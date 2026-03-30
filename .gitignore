@@ -1,0 +1,57 @@
+# Binaries
+/gateway
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary
+*.test
+
+# Output of the go coverage tool
+*.out
+coverage.txt
+
+# Dependency directories
+vendor/
+
+# Go workspace file
+go.work
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local config (secrets, overrides)
+*.local.yaml
+*.local.yml
+.env
+.env.*
+
+# Runtime
+*.db          # SQLite
+*.db-shm
+*.db-wal
+
+# Logs
+*.log
+
+# Certs
+*.pem
+*.key
+
+# Build artifacts
+dist/
+build/
+
+# agents
+.loki
