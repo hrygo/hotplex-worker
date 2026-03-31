@@ -74,6 +74,15 @@ var (
 		Help:      "Total WebSocket messages by direction and event type",
 	}, []string{"direction", "event_type"})
 
+	// GatewayEventsTotal tracks pass-through events forwarded by Handler.Handle.
+	// AEP-011 (reasoning, step, permission_request, permission_response) and
+	// AEP-012 (message, message.start, message.end) are counted here.
+	GatewayEventsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "hotplex",
+		Name:      "gateway_events_total",
+		Help:      "Total pass-through gateway events by event type and direction",
+	}, []string{"event_type", "direction"})
+
 	// GatewayDeltasDropped tracks dropped message.delta events due to backpressure.
 	GatewayDeltasDropped = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: "hotplex",

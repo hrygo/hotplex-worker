@@ -51,9 +51,10 @@ type ClientCaps struct {
 // InitAckData is the payload of a gateway → client init_ack message.
 type InitAckData struct {
 	SessionID  string              `json:"session_id"`
-	State      events.SessionState `json:"state"`
-	ServerCaps ServerCaps          `json:"server_caps"`
+	State      events.SessionState  `json:"state"`
+	ServerCaps ServerCaps           `json:"server_caps"`
 	Error      string              `json:"error,omitempty"`
+	Code       events.ErrorCode    `json:"code,omitempty"`
 }
 
 // ServerCaps declares what the gateway / worker supports.
@@ -118,6 +119,7 @@ func BuildInitAckError(sessionID string, initErr *InitError) *events.Envelope {
 			SessionID: sessionID,
 			State:     events.StateDeleted,
 			Error:     initErr.Message,
+			Code:      initErr.Code,
 		},
 	)
 }

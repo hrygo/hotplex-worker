@@ -152,7 +152,9 @@ type DoneData struct {
 	Dropped bool `json:"dropped,omitempty"`
 }
 
-// MessageData is the payload for Message events (S→C — complete message).
+// MessageData is the payload for Message events (S→C — complete message, non-streaming).
+// In streaming scenarios, prefer MessageStartData/MessageDeltaData/MessageEndData.
+// The gateway treats Message as a pass-through event for backward compatibility.
 type MessageData struct {
 	ID          string         `json:"id"`
 	Role        string         `json:"role"`

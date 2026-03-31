@@ -73,8 +73,9 @@ type Hub struct {
 	sessionDropped map[string]bool
 
 	// Shutdown signals.
-	ctx    context.Context
-	cancel context.CancelFunc
+	ctx       context.Context
+	cancel    context.CancelFunc
+	closeOnce sync.Once // closes broadcast channel exactly once
 
 	// LogHandler is an optional callback invoked by routeMessage for each forwarded event.
 	// Use it to capture events into an external ring buffer (e.g. /admin/logs).
@@ -260,7 +261,7 @@ func (h *Hub) HandleHTTP(
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Authenticate at HTTP upgrade time.
-		userID, err := auth.AuthenticateRequest(r)
+		userID, botID, err := auth.AuthenticateRequest(r)
 		if err != nil {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
@@ -279,6 +280,7 @@ func (h *Hub) HandleHTTP(
 
 		c := newConn(h, wc, sessionID)
 		c.userID = userID
+		c.botID = botID // SEC-007: carry botID from HTTP-level JWT extraction
 		h.RegisterConn(c)
 		h.JoinSession(sessionID, c)
 
@@ -289,7 +291,7 @@ func (h *Hub) HandleHTTP(
 		go c.ReadPump(handler)
 		go c.WritePump()
 
-		h.log.Info("gateway: WS connected", "session_id", sessionID, "user_id", userID)
+		h.log.Info("gateway: WS connected", "session_id", sessionID, "user_id", userID, "bot_id", botID)
 	})
 }
 
@@ -301,6 +303,7 @@ func (h *Hub) Run() {
 		select {
 		case <-h.ctx.Done():
 			h.drainBroadcast()
+			h.closeOnce.Do(func() { close(h.broadcast) })
 			return
 		case msg := <-h.broadcast:
 			_, span := tracing.SpanFromContext(h.ctx).Start(h.ctx, "hub.broadcast")
@@ -392,8 +395,11 @@ func (h *Hub) Shutdown(ctx context.Context) error {
 	h.cancel()
 
 	// Drain in-flight messages with a deadline.
+	// closeOnce.Do ensures the channel is closed exactly once — either by Run()
+	// (if it was started) or by Shutdown() (if Run() was never started, e.g. in tests).
 	drainDone := make(chan struct{})
 	go func() {
+		h.closeOnce.Do(func() { close(h.broadcast) })
 		h.drainBroadcast()
 		close(drainDone)
 	}()

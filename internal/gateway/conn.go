@@ -44,12 +44,16 @@ type Conn struct {
 
 // newConn creates a new Conn.
 func newConn(hub *Hub, wc *websocket.Conn, sessionID string) *Conn {
+	log := slog.Default()
+	if hub != nil {
+		log = hub.log
+	}
 	return &Conn{
-		log:       hub.log,
+		log:       log,
 		wc:        wc,
 		hub:       hub,
 		sessionID: sessionID,
-		hb:        newHeartbeat(hub.log),
+		hb:        newHeartbeat(log),
 		done:      make(chan struct{}),
 	}
 }
@@ -216,7 +220,7 @@ func (c *Conn) performInit(handler *Handler) error {
 	if err != nil {
 		// Session does not exist → create new.
 		if errors.Is(err, session.ErrSessionNotFound) {
-			si, err = handler.sm.Create(context.Background(), sessionID, c.userID, initData.WorkerType, initData.Config.AllowedTools)
+			si, err = handler.sm.CreateWithBot(context.Background(), sessionID, c.userID, c.botID, initData.WorkerType, initData.Config.AllowedTools)
 			if err != nil {
 				c.sendInitError(events.ErrCodeInternalError, "failed to create session")
 				metrics.GatewayErrorsTotal.WithLabelValues(string(events.ErrCodeInternalError)).Inc()
@@ -402,9 +406,53 @@ func (h *Handler) Handle(ctx context.Context, env *events.Envelope) error {
 		return h.handlePing(ctx, env)
 	case events.Control:
 		return h.handleControl(ctx, env)
+	// AEP-011 / AEP-012: pass-through events from worker to all session clients.
+	case events.Reasoning:
+		// AEP-011: reasoning 事件透传
+		if err := h.hub.SendToSession(ctx, env); err != nil {
+			return err
+		}
+		metrics.GatewayEventsTotal.WithLabelValues("reasoning", "s2c").Inc()
+	case events.Step:
+		// AEP-011: step 事件透传
+		if err := h.hub.SendToSession(ctx, env); err != nil {
+			return err
+		}
+		metrics.GatewayEventsTotal.WithLabelValues("step", "s2c").Inc()
+	case events.PermissionRequest:
+		// AEP-011: permission_request 事件透传
+		if err := h.hub.SendToSession(ctx, env); err != nil {
+			return err
+		}
+		metrics.GatewayEventsTotal.WithLabelValues("permission_request", "s2c").Inc()
+	case events.PermissionResponse:
+		// AEP-011: permission_response 事件透传
+		if err := h.hub.SendToSession(ctx, env); err != nil {
+			return err
+		}
+		metrics.GatewayEventsTotal.WithLabelValues("permission_response", "s2c").Inc()
+	case events.Message:
+		// AEP-012: message 完整消息事件透传
+		if err := h.hub.SendToSession(ctx, env); err != nil {
+			return err
+		}
+		metrics.GatewayEventsTotal.WithLabelValues("message", "s2c").Inc()
+	case events.MessageStart:
+		// AEP-012: message.start 事件透传
+		if err := h.hub.SendToSession(ctx, env); err != nil {
+			return err
+		}
+		metrics.GatewayEventsTotal.WithLabelValues("message.start", "s2c").Inc()
+	case events.MessageEnd:
+		// AEP-012: message.end 事件透传
+		if err := h.hub.SendToSession(ctx, env); err != nil {
+			return err
+		}
+		metrics.GatewayEventsTotal.WithLabelValues("message.end", "s2c").Inc()
 	default:
 		return h.sendErrorf(ctx, env, events.ErrCodeProtocolViolation, "unknown event type: %s", env.Event.Type)
 	}
+	return nil
 }
 
 func (h *Handler) handleInput(ctx context.Context, env *events.Envelope) error {
@@ -563,27 +611,52 @@ func (h *Handler) sendErrorf(ctx context.Context, env *events.Envelope, code eve
 		Code:    code,
 		Message: fmt.Sprintf(format, args...),
 	})
-	return h.hub.SendToSession(ctx, err)
+	_ = h.hub.SendToSession(ctx, err) // best-effort; always return the error
+	return fmt.Errorf("%s: %s", code, fmt.Sprintf(format, args...))
 }
 
 // ─── Bridge ─────────────────────────────────────────────────────────────────
+
+// SessionManager abstracts the session.Manager methods used by Bridge.
+// It allows Bridge to be tested without a real Manager instance.
+type SessionManager interface {
+	Create(ctx context.Context, id, userID string, wt worker.WorkerType, allowedTools []string) (*session.SessionInfo, error)
+	AttachWorker(id string, w worker.Worker) error
+	DetachWorker(id string)
+	Transition(ctx context.Context, id string, to events.SessionState) error
+	Get(id string) (*session.SessionInfo, error)
+	Delete(ctx context.Context, id string) error
+}
+
+// WorkerFactory creates worker instances. Production code uses defaultWorkerFactory.
+type WorkerFactory interface {
+	NewWorker(t worker.WorkerType) (worker.Worker, error)
+}
+
+type defaultWorkerFactory struct{}
+
+func (defaultWorkerFactory) NewWorker(t worker.WorkerType) (worker.Worker, error) {
+	return worker.NewWorker(t)
+}
 
 // Bridge connects the gateway to the session manager.
 // It runs the read pump in a goroutine and proxies worker events to the hub.
 type Bridge struct {
 	log      *slog.Logger
 	hub      *Hub
-	sm       *session.Manager
+	sm       SessionManager
 	msgStore session.MessageStore // EVT-004: optional; nil means event persistence disabled
+	wf      WorkerFactory
 }
 
 // NewBridge creates a new bridge. msgStore may be nil (event persistence disabled).
-func NewBridge(log *slog.Logger, hub *Hub, sm *session.Manager, msgStore session.MessageStore) *Bridge {
+func NewBridge(log *slog.Logger, hub *Hub, sm SessionManager, msgStore session.MessageStore) *Bridge {
 	return &Bridge{
 		log:      log,
 		hub:      hub,
 		sm:       sm,
 		msgStore: msgStore,
+		wf:       defaultWorkerFactory{},
 	}
 }
 
@@ -597,7 +670,7 @@ func (b *Bridge) StartSession(ctx context.Context, id, userID string, wt worker.
 	_ = si
 
 	// Create worker.
-	w, err := worker.NewWorker(wt)
+	w, err := b.wf.NewWorker(wt)
 	if err != nil {
 		return fmt.Errorf("bridge: create worker: %w", err)
 	}
@@ -647,7 +720,7 @@ func (b *Bridge) ResumeSession(ctx context.Context, id string) error {
 	}
 
 	// Create worker.
-	w, err := worker.NewWorker(si.WorkerType)
+	w, err := b.wf.NewWorker(si.WorkerType)
 	if err != nil {
 		return fmt.Errorf("bridge: create worker: %w", err)
 	}
