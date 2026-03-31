@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [master, reorganized]
+    branches: [master]
     paths:
       - '**.go'
       - 'go.mod'
@@ -96,11 +96,12 @@ jobs:
       - name: Display code coverage
         run: go tool cover -func=coverage.out | tail -1
 
-      - uses: codecov/codecov-action@v5
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
         with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: hrygo/hotplex-worker
           files: ./coverage.out
           flags: unittests
           name: hotplex-worker
           fail_ci_if_error: false
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
