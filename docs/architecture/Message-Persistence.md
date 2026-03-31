@@ -12,7 +12,17 @@ tags:
 
 ---
 
-## 0. 核心定位（重要）
+## 0. 实施状态：v1.0 不实现
+
+> ⚠️ **v1.0 决定：不实现 EventStore / MessageStore / AuditLog。**
+>
+> 理由：Worker 自身已具备持久化能力（Claude Code 的 `~/.claude/projects/`，OpenCode Server 的服务端状态），Gateway 的职责是**控制面路由**，不做数据面 replay。
+>
+> 后续如有合规/审计需求，可按本文档设计在 v1.1 引入。
+
+---
+
+## 1. 核心定位（重要）
 
 > ⚠️ **本设计是可选存储插件，不参与 SessionManager 状态流转。**
 >
@@ -22,7 +32,7 @@ tags:
 
 ---
 
-## 1. 设计原则
+## 2. 设计原则
 
 ### 1.1 当前状态评估
 
@@ -609,11 +619,13 @@ func (s *EventStore) GetEvents(sessionID, userID string, fromSeq int64) ([]*Even
 
 ## 9. 实施路线图
 
-| 版本 | 任务 | 产出 |
-|------|------|------|
-| **v1.0** | 改进 Schema + Append-only 触发器 | `event_type`/`event_version` 字段 |
-| **v1.0** | 快照策略 + Temporal Query | 性能优化 |
-| **v1.0** | PostgreSQL 迁移 + pgaudit | 生产级合规 |
+| 版本 | 任务 | 产出 | 状态 |
+|------|------|------|------|
+| **v1.0** | 改进 Schema + Append-only 触发器 | `event_type`/`event_version` 字段 | ❌ 不实现 |
+| **v1.0** | 快照策略 + Temporal Query | 性能优化 | ❌ 不实现 |
+| **v1.0** | PostgreSQL 迁移 + pgaudit | 生产级合规 | ❌ 不实现 |
+
+> v1.0 由 Worker 自身负责数据持久化，Gateway 只管控制面。
 
 ---
 
