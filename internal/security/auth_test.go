@@ -43,7 +43,7 @@ func TestNewAuthenticator(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			auth := NewAuthenticator(tt.cfg)
+			auth := NewAuthenticator(tt.cfg, nil)
 			require.NotNil(t, auth)
 			require.Equal(t, tt.want, len(auth.validKey))
 		})
@@ -113,7 +113,7 @@ func TestAuthenticateRequest(t *testing.T) {
 				APIKeys:      tt.apiKeys,
 				APIKeyHeader: tt.headerName,
 			}
-			auth := NewAuthenticator(cfg)
+			auth := NewAuthenticator(cfg, nil)
 
 			req := httptest.NewRequest("GET", "/test", nil)
 			if tt.requestKey != "" {
@@ -124,7 +124,7 @@ func TestAuthenticateRequest(t *testing.T) {
 				req.Header.Set(header, tt.requestKey)
 			}
 
-			userID, err := auth.AuthenticateRequest(req)
+			userID, _, err := auth.AuthenticateRequest(req)
 			if tt.wantErr {
 				require.Error(t, err)
 				require.Equal(t, ErrUnauthorized, err)
@@ -137,10 +137,122 @@ func TestAuthenticateRequest(t *testing.T) {
 	}
 }
 
+// TestAuthenticateRequest_BotIDFromJWT tests that AuthenticateRequest extracts botID from a JWT
+// Bearer token in the Authorization header when a JWTValidator is configured.
+func TestAuthenticateRequest_BotIDFromJWT(t *testing.T) {
+	t.Parallel()
+
+	// Set up API key auth + JWT validator.
+	apiKey := "secret-api-key"
+	jwtSecret := []byte("test-jwt-secret-123")
+	jwtVal := NewJWTValidator(jwtSecret, "")
+	cfg := &config.SecurityConfig{
+		APIKeys:      []string{apiKey},
+		APIKeyHeader: "X-API-Key",
+	}
+	auth := NewAuthenticator(cfg, jwtVal)
+
+	tests := []struct {
+		name        string
+		apiKey      string
+		jwtToken    string
+		wantBotID   string
+		wantErr     bool
+	}{
+		{
+			name:      "valid api key, JWT with bot_id",
+			apiKey:    apiKey,
+			jwtToken:  mustGenToken(jwtVal, "user1", "bot_001"),
+			wantBotID: "bot_001",
+			wantErr:   false,
+		},
+		{
+			name:      "valid api key, JWT with empty bot_id",
+			apiKey:    apiKey,
+			jwtToken:  mustGenToken(jwtVal, "user1", ""),
+			wantBotID: "",
+			wantErr:   false,
+		},
+		{
+			name:      "valid api key, no JWT token",
+			apiKey:    apiKey,
+			jwtToken:  "",
+			wantBotID: "",
+			wantErr:   false,
+		},
+		{
+			name:      "valid api key, invalid JWT token",
+			apiKey:    apiKey,
+			jwtToken:  "not-a-valid-jwt",
+			wantBotID: "", // fail-open: botID silently empty, mismatch check deferred to performInit
+			wantErr:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			req := httptest.NewRequest("GET", "/test", nil)
+			req.Header.Set("X-API-Key", tt.apiKey)
+			if tt.jwtToken != "" {
+				req.Header.Set("Authorization", "Bearer "+tt.jwtToken)
+			}
+
+			userID, botID, err := auth.AuthenticateRequest(req)
+			if tt.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, "api_user", userID)
+				require.Equal(t, tt.wantBotID, botID)
+			}
+		})
+	}
+}
+
+// mustGenToken is a test helper that generates a JWT token with the given userID and botID.
+// Panics on error (only for test use).
+func mustGenToken(v *JWTValidator, userID, botID string) string {
+	token, err := v.GenerateTokenWithClaims(&JWTClaims{
+		UserID: userID,
+		BotID:  botID,
+	})
+	if err != nil {
+		panic("mustGenToken: " + err.Error())
+	}
+	return token
+}
+
+// TestAuthenticateRequest_DevModeBotID tests that in dev mode (no API keys configured),
+// botID is still extracted from the JWT token when the API key header is present.
+func TestAuthenticateRequest_DevModeBotID(t *testing.T) {
+	t.Parallel()
+
+	jwtSecret := []byte("dev-jwt-secret")
+	jwtVal := NewJWTValidator(jwtSecret, "")
+	cfg := &config.SecurityConfig{APIKeys: []string{}} // dev mode: no API keys
+	auth := NewAuthenticator(cfg, jwtVal)
+
+	token := mustGenToken(jwtVal, "dev_user", "bot_dev")
+
+	req := httptest.NewRequest("GET", "/test", nil)
+	// Dev mode still requires the API key header to be present.
+	req.Header.Set("X-API-Key", "any-value")
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	// In dev mode, any request with valid JWT is allowed and botID is extracted.
+	userID, botID, err := auth.AuthenticateRequest(req)
+	require.NoError(t, err)
+	require.Equal(t, "anonymous", userID) // dev mode: hard-coded user
+	require.Equal(t, "bot_dev", botID)
+}
+
 func TestAuthenticateEnvelope(t *testing.T) {
 	t.Parallel()
 
-	auth := NewAuthenticator(&config.SecurityConfig{APIKeys: []string{"test"}})
+	auth := NewAuthenticator(&config.SecurityConfig{APIKeys: []string{"test"}}, nil)
 
 	tests := []struct {
 		name    string
@@ -183,7 +295,7 @@ func TestMiddleware(t *testing.T) {
 	t.Parallel()
 
 	cfg := &config.SecurityConfig{APIKeys: []string{"secret123"}}
-	auth := NewAuthenticator(cfg)
+	auth := NewAuthenticator(cfg, nil)
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -235,7 +347,7 @@ func TestMiddleware_DevMode(t *testing.T) {
 
 	// Dev mode: no keys configured
 	cfg := &config.SecurityConfig{APIKeys: []string{}}
-	auth := NewAuthenticator(cfg)
+	auth := NewAuthenticator(cfg, nil)
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

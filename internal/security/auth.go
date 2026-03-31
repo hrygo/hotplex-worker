@@ -7,25 +7,29 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/golang-jwt/jwt/v5"
+
 	"hotplex-worker/internal/config"
 	"hotplex-worker/pkg/events"
 )
 
 // Authenticator validates API keys and user credentials.
 type Authenticator struct {
-	cfg      *config.SecurityConfig
-	validKey map[string]bool // set of valid API keys (hashed in production)
+	cfg          *config.SecurityConfig
+	validKey     map[string]bool // set of valid API keys (hashed in production)
+	jwtValidator *JWTValidator   // optional; set when JWT botID extraction is needed at HTTP level
 }
 
-// NewAuthenticator creates a new authenticator.
-func NewAuthenticator(cfg *config.SecurityConfig) *Authenticator {
+// NewAuthenticator creates a new authenticator. jwtValidator may be nil.
+func NewAuthenticator(cfg *config.SecurityConfig, jwtValidator *JWTValidator) *Authenticator {
 	validKey := make(map[string]bool)
 	for _, k := range cfg.APIKeys {
 		validKey[k] = true
 	}
 	return &Authenticator{
-		cfg:      cfg,
-		validKey: validKey,
+		cfg:          cfg,
+		validKey:     validKey,
+		jwtValidator: jwtValidator,
 	}
 }
 
@@ -33,8 +37,9 @@ func NewAuthenticator(cfg *config.SecurityConfig) *Authenticator {
 var ErrUnauthorized = errors.New("security: unauthorized")
 
 // AuthenticateRequest validates the request's API key.
-// Returns the user ID if valid, or ErrUnauthorized.
-func (a *Authenticator) AuthenticateRequest(r *http.Request) (string, error) {
+// Returns the user ID, bot ID (from JWT BotID claim), and any error.
+// botID may be empty when no JWT Bearer token is present.
+func (a *Authenticator) AuthenticateRequest(r *http.Request) (string, string, error) {
 	header := a.cfg.APIKeyHeader
 	if header == "" {
 		header = "X-API-Key"
@@ -42,20 +47,51 @@ func (a *Authenticator) AuthenticateRequest(r *http.Request) (string, error) {
 
 	key := r.Header.Get(header)
 	if key == "" {
-		return "", ErrUnauthorized
+		return "", "", ErrUnauthorized
 	}
 
 	// Constant-time comparison to prevent timing attacks.
 	if len(a.validKey) == 0 {
 		// No keys configured — allow all (dev mode).
-		return "anonymous", nil
+		return "anonymous", a.botIDFromRequest(r), nil
 	}
 
 	if !a.validKey[key] {
-		return "", ErrUnauthorized
+		return "", "", ErrUnauthorized
 	}
 
-	return "api_user", nil
+	return "api_user", a.botIDFromRequest(r), nil
+}
+
+// botIDFromRequest extracts the BotID claim from a JWT Bearer token in the Authorization header.
+// Returns "" if no token is present or if extraction fails (fail-open; botID mismatch is
+// enforced later by performInit).
+// Note: we parse without verifying the signature here because the HTTP-layer auth (API key)
+// is the primary gate; the JWT is used only for botID tagging. Full JWT validation with
+// signature verification happens later in performInit.
+func (a *Authenticator) botIDFromRequest(r *http.Request) string {
+	if a.jwtValidator == nil {
+		return ""
+	}
+	auth := r.Header.Get("Authorization")
+	if !strings.HasPrefix(auth, "Bearer ") {
+		return ""
+	}
+	tokenString := strings.TrimPrefix(auth, "Bearer ")
+	if tokenString == "" {
+		return ""
+	}
+	// Parse without signature verification — we only read the claims here.
+	// The actual JWT validation (ES256 verification) happens in performInit.
+	token, _, err := jwt.NewParser().ParseUnverified(tokenString, &JWTClaims{})
+	if err != nil {
+		return ""
+	}
+	claims, ok := token.Claims.(*JWTClaims)
+	if !ok {
+		return ""
+	}
+	return claims.BotID
 }
 
 // AuthenticateEnvelope validates the session_id and API key embedded in an envelope.
@@ -71,7 +107,7 @@ func (a *Authenticator) AuthenticateEnvelope(env *events.Envelope) error {
 // Middleware returns an HTTP middleware that enforces authentication.
 func (a *Authenticator) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, err := a.AuthenticateRequest(r)
+		_, _, err := a.AuthenticateRequest(r)
 		if err != nil {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
