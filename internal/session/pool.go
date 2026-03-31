@@ -51,7 +51,7 @@ func (e *PoolError) Error() string {
 
 // Acquire attempts to reserve a concurrency slot for userID.
 // It returns nil on success, or a PoolError describing the failure.
-func (p *PoolManager) Acquire(userID string) *PoolError {
+func (p *PoolManager) Acquire(userID string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 

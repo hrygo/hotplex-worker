@@ -273,8 +273,9 @@ func (m *Manager) AttachWorker(id string, w worker.Worker) error {
 	userID := ms.info.UserID
 
 	if poolErr := m.pool.Acquire(userID); poolErr != nil {
-		m.log.Warn("session: attach rejected", "kind", poolErr.Kind, "session_id", id)
-		if poolErr.Kind == poolErrKindUserQuotaExceeded {
+		pe, _ := poolErr.(*PoolError)
+		m.log.Warn("session: attach rejected", "kind", pe.Kind, "session_id", id)
+		if pe.Kind == poolErrKindUserQuotaExceeded {
 			metrics.PoolAcquireTotal.WithLabelValues("user_quota_exceeded").Inc()
 			return ErrUserQuotaExceeded
 		}

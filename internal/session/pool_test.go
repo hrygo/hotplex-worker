@@ -47,9 +47,10 @@ func TestPoolAcquire_GlobalLimit(t *testing.T) {
 	// Third should fail due to global limit
 	err := pool.Acquire("user3")
 	require.NotNil(t, err)
-	require.Equal(t, poolErrKindExhausted, err.Kind)
-	require.Equal(t, 2, err.Current)
-	require.Equal(t, 2, err.Max)
+	pe := err.(*PoolError)
+	require.Equal(t, poolErrKindExhausted, pe.Kind)
+	require.Equal(t, 2, pe.Current)
+	require.Equal(t, 2, pe.Max)
 }
 
 func TestPoolAcquire_UserQuotaLimit(t *testing.T) {
@@ -66,10 +67,11 @@ func TestPoolAcquire_UserQuotaLimit(t *testing.T) {
 	// Third for same user fails
 	err := pool.Acquire("user1")
 	require.NotNil(t, err)
-	require.Equal(t, poolErrKindUserQuotaExceeded, err.Kind)
-	require.Equal(t, "user1", err.UserID)
-	require.Equal(t, 2, err.Current)
-	require.Equal(t, 2, err.Max)
+	pe := err.(*PoolError)
+	require.Equal(t, poolErrKindUserQuotaExceeded, pe.Kind)
+	require.Equal(t, "user1", pe.UserID)
+	require.Equal(t, 2, pe.Current)
+	require.Equal(t, 2, pe.Max)
 
 	// Different user succeeds
 	require.Nil(t, pool.Acquire("user2"))
