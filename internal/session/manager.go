@@ -419,10 +419,39 @@ func (m *Manager) ValidateOwnership(ctx context.Context, sessionID, userID strin
 	return nil
 }
 
+// DebugSessionSnapshot holds safe-to-expose debug info for a managed session.
+// Exists to prevent callers from acquiring the per-session mutex directly,
+// which would violate lock ordering invariants and risk deadlocks.
+type DebugSessionSnapshot struct {
+	TurnCount    int
+	WorkerHealth worker.WorkerHealth
+	HasWorker    bool
+}
+
 // GetManagedSessionDebug returns the raw managedSession for admin/debug use.
-// Returns nil if the session is not found. Caller must not mutate the returned value.
+// Returns nil if the session is not found. Caller must not mutate the returned value
+// or acquire ms.Mu — use DebugSnapshot instead for safe access.
 func (m *Manager) GetManagedSessionDebug(id string) *managedSession {
 	return m.getManagedSession(id)
+}
+
+// DebugSnapshot safely captures debug fields from a managed session under the read lock.
+// Use this instead of acquiring ms.Mu directly from outside the session package.
+func (m *Manager) DebugSnapshot(id string) (DebugSessionSnapshot, bool) {
+	ms := m.getManagedSession(id)
+	if ms == nil {
+		return DebugSessionSnapshot{}, false
+	}
+	ms.Mu.RLock()
+	defer ms.Mu.RUnlock()
+	snap := DebugSessionSnapshot{
+		TurnCount: ms.TurnCount,
+	}
+	if ms.Worker != nil {
+		snap.HasWorker = true
+		snap.WorkerHealth = ms.Worker.Health()
+	}
+	return snap, true
 }
 
 // MessageStore returns the configured MessageStore (may be nil).

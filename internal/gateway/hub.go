@@ -361,6 +361,11 @@ func (h *Hub) NextSeq(sessionID string) int64 {
 	return h.seqGen.Next(sessionID)
 }
 
+// NextSeqPeek returns the current sequence number for a session without incrementing.
+func (h *Hub) NextSeqPeek(sessionID string) int64 {
+	return h.seqGen.Peek(sessionID)
+}
+
 // ConnectionsOpen returns the number of currently open WebSocket connections.
 func (h *Hub) ConnectionsOpen() int {
 	h.mu.RLock()
@@ -428,6 +433,13 @@ type SeqGen struct {
 // NewSeqGen creates a new sequence generator.
 func NewSeqGen() *SeqGen {
 	return &SeqGen{seq: make(map[string]int64)}
+}
+
+// Peek returns the current sequence number for a session without incrementing.
+func (g *SeqGen) Peek(sessionID string) int64 {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.seq[sessionID]
 }
 
 // Next returns the next sequence number for a session.

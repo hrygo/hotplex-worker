@@ -725,9 +725,25 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string) {
 	}
 
 	// AEP-020: Worker.Recv() closed — get exit code to determine crash vs normal exit.
-	// Wait() returns immediately since the process has already exited (Terminate was
-	// called before the conn channel was closed). Non-zero exit = crash = success=false.
-	if exitCode, _ := w.Wait(); exitCode != 0 {
+	// Wrap Wait() with a 2s timeout to avoid blocking the goroutine if the process
+	// is stuck in an unreported state (e.g. zombie or kernel-level hang).
+	var exitCode int
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		exitCode, _ = w.Wait()
+	})
+	ch := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(ch)
+	}()
+	select {
+	case <-ch:
+		// Wait() returned; check exit code.
+	case <-time.After(2 * time.Second):
+		b.log.Warn("gateway: Wait() timed out, skipping crash detection", "session_id", sessionID)
+	}
+	if exitCode != 0 {
 		b.log.Warn("gateway: worker exited with non-zero code, sending crash done", "session_id", sessionID, "exit_code", exitCode)
 		crashDone := events.NewEnvelope(aep.NewID(), sessionID, b.hub.NextSeq(sessionID), events.Done, events.DoneData{
 			Success: false,

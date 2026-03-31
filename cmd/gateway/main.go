@@ -640,24 +640,9 @@ func (a *AdminAPI) HandleDebugSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Collect extended debug info from session manager.
-	ms := a.sm.GetManagedSessionDebug(id)
-	var mutexLocked bool
-	var turnCount int
-	var workerHealth worker.WorkerHealth
-	if ms != nil {
-		ms.Mu.RLock()
-		mutexLocked = true // if we got here, we have a read lock
-		if ms.TurnCount > 0 {
-			turnCount = ms.TurnCount
-		}
-		if ms.Worker != nil {
-			workerHealth = ms.Worker.Health()
-		}
-		ms.Mu.RUnlock()
-	}
-
-	lastSeq := a.hub.NextSeq(id) // returns current seq without incrementing
+	// Collect extended debug info from session manager via DebugSnapshot
+	// (safe: lock acquisition happens inside the session package to respect lock ordering).
+	snap, _ := a.sm.DebugSnapshot(id)
 	respondJSON(w, map[string]any{
 		"session": map[string]any{
 			"id":          si.ID,
@@ -668,10 +653,10 @@ func (a *AdminAPI) HandleDebugSession(w http.ResponseWriter, r *http.Request) {
 			"updated_at":  si.UpdatedAt,
 		},
 		"debug": map[string]any{
-			"mutex_locked":  mutexLocked,
-			"turn_count":    turnCount,
-			"last_seq_sent": lastSeq,
-			"worker_health": workerHealth,
+			"has_worker":     snap.HasWorker,
+			"turn_count":    snap.TurnCount,
+			"last_seq_sent": a.hub.NextSeqPeek(id),
+			"worker_health": snap.WorkerHealth,
 		},
 	})
 }
@@ -799,7 +784,7 @@ func (r *logRingBuffer) Recent(limit int) []logEntry {
 		size = limit
 	}
 	// start from oldest
-	start := (r.head - size + size*1000) % (len(r.ent))
+	start := (r.head - size) % len(r.ent)
 	out := make([]logEntry, 0, size)
 	for i := 0; i < size; i++ {
 		idx := (start + i) % len(r.ent)
