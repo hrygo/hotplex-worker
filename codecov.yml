@@ -12,23 +12,33 @@ coverage:
       default:
         target: 80%
         threshold: 1%
-      # 核心安全模块要求 (Testing Strategy 5.1)
+      # 1. 安全核心 (Security) - 最高标准
       security:
         target: 95%
         paths:
           - "internal/security/"
-      # 核心引擎模块要求 (对应 internal/gateway)
+      # 2. 核心引擎 (Gateway/Engine)
       engine:
         target: 90%
         paths:
           - "internal/gateway/"
-      # 配置解析模块要求 (Testing Strategy 5.1)
+      # 3. 核心协议 (AEP Protocol)
+      protocol:
+        target: 90%
+        paths:
+          - "internal/aep/"
+      # 4. 配置中心 (Config)
       config:
         target: 85%
         paths:
           - "internal/config/"
-      # 适配器/提供者 (对应 internal/worker)
-      provider:
+      # 5. 会话管理 (Session)
+      session:
+        target: 80%
+        paths:
+          - "internal/session/"
+      # 6. 适配器/提供者 (Worker/Providers)
+      worker:
         target: 80%
         paths:
           - "internal/worker/"

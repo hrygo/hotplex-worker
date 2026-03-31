@@ -55,3 +55,4 @@ build/
 
 # agents
 .loki
+.agent/settings.local.json
