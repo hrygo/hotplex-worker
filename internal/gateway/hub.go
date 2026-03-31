@@ -338,7 +338,12 @@ func (h *Hub) routeMessage(msg *EnvelopeWithConn) {
 		h.LogHandler(level, fmt.Sprintf("event %s seq=%d", msg.Env.Event.Type, msg.Env.Seq), msg.Env.SessionID)
 	}
 
-	encoded, err := aep.EncodeJSON(msg.Env)
+	// Clone the envelope before encoding to prevent a data race with
+	// Bridge.forwardEvents which holds a reference to the original envelope
+	// and may encode it concurrently (e.g., for msgStore.Append on Done events).
+	cloned := events.Clone(msg.Env)
+
+	encoded, err := aep.EncodeJSON(cloned)
 	if err != nil {
 		h.log.Error("gateway: encode failed", "err", err)
 		return

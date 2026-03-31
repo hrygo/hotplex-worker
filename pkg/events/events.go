@@ -1,6 +1,9 @@
 package events
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // Version is the current AEP protocol version.
 const Version = "aep/v1"
@@ -79,6 +82,22 @@ type Envelope struct {
 	// Set by the gateway at init time and used for ownership validation.
 	// Not serialized over the wire.
 	OwnerID string `json:"-"`
+}
+
+// Clone returns a deep copy of the Envelope via JSON round-trip serialization.
+// This prevents data races when the clone and original are encoded concurrently
+// by different goroutines (e.g., Bridge.forwardEvents and Hub.routeMessage):
+// aep.EncodeJSON writes env.Version in-place, so a shallow struct copy would race.
+func Clone(env *Envelope) *Envelope {
+	data, err := json.Marshal(env)
+	if err != nil {
+		return &Envelope{}
+	}
+	var c Envelope
+	if err := json.Unmarshal(data, &c); err != nil {
+		return &Envelope{}
+	}
+	return &c
 }
 
 // Event wraps a kind and its data payload.

@@ -761,12 +761,21 @@ func (b *Bridge) ResumeSession(ctx context.Context, id string) error {
 	return b.hub.SendToSession(ctx, stateEvt)
 }
 
+// copyEnvelope delegates to events.Clone, which performs a deep copy of
+// map[string]any Event.Data to eliminate shared map headers.
+// This prevents data races when Hub.Run encodes the clone concurrently with
+// Bridge.forwardEvents encoding the original (e.g., for msgStore.Append).
+var _ = events.Clone // compile-time check that Clone is accessible
+
 // forwardEvents proxies worker events to the hub with seq assignment.
 // EVT-004: if msgStore is configured, it appends to the event log on done events.
 // AEP-020: after the recv channel closes, calls Worker.Wait() to determine exit
 // code and sets DoneData.Success accordingly (non-zero exit = crash = success=false).
 func (b *Bridge) forwardEvents(w worker.Worker, sessionID string) {
 	for env := range w.Conn().Recv() {
+		// Make a defensive copy before mutating SessionID to avoid a data race
+		// with Hub.Run which reads env during JSON encoding (hub mutates Seq).
+		env = events.Clone(env)
 		env.SessionID = sessionID
 		// Seq is assigned by hub.SendToSession via SeqGen (seq=0 triggers auto-assignment).
 

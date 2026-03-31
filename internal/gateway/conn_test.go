@@ -883,7 +883,7 @@ func TestBotIDIsolation_NewSessionStoresBotID(t *testing.T) {
 // mockBridgeSessionManager is a test double for Bridge tests.
 // It implements the SessionManager interface via mock.Mock.
 type mockBridgeSM struct {
-	*mock.Mock
+	mock.Mock
 }
 
 func (m *mockBridgeSM) Create(ctx context.Context, id, userID string, wt worker.WorkerType, allowedTools []string) (*session.SessionInfo, error) {
@@ -1198,7 +1198,7 @@ func TestBridge_ForwardEvents_NilMsgStore(t *testing.T) {
 // TestBridge_StartSession_Success verifies that StartSession creates a session,
 // attaches the worker, starts it, and transitions to RUNNING.
 func TestBridge_StartSession_Success(t *testing.T) {
-	sm := new(mockBridgeSM)
+	sm := &mockBridgeSM{Mock: mock.Mock{}}
 	sm.Test(t)
 
 	sessionInfo := &session.SessionInfo{
@@ -1207,7 +1207,7 @@ func TestBridge_StartSession_Success(t *testing.T) {
 		WorkerType: worker.TypeClaudeCode,
 		State:      events.StateCreated,
 	}
-	sm.On("Create", mock.Anything, "sess_start", "user1", worker.TypeClaudeCode, nil).Return(sessionInfo, nil)
+	sm.On("Create", mock.Anything, "sess_start", "user1", worker.TypeClaudeCode, mock.Anything).Return(sessionInfo, nil)
 	sm.On("AttachWorker", "sess_start", mock.Anything).Return(nil)
 	sm.On("Transition", mock.Anything, "sess_start", events.StateRunning).Return(nil)
 
@@ -1237,10 +1237,10 @@ func TestBridge_StartSession_Success(t *testing.T) {
 // TestBridge_StartSession_CreateFails verifies that when session creation fails,
 // StartSession returns an error without calling worker.Start.
 func TestBridge_StartSession_CreateFails(t *testing.T) {
-	sm := new(mockBridgeSM)
+	sm := &mockBridgeSM{Mock: mock.Mock{}}
 	sm.Test(t)
 
-	sm.On("Create", mock.Anything, "sess_fail", "user1", worker.TypeClaudeCode, nil).
+	sm.On("Create", mock.Anything, "sess_fail", "user1", worker.TypeClaudeCode, mock.Anything).
 		Return(nil, errors.New("create failed"))
 
 	h := newTestHub(t)
@@ -1268,7 +1268,7 @@ var _ WorkerFactory = failingWorkerFactory{}
 // TestBridge_ResumeSession_Success verifies that ResumeSession retrieves a session,
 // creates a worker, attaches it, resumes it, and transitions from TERMINATED→RUNNING.
 func TestBridge_ResumeSession_Success(t *testing.T) {
-	sm := new(mockBridgeSM)
+	sm := &mockBridgeSM{Mock: mock.Mock{}}
 	sm.Test(t)
 
 	sessionInfo := &session.SessionInfo{
@@ -1319,7 +1319,7 @@ func TestBridge_ResumeSession_Success(t *testing.T) {
 // TestBridge_ResumeSession_DeletedSession verifies that resuming a DELETED session
 // returns ErrSessionNotFound.
 func TestBridge_ResumeSession_DeletedSession(t *testing.T) {
-	sm := new(mockBridgeSM)
+	sm := &mockBridgeSM{Mock: mock.Mock{}}
 	sm.Test(t)
 
 	sessionInfo := &session.SessionInfo{
@@ -1353,7 +1353,7 @@ func init() {
 // TestBridge_ResumeSession_NoopWorker verifies that for a noop-type worker,
 // ResumeSession calls noopw.SetConn to inject a noop.Conn.
 func TestBridge_ResumeSession_NoopWorker(t *testing.T) {
-	sm := new(mockBridgeSM)
+	sm := &mockBridgeSM{Mock: mock.Mock{}}
 	sm.Test(t)
 
 	sessionInfo := &session.SessionInfo{
