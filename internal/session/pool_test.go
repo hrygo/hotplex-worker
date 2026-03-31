@@ -36,9 +36,6 @@ func TestPoolAcquire_Release(t *testing.T) {
 func TestPoolAcquire_GlobalLimit(t *testing.T) {
 	t.Parallel()
 
-	cfg := config.Default()
-	cfg.Pool.MaxSize = 2
-	cfg.Pool.MaxIdlePerUser = 10
 	pool := NewPoolManager(nil, 2, 10)
 
 	require.Nil(t, pool.Acquire("user1"))
@@ -56,9 +53,6 @@ func TestPoolAcquire_GlobalLimit(t *testing.T) {
 func TestPoolAcquire_UserQuotaLimit(t *testing.T) {
 	t.Parallel()
 
-	cfg := config.Default()
-	cfg.Pool.MaxSize = 10
-	cfg.Pool.MaxIdlePerUser = 2
 	pool := NewPoolManager(nil, 10, 2)
 
 	require.Nil(t, pool.Acquire("user1"))
