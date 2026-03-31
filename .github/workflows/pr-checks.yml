@@ -1,0 +1,41 @@
+name: PR Checks
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  branch-naming:
+    name: Branch Naming
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate branch name
+        env:
+          BRANCH: ${{ github.head_ref }}
+        run: |
+          REGEX="^(feat|fix|refactor|docs|chore|test)/([0-9]+-)?.*$"
+          if [[ ! "$BRANCH" =~ $REGEX ]]; then
+            echo "::error::Branch '$BRANCH' does not match required format: <type>/[<id>-]<desc>"
+            echo "Example: feat/96-login or fix/123-bug"
+            exit 1
+          fi
+          echo "✓ Branch naming correct: $BRANCH"
+
+  issue-link:
+    name: Issue Link
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate issue link
+        env:
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          if ! echo "$BODY" | grep -Eiq "\*?(resolves|fixes|closes|refs|fix)\*?\s*:?\s*#([0-9]+)"; then
+            echo "::error::PR body must contain an issue link"
+            echo "Add one of: Resolves #N, Fixes #N, Closes #N, or Refs #N"
+            exit 1
+          fi
+          echo "✓ Issue link found in PR body"
