@@ -50,10 +50,10 @@ type Manager struct {
 // managedSession holds a session's in-memory state and its mutex.
 type managedSession struct {
 	info      SessionInfo
-	Worker    worker.Worker
-	TurnCount int          // number of input turns processed (anti-pollution tracking)
-	startedAt time.Time    // time the worker was attached and started executing
-	Mu        sync.RWMutex // protects state transitions and input handling; reads use RLock
+	worker    worker.Worker
+	TurnCount int
+	startedAt time.Time
+	mu        sync.RWMutex // protects state transitions and input handling; reads use RLock
 }
 
 // SessionInfo is the in-memory session metadata.
@@ -172,19 +172,19 @@ func (m *Manager) transitionState(ctx context.Context, ms *managedSession, from,
 
 	if to == events.StateTerminated || to == events.StateDeleted {
 		// Record worker execution duration and decrement running gauge before killing.
-		if !ms.startedAt.IsZero() && ms.Worker != nil {
+		if !ms.startedAt.IsZero() && ms.worker != nil {
 			metrics.WorkerExecDuration.WithLabelValues(string(ms.info.WorkerType)).Observe(time.Since(ms.startedAt).Seconds())
 		}
-		if ms.Worker != nil {
+		if ms.worker != nil {
 			metrics.WorkersRunning.WithLabelValues(string(ms.info.WorkerType)).Dec()
 		}
-		// Release quota first (safe: releaseWorkerQuota does not lock ms.Mu).
+		// Release quota first (safe: releaseWorkerQuota does not lock ms.mu).
 		m.releaseWorkerQuota(ms)
 		// Kill the worker process if one is attached.
-		// Safe: ms.Mu is held by the caller, and worker.Kill() does not
+		// Safe: ms.mu is held by the caller, and worker.Kill() does not
 		// acquire any session manager locks (it uses syscall.Kill only).
-		if ms.Worker != nil {
-			if err := ms.Worker.Kill(); err != nil {
+		if ms.worker != nil {
+			if err := ms.worker.Kill(); err != nil {
 				m.log.Warn("session: worker kill failed", "id", ms.info.ID, "err", err)
 			}
 		}
@@ -233,8 +233,8 @@ func (m *Manager) TransitionWithReason(ctx context.Context, id string, to events
 		return ErrSessionNotFound
 	}
 
-	ms.Mu.Lock()
-	defer ms.Mu.Unlock()
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
 
 	from := ms.info.State
 	if !events.IsValidTransition(from, to) {
@@ -252,16 +252,16 @@ func (m *Manager) TransitionWithInput(ctx context.Context, id string, to events.
 		return ErrSessionNotFound
 	}
 
-	ms.Mu.Lock()
-	defer ms.Mu.Unlock()
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
 
 	// Anti-pollution: enforce max turns limit.
 	ms.TurnCount++
-	if ms.Worker != nil {
-		maxTurns := ms.Worker.MaxTurns()
+	if ms.worker != nil {
+		maxTurns := ms.worker.MaxTurns()
 		if maxTurns > 0 && ms.TurnCount > maxTurns {
 			m.log.Warn("session: max turns exceeded, initiating anti-pollution restart")
-			_ = ms.Worker.Kill()
+			_ = ms.worker.Kill()
 			from := ms.info.State
 			if events.IsValidTransition(from, events.StateTerminated) {
 				_ = m.transitionState(ctx, ms, from, events.StateTerminated, "max_turns")
@@ -304,12 +304,12 @@ func (m *Manager) AttachWorker(id string, w worker.Worker) error {
 		metrics.PoolAcquireTotal.WithLabelValues("pool_exhausted").Inc()
 		return ErrPoolExhausted
 	}
-	ms.Mu.Lock()
-	ms.Worker = w
+	ms.mu.Lock()
+	ms.worker = w
 	ms.startedAt = time.Now()
 	metrics.WorkerStartsTotal.WithLabelValues(string(ms.info.WorkerType), "success").Inc()
 	metrics.WorkersRunning.WithLabelValues(string(ms.info.WorkerType)).Inc()
-	ms.Mu.Unlock()
+	ms.mu.Unlock()
 
 	m.log.Debug("session: worker attached", "session_id", id, "user_id", userID)
 	return nil
@@ -321,9 +321,9 @@ func (m *Manager) GetWorker(id string) worker.Worker {
 	if ms == nil {
 		return nil
 	}
-	ms.Mu.RLock()
-	defer ms.Mu.RUnlock()
-	return ms.Worker
+	ms.mu.RLock()
+	defer ms.mu.RUnlock()
+	return ms.worker
 }
 
 // releaseWorkerQuota delegates to PoolManager.Release.
@@ -340,12 +340,12 @@ func (m *Manager) DetachWorker(id string) {
 		return
 	}
 
-	ms.Mu.Lock()
-	hasWorker := ms.Worker != nil
+	ms.mu.Lock()
+	hasWorker := ms.worker != nil
 	workerType := ms.info.WorkerType
-	ms.Worker = nil
+	ms.worker = nil
 	uid := ms.info.UserID
-	ms.Mu.Unlock()
+	ms.mu.Unlock()
 
 	if hasWorker {
 		metrics.WorkersRunning.WithLabelValues(string(workerType)).Dec()
@@ -365,18 +365,18 @@ func (m *Manager) Delete(ctx context.Context, id string) error {
 		return nil
 	}
 
-	ms.Mu.Lock()
-	hasWorker := ms.Worker != nil
+	ms.mu.Lock()
+	hasWorker := ms.worker != nil
 	workerType := ms.info.WorkerType
 	ms.info.State = events.StateDeleted
 	ms.info.UpdatedAt = time.Now()
 	if err := m.store.Upsert(ctx, &ms.info); err != nil {
-		ms.Mu.Unlock()
+		ms.mu.Unlock()
 		m.mu.Unlock()
 		return err
 	}
 	uid := ms.info.UserID
-	ms.Mu.Unlock()
+	ms.mu.Unlock()
 
 	// Release quota and remove from map while still holding m.mu.
 	if hasWorker {
@@ -428,28 +428,20 @@ type DebugSessionSnapshot struct {
 	HasWorker    bool
 }
 
-// GetManagedSessionDebug returns the raw managedSession for admin/debug use.
-// Returns nil if the session is not found. Caller must not mutate the returned value
-// or acquire ms.Mu — use DebugSnapshot instead for safe access.
-func (m *Manager) GetManagedSessionDebug(id string) *managedSession {
-	return m.getManagedSession(id)
-}
-
 // DebugSnapshot safely captures debug fields from a managed session under the read lock.
-// Use this instead of acquiring ms.Mu directly from outside the session package.
 func (m *Manager) DebugSnapshot(id string) (DebugSessionSnapshot, bool) {
 	ms := m.getManagedSession(id)
 	if ms == nil {
 		return DebugSessionSnapshot{}, false
 	}
-	ms.Mu.RLock()
-	defer ms.Mu.RUnlock()
+	ms.mu.RLock()
+	defer ms.mu.RUnlock()
 	snap := DebugSessionSnapshot{
 		TurnCount: ms.TurnCount,
 	}
-	if ms.Worker != nil {
+	if ms.worker != nil {
 		snap.HasWorker = true
-		snap.WorkerHealth = ms.Worker.Health()
+		snap.WorkerHealth = ms.worker.Health()
 	}
 	return snap, true
 }
@@ -466,8 +458,8 @@ func (m *Manager) Lock(id string) (release func(), err error) {
 	if ms == nil {
 		return nil, ErrSessionNotFound
 	}
-	ms.Mu.Lock()
-	return ms.Mu.Unlock, nil
+	ms.mu.Lock()
+	return ms.mu.Unlock, nil
 }
 
 // List returns all sessions from Store. Use ListActive for in-memory active sessions only.
@@ -503,11 +495,11 @@ func (m *Manager) WorkerHealthStatuses() []worker.WorkerHealth {
 
 	statuses := make([]worker.WorkerHealth, 0, len(m.sessions))
 	for _, ms := range m.sessions {
-		ms.Mu.RLock()
-		if ms.Worker != nil {
-			statuses = append(statuses, ms.Worker.Health())
+		ms.mu.RLock()
+		if ms.worker != nil {
+			statuses = append(statuses, ms.worker.Health())
 		}
-		ms.Mu.RUnlock()
+		ms.mu.RUnlock()
 	}
 	return statuses
 }
@@ -521,11 +513,11 @@ func (m *Manager) Close() error {
 	m.mu.Lock()
 	var workers []worker.Worker
 	for _, ms := range m.sessions {
-		ms.Mu.Lock()
-		if ms.Worker != nil {
-			workers = append(workers, ms.Worker)
+		ms.mu.Lock()
+		if ms.worker != nil {
+			workers = append(workers, ms.worker)
 		}
-		ms.Mu.Unlock()
+		ms.mu.Unlock()
 	}
 	m.mu.Unlock()
 
@@ -572,12 +564,12 @@ func (m *Manager) gc(ctx context.Context) {
 	var runningSessions []string
 	var runningWorkers []worker.Worker
 	for _, ms := range m.sessions {
-		ms.Mu.RLock()
+		ms.mu.RLock()
 		if ms.info.State == events.StateRunning {
 			runningSessions = append(runningSessions, ms.info.ID)
-			runningWorkers = append(runningWorkers, ms.Worker)
+			runningWorkers = append(runningWorkers, ms.worker)
 		}
-		ms.Mu.RUnlock()
+		ms.mu.RUnlock()
 	}
 	m.mu.RUnlock()
 
