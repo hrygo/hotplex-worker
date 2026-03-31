@@ -160,6 +160,9 @@ func (m *Manager) Get(id string) (*SessionInfo, error) {
 
 // ─── State transitions ───────────────────────────────────────────────────────
 
+// Default graceful shutdown timeout for worker termination.
+const gracefulShutdownTimeout = 5 * time.Second
+
 // transitionState performs the common state-transition work: validation,
 // in-memory update, persistence, and notifications.
 // Caller must hold ms.mu for write.
@@ -188,12 +191,14 @@ func (m *Manager) transitionState(ctx context.Context, ms *managedSession, from,
 		}
 		// Release quota first (safe: releaseWorkerQuota does not lock ms.mu).
 		m.releaseWorkerQuota(ms)
-		// Kill the worker process if one is attached.
-		// Safe: ms.mu is held by the caller, and worker.Kill() does not
+		// Gracefully terminate the worker process with 5s grace period.
+		// Safe: ms.mu is held by the caller, and worker.Terminate() does not
 		// acquire any session manager locks (it uses syscall.Kill only).
 		if ms.worker != nil {
-			if err := ms.worker.Kill(); err != nil {
-				m.log.Warn("session: worker kill failed", "id", ms.info.ID, "err", err)
+			terminateCtx, cancel := context.WithTimeout(ctx, gracefulShutdownTimeout)
+			defer cancel()
+			if err := ms.worker.Terminate(terminateCtx); err != nil {
+				m.log.Warn("session: worker terminate failed", "id", ms.info.ID, "err", err)
 			}
 		}
 	}
@@ -542,7 +547,10 @@ func (m *Manager) Close() error {
 
 	for _, w := range workers {
 		if w != nil {
-			_ = w.Kill()
+			// Graceful shutdown with 5s grace period
+			terminateCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = w.Terminate(terminateCtx)
 		}
 	}
 
