@@ -1,13 +1,9 @@
 package gateway
 
 import (
-	"context"
-	"errors"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -15,9 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"hotplex-worker/internal/aep"
-	"hotplex-worker/internal/config"
-	"hotplex-worker/internal/security"
-	"hotplex-worker/internal/session"
 	"hotplex-worker/internal/worker"
 	"hotplex-worker/pkg/events"
 )
