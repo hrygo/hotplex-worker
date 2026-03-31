@@ -11,12 +11,14 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"go.opentelemetry.io/otel/codes"
 
 	"hotplex-worker/internal/aep"
 	"hotplex-worker/internal/config"
 	"hotplex-worker/internal/metrics"
 	"hotplex-worker/internal/security"
 	"hotplex-worker/internal/session"
+	"hotplex-worker/internal/tracing"
 	"hotplex-worker/pkg/events"
 )
 
@@ -175,6 +177,14 @@ func (h *Hub) LeaveSession(sessionID string, conn *Conn) {
 // SendToSession delivers a message to all connections subscribed to a session.
 // Control-priority messages bypass the broadcast queue.
 func (h *Hub) SendToSession(ctx context.Context, env *events.Envelope) error {
+	spanCtx, span := tracing.SpanFromContext(ctx).Start(ctx, "hub.send_to_session")
+	defer span.End()
+	span.SetAttributes(
+		tracing.Attr("session_id", env.SessionID),
+		tracing.Attr("event_type", string(env.Event.Type)),
+		tracing.Attr("priority", string(env.Priority)),
+	)
+
 	// Assign sequence number before sending to broadcast queue or clients.
 	// We skip assignment if seq is already set (eg. by Handler for direct replies).
 	if env.Seq == 0 {
@@ -182,7 +192,7 @@ func (h *Hub) SendToSession(ctx context.Context, env *events.Envelope) error {
 	}
 
 	if env.Priority == events.PriorityControl {
-		return h.sendControlToSession(ctx, env)
+		return h.sendControlToSession(spanCtx, env)
 	}
 
 	// Backpressure strategy (per AEP spec §11.5):
@@ -209,7 +219,10 @@ func (h *Hub) SendToSession(ctx context.Context, env *events.Envelope) error {
 	case h.broadcast <- &EnvelopeWithConn{Env: env}:
 		return nil
 	default:
-		return errors.New("gateway: broadcast queue full")
+		err := errors.New("gateway: broadcast queue full")
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
 	}
 }
 
@@ -284,7 +297,14 @@ func (h *Hub) Run() {
 			h.drainBroadcast()
 			return
 		case msg := <-h.broadcast:
+			_, span := tracing.SpanFromContext(h.ctx).Start(h.ctx, "hub.broadcast")
+			span.SetAttributes(
+				tracing.Attr("session_id", msg.Env.SessionID),
+				tracing.Attr("event_type", string(msg.Env.Event.Type)),
+				tracing.Attr("seq", msg.Env.Seq),
+			)
 			h.routeMessage(msg)
+			span.End()
 		}
 	}
 }

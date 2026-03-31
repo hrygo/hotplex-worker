@@ -26,6 +26,7 @@ import (
 	"hotplex-worker/internal/gateway"
 	"hotplex-worker/internal/security"
 	"hotplex-worker/internal/session"
+	"hotplex-worker/internal/tracing"
 	"hotplex-worker/internal/worker"
 	_ "hotplex-worker/internal/worker/claudecode"
 	_ "hotplex-worker/internal/worker/opencodecli"
@@ -61,6 +62,9 @@ func run() error {
 	// Load configuration.
 	cfg := loadConfig()
 
+	// Initialize OpenTelemetry tracing (idempotent, optional).
+	tracing.Init(ctx, log, "hotplex-worker-gateway")
+
 	log.Info("gateway: starting",
 		"version", version(),
 		"go", runtime.Version(),
@@ -95,6 +99,38 @@ func run() error {
 	}
 
 	hub := gateway.NewHub(log, cfg)
+
+	// CONFIG-006/007/008: Start file-system config watcher for hot reload.
+	// Only active when a config file path was provided (flagConfig != "").
+	var configWatcher *config.Watcher
+	if *flagConfig != "" {
+		configWatcher = config.NewWatcher(log, *flagConfig,
+			func(newCfg *config.Config) {
+				// Hot update: apply non-static fields.
+				// The hub, sm, and other components read cfg at startup;
+				// for hot-reloadable fields, update the live config reference.
+				log.Info("config: hot reload applied",
+					"gateway.addr", newCfg.Gateway.Addr,
+					"pool.max_size", newCfg.Pool.MaxSize,
+					"gc_scan_interval", newCfg.Session.GCScanInterval,
+				)
+				// Update the live cfg reference for components that re-read it.
+				// Note: components that captured cfg at startup (like Hub's broadcastQueueSize)
+				// will use their captured values until restarted.
+				cfg = newCfg
+			},
+			func(field string) {
+				// Static field changed — log but do not apply (requires restart).
+				log.Warn("config: static field changed, restart required to apply",
+					"field", field,
+				)
+			},
+		)
+		if err := configWatcher.Start(ctx); err != nil {
+			log.Warn("config: watcher start failed, hot reload disabled", "error", err)
+			configWatcher = nil
+		}
+	}
 
 	sm.StateNotifier = func(ctx context.Context, sessionID string, state events.SessionState, message string) {
 		env := events.NewEnvelope(aep.NewID(), sessionID, hub.NextSeq(sessionID), events.State, events.StateData{
@@ -144,10 +180,19 @@ func run() error {
 	cancel()
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer shutdownCancel()
+	defer func() {
+		if err := tracing.Shutdown(shutdownCtx); err != nil {
+			log.Warn("tracing: shutdown", "error", err)
+		}
+		shutdownCancel()
+	}()
 
 	if err := hub.Shutdown(shutdownCtx); err != nil {
 		log.Warn("gateway: hub shutdown", "err", err)
+	}
+
+	if configWatcher != nil {
+		_ = configWatcher.Close()
 	}
 
 	if err := sm.Close(); err != nil {

@@ -9,12 +9,15 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 
 	"hotplex-worker/internal/aep"
 	"hotplex-worker/internal/config"
 	"hotplex-worker/internal/metrics"
 	"hotplex-worker/internal/security"
 	"hotplex-worker/internal/session"
+	"hotplex-worker/internal/tracing"
 	"hotplex-worker/internal/worker"
 	"hotplex-worker/internal/worker/noop"
 	"hotplex-worker/pkg/events"
@@ -122,16 +125,34 @@ func (c *Conn) ReadPump(handler *Handler) {
 		env.OwnerID = c.userID
 		env.Seq = c.hub.NextSeq(c.sessionID)
 
-		// Route to handler.
+		// Route to handler with tracing span.
+		_, span := tracing.SpanFromContext(context.Background()).Start(context.Background(), "conn.recv")
+		span.SetAttributes(
+			attribute.String("session_id", c.sessionID),
+			attribute.String("event_type", string(env.Event.Type)),
+			attribute.Int64("seq", env.Seq),
+		)
 		if err := handler.Handle(context.Background(), env); err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
 			c.log.Debug("gateway: handle error", "err", err, "session_id", c.sessionID)
+		} else {
+			span.SetStatus(codes.Ok, "")
 		}
+		span.End()
 	}
 }
 
 // performInit reads and processes the AEP init handshake message.
 // It blocks until either an init message is processed or an error occurs.
 func (c *Conn) performInit(handler *Handler) error {
+	_, span := tracing.SpanFromContext(context.Background()).Start(context.Background(), "conn.init")
+	defer func() {
+		if span != nil {
+			span.End()
+		}
+	}()
+
 	// Read first message with a longer deadline (init may take time on cold start).
 	_ = c.wc.SetReadDeadline(time.Now().Add(30 * time.Second))
 
@@ -240,6 +261,7 @@ func (c *Conn) performInit(handler *Handler) error {
 
 	c.log.Info("gateway: init complete", "session_id", sessionID,
 		"worker_type", initData.WorkerType, "state", si.State)
+	span.SetStatus(codes.Ok, "init complete")
 	return nil
 }
 
