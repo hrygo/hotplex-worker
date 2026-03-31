@@ -10,19 +10,24 @@ type Kind string
 
 // AEP v1 defined event kinds.
 const (
-	Error        Kind = "error"
-	State        Kind = "state"
-	Input        Kind = "input"
-	Done         Kind = "done"
-	MessageStart Kind = "message.start"
-	MessageDelta Kind = "message.delta"
-	MessageEnd   Kind = "message.end"
-	ToolCall     Kind = "tool_call"
-	ToolResult   Kind = "tool_result"
-	Raw          Kind = "raw"
-	Ping         Kind = "ping"
-	Pong         Kind = "pong"
-	Control      Kind = "control"
+	Error              Kind = "error"
+	State              Kind = "state"
+	Input              Kind = "input"
+	Done               Kind = "done"
+	Message            Kind = "message"
+	MessageStart       Kind = "message.start"
+	MessageDelta       Kind = "message.delta"
+	MessageEnd         Kind = "message.end"
+	ToolCall           Kind = "tool_call"
+	ToolResult         Kind = "tool_result"
+	Reasoning          Kind = "reasoning"
+	Step               Kind = "step"
+	Raw                Kind = "raw"
+	PermissionRequest  Kind = "permission_request"
+	PermissionResponse Kind = "permission_response"
+	Ping               Kind = "ping"
+	Pong               Kind = "pong"
+	Control            Kind = "control"
 )
 
 // Priority levels for message delivery.
@@ -145,6 +150,48 @@ type DoneData struct {
 	Stats   map[string]any `json:"stats,omitempty"`
 	// Dropped is true if the UI Reconciliation triggered due to silent backpressure drops
 	Dropped bool `json:"dropped,omitempty"`
+}
+
+// MessageData is the payload for Message events (S→C — complete message).
+type MessageData struct {
+	ID          string         `json:"id"`
+	Role        string         `json:"role"`
+	Content     string         `json:"content"`
+	ContentType string         `json:"content_type,omitempty"`
+	Metadata    map[string]any `json:"metadata,omitempty"`
+}
+
+// ReasoningData is the payload for Reasoning events (S→C — agent thinking/reasoning).
+type ReasoningData struct {
+	ID      string `json:"id"`
+	Content string `json:"content"`
+	Model   string `json:"model,omitempty"`
+}
+
+// StepData is the payload for Step events (S→C — execution step marker).
+type StepData struct {
+	ID        string         `json:"id"`
+	StepType  string         `json:"step_type"`
+	Name      string         `json:"name,omitempty"`
+	Input     map[string]any `json:"input,omitempty"`
+	Output    map[string]any `json:"output,omitempty"`
+	ParentID  string         `json:"parent_id,omitempty"`
+	Duration  int64          `json:"duration,omitempty"` // milliseconds
+}
+
+// PermissionRequestData is the payload for PermissionRequest events (S→C — ask user for permission).
+type PermissionRequestData struct {
+	ID          string   `json:"id"`
+	ToolName    string   `json:"tool_name"`
+	Description string   `json:"description,omitempty"`
+	Args        []string `json:"args,omitempty"`
+}
+
+// PermissionResponseData is the payload for PermissionResponse events (C→S — user grants/denies).
+type PermissionResponseData struct {
+	ID      string `json:"id"`
+	Allowed bool   `json:"allowed"`
+	Reason  string `json:"reason,omitempty"`
 }
 
 // ControlAction identifies the type of server-originated control instruction.
