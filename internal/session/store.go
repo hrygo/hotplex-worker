@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
     owner_id TEXT,
+    bot_id TEXT,
     worker_session_id TEXT,
     worker_type TEXT NOT NULL,
     state TEXT NOT NULL,
@@ -78,6 +79,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE INDEX IF NOT EXISTS idx_sessions_state ON sessions(state);
 CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_owner_id ON sessions(owner_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_bot_id ON sessions(bot_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
 CREATE INDEX IF NOT EXISTS idx_sessions_idle_expires_at ON sessions(idle_expires_at);
 
@@ -99,7 +101,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_events_session_seq_unique ON events(sessio
 -- Migrate: add owner_id column if it doesn't exist (no-op on fresh installs).
 -- The column is nullable so existing rows remain valid; application code
 -- falls back to user_id when owner_id IS NULL.
-_ = s.db.Exec("ALTER TABLE sessions ADD COLUMN owner_id TEXT")
+_ = s.db.Exec("ALTER TABLE sessions ADD COLUMN owner_id TEXT");
+-- Migrate: add bot_id column for SEC-007 multi-bot isolation.
+_ = s.db.Exec("ALTER TABLE sessions ADD COLUMN bot_id TEXT")
 `
 	_, err := s.db.ExecContext(ctx, schema)
 	if err != nil {
@@ -130,8 +134,8 @@ func (s *SQLiteStore) Upsert(ctx context.Context, info *SessionInfo) error {
 	}
 
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO sessions (id, user_id, owner_id, worker_session_id, worker_type, state, created_at, updated_at, expires_at, idle_expires_at, is_active, context_json)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`INSERT INTO sessions (id, user_id, owner_id, bot_id, worker_session_id, worker_type, state, created_at, updated_at, expires_at, idle_expires_at, is_active, context_json)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(id) DO UPDATE SET
 		   state=excluded.state,
 		   updated_at=excluded.updated_at,
@@ -139,7 +143,7 @@ func (s *SQLiteStore) Upsert(ctx context.Context, info *SessionInfo) error {
 		   idle_expires_at=excluded.idle_expires_at,
 		   is_active=excluded.is_active,
 		   context_json=excluded.context_json`,
-		info.ID, info.UserID, info.UserID, info.WorkerSessionID, info.WorkerType, string(info.State),
+		info.ID, info.UserID, info.OwnerID, info.BotID, info.WorkerSessionID, info.WorkerType, string(info.State),
 		info.CreatedAt, info.UpdatedAt, info.ExpiresAt, info.IdleExpiresAt,
 		isActive, string(ctxJSON),
 	)

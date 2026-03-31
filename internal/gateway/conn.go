@@ -31,6 +31,7 @@ type Conn struct {
 
 	sessionID string
 	userID    string
+	botID     string // SEC-007: bot isolation tag from JWT
 
 	// Heartbeat.
 	hb *heartbeat
@@ -198,6 +199,10 @@ func (c *Conn) performInit(handler *Handler) error {
 		if claims.Subject != "" {
 			c.userID = claims.Subject
 		}
+		// SEC-007: bind bot_id for multi-bot isolation.
+		if claims.BotID != "" {
+			c.botID = claims.BotID
+		}
 	}
 
 	// Determine session ID: prefer envelope's session_id, fall back to connection's.
@@ -231,6 +236,13 @@ func (c *Conn) performInit(handler *Handler) error {
 	} else if si.State == events.StateTerminated {
 		// Terminated → attempt resume (restart worker).
 		c.log.Info("gateway: resuming terminated session", "session_id", sessionID)
+	}
+
+	// SEC-007: reject cross-bot access — bot_id from JWT must match session's bot_id.
+	if c.botID != "" && si.BotID != "" && c.botID != si.BotID {
+		c.sendInitError(events.ErrCodeUnauthorized, "bot_id mismatch")
+		metrics.GatewayErrorsTotal.WithLabelValues(string(events.ErrCodeUnauthorized)).Inc()
+		return fmt.Errorf("bot_id mismatch: connection=%s session=%s", c.botID, si.BotID)
 	}
 
 	// Update connection's session ID if it changed.

@@ -31,21 +31,23 @@ type Manager struct {
 	stdout *os.File
 	stderr *os.File
 
-	mu        sync.Mutex
-	pgid      int
-	started   bool
-	exited    bool
-	exitCode  int
+	mu           sync.Mutex
+	pgid         int
+	started      bool
+	exited       bool
+	exitCode     int
 
 	// scanner reads stdout line-by-line with a 10MB per-line cap.
 	// Created in Start(); safe to call ReadLine() concurrently from one goroutine.
-	scanner     *bufio.Scanner
-	outputLimit int
+	scanner      *bufio.Scanner
+	outputLimit  int
+	allowedTools []string
 }
 
 // Opts configures a process manager.
 type Opts struct {
-	Logger *slog.Logger
+	Logger       *slog.Logger
+	AllowedTools []string // tools allowed for this worker process
 }
 
 // New creates a new process manager.
@@ -54,7 +56,8 @@ func New(opts Opts) *Manager {
 		opts.Logger = slog.Default()
 	}
 	return &Manager{
-		log: opts.Logger,
+		log:          opts.Logger,
+		allowedTools: opts.AllowedTools,
 	}
 }
 
@@ -67,6 +70,12 @@ func (m *Manager) Start(ctx context.Context, name string, args []string, env []s
 
 	if m.started {
 		return nil, nil, nil, fmt.Errorf("proc: already started")
+	}
+
+	// Append allowed-tools arguments if configured.
+	if len(m.allowedTools) > 0 {
+		toolsArgs := security.BuildAllowedToolsArgs(m.allowedTools)
+		args = append(args, toolsArgs...)
 	}
 
 	cmd := exec.CommandContext(ctx, name, args...)

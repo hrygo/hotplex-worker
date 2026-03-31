@@ -62,6 +62,7 @@ type SessionInfo struct {
 	ID            string              `json:"id"`
 	UserID        string              `json:"user_id"`
 	OwnerID       string              `json:"owner_id,omitempty"` // authenticated owner; falls back to UserID when nil
+	BotID         string              `json:"bot_id,omitempty"`  // SEC-007: bot isolation
 	WorkerType    worker.WorkerType   `json:"worker_type"`
 	State         events.SessionState `json:"state"`
 	CreatedAt     time.Time           `json:"created_at"`
@@ -103,10 +104,16 @@ func NewManager(ctx context.Context, log *slog.Logger, cfg *config.Config, store
 
 // Create creates a new session and persists it to SQLite.
 func (m *Manager) Create(ctx context.Context, id, userID string, workerType worker.WorkerType, allowedTools []string) (*SessionInfo, error) {
+	return m.CreateWithBot(ctx, id, userID, "", workerType, allowedTools)
+}
+
+// CreateWithBot creates a new session with explicit bot_id and persists it to SQLite.
+func (m *Manager) CreateWithBot(ctx context.Context, id, userID, botID string, workerType worker.WorkerType, allowedTools []string) (*SessionInfo, error) {
 	now := time.Now()
 	info := &SessionInfo{
 		ID:           id,
 		UserID:       userID,
+		BotID:        botID,
 		WorkerType:   workerType,
 		State:        events.StateCreated,
 		CreatedAt:    now,
@@ -123,7 +130,7 @@ func (m *Manager) Create(ctx context.Context, id, userID string, workerType work
 	m.sessions[id] = &managedSession{info: *info}
 	m.mu.Unlock()
 
-	m.log.Info("session: created", "id", id, "user_id", userID, "worker_type", workerType)
+	m.log.Info("session: created", "id", id, "user_id", userID, "worker_type", workerType, "bot_id", botID)
 	metrics.SessionsTotal.WithLabelValues(string(workerType)).Inc()
 	metrics.SessionsActive.WithLabelValues(string(events.StateCreated)).Inc()
 	return info, nil
