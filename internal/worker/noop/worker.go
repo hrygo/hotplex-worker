@@ -80,7 +80,7 @@ func (w *Worker) Input(_ context.Context, _ string, _ map[string]any) error {
 }
 
 func (w *Worker) Resume(_ context.Context, _ worker.SessionInfo) error {
-	return worker.ErrNotImplemented
+	return nil // noop: resume is a no-op
 }
 
 func (w *Worker) Terminate(_ context.Context) error {

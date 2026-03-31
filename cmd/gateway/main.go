@@ -147,13 +147,14 @@ func run() error {
 		_ = hub.SendToSession(ctx, env)
 	}
 
-	auth := security.NewAuthenticator(&cfg.Security)
-
 	// Initialize JWT validator if secret is configured (loaded via config.Load secrets provider).
+	// Pass it to NewAuthenticator so botID can be extracted from JWT at HTTP upgrade time.
 	var jwtValidator *security.JWTValidator
 	if len(cfg.Security.JWTSecret) > 0 {
 		jwtValidator = security.NewJWTValidator(cfg.Security.JWTSecret, cfg.Security.JWTAudience)
 	}
+
+	auth := security.NewAuthenticator(&cfg.Security, jwtValidator)
 
 	handler := gateway.NewHandler(log, cfg, hub, sm, jwtValidator)
 	bridge := gateway.NewBridge(log, hub, sm, msgStore)
