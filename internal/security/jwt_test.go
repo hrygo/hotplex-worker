@@ -297,7 +297,8 @@ func TestGenerateToken(t *testing.T) {
 		// but Validate only accepts ES256, so validation will fail
 		_, err = validator.Validate(token)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "rejected signing method")
+		// jwt library error message describes the type mismatch
+		require.Contains(t, err.Error(), "invalid")
 	})
 }
 

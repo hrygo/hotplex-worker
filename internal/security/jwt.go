@@ -2,6 +2,7 @@ package security
 
 import (
 	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/subtle"
 	"errors"
@@ -148,18 +149,46 @@ func (v *JWTValidator) GenerateToken(userID string, scopes []string, ttl time.Du
 }
 
 // GenerateTokenWithClaims generates a JWT token with the given claims using ES256.
+// For *ecdsa.PrivateKey secrets, it signs directly.
+// For []byte secrets (e.g. test HMAC secrets), it derives an ECDSA P-256 key so that
+// generated tokens are always ES256 (matching the validator's requirement).
 func (v *JWTValidator) GenerateTokenWithClaims(claims *JWTClaims) (string, error) {
 	var method jwt.SigningMethod
-	switch v.secret.(type) {
+	var signingKey any
+	switch secret := v.secret.(type) {
 	case *ecdsa.PrivateKey:
 		method = jwt.SigningMethodES256
+		signingKey = secret
 	case []byte:
-		method = jwt.SigningMethodHS256
+		// Derive a P-256 ECDSA key from the byte slice so the generated token
+		// is always ES256 (HMAC methods are explicitly rejected by Validate).
+		key := deriveECDSAP256Key(secret)
+		method = jwt.SigningMethodES256
+		signingKey = key
 	default:
 		return "", errors.New("security: GenerateTokenWithClaims: invalid secret type")
 	}
 	token := jwt.NewWithClaims(method, claims)
-	return token.SignedString(v.secret)
+	return token.SignedString(signingKey)
+}
+
+// deriveECDSAP256Key derives an ECDSA P-256 private key from a byte slice.
+// It is NOT a real KDF; it is intended only for test token generation.
+func deriveECDSAP256Key(secret []byte) *ecdsa.PrivateKey {
+	// Use the first 32 bytes of the secret as the scalar (padded with zeros if short).
+	var scalarBytes [32]byte
+	copy(scalarBytes[:], secret)
+	// Make sure the scalar is in the valid range for P-256.
+	N := elliptic.P256().Params().N
+	s := new(big.Int).SetBytes(scalarBytes[:])
+	s.Mod(s, new(big.Int).Sub(N, big.NewInt(1))) // keep in range [0, N-2]
+	s.Add(s, big.NewInt(1))                      // shift to [1, N-1] (never 0)
+
+	x, y := elliptic.P256().ScalarBaseMult(s.Bytes())
+	return &ecdsa.PrivateKey{
+		PublicKey: ecdsa.PublicKey{Curve: elliptic.P256(), X: x, Y: y},
+		D:         s,
+	}
 }
 
 // GenerateTokenWithJTI generates a token and adds its jti to the blacklist.
