@@ -18,8 +18,8 @@ import (
 
 // Default output buffer limits for bufio.Scanner.
 const (
-	scannerInitSize = 64 * 1024  // 64 KB initial capacity
-	scannerMaxSize  = 1 * 1024 * 1024 // 1 MB hard cap — scanner panics bufio.ErrTooLong beyond this
+	scannerInitSize = 64 * 1024       // 64 KB initial capacity
+	scannerMaxSize  = 10 * 1024 * 1024 // 10 MB hard cap — scanner panics bufio.ErrTooLong beyond this
 )
 
 // Manager oversees the lifecycle of a single worker process.
@@ -141,7 +141,7 @@ func (m *Manager) Start(ctx context.Context, name string, args []string, env []s
 	}
 
 	// Set up bufio.Scanner for line-by-line stdout parsing.
-	// Initial buffer 64 KB; hard cap 10 MB per line.
+	// Initial buffer 64 KB; hard cap 10 MB per line (AEP-008).
 	buf := make([]byte, scannerInitSize)
 	m.scanner = bufio.NewScanner(m.stdout)
 	m.scanner.Buffer(buf, scannerMaxSize)
@@ -273,7 +273,7 @@ func (m *Manager) captureExitCodeLocked() {
 
 // ReadLine reads the next line from the worker process stdout.
 // It returns ("", io.EOF) when the scanner reaches end-of-file, or
-// ("", ErrCodeWorkerOutputLimit) when a line exceeds the 1 MB buffer limit.
+// ("", ErrCodeWorkerOutputLimit) when a line exceeds the 10 MB buffer limit.
 //
 // ReadLine is NOT safe for concurrent calls; callers must serialize access
 // (typically a single read goroutine per session). It does NOT hold m.mu
@@ -297,7 +297,7 @@ func (m *Manager) ReadLine() (string, error) {
 		defer func() {
 			if p := recover(); p != nil {
 				if p == bufio.ErrTooLong {
-					scanErr = fmt.Errorf("worker output limit exceeded (1 MB line)")
+					scanErr = fmt.Errorf("worker output limit exceeded (10 MB line)")
 				} else {
 					panic(p)
 				}
