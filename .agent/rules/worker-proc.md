@@ -1,7 +1,7 @@
 ---
 paths:
   - "**/worker/**/*.go"
-  - "**/pool/**/*.go"
+  - "**/session/**/*.go"
 ---
 
 # 进程管理规范

@@ -1,0 +1,121 @@
+---
+paths:
+  - "**/aep/*.go"
+---
+
+# AEP v1 协议规范
+
+> hotplex-worker 对外暴露的统一 WebSocket 全双工通信协议
+> 参考文档：`docs/SPECS/Acceptance-Criteria.md` §AEP-001 ~ §AEP-030
+
+## Envelope 结构
+每条 AEP v1 消息必须包含以下字段：
+
+| 字段 | 类型 | 要求 |
+|------|------|------|
+| `id` | string | non-empty，消息唯一标识 |
+| `version` | string | 必须为 `aep/v1`，否则返回 `VERSION_MISMATCH` |
+| `session_id` | string | non-empty |
+| `seq` | int64 | 从 1 开始严格递增，同 session 内原子分配 |
+| `timestamp` | int64 | Unix ms，> 0 |
+| `event` | object | non-null，包含 `type` 字段 |
+| `priority` | string | 缺失默认为 `data`；`control` 跳过 backpressure |
+
+### 编解码约束
+```go
+// DecodeLine 必须验证所有必填字段
+func DecodeLine(line []byte) (*Envelope, error) {
+    dec := json.NewDecoder(bytes.NewReader(line))
+    dec.DisallowUnknownFields() // 拒绝未知字段
+    // ...
+}
+
+// EncodeLine 使用 json.Encoder，避免 []byte→string 复制
+func EncodeLine(w io.Writer, env *Envelope) error {
+    enc := json.NewEncoder(w)
+    return enc.Encode(env)
+}
+```
+
+## 消息类型
+
+### C→S（Client → Server）
+- `init`：握手，必须是 WS 连接建立后第一帧
+- `input`：用户任务，Session 繁忙时硬拒绝
+- `control`：terminate / delete
+- `ping`：心跳，回复 pong
+
+### S→C（Server → Client）
+- `init_ack`：握手响应
+- `state`：状态变更（created/running/idle/terminated）
+- `message.delta`：流式输出（text/code/image）
+- `message`：Turn 结束时完整消息聚合
+- `tool_call` / `tool_result`：Tool 调用通知（AUTONOMOUS 模式）
+- `done`：Turn 终止符
+- `error`：错误通知
+- `pong`：ping 响应
+- `control`：reconnect / throttle（Server 发起）
+
+## Seq 分配与去重
+```go
+// hub.NextSeq 原子分配，保证 session 内单调递增
+func (g *SeqGen) NextSeq(sessionID string) int64 {
+    g.mu.Lock()
+    defer g.mu.Unlock()
+    n := g.seq[sessionID]
+    g.seq[sessionID] = n + 1
+    return n
+}
+
+// message.delta 丢弃时不消耗 seq
+if !sent {
+    // seq 不递增，sessionDropped[sessionID] = true
+}
+```
+
+## Backpressure — 有界通道与 delta 丢弃
+```go
+// hub.broadcast 通道容量由 broadcastQueueSize 决定（默认 256）
+ch := make(chan *Envelope, cfg.BroadcastQueueSize)
+
+func SendToSession(sessionID string, env *Envelope) error {
+    if env.Event.Type == "message.delta" || env.Event.Type == "raw" {
+        // 非阻塞 select，通道满时静默丢弃
+        select {
+        case ch <- env:
+            return nil
+        default:
+            sessionDropped[sessionID] = true
+            return nil // 不返回错误
+        }
+    }
+    // 关键事件不可丢弃
+    ch <- env
+    return nil
+}
+```
+
+## 时序约束
+- Turn 开始：`state(running)` 必须是第一个 S→C event（seq=1）
+- Turn 结束：`done` 必须是最后一个 S→C event
+- `error` 必须在 `done` 之前
+- `tool_result.tool_call_id` 必须与对应 `tool_call.id` 匹配
+
+## Init 握手
+```go
+// performInit 必须在 30s 内完成
+ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+defer cancel()
+
+// 第一帧类型必须为 init
+if env.Event.Type != "init" {
+    return sendInitError(conn, "PROTOCOL_VIOLATION")
+}
+```
+
+## Worker 类型映射
+| Worker | 事件映射 |
+|--------|---------|
+| Claude Code | tool_use → tool_call |
+| OpenCode CLI | step_start → 提取 sessionID |
+| pi-mono (raw stdout) | 每行 stdout → 一条 message.delta |

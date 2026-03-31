@@ -3,7 +3,12 @@ paths:
   - "**/*.go"
 ---
 
-# Uber Go Style Guide
+# Go 编码规范
+
+> 合并自原 `go126.md`（Go 1.26 语言特性）+ `golang-style.md`（Uber Go Style Guide）
+> hotplex-worker 使用 Go 1.26，遵循 Uber Go Style Guide + 项目补充规则
+
+---
 
 ## 格式化
 - 行宽软限制 99 字符
@@ -50,3 +55,44 @@ paths:
   type Option func(*Config)
   func WithTimeout(d time.Duration) Option
   ```
+
+---
+
+## Go 1.26 语言特性
+
+## 默认生效（无需改代码）
+- **Green Tea GC**：GC overhead ↓ 10-40%，长驻进程直接受益
+- **Swiss Table Maps**：`make(map[K]V)` 使用新哈希表
+- **Container-Aware GOMAXPROCS**：自动适配容器 CPU 限制
+- **`io.ReadAll`**：2x faster，50% less allocation（Worker 输出流解析受益）
+- **`fmt.Errorf`**：分配减少，等价于 `errors.New`
+
+## 推荐使用
+- **`log/slog`**：标准库结构化日志，统一使用
+- **Generic Interfaces**：Worker 接口类型参数化（如 `Worker[T Event]`）
+- **`weak.Value`**：session metadata LRU 缓存
+- **`slices.Clone`**：slice 边界复制的标准方式
+- **`unique.Make`**：字符串驻留
+- **`new(expr)` 增强**：支持表达式初始化值，Worker 配置简化
+- **自引用泛型约束**：更灵活的泛型设计
+
+## Goroutine 泄漏检测（高优先级）
+- 实验性 profile：`runtime/pprof` 的 `goroutineleak` 类型
+- 启用：`GOEXPERIMENT=goroutineleakprofile`
+- 预期 **Go 1.27 默认启用**
+- **必须确保所有 goroutine 有 shutdown 路径**（ctx cancel / channel close / WaitGroup）
+
+## 构建优化
+```bash
+go build -pgo=auto ./cmd/gateway  # Profile-Guided Optimization
+```
+
+## 现代化工具
+```bash
+go fix ./...  # 自动现代化代码（go fix 完全重写，数十个 fixer）
+```
+
+## Flight Recorder（生产诊断）
+```bash
+go tool trace trace.out
+```
