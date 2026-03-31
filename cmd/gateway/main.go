@@ -104,7 +104,7 @@ func run() error {
 	// Only active when a config file path was provided (flagConfig != "").
 	var configWatcher *config.Watcher
 	if *flagConfig != "" {
-		configWatcher = config.NewWatcher(log, *flagConfig,
+		configWatcher = config.NewWatcher(log, *flagConfig, nil,
 			func(newCfg *config.Config) {
 				// Hot update: apply non-static fields.
 				// The hub, sm, and other components read cfg at startup;
@@ -142,10 +142,10 @@ func run() error {
 
 	auth := security.NewAuthenticator(&cfg.Security)
 
-	// Initialize JWT validator if secret is configured.
+	// Initialize JWT validator if secret is configured (loaded via config.Load secrets provider).
 	var jwtValidator *security.JWTValidator
-	if secret := os.Getenv("HOTPLEX_JWT_SECRET"); secret != "" {
-		jwtValidator = security.NewJWTValidator([]byte(secret), cfg.Security.JWTAudience)
+	if len(cfg.Security.JWTSecret) > 0 {
+		jwtValidator = security.NewJWTValidator(cfg.Security.JWTSecret, cfg.Security.JWTAudience)
 	}
 
 	handler := gateway.NewHandler(log, cfg, hub, sm, jwtValidator)
@@ -208,22 +208,15 @@ func run() error {
 }
 
 func loadConfig() *config.Config {
-	if *flagConfig != "" {
-		cfg, err := config.Load(*flagConfig)
-		if err != nil {
-			slog.Error("config: load failed", "path", *flagConfig, "err", err)
-			os.Exit(1)
-		}
-		if *flagDev {
-			cfg.Security.APIKeys = nil
-			cfg.Admin.Tokens = nil // Dev mode: allow all.
-		}
-		return cfg
+	cfg, err := config.Load(*flagConfig, config.LoadOptions{})
+	if err != nil {
+		slog.Error("config: load failed", "path", *flagConfig, "err", err)
+		os.Exit(1)
 	}
-	cfg := config.Default()
 	if *flagDev {
+		// Dev mode: disable auth requirements.
 		cfg.Security.APIKeys = nil
-		cfg.Admin.Tokens = nil // Dev mode: allow all.
+		cfg.Admin.Tokens = nil
 	}
 	return cfg
 }

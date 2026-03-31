@@ -217,7 +217,7 @@ func TestChainedSecretsProvider_Empty(t *testing.T) {
 func TestLoad_FileNotFound(t *testing.T) {
 	t.Parallel()
 
-	_, err := Load("/nonexistent/config.yaml")
+	_, err := Load("/nonexistent/config.yaml", LoadOptions{})
 	require.Error(t, err)
 }
 
@@ -225,7 +225,7 @@ func TestMustLoad_Panic(t *testing.T) {
 	t.Parallel()
 
 	require.Panics(t, func() {
-		MustLoad("/nonexistent/config.yaml")
+		MustLoad("/nonexistent/config.yaml", LoadOptions{})
 	})
 }
 

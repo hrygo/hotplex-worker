@@ -1,0 +1,49 @@
+codecov:
+  require_ci_to_pass: yes
+
+coverage:
+  precision: 2
+  round: down
+  range: "70...100"
+
+  status:
+    project:
+      # 整体项目覆盖率目标 (Testing Strategy 5.1 总计)
+      default:
+        target: 80%
+        threshold: 1%
+      # 核心安全模块要求 (Testing Strategy 5.1)
+      security:
+        target: 95%
+        paths:
+          - "internal/security/"
+      # 核心引擎模块要求 (对应 internal/gateway)
+      engine:
+        target: 90%
+        paths:
+          - "internal/gateway/"
+      # 配置解析模块要求 (Testing Strategy 5.1)
+      config:
+        target: 85%
+        paths:
+          - "internal/config/"
+      # 适配器/提供者 (对应 internal/worker)
+      provider:
+        target: 80%
+        paths:
+          - "internal/worker/"
+
+    patch:
+      # 对 Pull Request 中新增/修改代码的覆盖率要求
+      default:
+        target: 80%
+        threshold: 0%
+
+parsers:
+  gcov:
+    branch_discovery: yes
+
+comment:
+  layout: "header, diff, flags, files"
+  behavior: default
+  require_changes: no

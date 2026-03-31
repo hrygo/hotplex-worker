@@ -55,16 +55,17 @@ type ConfigChange struct {
 
 // Watcher monitors a config file for changes and applies hot updates.
 type Watcher struct {
-	log       *slog.Logger
-	path      string
-	viper     *fsnotify.Watcher
-	debounce  time.Duration
-	onChange  func(*Config) // called with the new config after hot reload
-	onStatic  func(string)  // called when a static field changes
+	log    *slog.Logger
+	path   string
+	sp     SecretsProvider // used on reload to supply secrets
+	viper  *fsnotify.Watcher
+	debounce time.Duration
+	onChange func(*Config) // called with the new config after hot reload
+	onStatic func(string)  // called when a static field changes
 
-	mu       sync.Mutex
-	closed   bool
-	latest   *Config // most recently loaded config (for onChange callback)
+	mu     sync.Mutex
+	closed bool
+	latest *Config // most recently loaded config (for onChange callback)
 
 	// Audit log of all changes.
 	muAudit sync.Mutex
@@ -73,16 +74,21 @@ type Watcher struct {
 
 // NewWatcher creates a file-system watcher for hot config reloading.
 // path: absolute path to the config file.
+// sp: SecretsProvider used on reload to supply sensitive values. If nil, falls back to env vars.
 // onChange: called (in a goroutine) when hot-reloadable fields change.
 // onStatic: called (in a goroutine) when static fields change.
 // The watcher does not start until Start() is called.
-func NewWatcher(log *slog.Logger, path string, onChange func(*Config), onStatic func(string)) *Watcher {
+func NewWatcher(log *slog.Logger, path string, sp SecretsProvider, onChange func(*Config), onStatic func(string)) *Watcher {
 	if log == nil {
 		log = slog.Default()
 	}
+	if sp == nil {
+		sp = NewEnvSecretsProvider()
+	}
 	return &Watcher{
 		log:      log,
-		path:     path,
+		path:    path,
+		sp:      sp,
 		debounce: 500 * time.Millisecond,
 		onChange: onChange,
 		onStatic: onStatic,
@@ -165,7 +171,7 @@ func (w *Watcher) reload() {
 
 	prev := w.latest
 
-	newCfg, err := Load(w.path)
+	newCfg, err := Load(w.path, LoadOptions{SecretsProvider: w.sp})
 	if err != nil {
 		w.log.Warn("config: reload failed", "error", err)
 		return
