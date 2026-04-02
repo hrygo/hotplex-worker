@@ -203,3 +203,50 @@ func TestBuildEnv_SessionOnlyVars(t *testing.T) {
 	require.True(t, foundCustom, "CUSTOM_VAR from session.Env should be included")
 	require.True(t, foundAnother, "ANOTHER from session.Env should be included")
 }
+
+func TestBuildEnv_PrefixWhitelist(t *testing.T) {
+	os.Setenv("HOME", "/home/test")
+	os.Setenv("OTEL_SERVICE_NAME", "hotplex-gateway")
+	os.Setenv("OTEL_EXPORTER", "console")
+	os.Setenv("OTEL_BSP_MAX_EXPORT_BATCH_SIZE", "512")
+	os.Setenv("NON_OTEL_VAR", "should-be-filtered")
+	defer os.Unsetenv("HOME")
+	defer os.Unsetenv("OTEL_SERVICE_NAME")
+	defer os.Unsetenv("OTEL_EXPORTER")
+	defer os.Unsetenv("OTEL_BSP_MAX_EXPORT_BATCH_SIZE")
+	defer os.Unsetenv("NON_OTEL_VAR")
+
+	session := worker.SessionInfo{
+		SessionID:  "test-session",
+		UserID:     "test-user",
+		ProjectDir: "/tmp",
+		Env:        nil,
+	}
+
+	// OTEL_ with trailing "_" is a prefix match.
+	whitelist := []string{"HOME", "OTEL_"}
+	env := BuildEnv(session, whitelist, "test-worker")
+
+	foundServiceName := false
+	foundExporter := false
+	foundBatchSize := false
+	foundNonOtel := false
+	for _, e := range env {
+		if e == "OTEL_SERVICE_NAME=hotplex-gateway" {
+			foundServiceName = true
+		}
+		if e == "OTEL_EXPORTER=console" {
+			foundExporter = true
+		}
+		if e == "OTEL_BSP_MAX_EXPORT_BATCH_SIZE=512" {
+			foundBatchSize = true
+		}
+		if strings.HasPrefix(e, "NON_OTEL_VAR=") {
+			foundNonOtel = true
+		}
+	}
+	require.True(t, foundServiceName, "OTEL_SERVICE_NAME should be included via prefix match")
+	require.True(t, foundExporter, "OTEL_EXPORTER should be included via prefix match")
+	require.True(t, foundBatchSize, "OTEL_BSP_MAX_EXPORT_BATCH_SIZE should be included via prefix match")
+	require.False(t, foundNonOtel, "NON_OTEL_VAR should not be included")
+}

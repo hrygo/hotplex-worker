@@ -138,7 +138,7 @@ func TestParser_ParseLine_ControlRequest(t *testing.T) {
 	require.Len(t, events, 1)
 
 	require.Equal(t, EventControl, events[0].Type)
-	payload, ok := events[0].Payload.(*PermissionRequestPayload)
+	payload, ok := events[0].Payload.(*ControlRequestPayload)
 	require.True(t, ok)
 	require.Equal(t, "req_123", payload.RequestID)
 	require.Equal(t, "read_file", payload.ToolName)
@@ -161,24 +161,34 @@ func TestParser_ParseLine_ControlRequestSetPermissionMode(t *testing.T) {
 	log := newTestLogger()
 	parser := NewParser(log)
 
-	// set_permission_mode should be silently ignored (auto-acknowledged by ControlHandler).
+	// set_permission_mode: ControlHandler sends auto-success; parser returns EventControl.
 	line := `{"type":"control_request","request_id":"req_auto","response":{"subtype":"set_permission_mode","permission_mode":"auto-accept"}}`
 
 	events, err := parser.ParseLine(line)
 	require.NoError(t, err)
-	require.Nil(t, events) // Silently ignored
+	require.Len(t, events, 1)
+	require.Equal(t, EventControl, events[0].Type)
+	cr, ok := events[0].Payload.(*ControlRequestPayload)
+	require.True(t, ok)
+	require.Equal(t, "req_auto", cr.RequestID)
+	require.Equal(t, "set_permission_mode", cr.Subtype)
 }
 
 func TestParser_ParseLine_ControlRequestMCPStatus(t *testing.T) {
 	log := newTestLogger()
 	parser := NewParser(log)
 
-	// mcp_status should be silently ignored.
+	// mcp_status: ControlHandler sends auto-success; parser returns EventControl.
 	line := `{"type":"control_request","request_id":"req_mcp","response":{"subtype":"mcp_status"}}`
 
 	events, err := parser.ParseLine(line)
 	require.NoError(t, err)
-	require.Nil(t, events)
+	require.Len(t, events, 1)
+	require.Equal(t, EventControl, events[0].Type)
+	cr, ok := events[0].Payload.(*ControlRequestPayload)
+	require.True(t, ok)
+	require.Equal(t, "req_mcp", cr.RequestID)
+	require.Equal(t, "mcp_status", cr.Subtype)
 }
 
 func TestParser_ParseLine_UnknownType(t *testing.T) {

@@ -171,6 +171,9 @@ type SessionInfo struct {
 	// ResumeSessionAt restores the session up to and including the specified
 	// assistant message ID, discarding later history (--resume-session-at).
 	ResumeSessionAt string
+	// RewindFiles restores files to their state at the specified user message ID
+	// and exits (--rewind-files).
+	RewindFiles string
 	// IncludeHookEvents exposes all hook lifecycle events in the output stream
 	// (--include-hook-events).
 	IncludeHookEvents bool

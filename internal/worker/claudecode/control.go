@@ -8,13 +8,6 @@ import (
 	"sync"
 )
 
-// ControlRequest represents a control request from Claude Code.
-type ControlRequest struct {
-	Type      string          `json:"type"`
-	RequestID string          `json:"request_id"`
-	Response  json.RawMessage `json:"response"`
-}
-
 // ControlResponse represents a response to Claude Code.
 type ControlResponse struct {
 	Type     string          `json:"type"`
@@ -44,71 +37,44 @@ func NewControlHandler(log *slog.Logger, stdin io.Writer) *ControlHandler {
 	}
 }
 
-// HandleRequest processes a control_request from Claude Code.
-// Returns WorkerEvent for gateway-forwarded requests (can_use_tool).
-// Returns nil for internally-handled requests (interrupt, set_*, mcp_*).
-func (h *ControlHandler) HandleRequest(req *ControlRequest) (*WorkerEvent, error) {
-	// Parse the response payload to determine subtype
-	var payload struct {
-		Subtype  string          `json:"subtype"`
-		ToolName string          `json:"tool_name,omitempty"`
-		Input    json.RawMessage `json:"input,omitempty"`
-	}
-	if err := json.Unmarshal(req.Response, &payload); err != nil {
-		return nil, fmt.Errorf("control: unmarshal response: %w", err)
-	}
-
+// HandlePayload processes already-unmarshaled control request fields.
+// This avoids a second json.Unmarshal in the readOutput hot path.
+// Note: can_use_tool is handled directly in parseControlRequest (parser.go),
+// not through this method, so this method only handles auto-success subtypes.
+func (h *ControlHandler) HandlePayload(payload *ControlRequestPayload) (*WorkerEvent, error) {
 	switch payload.Subtype {
-	case string(ControlCanUseTool):
-		// Forward to client as permission_request
-		var input map[string]any
-		if len(payload.Input) > 0 {
-			_ = json.Unmarshal(payload.Input, &input)
-		}
-
-		return &WorkerEvent{
-			Type: EventControl,
-			Payload: &PermissionRequestPayload{
-				RequestID: req.RequestID,
-				ToolName:  payload.ToolName,
-				Input:     input,
-			},
-		}, nil
-
 	case string(ControlInterrupt):
-		// Internal interrupt signal (don't forward to client)
 		h.log.Debug("control: received interrupt signal")
 		return nil, nil
 
 	case string(ControlSetPermissionMode), string(ControlSetModel), string(ControlSetMaxThinkingTokens):
-		// Auto-approve configuration changes
-		resp := &ControlResponse{
-			Type: "control_response",
-			Response: ResponsePayload{
-				Subtype:   "success",
-				RequestID: req.RequestID,
-				Response:  map[string]any{"status": "ok"},
-			},
-		}
-		return nil, h.SendResponse(resp)
+		return nil, h.sendAutoSuccess(payload.RequestID)
 
 	case string(ControlMCPStatus), string(ControlMCPSetServers), string(ControlMCPMessage):
-		// Auto-approve MCP requests (P1: could add more sophisticated handling)
-		resp := &ControlResponse{
-			Type: "control_response",
-			Response: ResponsePayload{
-				Subtype:   "success",
-				RequestID: req.RequestID,
-				Response:  map[string]any{"status": "ok"},
-			},
-		}
-		return nil, h.SendResponse(resp)
+		return nil, h.sendAutoSuccess(payload.RequestID)
 
 	default:
-		// Ignore unknown control requests
 		h.log.Warn("control: unknown request subtype", "subtype", payload.Subtype)
 		return nil, nil
 	}
+}
+
+// sendAutoSuccess sends a success response for auto-approved requests.
+func (h *ControlHandler) sendAutoSuccess(reqID string) error {
+	return h.sendResponse(reqID, map[string]any{"status": "ok"})
+}
+
+// sendResponse is the internal helper that constructs and sends the control_response
+// envelope, eliminating duplication between sendAutoSuccess and SendPermissionResponse.
+func (h *ControlHandler) sendResponse(reqID string, body map[string]any) error {
+	return h.SendResponse(&ControlResponse{
+		Type: "control_response",
+		Response: ResponsePayload{
+			Subtype:   "success",
+			RequestID: reqID,
+			Response:  body,
+		},
+	})
 }
 
 // SendResponse sends a control_response to Claude Code via stdin.
@@ -131,18 +97,9 @@ func (h *ControlHandler) SendResponse(resp *ControlResponse) error {
 }
 
 // SendPermissionResponse sends a user's permission decision back to Claude Code.
-// This is called when the client responds to a permission_request.
 func (h *ControlHandler) SendPermissionResponse(reqID string, allowed bool, reason string) error {
-	resp := &ControlResponse{
-		Type: "control_response",
-		Response: ResponsePayload{
-			Subtype:   "success",
-			RequestID: reqID,
-			Response: map[string]any{
-				"allowed": allowed,
-				"reason":  reason,
-			},
-		},
-	}
-	return h.SendResponse(resp)
+	return h.sendResponse(reqID, map[string]any{
+		"allowed": allowed,
+		"reason":  reason,
+	})
 }

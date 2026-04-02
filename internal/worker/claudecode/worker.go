@@ -31,10 +31,13 @@ var claudeCodeEnvWhitelist = []string{
 	"ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "ANTHROPIC_MODEL",
 	"ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BEDROCK_BASE_URL",
 	"ANTHROPIC_VERTEX_BASE_URL", "ANTHROPIC_FOUNDRY_BASE_URL",
+	"ANTHROPIC_CUSTOM_HEADERS",
 	// 安全配置
 	"BASH_MAX_TIMEOUT_MS", "BASH_MAX_OUTPUT_LENGTH",
 	"MAX_THINKING_TOKENS", "MAX_MCP_OUTPUT_TOKENS",
 	"MCP_TIMEOUT", "MCP_TOOL_TIMEOUT",
+	// OpenTelemetry (prefix-matched in BuildEnv)
+	"OTEL_",
 }
 
 // Default session store directory.
@@ -163,6 +166,9 @@ func (w *Worker) buildCLIArgs(session worker.SessionInfo, resume bool) []string 
 		}
 		if session.ResumeSessionAt != "" {
 			args = append(args, "--resume-session-at", session.ResumeSessionAt)
+		}
+		if session.RewindFiles != "" {
+			args = append(args, "--rewind-files", session.RewindFiles)
 		}
 	}
 	if session.PermissionMode != "" {
@@ -341,13 +347,40 @@ func (w *Worker) readOutput(ctx context.Context) {
 				return
 
 			case EventControl:
-				if permReq, ok := evt.Payload.(*PermissionRequestPayload); ok {
-					env := w.mapPermissionRequest(permReq)
-					if env != nil {
-						w.trySend(env)
-					}
+				cr, ok := evt.Payload.(*ControlRequestPayload)
+				if !ok {
+					continue
 				}
-				continue
+				switch cr.Subtype {
+				case string(ControlCanUseTool):
+					// Forward to gateway for user approval
+					var input map[string]any
+					if len(cr.Input) > 0 {
+						_ = json.Unmarshal(cr.Input, &input)
+					}
+					args := []string{`{}`}
+					if len(input) > 0 {
+						if s, err := json.Marshal(input); err == nil {
+							args = []string{string(s)}
+						}
+					}
+					env := events.NewEnvelope(
+						aep.NewID(),
+						w.sessionID,
+						w.nextSeq(),
+						events.PermissionRequest,
+						events.PermissionRequestData{
+							ID:          cr.RequestID,
+							ToolName:    cr.ToolName,
+							Description: cr.ToolName,
+							Args:        args,
+						},
+					)
+					w.trySend(env)
+				default:
+					// set_*, mcp_*, etc.: auto-success
+					_, _ = w.control.HandlePayload(cr)
+				}
 
 			default:
 				// Normal event mapping
@@ -365,28 +398,6 @@ func (w *Worker) readOutput(ctx context.Context) {
 			}
 		}
 	}
-}
-
-// mapPermissionRequest converts a permission request to AEP event.
-func (w *Worker) mapPermissionRequest(req *PermissionRequestPayload) *events.Envelope {
-	args := []string{}
-	if req.Input != nil {
-		if s, err := json.Marshal(req.Input); err == nil {
-			args = []string{string(s)}
-		}
-	}
-	return events.NewEnvelope(
-		aep.NewID(),
-		w.sessionID,
-		w.nextSeq(),
-		events.PermissionRequest,
-		events.PermissionRequestData{
-			ID:          req.RequestID,
-			ToolName:    req.ToolName,
-			Description: req.ToolName,
-			Args:        args,
-		},
-	)
 }
 
 // trySend non-blocking sends an envelope to the connection.

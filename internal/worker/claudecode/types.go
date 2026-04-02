@@ -66,9 +66,12 @@ type ContentBlock struct {
 
 // ControlRequestPayload represents a control request from Claude Code.
 type ControlRequestPayload struct {
-	Subtype  string          `json:"subtype"`
-	ToolName string          `json:"tool_name,omitempty"`
-	Input    json.RawMessage `json:"input,omitempty"`
+	// RequestID is always populated from the outer SDKMessage.RequestID field,
+	// NOT from the inner JSON body (which has no request_id field).
+	RequestID string          `json:"request_id,omitempty"`
+	Subtype   string          `json:"subtype"`
+	ToolName  string          `json:"tool_name,omitempty"`
+	Input     json.RawMessage `json:"input,omitempty"`
 }
 
 // SystemEventData represents system event data.

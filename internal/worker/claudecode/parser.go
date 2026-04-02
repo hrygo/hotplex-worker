@@ -49,8 +49,8 @@ const (
 // WorkerEvent represents a parsed event ready for mapping to AEP.
 type WorkerEvent struct {
 	Type       EventType
-	Payload    any         // One of: StreamPayload, ToolCallPayload, etc.
-	RawMessage *SDKMessage // Original message for advanced handling
+	Payload    any             // Concrete type varies by event; use type assertion to dispatch
+	RawMessage *SDKMessage     // Original message for advanced handling
 }
 
 // StreamPayload represents streaming content.
@@ -82,13 +82,6 @@ type ResultPayload struct {
 	Stats      map[string]any
 	Usage      map[string]any
 	ModelUsage map[string]any
-}
-
-// PermissionRequestPayload represents a tool permission request.
-type PermissionRequestPayload struct {
-	RequestID string
-	ToolName  string
-	Input     map[string]any
 }
 
 // Parser parses SDK messages into WorkerEvents.
@@ -290,31 +283,17 @@ func (p *Parser) parseResult(msg *SDKMessage) ([]*WorkerEvent, error) {
 }
 
 // parseControlRequest handles control_request messages.
+// All subtypes (can_use_tool, set_*, mcp_*, etc.) are returned as
+// EventControl with Payload=*ControlRequestPayload, routing by Subtype in worker.go.
 func (p *Parser) parseControlRequest(msg *SDKMessage) ([]*WorkerEvent, error) {
 	var req ControlRequestPayload
 	if err := json.Unmarshal(msg.Response, &req); err != nil {
 		return nil, fmt.Errorf("parser: unmarshal control_request: %w", err)
 	}
+	req.RequestID = msg.RequestID // canonical source is outer SDKMessage
 
 	switch req.Subtype {
-	case string(ControlCanUseTool):
-		// Forward to client as permission_request.
-		var input map[string]any
-		if len(req.Input) > 0 {
-			_ = json.Unmarshal(req.Input, &input)
-		}
-		return []*WorkerEvent{{
-			Type: EventControl,
-			Payload: &PermissionRequestPayload{
-				RequestID: msg.RequestID,
-				ToolName:  req.ToolName,
-				Input:     input,
-			},
-			RawMessage: msg,
-		}}, nil
-
 	case string(ControlInterrupt):
-		// Internal interrupt signal — worker should terminate.
 		p.log.Debug("parser: received interrupt from Claude Code")
 		return []*WorkerEvent{{
 			Type:       EventInterrupt,
@@ -322,10 +301,13 @@ func (p *Parser) parseControlRequest(msg *SDKMessage) ([]*WorkerEvent, error) {
 		}}, nil
 
 	default:
-		// Ignore other control_request subtypes (set_permission_mode, set_model, etc.)
-		// These are handled automatically by ControlHandler or Claude Code itself.
-		p.log.Debug("parser: ignoring control_request subtype", "subtype", req.Subtype)
-		return nil, nil
+		// can_use_tool, set_permission_mode, set_model, mcp_status, etc.
+		// worker.go dispatches by Subtype: can_use_tool → gateway, set_*/mcp_* → auto-success.
+		return []*WorkerEvent{{
+			Type:       EventControl,
+			Payload:    &req,
+			RawMessage: msg,
+		}}, nil
 	}
 }
 
