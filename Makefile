@@ -34,6 +34,8 @@ HTML_FILE     := coverage.html
 
 all: lint test build
 
+.DEFAULT_GOAL := help
+
 # ─── Build ───────────────────────────────────────────────────────────────────────
 # Default: auto-detect OS/ARCH, output as hotplex-worker-<os>-<arch>
 build: ## Build for current platform
