@@ -118,7 +118,7 @@ ${BLUE}Environment Variables:${NC}
 
   HOTPLEX_JWT_SECRET     JWT secret (required)
   HOTPLEX_ADMIN_TOKEN_1  Admin token 1 (optional)
-  HOTPLEX_DB_PATH        Database path (default: /var/lib/hotplex/data/gateway.db)
+  HOTPLEX_DB_PATH        Database path (default: /var/lib/hotplex/data/hotplex-worker.db)
 
 ${BLUE}Volumes:${NC}
 

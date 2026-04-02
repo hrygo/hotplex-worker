@@ -77,7 +77,7 @@ func (c *Config) Validate() []string {
 		errs = append(errs, "gateway.addr is required (or use default :8080)")
 	}
 	if c.DB.Path == "" {
-		errs = append(errs, "db.path is required (or use default gateway.db)")
+		errs = append(errs, "db.path is required (or use default hotplex-worker.db)")
 	}
 	if c.Session.RetentionPeriod <= 0 {
 		errs = append(errs, "session.retention_period must be positive")
@@ -112,7 +112,7 @@ func (c *Config) RequireSecrets() error {
 
 // Config holds all gateway configuration.
 type Config struct {
-	Gateway  GatewayConfig   `mapstructure:"gateway"`
+	Gateway  GatewayConfig  `mapstructure:"gateway"`
 	DB       DBConfig       `mapstructure:"db"`
 	Worker   WorkerConfig   `mapstructure:"worker"`
 	Security SecurityConfig `mapstructure:"security"`
@@ -124,29 +124,29 @@ type Config struct {
 
 // AdminConfig holds admin API settings.
 type AdminConfig struct {
-	Enabled            bool     `mapstructure:"enabled"`
-	Addr               string   `mapstructure:"addr"`
-	Tokens             []string `mapstructure:"tokens"`
+	Enabled            bool                `mapstructure:"enabled"`
+	Addr               string              `mapstructure:"addr"`
+	Tokens             []string            `mapstructure:"tokens"`
 	TokenScopes        map[string][]string `mapstructure:"token_scopes"`
-	DefaultScopes      []string `mapstructure:"default_scopes"`
-	IPWhitelistEnabled bool     `mapstructure:"ip_whitelist_enabled"`
-	AllowedCIDRs       []string `mapstructure:"allowed_cidrs"`
-	RateLimitEnabled   bool     `mapstructure:"rate_limit_enabled"`
-	RequestsPerSec     int      `mapstructure:"requests_per_sec"`
-	Burst              int      `mapstructure:"burst"`
+	DefaultScopes      []string            `mapstructure:"default_scopes"`
+	IPWhitelistEnabled bool                `mapstructure:"ip_whitelist_enabled"`
+	AllowedCIDRs       []string            `mapstructure:"allowed_cidrs"`
+	RateLimitEnabled   bool                `mapstructure:"rate_limit_enabled"`
+	RequestsPerSec     int                 `mapstructure:"requests_per_sec"`
+	Burst              int                 `mapstructure:"burst"`
 }
 
 // GatewayConfig holds WebSocket gateway settings.
 type GatewayConfig struct {
-	Addr                string        `mapstructure:"addr"`
-	ReadBufferSize      int           `mapstructure:"read_buffer_size"`
-	WriteBufferSize     int           `mapstructure:"write_buffer_size"`
-	PingInterval        time.Duration `mapstructure:"ping_interval"`
-	PongTimeout         time.Duration `mapstructure:"pong_timeout"`
-	WriteTimeout        time.Duration `mapstructure:"write_timeout"`
-	IdleTimeout         time.Duration `mapstructure:"idle_timeout"`
-	MaxFrameSize        int64         `mapstructure:"max_frame_size"`
-	BroadcastQueueSize  int           `mapstructure:"broadcast_queue_size"`
+	Addr               string        `mapstructure:"addr"`
+	ReadBufferSize     int           `mapstructure:"read_buffer_size"`
+	WriteBufferSize    int           `mapstructure:"write_buffer_size"`
+	PingInterval       time.Duration `mapstructure:"ping_interval"`
+	PongTimeout        time.Duration `mapstructure:"pong_timeout"`
+	WriteTimeout       time.Duration `mapstructure:"write_timeout"`
+	IdleTimeout        time.Duration `mapstructure:"idle_timeout"`
+	MaxFrameSize       int64         `mapstructure:"max_frame_size"`
+	BroadcastQueueSize int           `mapstructure:"broadcast_queue_size"`
 }
 
 // DBConfig holds SQLite settings.
@@ -169,14 +169,14 @@ type WorkerConfig struct {
 // SecurityConfig holds auth and input validation settings.
 // Sensitive fields (JWTSecret) must be provided via SecretsProvider after Load.
 type SecurityConfig struct {
-	APIKeyHeader    string   `mapstructure:"api_key_header"`
-	APIKeys         []string `mapstructure:"api_keys"`
-	TLSEnabled      bool     `mapstructure:"tls_enabled"`
-	TLSCertFile     string   `mapstructure:"tls_cert_file"`
-	TLSKeyFile      string   `mapstructure:"tls_key_file"`
-	AllowedOrigins  []string `mapstructure:"allowed_origins"`
-	JWTSecret       []byte   `mapstructure:"-"` // loaded via SecretsProvider, never from config file
-	JWTAudience     string   `mapstructure:"jwt_audience"`
+	APIKeyHeader   string   `mapstructure:"api_key_header"`
+	APIKeys        []string `mapstructure:"api_keys"`
+	TLSEnabled     bool     `mapstructure:"tls_enabled"`
+	TLSCertFile    string   `mapstructure:"tls_cert_file"`
+	TLSKeyFile     string   `mapstructure:"tls_key_file"`
+	AllowedOrigins []string `mapstructure:"allowed_origins"`
+	JWTSecret      []byte   `mapstructure:"-"` // loaded via SecretsProvider, never from config file
+	JWTAudience    string   `mapstructure:"jwt_audience"`
 }
 
 // SessionConfig holds session lifecycle settings.
@@ -190,10 +190,10 @@ type SessionConfig struct {
 
 // PoolConfig holds session pool settings.
 type PoolConfig struct {
-	MinSize           int   `mapstructure:"min_size"`
-	MaxSize           int   `mapstructure:"max_size"`
-	MaxIdlePerUser    int   `mapstructure:"max_idle_per_user"`
-	MaxMemoryPerUser  int64 `mapstructure:"max_memory_per_user"` // bytes; 0 = unlimited
+	MinSize          int   `mapstructure:"min_size"`
+	MaxSize          int   `mapstructure:"max_size"`
+	MaxIdlePerUser   int   `mapstructure:"max_idle_per_user"`
+	MaxMemoryPerUser int64 `mapstructure:"max_memory_per_user"` // bytes; 0 = unlimited
 }
 
 // ─── Defaults ────────────────────────────────────────────────────────────────
@@ -207,15 +207,15 @@ func Default() *Config {
 			Addr:               ":8888",
 			ReadBufferSize:     4096,
 			WriteBufferSize:    4096,
-			PingInterval:        54 * time.Second,
-			PongTimeout:         60 * time.Second,
-			WriteTimeout:        10 * time.Second,
-			IdleTimeout:         5 * time.Minute,
-			MaxFrameSize:        32 * 1024,
-			BroadcastQueueSize:  256,
+			PingInterval:       54 * time.Second,
+			PongTimeout:        60 * time.Second,
+			WriteTimeout:       10 * time.Second,
+			IdleTimeout:        5 * time.Minute,
+			MaxFrameSize:       32 * 1024,
+			BroadcastQueueSize: 256,
 		},
 		DB: DBConfig{
-			Path:         "gateway.db",
+			Path:         "hotplex-worker.db",
 			WALMode:      true,
 			BusyTimeout:  500 * time.Millisecond,
 			MaxOpenConns: 1,
@@ -235,15 +235,15 @@ func Default() *Config {
 		},
 		Session: SessionConfig{
 			RetentionPeriod:   7 * 24 * time.Hour,
-			GCScanInterval:     1 * time.Minute,
+			GCScanInterval:    1 * time.Minute,
 			MaxConcurrent:     1000,
 			EventStoreEnabled: true,
 		},
 		Pool: PoolConfig{
-			MinSize:           0,
-			MaxSize:           100,
-			MaxIdlePerUser:    3,
-			MaxMemoryPerUser:  2 << 30, // 2 GB
+			MinSize:          0,
+			MaxSize:          100,
+			MaxIdlePerUser:   3,
+			MaxMemoryPerUser: 2 << 30, // 2 GB
 		},
 		Admin: AdminConfig{
 			Enabled:            true,
@@ -276,10 +276,10 @@ var ErrConfigCycle = errors.New("config: inheritance cycle detected")
 // and secrets.  Configuration strategy: convention over configuration.
 //
 // Load order (later overrides earlier):
-//   1. Sensible defaults (Default())
-//   2. Parent config file (via inherits field), recursively, with cycle detection
-//   3. Config file (YAML/JSON/TOML) — canonical source for non-sensitive values
-//   4. Secrets provider — only sensitive fields (JWTSecret, etc.)
+//  1. Sensible defaults (Default())
+//  2. Parent config file (via inherits field), recursively, with cycle detection
+//  3. Config file (YAML/JSON/TOML) — canonical source for non-sensitive values
+//  4. Secrets provider — only sensitive fields (JWTSecret, etc.)
 //
 // If filePath is empty, only defaults + secrets are used (env-free startup
 // is possible by providing secrets via SecretsProvider).

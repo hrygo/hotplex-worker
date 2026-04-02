@@ -60,7 +60,7 @@ gateway:
   addr: ":8888"
 
 db:
-  path: "$DATA_DIR/hotplex.db"
+  path: "$DATA_DIR/hotplex-worker.db"
 
 worker:
   max_lifetime: 24h
@@ -94,7 +94,7 @@ cat <<EOF
 ${GREEN}Development environment ready!${NC}
 
 ${BLUE}Config:${NC}    $CONFIG_DIR/config.yaml
-${BLUE}Database:${NC}  $DATA_DIR/hotplex.db
+${BLUE}Database:${NC}  $DATA_DIR/hotplex-worker.db
 
 ${BLUE}Admin Token:${NC} $ADMIN_TOKEN
 

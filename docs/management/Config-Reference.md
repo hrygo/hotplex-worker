@@ -197,7 +197,7 @@ Pattern: `HOTPLEX_<SECTION>_<FIELD>`
 Examples:
 ```bash
 HOTPLEX_GATEWAY_ADDR=:8888
-HOTPLEX_DB_PATH=/var/lib/hotplex/data/gateway.db
+HOTPLEX_DB_PATH=/var/lib/hotplex/data/hotplex-worker.db
 HOTPLEX_SECURITY_TLS_ENABLED=true
 HOTPLEX_ADMIN_RATE_LIMIT_ENABLED=false
 ```
@@ -239,7 +239,7 @@ export HOTPLEX_ADMIN_TOKEN_SCOPES='{"token_1": ["session:read", "stats:read"]}'
 # Gateway: :8888
 # Admin: :9999
 # TLS: enabled
-# Database: gateway.db
+# Database: hotplex-worker.db
 ```
 
 ### Validate Secrets

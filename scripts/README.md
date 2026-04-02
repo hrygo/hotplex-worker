@@ -105,7 +105,7 @@ curl http://localhost:9999/admin/health
 .dev/
   ├── config.yaml          # Dev config
   └── data/
-      └── hotplex.db       # SQLite database
+      └── hotplex-worker.db       # SQLite database
 ```
 
 **Dev mode features:**

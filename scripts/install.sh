@@ -507,7 +507,7 @@ generate_config() {
     # Interactive configuration
     local gateway_addr=$(prompt_input "Gateway WebSocket address" ":8888")
     local admin_addr=$(prompt_input "Admin API address" ":9999")
-    local db_path=$(prompt_input "Database path" "$DATA_DIR/hotplex.db")
+    local db_path=$(prompt_input "Database path" "$DATA_DIR/hotplex-worker.db")
 
     local tls_enabled="false"
     if [[ "$DEV_MODE" == true ]]; then
@@ -705,7 +705,7 @@ export HOTPLEX_ADMIN_TOKEN_2="${ADMIN_TOKEN_2}"
 
 # ─── Database ────────────────────────────────────────────────────────────────
 
-export HOTPLEX_DB_PATH="${DATA_DIR}/hotplex.db"
+export HOTPLEX_DB_PATH="${DATA_DIR}/hotplex-worker.db"
 
 # ─── TLS (Production) ────────────────────────────────────────────────────────
 

@@ -66,7 +66,7 @@ Client (WebSocket) ──→ Gateway (AEP v1) ──→ Worker (Claude Code / Op
 ./bin/hotplex-worker-darwin-arm64
 ```
 
-Binary starts with all defaults (`:8888` WebSocket, `:9999` Admin, `gateway.db` SQLite).
+Binary starts with all defaults (`:8888` WebSocket, `:9999` Admin, `hotplex-worker.db` SQLite).
 
 ### 2.2 Run with Config File
 
@@ -148,7 +148,7 @@ gateway:
   broadcast_queue_size: 256
 
 db:
-  path: "/var/hotplex/hotplex.db"
+  path: "/var/hotplex/hotplex-worker.db"
   wal_mode: true
   busy_timeout: 500ms
 
@@ -249,7 +249,7 @@ All non-sensitive fields have production defaults. Binary runs with zero config.
 | `gateway.pong_timeout` | `60s` | |
 | `gateway.idle_timeout` | `5m` | |
 | `gateway.broadcast_queue_size` | `256` | |
-| `db.path` | `gateway.db` | SQLite path |
+| `db.path` | `hotplex-worker.db` | SQLite path |
 | `db.wal_mode` | `true` | |
 | `worker.max_lifetime` | `24h` | |
 | `worker.idle_timeout` | `30m` | |
@@ -452,7 +452,7 @@ curl http://localhost:9999/admin/health
   "status": "healthy",
   "checks": {
     "gateway": { "status": "healthy", "uptime_seconds": 3600 },
-    "database": { "status": "healthy", "type": "sqlite", "path": "/var/hotplex/hotplex.db" },
+    "database": { "status": "healthy", "type": "sqlite", "path": "/var/hotplex/hotplex-worker.db" },
     "workers": { "status": "healthy" }
   },
   "version": "88e4e3e8"

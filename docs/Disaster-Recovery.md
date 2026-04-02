@@ -46,7 +46,7 @@ systemctl stop hotplex-worker
 docker-compose stop gateway
 
 # Backup database
-cp /var/lib/hotplex/hotplex.db /backups/hotplex-backup-$(date +%Y%m%d-%H%M%S).db
+cp /var/lib/hotplex/hotplex-worker.db /backups/hotplex-backup-$(date +%Y%m%d-%H%M%S).db
 
 # Restart service
 systemctl start hotplex-worker
@@ -112,7 +112,7 @@ systemctl stop hotplex-worker
 docker-compose stop gateway
 
 # 2. Verify corruption
-sqlite3 /var/lib/hotplex/hotplex.db "PRAGMA integrity_check;"
+sqlite3 /var/lib/hotplex/hotplex-worker.db "PRAGMA integrity_check;"
 # Expected: "Error: database disk image is malformed"
 
 # 3. Find latest valid backup
@@ -124,14 +124,14 @@ sqlite3 "$LATEST" "PRAGMA integrity_check;"
 # Must return: "ok"
 
 # 5. Backup current (corrupted) database for analysis
-mv /var/lib/hotplex/hotplex.db /var/lib/hotplex/hotplex.db.corrupted.$(date +%Y%m%d)
+mv /var/lib/hotplex/hotplex-worker.db /var/lib/hotplex/hotplex-worker.db.corrupted.$(date +%Y%m%d)
 
 # 6. Restore from backup
-cp "$LATEST" /var/lib/hotplex/hotplex.db
+cp "$LATEST" /var/lib/hotplex/hotplex-worker.db
 
 # 7. Set correct permissions
-chown hotplex:hotplex /var/lib/hotplex/hotplex.db
-chmod 644 /var/lib/hotplex/hotplex.db
+chown hotplex:hotplex /var/lib/hotplex/hotplex-worker.db
+chmod 644 /var/lib/hotplex/hotplex-worker.db
 
 # 8. Start service
 systemctl start hotplex-worker
@@ -213,7 +213,7 @@ source /etc/hotplex/secrets.env
 
 # 4. Restore database
 mkdir -p /var/lib/hotplex/data
-cp /path/to/backup/hotplex.db /var/lib/hotplex/data/
+cp /path/to/backup/hotplex-worker.db /var/lib/hotplex/data/
 chown -R hotplex:hotplex /var/lib/hotplex
 
 # 5. Build and install
@@ -248,7 +248,7 @@ curl http://localhost:9999/admin/health
 After recovery:
 
 - [ ] Verify all sessions are accessible
-- [ ] Check database integrity: `sqlite3 hotplex.db "PRAGMA integrity_check;"`
+- [ ] Check database integrity: `sqlite3 hotplex-worker.db "PRAGMA integrity_check;"`
 - [ ] Review logs for errors: `journalctl -u hotplex-worker -n 100`
 - [ ] Update monitoring alerts if needed
 - [ ] Document root cause in incident report
@@ -282,7 +282,7 @@ curl -H "Authorization: Bearer $ADMIN_TOKEN" \
 
 ### Database Stats
 ```bash
-sqlite3 /var/lib/hotplex/hotplex.db <<EOF
+sqlite3 /var/lib/hotplex/hotplex-worker.db <<EOF
 SELECT 'sessions' as table_name, COUNT(*) as row_count FROM sessions
 UNION ALL
 SELECT 'audit_log', COUNT(*) FROM audit_log;

@@ -132,7 +132,7 @@ SQLite 数据库配置。
 
 | 字段 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
-| `path` | string | `gateway.db` | 数据库文件路径 |
+| `path` | string | `hotplex-worker.db` | 数据库文件路径 |
 | `wal_mode` | bool | `true` | 启用 WAL 模式 |
 | `busy_timeout` | duration | `500ms` | 锁等待超时 |
 | `max_open_conns` | int | `1` | 最大连接数（SQLite 限制为 1） |
@@ -219,7 +219,7 @@ env_whitelist:
 |------|--------|------|
 | `HOTPLEX_API_KEYS` | - | 客户端 API 密钥（逗号分隔） |
 | `HOTPLEX_LOG_LEVEL` | `info` | 日志级别 |
-| `HOTPLEX_DB_PATH` | `gateway.db` | 数据库路径 |
+| `HOTPLEX_DB_PATH` | `hotplex-worker.db` | 数据库路径 |
 | `HOTPLEX_GATEWAY_ADDR` | `:8888` | 网关地址 |
 | `HOTPLEX_ADMIN_ADDR` | `:9999` | 管理 API 地址 |
 

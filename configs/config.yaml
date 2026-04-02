@@ -65,7 +65,7 @@ admin:
 # ─────────────────────────────────────────────────────────────────────────────
 
 db:
-  path: "gateway.db"          # SQLite database file path
+  path: "hotplex-worker.db"          # SQLite database file path
   wal_mode: true              # Write-Ahead Logging (better concurrency)
   busy_timeout: 500ms         # SQLite lock timeout
   max_open_conns: 1           # Single writer (SQLite limitation)

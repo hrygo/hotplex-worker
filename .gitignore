@@ -1,5 +1,6 @@
 # Binaries
 /gateway
+bin/
 *.exe
 *.exe~
 *.dll
@@ -59,4 +60,4 @@ build/
 
 .vscode
 
-gateway.db*
+hotplex-worker.db*

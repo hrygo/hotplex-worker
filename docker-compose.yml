@@ -129,7 +129,7 @@ services:
         mkdir -p /backups &&
         while true; do
           TIMESTAMP=$$(date +%Y%m%d-%H%M%S) &&
-          cp /var/lib/hotplex/data/gateway.db "/backups/hotplex-$$TIMESTAMP.db" &&
+          cp /var/lib/hotplex/data/hotplex-worker.db "/backups/hotplex-$$TIMESTAMP.db" &&
           find /backups -name '*.db' -mtime +$$RETENTION_DAYS -delete &&
           echo "Backup created: hotplex-$$TIMESTAMP.db" &&
           sleep $$BACKUP_INTERVAL
