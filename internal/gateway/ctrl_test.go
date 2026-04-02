@@ -448,7 +448,7 @@ func TestSendControlToSession_Reconnect(t *testing.T) {
 		events.ControlActionReconnect, "worker restarted", map[string]any{"delay_ms": 1000})
 	require.NoError(t, err)
 
-	serverConn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+	_ = serverConn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
 	_, data, err := serverConn.ReadMessage()
 	require.NoError(t, err)
 	var env events.Envelope
@@ -472,7 +472,7 @@ func TestSendControlToSession_SessionInvalid(t *testing.T) {
 	err = handler.SendSessionInvalid(context.Background(), sid, "session deleted", true)
 	require.NoError(t, err)
 
-	serverConn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+	_ = serverConn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
 	_, data, err := serverConn.ReadMessage()
 	require.NoError(t, err)
 	var env events.Envelope
@@ -496,7 +496,7 @@ func TestSendControlToSession_Throttle(t *testing.T) {
 	err = handler.SendThrottle(context.Background(), sid, 5000, 10)
 	require.NoError(t, err)
 
-	serverConn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+	_ = serverConn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
 	_, data, err := serverConn.ReadMessage()
 	require.NoError(t, err)
 	var env events.Envelope
@@ -522,7 +522,7 @@ func TestSendReconnect(t *testing.T) {
 	err = handler.SendReconnect(context.Background(), sid, "worker restarted", 500)
 	require.NoError(t, err)
 
-	serverConn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+	_ = serverConn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
 	_, data, err := serverConn.ReadMessage()
 	require.NoError(t, err)
 	var env2 events.Envelope

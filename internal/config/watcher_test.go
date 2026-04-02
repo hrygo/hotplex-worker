@@ -476,9 +476,8 @@ func TestWatcher_Reload_WithStaticField(t *testing.T) {
 	// Therefore onStatic won't be called - onChange would be called instead.
 	// This test verifies that the reload mechanism works, but the static field
 	// detection would require a more sophisticated diffConfigs implementation.
-	onStaticMu.Lock()
-	// onStaticCalls may be empty since diffConfigs marks all changes as hot
-	onStaticMu.Unlock()
+	// The mutex is declared above and accessed via onStaticCalls to avoid unused var.
+	_ = onStaticCalls // reference onStaticMu via the sibling variable accessed in callbacks
 
 	// Verify history was still updated
 	history := w.History()

@@ -519,7 +519,7 @@ func sendWSInit(conn *websocket.Conn, msg []byte) ([]byte, error) {
 	if err := conn.WriteMessage(websocket.TextMessage, msg); err != nil {
 		return nil, err
 	}
-	conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 	_, resp, err := conn.ReadMessage()
 	return resp, err
 }
@@ -1011,7 +1011,7 @@ func TestBridge_ForwardEvents_NormalEvent(t *testing.T) {
 	}()
 
 	// Read the forwarded event from WebSocket.
-	server.SetReadDeadline(time.Now().Add(2 * time.Second))
+	_ = server.SetReadDeadline(time.Now().Add(2 * time.Second))
 	_, data, err := server.ReadMessage()
 	require.NoError(t, err, "forwardEvents should have sent the delta to hub")
 	require.Contains(t, string(data), `"type":"message.delta"`)
@@ -1058,7 +1058,7 @@ func TestBridge_ForwardEvents_DoneWithDroppedFlag(t *testing.T) {
 		close(done)
 	}()
 
-	server.SetReadDeadline(time.Now().Add(2 * time.Second))
+	_ = server.SetReadDeadline(time.Now().Add(2 * time.Second))
 	_, data, err := server.ReadMessage()
 	require.NoError(t, err, "forwardEvents should have sent the done event")
 	require.Contains(t, string(data), `"type":"done"`)
@@ -1098,7 +1098,7 @@ func TestBridge_ForwardEvents_CrashExitCode(t *testing.T) {
 	}()
 
 	// Read the crash done event.
-	server.SetReadDeadline(time.Now().Add(3 * time.Second))
+	_ = server.SetReadDeadline(time.Now().Add(3 * time.Second))
 	_, data, err := server.ReadMessage()
 	require.NoError(t, err, "forwardEvents should have sent crash done after Wait()")
 	require.Contains(t, string(data), `"type":"done"`)
@@ -1145,7 +1145,7 @@ func TestBridge_ForwardEvents_MessageStoreAppend(t *testing.T) {
 	}()
 
 	// Drain the done event from WebSocket.
-	server.SetReadDeadline(time.Now().Add(2 * time.Second))
+	_ = server.SetReadDeadline(time.Now().Add(2 * time.Second))
 	_, _, err := server.ReadMessage()
 	require.NoError(t, err)
 
@@ -1187,8 +1187,9 @@ func TestBridge_ForwardEvents_NilMsgStore(t *testing.T) {
 			close(done)
 		}()
 		// Drain the event.
-		server.SetReadDeadline(time.Now().Add(2 * time.Second))
-		server.ReadMessage()
+		_ = server.SetReadDeadline(time.Now().Add(2 * time.Second))
+		_, _, err := server.ReadMessage()
+		require.NoError(t, err)
 		<-done
 	})
 }
@@ -1309,7 +1310,7 @@ func TestBridge_ResumeSession_Success(t *testing.T) {
 	sm.AssertExpectations(t)
 
 	// Verify state event was sent.
-	server.SetReadDeadline(time.Now().Add(2 * time.Second))
+	_ = server.SetReadDeadline(time.Now().Add(2 * time.Second))
 	_, data, err := server.ReadMessage()
 	require.NoError(t, err)
 	require.Contains(t, string(data), `"type":"state"`)
@@ -1388,7 +1389,7 @@ func TestBridge_ResumeSession_NoopWorker(t *testing.T) {
 	sm.AssertExpectations(t)
 
 	// Verify state event was sent (Idle → no transition needed, but StateNotifier fires).
-	server.SetReadDeadline(time.Now().Add(2 * time.Second))
+	_ = server.SetReadDeadline(time.Now().Add(2 * time.Second))
 	_, data, err := server.ReadMessage()
 	require.NoError(t, err)
 	require.Contains(t, string(data), `"type":"state"`)

@@ -295,8 +295,8 @@ func TestSafeEnvBuilder_Build(t *testing.T) {
 		{
 			name: "hotplex vars only",
 			setup: func(b *SafeEnvBuilder) {
-				b.AddHotPlexVar("HOTPLEX_SESSION_ID", "sess_123")
-				b.AddHotPlexVar("HOTPLEX_WORKER_TYPE", "claude-code")
+				_ = b.AddHotPlexVar("HOTPLEX_SESSION_ID", "sess_123")
+				_ = b.AddHotPlexVar("HOTPLEX_WORKER_TYPE", "claude-code")
 			},
 			validate: func(t *testing.T, env []string) {
 				envMap := envSliceToMap(env)
@@ -307,8 +307,8 @@ func TestSafeEnvBuilder_Build(t *testing.T) {
 		{
 			name: "secrets only",
 			setup: func(b *SafeEnvBuilder) {
-				b.AddSecret("CLAUDE_API_KEY", "sk-secret")
-				b.AddSecret("OPENAI_API_KEY", "sk-openai")
+				_ = b.AddSecret("CLAUDE_API_KEY", "sk-secret")
+				_ = b.AddSecret("OPENAI_API_KEY", "sk-openai")
 			},
 			validate: func(t *testing.T, env []string) {
 				envMap := envSliceToMap(env)
@@ -319,8 +319,8 @@ func TestSafeEnvBuilder_Build(t *testing.T) {
 		{
 			name: "mixed vars hotplex takes precedence",
 			setup: func(b *SafeEnvBuilder) {
-				b.AddHotPlexVar("CUSTOM_VAR", "hotplex-value")
-				b.AddSecret("CUSTOM_VAR", "secret-value")
+				_ = b.AddHotPlexVar("CUSTOM_VAR", "hotplex-value")
+				_ = b.AddSecret("CUSTOM_VAR", "secret-value")
 			},
 			validate: func(t *testing.T, env []string) {
 				envMap := envSliceToMap(env)
@@ -332,7 +332,7 @@ func TestSafeEnvBuilder_Build(t *testing.T) {
 			name: "with worker type",
 			setup: func(b *SafeEnvBuilder) {
 				b.AddWorkerType("claude-code")
-				b.AddHotPlexVar("HOTPLEX_SESSION_ID", "sess_abc")
+				_ = b.AddHotPlexVar("HOTPLEX_SESSION_ID", "sess_abc")
 			},
 			validate: func(t *testing.T, env []string) {
 				envMap := envSliceToMap(env)

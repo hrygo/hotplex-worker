@@ -235,7 +235,7 @@ func TestHub_SendToSession_ControlPriority(t *testing.T) {
 	err := h.SendToSession(context.Background(), env)
 	require.NoError(t, err)
 
-	server.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+	_ = server.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
 	_, data, err := server.ReadMessage()
 	require.NoError(t, err)
 	require.Contains(t, string(data), `"type":"state"`)
@@ -340,7 +340,7 @@ func TestHub_SendToSession_SeqAssignment(t *testing.T) {
 	err := h.SendToSession(ctx, env)
 	require.NoError(t, err)
 
-	server.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+	_ = server.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
 	_, data, err := server.ReadMessage()
 	require.NoError(t, err)
 	require.Contains(t, string(data), `"seq":1`)
@@ -391,7 +391,7 @@ func TestHub_RouteMessage_LogHandler(t *testing.T) {
 	stateEnv := events.NewEnvelope(aep.NewID(), "sess_log", h.NextSeq("sess_log"), events.State, events.StateData{State: events.StateIdle})
 	h.routeMessage(&EnvelopeWithConn{Env: stateEnv, Conn: c})
 
-	server.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+	_ = server.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
 	_, _, err := server.ReadMessage()
 	require.NoError(t, err)
 	require.Len(t, logLines, 1)
@@ -468,7 +468,7 @@ func TestConn_WriteCtx(t *testing.T) {
 	err := c.WriteCtx(context.Background(), env)
 	require.NoError(t, err)
 
-	server.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+	_ = server.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
 	_, data, err := server.ReadMessage()
 	require.NoError(t, err)
 	require.Contains(t, string(data), `"type":"state"`)
@@ -503,7 +503,7 @@ func TestConn_WriteMessage(t *testing.T) {
 	err := c.WriteMessage(websocket.TextMessage, []byte(`{"test":"write"}`))
 	require.NoError(t, err)
 
-	server.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+	_ = server.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
 	_, data, err := server.ReadMessage()
 	require.NoError(t, err)
 	require.Equal(t, `{"test":"write"}`, string(data))
@@ -549,7 +549,7 @@ func TestConn_sendError(t *testing.T) {
 	c := newConn(h, conn, "sess_senderr")
 	c.sendError(events.ErrCodeInvalidMessage, "test error message")
 
-	server.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+	_ = server.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
 	_, data, err := server.ReadMessage()
 	require.NoError(t, err)
 	require.Contains(t, string(data), `"type":"error"`)
@@ -566,7 +566,7 @@ func TestConn_sendInitError(t *testing.T) {
 	c := newConn(h, conn, "sess_initerr")
 	c.sendInitError(events.ErrCodeUnauthorized, "bad token")
 
-	server.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+	_ = server.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
 	_, data, err := server.ReadMessage()
 	require.NoError(t, err)
 	require.Contains(t, string(data), `"type":"init_ack"`)

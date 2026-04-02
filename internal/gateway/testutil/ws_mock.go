@@ -65,7 +65,7 @@ func DialAndInit(serverURL string, initEnvelope map[string]any) (*websocket.Conn
 		return nil, nil, err
 	}
 
-	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	var resp map[string]any
 	if err := conn.ReadJSON(&resp); err != nil {
 		conn.Close()

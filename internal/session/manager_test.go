@@ -66,22 +66,6 @@ func (m *mockStore) Close() error {
 
 // ─── test helpers ──────────────────────────────────────────────────────────────
 
-// newTestManager creates a Manager with a mock store for testing.
-// It returns the manager and the mock store so callers can add .On() expectations.
-// The store.Close() expectation is pre-registered.
-func newTestManager(t *testing.T) (*Manager, *mockStore) {
-	t.Helper()
-	ctx := context.Background()
-	cfg := config.Default()
-	store := new(mockStore)
-	store.Test(t)
-	store.On("Close").Return(nil)
-	m, err := NewManager(ctx, nil, cfg, store, nil)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = m.Close() })
-	return m, store
-}
-
 // ─── state transition tests ───────────────────────────────────────────────────
 
 func TestStateTransition(t *testing.T) {
