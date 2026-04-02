@@ -1,9 +1,9 @@
 # HotPlex Worker Gateway Makefile
 
 # Build parameters
-BINARY_NAME=gateway
+BINARY_NAME=hotplex-worker
 BUILD_DIR=bin
-MAIN_PATH=./cmd/gateway/main.go
+MAIN_PATH=./cmd/worker/main.go
 
 # Go parameters
 GOCMD=go
@@ -28,7 +28,7 @@ setup: ## Install development tools
 	$(GOMOD) download
 	@which golangci-lint > /dev/null || (curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(shell go env GOPATH)/bin v1.64.5)
 
-build: ## Build the gateway binary
+build: ## Build the hotplex-worker binary
 	@echo "Building $(BINARY_NAME)..."
 	@mkdir -p $(BUILD_DIR)
 	$(GOBUILD) -o $(BUILD_DIR)/$(BINARY_NAME) $(MAIN_PATH)
@@ -63,8 +63,8 @@ clean: ## Remove build artifacts
 	rm -f coverage.out
 	rm -f coverage.html
 
-run: build ## Build and run the gateway
+run: build ## Build and run hotplex-worker
 	./$(BUILD_DIR)/$(BINARY_NAME)
 
-run-dev: build ## Build and run the gateway in dev mode
+run-dev: build ## Build and run hotplex-worker in dev mode
 	./$(BUILD_DIR)/$(BINARY_NAME) -dev
