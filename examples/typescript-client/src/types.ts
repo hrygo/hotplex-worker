@@ -213,6 +213,7 @@ export interface ServerCaps {
 export interface HotPlexClientConfig {
   url: string;
   workerType: WorkerType;
+  apiKey?: string;
   authToken?: string;
   reconnect?: ReconnectConfig;
   heartbeat?: HeartbeatConfig;

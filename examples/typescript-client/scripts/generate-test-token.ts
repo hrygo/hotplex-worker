@@ -1,10 +1,10 @@
-import { SignJWT, importPKCS8 } from 'jose';
+import { SignJWT, importJWK } from 'jose';
 import * as crypto from 'crypto';
 
 const P256_N = BigInt('0xffffffff00000000ffffffffffffffffbce6faadaa5f1a7f9b7ee7a11e9b4bf65dd65db47c9c52f1ee3a9000000000000ffffffff');
 const P256_N_MINUS_1 = P256_N - BigInt(1);
 
-async function generateTestToken(
+export async function generateTestToken(
   secret: string = 'test-secret-key-for-development-32bytes',
   userId: string = 'test-user',
   issuer: string = 'hotplex-worker',
@@ -23,8 +23,15 @@ async function generateTestToken(
   const ecdh = crypto.createECDH('prime256v1');
   ecdh.setPrivateKey(dBuf);
   
-  const privateKeyPem = ecdh.export({ type: 'pkcs8', format: 'pem' });
-  const privateKey = await importPKCS8(privateKeyPem.toString(), 'ES256');
+  const jwk = {
+    kty: 'EC',
+    crv: 'P-256',
+    x: ecdh.getPublicKey().slice(1, 33).toString('base64url'),
+    y: ecdh.getPublicKey().slice(33, 65).toString('base64url'),
+    d: dBuf.toString('base64url'),
+  };
+  
+  const privateKey = await importJWK(jwk, 'ES256');
   
   const now = Math.floor(Date.now() / 1000);
   
@@ -32,6 +39,7 @@ async function generateTestToken(
     .setProtectedHeader({ alg: 'ES256', typ: 'JWT' })
     .setIssuer(issuer)
     .setSubject(userId)
+    .setAudience(['hotplex-worker-gateway'])
     .setIssuedAt(now)
     .setExpirationTime(now + ttlSeconds)
     .setNotBefore(now)

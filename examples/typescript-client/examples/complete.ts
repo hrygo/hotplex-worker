@@ -98,6 +98,7 @@ async function main() {
   const client = new HotPlexClient({
     url: CONFIG.url + '/ws',
     workerType: WorkerType.ClaudeCode,
+    apiKey: 'dev-api-key',
     authToken: token,
     reconnect: {
       enabled: true,

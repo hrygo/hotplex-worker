@@ -56,9 +56,9 @@ services:
       - ./tls:/etc/hotplex/tls:ro
 
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9999/admin/health"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:9999/admin/health/workers | grep -q '\"status\":\"ok\"'"]
       interval: 30s
-      timeout: 3s
+      timeout: 5s
       retries: 3
       start_period: 10s
 

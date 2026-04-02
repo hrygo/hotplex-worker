@@ -23,6 +23,7 @@ async function main() {
   const client = new HotPlexClient({
     url: 'ws://localhost:8888/ws',
     workerType: WorkerType.ClaudeCode,
+    apiKey: 'dev-api-key',
     authToken: token,
   });
 

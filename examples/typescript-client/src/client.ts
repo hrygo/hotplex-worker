@@ -117,6 +117,7 @@ export class HotPlexClient extends EventEmitter<HotPlexClientEvents> {
     this.config = {
       url: config.url,
       workerType: config.workerType,
+      apiKey: config.apiKey,
       authToken: config.authToken,
       reconnect: config.reconnect ?? { enabled: true },
       heartbeat: config.heartbeat ?? {},
@@ -166,7 +167,11 @@ export class HotPlexClient extends EventEmitter<HotPlexClientEvents> {
   private async _doConnect(sessionId: string): Promise<InitAckData> {
     return new Promise((resolve, reject) => {
       try {
-        this.ws = new WebSocket(this.config.url);
+        const headers: Record<string, string> = {};
+        if (this.config.apiKey) {
+          headers['X-API-Key'] = this.config.apiKey;
+        }
+        this.ws = new WebSocket(this.config.url, { headers });
         
         const initEnv = createInitEnvelope(
           sessionId,
