@@ -577,7 +577,7 @@ func (s *AdminServer) handleSessions(w http.ResponseWriter, r *http.Request) {
 ```yaml
 # configs/admin.yaml
 admin:
-  server_addr: ":9080"
+  server_addr: ":9999"
 
   auth:
     enabled: true
@@ -607,7 +607,7 @@ admin:
 
 ```bash
 # .env
-HOTPLEX_ADMIN_SERVER_ADDR=:9080
+HOTPLEX_ADMIN_SERVER_ADDR=:9999
 HOTPLEX_ADMIN_TOKEN_1=admin_secret_001
 HOTPLEX_ADMIN_TOKEN_2=admin_secret_002
 ```
@@ -709,7 +709,7 @@ hotplexd admin health
 scrape_configs:
   - job_name: 'hotplex-admin'
     static_configs:
-      - targets: ['hotplex:9080']
+      - targets: ['hotplex:9999']
     metrics_path: '/admin/metrics'
     basic_auth:
       username: 'admin'

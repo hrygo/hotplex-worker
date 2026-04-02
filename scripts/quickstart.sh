@@ -57,7 +57,7 @@ ADMIN_TOKEN="dev-admin-token-$(openssl rand -hex 8)"
 log_info "Generating dev config..."
 cat > "$CONFIG_DIR/config.yaml" <<EOF
 gateway:
-  addr: ":8080"
+  addr: ":8888"
 
 db:
   path: "$DATA_DIR/hotplex.db"
@@ -72,7 +72,7 @@ security:
 
 admin:
   enabled: true
-  addr: ":9080"
+  addr: ":9999"
   tokens:
     - "$ADMIN_TOKEN"
   ip_whitelist_enabled: false
@@ -107,17 +107,17 @@ ${BLUE}Commands:${NC}
       -dev
 
   Test health:
-    curl http://localhost:9080/admin/health
+    curl http://localhost:9999/admin/health
 
   WebSocket:
-    ws://localhost:8080
+    ws://localhost:8888
 
 ${BLUE}Admin API:${NC}
 
   Admin token: $ADMIN_TOKEN
 
   curl -H "Authorization: Bearer $ADMIN_TOKEN" \\
-    http://localhost:9080/admin/stats
+    http://localhost:9999/admin/stats
 
 ${BLUE}Dev Mode:${NC}
 

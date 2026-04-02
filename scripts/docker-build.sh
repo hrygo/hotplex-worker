@@ -96,23 +96,23 @@ cat <<EOF
 ${BLUE}Usage:${NC}
 
   Run with default config:
-    docker run -p 8080:8080 -p 9080:9080 $TAG
+    docker run -p 8080:8888 -p 9080:9999 $TAG
 
   Run with custom config:
-    docker run -p 8080:8080 -p 9080:9080 \\
+    docker run -p 8080:8888 -p 9080:9999 \\
       -v /path/to/config.yaml:/etc/hotplex/config.yaml \\
       -e HOTPLEX_JWT_SECRET=your-secret \\
       $TAG
 
   Run with TLS:
-    docker run -p 8443:8443 -p 9080:9080 \\
+    docker run -p 8443:8443 -p 9080:9999 \\
       -v /path/to/tls.crt:/etc/hotplex/tls/server.crt \\
       -v /path/to/tls.key:/etc/hotplex/tls/server.key \\
       -e HOTPLEX_JWT_SECRET=your-secret \\
       $TAG
 
   Health check:
-    docker exec <container> wget -q -O- http://localhost:9080/admin/health
+    docker exec <container> wget -q -O- http://localhost:9999/admin/health
 
 ${BLUE}Environment Variables:${NC}
 

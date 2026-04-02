@@ -139,7 +139,7 @@ systemctl start hotplex-worker
 docker-compose up -d gateway
 
 # 9. Verify recovery
-curl http://localhost:9080/admin/health
+curl http://localhost:9999/admin/health
 # Expected: {"status": "healthy", ...}
 ```
 
@@ -228,7 +228,7 @@ systemctl start hotplex-worker
 docker-compose up -d
 
 # 8. Verify
-curl http://localhost:9080/admin/health
+curl http://localhost:9999/admin/health
 ```
 
 ---
@@ -271,13 +271,13 @@ After recovery:
 
 ### Health Check
 ```bash
-curl http://localhost:9080/admin/health | jq
+curl http://localhost:9999/admin/health | jq
 ```
 
 ### Session List
 ```bash
 curl -H "Authorization: Bearer $ADMIN_TOKEN" \
-  http://localhost:9080/admin/sessions | jq
+  http://localhost:9999/admin/sessions | jq
 ```
 
 ### Database Stats

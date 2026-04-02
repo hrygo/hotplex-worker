@@ -204,7 +204,7 @@ type PoolConfig struct {
 func Default() *Config {
 	return &Config{
 		Gateway: GatewayConfig{
-			Addr:               ":8080",
+			Addr:               ":8888",
 			ReadBufferSize:     4096,
 			WriteBufferSize:    4096,
 			PingInterval:        54 * time.Second,
@@ -247,7 +247,7 @@ func Default() *Config {
 		},
 		Admin: AdminConfig{
 			Enabled:            true,
-			Addr:               ":9080",
+			Addr:               ":9999",
 			Tokens:             nil,
 			TokenScopes:        nil,
 			DefaultScopes:      []string{"session:read", "stats:read", "health:read"},

@@ -505,8 +505,8 @@ generate_config() {
     local config_file="$CONFIG_DIR/config.yaml"
 
     # Interactive configuration
-    local gateway_addr=$(prompt_input "Gateway WebSocket address" ":8080")
-    local admin_addr=$(prompt_input "Admin API address" ":9080")
+    local gateway_addr=$(prompt_input "Gateway WebSocket address" ":8888")
+    local admin_addr=$(prompt_input "Admin API address" ":9999")
     local db_path=$(prompt_input "Database path" "$DATA_DIR/hotplex.db")
 
     local tls_enabled="false"
@@ -766,10 +766,10 @@ ${BLUE}Quick Start:${NC}
      $PREFIX/bin/$BIN_NAME -config $CONFIG_DIR/config.yaml
 
   3. Check health:
-     curl http://localhost:9080/admin/health
+     curl http://localhost:9999/admin/health
 
   4. Connect via WebSocket:
-     ws://localhost:8080
+     ws://localhost:8888
 
 ${BLUE}Production Checklist:${NC}
 

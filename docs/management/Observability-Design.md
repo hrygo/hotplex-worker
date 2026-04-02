@@ -559,7 +559,7 @@ observability:
 
   health:
     enabled: true
-    port: 9080
+    port: 9999
     path: "/health"
 ```
 

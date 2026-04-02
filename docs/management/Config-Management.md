@@ -60,7 +60,7 @@ configs/
 ```yaml
 # configs/gateway.yaml
 gateway:
-  server_addr: "${HOTPLEX_SERVER_ADDR:-:8080}"
+  server_addr: "${HOTPLEX_SERVER_ADDR:-:8888}"
   tls:
     cert_file: "${HOTPLEX_TLS_CERT}"
     key_file: "${HOTPLEX_TLS_KEY}"
@@ -289,7 +289,7 @@ func (l *Loader) Load() (*Config, error) {
 ```yaml
 # environments/dev.yaml
 gateway:
-  server_addr: ":8080"
+  server_addr: ":8888"
   tls:
     enabled: false  # 开发环境关闭 TLS
   logging:
@@ -309,7 +309,7 @@ auth:
 ```yaml
 # environments/prod.yaml
 gateway:
-  server_addr: ":8080"
+  server_addr: ":8888"
   tls:
     enabled: true
     cert_file: "${HOTPLEX_TLS_CERT}"

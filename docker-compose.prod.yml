@@ -49,12 +49,12 @@ services:
       - "traefik.http.routers.hotplex-gateway.rule=Host(`gateway.hotplex.dev`)"
       - "traefik.http.routers.hotplex-gateway.entrypoints=websecure"
       - "traefik.http.routers.hotplex-gateway.tls.certresolver=letsencrypt"
-      - "traefik.http.services.hotplex-gateway.loadbalancer.server.port=8080"
+      - "traefik.http.services.hotplex-gateway.loadbalancer.server.port=8888"
 
       - "traefik.http.routers.hotplex-admin.rule=Host(`admin.hotplex.dev`)"
       - "traefik.http.routers.hotplex-admin.entrypoints=websecure"
       - "traefik.http.routers.hotplex-admin.tls.certresolver=letsencrypt"
-      - "traefik.http.services.hotplex-admin.loadbalancer.server.port=9080"
+      - "traefik.http.services.hotplex-admin.loadbalancer.server.port=9999"
 
     networks:
       - traefik-network
@@ -78,7 +78,7 @@ services:
     ports:
       - "80:80"
       - "443:443"
-      - "8081:8080"  # Traefik dashboard
+      - "8081:8888"  # Traefik dashboard
 
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro

@@ -13,7 +13,7 @@ func TestDefault(t *testing.T) {
 
 	cfg := Default()
 	require.NotNil(t, cfg)
-	require.Equal(t, ":8080", cfg.Gateway.Addr)
+	require.Equal(t, ":8888", cfg.Gateway.Addr)
 	require.True(t, cfg.DB.WALMode)
 	require.Equal(t, 100, cfg.Pool.MaxSize)
 	require.Equal(t, 3, cfg.Pool.MaxIdlePerUser)
@@ -21,7 +21,7 @@ func TestDefault(t *testing.T) {
 	require.Equal(t, 1*time.Minute, cfg.Session.GCScanInterval)
 	require.False(t, cfg.Security.TLSEnabled)
 	require.True(t, cfg.Admin.Enabled)
-	require.Equal(t, ":9080", cfg.Admin.Addr)
+	require.Equal(t, ":9999", cfg.Admin.Addr)
 }
 
 func TestConfig_Validate(t *testing.T) {
@@ -35,7 +35,7 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name:   "valid defaults",
 			cfg:    *Default(),
-			errCnt: 1, // TLS warning for non-local address :8080
+			errCnt: 1, // TLS warning for non-local address :8888
 		},
 		{
 			name: "missing gateway addr",
@@ -87,7 +87,7 @@ func TestConfig_Validate(t *testing.T) {
 			name: "localhost TLS bypass",
 			cfg: func() Config {
 				c := *Default()
-				c.Gateway.Addr = "127.0.0.1:8080"
+				c.Gateway.Addr = "127.0.0.1:8888"
 				return c
 			}(),
 			errCnt: 0, // localhost bypasses TLS warning
@@ -262,7 +262,7 @@ func TestLoad_Inheritance_CycleDetection(t *testing.T) {
 	baseDir := t.TempDir()
 
 	baseCfg := baseDir + "/base.yaml"
-	if err := os.WriteFile(baseCfg, []byte("gateway:\n  addr: :8080\ninherits: child.yaml\n"), 0644); err != nil {
+	if err := os.WriteFile(baseCfg, []byte("gateway:\n  addr: :8888\ninherits: child.yaml\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	childCfg := baseDir + "/child.yaml"
@@ -282,7 +282,7 @@ func TestLoad_Inheritance_SelfReference(t *testing.T) {
 	require.NoError(t, err)
 	defer os.Remove(tmp.Name())
 
-	if _, err := tmp.WriteString("gateway:\n  addr: :8080\ninherits: " + tmp.Name() + "\n"); err != nil {
+	if _, err := tmp.WriteString("gateway:\n  addr: :8888\ninherits: " + tmp.Name() + "\n"); err != nil {
 		t.Fatal(err)
 	}
 	tmp.Close()
@@ -298,7 +298,7 @@ func TestLoad_Inheritance_ThreeLevelChain(t *testing.T) {
 	baseDir := t.TempDir()
 
 	baseCfg := baseDir + "/base.yaml"
-	if err := os.WriteFile(baseCfg, []byte("gateway:\n  addr: :8080\npool:\n  max_size: 10\n"), 0644); err != nil {
+	if err := os.WriteFile(baseCfg, []byte("gateway:\n  addr: :8888\npool:\n  max_size: 10\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	midCfg := baseDir + "/mid.yaml"

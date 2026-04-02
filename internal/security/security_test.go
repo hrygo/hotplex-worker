@@ -569,7 +569,7 @@ func TestBuildWorkerEnv(t *testing.T) {
 			name: "protected vars stripped",
 			input: map[string]string{
 				"CLAUDECODE":    "nested-agent-value",
-				"GATEWAY_ADDR":  "localhost:8080",
+				"GATEWAY_ADDR":  "localhost:8888",
 				"GATEWAY_TOKEN": "secret-token",
 			},
 			whitelist: nil,

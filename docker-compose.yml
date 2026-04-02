@@ -28,8 +28,8 @@ services:
     restart: unless-stopped
 
     ports:
-      - "8080:8080"   # WebSocket gateway
-      - "9080:9080"   # Admin API
+      - "8888:8888"   # WebSocket gateway
+      - "9999:9999"   # Admin API
 
     environment:
       # Required secrets

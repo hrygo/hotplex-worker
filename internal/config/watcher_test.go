@@ -181,7 +181,7 @@ func TestWatcher_AuditLog(t *testing.T) {
 		ConfigChange{
 			Timestamp: time.Now().UTC(),
 			Field:     "gateway.addr",
-			OldValue:  ":8080",
+			OldValue:  ":8888",
 			NewValue:  ":9090",
 			Hot:       true,
 		},
@@ -199,7 +199,7 @@ func TestWatcher_AuditLog(t *testing.T) {
 	audit = w.AuditLog()
 	require.Len(t, audit, 2)
 	require.Equal(t, "gateway.addr", audit[0].Field)
-	require.Equal(t, ":8080", audit[0].OldValue)
+	require.Equal(t, ":8888", audit[0].OldValue)
 	require.Equal(t, ":9090", audit[0].NewValue)
 	require.True(t, audit[0].Hot)
 
@@ -461,7 +461,7 @@ func TestWatcher_Reload_WithStaticField(t *testing.T) {
 	w.SetInitial(cfg)
 
 	// Modify static field (db.path)
-	newContent := "gateway:\n  addr: :8080\ndb:\n  path: /new/path.db\n"
+	newContent := "gateway:\n  addr: :8888\ndb:\n  path: /new/path.db\n"
 	err = os.WriteFile(tmpFile, []byte(newContent), 0644)
 	require.NoError(t, err)
 
@@ -624,7 +624,7 @@ func createTempConfigFile(t *testing.T) string {
 	tmpDir := t.TempDir()
 	tmpFile := filepath.Join(tmpDir, "config.yaml")
 
-	content := "gateway:\n  addr: :8080\npool:\n  max_size: 100\n"
+	content := "gateway:\n  addr: :8888\npool:\n  max_size: 100\n"
 	err := os.WriteFile(tmpFile, []byte(content), 0644)
 	require.NoError(t, err)
 

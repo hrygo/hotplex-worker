@@ -94,9 +94,9 @@ COPY --from=builder /build/bin/hotplex-worker /usr/local/bin/hotplex-worker
 COPY --chown=hotplex:hotplex configs/ /etc/hotplex/ 2>/dev/null || true
 
 # Expose ports
-# 8080: WebSocket gateway
-# 9080: Admin API
-EXPOSE 8080 9080
+# 8888: WebSocket gateway
+# 9999: Admin API
+EXPOSE 8888 9999
 
 # Environment variables
 ENV HOTPLEX_CONFIG=/etc/hotplex/config.yaml
@@ -108,7 +108,7 @@ USER hotplex:hotplex
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:9080/admin/health || exit 1
+    CMD curl -f http://localhost:9999/admin/health || exit 1
 
 # Entry point
 ENTRYPOINT ["/usr/local/bin/hotplex-worker"]

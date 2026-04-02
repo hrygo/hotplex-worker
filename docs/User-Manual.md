@@ -33,7 +33,7 @@ HotPlex Worker Gateway exposes a WebSocket interface (`AEP v1`) that bridges cli
 ```
 Client (WebSocket) ──→ Gateway (AEP v1) ──→ Worker (Claude Code / OpenCode)
                               │
-                              ├── Admin HTTP API (:9080)
+                              ├── Admin HTTP API (:9999)
                               ├── SQLite (sessions + audit)
                               └── OTEL Tracing (optional)
 ```
@@ -66,7 +66,7 @@ Client (WebSocket) ──→ Gateway (AEP v1) ──→ Worker (Claude Code / Op
 ./bin/hotplex-worker-darwin-arm64
 ```
 
-Binary starts with all defaults (`:8080` WebSocket, `:9080` Admin, `gateway.db` SQLite).
+Binary starts with all defaults (`:8888` WebSocket, `:9999` Admin, `gateway.db` SQLite).
 
 ### 2.2 Run with Config File
 
@@ -85,7 +85,7 @@ Dev mode relaxes security: any API key header value is accepted.
 ### 2.4 Docker
 
 ```bash
-docker run -p 8080:8080 -p 9080:9080 \
+docker run -p 8888:8888 -p 9999:9999 \
   -v /path/to/config.yaml:/config.yaml \
   -e HOTPLEX_JWT_SECRET=your-secret \
   hotplex-worker:latest
@@ -141,7 +141,7 @@ HotPlex uses [Viper](https://github.com/spf13/viper) — supports YAML, JSON, TO
 ```yaml
 # config.yaml
 gateway:
-  addr: ":8080"
+  addr: ":8888"
   ping_interval: 54s
   pong_timeout: 60s
   idle_timeout: 5m
@@ -187,7 +187,7 @@ pool:
 
 admin:
   enabled: true
-  addr: ":9080"
+  addr: ":9999"
   tokens:
     - "admin-token-1"
     - "admin-token-2"
@@ -221,7 +221,7 @@ Config values support `${VAR}` and `${VAR:-default}` syntax (Go's `os.ExpandEnv`
 
 ```yaml
 gateway:
-  addr: "${HOTPLEX_GATEWAY_ADDR:-:8080}"
+  addr: "${HOTPLEX_GATEWAY_ADDR:-:8888}"
 
 db:
   path: "${HOTPLEX_DB_PATH}"
@@ -244,7 +244,7 @@ All non-sensitive fields have production defaults. Binary runs with zero config.
 
 | Field | Default | Notes |
 |-------|---------|-------|
-| `gateway.addr` | `:8080` | WebSocket listen address |
+| `gateway.addr` | `:8888` | WebSocket listen address |
 | `gateway.ping_interval` | `54s` | |
 | `gateway.pong_timeout` | `60s` | |
 | `gateway.idle_timeout` | `5m` | |
@@ -261,7 +261,7 @@ All non-sensitive fields have production defaults. Binary runs with zero config.
 | `pool.max_size` | `100` | |
 | `pool.max_memory_per_user` | `2GB` | |
 | `admin.enabled` | `true` | |
-| `admin.addr` | `:9080` | |
+| `admin.addr` | `:9999` | |
 | `admin.rate_limit_enabled` | `true` | |
 | `admin.requests_per_sec` | `10` | |
 
@@ -319,7 +319,7 @@ No `-version` or `-help` flag is defined (falls through to standard `flag` packa
 ### 6.1 Connection
 
 ```javascript
-const ws = new WebSocket("ws://localhost:8080");
+const ws = new WebSocket("ws://localhost:8888");
 ```
 
 ### 6.2 Authentication
@@ -427,7 +427,7 @@ Full protocol specification: `docs/architecture/AEP-v1-Protocol.md`
 
 ## 7. Admin API Reference
 
-Admin API runs on `:9080` (configurable). All endpoints require Bearer token authentication unless IP whitelist bypass is configured.
+Admin API runs on `:9999` (configurable). All endpoints require Bearer token authentication unless IP whitelist bypass is configured.
 
 ### 7.1 Authentication
 
@@ -444,7 +444,7 @@ Tokens and scopes are configured in `admin.tokens` and `admin.token_scopes`.
 Health check. No auth required.
 
 ```bash
-curl http://localhost:9080/admin/health
+curl http://localhost:9999/admin/health
 ```
 
 ```json
@@ -465,7 +465,7 @@ Worker health check. Requires `health:read`.
 
 ```bash
 curl -H "Authorization: Bearer admin-token-1" \
-  http://localhost:9080/admin/health/workers
+  http://localhost:9999/admin/health/workers
 ```
 
 ```json
@@ -484,7 +484,7 @@ Stats summary. Requires `stats:read`.
 
 ```bash
 curl -H "Authorization: Bearer admin-token-1" \
-  http://localhost:9080/admin/stats
+  http://localhost:9999/admin/stats
 ```
 
 ```json
@@ -508,7 +508,7 @@ Pool statistics. Requires `stats:read`.
 
 ```bash
 curl -H "Authorization: Bearer admin-token-1" \
-  http://localhost:9080/admin/pool
+  http://localhost:9999/admin/pool
 ```
 
 ```json
@@ -522,7 +522,7 @@ Create a new session. Requires `session:write`.
 ```bash
 curl -X POST \
   -H "Authorization: Bearer admin-token-1" \
-  "http://localhost:9080/admin/sessions?user_id=user_001&worker_type=claude-code"
+  "http://localhost:9999/admin/sessions?user_id=user_001&worker_type=claude-code"
 ```
 
 ```json
@@ -535,7 +535,7 @@ List sessions. Requires `session:read`.
 
 ```bash
 curl -H "Authorization: Bearer admin-token-1" \
-  "http://localhost:9080/admin/sessions?limit=20&offset=0"
+  "http://localhost:9999/admin/sessions?limit=20&offset=0"
 ```
 
 Query params: `limit` (default 100), `offset`
@@ -546,7 +546,7 @@ Get session details. Requires `session:read`.
 
 ```bash
 curl -H "Authorization: Bearer admin-token-1" \
-  http://localhost:9080/admin/sessions/sess_abc123
+  http://localhost:9999/admin/sessions/sess_abc123
 ```
 
 #### `DELETE /admin/sessions/:id`
@@ -556,7 +556,7 @@ Terminate a session. Requires `session:delete`.
 ```bash
 curl -X DELETE \
   -H "Authorization: Bearer admin-token-1" \
-  http://localhost:9080/admin/sessions/sess_abc123
+  http://localhost:9999/admin/sessions/sess_abc123
 ```
 
 Returns `204 No Content`.
@@ -568,7 +568,7 @@ Send terminate signal to session worker. Requires `session:write`.
 ```bash
 curl -X POST \
   -H "Authorization: Bearer admin-token-1" \
-  http://localhost:9080/admin/sessions/sess_abc123/terminate
+  http://localhost:9999/admin/sessions/sess_abc123/terminate
 ```
 
 Returns `204 No Content`.
@@ -579,7 +579,7 @@ Config change audit log. Requires `config:read`.
 
 ```bash
 curl -H "Authorization: Bearer admin-token-1" \
-  http://localhost:9080/admin/config/history
+  http://localhost:9999/admin/config/history
 ```
 
 #### `POST /admin/config/rollback/:version`
@@ -589,7 +589,7 @@ Rollback config to a previous version. Requires `config:write`.
 ```bash
 curl -X POST \
   -H "Authorization: Bearer admin-token-1" \
-  http://localhost:9080/admin/config/rollback/3
+  http://localhost:9999/admin/config/rollback/3
 ```
 
 #### `POST /admin/config/validate`
@@ -620,7 +620,7 @@ Recent log entries from the in-memory ring buffer. Requires `admin:read`.
 
 ```bash
 curl -H "Authorization: Bearer admin-token-1" \
-  "http://localhost:9080/admin/logs?limit=50"
+  "http://localhost:9999/admin/logs?limit=50"
 ```
 
 ### 7.3 Scope Matrix
@@ -732,7 +732,7 @@ Warning is issued if TLS is disabled on a non-local address.
 HotPlex uses `log/slog` with JSON output to stdout:
 
 ```json
-{"time":"2026-04-02T13:40:41+08:00","level":"INFO","msg":"gateway: starting","version":"88e4e3e8","go":"go1.26.0","addr":":8080","config":""}
+{"time":"2026-04-02T13:40:41+08:00","level":"INFO","msg":"gateway: starting","version":"88e4e3e8","go":"go1.26.0","addr":":8888","config":""}
 ```
 
 Key log fields:
@@ -746,7 +746,7 @@ Key log fields:
 
 ### 10.2 Prometheus Metrics
 
-Metrics endpoint: `GET /metrics` on the admin port (`:9080`).
+Metrics endpoint: `GET /metrics` on the admin port (`:9999`).
 
 Enabled by importing `github.com/prometheus/client_golang/prometheus/promhttp`.
 
@@ -789,7 +789,7 @@ Last 64 config versions are retained in memory. View via `GET /admin/config/hist
 ```bash
 curl -X POST \
   -H "Authorization: Bearer admin-token-1" \
-  http://localhost:9080/admin/config/rollback/5
+  http://localhost:9999/admin/config/rollback/5
 ```
 
 Rollback to version `N` steps back from current (not absolute version number).
@@ -827,7 +827,7 @@ Either enable TLS or bind to localhost:
 
 ```yaml
 gateway:
-  addr: "127.0.0.1:8080"   # localhost
+  addr: "127.0.0.1:8888"   # localhost
 # OR
 security:
   tls_enabled: true
@@ -841,10 +841,10 @@ Ensure the gateway is listening on the expected address:
 
 ```bash
 # Check startup log
-{"msg":"gateway: listening","addr":":8080"}
+{"msg":"gateway: listening","addr":":8888"}
 
 # Test connection
-curl -v http://localhost:8080   # should get "400 Bad Request" (not WS upgrade)
+curl -v http://localhost:8888   # should get "400 Bad Request" (not WS upgrade)
 ```
 
 ### 12.3 Authentication Failures

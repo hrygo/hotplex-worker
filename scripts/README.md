@@ -81,7 +81,7 @@ systemctl status hotplex-worker
 journalctl -u hotplex-worker -f
 
 # Test health
-curl http://localhost:9080/admin/health
+curl http://localhost:9999/admin/health
 ```
 
 ### quickstart.sh
@@ -147,18 +147,18 @@ curl http://localhost:9080/admin/health
 
 ```bash
 # Development
-docker run -p 8080:8080 -p 9080:9080 \
+docker run -p 8080:8888 -p 9080:9999 \
   -e HOTPLEX_JWT_SECRET=your-secret \
   hotplex-worker:latest
 
 # With custom config
-docker run -p 8080:8080 -p 9080:9080 \
+docker run -p 8080:8888 -p 9080:9999 \
   -v /path/to/config.yaml:/etc/hotplex/config.yaml \
   -e HOTPLEX_JWT_SECRET=your-secret \
   hotplex-worker:latest
 
 # With TLS
-docker run -p 8443:8443 -p 9080:9080 \
+docker run -p 8443:8443 -p 9080:9999 \
   -v /path/to/tls.crt:/etc/hotplex/tls/server.crt \
   -v /path/to/tls.key:/etc/hotplex/tls/server.key \
   -e HOTPLEX_JWT_SECRET=your-secret \
@@ -399,15 +399,15 @@ docker logs hotplex-worker
 docker inspect hotplex-worker | jq '.[0].State.Health'
 
 # Run health check manually
-docker exec hotplex-worker curl -f http://localhost:9080/admin/health
+docker exec hotplex-worker curl -f http://localhost:9999/admin/health
 ```
 
 ### Port already in use
 
 ```bash
 # Find process using port
-lsof -i :8080
-lsof -i :9080
+lsof -i :8888
+lsof -i :9999
 
 # Kill process or change ports in config
 ```

@@ -408,7 +408,7 @@ export const options = {
 
 export default function () {
   // Health check
-  const health = http.get('http://localhost:9080/health');
+  const health = http.get('http://localhost:9999/health');
   check(health, { 'status is 200': (r) => r.status === 200 });
 
   // WebSocket test
