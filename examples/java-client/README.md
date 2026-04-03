@@ -572,4 +572,4 @@ Apache-2.0
 - **Protocol Spec**: `docs/architecture/AEP-v1-Protocol.md`
 - **Python Client**: `examples/python-client/`
 - **TypeScript Client**: `examples/typescript-client/`
-- **Go Client**: `examples/go-client/`
+- **Go Client**: `client/`

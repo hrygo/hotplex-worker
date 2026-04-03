@@ -809,7 +809,7 @@ See [`examples/`](examples/) directory:
 
 - **Protocol Spec**: `docs/architecture/AEP-v1-Protocol.md`
 - **Python Client**: `examples/python-client/`
-- **Go Client**: `examples/go-client/`
+- **Go Client**: `client/`
 - **Java Client**: `examples/java-client/`
 
 ---

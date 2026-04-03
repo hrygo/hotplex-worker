@@ -5,7 +5,7 @@
 
 ## Overview
 
-Create an example Go client module under `examples/go-client/` that demonstrates how to connect to the HotPlex Worker Gateway via WebSocket using the AEP v1 protocol. The module is an independent sub-module (own `go.mod`) that imports the `hotplex-worker` module as a third-party library, mirroring how real Go clients would consume the gateway.
+Create a Go client module under `client/` that demonstrates how to connect to the HotPlex Worker Gateway via WebSocket using the AEP v1 protocol. The module is an independent sub-module (own `go.mod`) that imports the `hotplex-worker` module as a third-party library, mirroring how real Go clients would consume the gateway.
 
 ## Goals
 
@@ -23,7 +23,7 @@ Create an example Go client module under `examples/go-client/` that demonstrates
 ## Directory Structure
 
 ```
-examples/go-client/
+client/
 ├── go.mod                          # Independent module
 ├── client/
 │   ├── client.go                   # Client core: WebSocket, send/recv pumps

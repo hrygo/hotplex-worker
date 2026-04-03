@@ -9,7 +9,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/hotplex/hotplex-go-client/client"
+	"github.com/hotplex/hotplex-go-client"
 )
 
 func main() {

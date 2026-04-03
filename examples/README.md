@@ -51,7 +51,7 @@ Gateway 默认监听：
 |------|------|------|------|
 | Python 3.10+ | [`python-client/`](python-client/) | ✅ 生产可用 | [README.md](python-client/README.md) |
 | TypeScript/Node.js | [`typescript-client/`](typescript-client/) | ✅ 生产可用 | [README.md](typescript-client/README.md) |
-| Go 1.21+ | [`go-client/`](go-client/) | 🚧 开发中 | [README.md](go-client/README.md) |
+| Go 1.21+ | [`../client/`](../client/) | 🚧 开发中 | [README.md](../client/README.md) |
 | Java 17+ | [`java-client/`](java-client/) | 🚧 开发中 | [README.md](java-client/README.md) |
 
 ---
@@ -150,7 +150,7 @@ process.on("SIGINT", async () => {
 ### 安装
 
 ```bash
-cd examples/go-client
+cd client
 go mod download
 ```
 
@@ -205,7 +205,7 @@ func main() {
 }
 ```
 
-**完整文档**: [`go-client/README.md`](go-client/README.md)
+**完整文档**: [`client/README.md`](../client/README.md)
 
 ---
 
@@ -774,7 +774,7 @@ cd typescript-client
 npm test
 
 # Go
-cd go-client
+cd client
 go test ./... -cover
 
 # Java
@@ -844,7 +844,7 @@ pytest tests/integration/ -v
 
 | 示例 | Python | TypeScript | Go | Java |
 |------|--------|-----------|----|----|
-| 快速上手 | [`quickstart.py`](python-client/examples/quickstart.py) | [`quickstart.ts`](typescript-client/examples/quickstart.ts) | [`main.go`](go-client/examples/basic/main.go) | [`Main.java`](java-client/src/main/java/dev/hotplex/example/Main.java) |
+| 快速上手 | [`quickstart.py`](python-client/examples/quickstart.py) | [`quickstart.ts`](typescript-client/examples/quickstart.ts) | [`main.go`](../client/examples/quickstart.go) | [`Main.java`](java-client/src/main/java/dev/hotplex/example/Main.java) |
 | 完整功能 | [`advanced.py`](python-client/examples/advanced.py) | [`complete.ts`](typescript-client/examples/complete.ts) | - | - |
 
 ---

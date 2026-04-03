@@ -10,4 +10,4 @@ require (
 
 require github.com/hotplex/hotplex-worker v0.0.0
 
-replace github.com/hotplex/hotplex-worker => ../..
+replace github.com/hotplex/hotplex-worker => ..

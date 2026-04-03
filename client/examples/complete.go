@@ -15,7 +15,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/hotplex/hotplex-go-client/client"
+	"github.com/hotplex/hotplex-go-client"
 )
 
 // allowedPermissions is a map of tool names that are auto-approved.

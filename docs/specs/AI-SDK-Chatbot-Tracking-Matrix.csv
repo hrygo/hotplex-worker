@@ -1,0 +1,76 @@
+id,title,area,priority,status,verification_date,verifier,notes
+TR-001,实现 ChatTransport 接口,Transport 适配层,P0,TODO,,sendMessage/onData/onFinish/onError
+TR-002,AEP message.start → 创建消息缓冲区,Transport 适配层,P0,TODO,,Map<message_id, buffer>
+TR-003,AEP message.delta → AI SDK onData 回调,Transport 适配层,P0,TODO,,流式文本推送
+TR-004,AEP message.end → AI SDK onFinish 回调,Transport 适配层,P0,TODO,,完整消息聚合
+TR-005,AEP error → AI SDK onError 回调,Transport 适配层,P0,TODO,,错误码映射
+TR-006,AEP done 事件处理,Transport 适配层,P0,TODO,,success/failure 检测
+TR-007,AEP tool_call → AI SDK onData,Transport 适配层,P1,TODO,,type: tool-call
+TR-008,AEP permission_request → UI 对话框,Transport 适配层,P1,TODO,,权限请求处理
+TR-009,复用 HotPlexClient WebSocket 连接,Transport 适配层,P0,TODO,,避免重复实现
+TR-010,Transport 生命周期管理,Transport 适配层,P0,TODO,,connect/disconnect 清理
+TR-011,消息缓冲区溢出保护,Transport 适配层,P1,TODO,,最大 10MB 限制
+TR-012,背压丢弃检测,Transport 适配层,P1,TODO,,done.dropped=true 检测
+TR-013,多消息并发处理,Transport 适配层,P1,TODO,,多个 message_id 同时存在
+TR-014,类型安全的 TypeScript 定义,Transport 适配层,P0,TODO,,完整接口定义
+TR-015,编译时类型检查无错误,Transport 适配层,P0,TODO,,tsc --noEmit 通过
+HK-001,useHotPlexChat Hook 返回正确接口,React Hook 集成,P0,TODO,,messages/sendMessage/status/error
+HK-002,自动连接管理,React Hook 集成,P0,TODO,,首次调用时连接
+HK-003,组件卸载时自动断开,React Hook 集成,P0,TODO,,useEffect cleanup
+HK-004,连接状态同步,React Hook 集成,P0,TODO,,实时状态更新
+HK-005,消息状态管理,React Hook 集成,P0,TODO,,AI SDK message 格式
+HK-006,loading 状态指示,React Hook 集成,P0,TODO,,输入禁用控制
+HK-007,错误状态管理,React Hook 集成,P0,TODO,,用户友好提示
+HK-008,支持多实例,React Hook 集成,P1,TODO,,不同 sessionId 隔离
+HK-009,支持会话恢复,React Hook 集成,P1,TODO,,Resume 现有会话
+HK-010,支持 React 18+ 并发特性,React Hook 集成,P1,TODO,,StrictMode 兼容
+MSG-001,用户消息正确发送,消息处理,P0,TODO,,sendInput(content)
+MSG-002,AI 响应流式接收,消息处理,P0,TODO,,delta → UI 更新
+MSG-003,消息聚合正确,消息处理,P0,TODO,,delta → 完整消息
+MSG-004,消息 ID 唯一且稳定,消息处理,P0,TODO,,使用 AEP message.id
+MSG-005,消息角色正确,消息处理,P0,TODO,,user/assistant 映射
+MSG-006,消息时间戳正确,消息处理,P1,TODO,,Unix ms → Date
+MSG-007,消息顺序正确,消息处理,P0,TODO,,时序保证
+MSG-008,空消息过滤,消息处理,P1,TODO,,输入验证
+MSG-009,超长消息处理,消息处理,P1,TODO,,> 32KB 提示
+MSG-010,多行文本正确渲染,消息处理,P1,TODO,,whitespace-pre-wrap
+MSG-011,Markdown 格式支持,消息处理,P2,TODO,,react-markdown
+MSG-012,代码块高亮,消息处理,P2,TODO,,prism.js
+ERR-001,连接失败错误提示清晰,错误处理与重连,P0,TODO,,网络错误 → 用户提示
+ERR-002,认证失败处理,错误处理与重连,P0,TODO,,UNAUTHORIZED 重登录
+ERR-003,会话忙重试,错误处理与重连,P0,TODO,,SESSION_BUSY 自动重试
+ERR-004,会话不存在处理,错误处理与重连,P0,TODO,,SESSION_NOT_FOUND 新会话
+ERR-005,自动重连机制,错误处理与重连,P0,TODO,,指数退避 1s→2s→4s
+ERR-006,最大重连次数限制,错误处理与重连,P1,TODO,,最多 10 次
+ERR-007,重连状态指示,错误处理与重连,P0,TODO,,reconnecting attempt N/M
+ERR-008,服务端请求重连处理,错误处理与重连,P1,TODO,,control: reconnect
+ERR-009,Session 失效处理,错误处理与重连,P1,TODO,,session_invalid 清理
+ERR-010,错误边界包装,错误处理与重连,P1,TODO,,React Error Boundary
+PERF-001,流式渲染流畅度 ≥ 30 FPS,性能与优化,P1,TODO,,RAF 批量更新
+PERF-002,首次连接时间 ≤ 2 秒,性能与优化,P1,TODO,,本地网络环境
+PERF-003,消息延迟 ≤ 100ms (P95),性能与优化,P1,TODO,,输入 → 首个 delta
+PERF-004,内存占用 ≤ 50MB,性能与优化,P1,TODO,,长会话测试
+PERF-005,消息批量更新,性能与优化,P1,TODO,,100ms window
+PERF-006,虚拟滚动,性能与优化,P2,TODO,,react-window
+PERF-007,Bundle 大小 ≤ 60KB,性能与优化,P1,TODO,,依赖优化
+PERF-008,无内存泄漏,性能与优化,P0,TODO,,清理监听器+定时器
+SEC-001,authToken 不暴露到日志,安全,P0,TODO,,敏感信息过滤
+SEC-002,WebSocket URL 使用 WSS,安全,P0,TODO,,生产环境 TLS
+SEC-003,XSS 防护,安全,P0,TODO,,消息内容转义
+SEC-004,CORS 配置正确,安全,P0,TODO,,AllowedOrigins
+SEC-005,会话隔离,安全,P0,TODO,,JWT user_id 验证
+DOC-001,Transport 接口 API 文档,文档与示例,P0,TODO,,TSDoc 注释
+DOC-002,useHotPlexChat Hook 文档,文档与示例,P0,TODO,,使用示例
+DOC-003,快速开始指南,文档与示例,P0,TODO,,README.md
+DOC-004,完整示例应用,文档与示例,P1,TODO,,examples/nextjs-chat
+DOC-005,错误码映射表,文档与示例,P1,TODO,,AEP → 用户提示
+DOC-006,性能优化指南,文档与示例,P2,TODO,,最佳实践
+DOC-007,故障排查指南,文档与示例,P1,TODO,,常见问题 FAQ
+DOC-008,迁移指南,文档与示例,P2,TODO,,Breaking Changes
+TEST-001,单元测试覆盖率 ≥ 80%,测试覆盖,P0,TODO,,Vitest + @testing-library
+TEST-002,Transport 适配器单元测试,测试覆盖,P0,TODO,,事件映射测试
+TEST-003,Hook 单元测试,测试覆盖,P0,TODO,,renderHook + act
+TEST-004,集成测试 (E2E),测试覆盖,P1,TODO,,Playwright/Cypress
+TEST-005,错误场景测试,测试覆盖,P0,TODO,,断网/超时/认证失败
+TEST-006,性能回归测试,测试覆盖,P2,TODO,,Benchmark CI
+TEST-007,可访问性测试 (a11y),测试覆盖,P2,TODO,,axe-core
