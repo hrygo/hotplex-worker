@@ -179,14 +179,12 @@ public class HotPlexClient extends TextWebSocketHandler {
         try {
             WebSocketClient client = new StandardWebSocketClient();
             
-            Map<String, String> headers = new HashMap<>();
+            WebSocketHttpHeaders wsHeaders = new WebSocketHttpHeaders();
             if (apiKey != null && !apiKey.isEmpty()) {
-                headers.put("X-API-Key", apiKey);
+                wsHeaders.add("X-API-Key", apiKey);
             }
             
-            final String finalSessionId = this.sessionId;
-            
-            client.doHandshake(this, null, URI.create(url), headers);
+            client.execute(this, wsHeaders, URI.create(url));
             
         } catch (Exception e) {
             log.error("Failed to initiate WebSocket connection", e);
@@ -816,7 +814,7 @@ public class HotPlexClient extends TextWebSocketHandler {
         }
     }
 
-    @SuppressWarnings("unchecked")
+
     private <T> void emit(String event, T data) {
         emit(event, data, null);
     }

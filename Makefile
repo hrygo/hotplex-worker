@@ -127,7 +127,7 @@ test-short: ## Run short tests (skip slow integration tests)
 
 test-integration: ## Run integration tests (requires Docker)
 	@echo "🧪 Running integration tests..."
-	$(GOTEST) -run Integration - -timeout 20m ./...
+	$(GOTEST) -run Integration -timeout 20m ./...
 	@echo "✅ Integration tests passed"
 
 test-race: test ## Alias for 'test' (race detection enabled by default)

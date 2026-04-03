@@ -4,7 +4,6 @@ import dev.hotplex.client.HotPlexClient;
 import dev.hotplex.protocol.*;
 import dev.hotplex.security.JwtTokenGenerator;
 
-import java.util.List;
 import java.util.Scanner;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -59,34 +58,34 @@ public class InteractiveExample {
         System.out.println("   State: " + ack.getState() + "\n");
 
         // Interactive mode
-        Scanner scanner = new Scanner(System.in);
+        try (Scanner scanner = new Scanner(System.in)) {
+            while (true) {
+                System.out.print("\n> ");
+                String input = scanner.nextLine().trim();
 
-        while (true) {
-            System.out.print("\n> ");
-            String input = scanner.nextLine().trim();
-
-            if (input.isEmpty()) {
-                continue;
-            }
-
-            if (input.startsWith("/")) {
-                // Handle commands
-                String command = input.toLowerCase();
-
-                if (command.equals("/quit")) {
-                    System.out.println("Goodbye!");
-                    client.disconnect();
-                    return;
-                } else if (command.equals("/status")) {
-                    System.out.println("Session ID: " + client.getSessionId());
-                    System.out.println("Connected: " + client.isConnected());
-                    System.out.println("State: " + client.getState());
-                } else {
-                    System.out.println("Unknown command: " + input);
+                if (input.isEmpty()) {
+                    continue;
                 }
-            } else {
-                // Send as input and wait for response
-                sendAndWait(client, input);
+
+                if (input.startsWith("/")) {
+                    // Handle commands
+                    String command = input.toLowerCase();
+
+                    if (command.equals("/quit")) {
+                        System.out.println("Goodbye!");
+                        client.disconnect();
+                        return;
+                    } else if (command.equals("/status")) {
+                        System.out.println("Session ID: " + client.getSessionId());
+                        System.out.println("Connected: " + client.isConnected());
+                        System.out.println("State: " + client.getState());
+                    } else {
+                        System.out.println("Unknown command: " + input);
+                    }
+                } else {
+                    // Send as input and wait for response
+                    sendAndWait(client, input);
+                }
             }
         }
     }

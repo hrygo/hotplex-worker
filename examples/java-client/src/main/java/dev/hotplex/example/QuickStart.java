@@ -4,7 +4,6 @@ import dev.hotplex.client.HotPlexClient;
 import dev.hotplex.protocol.*;
 import dev.hotplex.security.JwtTokenGenerator;
 
-import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
@@ -47,11 +46,6 @@ public class QuickStart {
 
         // Create JWT token generator
         JwtTokenGenerator tokenGenerator = new JwtTokenGenerator(signingKey, "hotplex-worker");
-        String token = tokenGenerator.generateToken(
-            "example-user",
-            List.of("read", "write"),
-            3600000 // 1 hour
-        );
 
         // Create client using builder
         HotPlexClient client = HotPlexClient.builder()
