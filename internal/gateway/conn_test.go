@@ -995,7 +995,7 @@ func TestBridge_ForwardEvents_NormalEvent(t *testing.T) {
 	conn, server := newTestWSConnPair(t)
 	defer conn.Close()
 	defer server.Close()
-	c := newConn(h, conn, "sess_fwd")
+	c := newConn(h, conn, "sess_fwd", nil)
 	h.JoinSession("sess_fwd", c)
 
 	_, cancel := context.WithCancel(context.Background())
@@ -1039,7 +1039,7 @@ func TestBridge_ForwardEvents_DoneWithDroppedFlag(t *testing.T) {
 	conn, server := newTestWSConnPair(t)
 	defer conn.Close()
 	defer server.Close()
-	c := newConn(h, conn, "sess_drop")
+	c := newConn(h, conn, "sess_drop", nil)
 	h.JoinSession("sess_drop", c)
 
 	// Mark deltas as dropped before calling forwardEvents.
@@ -1083,7 +1083,7 @@ func TestBridge_ForwardEvents_CrashExitCode(t *testing.T) {
 	conn, server := newTestWSConnPair(t)
 	defer conn.Close()
 	defer server.Close()
-	c := newConn(h, conn, "sess_crash")
+	c := newConn(h, conn, "sess_crash", nil)
 	h.JoinSession("sess_crash", c)
 
 	_, cancel := context.WithCancel(context.Background())
@@ -1130,7 +1130,7 @@ func TestBridge_ForwardEvents_MessageStoreAppend(t *testing.T) {
 	conn, server := newTestWSConnPair(t)
 	defer conn.Close()
 	defer server.Close()
-	c := newConn(h, conn, "sess_append")
+	c := newConn(h, conn, "sess_append", nil)
 	h.JoinSession("sess_append", c)
 
 	_, cancel := context.WithCancel(context.Background())
@@ -1171,7 +1171,7 @@ func TestBridge_ForwardEvents_NilMsgStore(t *testing.T) {
 	conn, server := newTestWSConnPair(t)
 	defer conn.Close()
 	defer server.Close()
-	c := newConn(h, conn, "sess_nilms")
+	c := newConn(h, conn, "sess_nilms", nil)
 	h.JoinSession("sess_nilms", c)
 
 	_, cancel := context.WithCancel(context.Background())
@@ -1294,7 +1294,7 @@ func TestBridge_ResumeSession_Success(t *testing.T) {
 	conn, server := newTestWSConnPair(t)
 	defer conn.Close()
 	defer server.Close()
-	c := newConn(h, conn, "sess_resume")
+	c := newConn(h, conn, "sess_resume", nil)
 	h.JoinSession("sess_resume", c)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1372,7 +1372,7 @@ func TestBridge_ResumeSession_NoopWorker(t *testing.T) {
 	conn, server := newTestWSConnPair(t)
 	defer conn.Close()
 	defer server.Close()
-	c := newConn(h, conn, "sess_noop")
+	c := newConn(h, conn, "sess_noop", nil)
 	h.JoinSession("sess_noop", c)
 
 	ctx, cancel := context.WithCancel(context.Background())

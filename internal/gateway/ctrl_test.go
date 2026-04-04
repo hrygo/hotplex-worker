@@ -177,7 +177,7 @@ func TestHandleInput_SessionNotActive(t *testing.T) {
 	require.Contains(t, err.Error(), "not active")
 }
 
-func TestHandleInput_InvalidTransition(t *testing.T) {
+func TestHandleInput_RunningSession_AcceptsInput(t *testing.T) {
 	t.Parallel()
 	handler, mgr, _, _ := newHandlerWithRealStore(t)
 
@@ -188,11 +188,13 @@ func TestHandleInput_InvalidTransition(t *testing.T) {
 	err = mgr.Transition(context.Background(), sid, events.StateRunning)
 	require.NoError(t, err)
 
+	// When session is RUNNING, handleInput delivers input to worker without error.
+	// This tests the fix: handleInput no longer tries TransitionWithInput for RUNNING,
+	// avoiding the invalid transition error.
 	env := inputEnvelope(sid, "hello")
 	err = handler.handleInput(context.Background(), env)
-	require.Error(t, err)
-	// Invalid transition RUNNING→RUNNING → ErrInvalidTransition.
-	require.Contains(t, err.Error(), "invalid")
+	// No error — input is accepted and delivered to worker.
+	require.NoError(t, err)
 }
 
 // ─── handlePing tests ─────────────────────────────────────────────────────────
@@ -207,7 +209,7 @@ func TestHandlePing_KnownSession(t *testing.T) {
 
 	conn, _ := newTestWSConnPair(t)
 	t.Cleanup(func() { conn.Close() })
-	hub.JoinSession(sid, newConn(hub, conn, sid))
+	hub.JoinSession(sid, newConn(hub, conn, sid, nil))
 
 	env := pingEnvelope(sid)
 	err = handler.handlePing(context.Background(), env)
@@ -242,7 +244,7 @@ func TestHandleControl_Terminate_Success(t *testing.T) {
 
 	conn, _ := newTestWSConnPair(t)
 	t.Cleanup(func() { conn.Close() })
-	hub.JoinSession(sid, newConn(hub, conn, sid))
+	hub.JoinSession(sid, newConn(hub, conn, sid, nil))
 
 	env := controlEnvelope(sid, string(events.ControlActionTerminate))
 	env.OwnerID = "user1"
@@ -262,7 +264,7 @@ func TestHandleControl_Terminate_Unauthorized(t *testing.T) {
 
 	conn, _ := newTestWSConnPair(t)
 	t.Cleanup(func() { conn.Close() })
-	hub.JoinSession(sid, newConn(hub, conn, sid))
+	hub.JoinSession(sid, newConn(hub, conn, sid, nil))
 
 	env := controlEnvelope(sid, string(events.ControlActionTerminate))
 	env.OwnerID = "other_user"
@@ -299,7 +301,7 @@ func TestHandleControl_Delete_Unauthorized(t *testing.T) {
 
 	conn, _ := newTestWSConnPair(t)
 	t.Cleanup(func() { conn.Close() })
-	hub.JoinSession(sid, newConn(hub, conn, sid))
+	hub.JoinSession(sid, newConn(hub, conn, sid, nil))
 
 	env := controlEnvelope(sid, string(events.ControlActionDelete))
 	env.OwnerID = "hacker"
@@ -320,7 +322,7 @@ func TestHandleControl_UnknownAction(t *testing.T) {
 
 	conn, _ := newTestWSConnPair(t)
 	t.Cleanup(func() { conn.Close() })
-	hub.JoinSession(sid, newConn(hub, conn, sid))
+	hub.JoinSession(sid, newConn(hub, conn, sid, nil))
 
 	env := controlEnvelope(sid, "fly_to_the_moon")
 	env.OwnerID = "user1"
@@ -339,7 +341,7 @@ func TestHandleControl_InvalidData(t *testing.T) {
 
 	conn, _ := newTestWSConnPair(t)
 	t.Cleanup(func() { conn.Close() })
-	hub.JoinSession(sid, newConn(hub, conn, sid))
+	hub.JoinSession(sid, newConn(hub, conn, sid, nil))
 
 	badEnv := events.NewEnvelope(aep.NewID(), sid, 1, events.Control, "not a map")
 	badEnv.OwnerID = "user1"
@@ -373,7 +375,7 @@ func TestHandle_PingRoute(t *testing.T) {
 
 	conn, _ := newTestWSConnPair(t)
 	t.Cleanup(func() { conn.Close() })
-	hub.JoinSession(sid, newConn(hub, conn, sid))
+	hub.JoinSession(sid, newConn(hub, conn, sid, nil))
 
 	env := pingEnvelope(sid)
 	err = handler.Handle(context.Background(), env)
@@ -422,7 +424,7 @@ func TestHandle_InputMalformedData(t *testing.T) {
 
 	conn, _ := newTestWSConnPair(t)
 	t.Cleanup(func() { conn.Close() })
-	hub.JoinSession(sid, newConn(hub, conn, sid))
+	hub.JoinSession(sid, newConn(hub, conn, sid, nil))
 
 	badEnv := events.NewEnvelope(aep.NewID(), sid, 1, events.Input, "not a map")
 	badEnv.OwnerID = "user1"
@@ -442,7 +444,7 @@ func TestSendControlToSession_Reconnect(t *testing.T) {
 
 	clientConn, serverConn := newTestWSConnPair(t)
 	t.Cleanup(func() { clientConn.Close() })
-	hub.JoinSession(sid, newConn(hub, clientConn, sid))
+	hub.JoinSession(sid, newConn(hub, clientConn, sid, nil))
 
 	err = handler.SendControlToSession(context.Background(), sid,
 		events.ControlActionReconnect, "worker restarted", map[string]any{"delay_ms": 1000})
@@ -467,7 +469,7 @@ func TestSendControlToSession_SessionInvalid(t *testing.T) {
 
 	clientConn, serverConn := newTestWSConnPair(t)
 	t.Cleanup(func() { clientConn.Close() })
-	hub.JoinSession(sid, newConn(hub, clientConn, sid))
+	hub.JoinSession(sid, newConn(hub, clientConn, sid, nil))
 
 	err = handler.SendSessionInvalid(context.Background(), sid, "session deleted", true)
 	require.NoError(t, err)
@@ -491,7 +493,7 @@ func TestSendControlToSession_Throttle(t *testing.T) {
 
 	clientConn, serverConn := newTestWSConnPair(t)
 	t.Cleanup(func() { clientConn.Close() })
-	hub.JoinSession(sid, newConn(hub, clientConn, sid))
+	hub.JoinSession(sid, newConn(hub, clientConn, sid, nil))
 
 	err = handler.SendThrottle(context.Background(), sid, 5000, 10)
 	require.NoError(t, err)
@@ -517,7 +519,7 @@ func TestSendReconnect(t *testing.T) {
 
 	clientConn, serverConn := newTestWSConnPair(t)
 	t.Cleanup(func() { clientConn.Close() })
-	hub.JoinSession(sid, newConn(hub, clientConn, sid))
+	hub.JoinSession(sid, newConn(hub, clientConn, sid, nil))
 
 	err = handler.SendReconnect(context.Background(), sid, "worker restarted", 500)
 	require.NoError(t, err)

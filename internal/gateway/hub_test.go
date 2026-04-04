@@ -89,7 +89,7 @@ func TestHub_RegisterConn(t *testing.T) {
 	defer conn.Close()
 	defer server.Close()
 
-	h.RegisterConn(newConn(h, conn, "sess_1"))
+	h.RegisterConn(newConn(h, conn, "sess_1", nil))
 	require.Equal(t, 1, h.ConnectionsOpen())
 }
 
@@ -97,7 +97,7 @@ func TestHub_UnregisterConn(t *testing.T) {
 	t.Parallel()
 	h := newTestHub(t)
 	conn, server := newTestWSConnPair(t)
-	c := newConn(h, conn, "sess_1")
+	c := newConn(h, conn, "sess_1", nil)
 	h.RegisterConn(c)
 
 	conn.Close()
@@ -113,7 +113,7 @@ func TestHub_JoinSession(t *testing.T) {
 	defer conn.Close()
 	defer server.Close()
 
-	c := newConn(h, conn, "sess_abc")
+	c := newConn(h, conn, "sess_abc", nil)
 	h.JoinSession("sess_abc", c)
 
 	h.mu.RLock()
@@ -131,8 +131,8 @@ func TestHub_JoinSession_DisconnectsStale(t *testing.T) {
 	defer conn2.Close()
 	defer server2.Close()
 
-	c1 := newConn(h, conn1, "sess_x")
-	c2 := newConn(h, conn2, "sess_x")
+	c1 := newConn(h, conn1, "sess_x", nil)
+	c2 := newConn(h, conn2, "sess_x", nil)
 
 	h.JoinSession("sess_x", c1)
 	h.JoinSession("sess_x", c2)
@@ -152,7 +152,7 @@ func TestHub_LeaveSession(t *testing.T) {
 	defer conn.Close()
 	defer server.Close()
 
-	c := newConn(h, conn, "sess_y")
+	c := newConn(h, conn, "sess_y", nil)
 	h.JoinSession("sess_y", c)
 	h.LeaveSession("sess_y", c)
 
@@ -170,7 +170,7 @@ func TestHub_LeaveSession_UnknownSession(t *testing.T) {
 	defer server.Close()
 
 	// Must not panic.
-	h.LeaveSession("never_existed", newConn(h, conn, "sess_z"))
+	h.LeaveSession("never_existed", newConn(h, conn, "sess_z", nil))
 }
 
 func TestHub_NextSeq(t *testing.T) {
@@ -201,8 +201,8 @@ func TestHub_ConnectionsOpen(t *testing.T) {
 	defer conn2.Close()
 	defer server2.Close()
 
-	h.RegisterConn(newConn(h, conn1, "s1"))
-	h.RegisterConn(newConn(h, conn2, "s2"))
+	h.RegisterConn(newConn(h, conn1, "s1", nil))
+	h.RegisterConn(newConn(h, conn2, "s2", nil))
 	require.Equal(t, 2, h.ConnectionsOpen())
 }
 
@@ -226,7 +226,7 @@ func TestHub_SendToSession_ControlPriority(t *testing.T) {
 	defer conn.Close()
 	defer server.Close()
 
-	c := newConn(h, conn, "sess_ctrl")
+	c := newConn(h, conn, "sess_ctrl", nil)
 	h.JoinSession("sess_ctrl", c)
 
 	env := events.NewEnvelope(aep.NewID(), "sess_ctrl", 0, events.State, events.StateData{State: events.StateRunning})
@@ -251,7 +251,7 @@ func TestHub_SendToSession_DeltaDropSilently(t *testing.T) {
 	conn, server := newTestWSConnPair(t)
 	defer conn.Close()
 	defer server.Close()
-	c := newConn(h, conn, "sess_drop")
+	c := newConn(h, conn, "sess_drop", nil)
 	h.JoinSession("sess_drop", c)
 
 	// Droppable delta should return nil even when queue is full.
@@ -269,7 +269,7 @@ func TestHub_SendToSession_GuaranteedQueueFull(t *testing.T) {
 	conn, server := newTestWSConnPair(t)
 	defer conn.Close()
 	defer server.Close()
-	c := newConn(h, conn, "sess_full")
+	c := newConn(h, conn, "sess_full", nil)
 	h.JoinSession("sess_full", c)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -329,7 +329,7 @@ func TestHub_SendToSession_SeqAssignment(t *testing.T) {
 	conn, server := newTestWSConnPair(t)
 	defer conn.Close()
 	defer server.Close()
-	c := newConn(h, conn, "sess_seq")
+	c := newConn(h, conn, "sess_seq", nil)
 	h.JoinSession("sess_seq", c)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -353,7 +353,7 @@ func TestHub_Shutdown(t *testing.T) {
 	defer conn.Close()
 	defer server.Close()
 
-	h.RegisterConn(newConn(h, conn, "sess_shutdown"))
+	h.RegisterConn(newConn(h, conn, "sess_shutdown", nil))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
@@ -380,7 +380,7 @@ func TestHub_RouteMessage_LogHandler(t *testing.T) {
 	defer conn.Close()
 	defer server.Close()
 
-	c := newConn(h, conn, "sess_log")
+	c := newConn(h, conn, "sess_log", nil)
 	h.JoinSession("sess_log", c)
 
 	var logLines []string
@@ -442,7 +442,7 @@ func TestConn_RemoteAddr(t *testing.T) {
 	defer conn.Close()
 	defer server.Close()
 
-	c := newConn(h, conn, "sess_ra")
+	c := newConn(h, conn, "sess_ra", nil)
 	addr := c.RemoteAddr()
 	require.NotEmpty(t, addr)
 	require.NotEqual(t, "?", addr)
@@ -462,7 +462,7 @@ func TestConn_WriteCtx(t *testing.T) {
 	defer conn.Close()
 	defer server.Close()
 
-	c := newConn(h, conn, "sess_writectx")
+	c := newConn(h, conn, "sess_writectx", nil)
 
 	env := events.NewEnvelope(aep.NewID(), "sess_writectx", 1, events.State, events.StateData{State: events.StateRunning})
 	err := c.WriteCtx(context.Background(), env)
@@ -480,7 +480,7 @@ func TestConn_WriteCtx_Closed(t *testing.T) {
 	conn, _ := newTestWSConnPair(t)
 	defer conn.Close()
 
-	c := newConn(h, conn, "sess_closed")
+	c := newConn(h, conn, "sess_closed", nil)
 	c.mu.Lock()
 	c.closed = true
 	c.mu.Unlock()
@@ -498,7 +498,7 @@ func TestConn_WriteMessage(t *testing.T) {
 	defer conn.Close()
 	defer server.Close()
 
-	c := newConn(h, conn, "sess_writemsg")
+	c := newConn(h, conn, "sess_writemsg", nil)
 
 	err := c.WriteMessage(websocket.TextMessage, []byte(`{"test":"write"}`))
 	require.NoError(t, err)
@@ -515,7 +515,7 @@ func TestConn_WriteMessage_Closed(t *testing.T) {
 	conn, _ := newTestWSConnPair(t)
 	defer conn.Close()
 
-	c := newConn(h, conn, "sess_write_closed")
+	c := newConn(h, conn, "sess_write_closed", nil)
 	c.mu.Lock()
 	c.closed = true
 	c.mu.Unlock()
@@ -530,7 +530,7 @@ func TestConn_Close_Idempotent(t *testing.T) {
 	conn, _ := newTestWSConnPair(t)
 	defer conn.Close()
 
-	c := newConn(h, conn, "sess_close")
+	c := newConn(h, conn, "sess_close", nil)
 	err := c.Close()
 	require.NoError(t, err)
 
@@ -546,7 +546,7 @@ func TestConn_sendError(t *testing.T) {
 	defer conn.Close()
 	defer server.Close()
 
-	c := newConn(h, conn, "sess_senderr")
+	c := newConn(h, conn, "sess_senderr", nil)
 	c.sendError(events.ErrCodeInvalidMessage, "test error message")
 
 	_ = server.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
@@ -563,7 +563,7 @@ func TestConn_sendInitError(t *testing.T) {
 	defer conn.Close()
 	defer server.Close()
 
-	c := newConn(h, conn, "sess_initerr")
+	c := newConn(h, conn, "sess_initerr", nil)
 	c.sendInitError(events.ErrCodeUnauthorized, "bad token")
 
 	_ = server.SetReadDeadline(time.Now().Add(500 * time.Millisecond))

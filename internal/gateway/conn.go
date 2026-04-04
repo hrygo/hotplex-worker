@@ -29,6 +29,9 @@ type Conn struct {
 	userID    string
 	botID     string // SEC-007: bot isolation tag from JWT
 
+	// Bridge for worker lifecycle management (started in performInit).
+	bridge *Bridge
+
 	// Heartbeat.
 	hb *heartbeat
 
@@ -39,7 +42,7 @@ type Conn struct {
 }
 
 // newConn creates a new Conn.
-func newConn(hub *Hub, wc *websocket.Conn, sessionID string) *Conn {
+func newConn(hub *Hub, wc *websocket.Conn, sessionID string, bridge *Bridge) *Conn {
 	log := slog.Default()
 	if hub != nil {
 		log = hub.log
@@ -48,6 +51,7 @@ func newConn(hub *Hub, wc *websocket.Conn, sessionID string) *Conn {
 		log:       log,
 		wc:        wc,
 		hub:       hub,
+		bridge:    bridge,
 		sessionID: sessionID,
 		hb:        newHeartbeat(log),
 		done:      make(chan struct{}),
@@ -224,6 +228,13 @@ func (c *Conn) performInit(handler *Handler) error {
 			}
 			c.log.Info("gateway: session created via init", "session_id", sessionID,
 				"worker_type", initData.WorkerType)
+			// Start the worker for the new session. Bridge.StartSession creates the worker,
+			// attaches it, starts it, transitions to RUNNING, and starts forwarding events.
+			if c.bridge != nil {
+				if err := c.bridge.StartSession(context.Background(), sessionID, c.userID, initData.WorkerType); err != nil {
+					c.log.Warn("gateway: bridge start session", "session_id", sessionID, "err", err)
+				}
+			}
 		} else {
 			c.sendInitError(events.ErrCodeInternalError, err.Error())
 			metrics.GatewayErrorsTotal.WithLabelValues(string(events.ErrCodeInternalError)).Inc()
@@ -264,12 +275,9 @@ func (c *Conn) performInit(handler *Handler) error {
 	}
 	metrics.GatewayMessagesTotal.WithLabelValues("outgoing", InitAck).Inc()
 
-	// If session was CREATED, transition to RUNNING. (StateNotifier will broadcast the state change)
-	if si.State == events.StateCreated {
-		if err := handler.sm.Transition(context.Background(), sessionID, events.StateRunning); err != nil {
-			c.log.Warn("gateway: transition to running", "session_id", sessionID, "err", err)
-		}
-	}
+	// NOTE: Session remains in CREATED state until handleInput transitions it to RUNNING.
+	// Do NOT transition here — handleInput (→ TransitionWithInput) is the sole entry point
+	// for the CREATED → RUNNING transition and is atomic with input delivery.
 
 	c.log.Info("gateway: init complete", "session_id", sessionID,
 		"worker_type", initData.WorkerType, "state", si.State)

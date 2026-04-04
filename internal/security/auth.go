@@ -45,7 +45,11 @@ func (a *Authenticator) AuthenticateRequest(r *http.Request) (string, string, er
 		header = "X-API-Key"
 	}
 
+	// Check header first, then query param (for browser WebSocket clients).
 	key := r.Header.Get(header)
+	if key == "" {
+		key = r.URL.Query().Get("api_key")
+	}
 	if key == "" {
 		return "", "", ErrUnauthorized
 	}

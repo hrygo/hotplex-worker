@@ -64,7 +64,7 @@ func (h *Handler) handleInput(ctx context.Context, env *events.Envelope) error {
 
 	content, _ := data["content"].(string)
 
-	// Check SESSION_BUSY: input and state transition must be atomic.
+	// Check SESSION_BUSY: session must be active.
 	si, err := h.sm.Get(env.SessionID)
 	if err != nil {
 		return h.sendErrorf(ctx, env, events.ErrCodeSessionNotFound, "session not found")
@@ -74,9 +74,12 @@ func (h *Handler) handleInput(ctx context.Context, env *events.Envelope) error {
 		return h.sendErrorf(ctx, env, events.ErrCodeSessionBusy, "session not active: %s", si.State)
 	}
 
-	// Atomic transition + input.
-	if err := h.sm.TransitionWithInput(ctx, env.SessionID, events.StateRunning, content, nil); err != nil {
-		return h.sendErrorf(ctx, env, events.ErrCodeSessionBusy, "session busy: %v", err)
+	// Atomic transition + input. Only needed for IDLE → RUNNING (not CREATED → RUNNING,
+	// which is handled by Bridge.StartSession in performInit). This covers the resume case.
+	if si.State == events.StateIdle {
+		if err := h.sm.TransitionWithInput(ctx, env.SessionID, events.StateRunning, content, nil); err != nil {
+			return h.sendErrorf(ctx, env, events.ErrCodeSessionBusy, "session busy: %v", err)
+		}
 	}
 
 	// Deliver to worker.

@@ -291,7 +291,7 @@ func (h *Hub) HandleHTTP(
 			return
 		}
 
-		c := newConn(h, wc, sessionID)
+		c := newConn(h, wc, sessionID, bridge)
 		c.userID = userID
 		c.botID = botID // SEC-007: carry botID from HTTP-level JWT extraction
 		h.RegisterConn(c)
