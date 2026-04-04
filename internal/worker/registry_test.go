@@ -120,12 +120,12 @@ type registryTestWorker struct{}
 
 var _ Worker = (*registryTestWorker)(nil)
 
-func (*registryTestWorker) Start(context.Context, SessionInfo) error             { return nil }
+func (*registryTestWorker) Start(context.Context, SessionInfo) error            { return nil }
 func (*registryTestWorker) Input(context.Context, string, map[string]any) error { return nil }
-func (*registryTestWorker) Resume(context.Context, SessionInfo) error          { return nil }
-func (*registryTestWorker) Terminate(context.Context) error                    { return nil }
-func (*registryTestWorker) Kill() error                                        { return nil }
-func (*registryTestWorker) Wait() (int, error)                                 { return 0, nil }
+func (*registryTestWorker) Resume(context.Context, SessionInfo) error           { return nil }
+func (*registryTestWorker) Terminate(context.Context) error                     { return nil }
+func (*registryTestWorker) Kill() error                                         { return nil }
+func (*registryTestWorker) Wait() (int, error)                                  { return 0, nil }
 func (*registryTestWorker) Conn() SessionConn                                   { return nil }
 func (*registryTestWorker) Health() WorkerHealth                                { return WorkerHealth{} }
 func (*registryTestWorker) LastIO() time.Time                                   { return time.Time{} }

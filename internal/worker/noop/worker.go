@@ -27,7 +27,7 @@ func (Capabilities) SupportsStreaming() bool { return false }
 func (Capabilities) SupportsTools() bool     { return false }
 func (Capabilities) EnvWhitelist() []string  { return nil }
 func (Capabilities) SessionStoreDir() string { return "" }
-func (Capabilities) MaxTurns() int          { return 0 }
+func (Capabilities) MaxTurns() int           { return 0 }
 func (Capabilities) Modalities() []string    { return nil }
 
 // Conn is a stub SessionConn that drops all messages.

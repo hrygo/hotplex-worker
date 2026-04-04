@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/stretchr/testify/require"
 	"github.com/hotplex/hotplex-worker/internal/worker"
+	"github.com/stretchr/testify/require"
 )
 
 func TestBuildEnv_BasicWhitelist(t *testing.T) {

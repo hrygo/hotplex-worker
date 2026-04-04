@@ -10,10 +10,10 @@ import (
 
 func TestValidateInit_Debug(t *testing.T) {
 	data := map[string]any{
-		"version":      events.Version,
+		"version":     events.Version,
 		"worker_type": "claude-code",
 	}
-	
+
 	env := &events.Envelope{
 		Version:   events.Version,
 		ID:        aep.NewID(),
@@ -22,12 +22,12 @@ func TestValidateInit_Debug(t *testing.T) {
 		Timestamp: time.Now().UnixMilli(),
 		Event:     events.Event{Type: Init, Data: data},
 	}
-	
+
 	t.Logf("env.Event.Data type: %T", env.Event.Data)
-	
+
 	dataOut, ok := env.Event.Data.(map[string]any)
 	t.Logf("type assertion ok: %v, data: %+v", ok, dataOut)
-	
+
 	result, err := ValidateInit(env)
 	t.Logf("err == nil: %v", err == nil)
 	t.Logf("err != nil: %v", err != nil)

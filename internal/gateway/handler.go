@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/hotplex/hotplex-worker/pkg/aep"
 	"github.com/hotplex/hotplex-worker/internal/config"
 	"github.com/hotplex/hotplex-worker/internal/metrics"
 	"github.com/hotplex/hotplex-worker/internal/security"
 	"github.com/hotplex/hotplex-worker/internal/session"
 	"github.com/hotplex/hotplex-worker/internal/worker"
+	"github.com/hotplex/hotplex-worker/pkg/aep"
 	"github.com/hotplex/hotplex-worker/pkg/events"
 )
 
@@ -112,13 +112,13 @@ func (h *Handler) handlePing(ctx context.Context, env *events.Envelope) error {
 }
 
 var passthroughMetricLabel = map[events.Kind]string{
-	events.Reasoning:         "reasoning",
-	events.Step:              "step",
+	events.Reasoning:          "reasoning",
+	events.Step:               "step",
 	events.PermissionRequest:  "permission_request",
 	events.PermissionResponse: "permission_response",
-	events.Message:           "message",
-	events.MessageStart:      "message.start",
-	events.MessageEnd:        "message.end",
+	events.Message:            "message",
+	events.MessageStart:       "message.start",
+	events.MessageEnd:         "message.end",
 }
 
 func (h *Handler) passthroughToSession(ctx context.Context, env *events.Envelope) error {

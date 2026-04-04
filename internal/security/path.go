@@ -9,7 +9,7 @@ import (
 // AllowedBaseDirs is the set of permitted base directories for session work dirs.
 var AllowedBaseDirs = map[string]bool{
 	"/var/hotplex/projects": true,
-	"/tmp/hotplex":           true,
+	"/tmp/hotplex":          true,
 }
 
 // ValidateBaseDir checks that the base directory is in the allowed list.

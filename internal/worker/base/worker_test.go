@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
 	"github.com/hotplex/hotplex-worker/internal/worker"
+	"github.com/stretchr/testify/require"
 )
 
 func TestBaseWorker_HealthNotStarted(t *testing.T) {

@@ -483,10 +483,10 @@ func TestValidateAPIKey(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name      string
-		provided  string
-		expected  string
-		wantErr   bool
+		name     string
+		provided string
+		expected string
+		wantErr  bool
 	}{
 		{"valid key", "secret-api-key-123", "secret-api-key-123", false},
 		{"invalid key", "wrong-key", "secret-api-key-123", true},

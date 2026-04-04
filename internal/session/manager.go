@@ -27,7 +27,7 @@ var (
 	ErrUserQuotaExceeded = errors.New("session: user quota exceeded")
 	ErrOwnershipMismatch = errors.New("session: ownership mismatch")
 	ErrMaxTurnsReached   = errors.New("session: max turns reached")
-	ErrWorkerAttached     = errors.New("session: worker already attached")
+	ErrWorkerAttached    = errors.New("session: worker already attached")
 )
 
 // Manager orchestrates session lifecycle, persistence, and GC.
@@ -62,7 +62,7 @@ type SessionInfo struct {
 	ID            string              `json:"id"`
 	UserID        string              `json:"user_id"`
 	OwnerID       string              `json:"owner_id,omitempty"` // authenticated owner; falls back to UserID when nil
-	BotID         string              `json:"bot_id,omitempty"`  // SEC-007: bot isolation
+	BotID         string              `json:"bot_id,omitempty"`   // SEC-007: bot isolation
 	WorkerType    worker.WorkerType   `json:"worker_type"`
 	State         events.SessionState `json:"state"`
 	CreatedAt     time.Time           `json:"created_at"`

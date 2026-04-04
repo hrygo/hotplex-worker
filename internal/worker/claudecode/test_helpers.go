@@ -65,7 +65,7 @@ func (m *mockConn) Close() error {
 	return nil
 }
 
-func (m *mockConn) UserID() string   { return m.userID }
+func (m *mockConn) UserID() string    { return m.userID }
 func (m *mockConn) SessionID() string { return m.sessionID }
 
 func (m *mockConn) sentEnvelopes() []*events.Envelope {

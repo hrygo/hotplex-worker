@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 )
 
 // ErrTokenRevoked is returned when a token's jti is on the blacklist.
@@ -25,8 +25,8 @@ var ErrInvalidAudience = errors.New("security: invalid audience")
 // JWTValidator validates and parses JWT tokens.
 // Only ES256 (ECDSA P-256) signing method is accepted, per security design.
 type JWTValidator struct {
-	secret   any // *ecdsa.PrivateKey or []byte (raw secret)
-	audience string
+	secret    any // *ecdsa.PrivateKey or []byte (raw secret)
+	audience  string
 	blacklist *jtiBlacklist
 }
 

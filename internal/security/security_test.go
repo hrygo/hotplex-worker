@@ -323,11 +323,11 @@ func TestCheckBashCommand(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name       string
-		cmd        string
-		wantNil    bool
-		wantP0     bool
-		wantP1     bool
+		name    string
+		cmd     string
+		wantNil bool
+		wantP0  bool
+		wantP1  bool
 	}{
 		{"empty nil", "", true, false, false},
 		{"harmless ls", "ls -la /tmp", true, false, false},
@@ -582,9 +582,9 @@ func TestBuildWorkerEnv(t *testing.T) {
 		{
 			name: "sensitive vars redacted",
 			input: map[string]string{
-				"HOME":          "/home/user",
-				"PATH":          "/usr/bin",
-				"GITHUB_TOKEN":  "ghs_secret",
+				"HOME":           "/home/user",
+				"PATH":           "/usr/bin",
+				"GITHUB_TOKEN":   "ghs_secret",
 				"OPENAI_API_KEY": "sk-secret",
 			},
 			whitelist: nil,
@@ -598,8 +598,8 @@ func TestBuildWorkerEnv(t *testing.T) {
 		{
 			name: "whitelisted sensitive vars pass through",
 			input: map[string]string{
-				"GITHUB_TOKEN":  "ghs_secret",
-				"AWS_API_KEY":   "ak_test",
+				"GITHUB_TOKEN": "ghs_secret",
+				"AWS_API_KEY":  "ak_test",
 			},
 			whitelist: []string{"GITHUB_TOKEN"},
 			check: func(t *testing.T, result map[string]string) {

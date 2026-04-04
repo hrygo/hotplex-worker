@@ -259,8 +259,8 @@ func TestInput_NotStarted_ReturnsError(t *testing.T) {
 func NewWithMocks() *Worker {
 	return &Worker{
 		BaseWorker: base.NewBaseWorker(slog.Default(), nil),
-		parser:    NewParser(slog.Default()),
-		mapper:    NewMapper(slog.Default(), "test-session", func() int64 { return 1 }),
+		parser:     NewParser(slog.Default()),
+		mapper:     NewMapper(slog.Default(), "test-session", func() int64 { return 1 }),
 		// stdin is set by the test via w.testConn = mc; mc.StdinWriter() = io.Discard
 		control: NewControlHandler(slog.Default(), io.Discard),
 	}

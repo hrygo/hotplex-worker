@@ -9,8 +9,8 @@ import (
 // New models must be explicitly added here before use.
 var AllowedModels = map[string]bool{
 	// Claude models.
-	"claude-sonnet-4-6":       true,
-	"claude-opus-4-6":         true,
+	"claude-sonnet-4-6":          true,
+	"claude-opus-4-6":            true,
 	"claude-3-5-sonnet-20241022": true,
 	"claude-3-5-haiku-20241022":  true,
 	"claude-3-opus-20240229":     true,

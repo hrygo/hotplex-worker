@@ -29,15 +29,15 @@ func TestOutputLimiter_Check(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:       "line exceeds MaxLineBytes",
-			line:       make([]byte, MaxLineBytes+1),
-			wantErr:    true,
-			errMsg:     "line exceeds",
+			name:    "line exceeds MaxLineBytes",
+			line:    make([]byte, MaxLineBytes+1),
+			wantErr: true,
+			errMsg:  "line exceeds",
 		},
 		{
-			name:       "exactly MaxLineBytes accepted",
-			line:       make([]byte, MaxLineBytes),
-			wantErr:    false,
+			name:    "exactly MaxLineBytes accepted",
+			line:    make([]byte, MaxLineBytes),
+			wantErr: false,
 		},
 		{
 			name:       "total exceeds MaxSessionBytes",

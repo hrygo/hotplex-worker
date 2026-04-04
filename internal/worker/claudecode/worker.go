@@ -101,21 +101,21 @@ func (w *Worker) Resume(ctx context.Context, session worker.SessionInfo) error {
 }
 
 func (w *Worker) startLocked(ctx context.Context, session worker.SessionInfo, resume bool) error {
-	if w.BaseWorker.Proc != nil {
+	if w.Proc != nil {
 		return fmt.Errorf("claudecode: already started")
 	}
 
 	args := w.buildCLIArgs(session, resume)
 	env := base.BuildEnv(session, claudeCodeEnvWhitelist, "claude-code")
 
-	w.BaseWorker.Proc = proc.New(proc.Opts{
-		Logger:       w.BaseWorker.Log,
+	w.Proc = proc.New(proc.Opts{
+		Logger:       w.Log,
 		AllowedTools: session.AllowedTools,
 	})
 
-	stdin, _, _, err := w.BaseWorker.Proc.Start(ctx, "claude", args, env, session.ProjectDir)
+	stdin, _, _, err := w.Proc.Start(ctx, "claude", args, env, session.ProjectDir)
 	if err != nil {
-		w.BaseWorker.Proc = nil
+		w.Proc = nil
 		return fmt.Errorf("claudecode: start: %w", err)
 	}
 
@@ -127,11 +127,11 @@ func (w *Worker) startLocked(ctx context.Context, session worker.SessionInfo, re
 
 	// readLineFn: use test override if set, otherwise real proc reader.
 	if w.readLineFn == nil {
-		w.readLineFn = w.BaseWorker.Proc.ReadLine
+		w.readLineFn = w.Proc.ReadLine
 	}
 
-	w.parser = NewParser(w.BaseWorker.Log)
-	w.mapper = NewMapper(w.BaseWorker.Log, session.SessionID, w.nextSeq)
+	w.parser = NewParser(w.Log)
+	w.mapper = NewMapper(w.Log, session.SessionID, w.nextSeq)
 	w.control = NewControlHandler(w.BaseWorker.Log, stdin)
 
 	w.SetConnLocked(base.NewConn(w.BaseWorker.Log, stdin, session.UserID, session.SessionID))

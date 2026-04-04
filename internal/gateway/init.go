@@ -4,8 +4,8 @@ package gateway
 import (
 	"time"
 
-	"github.com/hotplex/hotplex-worker/pkg/aep"
 	"github.com/hotplex/hotplex-worker/internal/worker"
+	"github.com/hotplex/hotplex-worker/pkg/aep"
 	"github.com/hotplex/hotplex-worker/pkg/events"
 )
 
@@ -50,23 +50,23 @@ type ClientCaps struct {
 
 // InitAckData is the payload of a gateway → client init_ack message.
 type InitAckData struct {
-	SessionID  string             `json:"session_id"`
+	SessionID  string              `json:"session_id"`
 	State      events.SessionState `json:"state"`
 	ServerCaps ServerCaps          `json:"server_caps"`
-	Error      string             `json:"error,omitempty"`
+	Error      string              `json:"error,omitempty"`
 	Code       events.ErrorCode    `json:"code,omitempty"`
 }
 
 // ServerCaps declares what the gateway / worker supports.
 type ServerCaps struct {
 	ProtocolVersion  string            `json:"protocol_version"`
-	WorkerType      worker.WorkerType `json:"worker_type"`
+	WorkerType       worker.WorkerType `json:"worker_type"`
 	SupportsResume   bool              `json:"supports_resume"`
 	SupportsDelta    bool              `json:"supports_delta"`
 	SupportsToolCall bool              `json:"supports_tool_call"`
 	SupportsPing     bool              `json:"supports_ping"`
 	MaxFrameSize     int64             `json:"max_frame_size"`
-	MaxTurns        int               `json:"max_turns,omitempty"`
+	MaxTurns         int               `json:"max_turns,omitempty"`
 	Modalities       []string          `json:"modalities,omitempty"`
 	Tools            []string          `json:"tools,omitempty"`
 }
@@ -199,7 +199,7 @@ func DefaultServerCaps(wt worker.WorkerType) ServerCaps {
 		SupportsToolCall: true,
 		SupportsPing:     true,
 		MaxFrameSize:     32 * 1024,
-		MaxTurns:        0,
+		MaxTurns:         0,
 		Modalities:       []string{"text", "code"},
 		Tools:            nil,
 	}

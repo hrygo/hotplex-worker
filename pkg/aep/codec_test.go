@@ -283,7 +283,7 @@ func TestIsTerminalEvent(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		kind    events.Kind
+		kind     events.Kind
 		terminal bool
 	}{
 		{events.Done, true},
@@ -447,8 +447,8 @@ func TestEncodeJSON_NDJSONSafe(t *testing.T) {
 
 	// Verify: output is valid JSON and content round-trips correctly.
 	var decoded struct {
-		Version   string `json:"version"`
-		Event     struct {
+		Version string `json:"version"`
+		Event   struct {
 			Type string `json:"type"`
 			Data struct {
 				Content string `json:"content"`

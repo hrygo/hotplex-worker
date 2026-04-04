@@ -18,12 +18,12 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/hotplex/hotplex-worker/pkg/aep"
 	"github.com/hotplex/hotplex-worker/internal/config"
 	"github.com/hotplex/hotplex-worker/internal/security"
 	"github.com/hotplex/hotplex-worker/internal/session"
 	"github.com/hotplex/hotplex-worker/internal/worker"
 	"github.com/hotplex/hotplex-worker/internal/worker/noop"
+	"github.com/hotplex/hotplex-worker/pkg/aep"
 	"github.com/hotplex/hotplex-worker/pkg/events"
 )
 
@@ -71,7 +71,7 @@ func TestValidateInit(t *testing.T) {
 			data: makeInit(func(m map[string]any) {
 				m["config"] = map[string]any{
 					"model":         "claude-sonnet-4-6",
-					"allowed_tools":  []any{"Read", "Bash"},
+					"allowed_tools": []any{"Read", "Bash"},
 					"max_turns":     50.0,
 					"work_dir":      "/tmp/project",
 				}
@@ -79,20 +79,20 @@ func TestValidateInit(t *testing.T) {
 			wantNil: true,
 		},
 		{
-			name: "missing version",
-			data: map[string]any{"worker_type": "claude-code"},
+			name:     "missing version",
+			data:     map[string]any{"worker_type": "claude-code"},
 			wantNil:  false,
 			wantCode: events.ErrCodeInvalidMessage,
 		},
 		{
-			name: "wrong version",
-			data: map[string]any{"version": "aep/v0", "worker_type": "claude-code"},
+			name:     "wrong version",
+			data:     map[string]any{"version": "aep/v0", "worker_type": "claude-code"},
 			wantNil:  false,
 			wantCode: events.ErrCodeVersionMismatch,
 		},
 		{
-			name: "missing worker_type",
-			data: map[string]any{"version": events.Version},
+			name:     "missing worker_type",
+			data:     map[string]any{"version": events.Version},
 			wantNil:  false,
 			wantCode: events.ErrCodeInvalidMessage,
 		},
@@ -161,7 +161,7 @@ func TestBackoffDuration(t *testing.T) {
 		{3, 8 * time.Second, 8 * time.Second},
 		{4, 16 * time.Second, 16 * time.Second},
 		{5, 32 * time.Second, 32 * time.Second},
-		{6, 60 * time.Second, 64 * time.Second}, // capped at 60s
+		{6, 60 * time.Second, 64 * time.Second},  // capped at 60s
 		{10, 60 * time.Second, 60 * time.Second}, // capped at 60s
 	}
 
@@ -552,7 +552,7 @@ func newECDSAKey(t *testing.T) *ecdsa.PrivateKey {
 // This is the SEC-007 cross-bot access rejection at resume time.
 func TestBotIDIsolation_CreateMismatch(t *testing.T) {
 	const (
-		sessionID = "sess_bot001"
+		sessionID  = "sess_bot001"
 		workerType = "claude-code"
 		botAlice   = "bot_alice"
 		botBob     = "bot_bob"
@@ -932,23 +932,23 @@ type mockBridgeWorker struct {
 	resumeErr  error
 }
 
-func (m *mockBridgeWorker) Type() worker.WorkerType                            { return m.workerType }
-func (m *mockBridgeWorker) SupportsResume() bool                               { return true }
-func (m *mockBridgeWorker) SupportsStreaming() bool                           { return true }
-func (m *mockBridgeWorker) SupportsTools() bool                               { return true }
-func (m *mockBridgeWorker) EnvWhitelist() []string                             { return nil }
-func (m *mockBridgeWorker) SessionStoreDir() string                           { return "" }
-func (m *mockBridgeWorker) MaxTurns() int                                     { return 0 }
-func (m *mockBridgeWorker) Modalities() []string                               { return []string{"text"} }
-func (m *mockBridgeWorker) Start(context.Context, worker.SessionInfo) error   { return m.startErr }
+func (m *mockBridgeWorker) Type() worker.WorkerType                             { return m.workerType }
+func (m *mockBridgeWorker) SupportsResume() bool                                { return true }
+func (m *mockBridgeWorker) SupportsStreaming() bool                             { return true }
+func (m *mockBridgeWorker) SupportsTools() bool                                 { return true }
+func (m *mockBridgeWorker) EnvWhitelist() []string                              { return nil }
+func (m *mockBridgeWorker) SessionStoreDir() string                             { return "" }
+func (m *mockBridgeWorker) MaxTurns() int                                       { return 0 }
+func (m *mockBridgeWorker) Modalities() []string                                { return []string{"text"} }
+func (m *mockBridgeWorker) Start(context.Context, worker.SessionInfo) error     { return m.startErr }
 func (m *mockBridgeWorker) Input(context.Context, string, map[string]any) error { return nil }
-func (m *mockBridgeWorker) Resume(context.Context, worker.SessionInfo) error { return m.resumeErr }
-func (m *mockBridgeWorker) Terminate(context.Context) error                    { return nil }
-func (m *mockBridgeWorker) Kill() error                                       { return nil }
-func (m *mockBridgeWorker) Wait() (int, error)                                 { return m.exitCode, nil }
-func (m *mockBridgeWorker) Conn() worker.SessionConn                           { return m.conn }
-func (m *mockBridgeWorker) Health() worker.WorkerHealth                        { return worker.WorkerHealth{} }
-func (m *mockBridgeWorker) LastIO() time.Time                                  { return time.Now() }
+func (m *mockBridgeWorker) Resume(context.Context, worker.SessionInfo) error    { return m.resumeErr }
+func (m *mockBridgeWorker) Terminate(context.Context) error                     { return nil }
+func (m *mockBridgeWorker) Kill() error                                         { return nil }
+func (m *mockBridgeWorker) Wait() (int, error)                                  { return m.exitCode, nil }
+func (m *mockBridgeWorker) Conn() worker.SessionConn                            { return m.conn }
+func (m *mockBridgeWorker) Health() worker.WorkerHealth                         { return worker.WorkerHealth{} }
+func (m *mockBridgeWorker) LastIO() time.Time                                   { return time.Now() }
 
 var _ worker.Worker = (*mockBridgeWorker)(nil)
 

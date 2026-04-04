@@ -793,7 +793,7 @@ func TestManager_AttachWorker_PoolExhausted(t *testing.T) {
 	m.mu.Unlock()
 
 	w := newMockWorker(worker.TypeClaudeCode, 0)
-        w.On("Terminate", mock.Anything).Return(nil)
+	w.On("Terminate", mock.Anything).Return(nil)
 
 	// First session exhausts the global pool
 	err = m.AttachWorker("sess_exhaust", w)

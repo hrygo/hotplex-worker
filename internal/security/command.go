@@ -71,8 +71,8 @@ func SanitizeArg(input string) string {
 // BashPolicyViolation describes a detected dangerous bash command.
 type BashPolicyViolation struct {
 	Severity string // "P0" (auto-deny) or "P1" (warn/log)
-	Reason  string
-	Command string
+	Reason   string
+	Command  string
 }
 
 var (

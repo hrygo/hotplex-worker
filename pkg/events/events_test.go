@@ -9,9 +9,9 @@ import (
 
 func TestSessionState_IsTerminal(t *testing.T) {
 	tests := []struct {
-		name      string
-		state     SessionState
-		terminal  bool
+		name     string
+		state    SessionState
+		terminal bool
 	}{
 		{
 			name:     "created is not terminal",

@@ -191,13 +191,13 @@ type ReasoningData struct {
 
 // StepData is the payload for Step events (S→C — execution step marker).
 type StepData struct {
-	ID        string         `json:"id"`
-	StepType  string         `json:"step_type"`
-	Name      string         `json:"name,omitempty"`
-	Input     map[string]any `json:"input,omitempty"`
-	Output    map[string]any `json:"output,omitempty"`
-	ParentID  string         `json:"parent_id,omitempty"`
-	Duration  int64          `json:"duration,omitempty"` // milliseconds
+	ID       string         `json:"id"`
+	StepType string         `json:"step_type"`
+	Name     string         `json:"name,omitempty"`
+	Input    map[string]any `json:"input,omitempty"`
+	Output   map[string]any `json:"output,omitempty"`
+	ParentID string         `json:"parent_id,omitempty"`
+	Duration int64          `json:"duration,omitempty"` // milliseconds
 }
 
 // PermissionRequestData is the payload for PermissionRequest events (S→C — ask user for permission).

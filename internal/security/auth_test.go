@@ -54,12 +54,12 @@ func TestAuthenticateRequest(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name        string
-		apiKeys     []string
-		headerName  string
-		requestKey  string
-		wantUserID  string
-		wantErr     bool
+		name       string
+		apiKeys    []string
+		headerName string
+		requestKey string
+		wantUserID string
+		wantErr    bool
 	}{
 		{
 			name:       "no keys configured dev mode",
@@ -153,11 +153,11 @@ func TestAuthenticateRequest_BotIDFromJWT(t *testing.T) {
 	auth := NewAuthenticator(cfg, jwtVal)
 
 	tests := []struct {
-		name        string
-		apiKey      string
-		jwtToken    string
-		wantBotID   string
-		wantErr     bool
+		name      string
+		apiKey    string
+		jwtToken  string
+		wantBotID string
+		wantErr   bool
 	}{
 		{
 			name:      "valid api key, JWT with bot_id",

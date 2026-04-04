@@ -122,19 +122,19 @@ type WorkerHealth struct {
 	Type      WorkerType `json:"type"`
 	SessionID string     `json:"session_id"`
 	PID       int        `json:"pid"`
-	Running   bool       `json:"running"`    // process has not exited
-	Healthy   bool       `json:"healthy"`    // running and not in error state
-	Uptime    string     `json:"uptime"`     // human-readable uptime
+	Running   bool       `json:"running"` // process has not exited
+	Healthy   bool       `json:"healthy"` // running and not in error state
+	Uptime    string     `json:"uptime"`  // human-readable uptime
 	Error     string     `json:"error,omitempty"`
 }
 
 // SessionInfo contains metadata about a session needed by the worker to start/resume.
 type SessionInfo struct {
 	SessionID     string
-	UserID       string
-	ProjectDir   string
-	Env          map[string]string
-	Args         []string
+	UserID        string
+	ProjectDir    string
+	Env           map[string]string
+	Args          []string
 	AllowedTools  []string // tools allowed for this session (from InitConfig.AllowedTools)
 	AllowedModels []string // models allowed for this session
 

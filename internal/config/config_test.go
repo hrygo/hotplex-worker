@@ -98,7 +98,7 @@ func TestConfig_Validate(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			// NOT parallel — mutates global env vars
-				errs := tt.cfg.Validate()
+			errs := tt.cfg.Validate()
 			require.Len(t, errs, tt.errCnt)
 		})
 	}
@@ -131,7 +131,7 @@ func TestExpandEnv(t *testing.T) {
 		{
 			name:  "variable with default",
 			input: "path=${UNSET_VAR:-/default/path}",
-			setup:  func() {},
+			setup: func() {},
 			verify: func(got string) {
 				require.Equal(t, "path=/default/path", got)
 			},
@@ -139,7 +139,7 @@ func TestExpandEnv(t *testing.T) {
 		{
 			name:  "variable with non-empty default",
 			input: "token=${MY_TOKEN:-fallback}",
-			setup:  func() {},
+			setup: func() {},
 			verify: func(got string) {
 				require.Equal(t, "token=fallback", got)
 			},
@@ -147,7 +147,7 @@ func TestExpandEnv(t *testing.T) {
 		{
 			name:  "multiple variables",
 			input: "${HOME}/${USER}/${PWD}",
-			setup:  func() {},
+			setup: func() {},
 			verify: func(got string) {
 				// All three are typically set in a shell environment, so expect expansion
 				require.NotContains(t, got, "${HOME}")
@@ -161,7 +161,7 @@ func TestExpandEnv(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			// NOT parallel — mutates global env vars
-				os.Unsetenv("HOME")
+			os.Unsetenv("HOME")
 			os.Unsetenv("USER")
 			os.Unsetenv("PWD")
 			os.Unsetenv("UNSET_VAR")
@@ -195,7 +195,7 @@ func TestChainedSecretsProvider(t *testing.T) {
 
 	require.Equal(t, "from-first", p.Get("key1"))  // first provider wins
 	require.Equal(t, "from-second", p.Get("key2")) // only in second
-	require.Empty(t, p.Get("key3"))                 // neither has it
+	require.Empty(t, p.Get("key3"))                // neither has it
 }
 
 type staticProvider struct {

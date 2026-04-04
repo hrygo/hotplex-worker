@@ -14,19 +14,19 @@ type PoolManager struct {
 
 	mu         sync.Mutex
 	totalCount int
-	userCount  map[string]int // userID → active session count
+	userCount  map[string]int   // userID → active session count
 	userMemory map[string]int64 // userID → total estimated memory bytes (sum of RLIMIT_AS caps)
 
-	maxSize           int   // 0 = unlimited
-	maxIdlePerUser    int   // 0 = unlimited
-	maxMemoryPerUser  int64 // bytes; 0 = unlimited
+	maxSize          int   // 0 = unlimited
+	maxIdlePerUser   int   // 0 = unlimited
+	maxMemoryPerUser int64 // bytes; 0 = unlimited
 }
 
 // Default per-worker memory estimate (matches RLIMIT_AS in proc/manager.go).
 const workerMemoryEstimate = 512 * 1024 * 1024 // 512 MB
 
 const (
-	poolErrKindExhausted        = "exhausted"
+	poolErrKindExhausted         = "exhausted"
 	poolErrKindUserQuotaExceeded = "user_quota_exceeded"
 	poolErrKindMemoryExceeded    = "memory_exceeded"
 )
@@ -37,11 +37,11 @@ func NewPoolManager(log *slog.Logger, maxSize, maxIdlePerUser int, maxMemoryPerU
 		log = slog.Default()
 	}
 	return &PoolManager{
-		log:             log,
-		userCount:      make(map[string]int),
-		userMemory:     make(map[string]int64),
-		maxSize:        maxSize,
-		maxIdlePerUser: maxIdlePerUser,
+		log:              log,
+		userCount:        make(map[string]int),
+		userMemory:       make(map[string]int64),
+		maxSize:          maxSize,
+		maxIdlePerUser:   maxIdlePerUser,
 		maxMemoryPerUser: maxMemoryPerUser,
 	}
 }

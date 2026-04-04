@@ -176,26 +176,26 @@ func TestBuildCLIArgs_AllOptions(t *testing.T) {
 
 	w := New()
 	session := worker.SessionInfo{
-		SessionID:           "test-session",
-		UserID:              "test-user",
-		ProjectDir:          "/tmp",
-		AllowedModels:       []string{"claude-sonnet-4-6"},
-		AllowedTools:        []string{"Read", "Write", "Bash"},
-		DisallowedTools:     []string{"WebSearch", "Edit"},
-		PermissionMode:      "plan",
-		SkipPermissions:    false,
-		SystemPrompt:        "You are a helpful assistant.",
-		SystemPromptReplace: "",
-		MCPConfig:           "/path/to/mcp.json",
-		StrictMCPConfig:     true,
-		ContinueSession:     false,
-		ForkSession:         false,
-		MaxTurns:            10,
-		Bare:                true,
-		AllowedDirs:         []string{"/extra/dir"},
-		MaxBudgetUSD:        0.05,
-		JSONSchema:          "/schemas/output.json",
-		IncludeHookEvents:   true,
+		SessionID:              "test-session",
+		UserID:                 "test-user",
+		ProjectDir:             "/tmp",
+		AllowedModels:          []string{"claude-sonnet-4-6"},
+		AllowedTools:           []string{"Read", "Write", "Bash"},
+		DisallowedTools:        []string{"WebSearch", "Edit"},
+		PermissionMode:         "plan",
+		SkipPermissions:        false,
+		SystemPrompt:           "You are a helpful assistant.",
+		SystemPromptReplace:    "",
+		MCPConfig:              "/path/to/mcp.json",
+		StrictMCPConfig:        true,
+		ContinueSession:        false,
+		ForkSession:            false,
+		MaxTurns:               10,
+		Bare:                   true,
+		AllowedDirs:            []string{"/extra/dir"},
+		MaxBudgetUSD:           0.05,
+		JSONSchema:             "/schemas/output.json",
+		IncludeHookEvents:      true,
 		IncludePartialMessages: true,
 	}
 
@@ -249,9 +249,9 @@ func TestBuildCLIArgs_ContinueSession(t *testing.T) {
 
 	w := New()
 	session := worker.SessionInfo{
-		SessionID:      "should-be-ignored",
-		UserID:         "test-user",
-		ProjectDir:     "/tmp",
+		SessionID:       "should-be-ignored",
+		UserID:          "test-user",
+		ProjectDir:      "/tmp",
 		ContinueSession: true,
 	}
 
@@ -266,8 +266,8 @@ func TestBuildCLIArgs_Resume(t *testing.T) {
 
 	w := New()
 	session := worker.SessionInfo{
-		SessionID: "resume-session",
-		UserID:    "test-user",
+		SessionID:  "resume-session",
+		UserID:     "test-user",
 		ProjectDir: "/tmp",
 	}
 
@@ -297,9 +297,9 @@ func TestBuildCLIArgs_ForkSession(t *testing.T) {
 
 	w := New()
 	session := worker.SessionInfo{
-		SessionID:  "fork-session",
-		UserID:     "test-user",
-		ProjectDir: "/tmp",
+		SessionID:   "fork-session",
+		UserID:      "test-user",
+		ProjectDir:  "/tmp",
 		ForkSession: true,
 	}
 
@@ -313,10 +313,10 @@ func TestBuildCLIArgs_MaxTurns(t *testing.T) {
 
 	w := New()
 	session := worker.SessionInfo{
-		SessionID: "max-turns-session",
-		UserID:    "test-user",
+		SessionID:  "max-turns-session",
+		UserID:     "test-user",
 		ProjectDir: "/tmp",
-		MaxTurns:  5,
+		MaxTurns:   5,
 	}
 
 	args := w.buildCLIArgs(session, false)
@@ -427,7 +427,7 @@ func TestBuildCLIArgs_Bare(t *testing.T) {
 	session := worker.SessionInfo{
 		SessionID:  "bare-session",
 		UserID:     "test-user",
-		ProjectDir:  "/tmp",
+		ProjectDir: "/tmp",
 		Bare:       true,
 	}
 
@@ -487,9 +487,9 @@ func TestStatusToSessionState(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name    string
-		input   string
-		wantOk  bool
+		name   string
+		input  string
+		wantOk bool
 	}{
 		{"idle maps to StateIdle", "idle", true},
 		{"processing maps to StateRunning", "processing", true},
@@ -528,4 +528,3 @@ func TestMapper_Map_UnknownStatus(t *testing.T) {
 		require.Nil(t, envs)
 	})
 }
-

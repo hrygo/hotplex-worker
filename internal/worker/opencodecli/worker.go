@@ -9,10 +9,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hotplex/hotplex-worker/pkg/aep"
 	"github.com/hotplex/hotplex-worker/internal/worker"
 	"github.com/hotplex/hotplex-worker/internal/worker/base"
 	"github.com/hotplex/hotplex-worker/internal/worker/proc"
+	"github.com/hotplex/hotplex-worker/pkg/aep"
 	"github.com/hotplex/hotplex-worker/pkg/events"
 )
 

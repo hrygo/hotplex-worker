@@ -17,32 +17,32 @@ import (
 // Format: "TopLevel.NestedField" (matches mapstructure tags).
 var HotReloadableFields = map[string]bool{
 	"gateway.addr":                 true,
-	"gateway.ping_interval":       true,
-	"gateway.pong_timeout":       true,
-	"gateway.write_timeout":       true,
-	"gateway.idle_timeout":       true,
+	"gateway.ping_interval":        true,
+	"gateway.pong_timeout":         true,
+	"gateway.write_timeout":        true,
+	"gateway.idle_timeout":         true,
 	"gateway.broadcast_queue_size": true,
-	"session.gc_scan_interval":    true,
-	"session.max_concurrent":      true,
-	"pool.max_size":              true,
-	"pool.max_idle_per_user":     true,
-	"worker.max_lifetime":        true,
-	"worker.idle_timeout":         true,
-	"worker.execution_timeout":   true,
-	"admin.requests_per_sec":      true,
-	"admin.burst":                 true,
+	"session.gc_scan_interval":     true,
+	"session.max_concurrent":       true,
+	"pool.max_size":                true,
+	"pool.max_idle_per_user":       true,
+	"worker.max_lifetime":          true,
+	"worker.idle_timeout":          true,
+	"worker.execution_timeout":     true,
+	"admin.requests_per_sec":       true,
+	"admin.burst":                  true,
 }
 
 // StaticFields are config fields that require a restart to take effect.
 // Changing these at runtime is logged but the value is NOT applied.
 var StaticFields = map[string]bool{
-	"security.api_keys":           true,
-	"security.tls_enabled":        true,
-	"security.tls_cert_file":     true,
-	"security.tls_key_file":      true,
-	"security.jwt_secret":        true,
-	"db.path":                     true,
-	"db.wal_mode":                true,
+	"security.api_keys":      true,
+	"security.tls_enabled":   true,
+	"security.tls_cert_file": true,
+	"security.tls_key_file":  true,
+	"security.jwt_secret":    true,
+	"db.path":                true,
+	"db.wal_mode":            true,
 }
 
 // ConfigChange represents a single configuration change for audit logging.
@@ -56,10 +56,10 @@ type ConfigChange struct {
 
 // Watcher monitors a config file for changes and applies hot updates.
 type Watcher struct {
-	log    *slog.Logger
-	path   string
-	sp     SecretsProvider // used on reload to supply secrets
-	viper  *fsnotify.Watcher
+	log      *slog.Logger
+	path     string
+	sp       SecretsProvider // used on reload to supply secrets
+	viper    *fsnotify.Watcher
 	debounce time.Duration
 	onChange func(*Config) // called with the new config after hot reload
 	onStatic func(string)  // called when a static field changes
@@ -97,13 +97,13 @@ func NewWatcher(log *slog.Logger, path string, sp SecretsProvider, onChange func
 		sp = NewEnvSecretsProvider()
 	}
 	return &Watcher{
-		log:      log,
-		path:    path,
-		sp:      sp,
-		debounce: 500 * time.Millisecond,
-		onChange: onChange,
-		onStatic: onStatic,
-		audit:    make([]ConfigChange, 0, 64),
+		log:           log,
+		path:          path,
+		sp:            sp,
+		debounce:      500 * time.Millisecond,
+		onChange:      onChange,
+		onStatic:      onStatic,
+		audit:         make([]ConfigChange, 0, 64),
 		maxHistoryLen: 64,
 	}
 }

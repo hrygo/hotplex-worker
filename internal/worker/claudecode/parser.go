@@ -36,21 +36,21 @@ const (
 type ControlSubtype string
 
 const (
-	ControlCanUseTool            ControlSubtype = "can_use_tool"
-	ControlInterrupt             ControlSubtype = "interrupt"
-	ControlSetPermissionMode     ControlSubtype = "set_permission_mode"
-	ControlSetModel              ControlSubtype = "set_model"
-	ControlSetMaxThinkingTokens   ControlSubtype = "set_max_thinking_tokens"
-	ControlMCPStatus             ControlSubtype = "mcp_status"
-	ControlMCPSetServers         ControlSubtype = "mcp_set_servers"
-	ControlMCPMessage            ControlSubtype = "mcp_message"
+	ControlCanUseTool           ControlSubtype = "can_use_tool"
+	ControlInterrupt            ControlSubtype = "interrupt"
+	ControlSetPermissionMode    ControlSubtype = "set_permission_mode"
+	ControlSetModel             ControlSubtype = "set_model"
+	ControlSetMaxThinkingTokens ControlSubtype = "set_max_thinking_tokens"
+	ControlMCPStatus            ControlSubtype = "mcp_status"
+	ControlMCPSetServers        ControlSubtype = "mcp_set_servers"
+	ControlMCPMessage           ControlSubtype = "mcp_message"
 )
 
 // WorkerEvent represents a parsed event ready for mapping to AEP.
 type WorkerEvent struct {
 	Type       EventType
-	Payload    any             // Concrete type varies by event; use type assertion to dispatch
-	RawMessage *SDKMessage     // Original message for advanced handling
+	Payload    any         // Concrete type varies by event; use type assertion to dispatch
+	RawMessage *SDKMessage // Original message for advanced handling
 }
 
 // StreamPayload represents streaming content.

@@ -18,7 +18,7 @@ import (
 
 // Default output buffer limits for bufio.Scanner.
 const (
-	scannerInitSize = 64 * 1024       // 64 KB initial capacity
+	scannerInitSize = 64 * 1024        // 64 KB initial capacity
 	scannerMaxSize  = 10 * 1024 * 1024 // 10 MB hard cap — scanner panics bufio.ErrTooLong beyond this
 )
 
@@ -31,11 +31,11 @@ type Manager struct {
 	stdout *os.File
 	stderr *os.File
 
-	mu           sync.Mutex
-	pgid         int
-	started      bool
-	exited       bool
-	exitCode     int
+	mu       sync.Mutex
+	pgid     int
+	started  bool
+	exited   bool
+	exitCode int
 
 	// scanner reads stdout line-by-line with a 10MB per-line cap.
 	// Created in Start(); safe to call ReadLine() concurrently from one goroutine.

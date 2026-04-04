@@ -135,7 +135,7 @@ func TestManager_PGID(t *testing.T) {
 func TestManager_captureExitCode(t *testing.T) {
 	t.Run("ProcessState 为 nil 时提前返回 0", func(t *testing.T) {
 		m := &Manager{
-			cmd:    &exec.Cmd{},
+			cmd:      &exec.Cmd{},
 			exitCode: 999, // 初始值不应被修改
 		}
 		m.captureExitCode()
