@@ -25,7 +25,6 @@ import (
 	"github.com/hotplex/hotplex-worker/internal/tracing"
 	"github.com/hotplex/hotplex-worker/internal/worker"
 	_ "github.com/hotplex/hotplex-worker/internal/worker/claudecode"
-	_ "github.com/hotplex/hotplex-worker/internal/worker/opencodecli"
 	_ "github.com/hotplex/hotplex-worker/internal/worker/opencodeserver"
 	_ "github.com/hotplex/hotplex-worker/internal/worker/pi"
 	"github.com/hotplex/hotplex-worker/pkg/aep"

@@ -4,10 +4,13 @@ tags:
   - project/HotPlex
   - worker/opencode-server
   - architecture/integration
+  - protocol/aep-v1
+  - feature/websocket-transport
+  - feature/session-management
+  - feature/resume-support
 date: 2026-04-04
-status: implemented
-progress: 100
-completion_date: 2026-04-04
+status: needs-implementation
+progress: 0
 ---
 
 # OpenCode Server Worker 集成规格
@@ -19,13 +22,13 @@ completion_date: 2026-04-04
 
 ## 1. 概述
 
-| 维度 | 设计 |
-|------|------|
-| **Transport** | HTTP + SSE（Server-Sent Events） |
-| **Protocol** | AEP v1 NDJSON over HTTP/SSE |
-| **进程模型** | 持久进程（`opencode serve`），多会话复用 |
-| **源码路径** | `internal/worker/opencodeserver/` |
-| **OpenCode 源码** | `~/opencode/packages/opencode/src/` |
+| 维度              | 设计                                     |
+| ----------------- | ---------------------------------------- |
+| **Transport**     | HTTP + SSE（Server-Sent Events）         |
+| **Protocol**      | AEP v1 NDJSON over HTTP/SSE              |
+| **进程模型**      | 持久进程（`opencode serve`），多会话复用 |
+| **源码路径**      | `internal/worker/opencodeserver/`        |
+| **OpenCode 源码** | `~/opencode/packages/opencode/src/`      |
 
 **集成命令**：
 
@@ -41,13 +44,13 @@ opencode serve --port 18789
 
 ### 2.1 核心组件
 
-| 组件 | 位置 | 说明 |
-|------|------|------|
-| HTTP Server | `packages/opencode/src/server/server.ts` | Hono 应用，含路由、CORS、压缩 |
-| Session API | `packages/opencode/src/server/routes/session.ts` | 会话 CRUD |
-| Event Stream | `packages/opencode/src/server/routes/event.ts` | SSE 事件推送 |
-| Instance | `packages/opencode/src/server/instance.ts` | 实例管理 |
-| MCP Config | `packages/opencode/src/server/routes/mcp.ts` | MCP 服务器配置 |
+| 组件         | 位置                                             | 说明                          |
+| ------------ | ------------------------------------------------ | ----------------------------- |
+| HTTP Server  | `packages/opencode/src/server/server.ts`         | Hono 应用，含路由、CORS、压缩 |
+| Session API  | `packages/opencode/src/server/routes/session.ts` | 会话 CRUD                     |
+| Event Stream | `packages/opencode/src/server/routes/event.ts`   | SSE 事件推送                  |
+| Instance     | `packages/opencode/src/server/instance.ts`       | 实例管理                      |
+| MCP Config   | `packages/opencode/src/server/routes/mcp.ts`     | MCP 服务器配置                |
 
 ### 2.2 通信流程
 
@@ -105,9 +108,9 @@ opencode serve --port 18789
 
 ### 3.1 健康检查
 
-| 端点 | 方法 | 说明 |
-|------|------|------|
-| `/global/health` | GET | 服务器就绪检查（ACP 协议） |
+| 端点             | 方法 | 说明                       |
+| ---------------- | ---- | -------------------------- |
+| `/global/health` | GET  | 服务器就绪检查（ACP 协议） |
 
 **响应**：
 ```json
@@ -119,24 +122,24 @@ opencode serve --port 18789
 
 ### 3.2 会话管理
 
-| 端点 | 方法 | 说明 |
-|------|------|------|
-| `/session` | POST | 创建新会话（ACP 协议） |
-| `/session/{session_id}` | GET | 获取会话信息 |
-| `/session/{session_id}` | DELETE | 删除会话 |
-| `/session/{session_id}/input` | POST | 发送输入 |
-| `/session/{session_id}/status` | GET | 获取会话状态 |
-| `/session/{session_id}/fork` | POST | Fork 会话 |
-| `/session/{session_id}/abort` | POST | 中止会话 |
-| `/session/{session_id}/share` | POST | 分享会话 |
-| `/session/{session_id}/diff` | GET | 获取会话差异 |
+| 端点                           | 方法   | 说明                   |
+| ------------------------------ | ------ | ---------------------- |
+| `/session`                     | POST   | 创建新会话（ACP 协议） |
+| `/session/{session_id}`        | GET    | 获取会话信息           |
+| `/session/{session_id}`        | DELETE | 删除会话               |
+| `/session/{session_id}/input`  | POST   | 发送输入               |
+| `/session/{session_id}/status` | GET    | 获取会话状态           |
+| `/session/{session_id}/fork`   | POST   | Fork 会话              |
+| `/session/{session_id}/abort`  | POST   | 中止会话               |
+| `/session/{session_id}/share`  | POST   | 分享会话               |
+| `/session/{session_id}/diff`   | GET    | 获取会话差异           |
 
 ### 3.3 事件流
 
-| 端点 | 方法 | 说明 |
-|------|------|------|
-| `/global/event` | GET | SSE 事件流（`session_id` 查询参数，ACP 协议） |
-| `/global/sync-event` | GET | 同步事件流 |
+| 端点                 | 方法 | 说明                                          |
+| -------------------- | ---- | --------------------------------------------- |
+| `/global/event`      | GET  | SSE 事件流（`session_id` 查询参数，ACP 协议） |
+| `/global/sync-event` | GET  | 同步事件流                                    |
 
 ---
 
@@ -334,20 +337,20 @@ func (w *Worker) readSSE(sessionID string) {
 
 ### 7.1 白名单
 
-| 变量 | 说明 | Impl |
-|------|------|------|
-| `HOME`, `USER`, `SHELL`, `PATH`, `TERM` | 系统环境 | ✅ 白名单 |
-| `LANG`, `LC_ALL`, `PWD` | 本地化 | ✅ 白名单 |
-| `OPENAI_API_KEY` | OpenAI API 密钥 | ✅ 白名单 |
-| `OPENAI_BASE_URL` | OpenAI API 端点 | ✅ 白名单 |
-| `OPENCODE_API_KEY` | OpenCode API 密钥 | ✅ 白名单 |
-| `OPENCODE_BASE_URL` | OpenCode API 端点 | ✅ 白名单 |
+| 变量                                    | 说明              | Impl     |
+| --------------------------------------- | ----------------- | -------- |
+| `HOME`, `USER`, `SHELL`, `PATH`, `TERM` | 系统环境          | ✅ 白名单 |
+| `LANG`, `LC_ALL`, `PWD`                 | 本地化            | ✅ 白名单 |
+| `OPENAI_API_KEY`                        | OpenAI API 密钥   | ✅ 白名单 |
+| `OPENAI_BASE_URL`                       | OpenAI API 端点   | ✅ 白名单 |
+| `OPENCODE_API_KEY`                      | OpenCode API 密钥 | ✅ 白名单 |
+| `OPENCODE_BASE_URL`                     | OpenCode API 端点 | ✅ 白名单 |
 
 ### 7.2 HotPlex 注入变量
 
-| 变量 | 说明 | Impl |
-|------|------|------|
-| `HOTPLEX_SESSION_ID` | 会话标识符 | ✅ `base/env.go` |
+| 变量                  | 说明                                 | Impl            |
+| --------------------- | ------------------------------------ | --------------- |
+| `HOTPLEX_SESSION_ID`  | 会话标识符                           | ✅ `base/env.go` |
 | `HOTPLEX_WORKER_TYPE` | Worker 类型标签（`opencode-server`） | ✅ `base/env.go` |
 
 ---
@@ -356,15 +359,15 @@ func (w *Worker) readSSE(sessionID string) {
 
 ### 8.1 AEP v1 事件类型
 
-| OpenCode Event | AEP Event Kind | 说明 | Impl |
-|----------------|---------------|------|------|
-| `message.part.delta` | `message.delta` | 流式文本/代码 | ⚠️ 需实现 |
-| `message.part.updated` | `message.delta` | 部分更新 | ⚠️ 需实现 |
-| `session.status` | `state` | 会话状态（idle/busy） | ⚠️ 需实现 |
-| `permission.asked` | `permission_request` | 工具权限请求 | ⚠️ 需实现 |
-| `question.asked` | — | 用户问题请求 | ⚠️ 需实现 |
-| `session.error` | `error` | 会话错误 | ⚠️ 需实现 |
-| `session.idle` | `state` | 会话空闲 | ⚠️ 需实现 |
+| OpenCode Event         | AEP Event Kind       | 说明                  | Impl     |
+| ---------------------- | -------------------- | --------------------- | -------- |
+| `message.part.delta`   | `message.delta`      | 流式文本/代码         | ⚠️ 需实现 |
+| `message.part.updated` | `message.delta`      | 部分更新              | ⚠️ 需实现 |
+| `session.status`       | `state`              | 会话状态（idle/busy） | ⚠️ 需实现 |
+| `permission.asked`     | `permission_request` | 工具权限请求          | ⚠️ 需实现 |
+| `question.asked`       | —                    | 用户问题请求          | ⚠️ 需实现 |
+| `session.error`        | `error`              | 会话错误              | ⚠️ 需实现 |
+| `session.idle`         | `state`              | 会话空闲              | ⚠️ 需实现 |
 
 ### 8.2 SDK 事件类型
 
@@ -595,16 +598,16 @@ func (w *Worker) waitForServer(ctx context.Context) error {
 
 ## 13. 与 OpenCode CLI Worker 的差异
 
-| 特性 | OpenCode CLI Worker | OpenCode Server Worker |
-|------|---------------------|------------------------|
-| **Transport** | stdio | HTTP + SSE |
-| **命令** | `opencode run --format json` | `opencode serve` |
-| **Session ID** | 内部生成（从 `step_start` 提取） | 外部指定或内部生成 |
-| **Resume** | **不支持** | **支持** |
-| **进程模型** | 单会话 | 多会话复用 |
-| **事件格式** | NDJSON stdout | SSE `data: {json}` |
-| **通信方式** | 双向 stdio | 请求/响应 + 订阅 |
-| **背压处理** | 256 channel | 256 channel |
+| 特性           | OpenCode CLI Worker              | OpenCode Server Worker |
+| -------------- | -------------------------------- | ---------------------- |
+| **Transport**  | stdio                            | HTTP + SSE             |
+| **命令**       | `opencode run --format json`     | `opencode serve`       |
+| **Session ID** | 内部生成（从 `step_start` 提取） | 外部指定或内部生成     |
+| **Resume**     | **不支持**                       | **支持**               |
+| **进程模型**   | 单会话                           | 多会话复用             |
+| **事件格式**   | NDJSON stdout                    | SSE `data: {json}`     |
+| **通信方式**   | 双向 stdio                       | 请求/响应 + 订阅       |
+| **背压处理**   | 256 channel                      | 256 channel            |
 
 ---
 
@@ -614,32 +617,32 @@ func (w *Worker) waitForServer(ctx context.Context) error {
 
 ### P0（必须实现，v1.0 MVP）
 
-| 项目 | 说明 |
-|------|------|
-| `opencode serve` 进程启动 | 端口 18789 |
-| `/global/health` 轮询 | 服务器就绪检测 |
-| `/session` POST | 会话创建（ACP 协议） |
-| SSE 事件读取 | `GET /global/event?session_id=xxx` |
-| AEP v1 编解码 | NDJSON over SSE |
-| `/session/{id}/input` POST | 输入发送 |
+| 项目                       | 说明                               |
+| -------------------------- | ---------------------------------- |
+| `opencode serve` 进程启动  | 端口 18789                         |
+| `/global/health` 轮询      | 服务器就绪检测                     |
+| `/session` POST            | 会话创建（ACP 协议）               |
+| SSE 事件读取               | `GET /global/event?session_id=xxx` |
+| AEP v1 编解码              | NDJSON over SSE                    |
+| `/session/{id}/input` POST | 输入发送                           |
 
 ### P1（重要，v1.0 完整支持）
 
-| 项目 | 说明 |
-|------|------|
-| Resume 支持 | 复用现有 session_id |
-| 事件类型映射 | `message.part.delta` → `message.delta` |
-| `session.status` | 会话状态映射 |
-| `permission.asked` | 权限请求映射 |
-| 错误处理 | `session.error` → `error` |
+| 项目               | 说明                                   |
+| ------------------ | -------------------------------------- |
+| Resume 支持        | 复用现有 session_id                    |
+| 事件类型映射       | `message.part.delta` → `message.delta` |
+| `session.status`   | 会话状态映射                           |
+| `permission.asked` | 权限请求映射                           |
+| 错误处理           | `session.error` → `error`              |
 
 ### P2（增强，v1.1）
 
-| 项目 | 说明 |
-|------|------|
-| `question.asked` | 用户问题请求 |
-| MCP 配置 | 通过 API 配置 MCP 服务器 |
-| 会话列表 | `GET /sessions` |
+| 项目             | 说明                     |
+| ---------------- | ------------------------ |
+| `question.asked` | 用户问题请求             |
+| MCP 配置         | 通过 API 配置 MCP 服务器 |
+| 会话列表         | `GET /sessions`          |
 
 ---
 
@@ -647,24 +650,24 @@ func (w *Worker) waitForServer(ctx context.Context) error {
 
 ### Server Worker 特有
 
-| 功能 | 源码路径 |
-|------|---------|
-| Worker 实现 | `internal/worker/opencodeserver/worker.go` |
-| OpenCode Server | `~/opencode/packages/opencode/src/server/` |
-| Session Routes | `~/opencode/packages/opencode/src/server/routes/session.ts` |
-| Event Routes | `~/opencode/packages/opencode/src/server/routes/event.ts` |
-| Serve Command | `~/opencode/packages/opencode/src/cli/cmd/serve.ts` |
+| 功能            | 源码路径                                                    |
+| --------------- | ----------------------------------------------------------- |
+| Worker 实现     | `internal/worker/opencodeserver/worker.go`                  |
+| OpenCode Server | `~/opencode/packages/opencode/src/server/`                  |
+| Session Routes  | `~/opencode/packages/opencode/src/server/routes/session.ts` |
+| Event Routes    | `~/opencode/packages/opencode/src/server/routes/event.ts`   |
+| Serve Command   | `~/opencode/packages/opencode/src/cli/cmd/serve.ts`         |
 
 ### 公共组件
 
 > 详见 [[Worker-Common-Protocol]] §9。
 
-| 功能 | 源码路径 |
-|------|---------|
-| BaseWorker | `internal/worker/base/worker.go` |
-| AEP Codec | `pkg/aep/codec.go` |
-| Events | `pkg/events/events.go` |
-| Worker Interface | `internal/worker/worker.go` |
+| 功能             | 源码路径                         |
+| ---------------- | -------------------------------- |
+| BaseWorker       | `internal/worker/base/worker.go` |
+| AEP Codec        | `pkg/aep/codec.go`               |
+| Events           | `pkg/events/events.go`           |
+| Worker Interface | `internal/worker/worker.go`      |
 
 ---
 
@@ -674,22 +677,22 @@ func (w *Worker) waitForServer(ctx context.Context) error {
 
 ### 16.1 汇总
 
-| 类别 | ✅ | ⚠️ | ❌ | 总计 |
-|------|---|---|---|------|
-| **API 端点** | 4 | 0 | 0 | 4 |
-| **事件映射** | 0 | 7 | 0 | 7 |
-| **Capability 接口** | 6 | 0 | 0 | 6 |
-| **错误处理** | 4 | 0 | 0 | 4 |
+| 类别                | ✅   | ⚠️   | ❌   | 总计 |
+| ------------------- | --- | --- | --- | ---- |
+| **API 端点**        | 4   | 0   | 0   | 4    |
+| **事件映射**        | 0   | 7   | 0   | 7    |
+| **Capability 接口** | 6   | 0   | 0   | 6    |
+| **错误处理**        | 4   | 0   | 0   | 4    |
 
 ### 16.2 待完成项目
 
-| 优先级 | 项目 | 说明 |
-|--------|------|------|
-| ⚠️ P0 | **事件类型映射** | 需对照 OpenCode SDK AEP 事件 |
-| ⚠️ P0 | **SSE → AEP 转换** | SSE `data:` 前缀处理 |
-| ⚠️ P1 | **Resume 完整实现** | 需验证 session_id 复用 |
-| ⚠️ P1 | **permission.asked** | 权限请求映射 |
-| ⚠️ P2 | **question.asked** | 用户问题请求 |
+| 优先级 | 项目                 | 说明                         |
+| ------ | -------------------- | ---------------------------- |
+| ⚠️ P0   | **事件类型映射**     | 需对照 OpenCode SDK AEP 事件 |
+| ⚠️ P0   | **SSE → AEP 转换**   | SSE `data:` 前缀处理         |
+| ⚠️ P1   | **Resume 完整实现**  | 需验证 session_id 复用       |
+| ⚠️ P1   | **permission.asked** | 权限请求映射                 |
+| ⚠️ P2   | **question.asked**   | 用户问题请求                 |
 
 ---
 
