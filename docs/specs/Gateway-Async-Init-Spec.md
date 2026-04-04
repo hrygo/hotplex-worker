@@ -7,6 +7,8 @@ tags:
   - refactor/async-init
 date: 2026-04-04
 status: draft
+progress: 0
+estimated_hours: 8
 ---
 
 # Gateway Async Init — Session Start Asynchronization

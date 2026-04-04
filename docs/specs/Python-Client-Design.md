@@ -1,3 +1,16 @@
+---
+type: spec
+tags:
+  - project/HotPlex
+  - client/python
+  - sdk
+date: 2026-04-02
+status: implemented
+progress: 100
+completion_date: 2026-04-02
+estimated_hours: 16
+---
+
 # Python Client 示例模块设计文档
 
 **日期：** 2026-04-02
@@ -66,7 +79,7 @@
 ```python
 # 编解码
 def encode_envelope(env: Envelope) -> str:
-    """序列化为 NDJSON（单行 JSON + \\n）"""
+    """序列化为 NDJSON（单行 JSON + \n）"""
 
 def decode_envelope(line: str) -> Envelope:
     """从 NDJSON 反序列化，自动检测事件类型"""

@@ -1,3 +1,15 @@
+---
+type: spec
+tags:
+  - project/HotPlex
+  - acceptance-criteria
+  - tracking
+date: 2026-04-02
+status: active
+progress: 96
+version: v1.1
+---
+
 # 验收标准跟踪矩阵
 
 > 文档版本: v1.1  |  最后更新: 2026-04-02

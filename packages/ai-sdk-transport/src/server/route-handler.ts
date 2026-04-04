@@ -69,7 +69,11 @@ export interface HotPlexRouteConfig {
  */
 export function createHotPlexHandler(config: HotPlexRouteConfig) {
   return async (request: {
-    messages: Array<{ role: string; content: string | Array<{ type: string; text?: string }> }>;
+    messages: Array<{ 
+      role: string; 
+      content?: string | Array<{ type: string; text?: string }>;
+      parts?: Array<{ type: string; text?: string }>;
+    }>;
   }): Promise<Response> => {
     const messages = request.messages || [];
     const lastMessage = messages[messages.length - 1];
@@ -78,11 +82,11 @@ export function createHotPlexHandler(config: HotPlexRouteConfig) {
       return new Response('Last message must be from user', { status: 400 });
     }
 
-    // Extract user content
+    const textParts = lastMessage.parts || lastMessage.content;
     const userContent =
-      typeof lastMessage.content === 'string'
-        ? lastMessage.content
-        : (lastMessage.content || [])
+      typeof textParts === 'string'
+        ? textParts
+        : (textParts || [])
             .filter((part: { type: string; text?: string }) => part.type === 'text')
             .map((part: { type: string; text?: string }) => part.text || '')
             .join('\n') || '';

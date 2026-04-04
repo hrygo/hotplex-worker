@@ -1,3 +1,18 @@
+---
+type: spec
+tags:
+  - project/HotPlex
+  - integration/ai-sdk
+  - frontend
+  - chatbot
+date: 2026-04-03
+status: implemented
+progress: 100
+priority: high
+estimated_hours: 16
+completion_date: 2026-04-03
+---
+
 # AI SDK Chatbot 集成设计规格
 
 > **Spec ID**: AI-SDK-001

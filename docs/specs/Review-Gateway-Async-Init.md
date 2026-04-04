@@ -1,3 +1,14 @@
+---
+type: review
+tags:
+  - project/HotPlex
+  - spec-review
+  - gateway/async-init
+date: 2026-04-04
+status: completed
+review_result: PASSED
+---
+
 # Spec Review Report
 
 **Document**: `docs/specs/Gateway-Async-Init-Spec.md`

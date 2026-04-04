@@ -202,7 +202,7 @@ run-config: build ## Run with custom config (make run-config CONFIG=/path/to/con
 start: build ## Start as background process (writes PID to /tmp)
 	@echo "🟢 Starting $(BINARY_NAME) as background process..."
 	@mkdir -p logs
-	./$(BUILD_DIR)/$(BINARY_NAME)-$(GOOS)-$(GOARCH) > $(LOG_FILE) 2>&1 & echo $$! > $(PID_FILE)
+	./$(BUILD_DIR)/$(BINARY_NAME)-$(GOOS)-$(GOARCH) -config $(or $(CONFIG),configs/config.yaml) > $(LOG_FILE) 2>&1 & echo $$! > $(PID_FILE)
 	@echo "✅ Started (PID: $$(cat $(PID_FILE)))"
 	@echo "📋 Logs: $(LOG_FILE)"
 	@echo "📊 Status: make status"

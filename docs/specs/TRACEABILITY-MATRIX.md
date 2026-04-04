@@ -1,3 +1,15 @@
+---
+type: spec
+tags:
+  - project/HotPlex
+  - traceability
+  - code-mapping
+date: 2026-04-02
+status: active
+progress: 96
+version: v1.2.1
+---
+
 # HotPlex Worker 功能实现与代码溯源矩阵 (Traceability Matrix)
 
 > 文档版本: v1.2.1  |  最后更新: 2026-04-02  |  维护者: HotPlex Engineering

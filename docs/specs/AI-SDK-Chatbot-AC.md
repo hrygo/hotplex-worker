@@ -1,3 +1,16 @@
+---
+type: spec
+tags:
+  - project/HotPlex
+  - integration/ai-sdk
+  - acceptance-criteria
+spec_id: AI-SDK-001
+date: 2026-04-03
+status: draft
+progress: 0
+version: v1.0
+---
+
 # AI SDK Chatbot 集成验收标准
 
 > **Spec ID**: AI-SDK-001

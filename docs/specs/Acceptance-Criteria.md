@@ -1,3 +1,15 @@
+---
+type: spec
+tags:
+  - project/HotPlex
+  - acceptance-criteria
+  - definition
+date: 2026-03-31
+status: draft
+progress: 100
+version: v1.0
+---
+
 # HotPlex Worker Gateway — 验收标准 (AC)
 
 > 文档版本: v1.0-draft

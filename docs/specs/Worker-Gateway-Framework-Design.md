@@ -1,3 +1,15 @@
+---
+type: spec
+tags:
+  - project/HotPlex
+  - architecture/gateway
+  - framework
+date: 2026-03-30
+status: implemented
+progress: 100
+completion_date: 2026-03-30
+---
+
 # HotPlex Worker Gateway — Application Framework Design
 
 > Date: 2026-03-30

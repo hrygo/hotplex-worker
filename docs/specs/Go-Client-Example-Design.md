@@ -1,3 +1,15 @@
+---
+type: spec
+tags:
+  - project/HotPlex
+  - client/go
+  - example
+date: 2026-04-03
+status: approved
+progress: 0
+estimated_hours: 12
+---
+
 # Go Client Example Module — Design Spec
 
 **Date:** 2026-04-03

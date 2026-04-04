@@ -4,6 +4,10 @@ tags:
   - project/HotPlex
   - worker/claude-code
   - architecture/integration
+date: 2026-04-01
+status: implemented
+progress: 100
+completion_date: 2026-04-01
 ---
 
 # Claude Code Worker 集成规格
