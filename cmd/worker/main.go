@@ -51,12 +51,24 @@ func run() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
-	}))
-	slog.SetDefault(log)
-
 	cfg := loadConfig()
+
+	// Initialize logger based on config.
+	var logHandler slog.Handler
+	var level slog.Level
+	if err := level.UnmarshalText([]byte(cfg.Log.Level)); err != nil {
+		level = slog.LevelInfo
+	}
+
+	opts := &slog.HandlerOptions{Level: level}
+	if cfg.Log.Format == "text" {
+		logHandler = slog.NewTextHandler(os.Stdout, opts)
+	} else {
+		logHandler = slog.NewJSONHandler(os.Stdout, opts)
+	}
+
+	log := slog.New(logHandler)
+	slog.SetDefault(log)
 
 	tracing.Init(ctx, log, "hotplex-worker-gateway")
 

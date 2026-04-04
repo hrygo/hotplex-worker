@@ -49,3 +49,5 @@ Desktop.ini
 *.swo
 *~
 .playwright-mcp
+.loki/
+main

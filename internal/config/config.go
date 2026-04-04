@@ -92,6 +92,10 @@ func (c *Config) Validate() []string {
 		!strings.Contains(c.Gateway.Addr, "[::1]") {
 		errs = append(errs, "TLS is disabled on non-local address; enable tls_enabled for production")
 	}
+	if c.Log.Format != "" && c.Log.Format != "json" && c.Log.Format != "text" {
+		errs = append(errs, "log.format must be either 'json' or 'text'")
+	}
+
 	return errs
 }
 
@@ -118,6 +122,7 @@ type Config struct {
 	Security SecurityConfig `mapstructure:"security"`
 	Session  SessionConfig  `mapstructure:"session"`
 	Pool     PoolConfig     `mapstructure:"pool"`
+	Log      LogConfig      `mapstructure:"log"`
 	Admin    AdminConfig    `mapstructure:"admin"`
 	Inherits string         `mapstructure:"inherits"` // path to parent config file; "" = no inheritance
 }
@@ -134,6 +139,12 @@ type AdminConfig struct {
 	RateLimitEnabled   bool                `mapstructure:"rate_limit_enabled"`
 	RequestsPerSec     int                 `mapstructure:"requests_per_sec"`
 	Burst              int                 `mapstructure:"burst"`
+}
+
+// LogConfig holds logging settings.
+type LogConfig struct {
+	Level  string `mapstructure:"level"`
+	Format string `mapstructure:"format"` // "json" or "text"
 }
 
 // GatewayConfig holds WebSocket gateway settings.
@@ -257,6 +268,10 @@ func Default() *Config {
 			RequestsPerSec:     10,
 			Burst:              20,
 		},
+		Log: LogConfig{
+			Level:  "info",
+			Format: "json",
+		},
 	}
 }
 
@@ -279,12 +294,27 @@ var ErrConfigCycle = errors.New("config: inheritance cycle detected")
 //  1. Sensible defaults (Default())
 //  2. Parent config file (via inherits field), recursively, with cycle detection
 //  3. Config file (YAML/JSON/TOML) — canonical source for non-sensitive values
-//  4. Secrets provider — only sensitive fields (JWTSecret, etc.)
+//  4. Environment variables (HOTPLEX_*)
+//  5. Secrets provider — only sensitive fields (JWTSecret, etc.)
 //
-// If filePath is empty, only defaults + secrets are used (env-free startup
-// is possible by providing secrets via SecretsProvider).
+// If filePath is empty, only defaults + environment + secrets are used.
 func Load(filePath string, opts LoadOptions) (*Config, error) {
-	return loadRecursive(filePath, opts, nil)
+	cfg, err := loadRecursive(filePath, opts, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	// Environment variable overrides (e.g. HOTPLEX_LOG_FORMAT=text)
+	v := viper.New()
+	v.SetEnvPrefix("HOTPLEX")
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	v.AutomaticEnv()
+
+	if err := v.Unmarshal(cfg); err != nil {
+		return nil, fmt.Errorf("config: environment override: %w", err)
+	}
+
+	return cfg, nil
 }
 
 // loadRecursive loads a config file and its ancestors, detecting cycles.
