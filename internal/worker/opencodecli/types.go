@@ -31,11 +31,11 @@ type StepStartPart struct {
 // StepFinishPart is emitted when a step completes.
 type StepFinishPart struct {
 	PartBase
-	Type     string         `json:"type"` // "step-finish"
-	Reason   string         `json:"reason"`
-	Snapshot string         `json:"snapshot,omitempty"`
-	Cost     float64        `json:"cost"`
-	Tokens   TokenUsage     `json:"tokens"`
+	Type     string     `json:"type"` // "step-finish"
+	Reason   string     `json:"reason"`
+	Snapshot string     `json:"snapshot,omitempty"`
+	Cost     float64    `json:"cost"`
+	Tokens   TokenUsage `json:"tokens"`
 }
 
 // TokenUsage is the token usage breakdown from step_finish.
@@ -60,9 +60,9 @@ type TextPart struct {
 // ReasoningPart is emitted when thinking content is produced (only with --thinking).
 type ReasoningPart struct {
 	PartBase
-	Type      string `json:"type"` // "reasoning"
-	Text      string `json:"text"`
-	Metadata  map[string]any `json:"metadata,omitempty"`
+	Type     string         `json:"type"` // "reasoning"
+	Text     string         `json:"text"`
+	Metadata map[string]any `json:"metadata,omitempty"`
 }
 
 // ToolPart is emitted when a tool is invoked.
@@ -77,11 +77,11 @@ type ToolPart struct {
 
 // ToolState is the state of a tool invocation.
 type ToolState struct {
-	Status string `json:"status"` // "pending", "running", "completed", "error"
+	Status string         `json:"status"` // "pending", "running", "completed", "error"
 	Input  map[string]any `json:"input,omitempty"`
-	Title  string `json:"title,omitempty"`
-	Error  string `json:"error,omitempty"`
-	Output string `json:"output,omitempty"`
+	Title  string         `json:"title,omitempty"`
+	Error  string         `json:"error,omitempty"`
+	Output string         `json:"output,omitempty"`
 }
 
 // ToolResult represents the result of a completed or errored tool.

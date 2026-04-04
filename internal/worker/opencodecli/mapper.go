@@ -13,7 +13,7 @@ import (
 type Mapper struct {
 	log       *slog.Logger
 	sessionID string
-	seqGen   func() int64
+	seqGen    func() int64
 	mu        sync.RWMutex
 }
 

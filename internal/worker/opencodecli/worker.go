@@ -79,14 +79,14 @@ func New() *Worker {
 
 // ─── Capabilities ─────────────────────────────────────────────────────────────
 
-func (w *Worker) Type() worker.WorkerType      { return worker.TypeOpenCodeCLI }
-func (w *Worker) SupportsResume() bool        { return true }
-func (w *Worker) SupportsStreaming() bool     { return true }
-func (w *Worker) SupportsTools() bool          { return true }
-func (w *Worker) EnvWhitelist() []string     { return openCodeEnvWhitelist }
-func (w *Worker) SessionStoreDir() string     { return ".opencode/sessions" }
-func (w *Worker) MaxTurns() int              { return 0 }
-func (w *Worker) Modalities() []string        { return []string{"text", "code"} }
+func (w *Worker) Type() worker.WorkerType { return worker.TypeOpenCodeCLI }
+func (w *Worker) SupportsResume() bool    { return true }
+func (w *Worker) SupportsStreaming() bool { return true }
+func (w *Worker) SupportsTools() bool     { return true }
+func (w *Worker) EnvWhitelist() []string  { return openCodeEnvWhitelist }
+func (w *Worker) SessionStoreDir() string { return ".opencode/sessions" }
+func (w *Worker) MaxTurns() int           { return 0 }
+func (w *Worker) Modalities() []string    { return []string{"text", "code"} }
 
 // ─── Worker Lifecycle ─────────────────────────────────────────────────────────
 

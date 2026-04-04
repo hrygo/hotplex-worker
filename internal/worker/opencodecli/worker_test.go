@@ -195,7 +195,7 @@ func TestOpenCodeCLIWorker_BuildCLIArgs(t *testing.T) {
 			name: "session ID takes precedence over continue",
 			session: worker.SessionInfo{
 				ContinueSession: true,
-				SessionID:      "sess_abc123",
+				SessionID:       "sess_abc123",
 			},
 			openSID: "ses_def456",
 			want:    []string{"run", "--format", "json", "--session", "ses_def456"},

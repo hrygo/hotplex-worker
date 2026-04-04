@@ -8,8 +8,6 @@ import (
 	"log"
 	"os"
 	"time"
-
-	"github.com/hotplex/hotplex-go-client"
 )
 
 func main() {

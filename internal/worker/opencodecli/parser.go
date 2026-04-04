@@ -34,9 +34,9 @@ type StepStartPayload struct {
 
 // StepFinishPayload carries step completion stats.
 type StepFinishPayload struct {
-	Reason   string
-	Cost     float64
-	Tokens   TokenUsage
+	Reason string
+	Cost   float64
+	Tokens TokenUsage
 }
 
 // TextPayload carries text content.

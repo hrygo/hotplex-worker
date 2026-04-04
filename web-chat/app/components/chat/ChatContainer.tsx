@@ -8,11 +8,13 @@ import ChatInput from './ChatInput';
 import ThinkingIndicator from './ThinkingIndicator';
 import ErrorMessage from './ErrorMessage';
 
+const chatTransport = new DefaultChatTransport({ api: '/api/chat' });
+
 export default function ChatContainer() {
   const [input, setInput] = useState('');
-  
+
   const { messages, status, error, stop, regenerate, sendMessage } = useChat({
-    transport: new DefaultChatTransport({ api: '/api/chat' }),
+    transport: chatTransport,
   });
 
   const isLoading = status === 'streaming' || status === 'submitted';
