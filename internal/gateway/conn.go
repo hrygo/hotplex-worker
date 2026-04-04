@@ -238,6 +238,13 @@ func (c *Conn) performInit(handler *Handler) error {
 					metrics.GatewayErrorsTotal.WithLabelValues(string(events.ErrCodeInternalError)).Inc()
 					return fmt.Errorf("create session: %w", err)
 				}
+				// Fetch the session info that StartSession created.
+				si, err = handler.sm.Get(sessionID)
+				if err != nil {
+					c.sendInitError(events.ErrCodeInternalError, "session not found after creation")
+					metrics.GatewayErrorsTotal.WithLabelValues(string(events.ErrCodeInternalError)).Inc()
+					return fmt.Errorf("get session after start: %w", err)
+				}
 				c.log.Info("gateway: session created via init", "session_id", sessionID,
 					"worker_type", initData.WorkerType)
 			} else {
