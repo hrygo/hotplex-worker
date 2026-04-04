@@ -16,8 +16,18 @@ import (
 	"github.com/hotplex/hotplex-worker/internal/metrics"
 	"github.com/hotplex/hotplex-worker/internal/session"
 	"github.com/hotplex/hotplex-worker/internal/tracing"
+	"github.com/hotplex/hotplex-worker/internal/worker"
 	"github.com/hotplex/hotplex-worker/pkg/events"
 )
+
+// SessionStarter initiates a worker session. It is the only Bridge capability
+// used by Conn (called once during the AEP init handshake).
+type SessionStarter interface {
+	StartSession(ctx context.Context, id, userID, botID string,
+		wt worker.WorkerType, allowedTools []string) error
+}
+
+var _ SessionStarter = (*Bridge)(nil) // compile-time: Bridge implements SessionStarter
 
 // Conn represents a single WebSocket client connection.
 type Conn struct {
@@ -29,8 +39,8 @@ type Conn struct {
 	userID    string
 	botID     string // SEC-007: bot isolation tag from JWT
 
-	// Bridge for worker lifecycle management (started in performInit).
-	bridge *Bridge
+	// starter handles session creation and worker lifecycle (nil = no-op, test mode).
+	starter SessionStarter
 
 	// Heartbeat.
 	hb *heartbeat
@@ -42,7 +52,7 @@ type Conn struct {
 }
 
 // newConn creates a new Conn.
-func newConn(hub *Hub, wc *websocket.Conn, sessionID string, bridge *Bridge) *Conn {
+func newConn(hub *Hub, wc *websocket.Conn, sessionID string, starter SessionStarter) *Conn {
 	log := slog.Default()
 	if hub != nil {
 		log = hub.log
@@ -51,7 +61,7 @@ func newConn(hub *Hub, wc *websocket.Conn, sessionID string, bridge *Bridge) *Co
 		log:       log,
 		wc:        wc,
 		hub:       hub,
-		bridge:    bridge,
+		starter:   starter,
 		sessionID: sessionID,
 		hb:        newHeartbeat(log),
 		done:      make(chan struct{}),
@@ -218,12 +228,12 @@ func (c *Conn) performInit(handler *Handler) error {
 	// Resolve session: create new or resume existing.
 	si, err := handler.sm.Get(sessionID)
 	if err != nil {
-		// Session does not exist → create and start via Bridge.
+		// Session does not exist → create and start via SessionStarter.
 		if errors.Is(err, session.ErrSessionNotFound) {
-			// Bridge.StartSession creates the DB record, worker, transitions to RUNNING,
-			// and starts forwarding events. Log after it succeeds.
-			if c.bridge != nil {
-				if err := c.bridge.StartSession(context.Background(), sessionID, c.userID, c.botID, initData.WorkerType, initData.Config.AllowedTools); err != nil {
+			// starter.StartSession creates the DB record, worker, transitions to RUNNING,
+			// and starts forwarding events. nil starter means test mode.
+			if c.starter != nil {
+				if err := c.starter.StartSession(context.Background(), sessionID, c.userID, c.botID, initData.WorkerType, initData.Config.AllowedTools); err != nil {
 					c.sendInitError(events.ErrCodeInternalError, "failed to create session")
 					metrics.GatewayErrorsTotal.WithLabelValues(string(events.ErrCodeInternalError)).Inc()
 					return fmt.Errorf("create session: %w", err)
@@ -231,14 +241,14 @@ func (c *Conn) performInit(handler *Handler) error {
 				c.log.Info("gateway: session created via init", "session_id", sessionID,
 					"worker_type", initData.WorkerType)
 			} else {
-				// No bridge (test mode) — create session without starting worker.
+				// Test mode — create session without starting a worker.
 				si, err = handler.sm.CreateWithBot(context.Background(), sessionID, c.userID, c.botID, initData.WorkerType, initData.Config.AllowedTools)
 				if err != nil {
 					c.sendInitError(events.ErrCodeInternalError, "failed to create session")
 					metrics.GatewayErrorsTotal.WithLabelValues(string(events.ErrCodeInternalError)).Inc()
 					return fmt.Errorf("create session: %w", err)
 				}
-				c.log.Info("gateway: session created via init (no bridge)", "session_id", sessionID,
+				c.log.Info("gateway: session created via init (test mode)", "session_id", sessionID,
 					"worker_type", initData.WorkerType)
 			}
 		} else {
