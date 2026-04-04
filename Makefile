@@ -591,12 +591,12 @@ reload: ## 🔃 Reload config (SIGHUP)
 
 web-chat-install: ## 📦 Install web-chat dependencies
 	@echo "$(CYAN)$(PACKAGE) Installing web-chat dependencies...$(RESET)"
-	@cd $(WEB_CHAT_DIR) && npm install
+	@cd $(WEB_CHAT_DIR) && pnpm install
 	@echo "$(GREEN)$(OK) Dependencies installed$(RESET)"
 
 web-chat-build: web-chat-install ## 🔨 Build web-chat
 	@echo "$(CYAN)$(BUILD) Building web-chat...$(RESET)"
-	@cd $(WEB_CHAT_DIR) && npm run build
+	@cd $(WEB_CHAT_DIR) && pnpm build
 	@echo "$(GREEN)$(OK) Built$(RESET)"
 
 web-chat-dev: web-chat-install ## 🛠️  Start web-chat dev server (background)
@@ -605,7 +605,7 @@ web-chat-dev: web-chat-install ## 🛠️  Start web-chat dev server (background
 		echo "$(YELLOW)$(WARN) Web-chat already running (PID: $$(cat $(WEB_CHAT_PID)))$(RESET)"; \
 	else \
 		echo "$(CYAN)$(ROCKET) Starting web-chat dev...$(RESET)"; \
-		cd $(WEB_CHAT_DIR) && npm run dev > $(WEB_CHAT_LOG) 2>&1 & \
+		cd $(WEB_CHAT_DIR) && pnpm dev > $(WEB_CHAT_LOG) 2>&1 & \
 		echo $$! > $(WEB_CHAT_PID); \
 		sleep 2; \
 		if kill -0 $$(cat $(WEB_CHAT_PID)) 2>/dev/null; then \
@@ -623,7 +623,7 @@ web-chat-start: web-chat-build ## 🚀 Start web-chat production (background)
 		echo "$(YELLOW)$(WARN) Web-chat already running$(RESET)"; \
 	else \
 		echo "$(CYAN)$(ROCKET) Starting web-chat production...$(RESET)"; \
-		cd $(WEB_CHAT_DIR) && npm start > $(WEB_CHAT_LOG) 2>&1 & \
+		cd $(WEB_CHAT_DIR) && pnpm start > $(WEB_CHAT_LOG) 2>&1 & \
 		echo $$! > $(WEB_CHAT_PID); \
 		sleep 2; \
 		if kill -0 $$(cat $(WEB_CHAT_PID)) 2>/dev/null; then \
@@ -898,6 +898,13 @@ help: ## 📖 Show interactive help (this screen)
 	@echo "  $(CYAN)status$(RESET)          Check status"
 	@echo "  $(CYAN)logs$(RESET)            Show logs"
 	@echo "  $(CYAN)tail$(RESET)            Tail logs (live)"
+	@echo ""
+	@echo "$(BOLD)$(CYAN)💬 Web Chat$(RESET)"
+	@echo "  $(CYAN)web-chat-dev$(RESET)    Start web-chat dev server"
+	@echo "  $(CYAN)web-chat-build$(RESET)   Build web-chat for production"
+	@echo "  $(CYAN)web-chat-start$(RESET)   Start web-chat (production)"
+	@echo "  $(CYAN)web-chat-stop$(RESET)    Stop web-chat"
+	@echo "  $(CYAN)web-chat-status$(RESET)   Check web-chat status"
 	@echo ""
 	@echo "$(BOLD)$(CYAN)🧹 Maintenance$(RESET)"
 	@echo "  $(CYAN)clean$(RESET)           Clean build artifacts"

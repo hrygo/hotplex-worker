@@ -84,17 +84,17 @@ func (p *Parser) ParseLine(line string) ([]*WorkerEvent, error) {
 	}
 
 	switch raw.Type {
-	case "step_start":
+	case string(EventStepStart):
 		return p.parseStepStart(&raw)
-	case "step_finish":
+	case string(EventStepFinish):
 		return p.parseStepFinish(&raw)
-	case "text":
+	case string(EventText):
 		return p.parseText(&raw)
-	case "reasoning":
+	case string(EventReasoning):
 		return p.parseReasoning(&raw)
-	case "tool_use":
+	case string(EventToolUse):
 		return p.parseToolUse(&raw)
-	case "error":
+	case string(EventError):
 		return p.parseError(&raw)
 	default:
 		p.log.Debug("opencodecli: ignoring event", "type", raw.Type)
@@ -190,7 +190,7 @@ func (p *Parser) parseError(raw *RawEvent) ([]*WorkerEvent, error) {
 			Type: EventError,
 			Payload: &ResultPayload{
 				Success: false,
-				Error:   string(raw.Error),
+				Error:   "unknown session error",
 			},
 		}}, nil
 	}

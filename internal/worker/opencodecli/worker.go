@@ -167,7 +167,7 @@ func (w *Worker) Input(ctx context.Context, content string, metadata map[string]
 
 	openCodeSID := ""
 	if v := w.openCodeSessionID.Load(); v != nil {
-		openCodeSID = v.(string)
+		openCodeSID, _ = v.(string)
 	}
 
 	args := w.buildCLIArgs(session, openCodeSID)
@@ -199,6 +199,7 @@ func (w *Worker) Input(ctx context.Context, content string, metadata map[string]
 	w.cancel = cancel
 
 	w.parser = NewParser(w.Log)
+	w.mapper = NewMapper(w.Log, session.SessionID, w.nextSeq)
 
 	w.BaseWorker.StartTime = time.Now()
 	w.BaseWorker.SetLastIO(w.BaseWorker.StartTime)
@@ -230,7 +231,7 @@ func (w *Worker) Resume(ctx context.Context, session worker.SessionInfo) error {
 
 	openCodeSID := ""
 	if v := w.openCodeSessionID.Load(); v != nil {
-		openCodeSID = v.(string)
+		openCodeSID, _ = v.(string)
 	}
 
 	args := w.buildCLIArgs(session, openCodeSID)

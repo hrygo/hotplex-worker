@@ -121,7 +121,7 @@ scripts/             # Build/validation scripts
 make build                    # Build gateway binary
 make test                     # Run tests with -race (timeout 15m)
 make test-short               # Quick test pass (-short)
-make lint                     # golangci-lint v1.64.5
+make lint                     # golangci-lint v1.64.8
 make coverage                 # Coverage report
 gofmt -s -w .                 # Format
 go build -pgo=auto ./cmd/worker  # PGO-optimized build
@@ -130,7 +130,7 @@ go mod tidy                   # Clean deps
 
 ## NOTES
 
-- `configs/` directory is empty — code references `configs/config.yaml` but file doesn't exist
+- `configs/` config-dev.yaml / config-prod.yaml / config.yaml / env.example / grafana / monitoring
 - `.claude` is symlinked to `.agent` — both directories exist
 - No `api/` directory — project uses JSON over WebSocket, not protobuf
 - Project targets POSIX only (PGID isolation requires `syscall.SysProcAttr{Setpgid: true}`)

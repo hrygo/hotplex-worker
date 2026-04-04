@@ -74,9 +74,6 @@ func (m *Mapper) seq() int64 {
 	if m.seqGen != nil {
 		return m.seqGen()
 	}
-	if m.seqGen != nil {
-		return m.seqGen()
-	}
 	return 0 // fallback: no seq gen registered
 }
 

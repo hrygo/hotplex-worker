@@ -42,6 +42,11 @@ func (c *recvOnlyConn) Recv() <-chan *events.Envelope {
 
 // TrySend non-blocking sends an envelope to the receive channel.
 func (c *recvOnlyConn) TrySend(env *events.Envelope) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed {
+		return false
+	}
 	select {
 	case c.recvCh <- env:
 		return true

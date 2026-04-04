@@ -84,13 +84,6 @@ type ToolState struct {
 	Output string         `json:"output,omitempty"`
 }
 
-// ToolResult represents the result of a completed or errored tool.
-type ToolResult struct {
-	ID     string
-	Output any
-	Error  string
-}
-
 // SessionError represents a session.error event.
 type SessionError struct {
 	Name    string `json:"name"`
