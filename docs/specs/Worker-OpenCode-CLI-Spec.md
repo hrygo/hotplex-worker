@@ -94,6 +94,8 @@ opencode run --format json
 
 ## 3. 环境变量
 
+> 详见 [[Worker-Common-Protocol]] §6。
+
 ### 3.1 供应商托管变量（白名单）
 
 | 变量 | 说明 | Impl |
@@ -107,23 +109,15 @@ opencode run --format json
 
 | 变量 | 说明 | Impl |
 |------|------|------|
-| `HOTPLEX_SESSION_ID` | 会话标识符 | ✅ `base/env.go:64-67` |
-| `HOTPLEX_WORKER_TYPE` | Worker 类型标签（`opencode-cli`） | ✅ `base/env.go:64-67` |
+| `HOTPLEX_SESSION_ID` | 会话标识符 | ✅ `base/env.go` |
+| `HOTPLEX_WORKER_TYPE` | Worker 类型标签（`opencode-cli`） | ✅ `base/env.go` |
 
-### 3.3 安全变量（标准白名单）
-
-| 变量 | 说明 | Impl |
-|------|------|------|
-| `HOME`, `USER`, `SHELL`, `PATH`, `TERM` | 系统环境 | ✅ 白名单 |
-| `LANG`, `LC_ALL`, `PWD` | 本地化 | ✅ 白名单 |
-
-### 3.4 安全集成要求
+### 3.3 安全集成要求
 
 | 要求 | 说明 | Impl |
 |------|------|------|
 | **移除 `CLAUDECODE=`** | 防止嵌套调用 | ✅ `security.StripNestedAgent()` |
-| **注入 `HOTPLEX_SESSION_ID`** | 会话追踪 | ✅ `base/env.go` |
-| **注入 `HOTPLEX_WORKER_TYPE`** |  Worker 类型标识 | ✅ `base/env.go` |
+| **StripNestedAgent** | 嵌套防护 | ✅ `internal/security/env.go` |
 
 ---
 
@@ -159,23 +153,11 @@ opencode run --format json
 
 ### 4.3 AEP NDJSON 安全序列化
 
+> 详见 [[Worker-Common-Protocol]] §3。
+
 **必须转义 U+2028（行分隔符）和 U+2029（段分隔符）**：
-
-```go
-// pkg/aep/codec.go
-var lineTerminators = regexp.MustCompile(`[\u2028\u2029]`)
-
-func Encode(w io.Writer, env *events.Envelope) error {
-    data, err := json.Marshal(env)
-    if err != nil {
-        return fmt.Errorf("aep: marshal envelope: %w", err)
-    }
-    data = escapeJSTerminators(data)  // 转义 U+2028/U+2029
-    data = append(data, '\n')
-    _, err = w.Write(data)
-    return err
-}
-```
+- 实现：`pkg/aep/codec.go` 的 `escapeJSTerminators()` 函数
+-背压处理：256 channel，delta 静默丢弃
 
 ---
 
@@ -336,45 +318,11 @@ func (w *Worker) Resume(ctx context.Context, session worker.SessionInfo) error {
 
 ## 8. 优雅终止（Graceful Shutdown）
 
-### 8.1 Worker Adapter 终止流程
+> 详见 [[Worker-Common-Protocol]] §5。
 
-实际实现在 `base.BaseWorker`，委托 `proc.Terminate`：
-
-```go
-// base/worker.go — BaseWorker.Terminate
-func (w *BaseWorker) Terminate(ctx context.Context) error {
-    w.Mu.Lock()
-    proc := w.Proc
-    w.Mu.Unlock()
-
-    if proc == nil {
-        return nil
-    }
-
-    // proc.Terminate: SIGTERM → 5s grace → SIGKILL（详见 proc/manager.go）
-    if err := proc.Terminate(ctx, syscall.SIGTERM, gracefulShutdownTimeout); err != nil {
-        return fmt.Errorf("base: terminate: %w", err)
-    }
-
-    w.Mu.Lock()
-    w.Proc = nil
-    w.Mu.Unlock()
-
-    return nil
-}
-```
-
-### 8.2 进程生命周期
-
-```
-Gateway SIGTERM
-    ↓
-proc.Terminate(ctx, SIGTERM, 5s)
-    ↓
-SIGTERM → 进程组
-    ↓ (5s 超时)
-SIGKILL → 进程组
-```
+- **终止流程**：SIGTERM → 5s grace → SIGKILL
+- **实现**：`base.BaseWorker.Terminate()` 委托 `proc.Terminate()`
+- **PGID 隔离**：`Setpgid: true` 确保信号传播到进程组
 
 ---
 
@@ -413,20 +361,11 @@ func() {
 
 ### 9.3 背压处理
 
-```go
-// base/conn.go:61-68
-func (c *Conn) TrySend(env *events.Envelope) bool {
-    select {
-    case c.recvCh <- env:
-        return true
-    default:
-        return false  // 静默丢弃
-    }
-}
-```
+> 详见 [[Worker-Common-Protocol]] §4。
 
 - **Channel 容量**：256
-- **静默丢弃**：`message.delta` 和 `raw` 类型
+- **静默丢弃**：`data` priority 消息（delta、raw）
+- **日志记录**：静默丢弃时记录警告
 
 ### 9.4 Worker 崩溃检测
 
@@ -543,6 +482,8 @@ func (w *Worker) readOutput() {
 
 ## 11. Capability 接口实现
 
+> 详见 [[Worker-Common-Protocol]] §7。
+
 ```go
 // worker.go:46-56
 func (w *Worker) Type() worker.WorkerType { return worker.TypeOpenCodeCLI }
@@ -585,6 +526,8 @@ func (w *Worker) Modalities() []string    { return []string{"text", "code"} }
 
 ## 13. 实现优先级
 
+> 详见 [[Worker-Common-Protocol]] §11（背压、终止、环境变量）
+
 ### P0（必须实现，v1.0 MVP）
 
 | 项目 | 说明 |
@@ -593,8 +536,6 @@ func (w *Worker) Modalities() []string    { return []string{"text", "code"} }
 | `step_start` session_id 提取 | 自动提取并缓存 |
 | 工具调用映射 | `tool_use` → `tool_call` |
 | 消息映射 | `message` → AEP 事件 |
-| 环境变量白名单 | `OPENAI_*`, `OPENCODE_*`, `HOTPLEX_*` |
-| 分层终止 | SIGTERM → 5s → SIGKILL |
 
 ### P1（重要，v1.0 完整支持）
 
@@ -621,6 +562,13 @@ func (w *Worker) Modalities() []string    { return []string{"text", "code"} }
 | 功能 | 源码路径 |
 |------|---------|
 | Worker 实现 | `internal/worker/opencodecli/worker.go` |
+
+### 公共组件
+
+> 详见 [[Worker-Common-Protocol]] §9。
+
+| 功能 | 源码路径 |
+|------|---------|
 | BaseWorker | `internal/worker/base/worker.go` |
 | Stdio Conn | `internal/worker/base/conn.go` |
 | BuildEnv | `internal/worker/base/env.go` |
@@ -660,10 +608,17 @@ func (w *Worker) Modalities() []string    { return []string{"text", "code"} }
 
 ## 16. 架构亮点
 
-- ✅ **三层协议分层**：`scanner` → `aep.DecodeLine` → `Conn.TrySend`
+> 详见 [[Worker-Common-Protocol]] §11。
+
+### CLI 特有亮点
+
 - ✅ **自动 session_id 提取**：从 `step_start` 事件解析
+- ✅ **多值 `--allowed-tools`**：每个工具单独参数
+- ❌ **不支持 Resume**：CLI 模式无持久化
+
+### 公共亮点
+
+- ✅ **三层协议分层**：`scanner` → `aep.DecodeLine` → `Conn.TrySend`
 - ✅ **背压处理**：256 buffer，delta 静默丢弃
 - ✅ **分层终止**：SIGTERM → 5s → SIGKILL
 - ✅ **`HOTPLEX_*` 变量注入**：会话追踪和类型标识
-- ✅ **多值 `--allowed-tools`**：每个工具单独参数
-- ❌ **不支持 Resume**：CLI 模式无持久化

@@ -13,6 +13,7 @@
 | [Worker-ClaudeCode-Spec.md](./Worker-ClaudeCode-Spec.md) | Claude Code Worker 集成规格 | ✅ Implemented | 2026-04-01 | 100% |
 | [Worker-OpenCode-CLI-Spec.md](./Worker-OpenCode-CLI-Spec.md) | OpenCode CLI Worker 集成规格 | ✅ Implemented | 2026-04-04 | 100% |
 | [Worker-OpenCode-Server-Spec.md](./Worker-OpenCode-Server-Spec.md) | OpenCode Server Worker 集成规格 | ✅ Implemented | 2026-04-04 | 100% |
+| [Worker-Common-Protocol.md](./Worker-Common-Protocol.md) | Worker 公共协议规范（NDJSON、背压、终止等） | ✅ Implemented | 2026-04-04 | 100% |
 | [Worker-ACPX-Spec.md](./Worker-ACPX-Spec.md) | ACPX Worker 集成规格 — 支持 16+ AI 编程 Agent | 📝 Draft | 2026-04-04 | 0% |
 
 ### 客户端 SDK 设计
@@ -50,11 +51,12 @@
 
 ### 按状态分类
 
-- ✅ **Implemented**: 7 个（已完成实现）
+- ✅ **Implemented**: 8 个（已完成实现）
   - Worker-Gateway-Framework-Design
   - Worker-ClaudeCode-Spec
   - Worker-OpenCode-CLI-Spec
   - Worker-OpenCode-Server-Spec
+  - Worker-Common-Protocol
   - Python-Client-Design
   - Go-Client-Example-Design
   - AI-SDK-Chatbot-Integration-Design
@@ -72,7 +74,7 @@
 
 ### 按类型分类
 
-- **架构设计**: 6 个
+- **架构设计**: 7 个
 - **客户端 SDK**: 2 个
 - **前端集成**: 1 个
 - **验收标准**: 4 个

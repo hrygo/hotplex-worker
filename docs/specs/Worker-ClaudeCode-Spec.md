@@ -4,10 +4,10 @@ tags:
   - project/HotPlex
   - worker/claude-code
   - architecture/integration
-date: 2026-04-01
+date: 2026-04-04
 status: implemented
 progress: 100
-completion_date: 2026-04-01
+completion_date: 2026-04-04
 ---
 
 # Claude Code Worker 集成规格
@@ -22,9 +22,13 @@ completion_date: 2026-04-01
 | 维度 | 设计 |
 |------|------|
 | **Transport** | stdio（stdin/stdout pipe） |
-| **Protocol** | stream-json（NDJSON） |
+| **Protocol** | SDK 私有 NDJSON（内部转换为 AEP v1） |
 | **进程模型** | 持久进程，多轮复用（Hot-Multiplexing） |
 | **源码路径** | `~/claude-code/src` |
+
+> **协议说明**：Claude Code 使用 SDK 私有协议，Worker Adapter 内部通过 `Parser` + `Mapper` 转换为 AEP v1 格式供 Gateway 使用。
+> 
+> 公共基础设施（NDJSON 序列化、背压处理、分层终止等）详见 [[Worker-Common-Protocol]]。
 
 **集成命令**：
 
@@ -173,42 +177,12 @@ user prompt here
 
 ### 5.1 NDJSON 安全序列化
 
-**必须转义 U+2028（行分隔符）和 U+2029（段分隔符）**，否则解析器会在这些字符处截断。
+> 详见 [[Worker-Common-Protocol]] §3。
 
-```typescript
-// 详见 src/cli/ndjsonSafeStringify.ts
-const JS_LINE_TERMINATORS = /\u2028|\u2029/g
-
-export function ndjsonSafeStringify(value: unknown): string {
-  return escapeJsLineTerminators(JSON.stringify(value))
-}
-```
-
-**Worker Adapter 实现**：
-
-```go
-import "regexp"
-
-var lineTerminators = regexp.MustCompile(`[\u2028\u2029]`)
-
-func ndjsonSafeMarshal(v any) (string, error) {
-    data, err := json.Marshal(v)
-    if err != nil {
-        return "", err
-    }
-    // 转义 JS 行终止符
-    safe := lineTerminators.ReplaceAllFunc(data, func(b []byte) []byte {
-        switch {
-        case bytes.Equal(b, []byte{0xE2, 0x80, 0xA8}):
-            return []byte("\\u2028")
-        case bytes.Equal(b, []byte{0xE2, 0x80, 0xA9}):
-            return []byte("\\u2029")
-        }
-        return b
-    })
-    return string(safe) + "\n", nil
-}
-```
+**必须转义 U+2028（行分隔符）和 U+2029（段分隔符）**：
+- Claude Code SDK：`src/cli/ndjsonSafeStringify.ts`
+- Worker Adapter 实现：`pkg/aep/codec.go` 的 `escapeJSTerminators()`
+- 背压处理：256 channel，delta 静默丢弃
 
 ### 5.2 SDK 消息类型
 
@@ -505,33 +479,12 @@ SIGKILL
 
 ### 9.2 Worker Adapter 终止流程
 
-实际实现在 `base.BaseWorker`，委托 `proc.Terminate`：
+> 详见 [[Worker-Common-Protocol]] §5。
 
-```go
-// base/worker.go — BaseWorker.Terminate
-func (w *BaseWorker) Terminate(ctx context.Context) error {
-    w.Mu.Lock()
-    proc := w.Proc
-    w.Mu.Unlock()
-
-    if proc == nil {
-        return nil
-    }
-
-    // proc.Terminate: SIGTERM → 5s grace → SIGKILL（详见 proc/manager.go）
-    if err := proc.Terminate(ctx, syscall.SIGTERM, gracefulShutdownTimeout); err != nil {
-        return fmt.Errorf("base: terminate: %w", err)
-    }
-
-    w.Mu.Lock()
-    w.Proc = nil
-    w.Mu.Unlock()
-
-    return nil
-}
-```
-
-Claude Code Worker 的 `Terminate` 直接调用 `BaseWorker.Terminate`（`worker.go:269-277`）。
+- **终止流程**：SIGTERM → 5s grace → SIGKILL
+- **实现**：`base.BaseWorker.Terminate()` 委托 `proc.Terminate()`
+- **PGID 隔离**：`Setpgid: true` 确保信号传播到进程组
+- Claude Code Worker 的 `Terminate` 直接调用 `BaseWorker.Terminate`（`worker.go:269-277`）
 
 ---
 
@@ -576,6 +529,8 @@ claude --print --session-id <id> \
 
 ## 11. 实现优先级
 
+> 详见 [[Worker-Common-Protocol]] §11（背压、终止、环境变量）。
+
 ### P0（必须实现，v1.0 MVP）
 
 | 项目 | 说明 |
@@ -610,6 +565,8 @@ claude --print --session-id <id> \
 
 ## 12. 源码关键路径
 
+### Claude Code Worker 特有
+
 | 功能 | 源码路径 |
 |------|---------|
 | CLI 参数解析 | `src/main.tsx` |
@@ -624,6 +581,17 @@ claude --print --session-id <id> \
 | SSE 传输 | `src/cli/transports/SSETransport.ts` |
 | Hybrid 传输 | `src/cli/transports/HybridTransport.ts` |
 | Tool 权限 | `src/Tool.ts` |
+
+### 公共组件
+
+> 详见 [[Worker-Common-Protocol]] §9。
+
+| 功能 | 源码路径 |
+|------|---------|
+| BaseWorker | `internal/worker/base/worker.go` |
+| AEP Codec | `pkg/aep/codec.go` |
+| Events | `pkg/events/events.go` |
+| Worker Interface | `internal/worker/worker.go` |
 
 ---
 
@@ -806,13 +774,23 @@ func (w *Worker) buildCLIArgs(session worker.SessionInfo, resume bool) []string 
 
 ### 14.6 架构亮点
 
-- ✅ 三层协议分层：`Parser` → `Mapper` → `ControlHandler`
-- ✅ `atomic.Int64` 原子 seq 生成，无锁竞争
-- ✅ `context` 取消传播，goroutine 退出路径完整
-- ✅ 分层终止：SIGTERM → 5s → SIGKILL（`base/worker.go`）
-- ✅ `StripNestedAgent` 防止嵌套调用
-- ✅ `OTEL_*` 前缀白名单，支持 OpenTelemetry 配置透传
-- ✅ 控制请求自动成功：`set_*`/`mcp_*` subtype 不再静默丢弃
-- ✅ `WorkerEvent` 统一路由：单一 `Payload *ControlRequestPayload` + Subtype switch，无双字段歧义
-- ✅ `sendResponse` DRY 辅助方法：消除 `sendAutoSuccess` / `SendPermissionResponse` 重复构造
-- ✅ 测试覆盖：`worker_test.go`、`parser_test.go`、`mapper_test.go`、`worker_integration_test.go`
+> 详见 [[Worker-Common-Protocol]] §11。
+
+### Claude Code Worker 特有亮点
+
+- ✅ **SDK → AEP 协议转换**：`Parser` + `Mapper` 三层架构
+- ✅ **控制协议**：`control_request`/`control_response` 双向控制
+- ✅ **权限请求**：`can_use_tool` → `permission_request`
+- ✅ **原子 seq 生成**：`atomic.Int64` 无锁竞争
+- ✅ **完整 goroutine 退出路径**：`context` 取消传播
+- ✅ **控制请求自动成功**：`set_*`/`mcp_*` subtype 不再静默丢弃
+- ✅ **WorkerEvent 统一路由**：单一 `Payload *ControlRequestPayload` + Subtype switch
+- ✅ **测试覆盖**：`worker_test.go`、`parser_test.go`、`mapper_test.go`、`worker_integration_test.go`
+
+### 公共亮点
+
+- ✅ **分层终止**：SIGTERM → 5s → SIGKILL
+- ✅ **背压处理**：256 buffer，delta 静默丢弃
+- ✅ **`HOTPLEX_*` 变量注入**：会话追踪和类型标识
+- ✅ **`StripNestedAgent`**：防止嵌套调用
+- ✅ **`OTEL_*` 前缀白名单**：OpenTelemetry 配置透传

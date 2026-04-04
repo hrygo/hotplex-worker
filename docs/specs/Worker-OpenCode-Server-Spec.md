@@ -284,6 +284,8 @@ func (w *Worker) readSSE(sessionID string) {
 
 ## 7. 环境变量
 
+> 详见 [[Worker-Common-Protocol]] §6。
+
 ### 7.1 白名单
 
 | 变量 | 说明 | Impl |
@@ -299,8 +301,8 @@ func (w *Worker) readSSE(sessionID string) {
 
 | 变量 | 说明 | Impl |
 |------|------|------|
-| `HOTPLEX_SESSION_ID` | 会话标识符 | ⚠️ 需验证 |
-| `HOTPLEX_WORKER_TYPE` | Worker 类型标签（`opencode-server`） | ⚠️ 需验证 |
+| `HOTPLEX_SESSION_ID` | 会话标识符 | ✅ `base/env.go` |
+| `HOTPLEX_WORKER_TYPE` | Worker 类型标签（`opencode-server`） | ✅ `base/env.go` |
 
 ---
 
@@ -406,49 +408,19 @@ func (w *Worker) Resume(ctx context.Context, session worker.SessionInfo) error {
 
 ## 10. 优雅终止（Graceful Shutdown）
 
-### 10.1 Worker Adapter 终止流程
+> 详见 [[Worker-Common-Protocol]] §5。
 
-```go
-// base/worker.go — BaseWorker.Terminate
-func (w *BaseWorker) Terminate(ctx context.Context) error {
-    w.Mu.Lock()
-    proc := w.Proc
-    w.Mu.Unlock()
-
-    if proc == nil {
-        return nil
-    }
-
-    // proc.Terminate: SIGTERM → 5s grace → SIGKILL
-    if err := proc.Terminate(ctx, syscall.SIGTERM, gracefulShutdownTimeout); err != nil {
-        return fmt.Errorf("base: terminate: %w", err)
-    }
-
-    w.Mu.Lock()
-    w.Proc = nil
-    w.Mu.Unlock()
-
-    return nil
-}
-```
-
-### 10.2 进程生命周期
-
-```
-Gateway SIGTERM
-    ↓
-proc.Terminate(ctx, SIGTERM, 5s)
-    ↓
-SIGTERM → 进程组（opencode serve）
-    ↓ (5s 超时)
-SIGKILL → 进程组
-```
+- **终止流程**：SIGTERM → 5s grace → SIGKILL
+- **实现**：`base.BaseWorker.Terminate()` 委托 `proc.Terminate()`
+- **PGID 隔离**：`Setpgid: true` 确保信号传播到进程组
 
 ---
 
 ## 11. 错误处理模式
 
 ### 11.1 服务器等待失败
+
+> 详见 [[Worker-Common-Protocol]] §8。
 
 ```go
 // worker.go:109-115
@@ -463,6 +435,8 @@ if err := w.waitForServer(ctx); err != nil {
 
 ### 11.2 SSE 解码错误
 
+> 详见 [[Worker-Common-Protocol]] §4（背压策略）。
+
 ```go
 // worker.go:391-394 - 非致命错误，继续读取
 env, err := aep.DecodeLine([]byte(data))
@@ -474,15 +448,11 @@ if err != nil {
 
 ### 11.3 背压处理
 
-```go
-// worker.go:409-413 - 非阻塞丢弃
-select {
-case conn.recvCh <- env:
-default:
-    w.Log.Warn("opencodeserver: recv channel full, dropping message")
-    // 无错误返回 - delta 类型静默丢弃
-}
-```
+> 详见 [[Worker-Common-Protocol]] §4。
+
+- **Channel 容量**：256
+- **静默丢弃**：`data` priority 消息
+- **日志记录**：静默丢弃时记录警告
 
 ### 11.4 输入发送失败
 
@@ -515,6 +485,8 @@ const defaultServePort = 18789
 ```
 
 ### 12.2 Capability 接口
+
+> 详见 [[Worker-Common-Protocol]] §7。
 
 ```go
 // worker.go:59-69
@@ -592,6 +564,8 @@ func (w *Worker) waitForServer(ctx context.Context) error {
 
 ## 14. 实现优先级
 
+> 详见 [[Worker-Common-Protocol]] §11（背压、终止、环境变量）
+
 ### P0（必须实现，v1.0 MVP）
 
 | 项目 | 说明 |
@@ -625,17 +599,26 @@ func (w *Worker) waitForServer(ctx context.Context) error {
 
 ## 15. 源码关键路径
 
+### Server Worker 特有
+
 | 功能 | 源码路径 |
 |------|---------|
 | Worker 实现 | `internal/worker/opencodeserver/worker.go` |
-| BaseWorker | `internal/worker/base/worker.go` |
-| AEP Codec | `pkg/aep/codec.go` |
-| Events | `pkg/events/events.go` |
-| Worker Interface | `internal/worker/worker.go` |
 | OpenCode Server | `~/opencode/packages/opencode/src/server/` |
 | Session Routes | `~/opencode/packages/opencode/src/server/routes/session.ts` |
 | Event Routes | `~/opencode/packages/opencode/src/server/routes/event.ts` |
 | Serve Command | `~/opencode/packages/opencode/src/cli/cmd/serve.ts` |
+
+### 公共组件
+
+> 详见 [[Worker-Common-Protocol]] §9。
+
+| 功能 | 源码路径 |
+|------|---------|
+| BaseWorker | `internal/worker/base/worker.go` |
+| AEP Codec | `pkg/aep/codec.go` |
+| Events | `pkg/events/events.go` |
+| Worker Interface | `internal/worker/worker.go` |
 
 ---
 
@@ -666,10 +649,17 @@ func (w *Worker) waitForServer(ctx context.Context) error {
 
 ## 17. 架构亮点
 
+> 详见 [[Worker-Common-Protocol]] §11。
+
+### Server Worker 特有亮点
+
 - ✅ **HTTP REST + SSE**：清晰的请求/响应 + 订阅分离
 - ✅ **持久进程**：Server 模式多会话复用
+- ✅ **Resume 支持**：Server 模式支持会话恢复
+- ⚠️ **无本地存储**：依赖 Server 进程内管理
+
+### 公共亮点
+
+- ✅ **AEP v1 协议**：与 Claude Code Worker 协议统一
 - ✅ **背压处理**：256 buffer，delta 静默丢弃
 - ✅ **分层终止**：SIGTERM → 5s → SIGKILL
-- ✅ **Resume 支持**：Server 模式支持会话恢复
-- ✅ **AEP v1 协议**：与 Claude Code Worker 协议统一
-- ⚠️ **无本地存储**：依赖 Server 进程内管理
