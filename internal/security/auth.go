@@ -13,6 +13,10 @@ import (
 	"github.com/hotplex/hotplex-worker/pkg/events"
 )
 
+// apiKeyQueryParam is the query parameter name for browser-based WebSocket clients
+// that cannot send custom headers (CORS restrictions).
+const apiKeyQueryParam = "api_key"
+
 // Authenticator validates API keys and user credentials.
 type Authenticator struct {
 	cfg          *config.SecurityConfig
@@ -48,7 +52,7 @@ func (a *Authenticator) AuthenticateRequest(r *http.Request) (string, string, er
 	// Check header first, then query param (for browser WebSocket clients).
 	key := r.Header.Get(header)
 	if key == "" {
-		key = r.URL.Query().Get("api_key")
+		key = r.URL.Query().Get(apiKeyQueryParam)
 	}
 	if key == "" {
 		return "", "", ErrUnauthorized
