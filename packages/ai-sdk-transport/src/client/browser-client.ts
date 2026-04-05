@@ -184,6 +184,13 @@ export class BrowserHotPlexClient extends EventEmitter<BrowserClientEvents> {
   private _doConnect(sessionId: string): Promise<InitAckData> {
     return new Promise((resolve, reject) => {
       try {
+        // Mute any pending onclose handler on the previous WebSocket instance
+        // so its close event (from TCP teardown) does not trigger reconnect logic.
+        const prevWs = this.ws;
+        if (prevWs) {
+          prevWs.onclose = null;
+        }
+
         // Build URL with API key as query param (browser WebSocket doesn't support headers)
         let url = this.config.url;
         if (this.config.apiKey) {
@@ -202,6 +209,9 @@ export class BrowserHotPlexClient extends EventEmitter<BrowserClientEvents> {
 
         const onOpen = () => {
           if (!this.ws) return;
+          // Update session ID eagerly so sendInput calls made immediately after
+          // connect() resolves (but before init_ack is received) use the correct ID.
+          this._sessionId = sessionId;
           this.ws.send(serializeEnvelope(initEnv));
         };
 
@@ -221,14 +231,17 @@ export class BrowserHotPlexClient extends EventEmitter<BrowserClientEvents> {
           // WebSocket error events don't carry useful info; close event follows
         };
 
-        const onClose = (event: CloseEvent) => {
-          this._handleClose(event.code, event.reason || 'Connection closed');
-        };
+        // Capture the socket instance so the close handler can detect
+        // when this WebSocket has been superseded by a newer one.
+        const activeWs = this.ws;
 
         this.ws.addEventListener('open', onOpen);
         this.ws.addEventListener('message', onMessage);
         this.ws.addEventListener('error', onError);
-        this.ws.addEventListener('close', onClose);
+        this.ws.addEventListener('close', (event: CloseEvent) => {
+          if (activeWs !== this.ws) return;
+          this._handleClose(event.code, event.reason || 'Connection closed');
+        });
       } catch (err) {
         reject(err);
       }

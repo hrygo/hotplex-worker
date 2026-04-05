@@ -52,6 +52,7 @@ export default function ChatInput({ input, onInputChange, onSend, onStop, isLoad
       <div className="flex items-end gap-3 max-w-3xl mx-auto">
         <div className="flex-1 relative">
           <textarea
+            id="chat-input"
             ref={textareaRef}
             value={input}
             onChange={handleChange}
@@ -62,6 +63,7 @@ export default function ChatInput({ input, onInputChange, onSend, onStop, isLoad
             disabled={isLoading}
             rows={1}
             aria-label="Chat input"
+            name="chat-input"
             className={`w-full px-4 py-3 border rounded-xl resize-none transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed ${
               isFocused ? 'shadow-sm' : 'shadow'
             }`}
