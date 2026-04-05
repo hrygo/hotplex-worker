@@ -162,7 +162,7 @@ tags:
     │                │                     │                   │
     │◄─ {init_ack} ──│                     │                   │
     │    session_id  │                     │                   │
-    │   (server-gen) │  ← P0: Server generates session_id         │
+    │   (server-gen) │                     │                   │
     │                │                     │                   │
     │══ 3.User Input (Full-Duplex) ══════════════════════════════════════════════│
     │                │                     │                   │
@@ -194,14 +194,14 @@ tags:
     │══ 5.Heartbeat Keep-Alive ═════════════════════════════════════════════════│
     │                │                     │                   │
     │── {ping} ─────►│                     │                   │
-    │                │  ← P2: No seq consumed (heartbeat control)│
+    │                │  (seq=0, heartbeat control message)       │
     │◄─ {pong} ◄─────│                     │                   │
     │                │                     │                   │
     │══ 6.Connection Close & Reconnect ════════════════════════════════════════│
     │                │                     │                   │
     │── close ──────►│── Transition ──────►│                   │
-    │                │   to StateIdle      │  ← P1: Session    │
-    │                │                     │     orphan fix    │
+    │                │   to StateIdle      │  Session paused   │
+    │                │   (worker paused)   │  for reconnect    │
     │                │                     │                   │
     │◄─ FIN ◄────────│                     │                   │
     │                │                     │                   │
@@ -213,8 +213,8 @@ tags:
     │── {init} ─────►│── Detect ──────────►│                   │
     │   (session_id) │   StateIdle         │                   │
     │                │                     │                   │
-    │                │── ResumeSession ───►│  ← P1: Worker     │
-    │                │   (Bridge)          │     reattach      │
+    │                │── ResumeSession ───►│  Worker restart   │
+    │                │   (Bridge)          │  & reattach       │
     │                │                     │                   │
     │◄─ {init_ack} ──│── StateIdle ────────│                   │
     │                │   → StateRunning    │                   │
@@ -322,7 +322,7 @@ tags:
 | Session CRUD | Create, read, update, delete sessions |
 | State Transitions | Atomic state machine transitions with mutex protection |
 | GC | Expired session cleanup |
-| **Nil Guards** | P1: Returns safely when called on nil Manager (test mode) |
+| Nil Guards | Returns safely when called on nil Manager (test mode) |
 
 ### 5.4 Worker Adapter (`internal/worker/`)
 
@@ -332,7 +332,7 @@ tags:
 | `ClaudeCodeWorker` | Claude CLI adapter with stream-json protocol |
 | `OpenCodeCLIWorker` | OpenCode CLI adapter with json-lines protocol |
 | `OpenCodeSrvWorker` | OpenCode server adapter with HTTP+SSE |
-| **Platform Compatibility** | P3: `proc.Manager` skips RLIMIT_AS on macOS (not reliably supported) |
+| Platform Compatibility | `proc.Manager` skips RLIMIT_AS on macOS (not supported) |
 
 ---
 
@@ -410,55 +410,154 @@ pool:
 
 ---
 
-## 9. Bug Fixes & Improvements (2026-04-05)
+## 9. Session Lifecycle Details
 
-### P0: Session ID Mismatch (Fixed)
+### Session ID Generation
 
-**Problem**: Browser client generated session_id on WebSocket open, causing mismatch with server-generated ID from `init_ack`.
+**Lifecycle**:
+1. Client initiates WebSocket connection (no session_id generated yet)
+2. Client sends `init` message with optional `session_id` (for reconnect)
+3. Server creates or resumes session
+4. Server returns `init_ack` with authoritative `session_id`
+5. Client uses `init_ack.session_id` for all subsequent messages
 
-**Solution**:
-- Removed client-side session ID generation
-- Server generates session ID during init handshake
-- Client receives session ID from `init_ack` and uses it for subsequent messages
+**Design Principle**:
+- Server is the **single source of truth** for session IDs
+- Client can suggest a session_id (reconnect scenario)
+- Server has final authority to accept or reject
+- `init_ack.session_id` is the only reliable session ID
 
-**Files**: `packages/ai-sdk-transport/src/client/browser-client.ts`
+### WebSocket Close Behavior
 
-### P1: Session Orphan on WebSocket Close (Fixed)
+When WebSocket closes (network interruption, browser tab close):
 
-**Problem**: When WebSocket closed unexpectedly (network issue, browser tab close), worker process continued running, causing resource leak.
+1. **Gateway Actions**:
+   ```go
+   // conn.go ReadPump defer
+   defer func() {
+       c.hb.Stop()
+       c.Close()
+       c.hub.UnregisterConn(c)
 
-**Solution**:
-- ReadPump transitions session to `StateIdle` on close (instead of `StateTerminated`)
-- Worker is paused (not killed), waiting for potential reconnect
-- On reconnect with same session_id, `ResumeSession`:
-  - Terminates stale worker (from previous connection)
-  - Creates new worker instance
-  - Transitions back to `StateRunning`
-- Client can resume conversation without losing context
+       // Transition to StateIdle (pause, not terminate)
+       if c.sessionID != "" {
+           if err := handler.sm.Transition(ctx, c.sessionID, events.StateIdle); err != nil {
+               c.log.Debug("gateway: conn close transition to idle", "session_id", c.sessionID, "err", err)
+           }
+       }
+       c.hub.LeaveSession(c.sessionID, c)
+   }()
+   ```
 
-**Files**: `internal/gateway/conn.go`, `internal/gateway/bridge.go`
+2. **Session State**:
+   - Session enters `StateIdle` (paused state)
+   - Worker is paused, not terminated
+   - Conversation context preserved
+   - Waits for `idle_timeout` GC or client reconnect
 
-### P2: Ping Sequence Number Consumption (Fixed)
+3. **Worker Behavior**:
+   - Process continues running (paused state)
+   - Awaiting new input or termination signal
+   - Resources retained for quick resume
 
-**Problem**: `ping` events consumed sequence numbers, causing gaps in message ordering.
+### Reconnection & Resume
 
-**Solution**:
-- Ping/pong events are now skip sequence number assignment
-- These are heartbeat control messages, not part of the message stream
-- Prevents duplicate sequence consumption
+When client reconnects with same `session_id`:
 
-**Files**: `internal/gateway/conn.go`
+1. **Reconnect Detection**:
+   ```go
+   // conn.go performInit
+   } else if si.State == events.StateIdle {
+       c.log.Info("gateway: resuming idle session", "session_id", sessionID)
+       if c.starter != nil {
+           if err := c.starter.ResumeSession(ctx, sessionID); err != nil {
+               c.sendInitError(events.ErrCodeInternalError, "failed to resume session")
+               return fmt.Errorf("resume session: %w", err)
+           }
+       }
+   }
+   ```
 
-### P3: macOS RLIMIT_AS Warning (Fixed)
+2. **ResumeSession Implementation**:
+   ```go
+   // bridge.go ResumeSession
+   func (b *Bridge) ResumeSession(ctx context.Context, id string) error {
+       si, err := b.sm.Get(id)
 
-**Problem**: `RLIMIT_AS` system call failed silently on macOS, causing spurious warnings in logs.
+       // Clean up stale worker (prevent leak)
+       if existing := b.sm.GetWorker(id); existing != nil {
+           _ = existing.Terminate(ctx)
+           b.sm.DetachWorker(id)
+       }
 
-**Solution**:
-- Added platform detection (`runtime.GOOS != "darwin"`)
-- Skip `RLIMIT_AS` setting on macOS
-- Still applies on Linux/POSIX systems where it's reliably supported
+       // Create and attach new worker
+       w, err := b.wf.NewWorker(si.WorkerType)
+       b.sm.AttachWorker(id, w)
 
-**Files**: `internal/worker/proc/manager.go`
+       // Transition IDLE → RUNNING
+       b.sm.Transition(ctx, id, events.StateRunning)
+
+       // Resume worker execution
+       w.Resume(ctx, workerInfo)
+
+       return nil
+   }
+   ```
+
+3. **Key Principles**:
+   - `StateIdle` = "Paused" (worker paused, not killed)
+   - `StateTerminated` = "Stopped" (worker dead, needs full restart)
+   - ResumeSession cleans up stale workers first
+   - Seamless resume without losing context
+
+### Sequence Number Assignment
+
+**Messages Requiring Seq**:
+- Business: `input`, `message`, `message.delta`, `message.done`, `done`
+- State: `state`, `error`, `reasoning`
+- Tools: `tool_call`, `tool_result`
+- Raw: `raw`
+- Control: `control`
+
+**Messages Without Seq** (seq=0):
+- Heartbeat: `ping`, `pong`
+  - WebSocket-level control messages
+  - Not part of business flow
+  - Clients don't need to order them
+
+**Implementation**:
+```go
+// conn.go ReadPump
+env.SessionID = c.sessionID
+env.OwnerID = c.userID
+
+// Skip seq for heartbeat messages
+if env.Event.Type != events.Ping {
+    env.Seq = c.hub.NextSeq(c.sessionID)
+}
+```
+
+### Platform Compatibility
+
+**Memory Limit (RLIMIT_AS)**:
+```go
+// proc/manager.go Start
+if runtime.GOOS != "darwin" && cmd.Process != nil {
+    const memLimit = 512 * 1024 * 1024 // 512 MB
+    if err := syscall.Setrlimit(syscall.RLIMIT_AS, &syscall.Rlimit{
+        Cur: memLimit,
+        Max: memLimit,
+    }); err != nil {
+        m.log.Warn("proc: setrlimit RLIMIT_AS failed", "error", err)
+        // Non-fatal: log and continue
+    }
+}
+```
+
+**Platform Differences**:
+- **Linux/POSIX**: Full `RLIMIT_AS` support
+- **macOS (Darwin)**: No reliable `RLIMIT_AS` support (skipped)
+- **Windows**: No POSIX `setrlimit` support
 
 ---
 
@@ -467,5 +566,5 @@ pool:
 
 | Date | Version | Change |
 |------|---------|--------|
-| 2026-04-05 | 1.1 | **P0-P3 Bug Fixes**:<br/>• P0: Server-side session_id generation (removed client-side ID assignment)<br>• P1: Session orphan prevention via StateIdle transition on WS close + ResumeSession on reconnect<br>• P2: Skip seq number for ping/pong heartbeat messages<br>• P3: macOS RLIMIT_AS warning suppression |
+| 2026-04-05 | 1.1 | **Protocol & Session Improvements**:<br/>• Session ID: Server-side generation with client-side assignment<br/>• Session Resume: StateIdle transition on disconnect + ResumeSession on reconnect<br/>• Heartbeat: Ping/pong messages skip sequence numbering<br/>• Platform: macOS compatibility for RLIMIT_AS |
 | 2026-04-05 | 1.0 | Initial document creation |
