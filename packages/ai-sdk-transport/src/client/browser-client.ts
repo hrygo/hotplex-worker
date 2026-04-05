@@ -162,8 +162,16 @@ export class BrowserHotPlexClient extends EventEmitter<BrowserClientEvents> {
   async connect(sessionId?: string): Promise<InitAckData> {
     this.closed = false;
     this.shouldReconnect = true;
-    this._sessionId = sessionId || newSessionId();
-    return this._doConnect(this._sessionId);
+    // If reconnecting (has existing _sessionId), pass it so gateway can match the existing session.
+    // If first connect, pass undefined so gateway assigns a new session ID.
+    const id = sessionId || this._sessionId || undefined;
+    if (id) {
+      this._sessionId = id;
+      return this._doConnect(id);
+    }
+    const newId = newSessionId();
+    this._sessionId = newId;
+    return this._doConnect(newId);
   }
 
   async resume(existingSessionId: string): Promise<InitAckData> {

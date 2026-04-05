@@ -1,11 +1,17 @@
 'use client';
 
 import { useMemo } from 'react';
-import type { UIMessage } from 'ai';
 import MessageContent from './MessageContent';
 
+interface Message {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  createdAt?: Date;
+}
+
 interface MessageBubbleProps {
-  message: UIMessage;
+  message: Message;
   isStreaming?: boolean;
 }
 

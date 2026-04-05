@@ -3,23 +3,22 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
-import type { UIMessage } from 'ai';
 import CodeBlock from './CodeBlock';
 
-interface MessageContentProps {
-  message: UIMessage;
+interface Message {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  createdAt?: Date;
 }
 
-function getTextContent(message: UIMessage): string {
-  return message.parts
-      .filter((part): part is { type: 'text'; text: string } => part.type === 'text')
-      .map((part) => part.text)
-      .join('');
+interface MessageContentProps {
+  message: Message;
 }
 
 export default function MessageContent({ message }: MessageContentProps) {
-  const text = getTextContent(message);
-  
+  const text = message.content;
+
   // User messages: plain text
   if (message.role === 'user') {
     return <p className="whitespace-pre-wrap break-words">{text}</p>;

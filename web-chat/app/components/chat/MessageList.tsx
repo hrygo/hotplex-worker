@@ -1,12 +1,18 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import type { UIMessage } from 'ai';
 import MessageBubble from './MessageBubble';
 
+interface Message {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  createdAt?: Date;
+}
+
 interface MessageListProps {
-  messages: UIMessage[];
-  status: 'submitted' | 'streaming' | 'ready' | 'error';
+  messages: Message[];
+  status: 'submitted' | 'streaming' | 'ready' | 'error' | 'awaiting_input';
 }
 
 export default function MessageList({ messages, status }: MessageListProps) {
