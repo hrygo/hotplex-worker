@@ -308,10 +308,14 @@ func (w *Worker) readOutput(ctx context.Context) {
 	}()
 
 	w.Mu.Lock()
-	defer w.Mu.Unlock()
 	if w.readLineFn == nil {
+		w.Mu.Unlock()
 		return
 	}
+	// Hold the lock during startup only; read loop below is unprotected so that
+	// Terminate (which needs the lock) doesn't deadlock with a blocked scanner.
+	readLineFn := w.readLineFn
+	w.Mu.Unlock()
 
 	for {
 		select {
@@ -320,7 +324,7 @@ func (w *Worker) readOutput(ctx context.Context) {
 		default:
 		}
 
-		line, err := w.readLineFn()
+		line, err := readLineFn()
 		if err != nil {
 			if err == io.EOF {
 				return
@@ -333,10 +337,12 @@ func (w *Worker) readOutput(ctx context.Context) {
 			continue
 		}
 
-		// Parse SDK message
 		workerEvents, err := w.parser.ParseLine(line)
 		if err != nil {
 			w.BaseWorker.Log.Warn("claudecode: parse line", "error", err, "line", line)
+			continue
+		}
+		if len(workerEvents) == 0 {
 			continue
 		}
 
@@ -411,16 +417,18 @@ func (w *Worker) readOutput(ctx context.Context) {
 func (w *Worker) trySend(env *events.Envelope) {
 	conn := w.Conn()
 	if conn == nil {
+		w.BaseWorker.Log.Warn("claudecode: trySend conn nil", "session_id", w.sessionID)
 		return
 	}
 
 	// Duck-typed interface: *base.Conn (production) and mockConn (tests) both satisfy it.
 	ts, ok := conn.(interface{ TrySend(*events.Envelope) bool })
 	if !ok {
+		w.BaseWorker.Log.Warn("claudecode: trySend conn type unsupported", "session_id", w.sessionID, "type", fmt.Sprintf("%T", conn))
 		return
 	}
 	if !ts.TrySend(env) {
-		w.BaseWorker.Log.Warn("claudecode: recv channel full, dropping message")
+		w.BaseWorker.Log.Warn("claudecode: recv channel full, dropping", "session_id", w.sessionID, "event_type", env.Event.Type)
 	}
 }
 

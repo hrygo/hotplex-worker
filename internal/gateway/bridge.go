@@ -146,7 +146,9 @@ var _ = events.Clone // compile-time check that Clone is accessible
 // AEP-020: after the recv channel closes, calls Worker.Wait() to determine exit
 // code and sets DoneData.Success accordingly (non-zero exit = crash = success=false).
 func (b *Bridge) forwardEvents(w worker.Worker, sessionID string) {
+	b.log.Info("bridge: forwardEvents goroutine started", "session_id", sessionID)
 	for env := range w.Conn().Recv() {
+		b.log.Debug("bridge: received event from worker", "session_id", sessionID, "event_type", env.Event.Type)
 		// Make a defensive copy before mutating SessionID to avoid a data race
 		// with Hub.Run which reads env during JSON encoding (hub mutates Seq).
 		env = events.Clone(env)

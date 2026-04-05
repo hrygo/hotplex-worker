@@ -40,6 +40,7 @@ func NewHandler(log *slog.Logger, cfg *config.Config, hub *Hub, sm *session.Mana
 
 // Handle processes an incoming envelope from a client.
 func (h *Handler) Handle(ctx context.Context, env *events.Envelope) error {
+	h.log.Debug("gateway: Handle called", "event_type", env.Event.Type, "session_id", env.SessionID, "seq", env.Seq)
 	switch env.Event.Type {
 	case events.Input:
 		return h.handleInput(ctx, env)
@@ -57,20 +58,28 @@ func (h *Handler) Handle(ctx context.Context, env *events.Envelope) error {
 }
 
 func (h *Handler) handleInput(ctx context.Context, env *events.Envelope) error {
+	h.log.Debug("gateway: handleInput called", "session_id", env.SessionID, "seq", env.Seq)
+
 	data, ok := env.Event.Data.(map[string]any)
 	if !ok {
+		h.log.Warn("gateway: handleInput malformed data", "session_id", env.SessionID)
 		return h.sendErrorf(ctx, env, events.ErrCodeInvalidMessage, "malformed input data")
 	}
 
 	content, _ := data["content"].(string)
+	h.log.Debug("gateway: handleInput content received", "session_id", env.SessionID, "content_len", len(content))
 
 	// Check SESSION_BUSY: session must be active.
 	si, err := h.sm.Get(env.SessionID)
 	if err != nil {
+		h.log.Warn("gateway: handleInput session not found", "session_id", env.SessionID, "err", err)
 		return h.sendErrorf(ctx, env, events.ErrCodeSessionNotFound, "session not found")
 	}
 
+	h.log.Debug("gateway: handleInput session state", "session_id", env.SessionID, "state", si.State)
+
 	if !si.State.IsActive() {
+		h.log.Warn("gateway: handleInput session not active", "session_id", env.SessionID, "state", si.State)
 		return h.sendErrorf(ctx, env, events.ErrCodeSessionBusy, "session not active: %s", si.State)
 	}
 
@@ -78,6 +87,7 @@ func (h *Handler) handleInput(ctx context.Context, env *events.Envelope) error {
 	// which is handled by Bridge.StartSession in performInit). This covers the resume case.
 	if si.State == events.StateIdle {
 		if err := h.sm.TransitionWithInput(ctx, env.SessionID, events.StateRunning, content, nil); err != nil {
+			h.log.Warn("gateway: handleInput transition failed", "session_id", env.SessionID, "err", err)
 			return h.sendErrorf(ctx, env, events.ErrCodeSessionBusy, "session busy: %v", err)
 		}
 	}
@@ -85,9 +95,14 @@ func (h *Handler) handleInput(ctx context.Context, env *events.Envelope) error {
 	// Deliver to worker.
 	w := h.sm.GetWorker(env.SessionID)
 	if w != nil {
+		h.log.Debug("gateway: delivering input to worker", "session_id", env.SessionID, "content_preview", content)
 		if err := w.Input(ctx, content, nil); err != nil {
 			h.log.Warn("gateway: worker input", "err", err, "session_id", env.SessionID)
+		} else {
+			h.log.Info("gateway: input delivered to worker", "session_id", env.SessionID)
 		}
+	} else {
+		h.log.Error("gateway: handleInput no worker found", "session_id", env.SessionID)
 	}
 
 	return nil

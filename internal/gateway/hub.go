@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"go.opentelemetry.io/otel/codes"
 
 	"github.com/hotplex/hotplex-worker/internal/config"
 	"github.com/hotplex/hotplex-worker/internal/metrics"
@@ -150,18 +149,27 @@ func (h *Hub) UnregisterConn(conn *Conn) {
 }
 
 // JoinSession subscribes conn to receive events for a session.
-// If the session already has another connection, the old one is disconnected
-// (per the "按 session_id 去重连接，只保留最新连接" rule).
+// If the session already has another connection, the old ones are removed from
+// the session routing map (no longer receive events) and left to close
+// naturally when their WebSocket read loop encounters the closed socket.
+// This prevents the race where worker responses go to a stale connection,
+// while avoiding the reconnect storms caused by forcibly closing connections
+// (which triggers client WebSocket onclose → reconnect loops).
+// This implements the "按 session_id 去重连接，只保留最新连接" rule.
 func (h *Hub) JoinSession(sessionID string, conn *Conn) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	// Kick out existing connections for this session.
+	// Remove stale connections from session routing only — do NOT call Close().
+	// Each removed conn's ReadPump goroutine will exit naturally when the
+	// underlying TCP connection is torn down (either by the client closing
+	// its end, or by WritePump detecting the dead socket on next write).
+	// This avoids triggering the client's WebSocket onclose → reconnect logic.
 	if existing, ok := h.sessions[sessionID]; ok {
 		for c := range existing {
 			if c != conn {
-				h.log.Info("gateway: disconnecting stale connection", "session_id", sessionID)
-				c.Close()
+				delete(existing, c)
+				h.log.Info("gateway: removed stale conn from session", "session_id", sessionID)
 			}
 		}
 	}
@@ -182,6 +190,21 @@ func (h *Hub) LeaveSession(sessionID string, conn *Conn) {
 		}
 	}
 	h.mu.Unlock()
+}
+
+// sendBroadcast safely sends to the broadcast channel, recovering from a closed-channel panic.
+// This handles the race where StateNotifier goroutines (triggered by session state transitions)
+// attempt to send after the hub has shut down and closed the broadcast channel.
+func (h *Hub) sendBroadcast(msg *EnvelopeWithConn) (sent bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			h.log.Warn("gateway: broadcast channel closed, dropping state event",
+				"session_id", msg.Env.SessionID, "event", msg.Env.Event.Type, "panic", r)
+			sent = false
+		}
+	}()
+	h.broadcast <- msg
+	return true
 }
 
 // SendToSession delivers a message to all connections subscribed to a session.
@@ -218,31 +241,22 @@ func (h *Hub) SendToSession(ctx context.Context, env *events.Envelope, afterDrai
 	// The clone is created inside the select to keep the backpressure check
 	// and send atomic (same as the original code).
 	if isDroppable(env.Event.Type) {
-		select {
-		case h.broadcast <- &EnvelopeWithConn{Env: events.Clone(env), afterDrain: afterDrainCallback}:
-			return nil
-		default:
-			// Silently drop delta — seq is NOT incremented for dropped events,
-			// so client will not see seq gaps from intentional drops.
-			h.mu.Lock()
-			h.sessionDropped[env.SessionID] = true
-			h.mu.Unlock()
-			metrics.GatewayDeltasDropped.Inc()
-			h.log.Debug("gateway: dropped delta (backpressure)", "session_id", env.SessionID)
+		if h.sendBroadcast(&EnvelopeWithConn{Env: events.Clone(env), afterDrain: afterDrainCallback}) {
 			return nil
 		}
+		// sendBroadcast returned false = channel closed; drop delta silently.
+		h.mu.Lock()
+		h.sessionDropped[env.SessionID] = true
+		h.mu.Unlock()
+		metrics.GatewayDeltasDropped.Inc()
+		return nil
 	}
 
 	// Guaranteed delivery path.
-	select {
-	case h.broadcast <- &EnvelopeWithConn{Env: events.Clone(env), afterDrain: afterDrainCallback}:
+	if h.sendBroadcast(&EnvelopeWithConn{Env: events.Clone(env), afterDrain: afterDrainCallback}) {
 		return nil
-	default:
-		err := errors.New("gateway: broadcast queue full")
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return err
 	}
+	return errors.New("gateway: broadcast channel closed")
 }
 
 func (h *Hub) sendControlToSession(ctx context.Context, env *events.Envelope) error {
