@@ -47,21 +47,17 @@ func main() {
 	// Handle events in background goroutine.
 	go func() {
 		for evt := range c.Events() {
-			switch evt.Kind {
-			case client.KindMessageDelta:
-				if content, ok := evt.Data.(map[string]any); ok {
-					if text, ok := content["content"].(string); ok {
-						fmt.Print(text)
-					}
+			switch evt.Type {
+			case client.EventMessageDelta:
+				if m, ok := evt.Data.(map[string]any); ok {
+					fmt.Print(m["content"])
 				}
-			case client.KindDone:
-				fmt.Println("\n--- done ---")
-				os.Exit(0)
-			case client.KindError:
-				if err, ok := evt.Data.(map[string]any); ok {
-					fmt.Fprintf(os.Stderr, "\nerror: %v\n", err["message"])
-				}
-				os.Exit(1)
+			case client.EventDone:
+				fmt.Println("\nFinished!")
+				return
+			case client.EventError:
+				fmt.Printf("\nError: %v\n", evt.Data)
+				return
 			}
 		}
 	}()

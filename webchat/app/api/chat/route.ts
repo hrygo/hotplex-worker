@@ -1,4 +1,4 @@
-import { createHotPlexHandler } from '@hotplex/ai-sdk-transport/server';
+import { createHotPlexHandler } from '@/lib/ai-sdk-transport/server/index';
 
 const handleChat = createHotPlexHandler({
   url: process.env.HOTPLEX_WS_URL || 'ws://localhost:8888/ws',

@@ -253,6 +253,13 @@ func setupRoutes(
 		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
 
+	// Browser-accessible session API (auth via api_key query param).
+	gatewayAPI := gateway.NewGatewayAPI(auth, sm, bridge)
+	mux.HandleFunc("GET /api/sessions", gatewayAPI.ListSessions)
+	mux.HandleFunc("POST /api/sessions", gatewayAPI.CreateSession)
+	mux.HandleFunc("GET /api/sessions/", gatewayAPI.GetSession)
+	mux.HandleFunc("DELETE /api/sessions/", gatewayAPI.DeleteSession)
+
 	mux.HandleFunc("GET /admin/health/ready", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})

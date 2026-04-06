@@ -6,4 +6,4 @@
  */
 
 // Re-export route handler
-export { createHotPlexHandler, type HotPlexRouteConfig } from './route-handler.js';
+export { createHotPlexHandler, type HotPlexRouteConfig } from './route-handler';

@@ -33,7 +33,7 @@ client.go    # Client struct: Connect, Resume, SendInput, SendPermissionResponse
 
 **Event delivery**
 - Events() returns `<-chan Event` (read-only)
-- Event struct: Kind (string), Seq (int64), Session (string), Data (any)
+- Event struct: Type (string), Seq (int64), Session (string), Data (any)
 
 **Error handling**
 - ErrNotConnected sentinel for operations before Connect()

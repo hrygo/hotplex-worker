@@ -1,6 +1,6 @@
-import { BrowserHotPlexClient } from '../client/browser-client.js';
-import { mapAepToDataStream, mapErrorToDataStream, type DataStreamWriter } from '../transport/chunk-mapper.js';
-import type { ErrorData } from '../client/types.js';
+import { BrowserHotPlexClient } from '../client/browser-client';
+import { mapAepToDataStream, mapErrorToDataStream, type DataStreamWriter } from '../transport/chunk-mapper';
+import type { ErrorData } from '../client/types';
 
 /**
  * Configuration for HotPlex API route handler
@@ -32,45 +32,11 @@ export interface HotPlexRouteConfig {
  *
  * This is a framework-agnostic handler that can be used with
  * Next.js, Remix, or any other framework that supports Web API Request/Response.
- *
- * @example
- * ```typescript
- * // Next.js App Router
- * import { createHotPlexHandler } from '@hotplex/ai-sdk-transport/server';
- *
- * const handleChat = createHotPlexHandler({
- *   url: process.env.HOTPLEX_WS_URL!,
- *   workerType: 'claude_code',
- *   apiKey: process.env.HOTPLEX_API_KEY,
- * });
- *
- * export async function POST(req: Request) {
- *   const body = await req.json();
- *   return handleChat(body);
- * }
- * ```
- *
- * @example
- * ```typescript
- * // Express
- * import { createHotPlexHandler } from '@hotplex/ai-sdk-transport/server';
- *
- * const handleChat = createHotPlexHandler({
- *   url: process.env.HOTPLEX_WS_URL!,
- *   workerType: 'claude_code',
- *   apiKey: process.env.HOTPLEX_API_KEY,
- * });
- *
- * app.post('/api/chat', async (req, res) => {
- *   const response = await handleChat(req.body);
- *   // Handle streaming response...
- * });
- * ```
  */
 export function createHotPlexHandler(config: HotPlexRouteConfig) {
   return async (request: {
-    messages: Array<{ 
-      role: string; 
+    messages: Array<{
+      role: string;
       content?: string | Array<{ type: string; text?: string }>;
       parts?: Array<{ type: string; text?: string }>;
     }>;
@@ -98,7 +64,7 @@ export function createHotPlexHandler(config: HotPlexRouteConfig) {
     // Create WebSocket client
     const client = new BrowserHotPlexClient({
       url: config.url,
-      workerType: config.workerType as import('../client/constants.js').WorkerType,
+      workerType: config.workerType as import('../client/constants').WorkerType,
       apiKey: config.apiKey,
       authToken: config.authToken,
       heartbeat: { pingIntervalMs: 10000, pongTimeoutMs: 5000, maxMissedPongs: 2 },

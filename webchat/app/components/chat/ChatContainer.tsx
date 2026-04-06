@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { BrowserHotPlexClient } from '@hotplex/ai-sdk-transport';
-import type { MessageDeltaData, ErrorData, DoneData, ReasoningData } from '@hotplex/ai-sdk-transport';
+import { BrowserHotPlexClient } from '@/lib/ai-sdk-transport';
+import type { MessageDeltaData, ErrorData, DoneData, ReasoningData } from '@/lib/ai-sdk-transport';
 import MessageList from './MessageList';
 import ChatInput from './ChatInput';
 import ThinkingIndicator from './ThinkingIndicator';

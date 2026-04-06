@@ -1,5 +1,6 @@
-import type { BrowserHotPlexClient } from '../client/browser-client.js';
-import type { DataStreamWriter, JSONValue } from 'ai';
+import type { BrowserHotPlexClient } from '../client/browser-client';
+import type { JSONValue } from 'ai';
+import type { DataStreamWriter } from './chunk-mapper';
 import type {
   MessageStartData,
   MessageDeltaData,
@@ -11,7 +12,7 @@ import type {
   StepData,
   PermissionRequestData,
   ErrorData,
-} from '../client/types.js';
+} from '../client/types';
 
 /**
  * Create a data stream writer that maps AEP events to AI SDK data stream format.
@@ -143,7 +144,6 @@ export function createAepStream(
 
   // Abort handling
   const onAbort = () => {
-    // controller may not be set yet if abort fires during start()
     controller?.close();
   };
 

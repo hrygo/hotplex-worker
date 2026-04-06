@@ -7,7 +7,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ExternalStoreAdapter, ThreadMessageLike, AppendMessage } from '@assistant-ui/react';
-import { BrowserHotPlexClient } from '@hotplex/ai-sdk-transport';
+import { BrowserHotPlexClient } from '@/lib/ai-sdk-transport';
 import type {
   Envelope,
   MessageDeltaData,
@@ -15,7 +15,7 @@ import type {
   DoneData,
   ErrorData,
   ReasoningData,
-} from '@hotplex/ai-sdk-transport';
+} from '@/lib/ai-sdk-transport';
 
 // ThreadSuggestion shape — matches @assistant-ui/core ThreadSuggestion
 type ThreadSuggestion = { prompt: string };
@@ -28,6 +28,8 @@ export interface UseHotPlexRuntimeConfig {
   url?: string;
   workerType?: string;
   apiKey?: string;
+  /** Initial session ID to resume (calls resume() instead of connect()). */
+  sessionId?: string;
 }
 
 // Single part of a message
@@ -107,6 +109,7 @@ export function useHotPlexRuntime({
   url = 'ws://localhost:8888/ws',
   workerType = 'claude_code',
   apiKey = 'dev',
+  sessionId,
 }: UseHotPlexRuntimeConfig = {}): ExternalStoreAdapter<HotPlexMessage> {
   // State
   const [messages, setMessages] = useState<HotPlexMessage[]>([]);
@@ -277,8 +280,8 @@ export function useHotPlexRuntime({
     client.on('reasoning', handleReasoning);
     client.on('messageStart', handleMessageStart);
 
-    // Connect
-    client.connect().catch((err) => {
+    // Connect (resume an existing session or create new one)
+    client.connect(sessionId).catch((err) => {
       console.error('HotPlexRuntimeAdapter: connection failed', err);
     });
 
@@ -294,7 +297,7 @@ export function useHotPlexRuntime({
       client.disconnect();
       clientRef.current = null;
     };
-  }, [url, workerType, apiKey]);
+  }, [url, workerType, apiKey, sessionId]);
 
   // Handler for new messages (from assistant-ui Composer)
   // NOTE: reads client.connected directly from ref to avoid stale closure with isConnected state

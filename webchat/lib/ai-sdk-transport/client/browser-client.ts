@@ -12,7 +12,7 @@ import {
   ErrorCode,
   ControlAction,
   ProtocolConstants,
-} from './constants.js';
+} from './constants';
 import type {
   HotPlexClientConfig,
   ReconnectConfig,
@@ -33,7 +33,7 @@ import type {
   StepData,
   PongData,
   ControlData,
-} from './types.js';
+} from './types';
 import {
   createInitEnvelope,
   createInputEnvelope,
@@ -44,7 +44,7 @@ import {
   deserializeEnvelope,
   newSessionId,
   isInitAck,
-} from './envelope.js';
+} from './envelope';
 
 // ============================================================================
 // Event Types
@@ -162,13 +162,10 @@ export class BrowserHotPlexClient extends EventEmitter<BrowserClientEvents> {
   async connect(sessionId?: string): Promise<InitAckData> {
     this.closed = false;
     this.shouldReconnect = true;
-    // If reconnecting (has existing _sessionId), pass it so gateway can match the existing session.
-    // If first connect, pass undefined so gateway assigns a new session ID.
     const id = sessionId || this._sessionId || undefined;
     if (id) {
       this._sessionId = id;
     }
-    // Pass undefined for new sessions — wait for init_ack to get the gateway-assigned session ID.
     return this._doConnect(id);
   }
 
@@ -182,14 +179,11 @@ export class BrowserHotPlexClient extends EventEmitter<BrowserClientEvents> {
   private _doConnect(sessionId: string | undefined): Promise<InitAckData> {
     return new Promise((resolve, reject) => {
       try {
-        // Mute any pending onclose handler on the previous WebSocket instance
-        // so its close event (from TCP teardown) does not trigger reconnect logic.
         const prevWs = this.ws;
         if (prevWs) {
           prevWs.onclose = null;
         }
 
-        // Build URL with API key as query param (browser WebSocket doesn't support headers)
         let url = this.config.url;
         if (this.config.apiKey) {
           const separator = url.includes('?') ? '&' : '?';
@@ -207,7 +201,6 @@ export class BrowserHotPlexClient extends EventEmitter<BrowserClientEvents> {
 
         const onOpen = () => {
           if (!this.ws) return;
-          // sessionId will be set from init_ack; don't set eagerly.
           this.ws.send(serializeEnvelope(initEnv));
         };
 
@@ -227,8 +220,6 @@ export class BrowserHotPlexClient extends EventEmitter<BrowserClientEvents> {
           // WebSocket error events don't carry useful info; close event follows
         };
 
-        // Capture the socket instance so the close handler can detect
-        // when this WebSocket has been superseded by a newer one.
         const activeWs = this.ws;
 
         this.ws.addEventListener('open', onOpen);

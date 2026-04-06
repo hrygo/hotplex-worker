@@ -17,7 +17,7 @@ import type {
   StepData,
   PermissionRequestData,
   ErrorData,
-} from '../client/types.js';
+} from '../client/types';
 
 /**
  * Data stream writer interface
@@ -226,7 +226,7 @@ function getErrorMessage(code: string, defaultMessage: string): string {
  */
 export function mapAepToDataStream(
   writer: DataStreamWriter,
-  client: import('../client/browser-client.js').BrowserHotPlexClient,
+  client: import('../client/browser-client').BrowserHotPlexClient,
 ): void {
   client.on('messageStart', (data: MessageStartData) => mapMessageStart(writer, data));
   client.on('delta', (data: MessageDeltaData) => mapMessageDelta(writer, data));

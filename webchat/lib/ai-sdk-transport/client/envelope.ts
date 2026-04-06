@@ -1,6 +1,6 @@
 /**
  * Envelope creation and utility helpers for AEP v1 protocol.
- * 
+ *
  * Design rationale:
  * - All AEP messages are NDJSON (one JSON object per line)
  * - Event IDs use format "evt_<uuid>" (see internal/aep/codec.go)
@@ -14,13 +14,13 @@ import {
   SESSION_ID_PREFIX,
   EventKind,
   Priority,
-} from './constants.js';
+} from './constants';
 import type {
   Envelope,
   InputData,
   InitData,
   ControlData,
-} from './types.js';
+} from './types';
 
 // ============================================================================
 // UUID Generation

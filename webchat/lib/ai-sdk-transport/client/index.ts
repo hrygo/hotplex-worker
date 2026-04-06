@@ -2,8 +2,8 @@
  * Client-side BrowserHotPlexClient for direct WebSocket connections.
  */
 
-export { BrowserHotPlexClient } from './browser-client.js';
-export type { BrowserClientEvents } from './browser-client.js';
+export { BrowserHotPlexClient } from './browser-client';
+export type { BrowserClientEvents } from './browser-client';
 
 // Re-export types and constants
 export type {
@@ -25,7 +25,7 @@ export type {
   StepData,
   PermissionRequestData,
   DoneData,
-} from './types.js';
+} from './types';
 
 export {
   EventKind,
@@ -34,4 +34,4 @@ export {
   ControlAction,
   WorkerType,
   AEP_VERSION,
-} from './constants.js';
+} from './constants';

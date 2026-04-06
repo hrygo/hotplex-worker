@@ -1,4 +1,4 @@
-import type { WorkerType } from '../client/constants.js';
+import type { WorkerType } from '../client/constants';
 
 /**
  * Configuration for HotPlex transport

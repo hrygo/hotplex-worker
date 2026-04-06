@@ -934,6 +934,14 @@ func (m *mockBridgeSM) Delete(ctx context.Context, id string) error {
 	return args.Error(0)
 }
 
+func (m *mockBridgeSM) List(ctx context.Context, limit, offset int) ([]*session.SessionInfo, error) {
+	args := m.Called(ctx, limit, offset)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*session.SessionInfo), args.Error(1)
+}
+
 var _ SessionManager = (*mockBridgeSM)(nil)
 
 // mockBridgeWorker is a configurable fake Worker for Bridge tests.

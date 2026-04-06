@@ -60,7 +60,7 @@ type Client struct {
 
 // Event is an inbound event delivered via the Events() channel.
 type Event struct {
-	Kind    string      `json:"kind"`
+	Type    string      `json:"type"`
 	Seq     int64       `json:"seq"`
 	Session string      `json:"session"`
 	Data    interface{} `json:"data,omitempty"`
@@ -167,7 +167,7 @@ func (c *Client) doConnect(ctx context.Context, sessionID string, isResume bool)
 		conn.Close()
 		return nil, fmt.Errorf("client: decode init ack: %w", err)
 	}
-	if ackEnv.Event.Type != KindInitAck {
+	if ackEnv.Event.Type != EventInitAck {
 		conn.Close()
 		return nil, fmt.Errorf("client: unexpected event type %q (expected init_ack)", ackEnv.Event.Type)
 	}
@@ -293,19 +293,19 @@ func (c *Client) recvPump() {
 			if isClosedWS(err) {
 				return
 			}
-			c.deliver(Event{Kind: KindError, Data: map[string]any{"code": "read_error", "message": err.Error()}})
+			c.deliver(Event{Type: EventError, Data: map[string]any{"code": "read_error", "message": err.Error()}})
 			return
 		}
 
 		raw, err := io.ReadAll(r)
 		if err != nil {
-			c.deliver(Event{Kind: KindError, Data: map[string]any{"code": "read_error", "message": err.Error()}})
+			c.deliver(Event{Type: EventError, Data: map[string]any{"code": "read_error", "message": err.Error()}})
 			return
 		}
 
 		env, err := aep.DecodeLine(raw)
 		if err != nil {
-			c.deliver(Event{Kind: KindError, Data: map[string]any{"code": "decode_error", "message": err.Error()}})
+			c.deliver(Event{Type: EventError, Data: map[string]any{"code": "decode_error", "message": err.Error()}})
 			return
 		}
 
@@ -321,7 +321,7 @@ func (c *Client) recvPump() {
 		}
 
 		c.deliver(Event{
-			Kind:    string(env.Event.Type),
+			Type:    string(env.Event.Type),
 			Seq:     env.Seq,
 			Session: env.SessionID,
 			Data:    env.Event.Data,
@@ -380,8 +380,8 @@ func (c *Client) deliver(evt Event) {
 		// Backpressure: drop non-critical events when channel is full.
 		// Only preserve done/error; streamable events (message.delta) can be
 		// reconstructed from the final message.
-		if evt.Kind != KindDone && evt.Kind != KindError {
-			c.logger.Warn("events channel full, dropping event", "kind", evt.Kind)
+		if evt.Type != EventDone && evt.Type != EventError {
+			c.logger.Warn("events channel full, dropping event", "type", evt.Type)
 		}
 	}
 }

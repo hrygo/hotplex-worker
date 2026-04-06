@@ -1,4 +1,4 @@
-import type { EventKind, Priority, SessionState, ErrorCode, ControlAction, WorkerType } from './constants.js';
+import type { EventKind, Priority, SessionState, ErrorCode, ControlAction, WorkerType } from './constants';
 
 // ============================================================================
 // Envelope and Event Structures (from pkg/events/events.go)

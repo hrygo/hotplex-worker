@@ -118,17 +118,17 @@ func main() {
 
 func handleEvents(c *client.Client, st *stats, autoApprove bool) {
 	for evt := range c.Events() {
-		switch evt.Kind {
-		case client.KindMessageDelta:
+		switch evt.Type {
+		case client.EventMessageDelta:
 			if content := fieldStr(evt.Data, "content"); content != "" {
 				fmt.Print(content)
 			}
-		case client.KindMessageStart:
+		case client.EventMessageStart:
 			role := fieldStr(evt.Data, "role")
 			fmt.Printf("\n[message start: %s]\n", role)
-		case client.KindMessageEnd:
+		case client.EventMessageEnd:
 			fmt.Println()
-		case client.KindToolCall:
+		case client.EventToolCall:
 			st.toolCalls++
 			name := fieldStr(evt.Data, "name")
 			if args := fieldStr(evt.Data, "input"); args != "" {
@@ -136,7 +136,7 @@ func handleEvents(c *client.Client, st *stats, autoApprove bool) {
 			} else {
 				fmt.Printf("\n[tool: %s]\n", name)
 			}
-		case client.KindToolResult:
+		case client.EventToolResult:
 			output := fieldStr(evt.Data, "output")
 			if output != "" {
 				fmt.Printf("[tool result: %s]\n", truncate(output, 100))
@@ -144,12 +144,12 @@ func handleEvents(c *client.Client, st *stats, autoApprove bool) {
 			if errStr := fieldStr(evt.Data, "error"); errStr != "" {
 				fmt.Printf("[tool error: %s]\n", errStr)
 			}
-		case client.KindReasoning:
+		case client.EventReasoning:
 			content := fieldStr(evt.Data, "content")
 			if content != "" {
 				fmt.Printf("\n[reasoning: %s]\n", truncate(content, 120))
 			}
-		case client.KindPermissionRequest:
+		case client.EventPermissionRequest:
 			toolName := fieldStr(evt.Data, "tool_name")
 			desc := fieldStr(evt.Data, "description")
 			id := fieldStr(evt.Data, "id")
@@ -161,10 +161,10 @@ func handleEvents(c *client.Client, st *stats, autoApprove bool) {
 				fmt.Printf("[permission denied: %s — set HOTPLEX_AUTO_APPROVE=1 to auto-approve]\n", toolName)
 				_ = c.SendPermissionResponse(context.Background(), id, false, "not in allowlist")
 			}
-		case client.KindState:
+		case client.EventState:
 			state := fieldStr(evt.Data, "state")
 			fmt.Printf("\n[state: %s]\n", state)
-		case client.KindDone:
+		case client.EventDone:
 			fmt.Println("\n" + strings.Repeat("=", 50))
 			fmt.Println("Session complete")
 			if data, ok := evt.Data.(map[string]any); ok {
@@ -200,15 +200,15 @@ func handleEvents(c *client.Client, st *stats, autoApprove bool) {
 			fmt.Printf("Session: %s\n", c.SessionID())
 			c.Close()
 			os.Exit(0)
-		case client.KindError:
+		case client.EventError:
 			errMsg := fieldStr(evt.Data, "message")
 			code := fieldStr(evt.Data, "code")
 			fmt.Fprintf(os.Stderr, "\n[ERROR %s] %s\n", code, errMsg)
 			os.Exit(1)
-		case client.KindControl:
+		case client.EventControl:
 			action := fieldStr(evt.Data, "action")
 			fmt.Printf("\n[control: %s]\n", action)
-		case client.KindPong:
+		case client.EventPong:
 			fmt.Print("[pong]")
 		}
 	}
