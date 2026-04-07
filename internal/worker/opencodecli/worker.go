@@ -90,66 +90,11 @@ func (w *Worker) Modalities() []string    { return []string{"text", "code"} }
 
 // ─── Worker Lifecycle ─────────────────────────────────────────────────────────
 
-func (w *Worker) Start(ctx context.Context, session worker.SessionInfo) error {
-	w.Mu.Lock()
-	defer w.Mu.Unlock()
-
-	if w.Proc != nil {
-		return fmt.Errorf("opencodecli: already started")
-	}
-
-	w.sessionInfo = session
-
-	args := w.buildCLIArgs(session, "")
-	env := base.BuildEnv(session, openCodeEnvWhitelist, "opencode-cli")
-
-	w.Proc = proc.New(proc.Opts{
-		Logger:       w.Log,
-		AllowedTools: session.AllowedTools,
-	})
-
-	var err error
-	w.stdin, _, _, err = w.Proc.Start(ctx, "opencode", args, env, session.ProjectDir)
-	if err != nil {
-		w.Proc = nil
-		return fmt.Errorf("opencodecli: start: %w", err)
-	}
-
-	// Send initial message(s) as plain text over stdin.
-	if err := w.writeStdin(session.Args...); err != nil {
-		_ = w.Proc.Kill()
-		_ = w.Proc.Close()
-		w.Proc = nil
-		w.stdin = nil
-		return fmt.Errorf("opencodecli: start: stdin: %w", err)
-	}
-
-	childCtx, cancel := context.WithCancel(ctx)
-	w.cancel = cancel
-
-	w.parser = NewParser(w.Log)
-	w.mapper = NewMapper(w.Log, session.SessionID, w.nextSeq)
-
-	w.conn = newRecvOnlyConn(session.UserID, session.SessionID, func() {
-		if w.stdin != nil {
-			w.stdin.Close()
-			w.stdin = nil
-		}
-		if w.Proc != nil {
-			_ = w.Proc.Close()
-		}
-	})
-
-	w.BaseWorker.StartTime = time.Now()
-	w.BaseWorker.SetLastIO(w.BaseWorker.StartTime)
-
-	go w.readOutput(childCtx)
-	return nil
-}
-
-func (w *Worker) Input(ctx context.Context, content string, metadata map[string]any) error {
-	w.Mu.Lock()
-
+// startLocked is the shared process startup sequence.
+// Caller must hold Mu; startLocked releases it before returning.
+// It terminates any existing proc, reinitializes stdin/stdout with a new
+// subprocess, runs writeStdinFn, and starts the readOutput goroutine.
+func (w *Worker) startLocked(ctx context.Context, session worker.SessionInfo, openCodeSID string, writeStdinFn func() error) error {
 	if w.cancel != nil {
 		w.cancel()
 	}
@@ -161,13 +106,6 @@ func (w *Worker) Input(ctx context.Context, content string, metadata map[string]
 	if w.stdin != nil {
 		w.stdin.Close()
 		w.stdin = nil
-	}
-
-	session := w.sessionInfo
-
-	openCodeSID := ""
-	if v := w.openCodeSessionID.Load(); v != nil {
-		openCodeSID, _ = v.(string)
 	}
 
 	args := w.buildCLIArgs(session, openCodeSID)
@@ -183,16 +121,16 @@ func (w *Worker) Input(ctx context.Context, content string, metadata map[string]
 	if err != nil {
 		w.Proc = nil
 		w.Mu.Unlock()
-		return fmt.Errorf("opencodecli: input: start: %w", err)
+		return err
 	}
 
-	if err := w.writeStdin(content); err != nil {
+	if err := writeStdinFn(); err != nil {
 		_ = w.Proc.Kill()
 		_ = w.Proc.Close()
 		w.Proc = nil
 		w.stdin = nil
 		w.Mu.Unlock()
-		return fmt.Errorf("opencodecli: input: stdin: %w", err)
+		return err
 	}
 
 	childCtx, cancel := context.WithCancel(ctx)
@@ -205,27 +143,36 @@ func (w *Worker) Input(ctx context.Context, content string, metadata map[string]
 	w.BaseWorker.SetLastIO(w.BaseWorker.StartTime)
 
 	w.Mu.Unlock()
-
 	go w.readOutput(childCtx)
 	return nil
+}
+
+func (w *Worker) Start(ctx context.Context, session worker.SessionInfo) error {
+	w.Mu.Lock()
+	if w.Proc != nil {
+		w.Mu.Unlock()
+		return fmt.Errorf("opencodecli: already started")
+	}
+	w.sessionInfo = session
+	return w.startLocked(ctx, session, "", func() error {
+		return w.writeStdin(session.Args...)
+	})
+}
+
+func (w *Worker) Input(ctx context.Context, content string, metadata map[string]any) error {
+	w.Mu.Lock()
+	openCodeSID := ""
+	if v := w.openCodeSessionID.Load(); v != nil {
+		openCodeSID, _ = v.(string)
+	}
+	return w.startLocked(ctx, w.sessionInfo, openCodeSID, func() error {
+		return w.writeStdin(content)
+	})
 }
 
 func (w *Worker) Resume(ctx context.Context, session worker.SessionInfo) error {
 	w.Mu.Lock()
 	defer w.Mu.Unlock()
-
-	if w.cancel != nil {
-		w.cancel()
-	}
-	if w.Proc != nil {
-		_ = w.Proc.Kill()
-		_ = w.Proc.Close()
-		w.Proc = nil
-	}
-	if w.stdin != nil {
-		w.stdin.Close()
-		w.stdin = nil
-	}
 
 	w.sessionInfo = session
 
@@ -234,26 +181,10 @@ func (w *Worker) Resume(ctx context.Context, session worker.SessionInfo) error {
 		openCodeSID, _ = v.(string)
 	}
 
-	args := w.buildCLIArgs(session, openCodeSID)
-	env := base.BuildEnv(session, openCodeEnvWhitelist, "opencode-cli")
-
-	w.Proc = proc.New(proc.Opts{
-		Logger:       w.Log,
-		AllowedTools: session.AllowedTools,
-	})
-
-	var err error
-	w.stdin, _, _, err = w.Proc.Start(ctx, "opencode", args, env, session.ProjectDir)
-	if err != nil {
-		w.Proc = nil
-		return fmt.Errorf("opencodecli: resume: start: %w", err)
+	// startLocked releases the lock; re-establish conn after it returns.
+	if err := w.startLocked(ctx, session, openCodeSID, func() error { return nil }); err != nil {
+		return err
 	}
-
-	childCtx, cancel := context.WithCancel(ctx)
-	w.cancel = cancel
-
-	w.parser = NewParser(w.Log)
-	w.mapper = NewMapper(w.Log, session.SessionID, w.nextSeq)
 
 	w.conn = newRecvOnlyConn(session.UserID, session.SessionID, func() {
 		if w.stdin != nil {
@@ -264,12 +195,23 @@ func (w *Worker) Resume(ctx context.Context, session worker.SessionInfo) error {
 			_ = w.Proc.Close()
 		}
 	})
-
-	w.BaseWorker.StartTime = time.Now()
-	w.BaseWorker.SetLastIO(w.BaseWorker.StartTime)
-
-	go w.readOutput(childCtx)
 	return nil
+}
+
+// ResetContext clears the worker runtime context.
+// OpenCode CLI does not support in-place clearing, so this terminates the
+// current process and starts a fresh one with the same session ID.
+func (w *Worker) ResetContext(ctx context.Context) error {
+	w.Mu.Lock()
+
+	openCodeSID := ""
+	if v := w.openCodeSessionID.Load(); v != nil {
+		openCodeSID, _ = v.(string)
+	}
+
+	return w.startLocked(ctx, w.sessionInfo, openCodeSID, func() error {
+		return w.writeStdin(w.sessionInfo.Args...)
+	})
 }
 
 // writeStdin writes messages as plain text (newline-separated) to subprocess stdin.
@@ -330,65 +272,6 @@ func (w *Worker) Health() worker.WorkerHealth {
 
 func (w *Worker) LastIO() time.Time {
 	return w.BaseWorker.LastIO()
-}
-
-// ResetContext clears the worker runtime context.
-// OpenCode CLI does not support in-place context clearing, so this terminates the
-// current process and starts a fresh one with the same session ID.
-// The Gateway layer has already called sm.ClearContext() to clear SessionInfo.Context.
-func (w *Worker) ResetContext(ctx context.Context) error {
-	w.Mu.Lock()
-	session := w.sessionInfo
-	w.Mu.Unlock()
-
-	if err := w.Terminate(ctx); err != nil {
-		return fmt.Errorf("opencodecli: reset terminate: %w", err)
-	}
-
-	openCodeSID := ""
-	if v := w.openCodeSessionID.Load(); v != nil {
-		openCodeSID, _ = v.(string)
-	}
-	// Start fresh with same opencode session ID (causes opencode to create fresh context).
-	args := w.buildCLIArgs(session, openCodeSID)
-	env := base.BuildEnv(session, openCodeEnvWhitelist, "opencode-cli")
-
-	w.Mu.Lock()
-	w.Proc = proc.New(proc.Opts{
-		Logger:       w.Log,
-		AllowedTools: session.AllowedTools,
-	})
-
-	var err error
-	w.stdin, _, _, err = w.Proc.Start(ctx, "opencode", args, env, session.ProjectDir)
-	if err != nil {
-		w.Proc = nil
-		w.Mu.Unlock()
-		return fmt.Errorf("opencodecli: reset start: %w", err)
-	}
-
-	if err := w.writeStdin(session.Args...); err != nil {
-		_ = w.Proc.Kill()
-		_ = w.Proc.Close()
-		w.Proc = nil
-		w.stdin = nil
-		w.Mu.Unlock()
-		return fmt.Errorf("opencodecli: reset stdin: %w", err)
-	}
-
-	childCtx, cancel := context.WithCancel(ctx)
-	w.cancel = cancel
-
-	w.parser = NewParser(w.Log)
-	w.mapper = NewMapper(w.Log, session.SessionID, w.nextSeq)
-
-	w.BaseWorker.StartTime = time.Now()
-	w.BaseWorker.SetLastIO(w.BaseWorker.StartTime)
-
-	w.Mu.Unlock()
-
-	go w.readOutput(childCtx)
-	return nil
 }
 
 // ─── CLI Arguments ────────────────────────────────────────────────────────────
@@ -500,7 +383,7 @@ func (w *Worker) readOutput(ctx context.Context) {
 			continue
 		}
 
-		events, err := parser.ParseLine(line)
+		evts, err := parser.ParseLine(line)
 		if err != nil {
 			w.Log.Warn("opencodecli: parse line", "error", err)
 			continue
@@ -508,7 +391,7 @@ func (w *Worker) readOutput(ctx context.Context) {
 
 		w.BaseWorker.SetLastIO(time.Now())
 
-		for _, evt := range events {
+		for _, evt := range evts {
 			w.handleEvent(evt, mapper)
 		}
 	}
