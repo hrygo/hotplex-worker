@@ -482,6 +482,30 @@ func (m *Manager) ClearContext(ctx context.Context, sessionID string) error {
 	return m.store.Upsert(ctx, &ms.info)
 }
 
+// UpdateWorkerSessionID persists the worker-internal session ID for resume support.
+// Workers that manage their own session IDs (OpenCode CLI, OpenCode Server) call this
+// to store the ID so it can be restored on resume.
+func (m *Manager) UpdateWorkerSessionID(ctx context.Context, id, workerSessionID string) error {
+	if m == nil {
+		return ErrSessionNotFound
+	}
+	ms := m.getManagedSession(id)
+	if ms == nil {
+		return ErrSessionNotFound
+	}
+
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
+
+	if ms.info.WorkerSessionID == workerSessionID {
+		return nil
+	}
+	ms.info.WorkerSessionID = workerSessionID
+	ms.info.UpdatedAt = time.Now()
+
+	return m.store.Upsert(ctx, &ms.info)
+}
+
 // DebugSessionSnapshot holds safe-to-expose debug info for a managed session.
 // Exists to prevent callers from acquiring the per-session mutex directly,
 // which would violate lock ordering invariants and risk deadlocks.

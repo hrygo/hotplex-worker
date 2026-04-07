@@ -15,7 +15,7 @@ func TestValidateInit_Inline(t *testing.T) {
 		Seq:       1,
 		SessionID: "sess_test",
 		Timestamp: time.Now().UnixMilli(),
-		Event: events.Event{Type: Init, Data: map[string]any{
+		Event: events.Event{Type: events.Init, Data: map[string]any{
 			"version":     events.Version,
 			"worker_type": "claude-code",
 		}},

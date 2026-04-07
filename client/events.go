@@ -8,6 +8,7 @@ const Version = events.Version // "aep/v1"
 
 // Event kind constants matching pkg/events/events.go.
 const (
+	EventInit               = string(events.Init)
 	EventError              = string(events.Error)
 	EventState              = string(events.State)
 	EventInput              = string(events.Input)

@@ -196,13 +196,13 @@ func (c *Conn) performInit(handler *Handler) error {
 	}
 
 	// Only accept init message as first message.
-	if env.Event.Type != Init {
+	if env.Event.Type != events.Init {
 		c.sendInitError(events.ErrCodeProtocolViolation, "expected init as first message, got "+string(env.Event.Type))
 		metrics.GatewayErrorsTotal.WithLabelValues(string(events.ErrCodeProtocolViolation)).Inc()
 		return fmt.Errorf("expected init, got %s", env.Event.Type)
 	}
 
-	metrics.GatewayMessagesTotal.WithLabelValues("incoming", Init).Inc()
+	metrics.GatewayMessagesTotal.WithLabelValues("incoming", string(events.Init)).Inc()
 
 	// Validate init fields.
 	initData, initErr := ValidateInit(env)
@@ -278,10 +278,10 @@ func (c *Conn) performInit(handler *Handler) error {
 		// Deleted session → reject.
 		c.sendInitError(events.ErrCodeSessionNotFound, "session was deleted")
 		return ErrInitSessionDeleted
-	} else if si.State == events.StateIdle {
-		// Idle session → resume worker (reattach to existing session/worker).
-		c.log.Info("gateway: resuming idle session", "session_id", sessionID)
-		// P1: ResumeSession requires a valid SessionStarter (Bridge). In test mode,
+	} else if si.State == events.StateIdle || si.State == events.StateTerminated {
+		// Idle/Terminated session → resume worker (reattach to existing session/worker).
+		c.log.Info("gateway: resuming session", "session_id", sessionID, "from_state", si.State)
+		// ResumeSession requires a valid SessionStarter (Bridge). In test mode,
 		// starter may be nil; skip resumption and let bot_id validation proceed.
 		if c.starter != nil {
 			if err := c.starter.ResumeSession(context.Background(), sessionID); err != nil {
@@ -289,9 +289,6 @@ func (c *Conn) performInit(handler *Handler) error {
 				return fmt.Errorf("resume session: %w", err)
 			}
 		}
-	} else if si.State == events.StateTerminated {
-		// Terminated → attempt resume (restart worker).
-		c.log.Info("gateway: resuming terminated session", "session_id", sessionID)
 	}
 
 	// SEC-007: reject cross-bot access — bot_id from JWT must match session's bot_id.

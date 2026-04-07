@@ -8,11 +8,12 @@ tags:
   - feature/websocket-transport
   - feature/session-management
   - feature/resume-support
-date: 2026-04-04
+date: 2026-04-07
 status: implemented
 progress: 100
 validation: validated-against-source
-last-validated: 2026-04-04
+last-validated: 2026-04-07
+worker_session_id_handler: implemented
 ---
 
 # OpenCode Server Worker 集成规格
@@ -450,7 +451,38 @@ type Event struct {
 
 ## 9. Session 管理
 
-### 9.1 Session 生命周期
+### 9.1 WorkerSessionIDHandler 接口实现
+
+> OpenCode Server Worker 实现 `worker.WorkerSessionIDHandler` 接口，使 Gateway 能够获取并持久化内部 session ID。
+
+```go
+// opencodeserver/worker.go
+
+type atomicSessionID struct {
+    atomic.Value // stores string
+}
+
+func (w *Worker) SetWorkerSessionID(id string) {
+    w.atomicSID.Store(id)
+    if w.httpConn != nil {
+        w.httpConn.sessionID = id
+    }
+}
+
+func (w *Worker) GetWorkerSessionID() string {
+    if w.httpConn != nil {
+        return w.httpConn.sessionID
+    }
+    if v := w.atomicSID.Load(); v != nil {
+        return v.(string)
+    }
+    return ""
+}
+```
+
+**持久化时机**：`bridge.forwardEvents()` 收到第一个 worker 事件时，`persistWorkerSessionID()` 调用 `GetWorkerSessionID()` 并更新 DB。
+
+### 9.2 Session 生命周期
 
 ```
 Start

@@ -13,6 +13,7 @@ type Kind string
 
 // AEP v1 defined event kinds.
 const (
+	Init               Kind = "init" // session initialization (client → gateway)
 	Error              Kind = "error"
 	State              Kind = "state"
 	Input              Kind = "input"

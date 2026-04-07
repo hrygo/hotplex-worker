@@ -152,14 +152,14 @@ func (w *Worker) buildCLIArgs(session worker.SessionInfo, resume bool) []string 
 		"--input-format", "stream-json",
 	}
 
-	// --continue: resume latest session in current dir (no --session-id)
+	// Session mode:
+	// - ContinueSession=true: resume latest session in current dir (--continue)
+	// - resume=true: resume specific session (--session-id --resume)
+	// - new session: let Claude create one (no --session-id)
 	if session.ContinueSession {
 		args = append(args, "--continue")
-	} else {
+	} else if resume {
 		args = append(args, "--session-id", aep.ParseSessionID(session.SessionID))
-	}
-
-	if resume {
 		args = append(args, "--resume")
 		if session.ForkSession {
 			args = append(args, "--fork-session")
@@ -171,6 +171,7 @@ func (w *Worker) buildCLIArgs(session worker.SessionInfo, resume bool) []string 
 			args = append(args, "--rewind-files", session.RewindFiles)
 		}
 	}
+	// else: new session - don't pass --session-id, Claude will create one
 	if session.PermissionMode != "" {
 		args = append(args, "--permission-mode", session.PermissionMode)
 	}

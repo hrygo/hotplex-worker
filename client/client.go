@@ -141,7 +141,7 @@ func (c *Client) doConnect(ctx context.Context, sessionID string, isResume bool)
 		initData["session_id"] = sessionID
 	}
 
-	env := aep.NewEnvelope(aep.NewID(), sessionID, 0, events.Control, initData)
+	env := aep.NewEnvelope(aep.NewID(), sessionID, 1, events.Init, initData)
 	frame, err := aep.EncodeJSON(env)
 	if err != nil {
 		conn.Close()

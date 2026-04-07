@@ -767,7 +767,7 @@ func (h *Handler) handleGC(ctx context.Context, env *events.Envelope) error {
 
 | 日期 | 版本 | 变更 |
 |------|------|------|
-| 2026-04-07 | 1.4 | **状态更新**: Phase 1 已100%完成实现；所有核心文件已验证存在并有测试覆盖；Header状态改为"已实现" |
+| 2026-04-07 | 1.4 | **状态更新**: Phase 1 已100%完成实现；所有核心文件已验证存在并有测试覆盖；新增 WorkerSessionIDHandler 接口实现（OpenCode CLI/Server）；UUIDv5 映射和 persistWorkerSessionID 流程已完整 |
 | 2026-04-07 | 1.3 | 新增第 8 节 AC（Acceptance Criteria），共 9 组 44 条验收标准；章节重新编号 |
 | 2026-04-06 | 1.2 | 移除向后兼容逻辑；改用 UUIDv5 算法替代 SHA-256 hex |
 | 2026-04-06 | 1.1 | 交叉复核源码，精确到文件/行号；明确 minimal change set |

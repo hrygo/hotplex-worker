@@ -304,7 +304,7 @@ func TestAEPMessageEncodeDecode(t *testing.T) {
 				aep.NewID(),
 				"sess_123",
 				1,
-				Init,
+				events.Init,
 				InitData{
 					Version:    events.Version,
 					WorkerType: worker.TypeClaudeCode,
@@ -395,7 +395,7 @@ func envFromData(data map[string]any) *events.Envelope {
 		Seq:       1,
 		SessionID: "sess_test",
 		Timestamp: time.Now().UnixMilli(),
-		Event:     events.Event{Type: Init, Data: data},
+		Event:     events.Event{Type: events.Init, Data: data},
 	}
 }
 
@@ -509,7 +509,7 @@ func makeInitEnvelope(sessionID, workerType, token string) []byte {
 	if token != "" {
 		data["auth"] = map[string]any{"token": token}
 	}
-	env := events.NewEnvelope(aep.NewID(), sessionID, 1, Init, data)
+	env := events.NewEnvelope(aep.NewID(), sessionID, 1, events.Init, data)
 	env.SessionID = sessionID
 	raw, _ := aep.EncodeJSON(env)
 	return raw
@@ -633,12 +633,12 @@ func TestBotIDIsolation_CreateMismatch(t *testing.T) {
 	store2.On("Close").Return(nil)
 	// Get returns the existing session with bot_alice.
 	existingSession := &session.SessionInfo{
-		ID:            derivedSID,
-		UserID:        "alice",
-		BotID:         botAlice, // session was created with bot_alice
-		State:         events.StateIdle,
-		WorkerType:    worker.WorkerType(workerType),
-		AllowedTools:  []string{},
+		ID:           derivedSID,
+		UserID:       "alice",
+		BotID:        botAlice, // session was created with bot_alice
+		State:        events.StateIdle,
+		WorkerType:   worker.WorkerType(workerType),
+		AllowedTools: []string{},
 	}
 	store2.On("Get", mock.Anything, derivedSID).Return(existingSession, nil)
 	// Transition to RUNNING (called by ResumeSession for StateIdle→RUNNING).
@@ -949,6 +949,11 @@ func (m *mockBridgeSM) List(ctx context.Context, limit, offset int) ([]*session.
 	return args.Get(0).([]*session.SessionInfo), args.Error(1)
 }
 
+func (m *mockBridgeSM) UpdateWorkerSessionID(ctx context.Context, id, workerSessionID string) error {
+	args := m.Called(ctx, id, workerSessionID)
+	return args.Error(0)
+}
+
 var _ SessionManager = (*mockBridgeSM)(nil)
 
 // mockBridgeWorker is a configurable fake Worker for Bridge tests.
@@ -975,9 +980,9 @@ func (m *mockBridgeWorker) Terminate(context.Context) error                     
 func (m *mockBridgeWorker) Kill() error                                         { return nil }
 func (m *mockBridgeWorker) Wait() (int, error)                                  { return m.exitCode, nil }
 func (m *mockBridgeWorker) Conn() worker.SessionConn                            { return m.conn }
-func (m *mockBridgeWorker) Health() worker.WorkerHealth                        { return worker.WorkerHealth{} }
+func (m *mockBridgeWorker) Health() worker.WorkerHealth                         { return worker.WorkerHealth{} }
 func (m *mockBridgeWorker) LastIO() time.Time                                   { return time.Now() }
-func (m *mockBridgeWorker) ResetContext(context.Context) error                   { return nil }
+func (m *mockBridgeWorker) ResetContext(context.Context) error                  { return nil }
 
 var _ worker.Worker = (*mockBridgeWorker)(nil)
 
@@ -1394,7 +1399,7 @@ func TestBridge_ResumeSession_NoopWorker(t *testing.T) {
 		State:      events.StateIdle,
 	}
 	sm.On("Get", "sess_noop").Return(sessionInfo, nil)
-	sm.On("GetWorker", "sess_noop").Return(nil) // P1: no stale worker
+	sm.On("GetWorker", "sess_noop").Return(nil)                                      // P1: no stale worker
 	sm.On("Transition", mock.Anything, "sess_noop", events.StateRunning).Return(nil) // StateIdle → Running
 	sm.On("AttachWorker", "sess_noop", mock.Anything).Return(nil)
 

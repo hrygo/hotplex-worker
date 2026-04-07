@@ -9,9 +9,9 @@ tags:
   - feature/session-management
   - feature/resume-support
   - feature/tool-filtering
-date: 2026-04-04
-status: needs-implementation
-progress: 0
+date: 2026-04-07
+status: implemented
+progress: 100
 ---
 
 # OpenCode CLI Worker 集成规格
@@ -679,7 +679,35 @@ func (w *Worker) tryExtractSessionID(line string) {
 }
 ```
 
-### 7.2 Resume 支持
+### 7.2 WorkerSessionIDHandler 接口实现
+
+> OpenCode CLI Worker 实现 `worker.WorkerSessionIDHandler` 接口，使 Gateway 能够获取并持久化内部 session ID。
+
+```go
+// opencodecli/worker.go
+
+// WorkerSessionIDHandler 实现
+func (w *Worker) SetWorkerSessionID(id string) {
+    w.mu.Lock()
+    w.sessionID = id
+    w.mu.Unlock()
+}
+
+func (w *Worker) GetWorkerSessionID() string {
+    w.mu.RLock()
+    defer w.mu.RUnlock()
+    return w.sessionID
+}
+```
+
+**Session ID 持久化流程**：
+
+1. Worker 启动时 `sessionID = ""`
+2. `readOutput()` 从 `step_start` 事件提取 session ID
+3. `persistWorkerSessionID()` 在 `forwardEvents()` 收到第一个事件时调用
+4. `sm.UpdateWorkerSessionID()` 持久化到 SQLite `sessions.worker_session_id` 字段
+
+### 7.3 Resume 支持
 
 Worker Adapter 通过传递 `--session` / `--continue` 参数支持 Resume：
 

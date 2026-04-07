@@ -11,7 +11,6 @@ import (
 
 // AEP v1 init message kinds (both directions).
 const (
-	Init    = "init"
 	InitAck = "init_ack"
 )
 

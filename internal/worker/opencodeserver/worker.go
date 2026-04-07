@@ -39,6 +39,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/hotplex/hotplex-worker/internal/worker"
@@ -117,12 +118,38 @@ const (
 //   - httpConn protected by embedded BaseWorker.Mu
 //   - SSE reader goroutine exits when context cancelled or connection closes
 type Worker struct {
-	*base.BaseWorker // Embedded shared lifecycle: Terminate/Kill/Wait/Health/LastIO
+	*base.BaseWorker
 
-	httpConn *conn        // HTTP-based session connection (NOT stdio-based base.Conn)
-	port     int          // Server listen port (default: 18789)
-	httpAddr string       // Server base URL (http://localhost:port)
-	client   *http.Client // Persistent HTTP client for API calls
+	httpConn *conn
+	port     int
+	httpAddr string
+	client   *http.Client
+
+	// workerSessionID atomically stores the worker-internal session ID.
+	// This serves as a fallback when httpConn is not yet initialized,
+	// ensuring SetWorkerSessionID is never a silent no-op.
+	workerSessionID atomic.Value // string
+}
+
+var _ worker.WorkerSessionIDHandler = (*Worker)(nil)
+
+func (w *Worker) GetWorkerSessionID() string {
+	if w.httpConn != nil {
+		return w.httpConn.sessionID
+	}
+	if v := w.workerSessionID.Load(); v != nil {
+		if sid, ok := v.(string); ok {
+			return sid
+		}
+	}
+	return ""
+}
+
+func (w *Worker) SetWorkerSessionID(id string) {
+	w.workerSessionID.Store(id)
+	if w.httpConn != nil {
+		w.httpConn.sessionID = id
+	}
 }
 
 // New creates a new OpenCode Server worker instance.

@@ -67,7 +67,7 @@ func (v *JWTValidator) Validate(tokenString string) (*JWTClaims, error) {
 			case *ecdsa.PrivateKey:
 				return s.Public(), nil
 			case []byte:
-				return s, nil
+				return deriveECDSAP256Key(s).Public(), nil
 			default:
 				return nil, fmt.Errorf("security: invalid secret type for ES256: %T", v.secret)
 			}

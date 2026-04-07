@@ -356,6 +356,7 @@ type SessionManager interface {
 	GetWorker(id string) worker.Worker
 	Delete(ctx context.Context, id string) error
 	List(ctx context.Context, limit, offset int) ([]*session.SessionInfo, error)
+	UpdateWorkerSessionID(ctx context.Context, id, workerSessionID string) error
 }
 
 // WorkerFactory creates worker instances. Production code uses defaultWorkerFactory.

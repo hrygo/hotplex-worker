@@ -41,33 +41,35 @@ var openCodeEnvWhitelist = []string{
 type Worker struct {
 	*base.BaseWorker
 
-	// sessionInfo stores the session metadata needed for Input/Resume.
 	sessionInfo worker.SessionInfo
+	conn        *recvOnlyConn
+	stdin       *os.File
 
-	// conn is our recv-only connection (separate from base.Conn which uses stdin).
-	conn *recvOnlyConn
-
-	// stdin is the write end of the subprocess stdin pipe.
-	stdin *os.File
-
-	// openCodeSessionID caches the internal OpenCode session ID (ses_xxx).
 	openCodeSessionID atomic.Value // string
 
-	// Protocol layers.
 	parser *Parser
 	mapper *Mapper
 
-	// Goroutine lifecycle.
 	cancel context.CancelFunc
+	seq    atomic.Int64
 
-	// Seq generation (atomic, no mutex needed).
-	seq atomic.Int64
-
-	// readLineFn reads the next NDJSON line from stdout. Injectable for tests.
 	readLineFn func() (string, error)
+	testConn   worker.SessionConn
+}
 
-	// testConn allows tests to inject a mock SessionConn.
-	testConn worker.SessionConn
+var _ worker.WorkerSessionIDHandler = (*Worker)(nil)
+
+func (w *Worker) GetWorkerSessionID() string {
+	if v := w.openCodeSessionID.Load(); v != nil {
+		if sid, ok := v.(string); ok {
+			return sid
+		}
+	}
+	return ""
+}
+
+func (w *Worker) SetWorkerSessionID(id string) {
+	w.openCodeSessionID.Store(id)
 }
 
 // New creates a new OpenCode CLI worker.
@@ -154,9 +156,24 @@ func (w *Worker) Start(ctx context.Context, session worker.SessionInfo) error {
 		return fmt.Errorf("opencodecli: already started")
 	}
 	w.sessionInfo = session
-	return w.startLocked(ctx, session, "", func() error {
+
+	if err := w.startLocked(ctx, session, "", func() error {
 		return w.writeStdin(session.Args...)
+	}); err != nil {
+		return err
+	}
+
+	// startLocked releases the lock; initialize conn after it returns.
+	w.conn = newRecvOnlyConn(session.UserID, session.SessionID, func() {
+		if w.stdin != nil {
+			w.stdin.Close()
+			w.stdin = nil
+		}
+		if w.Proc != nil {
+			_ = w.Proc.Close()
+		}
 	})
+	return nil
 }
 
 func (w *Worker) Input(ctx context.Context, content string, metadata map[string]any) error {
@@ -176,9 +193,11 @@ func (w *Worker) Resume(ctx context.Context, session worker.SessionInfo) error {
 
 	w.sessionInfo = session
 
-	openCodeSID := ""
-	if v := w.openCodeSessionID.Load(); v != nil {
-		openCodeSID, _ = v.(string)
+	openCodeSID := session.WorkerSessionID
+	if openCodeSID == "" {
+		if v := w.openCodeSessionID.Load(); v != nil {
+			openCodeSID, _ = v.(string)
+		}
 	}
 
 	// startLocked releases the lock; re-establish conn after it returns.

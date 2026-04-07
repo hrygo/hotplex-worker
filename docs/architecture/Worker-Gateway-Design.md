@@ -80,7 +80,53 @@ Worker 自行决定和执行 tool 调用。`tool_call` / `tool_result` 事件 **
 
 > 状态集合与 [[architecture/AEP-v1-Protocol]] §3.9 保持一致。AEP 为 single source of truth。
 
-### 5.1 状态机
+### 5.1 Session ID 映射机制
+
+> **客户端管理的 Session ID**：客户端通过 `init.session_id` 上送 `client_session_id`，服务端用 UUIDv5 做一致性映射，确保相同 `(owner_id, worker_type, client_session_id)` 永远映射为同一服务端 session。
+
+#### 5.1.1 UUIDv5 映射算法
+
+```go
+// internal/session/key.go
+var hotplexNamespace = uuid.MustParse("urn:uuid:6ba7b810-9dad-11d1-80b4-00c04fd430c8")
+
+func DeriveSessionKey(ownerID string, wt worker.WorkerType, clientSessionID string) string {
+    name := ownerID + "|" + string(wt) + "|" + clientSessionID
+    id := uuid.NewHash(hotplexNamespace, name)
+    return id.String()
+}
+```
+
+#### 5.1.2 init 流程
+
+```
+Client init{session_id: "my-chat-001"}
+  → DeriveSessionKey(ownerID="user_001", wt="claude_code", clientSessionID="my-chat-001")
+  → UUIDv5: "550e8400-e29b-41d4-a716-446655440000"
+  → sm.GetOrCreate("550e8400-e29b-41d4-a716-446655440000")
+      ├─ 存在 → 返回现有 session（idempotent）
+      └─ 不存在 → 创建新 session
+```
+
+#### 5.1.3 WorkerSessionIDHandler 接口
+
+> 某些 Worker（OpenCode CLI/Server）内部使用独立的 session ID 系统。Gateway 通过 `WorkerSessionIDHandler` 接口获取该内部 ID 并持久化到 SQLite `sessions.worker_session_id` 字段。
+
+```go
+// internal/worker/worker.go
+type WorkerSessionIDHandler interface {
+    SetWorkerSessionID(id string)
+    GetWorkerSessionID() string
+}
+```
+
+**实现者**：
+- **OpenCode CLI**：`opencode run` 自动生成 session ID，Worker 从 `step_start` 事件提取
+- **OpenCode Server**：使用 HTTP 连接中的 session ID
+
+**持久化时机**：`bridge.forwardEvents()` 收到第一个 worker 事件时，调用 `persistWorkerSessionID()` 更新 DB。
+
+### 5.2 状态机
 
 #### 状态总览
 

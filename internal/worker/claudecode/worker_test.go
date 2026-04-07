@@ -205,7 +205,7 @@ func TestBuildCLIArgs_AllOptions(t *testing.T) {
 	require.Contains(t, args, "--verbose")
 	require.Contains(t, args, "--output-format", "stream-json")
 	require.Contains(t, args, "--input-format", "stream-json")
-	require.Contains(t, args, "--session-id", "test-session")
+	require.NotContains(t, args, "--session-id")
 	require.Contains(t, args, "--permission-mode", "plan")
 	require.Contains(t, args, "--disallowed-tools", "WebSearch,Edit")
 	require.Contains(t, args, "--model", "claude-sonnet-4-6")
@@ -367,11 +367,12 @@ func TestBuildCLIArgs_Minimal(t *testing.T) {
 	}
 
 	args := w.buildCLIArgs(session, false)
-	// Only the required flags (8 tokens total: --print, --verbose, --output-format, stream-json, --input-format, stream-json, --session-id, minimal-session).
-	require.Len(t, args, 8)
+	// Only the required flags (6 tokens total: --print, --verbose, --output-format, stream-json, --input-format, stream-json).
+	// For new sessions, --session-id is NOT passed - Claude creates one automatically.
+	require.Len(t, args, 6)
 	require.Contains(t, args, "--print")
 	require.Contains(t, args, "--verbose")
-	require.Contains(t, args, "--session-id", "minimal-session")
+	require.NotContains(t, args, "--session-id")
 }
 
 func TestToCompatSessionID(t *testing.T) {
