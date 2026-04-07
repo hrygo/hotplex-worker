@@ -79,6 +79,7 @@ client.WorkerType("claude_code")            // required
 client.AuthToken("jwt-token")               // JWT bearer token
 client.APIKey("sk-xxx")                     // API key header
 client.PingInterval(30 * time.Second)       // heartbeat (default 54s)
+client.ClientSessionID("my-session-001")    // client-managed session ID (UUIDv5 mapped)
 ```
 
 ### Connection
@@ -96,7 +97,9 @@ ack, err := c.Resume(ctx, "sess_xxx")       // returns *InitAckData
 ```go
 c.SendInput(ctx, "your message")                         // user input
 c.SendPermissionResponse(ctx, "id", true, "approved")    // approve tool
-c.SendControl(ctx, "terminate")                          // terminate session
+c.SendControl(ctx, "terminate")                           // terminate session
+c.SendReset(ctx, "user_requested")                       // clear context, restart worker
+c.SendGC(ctx, "user_idle")                               // archive session, terminate worker
 ```
 
 ### Events

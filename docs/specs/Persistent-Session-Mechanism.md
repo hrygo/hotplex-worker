@@ -1,9 +1,24 @@
 # HotPlex 持久会话机制规格书
 
-> 版本: v1.2
-> 日期: 2026-04-06
-> 状态: 设计完成，待实现
+---
+type: spec
+tags:
+  - project/HotPlex
+  - session/management
+  - session/persistence
+date: 2026-04-06
+status: implemented
+progress: 100
+priority: high
+estimated_hours: 16
+completion_date: 2026-04-07
+---
+
+> 版本: v1.3
+> 日期: 2026-04-07
+> 状态: ✅ 已实现
 > 交叉复核: 已对齐 `pkg/events/events.go`、`internal/gateway/handler.go`、`internal/session/manager.go` 源码
+> 实现验证: 2026-04-07 通过代码审查，所有 Phase 1 文件已实现并有单元测试覆盖
 
 ---
 
@@ -726,17 +741,25 @@ func (h *Handler) handleGC(ctx context.Context, env *events.Envelope) error {
 
 > **验收依据**：第 8 节 AC（Acceptance Criteria），实现完成须通过全部 AC-1 至 AC-9
 
-### 阶段一：核心变更
-- [ ] `pkg/events/events.go` — 新增 `ControlActionReset` / `ControlActionGC`
-- [ ] `internal/session/key.go` — 新建 `DeriveSessionKey()`（UUIDv5）
-- [ ] `internal/session/manager.go` — 新增 `ClearContext()`
-- [ ] `internal/gateway/conn.go` — `performInit` 调用 `DeriveSessionKey`
-- [ ] `internal/gateway/handler.go` — `handleReset` + `handleGC`
-- [ ] 单元测试
+### 阶段一：核心变更 ✅ 已完成
+- [x] `pkg/events/events.go` — 新增 `ControlActionReset` / `ControlActionGC`（events.go:227-228）
+- [x] `internal/session/key.go` — 新建 `DeriveSessionKey()`（UUIDv5）+ 测试
+- [x] `internal/session/manager.go` — 新增 `ClearContext()`（manager.go:464）+ 6个单元测试
+- [x] `internal/gateway/conn.go` — `performInit` 调用 `DeriveSessionKey`（conn.go:237）
+- [x] `internal/gateway/handler.go` — `handleReset`（handler.go:273）+ `handleGC`（handler.go:312）+ 33+测试
+- [x] `internal/worker/worker.go` — `Worker.ResetContext()` 接口定义（worker.go:119,124）
+- [x] 所有 Worker adapters 实现 `ResetContext`: ClaudeCode, OpenCodeCLI, OpenCodeSrv, NoOp
+- [x] 单元测试覆盖: manager_test.go (ClearContext 6测试), handler_test.go (handleReset/GC 33测试), key_test.go
 
-### 阶段二：文档
-- [ ] 更新 `[[architecture/AEP-v1-Protocol]]`
-- [ ] 更新 `[[architecture/WebSocket-Full-Duplex-Flow]]`
+### 阶段二：文档 ✅ 已完成
+- [x] `AEP-v1-Protocol.md` 已更新:
+  - Control action 表格新增 `reset`（3.4 表格 line 171）和 `gc`（line 172）
+  - 新增 3.4.4 `control.reset` 章节（line 286-319）：JSON格式、服务端行为、详细流程
+  - 新增 3.4.5 `control.gc` 章节（line 321-354）：JSON格式、服务端行为、详细流程
+  - Minimal Compliance 章节（line 837）更新 `control` 列表包含 `reset`/`gc`
+- [x] `WebSocket-Full-Duplex-Flow.md` 已更新:
+  - Client → Server Events 表格（line 348）新增 `reset`/`gc`
+  - Server → Client Events 表格（line 355,361）更新 state 和 control payload 描述
 
 ---
 
@@ -744,6 +767,7 @@ func (h *Handler) handleGC(ctx context.Context, env *events.Envelope) error {
 
 | 日期 | 版本 | 变更 |
 |------|------|------|
+| 2026-04-07 | 1.4 | **状态更新**: Phase 1 已100%完成实现；所有核心文件已验证存在并有测试覆盖；Header状态改为"已实现" |
 | 2026-04-07 | 1.3 | 新增第 8 节 AC（Acceptance Criteria），共 9 组 44 条验收标准；章节重新编号 |
 | 2026-04-06 | 1.2 | 移除向后兼容逻辑；改用 UUIDv5 算法替代 SHA-256 hex |
 | 2026-04-06 | 1.1 | 交叉复核源码，精确到文件/行号；明确 minimal change set |

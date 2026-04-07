@@ -340,25 +340,25 @@ tags:
 
 ### 6.1 Client → Server Events
 
-| Event Type | Description          | Payload                                   |
-| ---------- | -------------------- | ----------------------------------------- |
-| `init`     | Connection handshake | `{session_id, worker_type, config, auth}` |
-| `input`    | User message         | `{content, attachments?}`                 |
-| `ping`     | Heartbeat request    | `{}`                                      |
-| `control`  | Control action       | `{action: "terminate"\|"delete"}`         |
+| Event Type | Description          | Payload                                              |
+| ---------- | -------------------- | ---------------------------------------------------- |
+| `init`     | Connection handshake | `{session_id, worker_type, config, auth}`            |
+| `input`    | User message         | `{content, attachments?}`                           |
+| `ping`     | Heartbeat request    | `{}`                                                |
+| `control`  | Control action       | `{action: "terminate"\|"delete"\|"reset"\|"gc"}`    |
 
 ### 6.2 Server → Client Events
 
-| Event Type      | Description              | Payload                                    |
-| --------------- | ------------------------ | ------------------------------------------ |
-| `init_ack`      | Handshake acknowledgment | `{session_id, capabilities}`               |
-| `state`         | Session state change     | `{state: "running"\|"idle"\|"terminated"}` |
+| Event Type      | Description              | Payload                                                 |
+| --------------- | ------------------------ | ------------------------------------------------------- |
+| `init_ack`      | Handshake acknowledgment | `{session_id, capabilities}`                          |
+| `state`         | Session state change     | `{state: "running"\|"idle"\|"terminated", message?}` |
 | `message.delta` | Streaming text           | `{content}`                                |
 | `message.done`  | Message complete         | `{usage?}`                                 |
 | `reasoning`     | Thinking process         | `{content}`                                |
 | `error`         | Error occurred           | `{code, message}`                          |
 | `pong`          | Heartbeat response       | `{}`                                       |
-| `control`       | Server control           | `{action: "throttle"\|"reconnect"}`        |
+| `control`       | Server control           | `{action: "throttle"\|"reconnect"\|"session_invalid"}` |
 | `raw`           | Passthrough              | `{data}`                                   |
 
 ---

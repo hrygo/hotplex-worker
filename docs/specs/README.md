@@ -14,6 +14,7 @@
 | [Worker-OpenCode-CLI-Spec.md](./Worker-OpenCode-CLI-Spec.md) | OpenCode CLI Worker 集成规格 — 事件转换、Session 管理、Resume 支持 | 🔨 Needs Implementation | 2026-04-04 | 0% |
 | [Worker-OpenCode-Server-Spec.md](./Worker-OpenCode-Server-Spec.md) | OpenCode Server Worker 集成规格 — WebSocket 传输、Session 管理、Resume 支持 | 🔨 Needs Implementation | 2026-04-04 | 0% |
 | [Worker-Common-Protocol.md](./Worker-Common-Protocol.md) | Worker 公共协议规范（NDJSON、背压、终止等） | ✅ Implemented | 2026-04-04 | 100% |
+| [Persistent-Session-Mechanism.md](./Persistent-Session-Mechanism.md) | 持久会话机制 — UUIDv5 映射、reset/gc、session 状态机 | ✅ Implemented | 2026-04-07 | 100% |
 | [Worker-ACPX-Spec.md](./Worker-ACPX-Spec.md) | ACPX Worker 集成规格 — 支持 16+ AI 编程 Agent | 📝 Draft | 2026-04-04 | 0% |
 
 ### 客户端 SDK 设计
@@ -51,10 +52,11 @@
 
 ### 按状态分类
 
-- ✅ **Implemented**: 6 个（已完成实现）
+- ✅ **Implemented**: 7 个（已完成实现）
   - Worker-Gateway-Framework-Design
   - Worker-ClaudeCode-Spec
   - Worker-Common-Protocol
+  - Persistent-Session-Mechanism
   - Python-Client-Design
   - Go-Client-Example-Design
   - AI-SDK-Chatbot-Integration-Design
@@ -75,7 +77,7 @@
 
 ### 按类型分类
 
-- **架构设计**: 7 个
+- **架构设计**: 8 个
 - **客户端 SDK**: 2 个
 - **前端集成**: 1 个
 - **验收标准**: 4 个
@@ -169,6 +171,7 @@ completion_date: YYYY-MM-DD  # 可选，完成时填写
 
 | 日期 | 版本 | 更新内容 |
 |------|------|----------|
+| 2026-04-07 | v1.4 | 新增 Persistent-Session-Mechanism.md（持久会话机制，100% 已实现）；更新规格索引统计 |
 | 2026-04-04 | v1.3 | 修正 Worker-OpenCode-Server-Spec 状态为 needs-implementation；更新统计 |
 | 2026-04-04 | v1.2 | 修正 Worker-OpenCode-CLI-Spec 状态为 needs-implementation；新增状态定义 |
 | 2026-04-04 | v1.1 | 新增客户端 SDK、前端集成设计规格；添加 metadata 索引 |

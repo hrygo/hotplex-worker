@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 
 	"github.com/hotplex/hotplex-worker/pkg/aep"
@@ -32,10 +31,11 @@ const (
 // It implements the AEP v1 WebSocket protocol.
 type Client struct {
 	// config from options
-	url        string
-	workerType string
-	authToken  string
-	apiKey     string
+	url             string
+	workerType      string
+	authToken       string
+	apiKey          string
+	clientSessionID string
 
 	// heartbeat config
 	pingInterval time.Duration
@@ -91,7 +91,10 @@ func New(ctx context.Context, opts ...Option) (*Client, error) {
 
 // Connect establishes a new session with the gateway.
 func (c *Client) Connect(ctx context.Context) (*InitAckData, error) {
-	sessionID := "sess_" + uuid.NewString()
+	sessionID := c.clientSessionID
+	if sessionID == "" {
+		sessionID = aep.NewSessionID()
+	}
 	return c.doConnect(ctx, sessionID, false)
 }
 
@@ -134,7 +137,7 @@ func (c *Client) doConnect(ctx context.Context, sessionID string, isResume bool)
 	if c.authToken != "" {
 		initData["auth"] = map[string]any{"token": c.authToken}
 	}
-	if isResume {
+	if c.clientSessionID != "" || isResume {
 		initData["session_id"] = sessionID
 	}
 
@@ -224,7 +227,29 @@ func (c *Client) SendPermissionResponse(ctx context.Context, id string, approved
 
 // SendControl sends a control action ("terminate" | "delete").
 func (c *Client) SendControl(ctx context.Context, action string) error {
-	return c.send(ctx, events.Control, map[string]any{"action": action})
+	return c.send(ctx, events.Control, &events.ControlData{
+		Action: events.ControlAction(action),
+	})
+}
+
+// SendReset sends a reset control action to clear session context.
+// The session will restart with a fresh worker, preserving the session ID.
+func (c *Client) SendReset(ctx context.Context, reason string) error {
+	return c.sendControlWithReason(ctx, events.ControlActionReset, reason)
+}
+
+// SendGC sends a gc control action to archive the session.
+// The worker is terminated but session history is preserved for resume.
+func (c *Client) SendGC(ctx context.Context, reason string) error {
+	return c.sendControlWithReason(ctx, events.ControlActionGC, reason)
+}
+
+func (c *Client) sendControlWithReason(ctx context.Context, action events.ControlAction, reason string) error {
+	data := &events.ControlData{Action: action}
+	if reason != "" {
+		data.Reason = reason
+	}
+	return c.send(ctx, events.Control, data)
 }
 
 // Close gracefully shuts down the client.

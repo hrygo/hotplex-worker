@@ -29,6 +29,14 @@ const (
 	EventInitAck            = "init_ack"
 )
 
+// ControlAction constants for client-initiated control.
+const (
+	ControlActionTerminate = string(events.ControlActionTerminate)
+	ControlActionDelete    = string(events.ControlActionDelete)
+	ControlActionReset     = string(events.ControlActionReset)
+	ControlActionGC        = string(events.ControlActionGC)
+)
+
 // SessionState mirrors pkg/events/events.go.
 type SessionState = events.SessionState
 

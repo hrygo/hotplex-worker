@@ -65,6 +65,7 @@ func main() {
 		client.URL(gatewayURL),
 		client.WorkerType(getEnv("HOTPLEX_WORKER_TYPE", "claude_code")),
 		client.AuthToken(token),
+		client.ClientSessionID(getEnv("HOTPLEX_CLIENT_SESSION_ID", "")),
 	)
 	if err != nil {
 		log.Fatalf("create client: %v", err)
