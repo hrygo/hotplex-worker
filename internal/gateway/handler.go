@@ -257,34 +257,36 @@ func (h *Handler) sendErrorf(ctx context.Context, env *events.Envelope, code eve
 	return fmt.Errorf("%s: %s", code, fmt.Sprintf(format, args...))
 }
 
-// handleReset processes the control.reset action.
-// It clears SessionInfo.Context, calls Worker.ResetContext, and transitions to RUNNING.
-// Precondition: session must be in an active state (CREATED, RUNNING, IDLE).
+// validateOwner checks ownership and returns the session in one call.
+// This avoids the double-fetch that calling ValidateOwnership then Get separately incurs.
+func (h *Handler) validateOwner(ctx context.Context, env *events.Envelope) (*session.SessionInfo, error) {
+	si, err := h.sm.Get(env.SessionID)
+	if err != nil {
+		return nil, err
+	}
+	if si.UserID != env.OwnerID {
+		return nil, fmt.Errorf("%w: owner mismatch", session.ErrOwnershipMismatch)
+	}
+	return si, nil
+}
+
 func (h *Handler) handleReset(ctx context.Context, env *events.Envelope) error {
-	// 1. Ownership check.
-	if err := h.sm.ValidateOwnership(ctx, env.SessionID, env.OwnerID, ""); err != nil {
+	si, err := h.validateOwner(ctx, env)
+	if err != nil {
 		if errors.Is(err, session.ErrSessionNotFound) {
 			return h.sendErrorf(ctx, env, events.ErrCodeSessionNotFound, "session not found")
 		}
 		return h.sendErrorf(ctx, env, events.ErrCodeUnauthorized, "ownership required")
 	}
-
-	// 1b. State precondition: reset is only valid for active states.
-	si, err := h.sm.Get(env.SessionID)
-	if err != nil {
-		return h.sendErrorf(ctx, env, events.ErrCodeSessionNotFound, "session not found")
-	}
-	if si.State != events.StateCreated && si.State != events.StateRunning && si.State != events.StateIdle {
+	if !si.State.IsActive() {
 		return h.sendErrorf(ctx, env, events.ErrCodeProtocolViolation, "reset not allowed in state: %s", si.State)
 	}
 
-	// 2. Gateway: clear SessionInfo.Context.
 	if err := h.sm.ClearContext(ctx, env.SessionID); err != nil {
 		h.log.Warn("gateway: reset clear context failed", "session_id", env.SessionID, "err", err)
 		return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "clear context failed: %v", err)
 	}
 
-	// 3. Worker: clear runtime context (in-place or terminate+start, per worker decision).
 	w := h.sm.GetWorker(env.SessionID)
 	if w != nil {
 		if err := w.ResetContext(ctx); err != nil {
@@ -293,12 +295,10 @@ func (h *Handler) handleReset(ctx context.Context, env *events.Envelope) error {
 		}
 	}
 
-	// 4. Transition to RUNNING.
 	if err := h.sm.TransitionWithReason(ctx, env.SessionID, events.StateRunning, "reset"); err != nil {
 		return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "reset transition failed: %v", err)
 	}
 
-	// 5. Send state notification.
 	stateEvt := events.NewEnvelope(aep.NewID(), env.SessionID, h.hub.NextSeq(env.SessionID), events.State, events.StateData{
 		State:   events.StateRunning,
 		Message: "context_reset",
@@ -309,31 +309,19 @@ func (h *Handler) handleReset(ctx context.Context, env *events.Envelope) error {
 	return nil
 }
 
-// handleGC processes the control.gc action.
-// It terminates the worker (which saves state internally) and transitions to TERMINATED.
-// Idempotent: calling gc on an already-TERMINATED session returns success without error.
 func (h *Handler) handleGC(ctx context.Context, env *events.Envelope) error {
-	// 1. Ownership check.
-	if err := h.sm.ValidateOwnership(ctx, env.SessionID, env.OwnerID, ""); err != nil {
+	si, err := h.validateOwner(ctx, env)
+	if err != nil {
 		if errors.Is(err, session.ErrSessionNotFound) {
 			return h.sendErrorf(ctx, env, events.ErrCodeSessionNotFound, "session not found")
 		}
 		return h.sendErrorf(ctx, env, events.ErrCodeUnauthorized, "ownership required")
 	}
-
-	// 2. Get current state for idempotency check.
-	si, err := h.sm.Get(env.SessionID)
-	if err != nil {
-		return h.sendErrorf(ctx, env, events.ErrCodeSessionNotFound, "session not found")
-	}
-
-	// Idempotent: already terminated — return success without transitioning.
 	if si.State == events.StateTerminated {
 		h.log.Info("gateway: gc idempotent (already terminated)", "session_id", env.SessionID)
 		return nil
 	}
 
-	// 3. Terminate worker (worker saves state internally) and detach.
 	if w := h.sm.GetWorker(env.SessionID); w != nil {
 		if err := w.Terminate(ctx); err != nil {
 			h.log.Warn("gateway: gc worker terminate failed", "session_id", env.SessionID, "err", err)
@@ -341,12 +329,10 @@ func (h *Handler) handleGC(ctx context.Context, env *events.Envelope) error {
 		h.sm.DetachWorker(env.SessionID)
 	}
 
-	// 4. Transition to TERMINATED.
 	if err := h.sm.TransitionWithReason(ctx, env.SessionID, events.StateTerminated, "gc"); err != nil {
 		return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "gc transition failed: %v", err)
 	}
 
-	// 5. Send state notification.
 	stateEvt := events.NewEnvelope(aep.NewID(), env.SessionID, h.hub.NextSeq(env.SessionID), events.State, events.StateData{
 		State:   events.StateTerminated,
 		Message: "session_archived",

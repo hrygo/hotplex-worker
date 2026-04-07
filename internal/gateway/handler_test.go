@@ -14,6 +14,7 @@ import (
 	"github.com/hotplex/hotplex-worker/internal/config"
 	"github.com/hotplex/hotplex-worker/internal/session"
 	"github.com/hotplex/hotplex-worker/internal/worker"
+	"github.com/hotplex/hotplex-worker/pkg/aep"
 	noopworker "github.com/hotplex/hotplex-worker/internal/worker/noop"
 	"github.com/hotplex/hotplex-worker/pkg/events"
 )
@@ -96,27 +97,6 @@ func (h *mockHandlerHub) Clear() {
 	h.sent = nil
 }
 
-// mockHandlerForTest wraps Handler and overrides the sm/hub with our mocks.
-type mockHandlerForTest struct {
-	*Handler
-	sm  *mockHandlerSM
-	hub *mockHandlerHub
-}
-
-func newTestHandler() *mockHandlerForTest {
-	cfg := config.Default()
-	sm := new(mockHandlerSM)
-	mhub := newMockHub()
-	h := &Handler{
-		log: slog.Default(),
-		cfg: cfg,
-	}
-	// Override the unexported fields via interface approach
-	_ = h
-	// Use the public NewHandler pattern but with test doubles
-	return &mockHandlerForTest{Handler: h, sm: sm, hub: mhub}
-}
-
 // testableHandler gives us access to handleReset/handleGC for testing
 // by embedding the handler with a custom sm/hub.
 type testableHandler struct {
@@ -137,7 +117,7 @@ type testableHandler struct {
 }
 
 func (h *testableHandler) sendState(ctx context.Context, sessionID string, state events.SessionState, message string) error {
-	env := events.NewEnvelope("test-id", sessionID, h.hub.NextSeq(sessionID), events.State, events.StateData{
+	env := events.NewEnvelope(aep.NewID(), sessionID, h.hub.NextSeq(sessionID), events.State, events.StateData{
 		State:   state,
 		Message: message,
 	})

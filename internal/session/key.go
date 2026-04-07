@@ -7,7 +7,7 @@ import (
 	"github.com/hotplex/hotplex-worker/internal/worker"
 )
 
-// hotplexNamespace is the HotPlex专属命名空间 UUID（RFC 4122 §4.3）。
+// hotplexNamespace is the HotPlex namespace UUID (RFC 4122 §4.3).
 // Using a fixed value ensures cross-environment consistency.
 var hotplexNamespace = uuid.MustParse("urn:uuid:6ba7b810-9dad-11d1-80b4-00c04fd430c8")
 
