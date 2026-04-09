@@ -5,21 +5,21 @@
 [![codecov](https://codecov.io/gh/hrygo/hotplex-worker/graph/badge.svg?token=...)](https://codecov.io/gh/hrygo/hotplex-worker)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-**HotPlex Worker Gateway** is a high-performance, unified access layer for managing AI Coding Agent sessions. It abstracts the differences between various agents (Claude Code, OpenCode CLI, etc.) and provides a standardized, stateful WebSocket interface.
+**HotPlex Worker Gateway** is a high-performance, unified access layer for managing AI Coding Agent sessions. It abstracts protocol differences across agents and provides a standardized, stateful WebSocket interface.
 
-## 🚀 Key Features
+## Features
 
-- **Unified Protocol**: Implements [AEP v1 (Agent Exchange Protocol)](docs/architecture/AEP-v1-Protocol.md) over WebSockets.
-- **Session Management**: Full lifecycle management (Create, Resume, Terminate, GC) with SQLite persistence.
-- **Process Isolation**: Secure execution using **PGID isolation** and built-in **WAF** for command injection protection.
-- **Hot-Multiplexing**: Persistent worker processes with zero-cold-start session resume.
-- **Pluggable Workers**: Support for Claude Code, OpenCode CLI, OpenCode Server, and more.
-- **Admin API**: Real-time stats, health monitoring, and dynamic configuration hot-reload.
-- **Cloud Native**: Built-in Prometheus metrics and OpenTelemetry tracing.
+- **Unified Protocol** — [AEP v1 (Agent Exchange Protocol)](docs/architecture/AEP-v1-Protocol.md) over WebSockets
+- **5 Worker Adapters** — Claude Code, OpenCode CLI, OpenCode Server, ACPX, Pi-mono
+- **Session Lifecycle** — Create / Resume / Terminate / GC with SQLite persistence and UUIDv5 session IDs
+- **Process Isolation** — PGID isolation with layered SIGTERM → SIGKILL termination
+- **Security** — ES256 JWT, SSRF protection, command whitelist, env isolation, AI tool policy
+- **Admin API** — Real-time stats, health checks, session CRUD, dynamic config hot-reload
+- **Client SDKs** — TypeScript, Python, Java, and Go SDKs with working examples
+- **Web Chat UI** — Next.js chat interface powered by Vercel AI SDK transport adapter
+- **Cloud Native** — Prometheus metrics, OpenTelemetry tracing, PGO-optimized builds
 
-## 🏗 Architecture
-
-HotPlex acts as a bridge between your clients (IDE, Web, CLI) and underlying AI agents.
+## Architecture
 
 ```mermaid
 graph TD
@@ -29,59 +29,69 @@ graph TD
         Session[Session Manager]
         Pool[Worker Pool]
     end
-    Pool -- "stdio / HTTP" --> Claude[Claude Code]
-    Pool -- "stdio / HTTP" --> OpenCode[OpenCode]
-    Pool -- "stdio / HTTP" --> Pi[Pi Mono]
+    Pool -- "stdio" --> Claude[Claude Code]
+    Pool -- "stdio" --> OpenCode[OpenCode CLI]
+    Pool -- "HTTP" --> OCS[OpenCode Server]
+    Pool -- "stdio" --> ACPX[ACPX]
+    Pool -- "stdio" --> Pi[Pi-mono]
 ```
 
-For more details, see the [Architecture Overview](docs/architecture/Worker-Gateway-Design.md).
+See [Architecture Design](docs/architecture/Worker-Gateway-Design.md) for details.
 
-## 🛠 Quick Start
+## Quick Start
 
 ### Prerequisites
 
 - Go 1.26+
 - SQLite3
 
-### Installation
+### Build & Run
 
 ```bash
-# Clone the repository
 git clone https://github.com/hrygo/hotplex-worker.git
 cd hotplex-worker
-
-# Install dependencies
-go mod download
-
-# Build the gateway
 make build
-```
 
-### Running
-
-```bash
-# Start with default configuration
+# Start with default config
 ./bin/gateway --config configs/config.yaml
 
 # Development mode (relaxed security)
 ./bin/gateway --dev
 ```
 
-## 📖 Documentation
+### Configuration
 
-- [Architecture Design](docs/architecture/Worker-Gateway-Design.md)
-- [AEP v1 Protocol Specification](docs/architecture/AEP-v1-Protocol.md)
-- [Testing Strategy](docs/testing/Testing-Strategy.md)
-- [Traceability Matrix](docs/specs/TRACEABILITY-MATRIX.md)
+See [configs/README.md](configs/README.md) for full configuration reference, including hot-reload, environment variables, and multi-environment setups.
 
-## 🤝 Contributing
+## Client SDKs
 
-We welcome contributions! Please see our [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to get started.
+| Language | Directory | Protocol |
+|----------|-----------|----------|
+| TypeScript | [examples/typescript-client](examples/typescript-client) | WebSocket (AEP v1) |
+| Python | [examples/python-client](examples/python-client) | WebSocket (AEP v1) |
+| Java | [examples/java-client](examples/java-client) | WebSocket (AEP v1) |
+| Go | [client](client/) | WebSocket (AEP v1) |
 
-## 📜 License
+### Web Chat UI
 
-HotPlex is released under the [Apache License 2.0](LICENSE).
+A Next.js web chat interface is available at [webchat/](webchat/), using the [`@hotplex/ai-sdk-transport`](packages/ai-sdk-transport) adapter for Vercel AI SDK integration.
 
----
+## Documentation
 
-*Built with ❤️ by the HotPlex Authors.*
+| Document | Description |
+|----------|-------------|
+| [Architecture Design](docs/architecture/Worker-Gateway-Design.md) | System design and constraints |
+| [AEP v1 Protocol](docs/architecture/AEP-v1-Protocol.md) | Wire format, events, versioning |
+| [AEP v1 Appendix](docs/architecture/AEP-v1-Appendix.md) | Sequence diagrams, state machines |
+| [WebSocket Full-Duplex Flow](docs/architecture/WebSocket-Full-Duplex-Flow.md) | Connection lifecycle and race prevention |
+| [User Manual](docs/User-Manual.md) | API usage, lifecycle, examples |
+| [Security](docs/security/) | JWT, input validation, SSRF, tool policy |
+| [Testing Strategy](docs/testing/Testing-Strategy.md) | Unit / integration / e2e testing |
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development workflow, PR guidelines, and testing standards.
+
+## License
+
+[Apache License 2.0](LICENSE)
