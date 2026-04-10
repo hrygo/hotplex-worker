@@ -136,13 +136,17 @@ func (m *Manager) CreateWithBot(ctx context.Context, id, userID, botID string, w
 	return info, nil
 }
 
-// Get returns a session by ID. Returns ErrSessionNotFound if not found.
+// Get returns a snapshot of a session by ID. Returns ErrSessionNotFound if not found.
+// The returned *SessionInfo is a copy safe to read without holding locks.
 func (m *Manager) Get(id string) (*SessionInfo, error) {
 	m.mu.RLock()
 	ms, ok := m.sessions[id]
 	m.mu.RUnlock()
 	if ok {
-		return &ms.info, nil
+		ms.mu.RLock()
+		info := ms.info
+		ms.mu.RUnlock()
+		return &info, nil
 	}
 
 	// Fall back to Store.

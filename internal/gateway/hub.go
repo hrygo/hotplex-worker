@@ -72,9 +72,8 @@ type Hub struct {
 	sessionDropped map[string]bool
 
 	// Shutdown signals.
-	ctx       context.Context
-	cancel    context.CancelFunc
-	closeOnce sync.Once // closes broadcast channel exactly once
+	ctx    context.Context
+	cancel context.CancelFunc
 
 	// LogHandler is an optional callback invoked by routeMessage for each forwarded event.
 	// Use it to capture events into an external ring buffer (e.g. /admin/logs).
@@ -192,19 +191,16 @@ func (h *Hub) LeaveSession(sessionID string, conn *Conn) {
 	h.mu.Unlock()
 }
 
-// sendBroadcast safely sends to the broadcast channel, recovering from a closed-channel panic.
-// This handles the race where StateNotifier goroutines (triggered by session state transitions)
-// attempt to send after the hub has shut down and closed the broadcast channel.
+// sendBroadcast sends to the broadcast channel. Returns false if the hub is
+// shutting down (ctx cancelled). Uses select with ctx.Done() instead of
+// close(channel)+recover() to avoid the send-on-closed-channel data race.
 func (h *Hub) sendBroadcast(msg *EnvelopeWithConn) (sent bool) {
-	defer func() {
-		if r := recover(); r != nil {
-			h.log.Warn("gateway: broadcast channel closed, dropping state event",
-				"session_id", msg.Env.SessionID, "event", msg.Env.Event.Type, "panic", r)
-			sent = false
-		}
-	}()
-	h.broadcast <- msg
-	return true
+	select {
+	case h.broadcast <- msg:
+		return true
+	case <-h.ctx.Done():
+		return false
+	}
 }
 
 // SendToSession delivers a message to all connections subscribed to a session.
@@ -261,7 +257,11 @@ func (h *Hub) SendToSession(ctx context.Context, env *events.Envelope, afterDrai
 
 func (h *Hub) sendControlToSession(ctx context.Context, env *events.Envelope) error {
 	h.mu.RLock()
-	conns := h.sessions[env.SessionID]
+	sessionConns := h.sessions[env.SessionID]
+	conns := make([]*Conn, 0, len(sessionConns))
+	for conn := range sessionConns {
+		conns = append(conns, conn)
+	}
 	h.mu.RUnlock()
 
 	if len(conns) == 0 {
@@ -269,7 +269,7 @@ func (h *Hub) sendControlToSession(ctx context.Context, env *events.Envelope) er
 	}
 
 	env = events.Clone(env)
-	for conn := range conns {
+	for _, conn := range conns {
 		if err := conn.WriteCtx(ctx, env); err != nil {
 			h.log.Warn("gateway: send to conn failed", "err", err, "conn", conn.RemoteAddr())
 		}
@@ -285,6 +285,9 @@ func (h *Hub) HandleHTTP(
 	handler *Handler,
 	bridge *Bridge,
 ) http.Handler {
+
+	// Give the handler access to sm for the init handshake.
+	handler.sm = sm
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Authenticate at HTTP upgrade time.
@@ -311,9 +314,6 @@ func (h *Hub) HandleHTTP(
 		h.RegisterConn(c)
 		h.JoinSession(sessionID, c)
 
-		// Give the handler access to sm for the init handshake.
-		handler.sm = sm
-
 		// Start read and write pumps in background.
 		go c.ReadPump(handler)
 		go c.WritePump()
@@ -323,6 +323,8 @@ func (h *Hub) HandleHTTP(
 }
 
 // Run starts the hub's run loop. It blocks until the context is cancelled.
+// The broadcast channel is never closed — sendBroadcast uses ctx.Done() to
+// detect shutdown, and this function drains remaining messages non-blockingly.
 func (h *Hub) Run() {
 	h.log.Info("gateway: hub running")
 
@@ -330,9 +332,11 @@ func (h *Hub) Run() {
 		select {
 		case <-h.ctx.Done():
 			h.drainBroadcast()
-			h.closeOnce.Do(func() { close(h.broadcast) })
 			return
 		case msg := <-h.broadcast:
+			if msg == nil || msg.Env == nil {
+				continue
+			}
 			_, span := tracing.SpanFromContext(h.ctx).Start(h.ctx, "hub.broadcast")
 			span.SetAttributes(
 				tracing.Attr("session_id", msg.Env.SessionID),
@@ -349,8 +353,14 @@ func (h *Hub) Run() {
 }
 
 func (h *Hub) routeMessage(msg *EnvelopeWithConn) {
+	// Snapshot connections under RLock to avoid iterating a shared map
+	// that UnregisterConn may modify concurrently.
 	h.mu.RLock()
-	conns := h.sessions[msg.Env.SessionID]
+	sessionConns := h.sessions[msg.Env.SessionID]
+	conns := make([]*Conn, 0, len(sessionConns))
+	for conn := range sessionConns {
+		conns = append(conns, conn)
+	}
 	h.mu.RUnlock()
 
 	if len(conns) == 0 {
@@ -377,7 +387,7 @@ func (h *Hub) routeMessage(msg *EnvelopeWithConn) {
 		return
 	}
 
-	for conn := range conns {
+	for _, conn := range conns {
 		metrics.GatewayMessagesTotal.WithLabelValues("outgoing", string(msg.Env.Event.Type)).Inc()
 		if err := conn.WriteMessage(websocket.TextMessage, encoded); err != nil {
 			h.log.Warn("gateway: write failed", "err", err)
@@ -386,9 +396,22 @@ func (h *Hub) routeMessage(msg *EnvelopeWithConn) {
 	}
 }
 
+// drainBroadcast processes remaining messages in the broadcast channel.
+// Non-blocking: returns when the channel is empty. Since sendBroadcast checks
+// ctx.Done() before sending, no new messages arrive after context cancellation.
 func (h *Hub) drainBroadcast() {
-	for msg := range h.broadcast {
-		h.routeMessage(msg)
+	for {
+		select {
+		case msg := <-h.broadcast:
+			if msg != nil && msg.Env != nil {
+				h.routeMessage(msg)
+				if msg.afterDrain != nil {
+					msg.afterDrain()
+				}
+			}
+		default:
+			return
+		}
 	}
 }
 
@@ -422,17 +445,19 @@ func (h *Hub) GetAndClearDropped(sessionID string) bool {
 }
 
 // Shutdown gracefully shuts down all connections and stops the hub.
-// It drains in-flight messages from the broadcast queue, then closes
-// all WebSocket connections. The ctx deadline controls the maximum wait time.
+// It signals Run() to stop via context cancellation, waits for in-flight
+// broadcast messages to drain, then closes all WebSocket connections.
+// The ctx deadline controls the maximum wait time.
 func (h *Hub) Shutdown(ctx context.Context) error {
 	h.cancel()
 
-	// Drain in-flight messages with a deadline.
-	// closeOnce.Do ensures the channel is closed exactly once — either by Run()
-	// (if it was started) or by Shutdown() (if Run() was never started, e.g. in tests).
+	// Wait briefly for Run() to drain remaining messages.
+	// Run() handles drain in its ctx.Done() path. The broadcast channel
+	// is never closed — it's GC'd with the Hub.
 	drainDone := make(chan struct{})
 	go func() {
-		h.closeOnce.Do(func() { close(h.broadcast) })
+		// Give Run() a moment to process its ctx.Done path.
+		// This also handles the case where Run() was never started.
 		h.drainBroadcast()
 		close(drainDone)
 	}()

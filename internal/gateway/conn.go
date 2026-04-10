@@ -83,16 +83,21 @@ func (c *Conn) RemoteAddr() string {
 func (c *Conn) ReadPump(handler *Handler) {
 	defer func() {
 		c.hb.Stop()
-		c.Close()
-		c.hub.UnregisterConn(c)
-		// Transition to IDLE so idle_timeout GC can clean up the worker.
-		// On reconnect, performInit will detect StateIdle and call ResumeSession.
+
+		// Transition to IDLE BEFORE unregistering so the state(idle) event
+		// can be routed through Hub.Run while the conn is still in h.sessions.
+		// If we unregister first, routeMessage finds no connections and the
+		// state event is silently dropped.
 		if c.sessionID != "" {
 			if err := handler.sm.Transition(context.Background(), c.sessionID, events.StateIdle); err != nil {
 				c.log.Debug("gateway: conn close transition to idle", "session_id", c.sessionID, "err", err)
 			}
 		}
-		c.hub.LeaveSession(c.sessionID, c)
+
+		// Now safe to remove from routing — state event already queued.
+		c.hub.UnregisterConn(c)
+
+		c.Close()
 	}()
 
 	c.wc.SetReadLimit(maxMessageSize)

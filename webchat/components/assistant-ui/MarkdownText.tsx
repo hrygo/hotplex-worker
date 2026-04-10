@@ -2,13 +2,9 @@
 
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { TextMessagePartComponent } from "@assistant-ui/react";
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const hljs = require("highlight.js");
 
-/**
- * Escape HTML special characters for safe insertion.
- */
 function escapeHtml(text: string): string {
   return text
     .replace(/&/g, "&amp;")
@@ -18,37 +14,30 @@ function escapeHtml(text: string): string {
     .replace(/'/g, "&#39;");
 }
 
-/**
- * MarkdownText - Renders message text content as formatted Markdown.
- *
- * Used as the `Text` component in MessagePrimitive.Parts.
- * Supports GFM (tables, strikethrough, task lists) and code syntax highlighting.
- */
-export const MarkdownText: TextMessagePartComponent = ({ text }) => {
+export function MarkdownText({ text }: { text: string }) {
   if (!text) return null;
 
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
       components={{
-        // Custom pre: just pass through children (removes outer wrapper)
         pre: ({ children }) => <>{children}</>,
-        // Custom code: handle both inline and block code
         code: ({ className, children, ...props }) => {
           const raw = String(children).replace(/\n$/, "");
           const langMatch = /language-(\w+)/.exec(className ?? "");
           const lang = langMatch?.[1] ?? "";
 
           if (!className) {
-            // Inline code — escape and render without className
             return (
               <code
                 style={{
-                  background: "#f3f4f6",
+                  background: "rgba(245, 158, 11, 0.08)",
                   padding: "0.1em 0.3em",
                   borderRadius: "0.25rem",
                   fontSize: "0.875em",
-                  fontFamily: "ui-monospace, monospace",
+                  fontFamily: "var(--font-mono)",
+                  color: "var(--accent-amber)",
+                  border: "1px solid rgba(245, 158, 11, 0.1)",
                 }}
                 {...(props as React.HTMLAttributes<HTMLElement>)}
               >
@@ -57,7 +46,6 @@ export const MarkdownText: TextMessagePartComponent = ({ text }) => {
             );
           }
 
-          // Code block — syntax highlight with hljs
           let highlighted: string;
           if (lang && hljs.getLanguage(lang)) {
             highlighted = hljs.highlight(raw, {
@@ -69,23 +57,39 @@ export const MarkdownText: TextMessagePartComponent = ({ text }) => {
           }
 
           return (
-            <code
-              style={{
-                display: "block",
-                background: "#1e1e1e",
-                color: "#d4d4d4",
-                padding: "1rem",
-                borderRadius: "0.5rem",
-                overflowX: "auto",
-                margin: "0.5rem 0",
-                fontSize: "0.875em",
-                fontFamily: "ui-monospace, SFMono-Regular, monospace",
-              }}
-              dangerouslySetInnerHTML={{ __html: highlighted }}
-              {...(props as React.HTMLAttributes<HTMLElement>)}
-            />
+            <div className="code-block-wrapper">
+              <div className="code-block-header">
+                <span className="code-lang-label">{lang || "code"}</span>
+              </div>
+              <code
+                style={{
+                  display: "block",
+                  background: "#16130f",
+                  color: "#d6d3d1",
+                  padding: "1rem 1.25rem",
+                  borderRadius: 0,
+                  overflowX: "auto",
+                  margin: 0,
+                  fontSize: "0.8125em",
+                  fontFamily: "var(--font-mono)",
+                  lineHeight: 1.75,
+                }}
+                dangerouslySetInnerHTML={{ __html: highlighted }}
+                {...(props as React.HTMLAttributes<HTMLElement>)}
+              />
+            </div>
           );
         },
+        a: ({ href, children }) => (
+          <a href={href} target="_blank" rel="noopener noreferrer" style={{ color: "var(--accent-amber)" }}>
+            {children}
+          </a>
+        ),
+        table: ({ children }) => (
+          <div style={{ overflowX: "auto", margin: "0.5rem 0" }}>
+            <table style={{ minWidth: "100%" }}>{children}</table>
+          </div>
+        ),
       }}
     >
       {text}

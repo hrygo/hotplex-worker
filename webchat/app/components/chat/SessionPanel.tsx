@@ -3,46 +3,13 @@
 import { useState } from 'react';
 import { formatRelativeTime, stateLabel, type SessionInfo } from '@/lib/api/sessions';
 import { useSessions } from '@/lib/hooks/useSessions';
+import { BrandIcon, WORKER_DISPLAY } from '@/components/icons';
 
 interface SessionPanelProps {
-  /** Called when a session is selected — triggers reconnection in the runtime. */
   onSessionSelect: (sessionId: string) => void;
   initialSessionId?: string | null;
 }
 
-// State colors — stable constants, no need to recreate on every render
-const STATE_COLORS: Record<SessionInfo['state'], string> = {
-  created: 'var(--accent-cyan)',
-  running: 'var(--accent-emerald)',
-  idle: 'var(--accent-amber)',
-  terminated: 'var(--text-muted)',
-  deleted: 'var(--text-faint)',
-};
-const STATE_GLOW: Record<SessionInfo['state'], string> = {
-  created: 'rgba(6,182,212,0.5)',
-  running: 'rgba(16,185,129,0.5)',
-  idle: 'rgba(245,158,11,0.5)',
-  terminated: 'transparent',
-  deleted: 'transparent',
-};
-
-// State indicator dot with glow
-function StateDot({ state }: { state: SessionInfo['state'] }) {
-  return (
-    <span
-      className="inline-block w-2 h-2 rounded-full flex-shrink-0"
-      style={{
-        backgroundColor: STATE_COLORS[state] ?? 'var(--text-muted)',
-        boxShadow: STATE_GLOW[state] !== 'transparent'
-          ? `0 0 6px ${STATE_GLOW[state]}`
-          : 'none',
-      }}
-      aria-label={state}
-    />
-  );
-}
-
-// Single session row
 function SessionRow({
   session,
   isActive,
@@ -62,36 +29,14 @@ function SessionRow({
       tabIndex={0}
       onClick={onSelect}
       onKeyDown={(e) => e.key === 'Enter' && onSelect()}
-      className={`
-        group relative flex items-center gap-3 px-4 py-3 cursor-pointer
-        transition-all duration-150 rounded-xl border
-        ${isActive
-          ? 'border-[var(--emerald-border)] shadow-[0_0_12px_rgba(16,185,129,0.1)]'
-          : 'border-transparent hover:border-[var(--border-default)]'
-        }
-      `}
-      style={{
-        background: isActive ? 'var(--emerald-bg)' : 'var(--bg-surface)',
-        borderColor: isActive ? 'var(--emerald-border)' : 'var(--border-subtle)',
-      }}
+      className={`session-row ${isActive ? 'active' : ''}`}
     >
-      {/* Active indicator */}
-      {isActive && (
-        <div
-          className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-8 rounded-r"
-          style={{
-            background: 'var(--accent-emerald)',
-            boxShadow: '0 0 8px rgba(16,185,129,0.6)',
-          }}
-        />
-      )}
-
       {/* Icon */}
       <div
-        className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-colors"
+        className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center"
         style={{
-          background: isActive ? 'var(--emerald-bg)' : 'var(--bg-elevated)',
-          color: isActive ? 'var(--accent-emerald)' : 'var(--text-muted)',
+          background: isActive ? 'var(--amber-light)' : 'var(--bg-elevated)',
+          color: isActive ? 'var(--accent-amber)' : 'var(--text-faint)',
         }}
       >
         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ width: 16, height: 16 }}>
@@ -103,30 +48,24 @@ function SessionRow({
       {/* Content */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <StateDot state={session.state} />
+          <span className={`state-dot state-dot-${session.state}`} />
           <span
             className="text-xs font-mono truncate"
-            style={{ color: isActive ? 'var(--accent-emerald)' : 'var(--text-secondary)' }}
+            style={{ color: isActive ? 'var(--accent-amber)' : 'var(--text-secondary)' }}
           >
             {session.id.slice(0, 16)}…
           </span>
           {session.worker_type && (
             <span
               className="text-[10px] px-1.5 py-0.5 rounded font-mono"
-              style={{
-                background: 'var(--bg-elevated)',
-                color: 'var(--text-muted)',
-              }}
+              style={{ background: 'var(--bg-elevated)', color: 'var(--text-faint)' }}
             >
-              {session.worker_type.replace('claude_code', 'claude')}
+              {WORKER_DISPLAY[session.worker_type] ?? session.worker_type}
             </span>
           )}
         </div>
         <div className="flex items-center gap-2 mt-0.5">
-          <span
-            className="text-[11px]"
-            style={{ color: isActive ? 'var(--accent-emerald)' : 'var(--text-muted)', opacity: isActive ? 0.7 : 1 }}
-          >
+          <span className="text-[11px]" style={{ color: isActive ? 'var(--accent-amber)' : 'var(--text-muted)', opacity: isActive ? 0.8 : 1 }}>
             {stateLabel(session.state)}
           </span>
           <span style={{ color: 'var(--text-faint)' }}>·</span>
@@ -142,27 +81,20 @@ function SessionRow({
         </div>
       </div>
 
-      {/* Delete button */}
+      {/* Delete */}
       {confirmDelete ? (
         <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
           <button
             onClick={() => { onDelete(); setConfirmDelete(false); }}
-            className="px-2 py-1 text-[11px] rounded transition-colors"
-            style={{
-              background: 'rgba(239,68,68,0.08)',
-              color: '#ef4444',
-              border: '1px solid rgba(239,68,68,0.2)',
-            }}
+            className="px-2 py-1 text-[11px] rounded"
+            style={{ background: 'rgba(251,113,133,0.08)', color: 'var(--accent-coral)', border: '1px solid rgba(251,113,133,0.2)' }}
           >
             删除
           </button>
           <button
             onClick={() => setConfirmDelete(false)}
-            className="px-2 py-1 text-[11px] rounded transition-colors"
-            style={{
-              background: 'var(--bg-elevated)',
-              color: 'var(--text-muted)',
-            }}
+            className="px-2 py-1 text-[11px] rounded"
+            style={{ background: 'var(--bg-elevated)', color: 'var(--text-muted)' }}
           >
             取消
           </button>
@@ -171,15 +103,7 @@ function SessionRow({
         <button
           onClick={(e) => { e.stopPropagation(); setConfirmDelete(true); }}
           className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg transition-all"
-          style={{ color: 'var(--text-muted)' }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = 'rgba(239,68,68,0.06)';
-            e.currentTarget.style.color = '#ef4444';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = 'transparent';
-            e.currentTarget.style.color = 'var(--text-muted)';
-          }}
+          style={{ color: 'var(--text-faint)' }}
           aria-label="删除会话"
         >
           <svg style={{ width: 14, height: 14 }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -192,67 +116,19 @@ function SessionRow({
   );
 }
 
-// Empty state
 function EmptyState({ onCreate }: { onCreate: () => void }) {
   return (
     <div className="flex flex-col items-center justify-center py-12 px-6 text-center">
-      <div
-        className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4"
-        style={{
-          background: 'var(--emerald-bg)',
-          boxShadow: '0 0 20px rgba(16,185,129,0.08)',
-          border: '1px solid var(--emerald-border)',
-        }}
-      >
-        <svg style={{ width: 28, height: 28, color: 'var(--accent-emerald)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-            d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-        </svg>
-      </div>
+      <BrandIcon size={56} />
       <p className="text-sm mb-1" style={{ color: 'var(--text-secondary)' }}>暂无会话</p>
       <p className="text-xs mb-5" style={{ color: 'var(--text-muted)' }}>创建一个新会话来开始</p>
-      <button
-        onClick={onCreate}
-        className="px-5 py-2 rounded-xl text-sm font-medium transition-all hover:shadow-[0_0_16px_rgba(16,185,129,0.15)]"
-        style={{
-          background: 'var(--emerald-bg)',
-          color: 'var(--accent-emerald)',
-          border: '1px solid var(--emerald-border)',
-        }}
-      >
+      <button onClick={onCreate} className="btn-new-session" style={{ width: 'auto' }}>
         + 新建会话
       </button>
     </div>
   );
 }
 
-// Loading skeleton
-function LoadingSkeleton() {
-  return (
-    <div className="space-y-2 p-4">
-      {[1, 2, 3].map((i) => (
-        <div key={i} className="flex items-center gap-3 px-4 py-3 rounded-xl" style={{ background: 'var(--bg-surface)' }}>
-          <div
-            className="w-8 h-8 rounded-lg"
-            style={{ background: 'var(--bg-elevated)' }}
-          />
-          <div className="flex-1 space-y-2">
-            <div
-              className="h-3 rounded"
-              style={{ background: 'var(--bg-elevated)', width: '75%' }}
-            />
-            <div
-              className="h-2 rounded"
-              style={{ background: 'var(--bg-elevated)', width: '50%', opacity: 0.6 }}
-            />
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// Main SessionPanel component
 export function SessionPanel({ onSessionSelect, initialSessionId }: SessionPanelProps) {
   const {
     sessions,
@@ -274,32 +150,16 @@ export function SessionPanel({ onSessionSelect, initialSessionId }: SessionPanel
     return (
       <button
         onClick={openPanel}
-        className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-sm transition-all border"
-        style={{
-          color: 'var(--text-secondary)',
-          background: 'transparent',
-          borderColor: 'transparent',
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.background = 'var(--bg-hover)';
-          e.currentTarget.style.borderColor = 'var(--border-default)';
-          e.currentTarget.style.color = 'var(--text-primary)';
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.background = 'transparent';
-          e.currentTarget.style.borderColor = 'transparent';
-          e.currentTarget.style.color = 'var(--text-secondary)';
-        }}
+        className="session-toggle-btn"
       >
         <svg style={{ width: 16, height: 16 }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-            d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
         </svg>
         会话
         {sessions.length > 0 && (
           <span
             className="text-[10px] px-1.5 py-0.5 rounded-full font-mono"
-            style={{ background: 'var(--bg-elevated)', color: 'var(--text-muted)' }}
+            style={{ background: 'var(--bg-elevated)', color: 'var(--text-faint)' }}
           >
             {sessions.length}
           </span>
@@ -310,49 +170,23 @@ export function SessionPanel({ onSessionSelect, initialSessionId }: SessionPanel
 
   return (
     <>
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 z-40"
-        style={{
-          background: 'rgba(0,0,0,0.06)',
-          backdropFilter: 'blur(4px)',
-        }}
-        onClick={closePanel}
-        aria-hidden="true"
-      />
+      <div className="session-panel-backdrop" onClick={closePanel} aria-hidden="true" />
 
-      {/* Panel */}
-      <div
-        className="fixed right-0 top-0 h-full z-50 w-80 flex flex-col"
-        style={{
-          background: 'var(--bg-surface)',
-          borderLeft: '1px solid var(--border-default)',
-          boxShadow: '-20px 0 60px rgba(0,0,0,0.08)',
-        }}
-        role="dialog"
-        aria-label="会话列表"
-      >
+      <div className="session-panel" role="dialog" aria-label="会话列表">
         {/* Header */}
-        <div
-          className="flex items-center justify-between px-5 py-4"
-          style={{ borderBottom: '1px solid var(--border-subtle)' }}
-        >
+        <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
           <div className="flex items-center gap-2">
             <div
               className="w-6 h-6 rounded-lg flex items-center justify-center"
-              style={{ background: 'var(--emerald-bg)', color: 'var(--accent-emerald)' }}
+              style={{ background: 'var(--amber-light)', color: 'var(--accent-amber)' }}
             >
               <svg style={{ width: 14, height: 14 }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
               </svg>
             </div>
             <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>会话列表</h2>
             {sessions.length > 0 && (
-              <span
-                className="text-[10px] px-1.5 py-0.5 rounded-full font-mono"
-                style={{ background: 'var(--bg-elevated)', color: 'var(--text-muted)' }}
-              >
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full font-mono" style={{ background: 'var(--bg-elevated)', color: 'var(--text-faint)' }}>
                 {sessions.length}
               </span>
             )}
@@ -362,58 +196,48 @@ export function SessionPanel({ onSessionSelect, initialSessionId }: SessionPanel
               onClick={() => createNewSession()}
               disabled={isLoading}
               className="p-1.5 rounded-lg transition-colors disabled:opacity-50"
-              style={{ color: 'var(--text-muted)' }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'var(--emerald-bg)';
-                e.currentTarget.style.color = 'var(--accent-emerald)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'transparent';
-                e.currentTarget.style.color = 'var(--text-muted)';
-              }}
+              style={{ color: 'var(--text-faint)' }}
               aria-label="新建会话"
               title="新建会话"
             >
               <svg style={{ width: 16, height: 16 }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                  d="M12 4v16m8-8H4" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m8-8H4" />
               </svg>
             </button>
             <button
               onClick={closePanel}
               className="p-1.5 rounded-lg transition-colors"
-              style={{ color: 'var(--text-muted)' }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'var(--bg-elevated)';
-                e.currentTarget.style.color = 'var(--text-primary)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'transparent';
-                e.currentTarget.style.color = 'var(--text-muted)';
-              }}
+              style={{ color: 'var(--text-faint)' }}
               aria-label="关闭"
             >
               <svg style={{ width: 16, height: 16 }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                  d="M6 18L18 6M6 6l12 12" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
           </div>
         </div>
 
-        {/* Session list */}
+        {/* List */}
         <div className="flex-1 overflow-y-auto py-2">
           {isLoading && sessions.length === 0 ? (
-            <LoadingSkeleton />
+            <div className="space-y-2 p-4">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="flex items-center gap-3 px-4 py-3 rounded-xl" style={{ background: 'var(--bg-surface)' }}>
+                  <div className="w-8 h-8 rounded-lg" style={{ background: 'var(--bg-elevated)' }} />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-3 rounded" style={{ background: 'var(--bg-elevated)', width: '75%' }} />
+                    <div className="h-2 rounded" style={{ background: 'var(--bg-elevated)', width: '50%', opacity: 0.6 }} />
+                  </div>
+                </div>
+              ))}
+            </div>
           ) : error ? (
             <div className="px-5 py-8 text-center">
-              <p className="text-sm mb-2" style={{ color: '#ef4444' }}>{error}</p>
+              <p className="text-sm mb-2" style={{ color: 'var(--accent-coral)' }}>{error}</p>
               <button
                 onClick={() => window.location.reload()}
-                className="text-xs transition-colors"
+                className="text-xs"
                 style={{ color: 'var(--text-muted)' }}
-                onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-primary)'; }}
-                onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; }}
               >
                 刷新页面重试
               </button>
@@ -440,25 +264,10 @@ export function SessionPanel({ onSessionSelect, initialSessionId }: SessionPanel
           <button
             onClick={() => createNewSession()}
             disabled={isLoading}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all
-              disabled:opacity-50 disabled:cursor-not-allowed"
-            style={{
-              background: 'var(--emerald-bg)',
-              color: 'var(--accent-emerald)',
-              border: '1px solid var(--emerald-border)',
-            }}
-            onMouseEnter={(e) => {
-              if (!isLoading) {
-                e.currentTarget.style.boxShadow = '0 0 16px rgba(16,185,129,0.15)';
-              }
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.boxShadow = 'none';
-            }}
+            className="btn-new-session"
           >
             <svg style={{ width: 16, height: 16 }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                d="M12 4v16m8-8H4" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m8-8H4" />
             </svg>
             新建会话
           </button>
