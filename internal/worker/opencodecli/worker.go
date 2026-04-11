@@ -105,10 +105,7 @@ func (w *Worker) startLocked(ctx context.Context, session worker.SessionInfo, op
 		_ = w.Proc.Close()
 		w.Proc = nil
 	}
-	if w.stdin != nil {
-		w.stdin.Close()
-		w.stdin = nil
-	}
+	w.closeStdin()
 
 	args := w.buildCLIArgs(session, openCodeSID)
 	env := base.BuildEnv(session, openCodeEnvWhitelist, "opencode-cli")
@@ -134,6 +131,11 @@ func (w *Worker) startLocked(ctx context.Context, session worker.SessionInfo, op
 		w.Mu.Unlock()
 		return err
 	}
+
+	// OpenCode CLI buffers input until stdin closes — close stdin to signal
+	// the process to begin processing. This is safe because opencodecli
+	// spawns a fresh subprocess on each Input() call.
+	w.closeStdin()
 
 	childCtx, cancel := context.WithCancel(ctx)
 	w.cancel = cancel
@@ -165,10 +167,7 @@ func (w *Worker) Start(ctx context.Context, session worker.SessionInfo) error {
 
 	// startLocked releases the lock; initialize conn after it returns.
 	w.conn = newRecvOnlyConn(session.UserID, session.SessionID, func() {
-		if w.stdin != nil {
-			w.stdin.Close()
-			w.stdin = nil
-		}
+		w.closeStdin()
 		if w.Proc != nil {
 			_ = w.Proc.Close()
 		}
@@ -206,10 +205,7 @@ func (w *Worker) Resume(ctx context.Context, session worker.SessionInfo) error {
 	}
 
 	w.conn = newRecvOnlyConn(session.UserID, session.SessionID, func() {
-		if w.stdin != nil {
-			w.stdin.Close()
-			w.stdin = nil
-		}
+		w.closeStdin()
 		if w.Proc != nil {
 			_ = w.Proc.Close()
 		}
@@ -359,8 +355,14 @@ func (w *Worker) buildCLIArgs(session worker.SessionInfo, openCodeSessionID stri
 
 func (w *Worker) readOutput(ctx context.Context) {
 	defer func() {
-		if conn := w.Conn(); conn != nil {
-			conn.Close()
+		// Only close the conn when the process exits on its own (EOF or error).
+		// When ctx is cancelled (Input() relaunches or Terminate()), the conn
+		// must stay open: Input's new readOutput goroutine will use the same conn,
+		// and the bridge's forwardEvents goroutine reads from conn.Recv().
+		if ctx.Err() == nil {
+			if conn := w.Conn(); conn != nil {
+				conn.Close()
+			}
 		}
 	}()
 
@@ -489,6 +491,14 @@ func (w *Worker) trySend(env *events.Envelope) {
 	}
 	if !ts.TrySend(env) {
 		w.Log.Warn("opencodecli: recv channel full, dropping message")
+	}
+}
+
+// closeStdin closes and nils the stdin pipe. Caller must hold w.Mu.
+func (w *Worker) closeStdin() {
+	if w.stdin != nil {
+		w.stdin.Close()
+		w.stdin = nil
 	}
 }
 
