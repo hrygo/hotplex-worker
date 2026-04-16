@@ -198,6 +198,15 @@ func (p *Parser) parseAssistant(msg *SDKMessage) ([]*WorkerEvent, error) {
 				},
 				RawMessage: msg,
 			})
+		case "thinking":
+			events = append(events, &WorkerEvent{
+				Type: EventAssistant,
+				Payload: &StreamPayload{
+					Type:    "thinking",
+					Content: block.Thinking,
+				},
+				RawMessage: msg,
+			})
 		case "tool_use":
 			var input map[string]any
 			if err := json.Unmarshal(block.Input, &input); err != nil {

@@ -8,21 +8,84 @@ paths:
 > Session 状态机、GC 策略、并发控制、mutex 规范
 > 参考：`docs/specs/Acceptance-Criteria.md` §SM-001 ~ §SM-008
 
+## Session ID 生命周期
+
+**生成规则**：
+- Session ID 由服务端在 `init` 握手时生成
+- 客户端在 `init` 中可选提供 `session_id`（用于重连恢复）
+- 服务端决定最终使用的 `session_id`
+- `init_ack` 中返回的 `session_id` 是唯一可信来源
+
+**客户端行为**：
+```typescript
+// 发送 init
+const initEnv = {
+    id: generateId(),
+    version: 'aep/v1',
+    session_id: existingSessionId || undefined,  // 重连时提供
+    event: { type: 'init', data: { worker_type, config, auth } }
+}
+
+// 使用 init_ack 返回的 session_id
+onMessage((env) => {
+    if (env.event.type === 'init_ack') {
+        this.sessionId = env.session_id  // 服务端分配的权威 ID
+    }
+})
+```
+
+**服务端行为**：
+```go
+// conn.go performInit
+sessionID := initData.SessionID
+if sessionID == "" {
+    sessionID = c.sessionID  // 使用 conn 创建时的 ID
+}
+
+// 创建或恢复 session
+si, err := handler.sm.Get(sessionID)
+// ...
+
+// 返回 session_id 给客户端
+ack := BuildInitAck(sessionID, si.State, initData.WorkerType)
+```
+
+---
+
 ## 5 状态机
 
 ```
 CREATED → RUNNING → IDLE → TERMINATED → DELETED
-   ↑                    ↓
-   └─── RESUME ←────────┘
+   ↑                    ↓            ↑
+   └─── RESUME ←────────┘    │
+          └──────────────────────┘
 ```
 
-| 状态 | IsActive() | 说明 |
-|------|-----------|------|
-| `CREATED` | true | Session 创建，未开始执行 |
-| `RUNNING` | true | 正在执行 Worker |
-| `IDLE` | true | Turn 结束，等待下一个 input |
-| `TERMINATED` | false | 结束，保留元数据 |
-| `DELETED` | false | 终态，DB 记录已删除 |
+| 状态 | IsActive() | 语义 | 持续时间 |
+|------|-----------|------|---------|
+| `CREATED` | true | Session 创建，未开始执行 | 瞬态（<1s） |
+| `RUNNING` | true | 正在执行 Worker，处理输入 | 业务执行期间 |
+| `IDLE` | true | Worker 暂停，等待重连或新输入 | `idle_timeout` GC 前 |
+| `TERMINATED` | false | Worker 已终止，保留元数据 | `retention_period` GC 前 |
+| `DELETED` | false | 终态，DB 记录已删除 | 永久 |
+
+### 状态语义
+
+**StateIdle - 暂停状态**：
+- Worker 进程暂停（paused），未终止
+- 保留对话上下文和状态
+- WebSocket 断开时自动进入
+- 等待客户端重连恢复
+
+**StateTerminated - 终止状态**：
+- Worker 进程已终止
+- 对话结束，但保留历史记录
+- 需要完全重启（新 session）
+
+**StateDeleted - 清理状态**：
+- 数据库记录已删除
+- 所有资源已释放
+- 管理员操作或 GC 触发
 
 ### 合法转换规则
 ```go

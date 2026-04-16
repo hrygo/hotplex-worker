@@ -23,7 +23,7 @@ session:
 
 pool:
   max_size: 50               # Smaller pool for development
-  max_memory_per_user: 1073741824  # 1GB limit for dev
+  max_memory_per_user: 4294967296  # 4GB limit for dev (supports up to 8 concurrent workers)
 
 worker:
   idle_timeout: 5m           # Shorter idle timeout for faster cleanup

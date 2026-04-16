@@ -129,6 +129,7 @@ func (*registryTestWorker) Wait() (int, error)                                  
 func (*registryTestWorker) Conn() SessionConn                                   { return nil }
 func (*registryTestWorker) Health() WorkerHealth                                { return WorkerHealth{} }
 func (*registryTestWorker) LastIO() time.Time                                   { return time.Time{} }
+func (*registryTestWorker) ResetContext(context.Context) error                      { return nil }
 func (*registryTestWorker) Type() WorkerType                                    { return TypeClaudeCode }
 func (*registryTestWorker) SupportsResume() bool                                { return false }
 func (*registryTestWorker) SupportsStreaming() bool                             { return false }

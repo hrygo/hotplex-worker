@@ -45,15 +45,15 @@ func main() {
 
     go func() {
         for evt := range c.Events() {
-            switch evt.Kind {
-            case client.KindMessageDelta:
+            switch evt.Type {
+            case client.EventMessageDelta:
                 if m, ok := evt.Data.(map[string]any); ok {
                     fmt.Print(m["content"])
                 }
-            case client.KindDone:
+            case client.EventDone:
                 fmt.Println("\n--- done ---")
                 os.Exit(0)
-            case client.KindError:
+            case client.EventError:
                 fmt.Fprintf(os.Stderr, "error: %v\n", evt.Data)
                 os.Exit(1)
             }
@@ -79,6 +79,7 @@ client.WorkerType("claude_code")            // required
 client.AuthToken("jwt-token")               // JWT bearer token
 client.APIKey("sk-xxx")                     // API key header
 client.PingInterval(30 * time.Second)       // heartbeat (default 54s)
+client.ClientSessionID("my-session-001")    // client-managed session ID (UUIDv5 mapped)
 ```
 
 ### Connection
@@ -96,14 +97,16 @@ ack, err := c.Resume(ctx, "sess_xxx")       // returns *InitAckData
 ```go
 c.SendInput(ctx, "your message")                         // user input
 c.SendPermissionResponse(ctx, "id", true, "approved")    // approve tool
-c.SendControl(ctx, "terminate")                          // terminate session
+c.SendControl(ctx, "terminate")                           // terminate session
+c.SendReset(ctx, "user_requested")                       // clear context, restart worker
+c.SendGC(ctx, "user_idle")                               // archive session, terminate worker
 ```
 
 ### Events
 
 ```go
 for evt := range c.Events() {
-    // evt.Kind    — event type string (see constants below)
+    // evt.Type    — event type string (see constants below)
     // evt.Seq     — monotonic sequence number
     // evt.Session — session ID
     // evt.Data    — event payload (map[string]any)
@@ -122,17 +125,22 @@ c.Close()         // graceful shutdown
 
 | Constant | Description |
 |----------|-------------|
-| `KindMessageStart` | Streaming message begins |
-| `KindMessageDelta` | Streaming content chunk |
-| `KindMessageEnd` | Streaming message ends |
-| `KindToolCall` | Worker requests tool execution |
-| `KindToolResult` | Tool execution result |
-| `KindPermissionRequest` | Worker asks for permission |
-| `KindState` | Session state changed |
-| `KindDone` | Session completed |
-| `KindError` | Error occurred |
-| `KindControl` | Control event |
-| `KindPong` | Heartbeat response |
+| `EventMessageStart` | Streaming message begins |
+| `EventMessageDelta` | Streaming content chunk |
+| `EventMessageEnd` | Streaming message ends |
+| `EventToolCall` | Worker requests tool execution |
+| `EventToolResult` | Tool execution result |
+| `EventPermissionRequest` | Worker asks for permission |
+| `EventState` | Session state changed |
+| `EventDone` | Session completed |
+| `EventError` | Error occurred |
+| `EventControl` | Control event |
+| `EventPing` | Heartbeat probe |
+| `EventPong` | Heartbeat response |
+| `EventInitAck` | Connection established |
+| `EventRaw` | Passthrough agent data |
+| `EventReasoning` | Agent "thinking" tokens |
+| `EventStep` | Higher-level task step |
 
 ## Data Types
 

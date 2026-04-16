@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"go.opentelemetry.io/otel/codes"
 
 	"github.com/hotplex/hotplex-worker/internal/config"
 	"github.com/hotplex/hotplex-worker/internal/metrics"
@@ -73,9 +72,8 @@ type Hub struct {
 	sessionDropped map[string]bool
 
 	// Shutdown signals.
-	ctx       context.Context
-	cancel    context.CancelFunc
-	closeOnce sync.Once // closes broadcast channel exactly once
+	ctx    context.Context
+	cancel context.CancelFunc
 
 	// LogHandler is an optional callback invoked by routeMessage for each forwarded event.
 	// Use it to capture events into an external ring buffer (e.g. /admin/logs).
@@ -150,18 +148,27 @@ func (h *Hub) UnregisterConn(conn *Conn) {
 }
 
 // JoinSession subscribes conn to receive events for a session.
-// If the session already has another connection, the old one is disconnected
-// (per the "按 session_id 去重连接，只保留最新连接" rule).
+// If the session already has another connection, the old ones are removed from
+// the session routing map (no longer receive events) and left to close
+// naturally when their WebSocket read loop encounters the closed socket.
+// This prevents the race where worker responses go to a stale connection,
+// while avoiding the reconnect storms caused by forcibly closing connections
+// (which triggers client WebSocket onclose → reconnect loops).
+// This implements the "按 session_id 去重连接，只保留最新连接" rule.
 func (h *Hub) JoinSession(sessionID string, conn *Conn) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	// Kick out existing connections for this session.
+	// Remove stale connections from session routing only — do NOT call Close().
+	// Each removed conn's ReadPump goroutine will exit naturally when the
+	// underlying TCP connection is torn down (either by the client closing
+	// its end, or by WritePump detecting the dead socket on next write).
+	// This avoids triggering the client's WebSocket onclose → reconnect logic.
 	if existing, ok := h.sessions[sessionID]; ok {
 		for c := range existing {
 			if c != conn {
-				h.log.Info("gateway: disconnecting stale connection", "session_id", sessionID)
-				c.Close()
+				delete(existing, c)
+				h.log.Info("gateway: removed stale conn from session", "session_id", sessionID)
 			}
 		}
 	}
@@ -182,6 +189,18 @@ func (h *Hub) LeaveSession(sessionID string, conn *Conn) {
 		}
 	}
 	h.mu.Unlock()
+}
+
+// sendBroadcast sends to the broadcast channel. Returns false if the hub is
+// shutting down (ctx cancelled). Uses select with ctx.Done() instead of
+// close(channel)+recover() to avoid the send-on-closed-channel data race.
+func (h *Hub) sendBroadcast(msg *EnvelopeWithConn) (sent bool) {
+	select {
+	case h.broadcast <- msg:
+		return true
+	case <-h.ctx.Done():
+		return false
+	}
 }
 
 // SendToSession delivers a message to all connections subscribed to a session.
@@ -218,36 +237,31 @@ func (h *Hub) SendToSession(ctx context.Context, env *events.Envelope, afterDrai
 	// The clone is created inside the select to keep the backpressure check
 	// and send atomic (same as the original code).
 	if isDroppable(env.Event.Type) {
-		select {
-		case h.broadcast <- &EnvelopeWithConn{Env: events.Clone(env), afterDrain: afterDrainCallback}:
-			return nil
-		default:
-			// Silently drop delta — seq is NOT incremented for dropped events,
-			// so client will not see seq gaps from intentional drops.
-			h.mu.Lock()
-			h.sessionDropped[env.SessionID] = true
-			h.mu.Unlock()
-			metrics.GatewayDeltasDropped.Inc()
-			h.log.Debug("gateway: dropped delta (backpressure)", "session_id", env.SessionID)
+		if h.sendBroadcast(&EnvelopeWithConn{Env: events.Clone(env), afterDrain: afterDrainCallback}) {
 			return nil
 		}
+		// sendBroadcast returned false = channel closed; drop delta silently.
+		h.mu.Lock()
+		h.sessionDropped[env.SessionID] = true
+		h.mu.Unlock()
+		metrics.GatewayDeltasDropped.Inc()
+		return nil
 	}
 
 	// Guaranteed delivery path.
-	select {
-	case h.broadcast <- &EnvelopeWithConn{Env: events.Clone(env), afterDrain: afterDrainCallback}:
+	if h.sendBroadcast(&EnvelopeWithConn{Env: events.Clone(env), afterDrain: afterDrainCallback}) {
 		return nil
-	default:
-		err := errors.New("gateway: broadcast queue full")
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return err
 	}
+	return errors.New("gateway: broadcast channel closed")
 }
 
 func (h *Hub) sendControlToSession(ctx context.Context, env *events.Envelope) error {
 	h.mu.RLock()
-	conns := h.sessions[env.SessionID]
+	sessionConns := h.sessions[env.SessionID]
+	conns := make([]*Conn, 0, len(sessionConns))
+	for conn := range sessionConns {
+		conns = append(conns, conn)
+	}
 	h.mu.RUnlock()
 
 	if len(conns) == 0 {
@@ -255,7 +269,7 @@ func (h *Hub) sendControlToSession(ctx context.Context, env *events.Envelope) er
 	}
 
 	env = events.Clone(env)
-	for conn := range conns {
+	for _, conn := range conns {
 		if err := conn.WriteCtx(ctx, env); err != nil {
 			h.log.Warn("gateway: send to conn failed", "err", err, "conn", conn.RemoteAddr())
 		}
@@ -271,6 +285,9 @@ func (h *Hub) HandleHTTP(
 	handler *Handler,
 	bridge *Bridge,
 ) http.Handler {
+
+	// Give the handler access to sm for the init handshake.
+	handler.sm = sm
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Authenticate at HTTP upgrade time.
@@ -297,9 +314,6 @@ func (h *Hub) HandleHTTP(
 		h.RegisterConn(c)
 		h.JoinSession(sessionID, c)
 
-		// Give the handler access to sm for the init handshake.
-		handler.sm = sm
-
 		// Start read and write pumps in background.
 		go c.ReadPump(handler)
 		go c.WritePump()
@@ -309,6 +323,8 @@ func (h *Hub) HandleHTTP(
 }
 
 // Run starts the hub's run loop. It blocks until the context is cancelled.
+// The broadcast channel is never closed — sendBroadcast uses ctx.Done() to
+// detect shutdown, and this function drains remaining messages non-blockingly.
 func (h *Hub) Run() {
 	h.log.Info("gateway: hub running")
 
@@ -316,9 +332,11 @@ func (h *Hub) Run() {
 		select {
 		case <-h.ctx.Done():
 			h.drainBroadcast()
-			h.closeOnce.Do(func() { close(h.broadcast) })
 			return
 		case msg := <-h.broadcast:
+			if msg == nil || msg.Env == nil {
+				continue
+			}
 			_, span := tracing.SpanFromContext(h.ctx).Start(h.ctx, "hub.broadcast")
 			span.SetAttributes(
 				tracing.Attr("session_id", msg.Env.SessionID),
@@ -335,8 +353,14 @@ func (h *Hub) Run() {
 }
 
 func (h *Hub) routeMessage(msg *EnvelopeWithConn) {
+	// Snapshot connections under RLock to avoid iterating a shared map
+	// that UnregisterConn may modify concurrently.
 	h.mu.RLock()
-	conns := h.sessions[msg.Env.SessionID]
+	sessionConns := h.sessions[msg.Env.SessionID]
+	conns := make([]*Conn, 0, len(sessionConns))
+	for conn := range sessionConns {
+		conns = append(conns, conn)
+	}
 	h.mu.RUnlock()
 
 	if len(conns) == 0 {
@@ -363,7 +387,7 @@ func (h *Hub) routeMessage(msg *EnvelopeWithConn) {
 		return
 	}
 
-	for conn := range conns {
+	for _, conn := range conns {
 		metrics.GatewayMessagesTotal.WithLabelValues("outgoing", string(msg.Env.Event.Type)).Inc()
 		if err := conn.WriteMessage(websocket.TextMessage, encoded); err != nil {
 			h.log.Warn("gateway: write failed", "err", err)
@@ -372,9 +396,22 @@ func (h *Hub) routeMessage(msg *EnvelopeWithConn) {
 	}
 }
 
+// drainBroadcast processes remaining messages in the broadcast channel.
+// Non-blocking: returns when the channel is empty. Since sendBroadcast checks
+// ctx.Done() before sending, no new messages arrive after context cancellation.
 func (h *Hub) drainBroadcast() {
-	for msg := range h.broadcast {
-		h.routeMessage(msg)
+	for {
+		select {
+		case msg := <-h.broadcast:
+			if msg != nil && msg.Env != nil {
+				h.routeMessage(msg)
+				if msg.afterDrain != nil {
+					msg.afterDrain()
+				}
+			}
+		default:
+			return
+		}
 	}
 }
 
@@ -408,17 +445,19 @@ func (h *Hub) GetAndClearDropped(sessionID string) bool {
 }
 
 // Shutdown gracefully shuts down all connections and stops the hub.
-// It drains in-flight messages from the broadcast queue, then closes
-// all WebSocket connections. The ctx deadline controls the maximum wait time.
+// It signals Run() to stop via context cancellation, waits for in-flight
+// broadcast messages to drain, then closes all WebSocket connections.
+// The ctx deadline controls the maximum wait time.
 func (h *Hub) Shutdown(ctx context.Context) error {
 	h.cancel()
 
-	// Drain in-flight messages with a deadline.
-	// closeOnce.Do ensures the channel is closed exactly once — either by Run()
-	// (if it was started) or by Shutdown() (if Run() was never started, e.g. in tests).
+	// Wait briefly for Run() to drain remaining messages.
+	// Run() handles drain in its ctx.Done() path. The broadcast channel
+	// is never closed — it's GC'd with the Hub.
 	drainDone := make(chan struct{})
 	go func() {
-		h.closeOnce.Do(func() { close(h.broadcast) })
+		// Give Run() a moment to process its ctx.Done path.
+		// This also handles the case where Run() was never started.
 		h.drainBroadcast()
 		close(drainDone)
 	}()

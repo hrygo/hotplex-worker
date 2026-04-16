@@ -152,14 +152,14 @@ func (w *Worker) buildCLIArgs(session worker.SessionInfo, resume bool) []string 
 		"--input-format", "stream-json",
 	}
 
-	// --continue: resume latest session in current dir (no --session-id)
+	// Session mode:
+	// - ContinueSession=true: resume latest session in current dir (--continue)
+	// - resume=true: resume specific session (--session-id --resume)
+	// - new session: let Claude create one (no --session-id)
 	if session.ContinueSession {
 		args = append(args, "--continue")
-	} else {
-		args = append(args, "--session-id", session.SessionID)
-	}
-
-	if resume {
+	} else if resume {
+		args = append(args, "--session-id", aep.ParseSessionID(session.SessionID))
 		args = append(args, "--resume")
 		if session.ForkSession {
 			args = append(args, "--fork-session")
@@ -171,6 +171,7 @@ func (w *Worker) buildCLIArgs(session worker.SessionInfo, resume bool) []string 
 			args = append(args, "--rewind-files", session.RewindFiles)
 		}
 	}
+	// else: new session - don't pass --session-id, Claude will create one
 	if session.PermissionMode != "" {
 		args = append(args, "--permission-mode", session.PermissionMode)
 	}
@@ -298,6 +299,38 @@ func (w *Worker) LastIO() time.Time {
 	return w.BaseWorker.LastIO()
 }
 
+// ResetContext clears the worker runtime context.
+// Claude Code does not support in-place context clearing, so this terminates the
+// current process and starts a fresh one with --resume to recreate session files.
+// The Gateway layer has already called sm.ClearContext() to clear SessionInfo.Context.
+func (w *Worker) ResetContext(ctx context.Context) error {
+	w.Mu.Lock()
+	sessionID := w.sessionID
+	w.Mu.Unlock()
+
+	if err := w.Terminate(ctx); err != nil {
+		return fmt.Errorf("claudecode: reset terminate: %w", err)
+	}
+
+	// Reconstruct session info from current worker state.
+	conn := w.BaseWorker.Conn()
+	var userID, projectDir string
+	if conn != nil {
+		userID = conn.UserID()
+		projectDir = conn.SessionID() // same as sessionID for claudecode
+	}
+	if projectDir == "" {
+		projectDir = sessionID
+	}
+
+	session := worker.SessionInfo{
+		SessionID:  sessionID,
+		UserID:     userID,
+		ProjectDir: projectDir,
+	}
+	return w.Start(ctx, session)
+}
+
 // ─── Internal ────────────────────────────────────────────────────────────────
 
 func (w *Worker) readOutput(ctx context.Context) {
@@ -308,10 +341,14 @@ func (w *Worker) readOutput(ctx context.Context) {
 	}()
 
 	w.Mu.Lock()
-	defer w.Mu.Unlock()
 	if w.readLineFn == nil {
+		w.Mu.Unlock()
 		return
 	}
+	// Hold the lock during startup only; read loop below is unprotected so that
+	// Terminate (which needs the lock) doesn't deadlock with a blocked scanner.
+	readLineFn := w.readLineFn
+	w.Mu.Unlock()
 
 	for {
 		select {
@@ -320,7 +357,7 @@ func (w *Worker) readOutput(ctx context.Context) {
 		default:
 		}
 
-		line, err := w.readLineFn()
+		line, err := readLineFn()
 		if err != nil {
 			if err == io.EOF {
 				return
@@ -333,10 +370,12 @@ func (w *Worker) readOutput(ctx context.Context) {
 			continue
 		}
 
-		// Parse SDK message
 		workerEvents, err := w.parser.ParseLine(line)
 		if err != nil {
 			w.BaseWorker.Log.Warn("claudecode: parse line", "error", err, "line", line)
+			continue
+		}
+		if len(workerEvents) == 0 {
 			continue
 		}
 
@@ -411,16 +450,18 @@ func (w *Worker) readOutput(ctx context.Context) {
 func (w *Worker) trySend(env *events.Envelope) {
 	conn := w.Conn()
 	if conn == nil {
+		w.BaseWorker.Log.Warn("claudecode: trySend conn nil", "session_id", w.sessionID)
 		return
 	}
 
 	// Duck-typed interface: *base.Conn (production) and mockConn (tests) both satisfy it.
 	ts, ok := conn.(interface{ TrySend(*events.Envelope) bool })
 	if !ok {
+		w.BaseWorker.Log.Warn("claudecode: trySend conn type unsupported", "session_id", w.sessionID, "type", fmt.Sprintf("%T", conn))
 		return
 	}
 	if !ts.TrySend(env) {
-		w.BaseWorker.Log.Warn("claudecode: recv channel full, dropping message")
+		w.BaseWorker.Log.Warn("claudecode: recv channel full, dropping", "session_id", w.sessionID, "event_type", env.Event.Type)
 	}
 }
 

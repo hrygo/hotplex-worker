@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"os"
@@ -175,6 +176,7 @@ type WorkerConfig struct {
 	ExecutionTimeout time.Duration `mapstructure:"execution_timeout"`
 	AllowedEnvs      []string      `mapstructure:"allowed_envs"`
 	EnvWhitelist     []string      `mapstructure:"env_whitelist"`
+	DefaultWorkDir   string        `mapstructure:"default_work_dir"`
 }
 
 // SecurityConfig holds auth and input validation settings.
@@ -237,6 +239,7 @@ func Default() *Config {
 			ExecutionTimeout: 10 * time.Minute,
 			AllowedEnvs:      nil,
 			EnvWhitelist:     nil,
+			DefaultWorkDir:   "/tmp/hotplex/workspace",
 		},
 		Security: SecurityConfig{
 			APIKeyHeader:   "X-API-Key",
@@ -388,8 +391,10 @@ func loadRecursive(filePath string, opts LoadOptions, visited []string) (*Config
 	}
 
 	// JWTSecret — only from secrets provider, never from config file.
+	// The secret is base64-encoded (standard or URL-safe) and decoded before use.
+	// This matches the client token generator's key loading behavior.
 	if secret := sp.Get("HOTPLEX_JWT_SECRET"); secret != "" {
-		cfg.Security.JWTSecret = []byte(secret)
+		cfg.Security.JWTSecret = decodeJWTSecret(secret)
 	}
 
 	// Numbered environment variables for slices (e.g. HOTPLEX_ADMIN_TOKEN_1..N)
@@ -486,4 +491,21 @@ func MustLoad(filePath string, opts LoadOptions) *Config {
 // ReadFile loads a config file and returns its raw bytes (for testing).
 func ReadFile(name string) ([]byte, error) {
 	return os.ReadFile(name)
+}
+
+// decodeJWTSecret decodes a base64-encoded JWT secret.
+// It supports both standard base64 and URL-safe base64 (with or without padding).
+// This matches the client token generator's key loading behavior.
+func decodeJWTSecret(secret string) []byte {
+	if decoded, err := base64.StdEncoding.DecodeString(secret); err == nil && len(decoded) == 32 {
+		return decoded
+	}
+	if decoded, err := base64.URLEncoding.DecodeString(secret); err == nil && len(decoded) == 32 {
+		return decoded
+	}
+	raw := []byte(secret)
+	if len(raw) == 32 {
+		return raw
+	}
+	return []byte(secret)
 }

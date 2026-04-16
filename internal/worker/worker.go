@@ -73,6 +73,7 @@ const (
 	TypeClaudeCode  WorkerType = "claude_code"
 	TypeOpenCodeCLI WorkerType = "opencode_cli"
 	TypeOpenCodeSrv WorkerType = "opencode_server"
+	TypeACPX        WorkerType = "acpx"
 	TypePimon       WorkerType = "pi-mono"
 	TypeUnknown     WorkerType = "unknown"
 )
@@ -115,6 +116,13 @@ type Worker interface {
 	// Used by GC zombie detection to identify stuck workers.
 	// Implementations that don't track I/O should return the zero time.Time.
 	LastIO() time.Time
+
+	// ResetContext clears the worker's runtime context.
+	// The worker decides the implementation:
+	//   - Workers that support in-place reset: send internal reset signal
+	//   - Others: terminate + start (physically deletes session files)
+	// Note: Gateway layer has already called sm.ClearContext() to clear SessionInfo.Context.
+	ResetContext(ctx context.Context) error
 }
 
 // WorkerHealth reports the runtime health of a worker process.
@@ -122,21 +130,36 @@ type WorkerHealth struct {
 	Type      WorkerType `json:"type"`
 	SessionID string     `json:"session_id"`
 	PID       int        `json:"pid"`
-	Running   bool       `json:"running"` // process has not exited
-	Healthy   bool       `json:"healthy"` // running and not in error state
-	Uptime    string     `json:"uptime"`  // human-readable uptime
+	Running   bool       `json:"running"`
+	Healthy   bool       `json:"healthy"`
+	Uptime    string     `json:"uptime"`
 	Error     string     `json:"error,omitempty"`
+}
+
+// WorkerSessionIDHandler is an optional interface for workers that manage
+// their own internal session IDs separate from the Gateway session ID.
+// Bridge detects implementations via type assertion and uses them to
+// persist/restore worker-internal session IDs for resume support.
+type WorkerSessionIDHandler interface {
+	SetWorkerSessionID(id string)
+	GetWorkerSessionID() string
 }
 
 // SessionInfo contains metadata about a session needed by the worker to start/resume.
 type SessionInfo struct {
-	SessionID     string
-	UserID        string
-	ProjectDir    string
-	Env           map[string]string
-	Args          []string
-	AllowedTools  []string // tools allowed for this session (from InitConfig.AllowedTools)
-	AllowedModels []string // models allowed for this session
+	SessionID    string
+	UserID       string
+	ProjectDir   string
+	Env          map[string]string
+	Args         []string
+	AllowedTools []string // tools allowed for this session (from InitConfig.AllowedTools)
+
+	// WorkerSessionID is the internal session ID used by the worker runtime.
+	// For workers that manage their own session state (OpenCode CLI, OpenCode Server),
+	// this field carries the worker-internal session ID for persistence and resume.
+	// Empty for workers that use Gateway SessionID directly (Claude Code).
+	WorkerSessionID string
+	AllowedModels   []string // models allowed for this session
 
 	// PermissionMode controls how the worker handles permission requests.
 	// Valid values: "default", "plan", "auto-accept".

@@ -191,6 +191,9 @@ func NewSessionID() string {
 // NDJSON-safe: U+2028 and U+2029 are escaped.
 func EncodeJSON(env *events.Envelope) ([]byte, error) {
 	env.Version = events.Version
+	if env.Timestamp == 0 {
+		env.Timestamp = nowMillis()
+	}
 	data, err := json.Marshal(env)
 	if err != nil {
 		return nil, fmt.Errorf("aep: marshal envelope: %w", err)

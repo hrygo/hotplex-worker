@@ -119,3 +119,8 @@ func (w *Worker) Health() worker.WorkerHealth {
 func (w *Worker) LastIO() time.Time {
 	return time.Time{}
 }
+
+// ResetContext is a no-op for the noop worker.
+func (w *Worker) ResetContext(_ context.Context) error {
+	return nil
+}

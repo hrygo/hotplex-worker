@@ -3,11 +3,12 @@ WebSocket broadcast hub with AEP v1 protocol dispatch, per-connection read/write
 
 ## STRUCTURE
 ```
-hub.go          # Hub struct: broadcast loop, conn/session registry, backpressure
-conn.go         # Conn, Handler, Bridge: read/write pumps, event dispatch, session lifecycle
-init.go         # Init handshake: InitData, InitAckData, caps structs, ValidateInit, BuildInitAck
+hub.go          # Hub struct: broadcast loop, conn/session registry, backpressure, seq gen
+conn.go         # Conn struct: read/write pumps, Handler struct for event dispatch
+bridge.go       # Bridge struct: session ↔ worker lifecycle, event forwarding
+init.go         # Init handshake: InitData, InitAckData, caps, ValidateInit, BuildInitAck
 heartbeat.go    # Missed ping counter with stop channel
-*_test.go       # 5 test files
+*_test.go       # 5 test files (conn_test, hub_test, ctrl_test, bridge_test, init_test)
 ```
 
 ## WHERE TO LOOK
@@ -15,8 +16,8 @@ heartbeat.go    # Missed ping counter with stop channel
 |------|----------|-------|
 | Broadcast hub | `hub.go:57` | Hub struct, Run() goroutine, seq gen |
 | Connection pumps | `conn.go:27` | Conn struct, ReadPump/WritePump goroutines |
-| Event dispatch | `conn.go:381` | Handler: handleInput, handlePing, handleControl |
-| Session lifecycle | `conn.go:644` | Bridge: StartSession, ResumeSession, forwardEvents |
+| Event dispatch | `handler.go` | Handler: handleInput, handlePing, handleControl |
+| Session lifecycle | `bridge.go` | Bridge: StartSession, ResumeSession, forwardEvents |
 | Init handshake | `init.go` | 30s timeout, first frame must be "init" |
 | Heartbeat | `heartbeat.go:12` | Missed ping tracking |
 
@@ -33,7 +34,7 @@ heartbeat.go    # Missed ping counter with stop channel
 - WritePump: exits on done/heartbeat stopped
 - mu sync.Mutex protects closed flag
 
-**Bridge lifecycle (conn.go)**
+**Bridge lifecycle (bridge.go)**
 - StartSession: create session → start worker → attach → forward events
 - ResumeSession: resume existing → re-attach worker
 - forwardEvents: goroutine reads worker.Recv() and broadcasts via hub

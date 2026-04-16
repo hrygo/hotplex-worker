@@ -35,8 +35,14 @@ func NewBridge(log *slog.Logger, hub *Hub, sm SessionManager, msgStore session.M
 	}
 }
 
+// SetWorkerFactory replaces the default worker factory. Used by tests to inject
+// simulated workers without requiring external CLI binaries.
+func (b *Bridge) SetWorkerFactory(wf WorkerFactory) {
+	b.wf = wf
+}
+
 // StartSession creates a new session and starts a worker.
-func (b *Bridge) StartSession(ctx context.Context, id, userID, botID string, wt worker.WorkerType, allowedTools []string) error {
+func (b *Bridge) StartSession(ctx context.Context, id, userID, botID string, wt worker.WorkerType, allowedTools []string, workDir string) error {
 	// Create session in DB with bot_id and allowed_tools.
 	si, err := b.sm.CreateWithBot(ctx, id, userID, botID, wt, allowedTools)
 	if err != nil {
@@ -59,7 +65,7 @@ func (b *Bridge) StartSession(ctx context.Context, id, userID, botID string, wt 
 	workerInfo := worker.SessionInfo{
 		SessionID:    id,
 		UserID:       userID,
-		ProjectDir:   "",
+		ProjectDir:   workDir,
 		Env:          nil,
 		Args:         nil,
 		AllowedTools: si.AllowedTools,
@@ -93,6 +99,11 @@ func (b *Bridge) ResumeSession(ctx context.Context, id string) error {
 		return session.ErrSessionNotFound
 	}
 
+	if existing := b.sm.GetWorker(id); existing != nil {
+		_ = existing.Terminate(context.Background())
+		b.sm.DetachWorker(id)
+	}
+
 	// Create worker.
 	w, err := b.wf.NewWorker(si.WorkerType)
 	if err != nil {
@@ -107,26 +118,28 @@ func (b *Bridge) ResumeSession(ctx context.Context, id string) error {
 		return fmt.Errorf("bridge: attach worker: %w", err)
 	}
 
+	// Transition IDLE/RESUMED/TERMINATED sessions to RUNNING.
+	if si.State != events.StateRunning {
+		if err := b.sm.Transition(ctx, id, events.StateRunning); err != nil {
+			return err
+		}
+	}
+
 	// Start worker.
 	workerInfo := worker.SessionInfo{
-		SessionID:    si.ID,
-		UserID:       si.UserID,
-		AllowedTools: si.AllowedTools,
+		SessionID:       si.ID,
+		UserID:          si.UserID,
+		AllowedTools:    si.AllowedTools,
+		WorkerSessionID: si.WorkerSessionID,
 	}
 	if err := w.Resume(ctx, workerInfo); err != nil {
 		b.sm.DetachWorker(id)
 		return fmt.Errorf("bridge: resume start: %w", err)
 	}
 
-	if si.State == events.StateTerminated {
-		if err := b.sm.Transition(ctx, id, events.StateRunning); err != nil {
-			return err
-		}
-	}
-
 	// Notify client of current state.
 	stateToNotify := si.State
-	if stateToNotify == events.StateTerminated {
+	if stateToNotify == events.StateTerminated || stateToNotify == events.StateIdle {
 		stateToNotify = events.StateRunning // We just transitioned it
 	}
 	stateEvt := events.NewEnvelope(aep.NewID(), id, b.hub.NextSeq(id), events.State, events.StateData{
@@ -141,12 +154,36 @@ func (b *Bridge) ResumeSession(ctx context.Context, id string) error {
 // Bridge.forwardEvents encoding the original (e.g., for msgStore.Append).
 var _ = events.Clone // compile-time check that Clone is accessible
 
+func (b *Bridge) persistWorkerSessionID(w worker.Worker, sessionID string) {
+	handler, ok := w.(worker.WorkerSessionIDHandler)
+	if !ok {
+		return
+	}
+	workerSID := handler.GetWorkerSessionID()
+	if workerSID == "" {
+		return
+	}
+	if err := b.sm.UpdateWorkerSessionID(context.Background(), sessionID, workerSID); err != nil {
+		b.log.Warn("bridge: failed to persist worker session ID", "session_id", sessionID, "worker_session_id", workerSID, "err", err)
+	} else {
+		b.log.Debug("bridge: persisted worker session ID", "session_id", sessionID, "worker_session_id", workerSID)
+	}
+}
+
 // forwardEvents proxies worker events to the hub with seq assignment.
 // EVT-004: if msgStore is configured, it appends to the event log on done events.
 // AEP-020: after the recv channel closes, calls Worker.Wait() to determine exit
 // code and sets DoneData.Success accordingly (non-zero exit = crash = success=false).
 func (b *Bridge) forwardEvents(w worker.Worker, sessionID string) {
+	b.log.Info("bridge: forwardEvents goroutine started", "session_id", sessionID)
+	firstEvent := true
 	for env := range w.Conn().Recv() {
+		b.log.Debug("bridge: received event from worker", "session_id", sessionID, "event_type", env.Event.Type)
+		// Capture and persist worker-internal session ID on first event
+		if firstEvent {
+			b.persistWorkerSessionID(w, sessionID)
+			firstEvent = false
+		}
 		// Make a defensive copy before mutating SessionID to avoid a data race
 		// with Hub.Run which reads env during JSON encoding (hub mutates Seq).
 		env = events.Clone(env)

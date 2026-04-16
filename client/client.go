@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 
 	"github.com/hotplex/hotplex-worker/pkg/aep"
@@ -32,10 +31,11 @@ const (
 // It implements the AEP v1 WebSocket protocol.
 type Client struct {
 	// config from options
-	url        string
-	workerType string
-	authToken  string
-	apiKey     string
+	url             string
+	workerType      string
+	authToken       string
+	apiKey          string
+	clientSessionID string
 
 	// heartbeat config
 	pingInterval time.Duration
@@ -60,7 +60,7 @@ type Client struct {
 
 // Event is an inbound event delivered via the Events() channel.
 type Event struct {
-	Kind    string      `json:"kind"`
+	Type    string      `json:"type"`
 	Seq     int64       `json:"seq"`
 	Session string      `json:"session"`
 	Data    interface{} `json:"data,omitempty"`
@@ -91,7 +91,10 @@ func New(ctx context.Context, opts ...Option) (*Client, error) {
 
 // Connect establishes a new session with the gateway.
 func (c *Client) Connect(ctx context.Context) (*InitAckData, error) {
-	sessionID := "sess_" + uuid.NewString()
+	sessionID := c.clientSessionID
+	if sessionID == "" {
+		sessionID = aep.NewSessionID()
+	}
 	return c.doConnect(ctx, sessionID, false)
 }
 
@@ -134,11 +137,11 @@ func (c *Client) doConnect(ctx context.Context, sessionID string, isResume bool)
 	if c.authToken != "" {
 		initData["auth"] = map[string]any{"token": c.authToken}
 	}
-	if isResume {
+	if c.clientSessionID != "" || isResume {
 		initData["session_id"] = sessionID
 	}
 
-	env := aep.NewEnvelope(aep.NewID(), sessionID, 0, events.Control, initData)
+	env := aep.NewEnvelope(aep.NewID(), sessionID, 1, events.Init, initData)
 	frame, err := aep.EncodeJSON(env)
 	if err != nil {
 		conn.Close()
@@ -167,7 +170,7 @@ func (c *Client) doConnect(ctx context.Context, sessionID string, isResume bool)
 		conn.Close()
 		return nil, fmt.Errorf("client: decode init ack: %w", err)
 	}
-	if ackEnv.Event.Type != KindInitAck {
+	if ackEnv.Event.Type != EventInitAck {
 		conn.Close()
 		return nil, fmt.Errorf("client: unexpected event type %q (expected init_ack)", ackEnv.Event.Type)
 	}
@@ -224,7 +227,29 @@ func (c *Client) SendPermissionResponse(ctx context.Context, id string, approved
 
 // SendControl sends a control action ("terminate" | "delete").
 func (c *Client) SendControl(ctx context.Context, action string) error {
-	return c.send(ctx, events.Control, map[string]any{"action": action})
+	return c.send(ctx, events.Control, &events.ControlData{
+		Action: events.ControlAction(action),
+	})
+}
+
+// SendReset sends a reset control action to clear session context.
+// The session will restart with a fresh worker, preserving the session ID.
+func (c *Client) SendReset(ctx context.Context, reason string) error {
+	return c.sendControlWithReason(ctx, events.ControlActionReset, reason)
+}
+
+// SendGC sends a gc control action to archive the session.
+// The worker is terminated but session history is preserved for resume.
+func (c *Client) SendGC(ctx context.Context, reason string) error {
+	return c.sendControlWithReason(ctx, events.ControlActionGC, reason)
+}
+
+func (c *Client) sendControlWithReason(ctx context.Context, action events.ControlAction, reason string) error {
+	data := &events.ControlData{Action: action}
+	if reason != "" {
+		data.Reason = reason
+	}
+	return c.send(ctx, events.Control, data)
 }
 
 // Close gracefully shuts down the client.
@@ -238,13 +263,18 @@ func (c *Client) Close() error {
 	conn := c.conn
 	c.mu.Unlock()
 
+	// Cancel context to unblock sendPump (select on ctx.Done) and pingPump.
 	c.cancel()
+	// Close the WebSocket connection to unblock recvPump (NextReader).
+	// This must happen before wg.Wait() to avoid deadlock.
+	if conn != nil {
+		_ = conn.Close()
+	}
+	// Close sendCh to unblock sendPump (range c.sendCh).
+	// Safe because c.closed=true prevents new writes to sendCh.
+	close(c.sendCh)
 	c.wg.Wait()
 	close(c.eventsCh)
-	close(c.sendCh)
-	if conn != nil {
-		return conn.Close()
-	}
 	return nil
 }
 
@@ -293,19 +323,19 @@ func (c *Client) recvPump() {
 			if isClosedWS(err) {
 				return
 			}
-			c.deliver(Event{Kind: KindError, Data: map[string]any{"code": "read_error", "message": err.Error()}})
+			c.deliver(Event{Type: EventError, Data: map[string]any{"code": "read_error", "message": err.Error()}})
 			return
 		}
 
 		raw, err := io.ReadAll(r)
 		if err != nil {
-			c.deliver(Event{Kind: KindError, Data: map[string]any{"code": "read_error", "message": err.Error()}})
+			c.deliver(Event{Type: EventError, Data: map[string]any{"code": "read_error", "message": err.Error()}})
 			return
 		}
 
 		env, err := aep.DecodeLine(raw)
 		if err != nil {
-			c.deliver(Event{Kind: KindError, Data: map[string]any{"code": "decode_error", "message": err.Error()}})
+			c.deliver(Event{Type: EventError, Data: map[string]any{"code": "decode_error", "message": err.Error()}})
 			return
 		}
 
@@ -321,7 +351,7 @@ func (c *Client) recvPump() {
 		}
 
 		c.deliver(Event{
-			Kind:    string(env.Event.Type),
+			Type:    string(env.Event.Type),
 			Seq:     env.Seq,
 			Session: env.SessionID,
 			Data:    env.Event.Data,
@@ -380,8 +410,8 @@ func (c *Client) deliver(evt Event) {
 		// Backpressure: drop non-critical events when channel is full.
 		// Only preserve done/error; streamable events (message.delta) can be
 		// reconstructed from the final message.
-		if evt.Kind != KindDone && evt.Kind != KindError {
-			c.logger.Warn("events channel full, dropping event", "kind", evt.Kind)
+		if evt.Type != EventDone && evt.Type != EventError {
+			c.logger.Warn("events channel full, dropping event", "type", evt.Type)
 		}
 	}
 }

@@ -1,11 +1,14 @@
 package proc
 
 import (
+	"context"
 	"io"
 	"log/slog"
 	"os"
 	"os/exec"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -230,5 +233,209 @@ func TestManager_ReadLine(t *testing.T) {
 		line, err := m.ReadLine()
 		require.Equal(t, "", line)
 		require.ErrorIs(t, err, io.EOF)
+	})
+}
+
+// --- TestManager_Start_RealProcess -------------------------------------------
+
+func TestManager_Start_RealProcess(t *testing.T) {
+	t.Parallel()
+
+	t.Run("start echo and read output", func(t *testing.T) {
+		t.Parallel()
+		m := New(Opts{Logger: slog.Default()})
+		ctx := context.Background()
+
+		stdin, stdout, _, err := m.Start(ctx, "echo", []string{"hello"}, nil, "")
+		require.NoError(t, err)
+		require.NotNil(t, stdin)
+		require.NotNil(t, stdout)
+		t.Cleanup(func() { m.Close() })
+
+		require.True(t, m.IsRunning())
+		require.Greater(t, m.PID(), 0)
+		require.Equal(t, m.PID(), m.PGID())
+
+		line, err := m.ReadLine()
+		require.NoError(t, err)
+		require.Equal(t, "hello", line)
+
+		// Next read should be EOF since echo exits after one line.
+		_, err = m.ReadLine()
+		require.ErrorIs(t, err, io.EOF)
+	})
+
+	t.Run("start nonexistent command returns error", func(t *testing.T) {
+		t.Parallel()
+		m := New(Opts{Logger: slog.Default()})
+		ctx := context.Background()
+
+		_, _, _, err := m.Start(ctx, "nonexistent_binary_xyz", []string{}, nil, "")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "proc: start")
+	})
+
+	t.Run("double start returns error", func(t *testing.T) {
+		t.Parallel()
+		m := New(Opts{Logger: slog.Default()})
+		ctx := context.Background()
+
+		_, _, _, err := m.Start(ctx, "echo", []string{"test"}, nil, "")
+		require.NoError(t, err)
+		t.Cleanup(func() { m.Close() })
+
+		_, _, _, err = m.Start(ctx, "echo", []string{"test2"}, nil, "")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "already started")
+	})
+}
+
+// --- TestManager_Terminate_Kill ----------------------------------------------
+
+func TestManager_Terminate_GracefulExit(t *testing.T) {
+	t.Parallel()
+
+	t.Run("terminate exits cleanly with SIGTERM", func(t *testing.T) {
+		t.Parallel()
+		m := New(Opts{Logger: slog.Default()})
+		ctx := context.Background()
+
+		_, _, _, err := m.Start(ctx, "sleep", []string{"60"}, nil, "")
+		require.NoError(t, err)
+		t.Cleanup(func() { m.Close() })
+
+		require.True(t, m.IsRunning())
+
+		err = m.Terminate(ctx, syscall.SIGTERM, 5*time.Second)
+		require.NoError(t, err)
+		require.False(t, m.IsRunning())
+	})
+
+	t.Run("kill sends SIGKILL", func(t *testing.T) {
+		t.Parallel()
+		m := New(Opts{Logger: slog.Default()})
+		ctx := context.Background()
+
+		_, _, _, err := m.Start(ctx, "sleep", []string{"60"}, nil, "")
+		require.NoError(t, err)
+		t.Cleanup(func() { m.Close() })
+
+		err = m.Kill()
+		require.NoError(t, err)
+		require.False(t, m.IsRunning())
+	})
+
+	t.Run("terminate on not-started returns nil", func(t *testing.T) {
+		t.Parallel()
+		m := New(Opts{Logger: slog.Default()})
+		ctx := context.Background()
+
+		err := m.Terminate(ctx, syscall.SIGTERM, time.Second)
+		require.NoError(t, err)
+	})
+
+	t.Run("kill on not-started returns nil", func(t *testing.T) {
+		t.Parallel()
+		m := New(Opts{Logger: slog.Default()})
+		err := m.Kill()
+		require.NoError(t, err)
+	})
+}
+
+// --- TestManager_Wait --------------------------------------------------------
+
+func TestManager_Wait(t *testing.T) {
+	t.Parallel()
+
+	t.Run("wait returns exit code for short-lived process", func(t *testing.T) {
+		t.Parallel()
+		m := New(Opts{Logger: slog.Default()})
+		ctx := context.Background()
+
+		_, _, _, err := m.Start(ctx, "echo", []string{"done"}, nil, "")
+		require.NoError(t, err)
+		t.Cleanup(func() { m.Close() })
+
+		code, err := m.Wait()
+		require.NoError(t, err)
+		require.Equal(t, 0, code)
+		require.False(t, m.IsRunning())
+	})
+
+	t.Run("wait on not-started returns error", func(t *testing.T) {
+		t.Parallel()
+		m := New(Opts{Logger: slog.Default()})
+		code, err := m.Wait()
+		require.Error(t, err)
+		require.Equal(t, -1, code)
+		require.Contains(t, err.Error(), "not started")
+	})
+
+	t.Run("wait captures non-zero exit code", func(t *testing.T) {
+		t.Parallel()
+		m := New(Opts{Logger: slog.Default()})
+		ctx := context.Background()
+
+		_, _, _, err := m.Start(ctx, "sh", []string{"-c", "exit 42"}, nil, "")
+		require.NoError(t, err)
+		t.Cleanup(func() { m.Close() })
+
+		code, err := m.Wait()
+		// cmd.Wait() returns an exec.ExitError for non-zero exits.
+		require.Error(t, err)
+		require.Equal(t, 42, code)
+	})
+}
+
+// --- TestManager_ReadLine_MultiLine ------------------------------------------
+
+func TestManager_ReadLine_MultiLine(t *testing.T) {
+	t.Parallel()
+
+	t.Run("read multiple lines from stdout", func(t *testing.T) {
+		t.Parallel()
+		m := New(Opts{Logger: slog.Default()})
+		ctx := context.Background()
+
+		script := "echo line1; echo line2; echo line3"
+		_, _, _, err := m.Start(ctx, "sh", []string{"-c", script}, nil, "")
+		require.NoError(t, err)
+		t.Cleanup(func() { m.Close() })
+
+		lines := []string{}
+		for {
+			line, err := m.ReadLine()
+			if err != nil {
+				break
+			}
+			if line != "" {
+				lines = append(lines, line)
+			}
+		}
+		require.Len(t, lines, 3)
+		require.Equal(t, "line1", lines[0])
+		require.Equal(t, "line2", lines[1])
+		require.Equal(t, "line3", lines[2])
+	})
+}
+
+// --- TestManager_Start_AllowedTools ------------------------------------------
+
+func TestManager_Start_AllowedTools(t *testing.T) {
+	t.Parallel()
+
+	t.Run("allowed tools are appended to args", func(t *testing.T) {
+		t.Parallel()
+		m := New(Opts{
+			Logger:       slog.Default(),
+			AllowedTools: []string{"Read", "Grep"},
+		})
+		ctx := context.Background()
+
+		// echo will ignore the extra args but we verify Start doesn't error.
+		_, _, _, err := m.Start(ctx, "echo", []string{"test"}, nil, "")
+		require.NoError(t, err)
+		t.Cleanup(func() { m.Close() })
+		require.True(t, m.IsRunning())
 	})
 }

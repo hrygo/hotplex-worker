@@ -8,25 +8,34 @@ const Version = events.Version // "aep/v1"
 
 // Event kind constants matching pkg/events/events.go.
 const (
-	KindError              = string(events.Error)
-	KindState              = string(events.State)
-	KindInput              = string(events.Input)
-	KindDone               = string(events.Done)
-	KindMessage            = string(events.Message)
-	KindMessageStart       = string(events.MessageStart)
-	KindMessageDelta       = string(events.MessageDelta)
-	KindMessageEnd         = string(events.MessageEnd)
-	KindToolCall           = string(events.ToolCall)
-	KindToolResult         = string(events.ToolResult)
-	KindReasoning          = string(events.Reasoning)
-	KindStep               = string(events.Step)
-	KindRaw                = string(events.Raw)
-	KindPermissionRequest  = string(events.PermissionRequest)
-	KindPermissionResponse = string(events.PermissionResponse)
-	KindPing               = string(events.Ping)
-	KindPong               = string(events.Pong)
-	KindControl            = string(events.Control)
-	KindInitAck            = "init_ack"
+	EventInit               = string(events.Init)
+	EventError              = string(events.Error)
+	EventState              = string(events.State)
+	EventInput              = string(events.Input)
+	EventDone               = string(events.Done)
+	EventMessage            = string(events.Message)
+	EventMessageStart       = string(events.MessageStart)
+	EventMessageDelta       = string(events.MessageDelta)
+	EventMessageEnd         = string(events.MessageEnd)
+	EventToolCall           = string(events.ToolCall)
+	EventToolResult         = string(events.ToolResult)
+	EventReasoning          = string(events.Reasoning)
+	EventStep               = string(events.Step)
+	EventRaw                = string(events.Raw)
+	EventPermissionRequest  = string(events.PermissionRequest)
+	EventPermissionResponse = string(events.PermissionResponse)
+	EventPing               = string(events.Ping)
+	EventPong               = string(events.Pong)
+	EventControl            = string(events.Control)
+	EventInitAck            = "init_ack"
+)
+
+// ControlAction constants for client-initiated control.
+const (
+	ControlActionTerminate = string(events.ControlActionTerminate)
+	ControlActionDelete    = string(events.ControlActionDelete)
+	ControlActionReset     = string(events.ControlActionReset)
+	ControlActionGC        = string(events.ControlActionGC)
 )
 
 // SessionState mirrors pkg/events/events.go.

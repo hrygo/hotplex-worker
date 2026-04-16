@@ -13,6 +13,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 
 	"github.com/hotplex/hotplex-worker/internal/metrics"
+	"github.com/hotplex/hotplex-worker/internal/security"
 	"github.com/hotplex/hotplex-worker/internal/session"
 	"github.com/hotplex/hotplex-worker/internal/tracing"
 	"github.com/hotplex/hotplex-worker/internal/worker"
@@ -24,7 +25,8 @@ import (
 // used by Conn (called once during the AEP init handshake).
 type SessionStarter interface {
 	StartSession(ctx context.Context, id, userID, botID string,
-		wt worker.WorkerType, allowedTools []string) error
+		wt worker.WorkerType, allowedTools []string, workDir string) error
+	ResumeSession(ctx context.Context, id string) error
 }
 
 var _ SessionStarter = (*Bridge)(nil) // compile-time: Bridge implements SessionStarter
@@ -81,8 +83,21 @@ func (c *Conn) RemoteAddr() string {
 func (c *Conn) ReadPump(handler *Handler) {
 	defer func() {
 		c.hb.Stop()
+
+		// Transition to IDLE BEFORE unregistering so the state(idle) event
+		// can be routed through Hub.Run while the conn is still in h.sessions.
+		// If we unregister first, routeMessage finds no connections and the
+		// state event is silently dropped.
+		if c.sessionID != "" {
+			if err := handler.sm.Transition(context.Background(), c.sessionID, events.StateIdle); err != nil {
+				c.log.Debug("gateway: conn close transition to idle", "session_id", c.sessionID, "err", err)
+			}
+		}
+
+		// Now safe to remove from routing — state event already queued.
+		c.hub.UnregisterConn(c)
+
 		c.Close()
-		c.hub.LeaveSession(c.sessionID, c)
 	}()
 
 	c.wc.SetReadLimit(maxMessageSize)
@@ -138,7 +153,10 @@ func (c *Conn) ReadPump(handler *Handler) {
 		// Stamp session ID, sequence number, and owner ID.
 		env.SessionID = c.sessionID
 		env.OwnerID = c.userID
-		env.Seq = c.hub.NextSeq(c.sessionID)
+		// P2: ping/pong are heartbeat control messages — don't consume seq.
+		if env.Event.Type != events.Ping {
+			env.Seq = c.hub.NextSeq(c.sessionID)
+		}
 
 		// Route to handler with tracing span.
 		_, span := tracing.SpanFromContext(context.Background()).Start(context.Background(), "conn.recv")
@@ -184,13 +202,13 @@ func (c *Conn) performInit(handler *Handler) error {
 	}
 
 	// Only accept init message as first message.
-	if env.Event.Type != Init {
+	if env.Event.Type != events.Init {
 		c.sendInitError(events.ErrCodeProtocolViolation, "expected init as first message, got "+string(env.Event.Type))
 		metrics.GatewayErrorsTotal.WithLabelValues(string(events.ErrCodeProtocolViolation)).Inc()
 		return fmt.Errorf("expected init, got %s", env.Event.Type)
 	}
 
-	metrics.GatewayMessagesTotal.WithLabelValues("incoming", Init).Inc()
+	metrics.GatewayMessagesTotal.WithLabelValues("incoming", string(events.Init)).Inc()
 
 	// Validate init fields.
 	initData, initErr := ValidateInit(env)
@@ -219,11 +237,21 @@ func (c *Conn) performInit(handler *Handler) error {
 		}
 	}
 
-	// Determine session ID: prefer envelope's session_id, fall back to connection's.
-	sessionID := initData.SessionID
-	if sessionID == "" {
-		sessionID = c.sessionID
+	// Resolve work dir: use client-provided value or default from config.
+	workDir := initData.Config.WorkDir
+	if workDir == "" {
+		workDir = handler.cfg.Worker.DefaultWorkDir
 	}
+	if err := security.ValidateWorkDir(workDir); err != nil {
+		c.sendInitError(events.ErrCodeInvalidMessage, err.Error())
+		metrics.GatewayErrorsTotal.WithLabelValues(string(events.ErrCodeInvalidMessage)).Inc()
+		return err
+	}
+
+	// Determine session ID via deterministic UUIDv5 mapping from client session ID.
+	// DeriveSessionKey(ownerID, workerType, clientSessionID, workDir) is always deterministic
+	// for the same (ownerID, workerType, clientSessionID, workDir) tuple.
+	sessionID := session.DeriveSessionKey(c.userID, initData.WorkerType, initData.SessionID, workDir)
 
 	// Resolve session: create new or resume existing.
 	si, err := handler.sm.Get(sessionID)
@@ -233,7 +261,7 @@ func (c *Conn) performInit(handler *Handler) error {
 			// starter.StartSession creates the DB record, worker, transitions to RUNNING,
 			// and starts forwarding events. nil starter means test mode.
 			if c.starter != nil {
-				if err := c.starter.StartSession(context.Background(), sessionID, c.userID, c.botID, initData.WorkerType, initData.Config.AllowedTools); err != nil {
+				if err := c.starter.StartSession(context.Background(), sessionID, c.userID, c.botID, initData.WorkerType, initData.Config.AllowedTools, workDir); err != nil {
 					c.sendInitError(events.ErrCodeInternalError, "failed to create session")
 					metrics.GatewayErrorsTotal.WithLabelValues(string(events.ErrCodeInternalError)).Inc()
 					return fmt.Errorf("create session: %w", err)
@@ -267,9 +295,17 @@ func (c *Conn) performInit(handler *Handler) error {
 		// Deleted session → reject.
 		c.sendInitError(events.ErrCodeSessionNotFound, "session was deleted")
 		return ErrInitSessionDeleted
-	} else if si.State == events.StateTerminated {
-		// Terminated → attempt resume (restart worker).
-		c.log.Info("gateway: resuming terminated session", "session_id", sessionID)
+	} else if si.State == events.StateIdle || si.State == events.StateTerminated {
+		// Idle/Terminated session → resume worker (reattach to existing session/worker).
+		c.log.Info("gateway: resuming session", "session_id", sessionID, "from_state", si.State)
+		// ResumeSession requires a valid SessionStarter (Bridge). In test mode,
+		// starter may be nil; skip resumption and let bot_id validation proceed.
+		if c.starter != nil {
+			if err := c.starter.ResumeSession(context.Background(), sessionID); err != nil {
+				c.sendInitError(events.ErrCodeInternalError, "failed to resume session")
+				return fmt.Errorf("resume session: %w", err)
+			}
+		}
 	}
 
 	// SEC-007: reject cross-bot access — bot_id from JWT must match session's bot_id.

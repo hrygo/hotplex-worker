@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"runtime"
 	"sync"
+	"syscall"
 
 	"github.com/hotplex/hotplex-worker/pkg/aep"
 	"github.com/hotplex/hotplex-worker/pkg/events"
@@ -54,6 +56,28 @@ func (c *Conn) Send(ctx context.Context, msg *events.Envelope) error {
 	return nil
 }
 
+// WriteAll loops syscall.Write until all data is written, handling partial
+// writes and EAGAIN (non-blocking pipe on macOS). Go's stdlib File.Write does
+// not retry EAGAIN for syscall-backed files, so we must use raw syscall.
+func WriteAll(fd int, data []byte) error {
+	n := 0
+	for n < len(data) {
+		nn, err := syscall.Write(fd, data[n:])
+		if err != nil {
+			if err == syscall.EAGAIN {
+				runtime.Gosched()
+				continue
+			}
+			return err
+		}
+		if nn == 0 {
+			return fmt.Errorf("writeAll: zero write")
+		}
+		n += nn
+	}
+	return nil
+}
+
 func (c *Conn) SendUserMessage(ctx context.Context, content string) error {
 	c.mu.Lock()
 	if c.closed {
@@ -67,7 +91,7 @@ func (c *Conn) SendUserMessage(ctx context.Context, content string) error {
 		Text string `json:"text"`
 	}
 	type message struct {
-		Type    string        `json:"type"`
+		Role    string        `json:"role"`
 		Content []textContent `json:"content"`
 	}
 	type userMessage struct {
@@ -78,7 +102,7 @@ func (c *Conn) SendUserMessage(ctx context.Context, content string) error {
 	msg := userMessage{
 		Type: "user",
 		Message: message{
-			Type:    "user",
+			Role:    "user",
 			Content: []textContent{{Type: "text", Text: content}},
 		},
 	}
@@ -89,7 +113,7 @@ func (c *Conn) SendUserMessage(ctx context.Context, content string) error {
 	}
 	data = append(data, '\n')
 
-	_, err = c.stdin.Write(data)
+	err = WriteAll(int(c.stdin.Fd()), data)
 	if err != nil {
 		return fmt.Errorf("base: write user message: %w", err)
 	}

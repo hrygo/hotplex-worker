@@ -11,6 +11,8 @@ This directory contains installation and deployment scripts for HotPlex Worker G
 | `docker-build.sh` | Build Docker image | `./scripts/docker-build.sh` |
 | `uninstall.sh` | Complete uninstallation | `sudo ./scripts/uninstall.sh` |
 | `validate-acpx-spec.sh` | Validate ACPX spec via acpx CLI | `./scripts/validate-acpx-spec.sh` |
+| `validate-opencode-cli-spec.sh` | Validate OpenCode CLI spec against source code | `./scripts/validate-opencode-cli-spec.sh` |
+| `test-opencode-cli-output.sh` | Test OpenCode CLI actual output format | `./scripts/test-opencode-cli-output.sh [test_case]` |
 | `hotplex-worker.service` | Systemd service unit | Install via `install.sh` |
 
 ## Installation Scripts
@@ -274,6 +276,205 @@ systemctl show hotplex-worker -p MemoryCurrent,CPUUsageNSec
 **Validation report:**
 
 After running, see `docs/specs/ACPX-Validation-Report.md` for detailed results.
+
+### validate-opencode-cli-spec.sh
+
+**OpenCode CLI spec validation script** that analyzes OpenCode CLI source code and compares it with Worker-OpenCode-CLI-Spec.md.
+
+**Purpose:**
+
+- Validates CLI parameter definitions (run, --format, --session, etc.)
+- Checks environment variable whitelist
+- Compares output format (NDJSON event types)
+- Analyzes event type mappings
+- Identifies implementation gaps
+
+**Requirements:**
+
+- OpenCode source code at `~/opencode`
+- Spec document at `docs/specs/Worker-OpenCode-CLI-Spec.md`
+- Standard Unix tools (grep, jq)
+
+**Usage:**
+
+```bash
+# Run full validation
+./scripts/validate-opencode-cli-spec.sh
+
+# Output includes:
+# - CLI parameter verification (✅ confirmed, ⚠️ pending, ❌ missing)
+# - Environment variable check
+# - Output format analysis
+# - Event type comparison
+# - Test command suggestions
+```
+
+**What it validates:**
+
+1. **CLI Parameters** - Checks if parameters in spec exist in source code
+2. **Environment Variables** - Verifies env whitelist implementation
+3. **Output Format** - Analyzes JSON event output structure
+4. **Event Types** - Compares spec event types with actual implementation
+5. **Implementation Status** - Tracks ✅ confirmed, ⚠️ pending, ❌ missing items
+
+**Sample output:**
+
+```
+=== OpenCode CLI Spec 验证工具 ===
+
+[1/5] 检查文件存在性
+✓ Spec 文件存在
+✓ OpenCode CLI 源码存在
+
+[2/5] 验证 CLI 参数
+✓ run
+? --format json (未在源码中找到)
+✓ --session
+✓ --continue
+? --resume (未在源码中找到)
+
+统计: 3 个参数已确认, 17 个参数待验证
+
+[3/5] 验证环境变量
+? OPENAI_API_KEY (未在源码中找到)
+? OPENCODE_API_KEY (未在源码中找到)
+
+[4/5] 验证输出格式
+✓ JSON 格式输出已实现
+
+源码中定义的事件类型:
+  • error
+  • reasoning
+  • step_finish
+  • step_start
+  • text
+  • tool_use
+
+Spec 中定义的事件类型:
+  • step_start
+  • message
+  • message.part.delta
+  • tool_use
+  • tool_result
+  • step_end
+  • error
+  • system
+  • session_created
+
+=== 验证完成 ===
+```
+
+**Analysis report:**
+
+After running, see `docs/research/opencode-cli-implementation-analysis.md` for detailed analysis.
+
+### test-opencode-cli-output.sh
+
+**OpenCode CLI output testing script** that runs actual CLI commands and captures output for analysis.
+
+**Purpose:**
+
+- Tests actual JSON output format
+- Validates event type mappings
+- Checks session ID extraction
+- Tests tool usage patterns
+- Verifies error handling
+- Compares JSON vs default format
+
+**Requirements:**
+
+- OpenCode CLI installed at `~/opencode`
+- `bun` runtime
+- `jq` for JSON parsing
+- Valid API keys (OPENAI_API_KEY or OPENCODE_API_KEY)
+
+**Usage:**
+
+```bash
+# Run all tests
+./scripts/test-opencode-cli-output.sh
+
+# Run specific test
+./scripts/test-opencode-cli-output.sh 1       # Basic output
+./scripts/test-opencode-cli-output.sh tool    # Tool usage
+./scripts/test-opencode-cli-output.sh error   # Error handling
+./scripts/test-opencode-cli-output.sh session # Session management
+./scripts/test-opencode-cli-output.sh env     # Environment injection
+./scripts/test-opencode-cli-output.sh format  # Format comparison
+
+# Output saved to test-output/ directory
+```
+
+**Test cases:**
+
+1. **Basic Output** - Simple text response, event type analysis
+2. **Tool Usage** - List files command, tool_use event validation
+3. **Error Handling** - Invalid file read, error event format
+4. **Session Management** - Session ID extraction, step_start analysis
+5. **Environment Injection** - HOTPLEX_SESSION_ID injection test
+6. **Format Comparison** - JSON vs default output comparison
+
+**Sample output:**
+
+```
+=== OpenCode CLI 输出测试 ===
+
+[Test 1] 基本文本输出
+运行: bun run opencode run --format json 'Reply with: Hello, World!'
+... (CLI output)
+
+输出已保存到: test-output/basic_output_20260404_123456.jsonl
+
+=== 输出分析 ===
+事件类型统计:
+      2 error
+      1 reasoning
+      1 step_finish
+      1 step_start
+      1 text
+      1 tool_use
+
+第一个 step_start 事件:
+{
+  "type": "step_start",
+  "timestamp": 1712234567890,
+  "sessionID": "sess_abc123",
+  "part": { ... }
+}
+
+Session ID:
+  sess_abc123
+  长度: 12
+  格式: UUID-like
+```
+
+**Output files:**
+
+```
+test-output/
+├── basic_output_20260404_123456.jsonl
+├── tool_usage_20260404_123457.jsonl
+├── error_handling_20260404_123458.jsonl
+├── session_test_20260404_123459.jsonl
+├── env_test_20260404_123500.jsonl
+└── format_json_20260404_123501.jsonl
+```
+
+**Analysis commands:**
+
+```bash
+# Check event types
+jq -r '.type' test-output/basic_output_*.jsonl | sort | uniq -c
+
+# Extract session IDs
+jq -r '.sessionID' test-output/*.jsonl | sort -u
+
+# View step_start events
+jq 'select(.type == "step_start")' test-output/*.jsonl
+
+# Compare with spec
+diff <(jq '.' test-output/basic_output_*.jsonl) expected_output.json
+```
 
 ## Docker Compose
 

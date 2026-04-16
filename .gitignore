@@ -50,4 +50,9 @@ Desktop.ini
 *~
 .playwright-mcp
 .loki/
-main
+.playwright-cli
+.ruff_cache
+__pycache__
+./*.png
+test-results/
+e2e/test-results/

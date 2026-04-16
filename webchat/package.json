@@ -1,0 +1,36 @@
+{
+  "name": "hotplex-webchat",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "@ai-sdk/react": "4.0.0-beta.64",
+    "@assistant-ui/react": "^0.12.23",
+    "@tailwindcss/postcss": "^4.2.2",
+    "@tailwindcss/vite": "^4.2.2",
+    "ai": "^6.0.146",
+    "eventemitter3": "^5.0.1",
+    "highlight.js": "^11.11.1",
+    "next": "^15.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-markdown": "^10.1.0",
+    "rehype-highlight": "^7.0.2",
+    "remark-gfm": "^4.0.1",
+    "tailwindcss": "^4.2.2",
+    "unist-util-visit": "^5.1.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.59.1",
+    "@tailwindcss/typography": "^0.5.19",
+    "@types/node": "^22.0.0",
+    "@types/react": "^18.3.1",
+    "typescript": "^5.7.0"
+  }
+}

@@ -168,6 +168,8 @@ Session 状态为 `running` 时，拒绝 input，返回 `error`（`SESSION_BUSY`
 |--------|------|
 | `terminate` | 终止 Worker runtime，Session 进入 `terminated` |
 | `delete` | 删除 Session 记录 + 清理 runtime |
+| `reset` | 清空 Session.Context，Worker 自行决定 in-place 或 terminate+start，Session 进入 `running` |
+| `gc` | 归档会话：终止 Worker（保留历史），Session 进入 `terminated`，后续可 resume |
 
 **Server → Client（服务器主动控制，`priority: "control"`）**：
 
@@ -280,6 +282,76 @@ Session 状态为 `running` 时，拒绝 input，返回 `error`（`SESSION_BUSY`
 3. 如果当前请求被拒绝，等待 `retry_after` 后重试
 
 > **注意**: 这是**软限制**，客户端应尽量遵守。如持续超限，Gateway 可能发送 `error(RATE_LIMIT_EXCEEDED)` 强制拒绝。
+
+#### 3.4.4 `control.reset`（C→S — 清空会话上下文）
+
+客户端请求清空当前会话的上下文，开始全新对话。
+
+```json
+{
+  "type": "control",
+  "data": {
+    "action": "reset",
+    "reason": "user_requested|new_conversation"
+  }
+}
+```
+
+| 字段 | 必选 | 说明 |
+|------|------|------|
+| `reason` | 否 | 重置原因：`user_requested`（用户主动）、`new_conversation`（新对话） |
+
+**服务端行为**：
+1. 清空 `SessionInfo.Context`（Gateway 层）
+2. 调用 `Worker.ResetContext()`（Worker 自行决定 in-place 或 terminate+start）
+3. Session 状态切至 `running`
+4. 返回 `state{state: "running", message: "context_reset"}`
+
+**详细流程**：
+```
+Client → Gateway: control{action: "reset"}
+  Gateway: sm.ClearContext(sessionID)  → SessionInfo.Context = {}
+  Gateway: w.ResetContext(ctx)         → Worker 清空运行时上下文
+  Gateway: sm.Transition(RUNNING)       → 状态切换
+  Gateway → Client: state{state: "running", message: "context_reset"}
+```
+
+> **注意**: `reset` 与 `terminate` 的区别 — `terminate` 是终止 Worker 并进入 `terminated` 状态；`reset` 是清空上下文并保持在 `running` 状态，开始全新对话。
+
+#### 3.4.5 `control.gc`（C→S — 会话归档）
+
+客户端请求将会话归档，Worker 终止但保留历史，后续可 resume。
+
+```json
+{
+  "type": "control",
+  "data": {
+    "action": "gc",
+    "reason": "user_idle|explicit_request"
+  }
+}
+```
+
+| 字段 | 必选 | 说明 |
+|------|------|------|
+| `reason` | 否 | 归档原因：`user_idle`（用户空闲超时）、`explicit_request`（用户主动） |
+
+**服务端行为**：
+1. 调用 `Worker.Terminate()`（Worker 内部自行保存会话状态）
+2. 解除 Worker attachment（`sm.DetachWorker`）
+3. Session 状态切至 `terminated`
+4. 返回 `state{state: "terminated", message: "session_archived"}`
+
+**详细流程**：
+```
+Client → Gateway: control{action: "gc"}
+  Gateway: w.Terminate(ctx)            → Worker 终止，保存状态
+  Gateway: sm.DetachWorker(sessionID)  → 解除 Worker attachment
+  Gateway: sm.Transition(TERMINATED)   → 状态切换
+  Gateway → Client: state{state: "terminated", message: "session_archived"}
+```
+
+> **注意**: `gc` 后 Session 可通过 `init` + 相同 `session_id` 恢复（resume）。
 
 ---
 
@@ -762,7 +834,7 @@ func (g *Gateway) sendControlEvent(sessionID string, event Event) error {
 **C→S（Client → Server）**：
 - `init` — 握手
 - `input` — 用户输入
-- `control`（`terminate`/`delete`）— 客户端控制命令
+- `control`（`terminate`/`delete`/`reset`/`gc`）— 客户端控制命令
 - `ping` — 心跳
 
 **S→C（Server → Client）**：

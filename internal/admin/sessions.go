@@ -8,7 +8,23 @@ import (
 	"github.com/hotplex/hotplex-worker/pkg/events"
 )
 
+func addCORSHeaders(w http.ResponseWriter) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Api-Key")
+}
+
+// Preflight handles CORS preflight requests (OPTIONS).
+func preflight(w http.ResponseWriter) {
+	addCORSHeaders(w)
+	w.WriteHeader(http.StatusOK)
+}
+
 func (a *AdminAPI) CreateSession(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodOptions {
+		preflight(w)
+		return
+	}
 	if !hasScope(r, ScopeSessionWrite) {
 		http.Error(w, "insufficient scope: need session:write", http.StatusForbidden)
 		return
@@ -26,16 +42,21 @@ func (a *AdminAPI) CreateSession(w http.ResponseWriter, r *http.Request) {
 		userID = "anonymous"
 	}
 
-	if err := a.bridge.StartSession(r.Context(), id, userID, "", wt, nil); err != nil {
+	if err := a.bridge.StartSession(r.Context(), id, userID, "", wt, nil, ""); err != nil {
 		a.log.Error("admin: create session", "err", err)
 		http.Error(w, "failed to create session", http.StatusInternalServerError)
 		return
 	}
 
+	addCORSHeaders(w)
 	respondJSON(w, map[string]string{"session_id": id})
 }
 
 func (a *AdminAPI) ListSessions(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodOptions {
+		preflight(w)
+		return
+	}
 	if !hasScope(r, ScopeSessionRead) {
 		http.Error(w, "insufficient scope: need session:read", http.StatusForbidden)
 		return
@@ -60,6 +81,7 @@ func (a *AdminAPI) ListSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	addCORSHeaders(w)
 	respondJSON(w, map[string]any{
 		"sessions": sessions,
 		"limit":    limit,
@@ -68,6 +90,10 @@ func (a *AdminAPI) ListSessions(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *AdminAPI) GetSession(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodOptions {
+		preflight(w)
+		return
+	}
 	if !hasScope(r, ScopeSessionRead) {
 		http.Error(w, "insufficient scope: need session:read", http.StatusForbidden)
 		return
@@ -79,10 +105,15 @@ func (a *AdminAPI) GetSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	addCORSHeaders(w)
 	respondJSON(w, si)
 }
 
 func (a *AdminAPI) DeleteSession(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodOptions {
+		preflight(w)
+		return
+	}
 	if !hasScope(r, ScopeSessionKill) {
 		http.Error(w, "insufficient scope: need session:delete", http.StatusForbidden)
 		return
@@ -93,10 +124,15 @@ func (a *AdminAPI) DeleteSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	addCORSHeaders(w)
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (a *AdminAPI) TerminateSession(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodOptions {
+		preflight(w)
+		return
+	}
 	if !hasScope(r, ScopeSessionWrite) {
 		http.Error(w, "insufficient scope: need session:write", http.StatusForbidden)
 		return
@@ -108,6 +144,7 @@ func (a *AdminAPI) TerminateSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	addCORSHeaders(w)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -116,6 +153,7 @@ func (a *AdminAPI) PoolStats(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "insufficient scope: need stats:read", http.StatusForbidden)
 		return
 	}
+	addCORSHeaders(w)
 	total, max, users := a.sm.Stats()
 	respondJSON(w, map[string]int{
 		"total": total,

@@ -13,6 +13,7 @@ type Kind string
 
 // AEP v1 defined event kinds.
 const (
+	Init               Kind = "init" // session initialization (client → gateway)
 	Error              Kind = "error"
 	State              Kind = "state"
 	Input              Kind = "input"
@@ -224,6 +225,8 @@ const (
 	ControlActionThrottle       ControlAction = "throttle"
 	ControlActionTerminate      ControlAction = "terminate"
 	ControlActionDelete         ControlAction = "delete"
+	ControlActionReset          ControlAction = "reset" // 清空上下文，Worker 自行决定 in-place 或 terminate+start
+	ControlActionGC             ControlAction = "gc"    // 归档会话，Worker 终止，保留历史
 )
 
 // ControlData is the payload for Control events.

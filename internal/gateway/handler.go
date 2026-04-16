@@ -40,6 +40,7 @@ func NewHandler(log *slog.Logger, cfg *config.Config, hub *Hub, sm *session.Mana
 
 // Handle processes an incoming envelope from a client.
 func (h *Handler) Handle(ctx context.Context, env *events.Envelope) error {
+	h.log.Debug("gateway: Handle called", "event_type", env.Event.Type, "session_id", env.SessionID, "seq", env.Seq)
 	switch env.Event.Type {
 	case events.Input:
 		return h.handleInput(ctx, env)
@@ -57,20 +58,28 @@ func (h *Handler) Handle(ctx context.Context, env *events.Envelope) error {
 }
 
 func (h *Handler) handleInput(ctx context.Context, env *events.Envelope) error {
+	h.log.Debug("gateway: handleInput called", "session_id", env.SessionID, "seq", env.Seq)
+
 	data, ok := env.Event.Data.(map[string]any)
 	if !ok {
+		h.log.Warn("gateway: handleInput malformed data", "session_id", env.SessionID)
 		return h.sendErrorf(ctx, env, events.ErrCodeInvalidMessage, "malformed input data")
 	}
 
 	content, _ := data["content"].(string)
+	h.log.Debug("gateway: handleInput content received", "session_id", env.SessionID, "content_len", len(content))
 
 	// Check SESSION_BUSY: session must be active.
 	si, err := h.sm.Get(env.SessionID)
 	if err != nil {
+		h.log.Warn("gateway: handleInput session not found", "session_id", env.SessionID, "err", err)
 		return h.sendErrorf(ctx, env, events.ErrCodeSessionNotFound, "session not found")
 	}
 
+	h.log.Debug("gateway: handleInput session state", "session_id", env.SessionID, "state", si.State)
+
 	if !si.State.IsActive() {
+		h.log.Warn("gateway: handleInput session not active", "session_id", env.SessionID, "state", si.State)
 		return h.sendErrorf(ctx, env, events.ErrCodeSessionBusy, "session not active: %s", si.State)
 	}
 
@@ -78,6 +87,7 @@ func (h *Handler) handleInput(ctx context.Context, env *events.Envelope) error {
 	// which is handled by Bridge.StartSession in performInit). This covers the resume case.
 	if si.State == events.StateIdle {
 		if err := h.sm.TransitionWithInput(ctx, env.SessionID, events.StateRunning, content, nil); err != nil {
+			h.log.Warn("gateway: handleInput transition failed", "session_id", env.SessionID, "err", err)
 			return h.sendErrorf(ctx, env, events.ErrCodeSessionBusy, "session busy: %v", err)
 		}
 	}
@@ -85,9 +95,14 @@ func (h *Handler) handleInput(ctx context.Context, env *events.Envelope) error {
 	// Deliver to worker.
 	w := h.sm.GetWorker(env.SessionID)
 	if w != nil {
+		h.log.Debug("gateway: delivering input to worker", "session_id", env.SessionID, "content_preview", content)
 		if err := w.Input(ctx, content, nil); err != nil {
 			h.log.Warn("gateway: worker input", "err", err, "session_id", env.SessionID)
+		} else {
+			h.log.Info("gateway: input delivered to worker", "session_id", env.SessionID)
 		}
+	} else {
+		h.log.Error("gateway: handleInput no worker found", "session_id", env.SessionID)
 	}
 
 	return nil
@@ -185,6 +200,12 @@ func (h *Handler) handleControl(ctx context.Context, env *events.Envelope) error
 		}
 		return nil
 
+	case events.ControlActionReset:
+		return h.handleReset(ctx, env)
+
+	case events.ControlActionGC:
+		return h.handleGC(ctx, env)
+
 	default:
 		return h.sendErrorf(ctx, env, events.ErrCodeProtocolViolation, "unknown control action: %s", action)
 	}
@@ -236,6 +257,92 @@ func (h *Handler) sendErrorf(ctx context.Context, env *events.Envelope, code eve
 	return fmt.Errorf("%s: %s", code, fmt.Sprintf(format, args...))
 }
 
+// validateOwner checks ownership and returns the session in one call.
+// This avoids the double-fetch that calling ValidateOwnership then Get separately incurs.
+func (h *Handler) validateOwner(ctx context.Context, env *events.Envelope) (*session.SessionInfo, error) {
+	si, err := h.sm.Get(env.SessionID)
+	if err != nil {
+		return nil, err
+	}
+	if si.UserID != env.OwnerID {
+		return nil, fmt.Errorf("%w: owner mismatch", session.ErrOwnershipMismatch)
+	}
+	return si, nil
+}
+
+func (h *Handler) handleReset(ctx context.Context, env *events.Envelope) error {
+	si, err := h.validateOwner(ctx, env)
+	if err != nil {
+		if errors.Is(err, session.ErrSessionNotFound) {
+			return h.sendErrorf(ctx, env, events.ErrCodeSessionNotFound, "session not found")
+		}
+		return h.sendErrorf(ctx, env, events.ErrCodeUnauthorized, "ownership required")
+	}
+	if !si.State.IsActive() {
+		return h.sendErrorf(ctx, env, events.ErrCodeProtocolViolation, "reset not allowed in state: %s", si.State)
+	}
+
+	if err := h.sm.ClearContext(ctx, env.SessionID); err != nil {
+		h.log.Warn("gateway: reset clear context failed", "session_id", env.SessionID, "err", err)
+		return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "clear context failed: %v", err)
+	}
+
+	w := h.sm.GetWorker(env.SessionID)
+	if w != nil {
+		if err := w.ResetContext(ctx); err != nil {
+			h.log.Warn("gateway: worker reset context failed", "session_id", env.SessionID, "err", err)
+			return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "worker reset failed: %v", err)
+		}
+	}
+
+	if err := h.sm.TransitionWithReason(ctx, env.SessionID, events.StateRunning, "reset"); err != nil {
+		return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "reset transition failed: %v", err)
+	}
+
+	stateEvt := events.NewEnvelope(aep.NewID(), env.SessionID, h.hub.NextSeq(env.SessionID), events.State, events.StateData{
+		State:   events.StateRunning,
+		Message: "context_reset",
+	})
+	_ = h.hub.SendToSession(ctx, stateEvt)
+
+	h.log.Info("gateway: session reset", "session_id", env.SessionID)
+	return nil
+}
+
+func (h *Handler) handleGC(ctx context.Context, env *events.Envelope) error {
+	si, err := h.validateOwner(ctx, env)
+	if err != nil {
+		if errors.Is(err, session.ErrSessionNotFound) {
+			return h.sendErrorf(ctx, env, events.ErrCodeSessionNotFound, "session not found")
+		}
+		return h.sendErrorf(ctx, env, events.ErrCodeUnauthorized, "ownership required")
+	}
+	if si.State == events.StateTerminated {
+		h.log.Info("gateway: gc idempotent (already terminated)", "session_id", env.SessionID)
+		return nil
+	}
+
+	if w := h.sm.GetWorker(env.SessionID); w != nil {
+		if err := w.Terminate(ctx); err != nil {
+			h.log.Warn("gateway: gc worker terminate failed", "session_id", env.SessionID, "err", err)
+		}
+		h.sm.DetachWorker(env.SessionID)
+	}
+
+	if err := h.sm.TransitionWithReason(ctx, env.SessionID, events.StateTerminated, "gc"); err != nil {
+		return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "gc transition failed: %v", err)
+	}
+
+	stateEvt := events.NewEnvelope(aep.NewID(), env.SessionID, h.hub.NextSeq(env.SessionID), events.State, events.StateData{
+		State:   events.StateTerminated,
+		Message: "session_archived",
+	})
+	_ = h.hub.SendToSession(ctx, stateEvt)
+
+	h.log.Info("gateway: session gc'd", "session_id", env.SessionID)
+	return nil
+}
+
 // ─── Bridge ─────────────────────────────────────────────────────────────────
 
 // SessionManager abstracts the session.Manager methods used by Bridge.
@@ -246,7 +353,10 @@ type SessionManager interface {
 	DetachWorker(id string)
 	Transition(ctx context.Context, id string, to events.SessionState) error
 	Get(id string) (*session.SessionInfo, error)
+	GetWorker(id string) worker.Worker
 	Delete(ctx context.Context, id string) error
+	List(ctx context.Context, limit, offset int) ([]*session.SessionInfo, error)
+	UpdateWorkerSessionID(ctx context.Context, id, workerSessionID string) error
 }
 
 // WorkerFactory creates worker instances. Production code uses defaultWorkerFactory.

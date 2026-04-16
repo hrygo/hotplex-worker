@@ -726,6 +726,10 @@ func (w *mockWorker) Health() worker.WorkerHealth {
 	return w.health
 }
 func (w *mockWorker) LastIO() time.Time { return w.lastIO }
+func (w *mockWorker) ResetContext(ctx context.Context) error {
+	args := w.Called(ctx)
+	return args.Error(0)
+}
 
 // ─── AttachWorker tests ───────────────────────────────────────────────────────
 
@@ -1482,4 +1486,159 @@ func TestManager_GC_NoPanicOnStoreErrors(t *testing.T) {
 
 	// gc should not panic even on store errors
 	m.gc(ctx)
+}
+
+// ─── ClearContext tests ──────────────────────────────────────────────────────
+
+func TestManager_ClearContext_Success(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	cfg := config.Default()
+	store := new(mockStore)
+	store.Test(t)
+	store.On("Close").Return(nil)
+
+	m, err := NewManager(ctx, nil, cfg, store, nil)
+	require.NoError(t, err)
+	defer m.Close()
+
+	now := time.Now()
+	seed := &SessionInfo{
+		ID:         "sess_clear",
+		UserID:     "user1",
+		WorkerType: worker.TypeClaudeCode,
+		State:      events.StateRunning,
+		CreatedAt:  now,
+		UpdatedAt:  now,
+		Context:    map[string]any{"key1": "value1", "key2": 42},
+	}
+	m.mu.Lock()
+	m.sessions["sess_clear"] = &managedSession{info: *seed}
+	m.mu.Unlock()
+
+	store.On("Upsert", ctx, mock.AnythingOfType("*session.SessionInfo")).Return(nil)
+
+	err = m.ClearContext(ctx, "sess_clear")
+	require.NoError(t, err)
+
+	// Verify Context is now empty in memory
+	info, _ := m.Get("sess_clear")
+	require.NotNil(t, info)
+	require.Empty(t, info.Context)
+}
+
+func TestManager_ClearContext_NotFound(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	cfg := config.Default()
+	store := new(mockStore)
+	store.Test(t)
+
+	store.On("Get", ctx, "sess_missing_clear").Return(nil, ErrSessionNotFound)
+	store.On("Close").Return(nil)
+
+	m, err := NewManager(ctx, nil, cfg, store, nil)
+	require.NoError(t, err)
+	defer m.Close()
+
+	err = m.ClearContext(ctx, "sess_missing_clear")
+	require.True(t, errors.Is(err, ErrSessionNotFound))
+}
+
+func TestManager_ClearContext_NilManager(t *testing.T) {
+	t.Parallel()
+
+	m := (*Manager)(nil)
+	err := m.ClearContext(context.Background(), "any")
+	require.True(t, errors.Is(err, ErrSessionNotFound))
+}
+
+func TestManager_ClearContext_UpdatesTimestamp(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	cfg := config.Default()
+	store := new(mockStore)
+	store.Test(t)
+	store.On("Close").Return(nil)
+
+	m, err := NewManager(ctx, nil, cfg, store, nil)
+	require.NoError(t, err)
+	defer m.Close()
+
+	now := time.Now()
+	seed := &SessionInfo{
+		ID:         "sess_clear_ts",
+		UserID:     "user1",
+		WorkerType: worker.TypeClaudeCode,
+		State:      events.StateRunning,
+		CreatedAt:  now.Add(-1 * time.Hour),
+		UpdatedAt:  now.Add(-1 * time.Hour),
+		Context:    map[string]any{"old": "data"},
+	}
+	m.mu.Lock()
+	m.sessions["sess_clear_ts"] = &managedSession{info: *seed}
+	m.mu.Unlock()
+
+	store.On("Upsert", ctx, mock.AnythingOfType("*session.SessionInfo")).Return(nil)
+
+	err = m.ClearContext(ctx, "sess_clear_ts")
+	require.NoError(t, err)
+
+	// Verify UpdatedAt was updated by checking in-memory state
+	m.mu.RLock()
+	updatedMs := m.sessions["sess_clear_ts"]
+	m.mu.RUnlock()
+	require.NotNil(t, updatedMs)
+	// UpdatedAt should be after the original time
+	require.True(t, updatedMs.info.UpdatedAt.After(now.Add(-5*time.Second)))
+}
+
+func TestManager_ClearContext_PreservesOtherFields(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	cfg := config.Default()
+	store := new(mockStore)
+	store.Test(t)
+	store.On("Close").Return(nil)
+
+	m, err := NewManager(ctx, nil, cfg, store, nil)
+	require.NoError(t, err)
+	defer m.Close()
+
+	now := time.Now()
+	seed := &SessionInfo{
+		ID:         "sess_clear_preserved",
+		UserID:     "user_preserve",
+		OwnerID:    "owner_preserve",
+		BotID:      "bot_preserve",
+		WorkerType: worker.TypeOpenCodeCLI,
+		State:      events.StateRunning,
+		CreatedAt:  now.Add(-30 * time.Minute),
+		UpdatedAt:  now.Add(-30 * time.Minute),
+		Context:    map[string]any{"some": "context"},
+	}
+	m.mu.Lock()
+	m.sessions["sess_clear_preserved"] = &managedSession{info: *seed}
+	m.mu.Unlock()
+
+	store.On("Upsert", ctx, mock.AnythingOfType("*session.SessionInfo")).Return(nil)
+
+	err = m.ClearContext(ctx, "sess_clear_preserved")
+	require.NoError(t, err)
+
+	// Verify other fields preserved in-memory
+	m.mu.RLock()
+	ms := m.sessions["sess_clear_preserved"]
+	m.mu.RUnlock()
+	require.NotNil(t, ms)
+	require.Equal(t, "user_preserve", ms.info.UserID)
+	require.Equal(t, "owner_preserve", ms.info.OwnerID)
+	require.Equal(t, "bot_preserve", ms.info.BotID)
+	require.Equal(t, worker.TypeOpenCodeCLI, ms.info.WorkerType)
+	require.Equal(t, events.StateRunning, ms.info.State)
+	require.Empty(t, ms.info.Context)
 }

@@ -170,7 +170,7 @@ version: v1.0
 | 61 | **DOC-001** | Transport 接口 API 文档 | 🔴 P0 | ⬜ TODO | - | TSDoc 注释 |
 | 62 | **DOC-002** | useHotPlexChat Hook 文档 | 🔴 P0 | ⬜ TODO | - | 使用示例 |
 | 63 | **DOC-003** | 快速开始指南 (5 分钟集成) | 🔴 P0 | ⬜ TODO | - | README.md |
-| 64 | **DOC-004** | 完整示例应用 (Next.js) | 🟡 P1 | ⬜ TODO | - | examples/nextjs-chat |
+| 64 | **DOC-004** | 完整示例应用 (Next.js) | 🟡 P1 | ⬜ TODO | - | webchat |
 | 65 | **DOC-005** | 错误码映射表 | 🟡 P1 | ⬜ TODO | - | AEP → 用户提示 |
 | 66 | **DOC-006** | 性能优化指南 | ⚪ P2 | ⬜ TODO | - | 最佳实践 |
 | 67 | **DOC-007** | 故障排查指南 | 🟡 P1 | ⬜ TODO | - | 常见问题 FAQ |

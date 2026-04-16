@@ -421,16 +421,9 @@ func TestHub_DrainBroadcast(t *testing.T) {
 	h := newTestHub(t)
 	env := events.NewEnvelope(aep.NewID(), "drain", 1, events.State, events.StateData{State: events.StateIdle})
 
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		h.drainBroadcast()
-	}()
-
 	h.broadcast <- &EnvelopeWithConn{Env: env}
-	close(h.broadcast)
-	wg.Wait()
+	// drainBroadcast is non-blocking; processes items already in the channel.
+	h.drainBroadcast()
 }
 
 // ─── Conn helper tests ────────────────────────────────────────────────────────
@@ -620,6 +613,7 @@ func (f *fakeWorker) Wait() (int, error)                                  { retu
 func (f *fakeWorker) Conn() worker.SessionConn                            { return f.conn }
 func (f *fakeWorker) Health() worker.WorkerHealth                         { return worker.WorkerHealth{} }
 func (f *fakeWorker) LastIO() time.Time                                   { return time.Now() }
+func (f *fakeWorker) ResetContext(context.Context) error                   { return nil }
 
 var _ worker.Worker = (*fakeWorker)(nil)
 var _ session.MessageStore = (*fakeMsgStore)(nil)

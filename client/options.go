@@ -46,3 +46,12 @@ func PingInterval(d time.Duration) Option {
 		return nil
 	}
 }
+
+// ClientSessionID enables deterministic session IDs for client-managed sessions.
+// Use when you need stable session identifiers across reconnections.
+func ClientSessionID(id string) Option {
+	return func(c *Client) error {
+		c.clientSessionID = id
+		return nil
+	}
+}

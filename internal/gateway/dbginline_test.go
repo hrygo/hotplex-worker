@@ -20,7 +20,7 @@ func TestValidateInit_Debug(t *testing.T) {
 		Seq:       1,
 		SessionID: "sess_test",
 		Timestamp: time.Now().UnixMilli(),
-		Event:     events.Event{Type: Init, Data: data},
+		Event:     events.Event{Type: events.Init, Data: data},
 	}
 
 	t.Logf("env.Event.Data type: %T", env.Event.Data)

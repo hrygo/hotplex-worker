@@ -136,13 +136,17 @@ func (m *Manager) CreateWithBot(ctx context.Context, id, userID, botID string, w
 	return info, nil
 }
 
-// Get returns a session by ID. Returns ErrSessionNotFound if not found.
+// Get returns a snapshot of a session by ID. Returns ErrSessionNotFound if not found.
+// The returned *SessionInfo is a copy safe to read without holding locks.
 func (m *Manager) Get(id string) (*SessionInfo, error) {
 	m.mu.RLock()
 	ms, ok := m.sessions[id]
 	m.mu.RUnlock()
 	if ok {
-		return &ms.info, nil
+		ms.mu.RLock()
+		info := ms.info
+		ms.mu.RUnlock()
+		return &info, nil
 	}
 
 	// Fall back to Store.
@@ -241,6 +245,9 @@ func (m *Manager) Transition(ctx context.Context, id string, to events.SessionSt
 // termReason is used as the label value for SessionsTerminated when transitioning
 // to StateTerminated (e.g., "idle_timeout", "max_lifetime", "zombie", "admin_kill").
 func (m *Manager) TransitionWithReason(ctx context.Context, id string, to events.SessionState, termReason string) error {
+	if m == nil {
+		return ErrSessionNotFound
+	}
 	ms := m.getManagedSession(id)
 	if ms == nil {
 		return ErrSessionNotFound
@@ -260,6 +267,9 @@ func (m *Manager) TransitionWithReason(ctx context.Context, id string, to events
 // TransitionWithInput performs a state transition and processes user input
 // atomically (both under the same mutex).
 func (m *Manager) TransitionWithInput(ctx context.Context, id string, to events.SessionState, content string, metadata map[string]any) error {
+	if m == nil {
+		return ErrSessionNotFound
+	}
 	ms := m.getManagedSession(id)
 	if ms == nil {
 		return ErrSessionNotFound
@@ -293,6 +303,9 @@ func (m *Manager) TransitionWithInput(ctx context.Context, id string, to events.
 
 // AttachWorker attempts to allocate concurrency quota and pair the worker runtime to the session.
 func (m *Manager) AttachWorker(id string, w worker.Worker) error {
+	if m == nil {
+		return ErrSessionNotFound
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -340,6 +353,9 @@ func (m *Manager) AttachWorker(id string, w worker.Worker) error {
 
 // GetWorker returns the worker for a session.
 func (m *Manager) GetWorker(id string) worker.Worker {
+	if m == nil {
+		return nil
+	}
 	ms := m.getManagedSession(id)
 	if ms == nil {
 		return nil
@@ -358,6 +374,9 @@ func (m *Manager) releaseWorkerQuota(ms *managedSession) {
 // It is safe to call even if no worker is attached.
 // Acquires ms.mu then pool lock to avoid deadlock with Delete.
 func (m *Manager) DetachWorker(id string) {
+	if m == nil {
+		return
+	}
 	ms := m.getManagedSession(id)
 	if ms == nil {
 		return
@@ -441,6 +460,51 @@ func (m *Manager) ValidateOwnership(ctx context.Context, sessionID, userID strin
 		return ErrOwnershipMismatch
 	}
 	return nil
+}
+
+// ClearContext clears the session context map.
+// Used by control.reset: Gateway layer clears SessionInfo.Context.
+// Worker runtime context clearing is delegated to Worker.ResetContext (in-place or terminate+start).
+func (m *Manager) ClearContext(ctx context.Context, sessionID string) error {
+	if m == nil {
+		return ErrSessionNotFound
+	}
+	ms := m.getManagedSession(sessionID)
+	if ms == nil {
+		return ErrSessionNotFound
+	}
+
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
+
+	ms.info.Context = map[string]any{}
+	ms.info.UpdatedAt = time.Now()
+
+	return m.store.Upsert(ctx, &ms.info)
+}
+
+// UpdateWorkerSessionID persists the worker-internal session ID for resume support.
+// Workers that manage their own session IDs (OpenCode CLI, OpenCode Server) call this
+// to store the ID so it can be restored on resume.
+func (m *Manager) UpdateWorkerSessionID(ctx context.Context, id, workerSessionID string) error {
+	if m == nil {
+		return ErrSessionNotFound
+	}
+	ms := m.getManagedSession(id)
+	if ms == nil {
+		return ErrSessionNotFound
+	}
+
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
+
+	if ms.info.WorkerSessionID == workerSessionID {
+		return nil
+	}
+	ms.info.WorkerSessionID = workerSessionID
+	ms.info.UpdatedAt = time.Now()
+
+	return m.store.Upsert(ctx, &ms.info)
 }
 
 // DebugSessionSnapshot holds safe-to-expose debug info for a managed session.

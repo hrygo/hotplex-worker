@@ -56,9 +56,41 @@ func EncodeLine(w io.Writer, env *Envelope) error {
 - `pong`：ping 响应
 - `control`：reconnect / throttle（Server 发起）
 
-## Seq 分配与去重
+## Seq 分配规则
+
+### 序号分配范围
+
+**需要序号的消息类型**：
+- 业务消息：`input`, `message`, `message.delta`, `message.done`, `done`
+- 状态消息：`state`, `error`, `reasoning`
+- 工具消息：`tool_call`, `tool_result`
+- 原始消息：`raw`
+- 控制消息：`control`
+
+**不需要序号的消息类型**：
+- 心跳消息：`ping`, `pong`
+  - 这些是 WebSocket 层面的控制消息
+  - 与业务流程无关
+  - Seq 字段为 0（未分配）
+
+### 实现方式
+
 ```go
-// hub.NextSeq 原子分配，保证 session 内单调递增
+// conn.go ReadPump
+env.SessionID = c.sessionID
+env.OwnerID = c.userID
+
+// Only assign seq to business messages, not heartbeat
+if env.Event.Type != events.Ping {
+    env.Seq = c.hub.NextSeq(c.sessionID)
+}
+// Ping/Pong messages have seq=0 (unassigned)
+```
+
+### Seq 生成算法
+
+```go
+// hub.go NextSeq - 原子分配，保证 session 内单调递增
 func (g *SeqGen) NextSeq(sessionID string) int64 {
     g.mu.Lock()
     defer g.mu.Unlock()
@@ -66,12 +98,36 @@ func (g *SeqGen) NextSeq(sessionID string) int64 {
     g.seq[sessionID] = n + 1
     return n
 }
-
-// message.delta 丢弃时不消耗 seq
-if !sent {
-    // seq 不递增，sessionDropped[sessionID] = true
-}
 ```
+
+**序号特性**：
+- 每个 session 独立的序号空间
+- 从 1 开始严格递增
+- 原子操作保证并发安全
+- 0 表示"未分配序号"
+
+### Backpressure 丢弃规则
+
+```go
+// hub.go SendToSession
+if env.Event.Type == "message.delta" || env.Event.Type == "raw" {
+    // Non-blocking send, drop if channel full
+    select {
+    case ch <- env:
+        return nil
+    default:
+        sessionDropped[sessionID] = true
+        return nil  // Don't return error
+    }
+}
+// Critical events (state/done/error) block until sent
+ch <- env
+```
+
+**丢弃标记**：
+- `sessionDropped[sessionID] = true` 表示有 delta 被丢弃
+- `done` 事件会检查此标记，在 `stats.dropped` 中体现
+- 丢弃的 delta **不消耗 seq**（保持序号连续性）
 
 ## Backpressure — 有界通道与 delta 丢弃
 ```go
