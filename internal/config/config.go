@@ -117,15 +117,37 @@ func (c *Config) RequireSecrets() error {
 
 // Config holds all gateway configuration.
 type Config struct {
-	Gateway  GatewayConfig  `mapstructure:"gateway"`
-	DB       DBConfig       `mapstructure:"db"`
-	Worker   WorkerConfig   `mapstructure:"worker"`
-	Security SecurityConfig `mapstructure:"security"`
-	Session  SessionConfig  `mapstructure:"session"`
-	Pool     PoolConfig     `mapstructure:"pool"`
-	Log      LogConfig      `mapstructure:"log"`
-	Admin    AdminConfig    `mapstructure:"admin"`
-	Inherits string         `mapstructure:"inherits"` // path to parent config file; "" = no inheritance
+	Gateway   GatewayConfig   `mapstructure:"gateway"`
+	DB        DBConfig        `mapstructure:"db"`
+	Worker    WorkerConfig    `mapstructure:"worker"`
+	Security  SecurityConfig  `mapstructure:"security"`
+	Session   SessionConfig   `mapstructure:"session"`
+	Pool      PoolConfig      `mapstructure:"pool"`
+	Log       LogConfig       `mapstructure:"log"`
+	Admin     AdminConfig     `mapstructure:"admin"`
+	Messaging MessagingConfig `mapstructure:"messaging"`
+	Inherits  string          `mapstructure:"inherits"` // path to parent config file; "" = no inheritance
+}
+
+// MessagingConfig holds messaging platform adapter settings.
+type MessagingConfig struct {
+	Slack  SlackConfig  `mapstructure:"slack"`
+	Feishu FeishuConfig `mapstructure:"feishu"`
+}
+
+// SlackConfig holds Slack Socket Mode adapter settings.
+type SlackConfig struct {
+	Enabled    bool   `mapstructure:"enabled"`
+	BotToken   string `mapstructure:"bot_token"`
+	AppToken   string `mapstructure:"app_token"`
+	SocketMode bool   `mapstructure:"socket_mode"`
+}
+
+// FeishuConfig holds Feishu WebSocket adapter settings.
+type FeishuConfig struct {
+	Enabled   bool   `mapstructure:"enabled"`
+	AppID     string `mapstructure:"app_id"`
+	AppSecret string `mapstructure:"app_secret"`
 }
 
 // AdminConfig holds admin API settings.

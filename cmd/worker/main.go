@@ -20,6 +20,9 @@ import (
 	"github.com/hotplex/hotplex-worker/internal/admin"
 	"github.com/hotplex/hotplex-worker/internal/config"
 	"github.com/hotplex/hotplex-worker/internal/gateway"
+	"github.com/hotplex/hotplex-worker/internal/messaging"
+	_ "github.com/hotplex/hotplex-worker/internal/messaging/feishu"
+	_ "github.com/hotplex/hotplex-worker/internal/messaging/slack"
 	"github.com/hotplex/hotplex-worker/internal/security"
 	"github.com/hotplex/hotplex-worker/internal/session"
 	"github.com/hotplex/hotplex-worker/internal/tracing"
@@ -162,6 +165,10 @@ func run() error {
 		Bridge:        bridge,
 		ConfigWatcher: configWatcher,
 	}
+
+	// Initialize messaging platform adapters.
+	msgAdapters := startMessagingAdapters(ctx, log, cfg, hub, sm, handler)
+
 	setupRoutes(mux, deps)
 
 	server := &http.Server{
@@ -198,6 +205,13 @@ func run() error {
 
 	if configWatcher != nil {
 		_ = configWatcher.Close()
+	}
+
+	// Close messaging adapters.
+	for _, adapter := range msgAdapters {
+		if err := adapter.Close(shutdownCtx); err != nil {
+			log.Warn("messaging: adapter close", "err", err)
+		}
 	}
 
 	if err := sm.Close(); err != nil {
@@ -409,6 +423,47 @@ func (a *configWatcherAdapter) Rollback(version int) (*config.Config, int, error
 		return nil, -1, errors.New("config watcher is nil")
 	}
 	return a.watcher.Rollback(version)
+}
+
+// startMessagingAdapters initializes and starts all enabled messaging platform adapters.
+func startMessagingAdapters(ctx context.Context, log *slog.Logger, cfg *config.Config,
+	hub *gateway.Hub, sm *session.Manager, handler *gateway.Handler,
+) []messaging.PlatformAdapterInterface {
+	var adapters []messaging.PlatformAdapterInterface
+	for _, pt := range messaging.RegisteredTypes() {
+		switch pt {
+		case messaging.PlatformSlack:
+			if !cfg.Messaging.Slack.Enabled {
+				continue
+			}
+		case messaging.PlatformFeishu:
+			if !cfg.Messaging.Feishu.Enabled {
+				continue
+			}
+		}
+		adapter, err := messaging.New(pt, log)
+		if err != nil {
+			log.Warn("messaging: skip adapter", "platform", pt, "err", err)
+			continue
+		}
+		msgBridge := messaging.NewBridge(log, pt, hub, sm, handler)
+		// Inject dependencies via embedded PlatformAdapter.
+		adapter.(interface{ SetHub(messaging.HubInterface) }).SetHub(hub)
+		adapter.(interface {
+			SetSessionManager(messaging.SessionManager)
+		}).SetSessionManager(sm)
+		adapter.(interface {
+			SetHandler(messaging.HandlerInterface)
+		}).SetHandler(handler)
+		adapter.(interface{ SetBridge(*messaging.Bridge) }).SetBridge(msgBridge)
+		if err := adapter.Start(ctx); err != nil {
+			log.Warn("messaging: start failed", "platform", pt, "err", err)
+			continue
+		}
+		adapters = append(adapters, adapter)
+		log.Info("messaging: adapter started", "platform", pt)
+	}
+	return adapters
 }
 
 func waitForSignal() os.Signal {
