@@ -9,6 +9,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	client "github.com/hotplex/hotplex-go-client"
 )
 
 var (

@@ -57,12 +57,12 @@ type AssistantMessage struct {
 
 // ContentBlock represents a content block in a message.
 type ContentBlock struct {
-	Type    string          `json:"type"` // text, tool_use, image, thinking
-	Text    string          `json:"text,omitempty"`
+	Type     string          `json:"type"` // text, tool_use, image, thinking
+	Text     string          `json:"text,omitempty"`
 	Thinking string          `json:"thinking,omitempty"` // For thinking blocks
-	ID      string          `json:"id,omitempty"`
-	Name    string          `json:"name,omitempty"`
-	Input   json.RawMessage `json:"input,omitempty"`
+	ID       string          `json:"id,omitempty"`
+	Name     string          `json:"name,omitempty"`
+	Input    json.RawMessage `json:"input,omitempty"`
 }
 
 // ControlRequestPayload represents a control request from Claude Code.

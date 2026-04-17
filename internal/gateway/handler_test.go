@@ -14,8 +14,8 @@ import (
 	"github.com/hotplex/hotplex-worker/internal/config"
 	"github.com/hotplex/hotplex-worker/internal/session"
 	"github.com/hotplex/hotplex-worker/internal/worker"
-	"github.com/hotplex/hotplex-worker/pkg/aep"
 	noopworker "github.com/hotplex/hotplex-worker/internal/worker/noop"
+	"github.com/hotplex/hotplex-worker/pkg/aep"
 	"github.com/hotplex/hotplex-worker/pkg/events"
 )
 
@@ -61,8 +61,8 @@ func (m *mockHandlerSM) Get(id string) (*session.SessionInfo, error) {
 
 // mockHandlerHub captures sent envelopes for verification.
 type mockHandlerHub struct {
-	mu     sync.Mutex
-	sent   []*events.Envelope
+	mu      sync.Mutex
+	sent    []*events.Envelope
 	nextSeq int64
 }
 
