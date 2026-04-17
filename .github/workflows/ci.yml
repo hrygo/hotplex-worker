@@ -44,6 +44,9 @@ jobs:
 
       - run: go mod download
 
+      - name: Verify module checksums
+        run: go mod verify
+
       - name: Vet
         run: go vet ./...
 
@@ -57,6 +60,7 @@ jobs:
           args: --timeout=10m
 
   # ── Layer 2: Unit tests (按包并行) ──────────────────────────────────────
+  # Add new packages here when created. Validate with: go list ./...
   unit-test:
     needs: [gate]
     name: Unit Test
@@ -66,7 +70,7 @@ jobs:
       fail-fast: false
       matrix:
         package:
-          - internal/aep
+          - pkg/aep
           - internal/config
           - internal/gateway
           - internal/messaging
@@ -144,7 +148,7 @@ jobs:
 
   # ── Layer 4: Coverage gate ───────────────────────────────────────────────
   coverage-check:
-    needs: [unit-test, integration-test]
+    needs: [integration-test]
     name: Coverage Check
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -156,22 +160,21 @@ jobs:
           go-version: '1.26'
           cache: false
 
-      - name: Download all coverage artifacts
+      - name: Download integration coverage
         uses: actions/download-artifact@v4
         with:
-          pattern: coverage-*
+          name: coverage-integration
           path: coverage-artifacts
-          merge-multiple: true
 
-      - name: Merge coverage profiles
+      - name: Check coverage threshold
         run: |
-          echo "Checking total coverage from integration profile..."
           TOTAL=$(go tool cover -func=coverage-artifacts/coverage.out 2>/dev/null | tail -1 | grep -oP '\d+\.\d+')
           echo "Total coverage: ${TOTAL}%"
           # Enforce 80% threshold
           PASS=$(echo "$TOTAL >= 80.0" | bc -l)
           if [ "$PASS" -ne 1 ]; then
             echo "::error::Coverage ${TOTAL}% is below 80% threshold."
+            exit 1
           fi
           echo "## Coverage: ${TOTAL}%" >> $GITHUB_STEP_SUMMARY
 
@@ -197,4 +200,4 @@ jobs:
           go build -o bin/hotplex-worker ./cmd/worker
 
       - name: Verify binary
-        run: ./bin/hotplex-worker --help || true
+        run: test -x ./bin/hotplex-worker && ./bin/hotplex-worker --help
