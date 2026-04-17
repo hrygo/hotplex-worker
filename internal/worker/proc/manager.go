@@ -82,6 +82,14 @@ func (m *Manager) Start(ctx context.Context, name string, args []string, env []s
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
 	cmd.Env = security.StripNestedAgent(env)
+
+	// Ensure work dir exists; create if missing.
+	if dir != "" {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return nil, nil, nil, fmt.Errorf("proc: mkdir workdir %s: %w", dir, err)
+		}
+	}
+
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setpgid: true, // create new process group
 	}

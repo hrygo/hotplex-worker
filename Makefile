@@ -59,12 +59,12 @@ COVERAGE_FILE  := coverage.out
 COVERAGE_HTML  := coverage.html
 TESTDB_PATTERN := *.db*
 
-WORKER_PID     := /tmp/hotplex-worker.pid
+WORKER_PID     := $(HOME)/.hotplex/.pid/hotplex-worker.pid
 WORKER_LOG     := $(LOG_DIR)/hotplex-worker.log
 WORKER_SOCK    := /tmp/hotplex-worker.sock
 
 WEB_CHAT_DIR   := webchat
-WEB_CHAT_PID   := /tmp/hotplex-webchat.pid
+WEB_CHAT_PID   := $(HOME)/.hotplex/.pid/hotplex-webchat.pid
 WEB_CHAT_PORT  := 3000
 WEB_CHAT_LOG   := $(LOG_DIR)/webchat.log
 

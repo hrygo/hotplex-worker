@@ -291,7 +291,7 @@ func (c *StreamingCardController) createCard(ctx context.Context) (string, error
 	return *resp.Data.CardId, nil
 }
 
-func (c *StreamingCardController) sendCardMessage(ctx context.Context, chatID, cardID string) (string, error) {
+func (c *StreamingCardController) sendCardMessage(ctx context.Context, chatID, _ string) (string, error) {
 	cardContent := map[string]any{
 		"config": map[string]any{
 			"streaming_mode": true,

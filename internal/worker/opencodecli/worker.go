@@ -29,6 +29,8 @@ var openCodeEnvWhitelist = []string{
 	"ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN",
 	// OpenCode server vars
 	"OPENCODE_BASE_URL", "OPENCODE_API_KEY",
+	// Local AI Provider vars
+	"DASHSCOPE_API_KEY", "MINIMAX_API_KEY", "ZHIPU_API_KEY", "DEEPSEEK_API_KEY", "OPENROUTER_API_KEY",
 	// Safety configs
 	"BASH_MAX_TIMEOUT_MS", "BASH_MAX_OUTPUT_LENGTH",
 	// OpenTelemetry (prefix-matched)
@@ -96,7 +98,7 @@ func (w *Worker) Modalities() []string    { return []string{"text", "code"} }
 // Caller must hold Mu; startLocked releases it before returning.
 // It terminates any existing proc, reinitializes stdin/stdout with a new
 // subprocess, runs writeStdinFn, and starts the readOutput goroutine.
-func (w *Worker) startLocked(ctx context.Context, session worker.SessionInfo, openCodeSID string, writeStdinFn func() error) error {
+func (w *Worker) startLocked(_ context.Context, session worker.SessionInfo, openCodeSID string, writeStdinFn func() error) error {
 	if w.cancel != nil {
 		w.cancel()
 	}
@@ -115,8 +117,9 @@ func (w *Worker) startLocked(ctx context.Context, session worker.SessionInfo, op
 		AllowedTools: session.AllowedTools,
 	})
 
+	bgCtx := context.Background()
 	var err error
-	w.stdin, _, _, err = w.Proc.Start(ctx, "opencode", args, env, session.ProjectDir)
+	w.stdin, _, _, err = w.Proc.Start(bgCtx, "opencode", args, env, session.ProjectDir)
 	if err != nil {
 		w.Proc = nil
 		w.Mu.Unlock()
@@ -137,7 +140,7 @@ func (w *Worker) startLocked(ctx context.Context, session worker.SessionInfo, op
 	// spawns a fresh subprocess on each Input() call.
 	w.closeStdin()
 
-	childCtx, cancel := context.WithCancel(ctx)
+	childCtx, cancel := context.WithCancel(bgCtx)
 	w.cancel = cancel
 
 	w.parser = NewParser(w.Log)
@@ -295,6 +298,7 @@ func (w *Worker) buildCLIArgs(session worker.SessionInfo, openCodeSessionID stri
 	args := []string{
 		"run",
 		"--format", "json",
+		"--dangerously-skip-permissions",
 	}
 
 	if openCodeSessionID != "" {

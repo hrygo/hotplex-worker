@@ -27,11 +27,19 @@ var claudeCodeEnvWhitelist = []string{
 	// Claude Code CLI vars (兼容前缀)
 	"CLAUDE_API_KEY", "CLAUDE_MODEL", "CLAUDE_BASE_URL",
 	"CLAUDE_CODE_MODE", "CLAUDE_DISABLE_AUTO_PERMISSIONS",
+	"CLAUDE_CODE_EXECPATH", "CLAUDE_CODE_ENTRYPOINT",
+	"CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS",
+	"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
+	// Claude Code CLI prefix (catches all CLAUDE_CODE_* vars)
+	"CLAUDE_CODE_",
 	// Anthropic SDK vars (部分用户直接设置这些)
 	"ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "ANTHROPIC_MODEL",
 	"ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BEDROCK_BASE_URL",
 	"ANTHROPIC_VERTEX_BASE_URL", "ANTHROPIC_FOUNDRY_BASE_URL",
 	"ANTHROPIC_CUSTOM_HEADERS",
+	// External LLM API Keys
+	"OPENAI_API_KEY", "DASHSCOPE_API_KEY", "MINIMAX_API_KEY",
+	"ZHIPU_API_KEY", "DEEPSEEK_API_KEY", "OPENROUTER_API_KEY",
 	// 安全配置
 	"BASH_MAX_TIMEOUT_MS", "BASH_MAX_OUTPUT_LENGTH",
 	"MAX_THINKING_TOKENS", "MAX_MCP_OUTPUT_TOKENS",
@@ -100,7 +108,7 @@ func (w *Worker) Resume(ctx context.Context, session worker.SessionInfo) error {
 	return w.startLocked(ctx, session, true)
 }
 
-func (w *Worker) startLocked(ctx context.Context, session worker.SessionInfo, resume bool) error {
+func (w *Worker) startLocked(_ context.Context, session worker.SessionInfo, resume bool) error {
 	if w.Proc != nil {
 		return fmt.Errorf("claudecode: already started")
 	}
@@ -113,13 +121,14 @@ func (w *Worker) startLocked(ctx context.Context, session worker.SessionInfo, re
 		AllowedTools: session.AllowedTools,
 	})
 
-	stdin, _, _, err := w.Proc.Start(ctx, "claude", args, env, session.ProjectDir)
+	bgCtx := context.Background()
+	stdin, _, _, err := w.Proc.Start(bgCtx, "claude", args, env, session.ProjectDir)
 	if err != nil {
 		w.Proc = nil
 		return fmt.Errorf("claudecode: start: %w", err)
 	}
 
-	childCtx, cancel := context.WithCancel(ctx)
+	childCtx, cancel := context.WithCancel(bgCtx)
 	w.cancel = cancel
 
 	w.sessionID = session.SessionID
@@ -150,6 +159,7 @@ func (w *Worker) buildCLIArgs(session worker.SessionInfo, resume bool) []string 
 		"--verbose", // Required for stream-json mode
 		"--output-format", "stream-json",
 		"--input-format", "stream-json",
+		"--dangerously-skip-permissions",
 	}
 
 	// Session mode:
