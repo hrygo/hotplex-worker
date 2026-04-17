@@ -16,7 +16,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/hotplex/hotplex-go-client"
+	client "github.com/hotplex/hotplex-go-client"
 )
 
 // Customize this map for your security requirements.

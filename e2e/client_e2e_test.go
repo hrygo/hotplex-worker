@@ -134,14 +134,14 @@ func newSimulatedWorker(wt worker.WorkerType) *simulatedWorker {
 	return &simulatedWorker{workerType: wt}
 }
 
-func (w *simulatedWorker) Type() worker.WorkerType            { return w.workerType }
-func (w *simulatedWorker) SupportsResume() bool                { return true }
-func (w *simulatedWorker) SupportsStreaming() bool             { return true }
-func (w *simulatedWorker) SupportsTools() bool                 { return true }
-func (w *simulatedWorker) EnvWhitelist() []string              { return nil }
-func (w *simulatedWorker) SessionStoreDir() string             { return "" }
-func (w *simulatedWorker) MaxTurns() int                       { return 0 }
-func (w *simulatedWorker) Modalities() []string                { return []string{"text"} }
+func (w *simulatedWorker) Type() worker.WorkerType { return w.workerType }
+func (w *simulatedWorker) SupportsResume() bool    { return true }
+func (w *simulatedWorker) SupportsStreaming() bool { return true }
+func (w *simulatedWorker) SupportsTools() bool     { return true }
+func (w *simulatedWorker) EnvWhitelist() []string  { return nil }
+func (w *simulatedWorker) SessionStoreDir() string { return "" }
+func (w *simulatedWorker) MaxTurns() int           { return 0 }
+func (w *simulatedWorker) Modalities() []string    { return []string{"text"} }
 
 func (w *simulatedWorker) Start(_ context.Context, info worker.SessionInfo) error {
 	w.mu.Lock()
@@ -305,13 +305,13 @@ func setupTestGateway(t *testing.T) *testGateway {
 	log := slog.Default()
 
 	cfg := config.Default()
-	cfg.Security.APIKeys = nil         // dev mode: allow all
+	cfg.Security.APIKeys = nil // dev mode: allow all
 	cfg.Security.AllowedOrigins = []string{"*"}
 	cfg.Gateway.BroadcastQueueSize = 64
 	cfg.Worker.DefaultWorkDir = "/tmp"
-		cfg.Pool.MaxSize = 20
-		cfg.Pool.MaxIdlePerUser = 10
-		cfg.Pool.MaxMemoryPerUser = 0
+	cfg.Pool.MaxSize = 20
+	cfg.Pool.MaxIdlePerUser = 10
+	cfg.Pool.MaxMemoryPerUser = 0
 
 	// Generate ES256 key for JWT testing.
 	jwtKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)

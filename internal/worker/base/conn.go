@@ -27,8 +27,8 @@ type Conn struct {
 
 // Claude Code stream-json input message types.
 type claudeUserMessage struct {
-	Type    string         `json:"type"`
-	Message claudeUserMsg  `json:"message"`
+	Type    string        `json:"type"`
+	Message claudeUserMsg `json:"message"`
 }
 
 type claudeUserMsg struct {

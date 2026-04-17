@@ -16,8 +16,8 @@ const DefaultWorkerWorkDir = "/tmp/hotplex/workspace"
 
 // Session ID formats for platform-derived sessions.
 const (
-	SessionIDFormatSlack  = "slack:%s:%s:%s:%s"  // teamID:channelID:threadTS:userID
-	SessionIDFormatFeishu = "feishu:%s:%s:%s"    // chatID:threadTS:userID
+	SessionIDFormatSlack  = "slack:%s:%s:%s:%s" // teamID:channelID:threadTS:userID
+	SessionIDFormatFeishu = "feishu:%s:%s:%s"   // chatID:threadTS:userID
 )
 
 // ConnFactory creates a PlatformConn for a given platform session.
