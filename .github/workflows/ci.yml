@@ -29,7 +29,7 @@ permissions:
   pull-requests: write
 
 jobs:
-  # ── Layer 1: Fast gates (快关门) ──────────────────────────────────────────
+  # ── Gate: fast checks (快关门) ───────────────────────────────────────────
   gate:
     name: Gate
     runs-on: ubuntu-latest
@@ -59,60 +59,10 @@ jobs:
           version: v1.64.8
           args: --timeout=10m
 
-  # ── Layer 2: Unit tests (按包并行) ──────────────────────────────────────
-  # Add new packages here when created. Validate with: go list ./...
-  unit-test:
+  # ── Test: all packages with race detector ──────────────────────────────
+  test:
     needs: [gate]
-    name: Unit Test
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    strategy:
-      fail-fast: false
-      matrix:
-        package:
-          - pkg/aep
-          - internal/config
-          - internal/gateway
-          - internal/messaging
-          - internal/messaging/slack
-          - internal/messaging/feishu
-          - internal/security
-          - internal/session
-          - internal/worker
-          - internal/worker/acpx
-          - internal/worker/base
-          - internal/worker/claudecode
-          - internal/worker/noop
-          - internal/worker/opencodecli
-          - internal/worker/opencodeserver
-          - internal/worker/pi
-          - internal/worker/proc
-          - pkg/events
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: actions/setup-go@v6
-        with:
-          go-version: '1.26'
-          cache: true
-
-      - run: go mod download
-
-      - name: Run unit tests
-        run: |
-          go test -race -timeout 5m -coverprofile=coverage.out -covermode=atomic ./${{ matrix.package }}
-          go tool cover -func=coverage.out | tail -1
-
-      - name: Upload coverage artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-${{ matrix.package }}
-          path: coverage.out
-
-  # ── Layer 3: Full integration test ───────────────────────────────────────
-  integration-test:
-    needs: [gate]
-    name: Integration Test
+    name: Test
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -125,15 +75,18 @@ jobs:
 
       - run: go mod download
 
-      - name: Run all tests with race detector
-        run: go test -race -timeout=15m -coverprofile=coverage.out -covermode=atomic ./...
+      - name: Run tests with race detector
+        run: go test -race -timeout=15m ./...
 
-      - name: Display total coverage
+      - name: Run tests with coverage
+        run: go test -timeout=15m -coverprofile=coverage.out -covermode=atomic ./...
+
+      - name: Display coverage
         run: go tool cover -func=coverage.out | tail -1
 
       - uses: actions/upload-artifact@v4
         with:
-          name: coverage-integration
+          name: coverage
           path: coverage.out
 
       - name: Upload to Codecov
@@ -142,13 +95,13 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: hrygo/hotplex-worker
           files: ./coverage.out
-          flags: integration
-          name: hotplex-worker-integration
+          flags: unittests
+          name: hotplex-worker
           fail_ci_if_error: false
 
-  # ── Layer 4: Coverage gate ───────────────────────────────────────────────
+  # ── Coverage gate ───────────────────────────────────────────────────────
   coverage-check:
-    needs: [integration-test]
+    needs: [test]
     name: Coverage Check
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -160,17 +113,16 @@ jobs:
           go-version: '1.26'
           cache: false
 
-      - name: Download integration coverage
+      - name: Download coverage
         uses: actions/download-artifact@v4
         with:
-          name: coverage-integration
+          name: coverage
           path: coverage-artifacts
 
       - name: Check coverage threshold
         run: |
           TOTAL=$(go tool cover -func=coverage-artifacts/coverage.out 2>/dev/null | tail -1 | grep -oP '\d+\.\d+')
           echo "Total coverage: ${TOTAL}%"
-          # Enforce 80% threshold
           PASS=$(echo "$TOTAL >= 80.0" | bc -l)
           if [ "$PASS" -ne 1 ]; then
             echo "::error::Coverage ${TOTAL}% is below 80% threshold."
@@ -178,7 +130,7 @@ jobs:
           fi
           echo "## Coverage: ${TOTAL}%" >> $GITHUB_STEP_SUMMARY
 
-  # ── Build verification ───────────────────────────────────────────────────
+  # ── Build verification ──────────────────────────────────────────────────
   build:
     needs: [gate]
     name: Build
