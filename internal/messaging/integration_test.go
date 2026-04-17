@@ -120,6 +120,9 @@ func TestBridge_MakeSlackEnvelope(t *testing.T) {
 		&mockHub{},
 		nil,
 		nil,
+		nil,
+		"claude_code",
+		"",
 	)
 
 	env := br.MakeSlackEnvelope(teamID, channelID, threadTS, userID, text)
@@ -149,6 +152,9 @@ func TestBridge_MakeFeishuEnvelope(t *testing.T) {
 		&mockHub{},
 		nil,
 		nil,
+		nil,
+		"claude_code",
+		"",
 	)
 
 	env := br.MakeFeishuEnvelope(chatID, threadTS, userID, text)

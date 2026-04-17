@@ -156,3 +156,25 @@ log:
 # Inherit from another config file (useful for environment-specific overrides)
 # Example: production.yaml inherits from base.yaml, then overrides specific fields
 # inherits: "base.yaml"  # Uncomment to enable
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MESSAGING PLATFORM CONFIGURATION
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Slack Socket Mode
+# messaging:
+#   slack:
+#     enabled: false
+#     bot_token: ""
+#     app_token: ""
+#     worker_type: "claude_code"
+#     work_dir: ""        # Working directory for worker processes
+
+# Feishu/Lark WebSocket
+# messaging:
+#   feishu:
+#     enabled: false
+#     app_id: ""
+#     app_secret: ""
+#     worker_type: "claude_code"
+#     work_dir: ""        # Working directory for worker processes

@@ -48,3 +48,13 @@ func stripMarkdown(s string) string {
 	s = strings.ReplaceAll(s, "`", "")
 	return strings.TrimSpace(s)
 }
+
+// ExtractChannelThread parses channel_id and thread_ts from a Slack session ID.
+// Format: slack:{team_id}:{channel_id}:{thread_ts}:{user_id}
+func ExtractChannelThread(sessionID string) (channelID, threadTS string) {
+	parts := strings.SplitN(sessionID, ":", 5)
+	if len(parts) < 5 || parts[0] != "slack" {
+		return "", ""
+	}
+	return parts[2], parts[3]
+}

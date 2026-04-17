@@ -243,7 +243,7 @@ func (c *SlackConn) Close() error {
 // extractResponseText extracts text content from an AEP event for Slack output.
 func extractResponseText(env *events.Envelope) (string, bool) {
 	switch env.Event.Type {
-	case "text", "message_delta":
+	case "text", events.MessageDelta:
 		// Try MessageDeltaData
 		if d, ok := env.Event.Data.(events.MessageDeltaData); ok {
 			return d.Content, d.Content != ""

@@ -35,7 +35,7 @@ func TestExtractResponseText_MessageDeltaData(t *testing.T) {
 	t.Parallel()
 	env := &events.Envelope{
 		Event: events.Event{
-			Type: "message_delta",
+			Type: events.MessageDelta,
 			Data: events.MessageDeltaData{
 				Content: "streaming content",
 			},

@@ -100,7 +100,13 @@ type HandlerInterface interface {
 
 // SessionManager is an opaque interface for session management.
 // Platform adapters don't call session creation directly; the bridge handles it.
-type SessionManager interface{}
+type SessionManager any
+
+// SessionStarter creates a new gateway session for a platform message.
+// Implemented by gateway.Bridge and injected during wiring.
+type SessionStarter interface {
+	StartPlatformSession(ctx context.Context, sessionID, ownerID, workerType, workDir string) error
+}
 
 // SetHub injects the gateway Hub. Called by main.go during wiring.
 func (a *PlatformAdapter) SetHub(hub HubInterface) { a.hub = hub }
