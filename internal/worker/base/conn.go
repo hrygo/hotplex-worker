@@ -86,25 +86,12 @@ func (c *Conn) SendUserMessage(ctx context.Context, content string) error {
 	}
 	c.mu.Unlock()
 
-	type textContent struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
-	}
-	type message struct {
-		Role    string        `json:"role"`
-		Content []textContent `json:"content"`
-	}
-	type userMessage struct {
-		Type    string  `json:"type"`
-		Message message `json:"message"`
-	}
-
-	msg := userMessage{
-		Type: "user",
-		Message: message{
-			Role:    "user",
-			Content: []textContent{{Type: "text", Text: content}},
-		},
+	msg := struct {
+		Type    string `json:"type"`
+		Content string `json:"content"`
+	}{
+		Type:    "user_message",
+		Content: content,
 	}
 
 	data, err := json.Marshal(msg)
