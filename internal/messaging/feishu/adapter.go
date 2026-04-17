@@ -2,6 +2,7 @@
 package feishu
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -97,6 +98,10 @@ func (a *Adapter) Start(ctx context.Context) error {
 	)
 	a.larkClient = lark.NewClient(a.appID, a.appSecret)
 
+	if err := a.fetchBotOpenID(ctx); err != nil {
+		a.log.Warn("feishu: failed to fetch bot open_id, mention detection disabled", "error", err)
+	}
+
 	a.log.Info("feishu: starting WebSocket connection")
 
 	go func() {
@@ -105,6 +110,39 @@ func (a *Adapter) Start(ctx context.Context) error {
 		}
 	}()
 
+	return nil
+}
+
+func (a *Adapter) fetchBotOpenID(ctx context.Context) error {
+	resp, err := a.larkClient.Get(ctx, "/open-apis/bot/v3/info", nil, "tenant_access_token")
+	if err != nil {
+		return fmt.Errorf("bot info API: %w", err)
+	}
+
+	var result struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+		Bot  struct {
+			OpenID string `json:"open_id"`
+		} `json:"bot"`
+	}
+
+	body := resp.RawBody
+	if len(body) == 0 {
+		return fmt.Errorf("bot info API: empty response body")
+	}
+
+	if err := json.Unmarshal(body, &result); err != nil {
+		return fmt.Errorf("parse bot info: %w", err)
+	}
+	if result.Code != 0 {
+		return fmt.Errorf("bot info API error: code=%d msg=%s", result.Code, result.Msg)
+	}
+	if result.Bot.OpenID == "" {
+		return fmt.Errorf("bot open_id is empty")
+	}
+	a.botOpenID = result.Bot.OpenID
+	a.log.Info("feishu: bot identity resolved", "open_id", a.botOpenID)
 	return nil
 }
 
@@ -224,6 +262,10 @@ func (a *Adapter) handleTextMessage(ctx context.Context, platformMsgID, channelI
 		md["reply_to_msg_id"] = replyToMsgID
 	}
 
+	// Pre-create conn and set reply target before bridge creates it via connFactory.
+	conn := a.GetOrCreateConn(channelID)
+	conn.replyToMsgID = replyToMsgID
+
 	return a.bridge.Handle(ctx, envelope)
 }
 
@@ -292,6 +334,13 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		return nil
 	}
 
+	c.adapter.log.Debug("feishu: WriteCtx sending",
+		"event_type", env.Event.Type,
+		"chat", c.chatID,
+		"reply_to", c.replyToMsgID,
+		"text_len", len(text),
+	)
+
 	if c.streamCtrl != nil {
 		if env.Event.Type == events.Done {
 			return c.streamCtrl.Close(ctx)
@@ -325,14 +374,17 @@ func (a *Adapter) sendTextMessage(ctx context.Context, chatID, text string) erro
 		return fmt.Errorf("feishu: lark client not initialized")
 	}
 
-	textJSON, err := json.Marshal(map[string]string{"text": text})
-	if err != nil {
-		return fmt.Errorf("feishu: marshal text message: %w", err)
+	cardJSON := buildCardContent(text)
+	preview := cardJSON
+	if len(preview) > 200 {
+		preview = preview[:200] + "..."
 	}
+	a.log.Debug("feishu: sending card message", "chat", chatID, "content_len", len(cardJSON), "content_preview", preview)
+
 	body := larkim.NewCreateMessageReqBodyBuilder().
 		ReceiveId(chatID).
-		MsgType(larkim.MsgTypeText).
-		Content(string(textJSON)).
+		MsgType(larkim.MsgTypeInteractive).
+		Content(cardJSON).
 		Build()
 
 	req := larkim.NewCreateMessageReqBuilder().
@@ -357,11 +409,15 @@ func (a *Adapter) replyMessage(ctx context.Context, messageID, content string, r
 		return fmt.Errorf("feishu: lark client not initialized")
 	}
 
-	textJSON, _ := json.Marshal(map[string]string{"text": content})
-
+	cardJSON := buildCardContent(content)
+	preview := cardJSON
+	if len(preview) > 200 {
+		preview = preview[:200] + "..."
+	}
+	a.log.Debug("feishu: sending reply card", "msg_id", messageID, "content_len", len(cardJSON), "content_preview", preview)
 	body := larkim.NewReplyMessageReqBodyBuilder().
-		MsgType(larkim.MsgTypeText).
-		Content(string(textJSON)).
+		MsgType(larkim.MsgTypeInteractive).
+		Content(cardJSON).
 		ReplyInThread(replyInThread).
 		Build()
 
@@ -377,6 +433,7 @@ func (a *Adapter) replyMessage(ctx context.Context, messageID, content string, r
 	if !resp.Success() {
 		return fmt.Errorf("feishu: reply message failed: code=%d msg=%s", resp.Code, resp.Msg)
 	}
+	a.log.Debug("feishu: reply message sent", "msg_id", messageID, "content_len", len(content))
 	return nil
 }
 
@@ -404,6 +461,26 @@ func ptrStr(p *string) string {
 
 type textContent struct {
 	Text string `json:"text"`
+}
+
+// buildCardContent builds a Feishu interactive card JSON using CardKit v2 format.
+// schema:"2.0" is required for the "markdown" tag to work with full markdown rendering.
+// Uses json.NewEncoder with SetEscapeHTML(false) to preserve HTML entities.
+func buildCardContent(text string) string {
+	card := map[string]any{
+		"schema": "2.0",
+		"config": map[string]any{"wide_screen_mode": true},
+		"body": map[string]any{
+			"elements": []map[string]any{
+				{"tag": "markdown", "content": text},
+			},
+		},
+	}
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	_ = enc.Encode(card)
+	return strings.TrimRight(buf.String(), "\n")
 }
 
 func extractTextFromContent(content string) string {
