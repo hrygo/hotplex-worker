@@ -65,6 +65,9 @@ var openCodeSrvEnvWhitelist = []string{
 	// OpenCode API configuration
 	"OPENAI_API_KEY", "OPENAI_BASE_URL",
 	"OPENCODE_API_KEY", "OPENCODE_BASE_URL",
+	// External LLM API Keys
+	"DASHSCOPE_API_KEY", "MINIMAX_API_KEY",
+	"ZHIPU_API_KEY", "DEEPSEEK_API_KEY", "OPENROUTER_API_KEY",
 }
 
 const (
@@ -442,6 +445,7 @@ func (w *Worker) startServerProcess(ctx context.Context, session worker.SessionI
 	args := []string{
 		"serve",
 		"--port", fmt.Sprintf("%d", defaultServePort),
+		"--dangerously-skip-permissions",
 	}
 
 	// Build environment using shared base.BuildEnv
@@ -454,7 +458,8 @@ func (w *Worker) startServerProcess(ctx context.Context, session worker.SessionI
 	})
 
 	// Start the opencode serve process
-	_, _, _, err := w.Proc.Start(ctx, "opencode", args, env, session.ProjectDir)
+	bgCtx := context.Background()
+	_, _, _, err := w.Proc.Start(bgCtx, "opencode", args, env, session.ProjectDir)
 	if err != nil {
 		w.Mu.Lock()
 		w.Proc = nil

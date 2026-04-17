@@ -27,11 +27,11 @@ readonly BUILD_DIR="${BUILD_DIR:-${ROOT_DIR}/bin}"
 readonly LOG_DIR="${LOG_DIR:-${ROOT_DIR}/logs}"
 readonly CONFIG="${CONFIG:-${ROOT_DIR}/configs/config.yaml}"
 
-readonly GATEWAY_PID="/tmp/hotplex-worker-dev.pid"
+readonly GATEWAY_PID="${HOME}/.hotplex/.pid/hotplex-worker.pid"
 readonly GATEWAY_LOG="${LOG_DIR}/hotplex-worker.log"
 
 readonly WEBCHAT_DIR="${ROOT_DIR}/webchat"
-readonly WEBCHAT_PID="/tmp/hotplex-webchat-dev.pid"
+readonly WEBCHAT_PID="${HOME}/.hotplex/.pid/hotplex-webchat.pid"
 readonly WEBCHAT_PORT="${WEBCHAT_PORT:-3000}"
 readonly WEBCHAT_LOG="${LOG_DIR}/webchat.log"
 
@@ -198,6 +198,12 @@ status_webchat() {
         fi
         [[ -f "$WEBCHAT_PID" ]] && echo -e "${DIM}  (stale PID file)${NC}"
     fi
+}
+
+status_all() {
+    status_gateway || true
+    echo ""
+    status_webchat || true
 }
 
 logs_webchat() {

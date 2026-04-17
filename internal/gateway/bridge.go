@@ -62,6 +62,7 @@ func (b *Bridge) StartSession(ctx context.Context, id, userID, botID string, wt 
 	}
 
 	// Start worker.
+	b.log.Debug("bridge: about to call w.Start", "session_id", id, "workDir", workDir)
 	workerInfo := worker.SessionInfo{
 		SessionID:    id,
 		UserID:       userID,
@@ -263,6 +264,7 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string) {
 // Implements messaging.SessionStarter. Idempotent: returns nil if session exists with a live worker.
 // If the session exists but has no worker (orphan from a previous gateway restart), it is recreated.
 func (b *Bridge) StartPlatformSession(ctx context.Context, sessionID, ownerID, workerType, workDir string) error {
+	b.log.Debug("bridge: StartPlatformSession called", "session_id", sessionID, "owner_id", ownerID, "worker_type", workerType, "work_dir", workDir)
 	_, err := b.sm.Get(sessionID)
 	if err == nil {
 		if w := b.sm.GetWorker(sessionID); w != nil {

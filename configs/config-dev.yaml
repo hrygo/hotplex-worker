@@ -43,7 +43,7 @@ messaging:
     work_dir: ""
 
   feishu:
-    enabled: false
+    enabled: true
     app_id: ""
     app_secret: ""
     worker_type: "claude_code"

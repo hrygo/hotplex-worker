@@ -11,6 +11,9 @@ import (
 	"github.com/hotplex/hotplex-worker/pkg/events"
 )
 
+// DefaultWorkerWorkDir is the fallback working directory when workDir is not configured.
+const DefaultWorkerWorkDir = "/tmp/hotplex/workspace"
+
 // ConnFactory creates a PlatformConn for a given platform session.
 // Each adapter registers its own factory during wiring.
 type ConnFactory func(sessionID string) PlatformConn
@@ -60,8 +63,13 @@ func (b *Bridge) Handle(ctx context.Context, env *events.Envelope) error {
 	}
 
 	// Auto-create session if starter is available.
+	workDir := b.workDir
+	if workDir == "" {
+		workDir = DefaultWorkerWorkDir
+	}
+	b.log.Debug("messaging bridge: about to start platform session", "session_id", env.SessionID, "owner_id", env.OwnerID, "worker_type", b.workerType, "work_dir", workDir)
 	if b.starter != nil {
-		if err := b.starter.StartPlatformSession(ctx, env.SessionID, env.OwnerID, b.workerType, b.workDir); err != nil {
+		if err := b.starter.StartPlatformSession(ctx, env.SessionID, env.OwnerID, b.workerType, workDir); err != nil {
 			b.log.Debug("messaging bridge: session start skipped or failed",
 				"session_id", env.SessionID, "err", err)
 		}

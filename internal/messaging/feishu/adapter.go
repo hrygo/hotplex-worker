@@ -108,7 +108,7 @@ func (a *Adapter) Start(ctx context.Context) error {
 	return nil
 }
 
-func (a *Adapter) handleMessage(ctx context.Context, event *larkim.P2MessageReceiveV1) error {
+func (a *Adapter) handleMessage(_ context.Context, event *larkim.P2MessageReceiveV1) error {
 	if event.Event == nil || event.Event.Message == nil {
 		return nil
 	}
@@ -325,11 +325,11 @@ func (a *Adapter) sendTextMessage(ctx context.Context, chatID, text string) erro
 		return fmt.Errorf("feishu: lark client not initialized")
 	}
 
-	content := larkim.NewMessageTextBuilder().TextLine(text).Build()
+	textJSON, _ := json.Marshal(map[string]string{"text": text})
 	body := larkim.NewCreateMessageReqBodyBuilder().
 		ReceiveId(chatID).
 		MsgType(larkim.MsgTypeText).
-		Content(content).
+		Content(string(textJSON)).
 		Build()
 
 	req := larkim.NewCreateMessageReqBuilder().

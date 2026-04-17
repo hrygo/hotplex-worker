@@ -48,7 +48,7 @@ func BuildEnv(session worker.SessionInfo, whitelist []string, workerTypeLabel st
 			continue
 		}
 
-		// Check prefix matches (e.g. OTEL_*).
+		// Check prefix matches (e.g. OTEL_).
 		if hasAnyPrefix(key, prefixKeys) {
 			env = append(env, e)
 			continue
