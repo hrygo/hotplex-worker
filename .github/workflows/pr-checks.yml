@@ -33,9 +33,13 @@ jobs:
         env:
           BODY: ${{ github.event.pull_request.body }}
         run: |
-          if ! echo "$BODY" | grep -Eiq "\*?(resolves|fixes|closes|refs|fix)\*?\s*:?\s*#([0-9]+)"; then
+          BODY_FILE=$(mktemp)
+          printf '%s' "$BODY" > "$BODY_FILE"
+          if ! grep -Eqi "\*?(resolves|fixes|closes|refs|fix)\*?\s*:?\s*#([0-9]+)" "$BODY_FILE"; then
             echo "::error::PR body must contain an issue link"
             echo "Add one of: Resolves #N, Fixes #N, Closes #N, or Refs #N"
+            rm -f "$BODY_FILE"
             exit 1
           fi
+          rm -f "$BODY_FILE"
           echo "✓ Issue link found in PR body"

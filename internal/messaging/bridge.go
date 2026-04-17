@@ -28,8 +28,8 @@ type Bridge struct {
 	workDir     string
 	connFactory ConnFactory
 
-	mu          sync.Mutex
-	joined      map[string]bool // sessionID → already joined
+	mu     sync.Mutex
+	joined map[string]bool // sessionID → already joined
 }
 
 // NewBridge creates a new platform bridge.
