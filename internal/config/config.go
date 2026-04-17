@@ -117,15 +117,46 @@ func (c *Config) RequireSecrets() error {
 
 // Config holds all gateway configuration.
 type Config struct {
-	Gateway  GatewayConfig  `mapstructure:"gateway"`
-	DB       DBConfig       `mapstructure:"db"`
-	Worker   WorkerConfig   `mapstructure:"worker"`
-	Security SecurityConfig `mapstructure:"security"`
-	Session  SessionConfig  `mapstructure:"session"`
-	Pool     PoolConfig     `mapstructure:"pool"`
-	Log      LogConfig      `mapstructure:"log"`
-	Admin    AdminConfig    `mapstructure:"admin"`
-	Inherits string         `mapstructure:"inherits"` // path to parent config file; "" = no inheritance
+	Gateway   GatewayConfig   `mapstructure:"gateway"`
+	DB        DBConfig        `mapstructure:"db"`
+	Worker    WorkerConfig    `mapstructure:"worker"`
+	Security  SecurityConfig  `mapstructure:"security"`
+	Session   SessionConfig   `mapstructure:"session"`
+	Pool      PoolConfig      `mapstructure:"pool"`
+	Log       LogConfig       `mapstructure:"log"`
+	Admin     AdminConfig     `mapstructure:"admin"`
+	Messaging MessagingConfig `mapstructure:"messaging"`
+	Inherits  string          `mapstructure:"inherits"` // path to parent config file; "" = no inheritance
+}
+
+// MessagingConfig holds messaging platform adapter settings.
+type MessagingConfig struct {
+	Slack  SlackConfig  `mapstructure:"slack"`
+	Feishu FeishuConfig `mapstructure:"feishu"`
+}
+
+// SlackConfig holds Slack Socket Mode adapter settings.
+type SlackConfig struct {
+	Enabled    bool   `mapstructure:"enabled"`
+	BotToken   string `mapstructure:"bot_token"`
+	AppToken   string `mapstructure:"app_token"`
+	SocketMode bool   `mapstructure:"socket_mode"`
+	WorkerType string `mapstructure:"worker_type"`
+	WorkDir    string `mapstructure:"work_dir"`
+}
+
+// FeishuConfig holds Feishu WebSocket adapter settings.
+type FeishuConfig struct {
+	Enabled    bool   `mapstructure:"enabled"`
+	AppID      string `mapstructure:"app_id"`
+	AppSecret  string `mapstructure:"app_secret"`
+	WorkerType string `mapstructure:"worker_type"`
+	WorkDir    string `mapstructure:"work_dir"`
+
+	DMPolicy       string   `mapstructure:"dm_policy"`
+	GroupPolicy    string   `mapstructure:"group_policy"`
+	RequireMention bool     `mapstructure:"require_mention"`
+	AllowFrom      []string `mapstructure:"allow_from"`
 }
 
 // AdminConfig holds admin API settings.
@@ -402,6 +433,9 @@ func loadRecursive(filePath string, opts LoadOptions, visited []string) (*Config
 	cfg.Admin.Tokens = aggregateNumberedEnv(cfg.Admin.Tokens, "HOTPLEX_ADMIN_TOKEN_")
 	cfg.Security.APIKeys = aggregateNumberedEnv(cfg.Security.APIKeys, "HOTPLEX_SECURITY_API_KEY_")
 
+	// Messaging platform env var overrides.
+	applyMessagingEnv(cfg)
+
 	// Post-process: normalize allowed_envs into env_whitelist.
 	if len(cfg.Worker.AllowedEnvs) > 0 {
 		seen := make(map[string]bool)
@@ -477,6 +511,54 @@ func aggregateNumberedEnv(existing []string, prefix string) []string {
 		}
 	}
 	return existing
+}
+
+// applyMessagingEnv overrides messaging config from environment variables.
+// This is needed because Viper's AutomaticEnv cannot map nested keys
+// unless the viper instance has seen them from a config file or SetDefault.
+func applyMessagingEnv(cfg *Config) {
+	if v := os.Getenv("HOTPLEX_MESSAGING_SLACK_ENABLED"); v != "" {
+		cfg.Messaging.Slack.Enabled = strings.EqualFold(v, "true")
+	}
+	if v := os.Getenv("HOTPLEX_MESSAGING_SLACK_BOT_TOKEN"); v != "" {
+		cfg.Messaging.Slack.BotToken = v
+	}
+	if v := os.Getenv("HOTPLEX_MESSAGING_SLACK_APP_TOKEN"); v != "" {
+		cfg.Messaging.Slack.AppToken = v
+	}
+	if v := os.Getenv("HOTPLEX_MESSAGING_FEISHU_ENABLED"); v != "" {
+		cfg.Messaging.Feishu.Enabled = strings.EqualFold(v, "true")
+	}
+	if v := os.Getenv("HOTPLEX_MESSAGING_FEISHU_APP_ID"); v != "" {
+		cfg.Messaging.Feishu.AppID = v
+	}
+	if v := os.Getenv("HOTPLEX_MESSAGING_FEISHU_APP_SECRET"); v != "" {
+		cfg.Messaging.Feishu.AppSecret = v
+	}
+	if v := os.Getenv("HOTPLEX_MESSAGING_FEISHU_WORKER_TYPE"); v != "" {
+		cfg.Messaging.Feishu.WorkerType = v
+	}
+	if v := os.Getenv("HOTPLEX_MESSAGING_FEISHU_WORK_DIR"); v != "" {
+		cfg.Messaging.Feishu.WorkDir = v
+	}
+	if v := os.Getenv("HOTPLEX_MESSAGING_SLACK_WORKER_TYPE"); v != "" {
+		cfg.Messaging.Slack.WorkerType = v
+	}
+	if v := os.Getenv("HOTPLEX_MESSAGING_SLACK_WORK_DIR"); v != "" {
+		cfg.Messaging.Slack.WorkDir = v
+	}
+	if v := os.Getenv("HOTPLEX_MESSAGING_FEISHU_DM_POLICY"); v != "" {
+		cfg.Messaging.Feishu.DMPolicy = v
+	}
+	if v := os.Getenv("HOTPLEX_MESSAGING_FEISHU_GROUP_POLICY"); v != "" {
+		cfg.Messaging.Feishu.GroupPolicy = v
+	}
+	if v := os.Getenv("HOTPLEX_MESSAGING_FEISHU_REQUIRE_MENTION"); v != "" {
+		cfg.Messaging.Feishu.RequireMention = strings.EqualFold(v, "true")
+	}
+	if v := os.Getenv("HOTPLEX_MESSAGING_FEISHU_ALLOW_FROM"); v != "" {
+		cfg.Messaging.Feishu.AllowFrom = strings.Split(v, ",")
+	}
 }
 
 // MustLoad is like Load but panics on error.

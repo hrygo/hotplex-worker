@@ -16,6 +16,7 @@
 | [Worker-Common-Protocol.md](./Worker-Common-Protocol.md) | Worker 公共协议规范（NDJSON、背压、终止等） | ✅ Implemented | 2026-04-04 | 100% |
 | [Persistent-Session-Mechanism.md](./Persistent-Session-Mechanism.md) | 持久会话机制 — UUIDv5 映射、reset/gc、session 状态机 | ✅ Implemented | 2026-04-07 | 100% |
 | [Worker-ACPX-Spec.md](./Worker-ACPX-Spec.md) | ACPX Worker 集成规格 — 支持 16+ AI 编程 Agent | 📝 Draft | 2026-04-04 | 0% |
+| [Feishu-Adapter-Improvement-Spec.md](./Feishu-Adapter-Improvement-Spec.md) | Feishu Adapter 改进规格 — 流式卡片、访问控制、多消息类型 | 📝 Draft | 2026-04-17 | 0% |
 
 ### 客户端 SDK 设计
 
@@ -63,10 +64,11 @@
 - 🔨 **Needs Implementation**: 2 个（规格已完成，待实现）
   - Worker-OpenCode-CLI-Spec
   - Worker-OpenCode-Server-Spec
-- 📝 **Draft**: 3 个（设计中）
+- 📝 **Draft**: 4 个（设计中）
   - Gateway-Async-Init-Spec
   - Worker-ACPX-Spec
   - AI-SDK-Chatbot-AC
+  - Feishu-Adapter-Improvement-Spec
 - 🔵 **Active**: 2 个（活跃维护）
   - AC-Tracking-Matrix
   - TRACEABILITY-MATRIX
@@ -77,7 +79,8 @@
 
 ### 按类型分类
 
-- **架构设计**: 8 个
+- **架构设计**: 9 个
+- **平台消息**: 1 个
 - **客户端 SDK**: 2 个
 - **前端集成**: 1 个
 - **验收标准**: 4 个

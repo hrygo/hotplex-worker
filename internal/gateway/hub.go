@@ -14,6 +14,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/hotplex/hotplex-worker/internal/config"
+	"github.com/hotplex/hotplex-worker/internal/messaging"
 	"github.com/hotplex/hotplex-worker/internal/metrics"
 	"github.com/hotplex/hotplex-worker/internal/security"
 	"github.com/hotplex/hotplex-worker/internal/session"
@@ -51,6 +52,14 @@ const (
 	maxMessageSize = 32 * 1024
 )
 
+// SessionWriter is the minimal interface satisfied by both *Conn and
+// platform connection wrappers. It is used as the value type in the
+// sessions routing map.
+type SessionWriter interface {
+	WriteCtx(ctx context.Context, env *events.Envelope) error
+	Close() error
+}
+
 // Hub is the central message router and connection registry.
 // All WebSocket connections and session→connection mappings are managed here.
 type Hub struct {
@@ -60,8 +69,8 @@ type Hub struct {
 	upgrader websocket.Upgrader
 
 	mu       sync.RWMutex
-	conns    map[*Conn]struct{}        // all active connections
-	sessions map[string]map[*Conn]bool // sessionID → connections
+	conns    map[*Conn]struct{}                // all active connections
+	sessions map[string]map[SessionWriter]bool // sessionID → connections
 
 	// Incoming messages from all connections.
 	broadcast chan *EnvelopeWithConn
@@ -113,7 +122,7 @@ func NewHub(log *slog.Logger, cfg *config.Config) *Hub {
 			},
 		},
 		conns:          make(map[*Conn]struct{}),
-		sessions:       make(map[string]map[*Conn]bool),
+		sessions:       make(map[string]map[SessionWriter]bool),
 		seqGen:         NewSeqGen(),
 		sessionDropped: make(map[string]bool),
 		broadcast:      make(chan *EnvelopeWithConn, broadcastQueueSize(cfg)),
@@ -174,7 +183,7 @@ func (h *Hub) JoinSession(sessionID string, conn *Conn) {
 	}
 
 	if h.sessions[sessionID] == nil {
-		h.sessions[sessionID] = make(map[*Conn]bool)
+		h.sessions[sessionID] = make(map[SessionWriter]bool)
 	}
 	h.sessions[sessionID][conn] = true
 }
@@ -189,6 +198,20 @@ func (h *Hub) LeaveSession(sessionID string, conn *Conn) {
 		}
 	}
 	h.mu.Unlock()
+}
+
+// JoinPlatformSession subscribes a PlatformConn to receive events for a session.
+// Unlike JoinSession, it does not register the connection in h.conns (no WS tracking)
+// and does not remove stale connections (platform SDK handles its own lifecycle).
+func (h *Hub) JoinPlatformSession(sessionID string, pc messaging.PlatformConn) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	if h.sessions[sessionID] == nil {
+		h.sessions[sessionID] = make(map[SessionWriter]bool)
+	}
+	h.sessions[sessionID][&pcEntry{pc: pc}] = true
+	h.log.Debug("gateway: platform conn joined session", "session_id", sessionID)
 }
 
 // sendBroadcast sends to the broadcast channel. Returns false if the hub is
@@ -258,7 +281,7 @@ func (h *Hub) SendToSession(ctx context.Context, env *events.Envelope, afterDrai
 func (h *Hub) sendControlToSession(ctx context.Context, env *events.Envelope) error {
 	h.mu.RLock()
 	sessionConns := h.sessions[env.SessionID]
-	conns := make([]*Conn, 0, len(sessionConns))
+	conns := make([]SessionWriter, 0, len(sessionConns))
 	for conn := range sessionConns {
 		conns = append(conns, conn)
 	}
@@ -271,7 +294,7 @@ func (h *Hub) sendControlToSession(ctx context.Context, env *events.Envelope) er
 	env = events.Clone(env)
 	for _, conn := range conns {
 		if err := conn.WriteCtx(ctx, env); err != nil {
-			h.log.Warn("gateway: send to conn failed", "err", err, "conn", conn.RemoteAddr())
+			h.log.Warn("gateway: send to conn failed", "err", err)
 		}
 	}
 	return nil
@@ -357,7 +380,7 @@ func (h *Hub) routeMessage(msg *EnvelopeWithConn) {
 	// that UnregisterConn may modify concurrently.
 	h.mu.RLock()
 	sessionConns := h.sessions[msg.Env.SessionID]
-	conns := make([]*Conn, 0, len(sessionConns))
+	conns := make([]SessionWriter, 0, len(sessionConns))
 	for conn := range sessionConns {
 		conns = append(conns, conn)
 	}
@@ -387,11 +410,19 @@ func (h *Hub) routeMessage(msg *EnvelopeWithConn) {
 		return
 	}
 
+	// Split by type: *Conn uses raw WriteMessage, platform wrappers use WriteCtx.
 	for _, conn := range conns {
 		metrics.GatewayMessagesTotal.WithLabelValues("outgoing", string(msg.Env.Event.Type)).Inc()
-		if err := conn.WriteMessage(websocket.TextMessage, encoded); err != nil {
-			h.log.Warn("gateway: write failed", "err", err)
-			conn.Close()
+		if c, ok := conn.(*Conn); ok {
+			if err := c.WriteMessage(websocket.TextMessage, encoded); err != nil {
+				h.log.Warn("gateway: write failed", "err", err)
+				conn.Close()
+			}
+		} else {
+			if err := conn.WriteCtx(context.Background(), msg.Env); err != nil {
+				h.log.Warn("gateway: platform write failed", "err", err)
+				conn.Close()
+			}
 		}
 	}
 }
@@ -513,4 +544,18 @@ func (g *SeqGen) Next(sessionID string) int64 {
 	n := g.seq[sessionID] + 1
 	g.seq[sessionID] = n
 	return n
+}
+
+// pcEntry wraps a PlatformConn so it can be stored in the sessions map alongside
+// *Conn entries. It delegates WriteCtx and Close to the underlying PlatformConn.
+type pcEntry struct {
+	pc messaging.PlatformConn
+}
+
+func (e *pcEntry) WriteCtx(ctx context.Context, env *events.Envelope) error {
+	return e.pc.WriteCtx(ctx, env)
+}
+
+func (e *pcEntry) Close() error {
+	return e.pc.Close()
 }

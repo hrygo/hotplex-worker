@@ -271,10 +271,15 @@ func (m *Manager) captureExitCodeLocked() {
 	m.exited = true
 	if ws, ok := m.cmd.ProcessState.Sys().(syscall.WaitStatus); ok {
 		m.exitCode = ws.ExitStatus()
+		if ws.Signaled() {
+			m.log.Info("proc: exited", "exit_code", m.exitCode, "signal", ws.Signal(), "signaled", true)
+		} else {
+			m.log.Info("proc: exited", "exit_code", m.exitCode)
+		}
 	} else {
 		m.exitCode = -1
+		m.log.Info("proc: exited", "exit_code", m.exitCode, "note", "non-POSIX wait status")
 	}
-	m.log.Info("proc: exited", "exit_code", m.exitCode)
 }
 
 // ReadLine reads the next line from the worker process stdout.

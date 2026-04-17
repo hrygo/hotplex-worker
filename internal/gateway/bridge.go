@@ -178,7 +178,11 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string) {
 	b.log.Info("bridge: forwardEvents goroutine started", "session_id", sessionID)
 	firstEvent := true
 	for env := range w.Conn().Recv() {
-		b.log.Debug("bridge: received event from worker", "session_id", sessionID, "event_type", env.Event.Type)
+		if env.Event.Type == events.Error {
+			b.log.Warn("bridge: received error from worker", "session_id", sessionID, "data", env.Event.Data)
+		} else {
+			b.log.Debug("bridge: received event from worker", "session_id", sessionID, "event_type", env.Event.Type)
+		}
 		// Capture and persist worker-internal session ID on first event
 		if firstEvent {
 			b.persistWorkerSessionID(w, sessionID)
@@ -253,4 +257,25 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string) {
 		})
 		_ = b.hub.SendToSession(context.Background(), crashDone)
 	}
+}
+
+// StartPlatformSession creates a session for a platform message if it doesn't already exist.
+// Implements messaging.SessionStarter. Idempotent: returns nil if session exists with a live worker.
+// If the session exists but has no worker (orphan from a previous gateway restart), it is recreated.
+func (b *Bridge) StartPlatformSession(ctx context.Context, sessionID, ownerID, workerType, workDir string) error {
+	_, err := b.sm.Get(sessionID)
+	if err == nil {
+		if w := b.sm.GetWorker(sessionID); w != nil {
+			return nil
+		}
+		b.log.Info("gateway: orphan platform session, recreating", "session_id", sessionID)
+		_ = b.sm.Delete(ctx, sessionID)
+	}
+
+	wt := worker.WorkerType(workerType)
+	if wt == "" {
+		return fmt.Errorf("gateway: no worker_type configured for platform session %s", sessionID)
+	}
+
+	return b.StartSession(ctx, sessionID, ownerID, "", wt, nil, workDir)
 }

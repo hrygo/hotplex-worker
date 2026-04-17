@@ -15,11 +15,15 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/joho/godotenv"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/hotplex/hotplex-worker/internal/admin"
 	"github.com/hotplex/hotplex-worker/internal/config"
 	"github.com/hotplex/hotplex-worker/internal/gateway"
+	"github.com/hotplex/hotplex-worker/internal/messaging"
+	"github.com/hotplex/hotplex-worker/internal/messaging/feishu"
+	"github.com/hotplex/hotplex-worker/internal/messaging/slack"
 	"github.com/hotplex/hotplex-worker/internal/security"
 	"github.com/hotplex/hotplex-worker/internal/session"
 	"github.com/hotplex/hotplex-worker/internal/tracing"
@@ -40,6 +44,11 @@ var (
 
 func main() {
 	flag.Parse()
+
+	// Load .env file if present (for local development).
+	_ = godotenv.Load()
+	_ = godotenv.Load(".env.local")
+
 	if err := run(); err != nil {
 		if !errors.Is(err, context.Canceled) {
 			slog.Error("gateway: fatal", "err", err)
@@ -162,6 +171,10 @@ func run() error {
 		Bridge:        bridge,
 		ConfigWatcher: configWatcher,
 	}
+
+	// Initialize messaging platform adapters.
+	msgAdapters := startMessagingAdapters(ctx, log, cfg, hub, sm, handler, bridge)
+
 	setupRoutes(mux, deps)
 
 	server := &http.Server{
@@ -198,6 +211,13 @@ func run() error {
 
 	if configWatcher != nil {
 		_ = configWatcher.Close()
+	}
+
+	// Close messaging adapters.
+	for _, adapter := range msgAdapters {
+		if err := adapter.Close(shutdownCtx); err != nil {
+			log.Warn("messaging: adapter close", "err", err)
+		}
 	}
 
 	if err := sm.Close(); err != nil {
@@ -409,6 +429,90 @@ func (a *configWatcherAdapter) Rollback(version int) (*config.Config, int, error
 		return nil, -1, errors.New("config watcher is nil")
 	}
 	return a.watcher.Rollback(version)
+}
+
+// startMessagingAdapters initializes and starts all enabled messaging platform adapters.
+func startMessagingAdapters(ctx context.Context, log *slog.Logger, cfg *config.Config,
+	hub *gateway.Hub, sm *session.Manager, handler *gateway.Handler, gwBridge *gateway.Bridge,
+) []messaging.PlatformAdapterInterface {
+	var adapters []messaging.PlatformAdapterInterface
+	for _, pt := range messaging.RegisteredTypes() {
+		// Check if platform is enabled and resolve per-platform config.
+		var workerType, workDir string
+		switch pt {
+		case messaging.PlatformSlack:
+			if !cfg.Messaging.Slack.Enabled {
+				continue
+			}
+			workerType = cfg.Messaging.Slack.WorkerType
+			workDir = cfg.Messaging.Slack.WorkDir
+		case messaging.PlatformFeishu:
+			if !cfg.Messaging.Feishu.Enabled {
+				continue
+			}
+			workerType = cfg.Messaging.Feishu.WorkerType
+			workDir = cfg.Messaging.Feishu.WorkDir
+		}
+
+		adapter, err := messaging.New(pt, log)
+		if err != nil {
+			log.Warn("messaging: skip adapter", "platform", pt, "err", err)
+			continue
+		}
+
+		msgBridge := messaging.NewBridge(log, pt, hub, sm, handler, gwBridge, workerType, workDir)
+
+		// Configure platform-specific credentials and conn factory.
+		switch pt {
+		case messaging.PlatformSlack:
+			if sa, ok := adapter.(*slack.Adapter); ok {
+				sa.Configure(cfg.Messaging.Slack.BotToken, cfg.Messaging.Slack.AppToken, msgBridge)
+				msgBridge.SetConnFactory(func(sessionID string) messaging.PlatformConn {
+					channelID, threadTS := slack.ExtractChannelThread(sessionID)
+					if channelID == "" {
+						return nil
+					}
+					return slack.NewSlackConn(sa, channelID, threadTS)
+				})
+			}
+		case messaging.PlatformFeishu:
+			if fa, ok := adapter.(*feishu.Adapter); ok {
+				fa.Configure(cfg.Messaging.Feishu.AppID, cfg.Messaging.Feishu.AppSecret, msgBridge)
+				gate := feishu.NewGate(
+					cfg.Messaging.Feishu.DMPolicy,
+					cfg.Messaging.Feishu.GroupPolicy,
+					cfg.Messaging.Feishu.RequireMention,
+					cfg.Messaging.Feishu.AllowFrom,
+				)
+				fa.SetGate(gate)
+				msgBridge.SetConnFactory(func(sessionID string) messaging.PlatformConn {
+					chatID := feishu.ExtractChatID(sessionID)
+					if chatID == "" {
+						return nil
+					}
+					return fa.GetOrCreateConn(chatID)
+				})
+			}
+		}
+
+		// Inject dependencies via embedded PlatformAdapter.
+		adapter.(interface{ SetHub(messaging.HubInterface) }).SetHub(hub)
+		adapter.(interface {
+			SetSessionManager(messaging.SessionManager)
+		}).SetSessionManager(sm)
+		adapter.(interface {
+			SetHandler(messaging.HandlerInterface)
+		}).SetHandler(handler)
+		adapter.(interface{ SetBridge(*messaging.Bridge) }).SetBridge(msgBridge)
+
+		if err := adapter.Start(ctx); err != nil {
+			log.Warn("messaging: start failed", "platform", pt, "err", err)
+			continue
+		}
+		adapters = append(adapters, adapter)
+		log.Info("messaging: adapter started", "platform", pt)
+	}
+	return adapters
 }
 
 func waitForSignal() os.Signal {
