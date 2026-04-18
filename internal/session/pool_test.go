@@ -44,7 +44,8 @@ func TestPoolAcquire_GlobalLimit(t *testing.T) {
 	// Third should fail due to global limit
 	err := pool.Acquire("user3")
 	require.NotNil(t, err)
-	pe := err.(*PoolError)
+	pe := new(PoolError)
+	require.ErrorAs(t, err, &pe)
 	require.Equal(t, poolErrKindExhausted, pe.Kind)
 	require.Equal(t, 2, pe.Current)
 	require.Equal(t, 2, pe.Max)
@@ -61,7 +62,8 @@ func TestPoolAcquire_UserQuotaLimit(t *testing.T) {
 	// Third for same user fails
 	err := pool.Acquire("user1")
 	require.NotNil(t, err)
-	pe := err.(*PoolError)
+	pe := new(PoolError)
+	require.ErrorAs(t, err, &pe)
 	require.Equal(t, poolErrKindUserQuotaExceeded, pe.Kind)
 	require.Equal(t, "user1", pe.UserID)
 	require.Equal(t, 2, pe.Current)
@@ -197,7 +199,8 @@ func TestPoolAcquireMemory_Limit(t *testing.T) {
 	// Third worker would exceed 1 GB → rejected
 	err := pool.AcquireMemory("user1")
 	require.NotNil(t, err)
-	pe := err.(*PoolError)
+	pe := new(PoolError)
+	require.ErrorAs(t, err, &pe)
 	require.Equal(t, poolErrKindMemoryExceeded, pe.Kind)
 }
 

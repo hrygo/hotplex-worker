@@ -442,8 +442,8 @@ func TestValidateURL(t *testing.T) {
 			err := ValidateURL(tt.url)
 			if tt.wantErr {
 				require.Error(t, err)
-				ssrfErr, ok := err.(*SSRFProtectionError)
-				require.True(t, ok, "expected SSRFProtectionError, got %T", err)
+				ssrfErr := new(SSRFProtectionError)
+				require.ErrorAs(t, err, &ssrfErr)
 				require.NotEmpty(t, ssrfErr.Reason)
 				require.NotEmpty(t, ssrfErr.URL)
 			} else {
