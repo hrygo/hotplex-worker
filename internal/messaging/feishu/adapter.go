@@ -348,6 +348,7 @@ type FeishuConn struct {
 	platformMsgID string
 	streamCtrl    *StreamingCardController
 	typingRid     string
+	toolRid       string
 }
 
 func NewFeishuConn(adapter *Adapter, chatID string) *FeishuConn {
@@ -376,15 +377,39 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		c.mu.Lock()
 		streamCtrl := c.streamCtrl
 		typingRid := c.typingRid
+		toolRid := c.toolRid
 		platformMsgID := c.platformMsgID
 		if typingRid != "" {
 			_ = c.adapter.RemoveTypingIndicator(ctx, platformMsgID, typingRid)
 			c.typingRid = ""
 		}
+		if toolRid != "" {
+			_ = c.adapter.removeReaction(ctx, platformMsgID, toolRid)
+			c.toolRid = ""
+		}
 		c.mu.Unlock()
 
 		if streamCtrl != nil && streamCtrl.IsCreated() {
 			return streamCtrl.Close(ctx)
+		}
+		return nil
+	}
+
+	// Handle tool_call: add 🔧 reaction on first tool execution.
+	if env.Event.Type == events.ToolCall {
+		c.mu.Lock()
+		toolRid := c.toolRid
+		platformMsgID := c.platformMsgID
+		c.mu.Unlock()
+
+		if toolRid == "" && platformMsgID != "" {
+			if rid, err := c.adapter.addReaction(ctx, platformMsgID, toolEmoji); err == nil && rid != "" {
+				c.mu.Lock()
+				c.toolRid = rid
+				c.mu.Unlock()
+			} else if err != nil {
+				c.adapter.log.Debug("feishu: tool reaction failed (non-fatal)", "error", err)
+			}
 		}
 		return nil
 	}
@@ -458,9 +483,11 @@ func (c *FeishuConn) Close() error {
 	c.mu.Lock()
 	streamCtrl := c.streamCtrl
 	typingRid := c.typingRid
+	toolRid := c.toolRid
 	platformMsgID := c.platformMsgID
 	c.streamCtrl = nil
 	c.typingRid = ""
+	c.toolRid = ""
 	c.mu.Unlock()
 
 	// Best-effort cleanup: Abort uses Background since this Close path is
@@ -470,6 +497,9 @@ func (c *FeishuConn) Close() error {
 	}
 	if typingRid != "" && c.adapter.larkClient != nil {
 		_ = c.adapter.RemoveTypingIndicator(context.Background(), platformMsgID, typingRid)
+	}
+	if toolRid != "" && c.adapter.larkClient != nil {
+		_ = c.adapter.removeReaction(context.Background(), platformMsgID, toolRid)
 	}
 	c.adapter.mu.Lock()
 	delete(c.adapter.activeConns, c.chatID)
