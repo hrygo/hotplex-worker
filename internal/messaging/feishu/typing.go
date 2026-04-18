@@ -9,7 +9,7 @@ import (
 
 const (
 	typingEmoji = "Typing"
-	toolEmoji   = "Wrench"
+	toolEmoji   = "Fire" // 🔥 tool activity indicator
 )
 
 // addReaction adds an emoji reaction to a message. Returns the reaction ID.
