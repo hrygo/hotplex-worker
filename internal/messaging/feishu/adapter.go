@@ -424,7 +424,10 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 					_ = c.adapter.RemoveTypingIndicator(ctx, platformMsgID, typingRid)
 				}
 			} else {
-				// Card created with initial content; typing indicator already consumed above.
+				// Card created with initial content; remove typing indicator.
+				if typingRid != "" {
+					_ = c.adapter.RemoveTypingIndicator(ctx, platformMsgID, typingRid)
+				}
 				return nil
 			}
 		} else {
