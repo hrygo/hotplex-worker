@@ -3,6 +3,7 @@ package feishu
 
 import (
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -56,49 +57,15 @@ func findTablesOutsideCodeBlocks(text string) []tableMatch {
 	var matches []tableMatch
 	searchFrom := 0
 
-	// Always check for a table at the very start of text (no preceding \n\n).
-	// This is separate from the main loop because the loop only finds tables
-	// that follow a \n\n paragraph boundary.
+	// Check for a table at the very start of text (no preceding \n\n).
 	if len(text) > 0 && text[0] == '|' && !isInsideCodeBlock(0) {
-		if nlIdx := strings.Index(text, "\n"); nlIdx >= 0 {
-			headerLine := text[0:nlIdx]
-			if isMarkdownTableHeader(headerLine) {
-				sepStart := nlIdx + 1
-				sepEnd := sepStart
-				for sepEnd < len(text) && text[sepEnd] != '\n' {
-					sepEnd++
-				}
-				if isSeparatorLine(text[sepStart:sepEnd]) {
-					tableEnd := sepEnd + 1
-					for tableEnd < len(text) {
-						if text[tableEnd] == '\n' {
-							break
-						}
-						lineEnd := tableEnd
-						for lineEnd < len(text) && text[lineEnd] != '\n' {
-							lineEnd++
-						}
-						if isMarkdownTableRow(text[tableEnd:lineEnd]) {
-							tableEnd = lineEnd + 1
-						} else {
-							break
-						}
-					}
-					matches = append(matches, tableMatch{start: 0, end: tableEnd})
-					// Back up one byte so the main loop can find the \n\n
-					// boundary that straddles the table end (the trailing \n
-					// of the data row pairs with the next \n to form \n\n).
-					if tableEnd > 0 && tableEnd < len(text) && text[tableEnd] == '\n' {
-						searchFrom = tableEnd - 1
-					} else {
-						searchFrom = tableEnd
-					}
-				}
-			}
+		if m, ok := tryParseTableAt(text, 0); ok {
+			matches = append(matches, m)
+			searchFrom = nextSearchFrom(text, m.end)
 		}
 	}
 
-	// Scan through text looking for \n\n positions (paragraph boundaries) — table starts.
+	// Scan for \n\n paragraph boundaries — table starts.
 	for {
 		if searchFrom >= len(text) {
 			break
@@ -114,7 +81,6 @@ func findTablesOutsideCodeBlocks(text string) []tableMatch {
 		if afterBlank >= len(text) {
 			break
 		}
-		// Skip blank lines.
 		for afterBlank < len(text) && (text[afterBlank] == '\n' || text[afterBlank] == ' ') {
 			afterBlank++
 		}
@@ -122,84 +88,83 @@ func findTablesOutsideCodeBlocks(text string) []tableMatch {
 			break
 		}
 
-		// Check if next line is a valid header (starts with |, not in code block).
 		if isInsideCodeBlock(afterBlank) {
 			searchFrom = afterBlank
 			continue
 		}
 
-		// Find end of the header line.
-		nlIdx := strings.Index(text[afterBlank:], "\n")
-		headerEnd := len(text)
-		if nlIdx >= 0 {
-			headerEnd = afterBlank + nlIdx
-		}
-		headerLine := text[afterBlank:headerEnd]
-
-		if !isMarkdownTableHeader(headerLine) {
-			searchFrom = afterBlank
-			continue
-		}
-
-		// We have a valid header at `afterBlank`. Now find the separator line.
-		sepStart := headerEnd
-		if sepStart < len(text) && text[sepStart] == '\n' {
-			sepStart++ // skip header's trailing \n
-		}
-		if isInsideCodeBlock(sepStart) || sepStart >= len(text) {
-			searchFrom = afterBlank
-			continue
-		}
-
-		// Extract separator line (up to its \n).
-		sepEnd := sepStart
-		for sepEnd < len(text) && text[sepEnd] != '\n' {
-			sepEnd++
-		}
-		sepLine := text[sepStart:sepEnd]
-		if !isSeparatorLine(sepLine) {
-			searchFrom = afterBlank
-			continue
-		}
-
-		// Valid table found from afterBlank. Now find the table end.
-		// Table extends through data rows until a non-table line or EOF.
-		// Start scanning from sepEnd (the \n after the separator row).
-		tableEnd := sepEnd + 1 // skip past the \n to reach the first data row
-		// Scan data rows and blank lines.
-		for tableEnd < len(text) {
-			// At a blank line: table ends here.
-			if text[tableEnd] == '\n' {
-				break
-			}
-			// Find end of current line.
-			lineEnd := tableEnd
-			for lineEnd < len(text) && text[lineEnd] != '\n' {
-				lineEnd++
-			}
-			lineContent := text[tableEnd:lineEnd]
-			if isMarkdownTableRow(lineContent) {
-				if lineEnd < len(text) {
-					tableEnd = lineEnd + 1 // include the \n
-				} else {
-					tableEnd = lineEnd // EOF, no trailing \n
-				}
-			} else {
-				break
-			}
-		}
-
-		matches = append(matches, tableMatch{start: afterBlank, end: tableEnd})
-		// Back up one byte so the next iteration can find the \n\n
-		// boundary that straddles this table's trailing \n.
-		if tableEnd > 0 && tableEnd < len(text) && text[tableEnd] == '\n' {
-			searchFrom = tableEnd - 1
+		if m, ok := tryParseTableAt(text, afterBlank); ok {
+			matches = append(matches, m)
+			searchFrom = nextSearchFrom(text, m.end)
 		} else {
-			searchFrom = tableEnd
+			searchFrom = afterBlank
 		}
 	}
 
 	return matches
+}
+
+// tryParseTableAt attempts to parse a complete markdown table starting at
+// headerStart. Returns the table match and true on success.
+func tryParseTableAt(text string, headerStart int) (tableMatch, bool) {
+	// Find end of header line.
+	headerEnd := headerStart
+	for headerEnd < len(text) && text[headerEnd] != '\n' {
+		headerEnd++
+	}
+	headerLine := text[headerStart:headerEnd]
+	if !isMarkdownTableHeader(headerLine) {
+		return tableMatch{}, false
+	}
+
+	// Find separator line (skip the \n after header, if present).
+	sepStart := headerEnd
+	if sepStart < len(text) && text[sepStart] == '\n' {
+		sepStart++
+	}
+	if sepStart >= len(text) {
+		return tableMatch{}, false
+	}
+	sepEnd := sepStart
+	for sepEnd < len(text) && text[sepEnd] != '\n' {
+		sepEnd++
+	}
+	if !isSeparatorLine(text[sepStart:sepEnd]) {
+		return tableMatch{}, false
+	}
+
+	// Scan data rows until a non-table line, blank line, or EOF.
+	tableEnd := sepEnd + 1
+	for tableEnd < len(text) {
+		if text[tableEnd] == '\n' {
+			break
+		}
+		lineEnd := tableEnd
+		for lineEnd < len(text) && text[lineEnd] != '\n' {
+			lineEnd++
+		}
+		if isMarkdownTableRow(text[tableEnd:lineEnd]) {
+			if lineEnd < len(text) {
+				tableEnd = lineEnd + 1
+			} else {
+				tableEnd = lineEnd
+			}
+		} else {
+			break
+		}
+	}
+
+	return tableMatch{start: headerStart, end: tableEnd}, true
+}
+
+// nextSearchFrom returns the position to resume scanning after a table ending
+// at tableEnd. Backs up one byte when the table ends on a \n so the main loop
+// can detect the \n\n boundary formed by the table's trailing \n and the next \n.
+func nextSearchFrom(text string, tableEnd int) int {
+	if tableEnd > 0 && tableEnd < len(text) && text[tableEnd] == '\n' {
+		return tableEnd - 1
+	}
+	return tableEnd
 }
 
 // isMarkdownTableHeader returns true if s looks like a markdown table header row.
@@ -291,10 +256,6 @@ func CountTables(text string) int {
 // Card-use pre-check
 // ---------------------------------------------------------------------------
 
-// fencedCodeBlockRe matches fenced code blocks for pre-check only (lighter
-// than FindAllStringIndex which we don't need here).
-var fencedCodeBlockRe = regexp.MustCompile("```[\\s\\S]*?```|~~~[\\s\\S]*?~~~")
-
 // ShouldUseCard returns true when text benefits from being sent as an
 // interactive Feishu card rather than a plain text message.
 //
@@ -307,7 +268,7 @@ var fencedCodeBlockRe = regexp.MustCompile("```[\\s\\S]*?```|~~~[\\s\\S]*?~~~")
 // The result governs the outer transport decision.  The caller must still
 // run SanitizeForCard on the text before embedding it in a card.
 func ShouldUseCard(text string) bool {
-	if fencedCodeBlockRe.MatchString(text) {
+	if codeBlockRe.MatchString(text) {
 		return true
 	}
 	n := CountTables(text)
@@ -369,7 +330,7 @@ func extractCodeBlocks(text string) (string, []string) {
 	blocks := []string{}
 	replaced := 0
 	result := codeBlockRe.ReplaceAllStringFunc(text, func(match string) string {
-		placeholder := codePlaceholderPrefix + itoa(replaced) + codePlaceholderSuffix
+		placeholder := codePlaceholderPrefix + strconv.Itoa(replaced) + codePlaceholderSuffix
 		blocks = append(blocks, match)
 		replaced++
 		return placeholder
@@ -382,7 +343,7 @@ func extractCodeBlocks(text string) (string, []string) {
 // from surrounding markdown content in Feishu cards.
 func restoreCodeBlocks(text string, blocks []string) string {
 	for i, block := range blocks {
-		placeholder := codePlaceholderPrefix + itoa(i) + codePlaceholderSuffix
+		placeholder := codePlaceholderPrefix + strconv.Itoa(i) + codePlaceholderSuffix
 		padded := "\n<br>\n" + block + "\n<br>\n"
 		text = strings.Replace(text, placeholder, padded, 1)
 	}
@@ -522,22 +483,3 @@ func StripInvalidImageKeys(text string) string {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-// itoa converts a non-negative integer to a decimal string without importing
-// strconv (avoids pulling strconv into a mostly-regex package).
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	var b strings.Builder
-	for n > 0 {
-		b.WriteByte(byte('0' + n%10))
-		n /= 10
-	}
-	// Reverse the builder.
-	s := b.String()
-	for i, j := 0, len(s)-1; i < j; i, j = i+1, j-1 {
-		s = s[:i+1] + string(s[j]) + s[i+1:]
-	}
-	return s
-}
