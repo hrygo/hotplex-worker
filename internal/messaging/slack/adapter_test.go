@@ -128,6 +128,8 @@ func TestFormatMrkdwn(t *testing.T) {
 		{"empty", "", ""},
 		{"plain text", "hello world", "hello world"},
 		{"mixed", "**bold** and `**code**`", "*bold* and `**code**`"},
+		{"bold italic", "***bold italic***", "*_bold italic_*"},
+		{"italic preserved", "*italic*", "*italic*"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -446,7 +448,7 @@ func TestActiveIndicators_StartStop(t *testing.T) {
 
 	ai := NewActiveIndicators()
 	// Start with nil adapter (no reactions added, but no panic)
-	ai.Start(ctx, nil, "C1", "123", "456")
+	ai.Start(ctx, nil, "C1", "123", "456", nil)
 	ai.Stop(ctx, "C1", "456")
 	// Double stop ok
 	ai.Stop(ctx, "C1", "456")

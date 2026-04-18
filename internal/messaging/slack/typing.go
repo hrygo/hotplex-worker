@@ -140,7 +140,7 @@ func NewActiveIndicators() *ActiveIndicators {
 }
 
 // Start begins a typing indicator for a message. Only starts if not already active.
-func (ai *ActiveIndicators) Start(ctx context.Context, adapter *Adapter, channelID, threadTS, messageTS string) {
+func (ai *ActiveIndicators) Start(ctx context.Context, adapter *Adapter, channelID, threadTS, messageTS string, stages []TypingStage) {
 	key := channelID + ":" + messageTS
 	ai.mu.Lock()
 	defer ai.mu.Unlock()
@@ -149,7 +149,7 @@ func (ai *ActiveIndicators) Start(ctx context.Context, adapter *Adapter, channel
 		return
 	}
 
-	ti := NewTypingIndicator(adapter, channelID, threadTS, messageTS, DefaultStages)
+	ti := NewTypingIndicator(adapter, channelID, threadTS, messageTS, stages)
 	ai.indicators[key] = ti
 	ti.Start(ctx)
 }

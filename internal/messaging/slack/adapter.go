@@ -34,11 +34,13 @@ type Adapter struct {
 	client             *slack.Client
 	socketMode         *socketmode.Client
 	botID              string
+	teamID             string
 	bridge             *messaging.Bridge
 	dedup              *Dedup
 	userCache          *UserCache
 	statusMgr          *StatusManager
 	activeIndicators   *ActiveIndicators
+	typingStages       []TypingStage
 	isAssistantCapable atomic.Bool
 	assistantEnabled   *bool
 	gate               *Gate
@@ -78,6 +80,7 @@ func (a *Adapter) Start(ctx context.Context) error {
 		return fmt.Errorf("slack: auth test: %w", err)
 	}
 	a.botID = authTest.UserID
+	a.teamID = authTest.TeamID
 
 	a.rateLimiter = NewChannelRateLimiter(ctx)
 	a.ownership = NewThreadOwnershipTracker(ctx, a.botID, a.log)
@@ -85,6 +88,7 @@ func (a *Adapter) Start(ctx context.Context) error {
 	a.userCache = NewUserCache(a.client)
 	a.statusMgr = NewStatusManager(a, a.log)
 	a.activeIndicators = NewActiveIndicators()
+	a.typingStages = a.resolveTypingStages()
 	a.activeStreams = make(map[string]*NativeStreamingWriter)
 	a.activeConns = make(map[string]*SlackConn)
 
@@ -142,6 +146,7 @@ func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsA
 	}
 
 	if msgEvent.BotID != "" {
+		a.log.Debug("slack: skipping bot message", "bot_id", msgEvent.BotID)
 		return
 	}
 
@@ -170,11 +175,22 @@ func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsA
 	}
 	teamID := event.TeamID
 
-	// Thread ownership check
 	channelType := "channel"
 	if channelID != "" && channelID[0] == 'D' {
 		channelType = "im"
 	}
+
+	// Access control gate (before ownership check; must be before ResolveMentions which strips <@BOTID>)
+	if a.gate != nil {
+		botMentioned := strings.Contains(text, "<@"+a.botID+">")
+		result := a.gate.Check(channelType, userID, botMentioned)
+		if !result.Allowed {
+			a.log.Debug("slack: gate rejected", "reason", result.Reason, "user", userID)
+			return
+		}
+	}
+
+	// Thread ownership check
 	if !a.ownership.ShouldRespond(channelType, threadTS, text, userID) {
 		return
 	}
@@ -186,16 +202,6 @@ func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsA
 	}
 	if !a.dedup.TryRecord(platformMsgID) {
 		return
-	}
-
-	// Access control gate (must be before ResolveMentions, which strips <@BOTID>)
-	if a.gate != nil {
-		botMentioned := strings.Contains(text, "<@"+a.botID+">")
-		result := a.gate.Check(channelType, userID, botMentioned)
-		if !result.Allowed {
-			a.log.Debug("slack: gate rejected", "reason", result.Reason, "user", userID)
-			return
-		}
 	}
 
 	// Resolve user mentions: <@UID> → @DisplayName, remove bot self-mentions
@@ -236,7 +242,7 @@ func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsA
 	}
 
 	// Start typing indicator (emoji fallback for free workspaces)
-	a.activeIndicators.Start(ctx, a, channelID, threadTS, msgEvent.TimeStamp)
+	a.activeIndicators.Start(ctx, a, channelID, threadTS, msgEvent.TimeStamp, a.typingStages)
 
 	// Set initial assistant status (native API for paid workspaces)
 	if a.isAssistantCapable.Load() && threadTS != "" {
@@ -251,6 +257,20 @@ func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsA
 // GetOrCreateConn returns an existing SlackConn for the channel/thread pair,
 // or creates and registers a new one. This ensures the same conn is reused
 // across multiple messages in the same thread, so Hub.Shutdown can close it.
+// resolveTypingStages converts config TypingStageConfig to TypingStage,
+// falling back to DefaultStages when no custom config is provided.
+func (a *Adapter) resolveTypingStages() []TypingStage {
+	if len(a.typingStages) == 0 {
+		return DefaultStages
+	}
+	return a.typingStages
+}
+
+// SetTypingStages sets custom emoji progress stages from config.
+func (a *Adapter) SetTypingStages(stages []TypingStage) {
+	a.typingStages = stages
+}
+
 func (a *Adapter) GetOrCreateConn(channelID, threadTS string) *SlackConn {
 	key := channelID + "#" + threadTS
 	a.mu.Lock()

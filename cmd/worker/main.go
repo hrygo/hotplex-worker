@@ -76,7 +76,15 @@ func run() error {
 		level = slog.LevelInfo
 	}
 
-	opts := &slog.HandlerOptions{Level: level}
+	opts := &slog.HandlerOptions{
+		Level: level,
+		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+			if len(groups) == 0 && a.Key == slog.TimeKey {
+				return slog.String(slog.TimeKey, a.Value.Time().Format("2006-01-02T15:04:05.0000"))
+			}
+			return a
+		},
+	}
 	if cfg.Log.Format == "text" {
 		logHandler = slog.NewTextHandler(os.Stdout, opts)
 	} else {
