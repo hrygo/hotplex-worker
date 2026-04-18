@@ -1,0 +1,32 @@
+#!/bin/bash
+# Git pre-push hook for HotPlex Worker
+# Final guard before code leaves the local machine
+
+set -e
+
+# ANSI color codes
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+NC='\033[0m'
+
+printf "${YELLOW}🚀 Running pre-push validation...${NC}\n"
+
+# 1. Build validation
+printf "🔹 Verifying build...\n"
+if ! make build > /dev/null 2>&1; then
+    printf "${RED}❌ Build failed! Fix compilation errors before pushing.${NC}\n"
+    make build
+    exit 1
+fi
+
+# 2. Fast unit tests
+printf "🔹 Running tests...\n"
+if ! make test-short > /dev/null 2>&1; then
+    printf "${RED}❌ Tests failed! Push aborted.${NC}\n"
+    make test-short
+    exit 1
+fi
+
+printf "${GREEN}✅ All quality gates passed! Push authorized.${NC}\n"
+exit 0
