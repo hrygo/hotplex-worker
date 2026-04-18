@@ -102,8 +102,11 @@ func (a *Adapter) Start(ctx context.Context) error {
 	a.wsClient = ws.NewClient(a.appID, a.appSecret,
 		ws.WithEventHandler(eventHandler),
 		ws.WithAutoReconnect(true),
+		ws.WithLogger(SlogLogger{Logger: a.log}),
 	)
-	a.larkClient = lark.NewClient(a.appID, a.appSecret)
+	a.larkClient = lark.NewClient(a.appID, a.appSecret,
+		lark.WithLogger(SlogLogger{Logger: a.log}),
+	)
 
 	if err := a.fetchBotOpenID(ctx); err != nil {
 		a.log.Warn("feishu: failed to fetch bot open_id, mention detection disabled", "error", err)

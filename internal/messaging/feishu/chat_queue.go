@@ -49,7 +49,7 @@ func (q *ChatQueue) Enqueue(chatID string, task func(ctx context.Context) error)
 			defer close(w.done)
 			defer cancel()
 			if err := task(ctx); err != nil && ctx.Err() == nil {
-				q.log.Warn("feishu: chat queue task error", "chat_id", chatID, "err", err)
+				q.log.Warn("feishu: chat queue task error", "chat_id", chatID, "error", err)
 			}
 			q.mu.Lock()
 			delete(q.workers, chatID)
@@ -74,7 +74,7 @@ func (q *ChatQueue) Enqueue(chatID string, task func(ctx context.Context) error)
 		defer close(newW.done)
 		defer cancel()
 		if err := task(ctx); err != nil && ctx.Err() == nil {
-			q.log.Warn("feishu: chat queue task error", "chat_id", chatID, "err", err)
+			q.log.Warn("feishu: chat queue task error", "chat_id", chatID, "error", err)
 		}
 		q.mu.Lock()
 		delete(q.workers, chatID)

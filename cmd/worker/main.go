@@ -82,13 +82,15 @@ func run() error {
 		logHandler = slog.NewJSONHandler(os.Stdout, opts)
 	}
 
-	log := slog.New(logHandler)
+	log := slog.New(logHandler).With(
+		"service", "hotplex-worker",
+		"version", versionString(),
+	)
 	slog.SetDefault(log)
 
 	tracing.Init(ctx, log, "hotplex-worker-gateway")
 
 	log.Info("gateway: starting",
-		"version", versionString(),
 		"go", runtime.Version(),
 		"addr", cfg.Gateway.Addr,
 		"config", *flagConfig,
