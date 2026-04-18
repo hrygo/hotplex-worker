@@ -278,11 +278,13 @@ func (a *Adapter) handleTextMessage(ctx context.Context, platformMsgID, channelI
 		md["reply_to_msg_id"] = replyToMsgID
 	}
 
-	// Pre-create conn and set reply target before bridge creates it via connFactory.
+	// Pre-create conn so its fields are ready before the bridge forwards to the handler.
 	conn := a.GetOrCreateConn(channelID)
+	conn.mu.Lock()
 	conn.replyToMsgID = replyToMsgID
 	conn.platformMsgID = platformMsgID
 	conn.chatType = chatType
+	conn.mu.Unlock()
 
 	// Typing indicator: add reaction to user's message (non-blocking, failure is non-fatal).
 	if platformMsgID != "" {
@@ -299,7 +301,7 @@ func (a *Adapter) handleTextMessage(ctx context.Context, platformMsgID, channelI
 		conn.EnableStreaming(ctrl)
 	}
 
-	return a.bridge.Handle(ctx, envelope)
+	return a.bridge.Handle(ctx, envelope, conn)
 }
 
 func (a *Adapter) HandleTextMessage(ctx context.Context, platformMsgID, channelID, teamID, threadTS, userID, text string) error {
@@ -338,8 +340,10 @@ func (a *Adapter) Close(ctx context.Context) error {
 }
 
 type FeishuConn struct {
-	adapter       *Adapter
-	chatID        string
+	adapter *Adapter
+	chatID  string
+
+	mu            sync.RWMutex
 	chatType      string
 	replyToMsgID  string
 	platformMsgID string
@@ -352,10 +356,14 @@ func NewFeishuConn(adapter *Adapter, chatID string) *FeishuConn {
 }
 
 func (c *FeishuConn) EnableStreaming(ctrl *StreamingCardController) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.streamCtrl = ctrl
 }
 
 func (c *FeishuConn) SetTypingReactionID(rid string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.typingRid = rid
 }
 
@@ -365,14 +373,19 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 	}
 
 	// Handle done event before extractResponseText (which returns false for done).
-	if c.streamCtrl != nil && env.Event.Type == events.Done {
-		if c.typingRid != "" {
-			_ = c.adapter.RemoveTypingIndicator(ctx, c.platformMsgID, c.typingRid)
+	if env.Event.Type == events.Done {
+		c.mu.Lock()
+		streamCtrl := c.streamCtrl
+		typingRid := c.typingRid
+		platformMsgID := c.platformMsgID
+		if typingRid != "" {
+			_ = c.adapter.RemoveTypingIndicator(ctx, platformMsgID, typingRid)
 			c.typingRid = ""
 		}
-		// If card was never created (no content arrived), skip close.
-		if c.streamCtrl.IsCreated() {
-			return c.streamCtrl.Close(ctx)
+		c.mu.Unlock()
+
+		if streamCtrl != nil && streamCtrl.IsCreated() {
+			return streamCtrl.Close(ctx)
 		}
 		return nil
 	}
@@ -382,56 +395,82 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		return nil
 	}
 
+	c.mu.Lock()
+	chatID := c.chatID
+	replyToMsgID := c.replyToMsgID
+	streamCtrl := c.streamCtrl
+	chatType := c.chatType
+	typingRid := c.typingRid
+	platformMsgID := c.platformMsgID
+	c.typingRid = "" // consumed; cleared under lock
+	c.mu.Unlock()
+
 	c.adapter.log.Debug("feishu: WriteCtx sending",
 		"event_type", env.Event.Type,
-		"chat", c.chatID,
-		"reply_to", c.replyToMsgID,
+		"chat", chatID,
+		"reply_to", replyToMsgID,
 		"text_len", len(text),
 	)
 
-	if c.streamCtrl != nil {
+	if streamCtrl != nil {
 		// Lazy-init: create card on first content arrival.
-		if !c.streamCtrl.IsCreated() {
-			if err := c.streamCtrl.EnsureCard(ctx, c.chatID, c.chatType, c.replyToMsgID, text); err != nil {
+		if !streamCtrl.IsCreated() {
+			if err := streamCtrl.EnsureCard(ctx, chatID, chatType, replyToMsgID, text); err != nil {
 				c.adapter.log.Warn("feishu: streaming card init failed, falling back to static", "error", err)
+				c.mu.Lock()
 				c.streamCtrl = nil
-			} else {
-				// Card created with initial content; remove typing indicator.
-				if c.typingRid != "" {
-					_ = c.adapter.RemoveTypingIndicator(ctx, c.platformMsgID, c.typingRid)
-					c.typingRid = ""
+				c.mu.Unlock()
+				if typingRid != "" {
+					_ = c.adapter.RemoveTypingIndicator(ctx, platformMsgID, typingRid)
 				}
+			} else {
+				// Card created with initial content; typing indicator already consumed above.
 				return nil
 			}
 		} else {
 			// Subsequent content: write + flush.
-			if c.typingRid != "" {
-				_ = c.adapter.RemoveTypingIndicator(ctx, c.platformMsgID, c.typingRid)
-				c.typingRid = ""
+			if typingRid != "" {
+				_ = c.adapter.RemoveTypingIndicator(ctx, platformMsgID, typingRid)
 			}
-			if err := c.streamCtrl.Write(text); err != nil {
+
+			if err := streamCtrl.Write(text); err != nil {
 				return err
 			}
-			return c.streamCtrl.Flush(ctx)
+			return streamCtrl.Flush(ctx)
 		}
 	}
 
-	if c.replyToMsgID != "" {
-		return c.adapter.replyMessage(ctx, c.replyToMsgID, stripTablesFromMarkdown(text), false)
+	// Typing indicator consumed but no streaming card was created.
+	if typingRid != "" {
+		_ = c.adapter.RemoveTypingIndicator(ctx, platformMsgID, typingRid)
 	}
-	return c.adapter.sendTextMessage(ctx, c.chatID, stripTablesFromMarkdown(text))
+
+	if replyToMsgID != "" {
+		return c.adapter.replyMessage(ctx, replyToMsgID, stripTablesFromMarkdown(text), false)
+	}
+	return c.adapter.sendTextMessage(ctx, chatID, stripTablesFromMarkdown(text))
 }
 
 func (c *FeishuConn) Close() error {
-	if c.streamCtrl != nil {
-		_ = c.streamCtrl.Abort(context.Background())
+	c.mu.Lock()
+	streamCtrl := c.streamCtrl
+	typingRid := c.typingRid
+	platformMsgID := c.platformMsgID
+	c.streamCtrl = nil
+	c.typingRid = ""
+	c.mu.Unlock()
+
+	// Best-effort cleanup: Abort uses Background since this Close path is
+	// called during shutdown (no deadline needed for graceful teardown).
+	if streamCtrl != nil {
+		_ = streamCtrl.Abort(context.Background())
 	}
-	if c.typingRid != "" && c.adapter.larkClient != nil {
-		_ = c.adapter.RemoveTypingIndicator(context.Background(), c.platformMsgID, c.typingRid)
+	if typingRid != "" && c.adapter.larkClient != nil {
+		_ = c.adapter.RemoveTypingIndicator(context.Background(), platformMsgID, typingRid)
 	}
 	c.adapter.mu.Lock()
-	defer c.adapter.mu.Unlock()
 	delete(c.adapter.activeConns, c.chatID)
+	c.adapter.mu.Unlock()
 	return nil
 }
 

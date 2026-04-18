@@ -503,12 +503,29 @@ func (h *Hub) Shutdown(ctx context.Context) error {
 	for c := range h.conns {
 		conns = append(conns, c)
 	}
+	// Collect platform connections from sessions map. These are not in h.conns
+	// and must be closed here since Hub.Shutdown is the canonical shutdown point.
+	seenPC := make(map[*pcEntry]bool)
+	var pcConns []*pcEntry
+	for _, conns := range h.sessions {
+		for sw := range conns {
+			if pce, ok := sw.(*pcEntry); ok && !seenPC[pce] {
+				seenPC[pce] = true
+				pcConns = append(pcConns, pce)
+			}
+		}
+	}
 	h.mu.RUnlock()
 
 	var errs []error
 	for _, c := range conns {
 		if err := c.Close(); err != nil {
 			errs = append(errs, err)
+		}
+	}
+	for _, pce := range pcConns {
+		if err := pce.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("platform conn close: %w", err))
 		}
 	}
 

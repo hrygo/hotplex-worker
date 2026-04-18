@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/hotplex/hotplex-worker/internal/metrics"
@@ -292,5 +293,14 @@ func (b *Bridge) StartPlatformSession(ctx context.Context, sessionID, ownerID, w
 		return fmt.Errorf("gateway: no worker_type configured for platform session %s", sessionID)
 	}
 
-	return b.StartSession(ctx, sessionID, ownerID, "", wt, nil, workDir, platform, platformKey)
+	// Create new session. If the worker rejects with "already in use" (e.g., Claude Code
+	// found a leftover transcript from a previous crashed session), retry as resume.
+	if err := b.StartSession(ctx, sessionID, ownerID, "", wt, nil, workDir, platform, platformKey); err != nil {
+		if strings.Contains(err.Error(), "already in use") {
+			b.log.Info("gateway: worker rejected session as in-use, switching to resume", "session_id", sessionID, "err", err)
+			return b.ResumeSession(ctx, sessionID, workDir)
+		}
+		return err
+	}
+	return nil
 }

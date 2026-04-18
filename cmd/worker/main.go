@@ -469,18 +469,11 @@ func startMessagingAdapters(ctx context.Context, log *slog.Logger, cfg *config.C
 
 		msgBridge := messaging.NewBridge(log, pt, hub, sm, handler, gwBridge, workerType, workDir)
 
-		// Configure platform-specific credentials and conn factory.
+		// Configure platform-specific credentials.
 		switch pt {
 		case messaging.PlatformSlack:
 			if sa, ok := adapter.(*slack.Adapter); ok {
 				sa.Configure(cfg.Messaging.Slack.BotToken, cfg.Messaging.Slack.AppToken, msgBridge)
-				msgBridge.SetConnFactory(func(sessionID string, _ *events.Envelope) messaging.PlatformConn {
-					channelID, threadTS := slack.ExtractChannelThread(sessionID)
-					if channelID == "" {
-						return nil
-					}
-					return slack.NewSlackConn(sa, channelID, threadTS)
-				})
 			}
 		case messaging.PlatformFeishu:
 			if fa, ok := adapter.(*feishu.Adapter); ok {
@@ -492,13 +485,6 @@ func startMessagingAdapters(ctx context.Context, log *slog.Logger, cfg *config.C
 					cfg.Messaging.Feishu.AllowFrom,
 				)
 				fa.SetGate(gate)
-				msgBridge.SetConnFactory(func(sessionID string, env *events.Envelope) messaging.PlatformConn {
-					chatID := feishu.ExtractChatID(env)
-					if chatID == "" {
-						return nil
-					}
-					return fa.GetOrCreateConn(chatID)
-				})
 			}
 		}
 

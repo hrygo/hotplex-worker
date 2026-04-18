@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
-	"sync"
 
 	"github.com/hotplex/hotplex-worker/internal/session"
 	"github.com/hotplex/hotplex-worker/internal/worker"
@@ -16,26 +15,17 @@ import (
 // DefaultWorkerWorkDir is the fallback working directory when workDir is not configured.
 const DefaultWorkerWorkDir = "/tmp/hotplex/workspace"
 
-// ConnFactory creates a PlatformConn for a given session.
-// It receives the full AEP envelope so it can extract platform-specific routing
-// fields (chat_id, channel_id, etc.) directly — no guessing required upstream.
-type ConnFactory func(sessionID string, env *events.Envelope) PlatformConn
-
 // Bridge orchestrates platform messages and gateway sessions.
 // It is the counterpart of gateway.Bridge for messaging platforms.
 type Bridge struct {
-	log         *slog.Logger
-	platform    PlatformType
-	hub         HubInterface
-	sm          SessionManager
-	handler     HandlerInterface
-	starter     SessionStarter
-	workerType  string
-	workDir     string
-	connFactory ConnFactory
-
-	mu     sync.Mutex
-	joined map[string]bool // sessionID → already joined
+	log        *slog.Logger
+	platform   PlatformType
+	hub        HubInterface
+	sm         SessionManager
+	handler    HandlerInterface
+	starter    SessionStarter
+	workerType string
+	workDir    string
 }
 
 // NewBridge creates a new platform bridge.
@@ -54,18 +44,14 @@ func NewBridge(log *slog.Logger, platform PlatformType, hub HubInterface,
 		starter:    starter,
 		workerType: workerType,
 		workDir:    workDir,
-		joined:     make(map[string]bool),
 	}
 }
 
-// SetConnFactory registers the platform connection factory.
-// The factory receives the AEP envelope so it can extract platform-specific routing
-// fields directly — no guessing required upstream.
-func (b *Bridge) SetConnFactory(f ConnFactory) { b.connFactory = f }
-
 // Handle routes a platform message through the AEP handler.
-// If no session exists yet, it auto-creates one using the configured worker type.
-func (b *Bridge) Handle(ctx context.Context, env *events.Envelope) error {
+// pc is the already-created PlatformConn for the platform session.
+// It is registered with the hub so worker output is routed back to the platform.
+// The caller is responsible for conn lifecycle (creation, field setup, reuse).
+func (b *Bridge) Handle(ctx context.Context, env *events.Envelope, pc PlatformConn) error {
 	if env.OwnerID == "" {
 		return fmt.Errorf("messaging bridge: OwnerID not set for platform message")
 	}
@@ -80,18 +66,9 @@ func (b *Bridge) Handle(ctx context.Context, env *events.Envelope) error {
 		}
 	}
 
-	// Join platform conn so worker output is routed back to the platform.
-	// Only join once per session to avoid duplicate entries in hub.
-	if b.connFactory != nil && b.hub != nil {
-		b.mu.Lock()
-		if !b.joined[env.SessionID] {
-			pc := b.connFactory(env.SessionID, env)
-			if pc != nil {
-				b.hub.JoinPlatformSession(env.SessionID, pc)
-				b.joined[env.SessionID] = true
-			}
-		}
-		b.mu.Unlock()
+	// Register platform conn so worker output is routed back to the platform.
+	if pc != nil && b.hub != nil {
+		b.hub.JoinPlatformSession(env.SessionID, pc)
 	}
 
 	return b.handler.Handle(ctx, env)

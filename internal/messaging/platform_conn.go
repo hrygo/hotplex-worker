@@ -14,5 +14,8 @@ type PlatformConn interface {
 	WriteCtx(ctx context.Context, env *events.Envelope) error
 
 	// Close permanently closes the connection and its associated goroutines.
+	// It is called during shutdown with a deadline-bearing context.
+	// Implementations that need cancellable cleanup should also implement
+	// CloseCtx for better shutdown control.
 	Close() error
 }

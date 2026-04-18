@@ -37,6 +37,7 @@ type Adapter struct {
 	rateLimiter   *ChannelRateLimiter
 	ownership     *ThreadOwnershipTracker
 	activeStreams map[string]*NativeStreamingWriter // messageTS -> writer
+	activeConns   map[string]*SlackConn             // "channelID#threadTS" -> conn
 }
 
 func (a *Adapter) Platform() messaging.PlatformType { return messaging.PlatformSlack }
@@ -71,6 +72,7 @@ func (a *Adapter) Start(ctx context.Context) error {
 	a.rateLimiter = NewChannelRateLimiter(ctx)
 	a.ownership = NewThreadOwnershipTracker(ctx, a.botID, a.log)
 	a.activeStreams = make(map[string]*NativeStreamingWriter)
+	a.activeConns = make(map[string]*SlackConn)
 
 	a.log.Info("slack: starting Socket Mode", "bot_id", a.botID)
 
@@ -155,6 +157,21 @@ func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsA
 	}
 }
 
+// GetOrCreateConn returns an existing SlackConn for the channel/thread pair,
+// or creates and registers a new one. This ensures the same conn is reused
+// across multiple messages in the same thread, so Hub.Shutdown can close it.
+func (a *Adapter) GetOrCreateConn(channelID, threadTS string) *SlackConn {
+	key := channelID + "#" + threadTS
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if c, ok := a.activeConns[key]; ok {
+		return c
+	}
+	c := NewSlackConn(a, channelID, threadTS)
+	a.activeConns[key] = c
+	return c
+}
+
 func (a *Adapter) HandleTextMessage(ctx context.Context, platformMsgID, channelID, teamID, threadTS, userID, text string) error {
 	if a.bridge == nil {
 		return nil
@@ -165,7 +182,8 @@ func (a *Adapter) HandleTextMessage(ctx context.Context, platformMsgID, channelI
 		return fmt.Errorf("slack: failed to build envelope")
 	}
 
-	return a.bridge.Handle(ctx, envelope)
+	conn := a.GetOrCreateConn(channelID, threadTS)
+	return a.bridge.Handle(ctx, envelope, conn)
 }
 
 // NewStreamingWriter creates a streaming writer for the given channel/thread.
@@ -193,6 +211,10 @@ func (a *Adapter) Close(ctx context.Context) error {
 		_ = w.Close()
 	}
 	a.activeStreams = nil
+	for _, c := range a.activeConns {
+		_ = c.Close()
+	}
+	a.activeConns = nil
 	a.mu.Unlock()
 
 	if a.rateLimiter != nil {
@@ -237,8 +259,13 @@ func (c *SlackConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 	return err
 }
 
-// Close ends the streaming writer for this connection.
+// Close removes the conn from the adapter registry. Streaming writers are closed
+// separately by the adapter's Close method.
 func (c *SlackConn) Close() error {
+	key := c.channelID + "#" + c.threadTS
+	c.adapter.mu.Lock()
+	delete(c.adapter.activeConns, key)
+	c.adapter.mu.Unlock()
 	return nil
 }
 
