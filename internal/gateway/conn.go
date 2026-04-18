@@ -50,6 +50,13 @@ type Conn struct {
 	mu     sync.Mutex
 	closed bool
 
+	// Init-phase buffering: during the AEP init handshake, events from
+	// Hub.routeMessage (state transitions during StartSession/ResumeSession)
+	// are buffered here. This ensures init_ack is always the first
+	// application-level message the client receives. Flushed by markInitDone.
+	initDone    bool
+	initPending [][]byte
+
 	done chan struct{}
 }
 
@@ -66,6 +73,7 @@ func newConn(hub *Hub, wc *websocket.Conn, sessionID string, starter SessionStar
 		starter:   starter,
 		sessionID: sessionID,
 		hb:        newHeartbeat(log),
+		initDone:  true, // true by default; performInit sets false during handshake
 		done:      make(chan struct{}),
 	}
 }
@@ -82,6 +90,7 @@ func (c *Conn) RemoteAddr() string {
 // It also handles pong responses, missed pong detection, and the AEP init handshake.
 func (c *Conn) ReadPump(handler *Handler) {
 	defer func() {
+		c.markInitDone() // flush buffered events or release on init failure
 		c.hb.Stop()
 
 		// Transition to IDLE BEFORE unregistering so the state(idle) event
@@ -253,6 +262,15 @@ func (c *Conn) performInit(handler *Handler) error {
 	// for the same (ownerID, workerType, clientSessionID, workDir) tuple.
 	sessionID := session.DeriveSessionKey(c.userID, initData.WorkerType, initData.SessionID, workDir)
 
+	// Enable init-phase buffering: WriteMessage will buffer events until
+	// markInitDone is called after init_ack is sent. This ensures init_ack
+	// is always the first message the client receives, even when state
+	// transitions during StartSession/ResumeSession race with init_ack.
+	// Placed after init validation so tests that don't send init remain unaffected.
+	c.mu.Lock()
+	c.initDone = false
+	c.mu.Unlock()
+
 	// Subscribe to session BEFORE creation/resume so that state events
 	// (e.g., RUNNING transition during StartSession) are delivered to this
 	// connection. Cleanup on error is handled by UnregisterConn in readPump's defer.
@@ -336,6 +354,11 @@ func (c *Conn) performInit(handler *Handler) error {
 	}
 	metrics.GatewayMessagesTotal.WithLabelValues("outgoing", InitAck).Inc()
 
+	// Flush any events buffered by WriteMessage during init.
+	// This ensures init_ack was written first, then state events
+	// (e.g., RUNNING transition from StartSession) follow in order.
+	c.markInitDone()
+
 	// NOTE: Session remains in CREATED state until handleInput transitions it to RUNNING.
 	// Do NOT transition here — handleInput (→ TransitionWithInput) is the sole entry point
 	// for the CREATED → RUNNING transition and is atomic with input delivery.
@@ -405,14 +428,41 @@ func (c *Conn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 }
 
 // WriteMessage writes raw bytes to the connection.
+// During the AEP init handshake, events are buffered instead of written
+// to ensure init_ack is always the first message the client receives.
 func (c *Conn) WriteMessage(msgType int, data []byte) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.closed {
 		return errors.New("conn closed")
 	}
+	if !c.initDone {
+		buf := make([]byte, len(data))
+		copy(buf, data)
+		c.initPending = append(c.initPending, buf)
+		return nil
+	}
 	_ = c.wc.SetWriteDeadline(time.Now().Add(writeWait))
 	return c.wc.WriteMessage(msgType, data)
+}
+
+// markInitDone signals that the init handshake is complete and flushes
+// any events buffered by WriteMessage during init. After this call,
+// WriteMessage writes events to the WebSocket immediately.
+func (c *Conn) markInitDone() {
+	c.mu.Lock()
+	c.initDone = true
+	for _, data := range c.initPending {
+		if c.closed {
+			break
+		}
+		_ = c.wc.SetWriteDeadline(time.Now().Add(writeWait))
+		if err := c.wc.WriteMessage(websocket.TextMessage, data); err != nil {
+			break
+		}
+	}
+	c.initPending = nil
+	c.mu.Unlock()
 }
 
 // Close closes the WebSocket connection.

@@ -137,12 +137,17 @@ type MessagingConfig struct {
 
 // SlackConfig holds Slack Socket Mode adapter settings.
 type SlackConfig struct {
-	Enabled    bool   `mapstructure:"enabled"`
-	BotToken   string `mapstructure:"bot_token"`
-	AppToken   string `mapstructure:"app_token"`
-	SocketMode bool   `mapstructure:"socket_mode"`
-	WorkerType string `mapstructure:"worker_type"`
-	WorkDir    string `mapstructure:"work_dir"`
+	Enabled             bool     `mapstructure:"enabled"`
+	BotToken            string   `mapstructure:"bot_token"`
+	AppToken            string   `mapstructure:"app_token"`
+	SocketMode          bool     `mapstructure:"socket_mode"`
+	WorkerType          string   `mapstructure:"worker_type"`
+	WorkDir             string   `mapstructure:"work_dir"`
+	AssistantAPIEnabled *bool    `mapstructure:"assistant_api_enabled"`
+	DMPolicy            string   `mapstructure:"dm_policy"`
+	GroupPolicy         string   `mapstructure:"group_policy"`
+	RequireMention      bool     `mapstructure:"require_mention"`
+	AllowFrom           []string `mapstructure:"allow_from"`
 }
 
 // FeishuConfig holds Feishu WebSocket adapter settings.
