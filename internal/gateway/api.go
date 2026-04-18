@@ -70,7 +70,7 @@ func (g *GatewayAPI) CreateSession(w http.ResponseWriter, r *http.Request) {
 	if userID == "" {
 		userID = "anonymous"
 	}
-	if err := g.bridge.StartSession(r.Context(), id, userID, botID, wt, nil, ""); err != nil {
+	if err := g.bridge.StartSession(r.Context(), id, userID, botID, wt, nil, "", "", nil); err != nil {
 		http.Error(w, "failed to create session", http.StatusInternalServerError)
 		return
 	}

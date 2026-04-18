@@ -42,7 +42,7 @@ func (a *AdminAPI) CreateSession(w http.ResponseWriter, r *http.Request) {
 		userID = "anonymous"
 	}
 
-	if err := a.bridge.StartSession(r.Context(), id, userID, "", wt, nil, ""); err != nil {
+	if err := a.bridge.StartSession(r.Context(), id, userID, "", wt, nil, "", "", nil); err != nil {
 		a.log.Error("admin: create session", "err", err)
 		http.Error(w, "failed to create session", http.StatusInternalServerError)
 		return

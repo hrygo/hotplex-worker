@@ -42,9 +42,9 @@ func (b *Bridge) SetWorkerFactory(wf WorkerFactory) {
 }
 
 // StartSession creates a new session and starts a worker.
-func (b *Bridge) StartSession(ctx context.Context, id, userID, botID string, wt worker.WorkerType, allowedTools []string, workDir string) error {
+func (b *Bridge) StartSession(ctx context.Context, id, userID, botID string, wt worker.WorkerType, allowedTools []string, workDir, platform string, platformKey map[string]string) error {
 	// Create session in DB with bot_id and allowed_tools.
-	si, err := b.sm.CreateWithBot(ctx, id, userID, botID, wt, allowedTools)
+	si, err := b.sm.CreateWithBot(ctx, id, userID, botID, wt, allowedTools, platform, platformKey)
 	if err != nil {
 		return fmt.Errorf("bridge: create session: %w", err)
 	}
@@ -265,8 +265,8 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string) {
 // Implements messaging.SessionStarter. Idempotent: returns nil if session exists with a live worker.
 // If the session exists but has no worker (orphan from a previous gateway restart), it resumes
 // the existing session so the worker can restore its internal session state.
-func (b *Bridge) StartPlatformSession(ctx context.Context, sessionID, ownerID, workerType, workDir string) error {
-	b.log.Debug("bridge: StartPlatformSession called", "session_id", sessionID, "owner_id", ownerID, "worker_type", workerType, "work_dir", workDir)
+func (b *Bridge) StartPlatformSession(ctx context.Context, sessionID, ownerID, workerType, workDir, platform string, platformKey map[string]string) error {
+	b.log.Debug("bridge: StartPlatformSession called", "session_id", sessionID, "owner_id", ownerID, "worker_type", workerType, "work_dir", workDir, "platform", platform)
 	_, err := b.sm.Get(sessionID)
 	if err == nil {
 		if w := b.sm.GetWorker(sessionID); w != nil {
@@ -284,5 +284,5 @@ func (b *Bridge) StartPlatformSession(ctx context.Context, sessionID, ownerID, w
 		return fmt.Errorf("gateway: no worker_type configured for platform session %s", sessionID)
 	}
 
-	return b.StartSession(ctx, sessionID, ownerID, "", wt, nil, workDir)
+	return b.StartSession(ctx, sessionID, ownerID, "", wt, nil, workDir, platform, platformKey)
 }

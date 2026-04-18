@@ -348,7 +348,7 @@ func (h *Handler) handleGC(ctx context.Context, env *events.Envelope) error {
 // SessionManager abstracts the session.Manager methods used by Bridge.
 // It allows Bridge to be tested without a real Manager instance.
 type SessionManager interface {
-	CreateWithBot(ctx context.Context, id, userID, botID string, wt worker.WorkerType, allowedTools []string) (*session.SessionInfo, error)
+	CreateWithBot(ctx context.Context, id, userID, botID string, wt worker.WorkerType, allowedTools []string, platform string, platformKey map[string]string) (*session.SessionInfo, error)
 	AttachWorker(id string, w worker.Worker) error
 	DetachWorker(id string)
 	Transition(ctx context.Context, id string, to events.SessionState) error

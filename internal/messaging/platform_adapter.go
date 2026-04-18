@@ -106,7 +106,7 @@ type SessionManager any
 // SessionStarter creates a new gateway session for a platform message.
 // Implemented by gateway.Bridge and injected during wiring.
 type SessionStarter interface {
-	StartPlatformSession(ctx context.Context, sessionID, ownerID, workerType, workDir string) error
+	StartPlatformSession(ctx context.Context, sessionID, ownerID, workerType, workDir, platform string, platformKey map[string]string) error
 }
 
 // SetHub injects the gateway Hub. Called by main.go during wiring.

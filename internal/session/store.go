@@ -65,20 +65,25 @@ func NewSQLiteStore(ctx context.Context, cfg *config.Config) (*SQLiteStore, erro
 
 func (s *SQLiteStore) migrate(ctx context.Context) error {
 	schema := `
+-- Sessions: core session metadata.
+-- id is a UUIDv5 derived from (ownerID, workerType, platform, platform_key) via DerivePlatformSessionKey.
+-- This deterministic mapping ensures the same platform conversation always maps to the same session.
 CREATE TABLE IF NOT EXISTS sessions (
-    id TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL,
-    owner_id TEXT,
-    bot_id TEXT,
-    worker_session_id TEXT,
-    worker_type TEXT NOT NULL,
-    state TEXT NOT NULL,
+    id TEXT PRIMARY KEY,                     -- UUIDv5: deterministic from consistency mapping
+    user_id TEXT NOT NULL,                   -- original user ID from platform
+    owner_id TEXT,                           -- authenticated owner (NULL → falls back to user_id)
+    bot_id TEXT,                             -- SEC-007: bot isolation key
+    worker_session_id TEXT,                  -- worker-internal session ID (only OpenCode CLI/Server; Claude Code = empty, uses id directly)
+    worker_type TEXT NOT NULL,               -- worker adapter: claude_code, opencode_cli, opencode_server, etc.
+    state TEXT NOT NULL,                     -- state machine: created / running / idle / terminated / deleted
+    platform TEXT NOT NULL DEFAULT '',       -- messaging platform: slack, feishu, '' (direct WebSocket)
+    platform_key_json TEXT NOT NULL DEFAULT '', -- JSON of consistency-mapping inputs (see DerivePlatformSessionKey)
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,
-    expires_at DATETIME,
-    idle_expires_at DATETIME,
-    is_active INTEGER NOT NULL DEFAULT 0,
-    context_json TEXT
+    expires_at DATETIME,                     -- max lifetime expiry
+    idle_expires_at DATETIME,                -- idle timeout expiry
+    is_active INTEGER NOT NULL DEFAULT 0,    -- 1 if state ∈ {created, running, idle}
+    context_json TEXT                        -- arbitrary session context (key-value)
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_state ON sessions(state);
 CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
@@ -86,16 +91,18 @@ CREATE INDEX IF NOT EXISTS idx_sessions_owner_id ON sessions(owner_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_bot_id ON sessions(bot_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
 CREATE INDEX IF NOT EXISTS idx_sessions_idle_expires_at ON sessions(idle_expires_at);
+CREATE INDEX IF NOT EXISTS idx_sessions_platform ON sessions(platform);
 
 -- EVT-001: events table for AEP message persistence.
+-- Append-only event log per session. Each row is one AEP envelope (done, message.delta, etc.).
 -- Append-only enforced at application layer; SQLite does not support
 -- standard BEFORE triggers for INSERT/UPDATE/DELETE prevention.
 CREATE TABLE IF NOT EXISTS events (
-    id TEXT PRIMARY KEY,
-    session_id TEXT NOT NULL,
-    seq INTEGER NOT NULL,
-    event_type TEXT NOT NULL,
-    payload_json TEXT NOT NULL,
+    id TEXT PRIMARY KEY,                     -- AEP envelope ID
+    session_id TEXT NOT NULL,                -- FK to sessions.id
+    seq INTEGER NOT NULL,                    -- monotonic sequence within session
+    event_type TEXT NOT NULL,                -- AEP event type: done, message.delta, tool_call, etc.
+    payload_json TEXT NOT NULL,              -- full AEP envelope JSON
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_events_session_id ON events(session_id);
@@ -103,15 +110,17 @@ CREATE INDEX IF NOT EXISTS idx_events_session_seq ON events(session_id, seq);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_events_session_seq_unique ON events(session_id, seq);
 
 -- EVT-008: audit_log table with hash chain for tamper-evident audit trail.
+-- Each row is hashed with the previous row's hash, forming a chain.
+-- Tampering with any row breaks the chain and is detectable.
 CREATE TABLE IF NOT EXISTS audit_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    timestamp INTEGER NOT NULL,
-    action TEXT NOT NULL,
-    actor_id TEXT NOT NULL,
-    session_id TEXT NOT NULL,
-    details TEXT,
-    previous_hash TEXT NOT NULL,
-    current_hash TEXT NOT NULL
+    timestamp INTEGER NOT NULL,              -- Unix epoch (seconds)
+    action TEXT NOT NULL,                    -- e.g. "session.create", "session.terminate"
+    actor_id TEXT NOT NULL,                  -- who performed the action
+    session_id TEXT NOT NULL,                -- target session
+    details TEXT,                            -- optional JSON details
+    previous_hash TEXT NOT NULL,             -- hash of previous row
+    current_hash TEXT NOT NULL               -- hash of this row (including previous_hash)
 );
 CREATE INDEX IF NOT EXISTS idx_audit_session_id ON audit_log(session_id);
 CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_log(timestamp);
@@ -127,6 +136,9 @@ CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_log(timestamp);
 	_, _ = s.db.ExecContext(ctx, "ALTER TABLE sessions ADD COLUMN owner_id TEXT")
 	// Migrate: add bot_id column for SEC-007 multi-bot isolation.
 	_, _ = s.db.ExecContext(ctx, "ALTER TABLE sessions ADD COLUMN bot_id TEXT")
+	// Migrate: add platform + platform_key_json for consistency mapping persistence.
+	_, _ = s.db.ExecContext(ctx, "ALTER TABLE sessions ADD COLUMN platform TEXT NOT NULL DEFAULT ''")
+	_, _ = s.db.ExecContext(ctx, "ALTER TABLE sessions ADD COLUMN platform_key_json TEXT NOT NULL DEFAULT ''")
 
 	return nil
 }
@@ -152,9 +164,18 @@ func (s *SQLiteStore) Upsert(ctx context.Context, info *SessionInfo) error {
 		isActive = 1
 	}
 
+	var platformKeyJSON []byte
+	if info.PlatformKey != nil {
+		var err2 error
+		platformKeyJSON, err2 = json.Marshal(info.PlatformKey)
+		if err2 != nil {
+			return fmt.Errorf("session store: marshal platform key: %w", err2)
+		}
+	}
+
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO sessions (id, user_id, owner_id, bot_id, worker_session_id, worker_type, state, created_at, updated_at, expires_at, idle_expires_at, is_active, context_json)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`INSERT INTO sessions (id, user_id, owner_id, bot_id, worker_session_id, worker_type, state, platform, platform_key_json, created_at, updated_at, expires_at, idle_expires_at, is_active, context_json)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(id) DO UPDATE SET
 		   state=excluded.state,
 		   updated_at=excluded.updated_at,
@@ -163,6 +184,7 @@ func (s *SQLiteStore) Upsert(ctx context.Context, info *SessionInfo) error {
 		   is_active=excluded.is_active,
 		   context_json=excluded.context_json`,
 		info.ID, info.UserID, info.OwnerID, info.BotID, info.WorkerSessionID, info.WorkerType, string(info.State),
+		info.Platform, string(platformKeyJSON),
 		info.CreatedAt, info.UpdatedAt, info.ExpiresAt, info.IdleExpiresAt,
 		isActive, string(ctxJSON),
 	)
@@ -171,14 +193,15 @@ func (s *SQLiteStore) Upsert(ctx context.Context, info *SessionInfo) error {
 
 func (s *SQLiteStore) Get(ctx context.Context, id string) (*SessionInfo, error) {
 	var info SessionInfo
-	var ctxJSON sql.NullString
+	var ctxJSON, platformKeyStr sql.NullString
 	var expiresAt, idleExpiresAt sql.NullTime
 	var createdAt, updatedAt time.Time
 
 	err := s.db.QueryRowContext(ctx,
-		`SELECT id, user_id, COALESCE(owner_id, user_id), worker_session_id, worker_type, state, bot_id, created_at, updated_at, expires_at, idle_expires_at, context_json
+		`SELECT id, user_id, COALESCE(owner_id, user_id), worker_session_id, worker_type, state, bot_id, platform, platform_key_json, created_at, updated_at, expires_at, idle_expires_at, context_json
 		 FROM sessions WHERE id = ?`, id,
 	).Scan(&info.ID, &info.UserID, &info.OwnerID, &info.WorkerSessionID, &info.WorkerType, &info.State, &info.BotID,
+		&info.Platform, &platformKeyStr,
 		&createdAt, &updatedAt, &expiresAt, &idleExpiresAt, &ctxJSON)
 
 	if err == sql.ErrNoRows {
@@ -201,6 +224,9 @@ func (s *SQLiteStore) Get(ctx context.Context, id string) (*SessionInfo, error) 
 			return nil, fmt.Errorf("session store: unmarshal context: %w", err)
 		}
 	}
+	if platformKeyStr.Valid && platformKeyStr.String != "" {
+		_ = json.Unmarshal([]byte(platformKeyStr.String), &info.PlatformKey)
+	}
 
 	return &info, nil
 }
@@ -210,7 +236,7 @@ func (s *SQLiteStore) List(ctx context.Context, limit, offset int) ([]*SessionIn
 		limit = 100
 	}
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, user_id, COALESCE(owner_id, user_id), worker_session_id, worker_type, state, bot_id, created_at, updated_at, expires_at, idle_expires_at, context_json
+		`SELECT id, user_id, COALESCE(owner_id, user_id), worker_session_id, worker_type, state, bot_id, platform, platform_key_json, created_at, updated_at, expires_at, idle_expires_at, context_json
 		 FROM sessions ORDER BY created_at DESC LIMIT ? OFFSET ?`, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("session store: list: %w", err)
@@ -220,12 +246,12 @@ func (s *SQLiteStore) List(ctx context.Context, limit, offset int) ([]*SessionIn
 	var sessions []*SessionInfo
 	for rows.Next() {
 		var si SessionInfo
-		var ctxJSON sql.NullString
+		var ctxJSON, platformKeyStr sql.NullString
 		var expiresAt, idleExpiresAt sql.NullTime
 		var createdAt, updatedAt time.Time
 
 		err := rows.Scan(&si.ID, &si.UserID, &si.OwnerID, &si.WorkerSessionID, &si.WorkerType, &si.State,
-			&si.BotID, &createdAt, &updatedAt, &expiresAt, &idleExpiresAt, &ctxJSON)
+			&si.BotID, &si.Platform, &platformKeyStr, &createdAt, &updatedAt, &expiresAt, &idleExpiresAt, &ctxJSON)
 		if err != nil {
 			continue
 		}
@@ -239,6 +265,9 @@ func (s *SQLiteStore) List(ctx context.Context, limit, offset int) ([]*SessionIn
 		}
 		if ctxJSON.Valid && ctxJSON.String != "" {
 			_ = json.Unmarshal([]byte(ctxJSON.String), &si.Context)
+		}
+		if platformKeyStr.Valid && platformKeyStr.String != "" {
+			_ = json.Unmarshal([]byte(platformKeyStr.String), &si.PlatformKey)
 		}
 		sessions = append(sessions, &si)
 	}

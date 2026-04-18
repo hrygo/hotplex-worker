@@ -74,7 +74,9 @@ func (b *Bridge) Handle(ctx context.Context, env *events.Envelope) error {
 
 	// Auto-create session if starter is available.
 	if b.starter != nil {
-		if err := b.starter.StartPlatformSession(ctx, env.SessionID, env.OwnerID, b.workerType, b.workDir); err != nil {
+		// Extract platform key from envelope metadata for persistence.
+		platform, platformKey := b.extractPlatformKey(env)
+		if err := b.starter.StartPlatformSession(ctx, env.SessionID, env.OwnerID, b.workerType, b.workDir, platform, platformKey); err != nil {
 			b.log.Debug("messaging bridge: session start skipped or failed",
 				"session_id", env.SessionID, "err", err)
 		}
@@ -141,6 +143,8 @@ func (b *Bridge) MakeSlackEnvelope(teamID, channelID, threadTS, userID, text str
 		"platform":   string(PlatformSlack),
 		"team_id":    teamID,
 		"channel_id": channelID,
+		"thread_ts":  threadTS,
+		"user_id":    userID,
 	})
 }
 
@@ -154,7 +158,60 @@ func (b *Bridge) MakeFeishuEnvelope(chatID, threadTS, userID, text string) *even
 		UserID:   userID,
 	})
 	return b.makeEnvelope(sessionID, userID, text, map[string]any{
-		"platform": string(PlatformFeishu),
-		"chat_id":  chatID,
+		"platform":  string(PlatformFeishu),
+		"chat_id":   chatID,
+		"thread_ts": threadTS,
+		"user_id":   userID,
 	})
+}
+
+// extractPlatformKey extracts the consistency-mapping inputs from the envelope metadata.
+// Returns (platform, platformKey) suitable for session persistence.
+func (b *Bridge) extractPlatformKey(env *events.Envelope) (string, map[string]string) {
+	data, ok := env.Event.Data.(map[string]any)
+	if !ok {
+		return string(b.platform), nil
+	}
+
+	md, _ := data["metadata"].(map[string]any)
+	if md == nil {
+		return string(b.platform), nil
+	}
+
+	platform, _ := md["platform"].(string)
+	if platform == "" {
+		platform = string(b.platform)
+	}
+
+	platformKey := make(map[string]string)
+	switch b.platform {
+	case PlatformFeishu:
+		if v, ok := md["chat_id"].(string); ok && v != "" {
+			platformKey["chat_id"] = v
+		}
+		if v, ok := md["thread_ts"].(string); ok {
+			platformKey["thread_ts"] = v
+		}
+		if v, ok := md["user_id"].(string); ok && v != "" {
+			platformKey["user_id"] = v
+		}
+	case PlatformSlack:
+		if v, ok := md["team_id"].(string); ok && v != "" {
+			platformKey["team_id"] = v
+		}
+		if v, ok := md["channel_id"].(string); ok && v != "" {
+			platformKey["channel_id"] = v
+		}
+		if v, ok := md["thread_ts"].(string); ok {
+			platformKey["thread_ts"] = v
+		}
+		if v, ok := md["user_id"].(string); ok && v != "" {
+			platformKey["user_id"] = v
+		}
+	}
+
+	if len(platformKey) == 0 {
+		return platform, nil
+	}
+	return platform, platformKey
 }

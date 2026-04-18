@@ -25,7 +25,7 @@ import (
 // used by Conn (called once during the AEP init handshake).
 type SessionStarter interface {
 	StartSession(ctx context.Context, id, userID, botID string,
-		wt worker.WorkerType, allowedTools []string, workDir string) error
+		wt worker.WorkerType, allowedTools []string, workDir string, platform string, platformKey map[string]string) error
 	ResumeSession(ctx context.Context, id string, workDir string) error
 }
 
@@ -261,7 +261,7 @@ func (c *Conn) performInit(handler *Handler) error {
 			// starter.StartSession creates the DB record, worker, transitions to RUNNING,
 			// and starts forwarding events. nil starter means test mode.
 			if c.starter != nil {
-				if err := c.starter.StartSession(context.Background(), sessionID, c.userID, c.botID, initData.WorkerType, initData.Config.AllowedTools, workDir); err != nil {
+				if err := c.starter.StartSession(context.Background(), sessionID, c.userID, c.botID, initData.WorkerType, initData.Config.AllowedTools, workDir, "", nil); err != nil {
 					c.sendInitError(events.ErrCodeInternalError, "failed to create session")
 					metrics.GatewayErrorsTotal.WithLabelValues(string(events.ErrCodeInternalError)).Inc()
 					return fmt.Errorf("create session: %w", err)
@@ -277,7 +277,7 @@ func (c *Conn) performInit(handler *Handler) error {
 					"worker_type", initData.WorkerType)
 			} else {
 				// Test mode — create session without starting a worker.
-				si, err = handler.sm.CreateWithBot(context.Background(), sessionID, c.userID, c.botID, initData.WorkerType, initData.Config.AllowedTools)
+				si, err = handler.sm.CreateWithBot(context.Background(), sessionID, c.userID, c.botID, initData.WorkerType, initData.Config.AllowedTools, "", nil)
 				if err != nil {
 					c.sendInitError(events.ErrCodeInternalError, "failed to create session")
 					metrics.GatewayErrorsTotal.WithLabelValues(string(events.ErrCodeInternalError)).Inc()
