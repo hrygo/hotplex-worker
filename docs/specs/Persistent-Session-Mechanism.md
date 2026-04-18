@@ -14,11 +14,12 @@ estimated_hours: 16
 completion_date: 2026-04-07
 ---
 
-> 版本: v1.3
-> 日期: 2026-04-07
+> 版本: v1.4
+> 日期: 2026-04-18
 > 状态: ✅ 已实现
 > 交叉复核: 已对齐 `pkg/events/events.go`、`internal/gateway/handler.go`、`internal/session/manager.go` 源码
 > 实现验证: 2026-04-07 通过代码审查，所有 Phase 1 文件已实现并有单元测试覆盖
+> v1.4 更新: 统一所有渠道 session 映射为 UUIDv5；修复 orphan 处理从 Delete+StartSession 改为 ResumeSession
 
 ---
 
@@ -75,65 +76,132 @@ HotPlex Worker Gateway 持久会话机制，支持：
 
 ## 2. Session ID 映射机制
 
-### 2.1 UUIDv5 映射算法
+### 2.1 统一 UUIDv5 映射
+
+所有渠道（Web + 平台）统一使用 UUIDv5 确定性映射。相同输入永远映射为相同的 session ID。
+
+**两种派生函数**：
 
 ```go
-// internal/session/key.go（新建）
+// internal/session/key.go
 
-package session
+// DeriveSessionKey — Web 客户端使用（包含 workDir + clientSessionID）
+func DeriveSessionKey(ownerID string, wt worker.WorkerType, clientSessionID string, workDir string) string {
+    name := ownerID + "|" + string(wt) + "|" + clientSessionID + "|" + workDir
+    id := uuid.NewHash(sha1.New(), hotplexNamespace, []byte(name), 5)
+    return id.String()
+}
 
-import (
-    "github.com/google/uuid"
-    "github.com/hotplex/hotplex-worker/internal/worker"
-)
+// PlatformContext holds platform-specific fields for session derivation.
+type PlatformContext struct {
+    Platform  string  // "slack" | "feishu"
+    TeamID    string  // Slack: workspace ID
+    ChannelID string  // Slack: channel ID
+    ThreadTS  string  // 跨平台通用: thread/conversation key
+    ChatID    string  // Feishu: chat ID
+    UserID    string  // 跨平台通用: user identity
+}
 
-// hotplexNamespace 是 HotPlex 专属命名空间 UUID（RFC 4122 §4.3）。
-// 使用固定值确保跨环境一致性。
-var hotplexNamespace = uuid.MustParse("urn:uuid:6ba7b810-9dad-11d1-80b4-00c04fd430c8")
-
-// DeriveSessionKey generates a deterministic server-side session ID using UUIDv5.
-// Same (ownerID, workerType, clientSessionID) always maps to the same session.
-func DeriveSessionKey(ownerID string, wt worker.WorkerType, clientSessionID string) string {
-    // UUIDv5 = SHA-1(name) with namespace
-    name := ownerID + "|" + string(wt) + "|" + clientSessionID
-    id := uuid.NewHash(hotplexNamespace, name)
-    return id.String() // 格式: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+// DerivePlatformSessionKey — 平台消息使用（Feishu/Slack）
+// 相同 (ownerID, workerType, platformContext) 永远映射为同一 session。
+// 不同平台（Feishu vs Slack）即使原始 ID 相同也绝不冲突。
+func DerivePlatformSessionKey(ownerID string, wt worker.WorkerType, ctx PlatformContext) string {
+    // 内部拼接: ownerID + "|" + wt + "|" + platform + [platform-specific fields] + "|" + userID
+    // 其中空字段不参与哈希
+    ...
 }
 ```
 
-### 2.2 init 流程
+### 2.2 各渠道 Session ID 派生
+
+| 渠道 | 派生函数 | 输入字段 | UUIDv5 哈希输入 |
+|------|---------|---------|----------------|
+| Web | `DeriveSessionKey` | ownerID, workerType, clientSessionID, workDir | `ownerID\|wt\|clientSessionID\|workDir` |
+| Feishu | `DerivePlatformSessionKey` | userID, workerType, platform="feishu", chatID, threadTS, userID | `ownerID\|wt\|feishu\|chatID\|threadTS\|userID` |
+| Slack channel | `DerivePlatformSessionKey` | userID, workerType, platform="slack", teamID, channelID="C...", threadTS, userID | `ownerID\|wt\|slack\|[teamID\|]C...\|threadTS\|userID` |
+| Slack DM | `DerivePlatformSessionKey` | userID, workerType, platform="slack", teamID, channelID="D...", threadTS, userID | `ownerID\|wt\|slack\|[teamID\|]D...\|threadTS\|userID`（threadTS 为空时不参与哈希）|
+
+**字段稳定性**：
+- Feishu: `chat_id` 稳定（同一人与 bot 的 DM 固定），`threadTS` 区分群话题线程
+- Slack channel: `channel_id` 稳定（`C...` 前缀），`threadTS` 区分 thread
+- Slack DM: `channel_id` 以 `D...` 前缀标识 bot 与该 user 的私密对话（workspace 内唯一），支持 thread（`threadTS` 有值时参与哈希）
+- 空字段不参与哈希，确保"无值"和"缺失字段"产生相同 session
+
+### 2.3 Slack DM 语义
+
+Slack Direct Message（DM）通过 channel ID 的 `D` 前缀与普通 channel 区分：
 
 ```
-Client init{session_id: "my-chat-001"}
-  → DeriveSessionKey(ownerID="user_001", wt="claude_code", clientSessionID="my-chat-001")
+普通 channel:  channel_id = "C0123456789"  → threadTS 可能存在
+DM channel:   channel_id = "D9876543210"  → threadTS 可能为空，也可能开启 thread
+```
+
+**Session 映射特性**：
+
+| 特性 | 说明 |
+|------|------|
+| Workspace 隔离 | `teamID` 参与哈希，同一 user 在不同 workspace 的 DM 是不同 session |
+| DM 标识 | `D` 前缀是 Slack 内部保证的 DM channel ID，同 bot + 同 user → 同一 `D...` ID |
+| 支持 Thread | DM 中可开启 thread，`threadTS` 有值时参与哈希 → DM 主会话与 thread 子会话映射为不同 session |
+| 同 user 重开 DM | Slack 会重用同一 `D...` ID → 映射到同一 session，对话历史保留 |
+| DM 中开启 thread | Slack 允许 DM 内开 thread，此时 `threadTS` 有值 → 映射为子 session，与主 DM 分离 |
+| Bot reinstall | Slack 可能重建 DM channel → `D...` ID 变化 → 映射为新 session（Slack 侧行为，无法控制）|
+
+**Gateway 重启后 DM session 恢复**：与普通 channel 流程一致，orphan → `ResumeSession` → 同一个 UUIDv5 → Worker 恢复内部 session。
+
+### 2.4 Session ID 与 Worker Session ID 的区分
+
+| 概念 | 定义 | 持久化位置 |
+|------|------|-----------|
+| **Gateway Session ID** | UUIDv5 派生，服务端 DB 主键 | `sessions.id` |
+| **Worker Session ID** | Worker runtime 内部 ID（如 Claude Code 的 session token） | `sessions.worker_session_id`（在首个 worker 事件后写入）|
+
+Worker Session ID 的持久化流程：
+1. Worker 启动时，Gateway 传递 `WorkerSessionID`（首次为空）
+2. Worker 发出的第一个事件携带其内部 session ID
+3. `Bridge.forwardEvents` 通过 `WorkerSessionIDHandler` 接口捕获，写入 DB
+4. 下次 `ResumeSession` 时，`WorkerSessionID` 从 DB 恢复，传递给 worker
+
+### 2.5 Gateway 重启后 Orphan 处理
+
+Gateway 重启后，已建立的 platform session 变为 orphan（DB 有记录但 worker 进程已消失）。
+
+**v1.4 修复前**：orphan → `Delete + StartSession` → 丢弃 WorkerSessionID，worker 进程重建，Claude Code 内部 session 丢失。
+
+**v1.4 修复后**：orphan → `ResumeSession` → worker 恢复内部 session 状态，对话历史保留。
+
+```
+platform message arrives → sm.Get(sessionID) = exists
+    ├─ sm.GetWorker(sessionID) = nil (orphan)
+    │   └─ ResumeSession(ctx, sessionID, workDir)
+    │       ├─ sm.AttachWorker → w.Resume
+    │       ├─ WorkerSessionID 从 DB 恢复
+    │       └─ Worker 内部 session 恢复（如 Claude Code --resume）
+    └─ sm.GetWorker(sessionID) ≠ nil (live)
+        └─ no-op
+```
+
+### 2.6 init 流程（Web）
+
+```
+Client init{session_id: "my-chat-001", worker_type: "claude_code", workDir: "/tmp/proj"}
+  → DeriveSessionKey(ownerID="user_001", wt="claude_code", clientSessionID="my-chat-001", workDir="/tmp/proj")
   → UUIDv5: "550e8400-e29b-41d4-a716-446655440000"
-  → sm.GetOrCreate("550e8400-e29b-41d4-a716-446655440000")
-      ├─ 存在 → 返回现有 session（idempotent）
-      └─ 不存在 → 创建新 session
+  → sm.Get("550e8400-...") → found? → ResumeSession
+  → sm.Get("550e8400-...") → not found? → StartSession
 ```
 
-### 2.3 conn.go 改动
-
-```go
-// internal/gateway/conn.go:performInit
-
-// Before
-sessionID := initData.SessionID
-if sessionID == "" {
-    sessionID = c.sessionID
-}
-
-// After（无向后兼容）
-sessionID := session.DeriveSessionKey(c.userID, initData.WorkerType, initData.SessionID)
-```
-
-### 2.4 行为矩阵
+### 2.7 行为矩阵
 
 | 场景 | 行为 |
 |------|------|
-| `client_session_id` 存在 | UUIDv5 映射，确定性查找/创建 |
-| `client_session_id` 不同 | 映射为不同 sessionID |
-| 相同三元组重连 | 映射为同一 sessionID → resume |
+| `client_session_id` 存在（Web） | UUIDv5 映射，确定性查找/创建 |
+| 相同 tuple 重连 | 映射为同一 sessionID → resume |
+| 不同 tuple | 映射为不同 sessionID |
+| Platform orphan | `ResumeSession` → worker 内部 session 恢复 |
+| 不同平台相同原始 ID | UUIDv5 隔离（platform 字段不同） |
+| Slack DM 同 user 重开 | Slack 重用同一 `D...` ID → 映射为同一 session |
+| Slack DM 中开 thread | `threadTS` 有值 → 映射为独立子 session |
 
 ---
 
@@ -280,13 +348,16 @@ const (
 | 文件 | 变更类型 | 说明 |
 |------|---------|------|
 | `pkg/events/events.go` | 修改 | +2 常量: `ControlActionReset`, `ControlActionGC` |
-| `internal/session/key.go` | 新建 | `DeriveSessionKey()` — UUIDv5 映射 |
+| `internal/session/key.go` | 修改 | `DeriveSessionKey()`（UUIDv5，v1.4 新增 workDir 参数）；新增 `DerivePlatformSessionKey()` + `PlatformContext` 结构体 |
 | `internal/session/manager.go` | 修改 | +1 方法: `ClearContext()` |
-| `internal/gateway/conn.go` | 修改 | `performInit` 调用 `DeriveSessionKey` |
+| `internal/gateway/conn.go` | 修改 | `performInit` 调用 `DeriveSessionKey`；`SessionStarter` 接口 `ResumeSession` 增加 `workDir` 参数 |
+| `internal/gateway/bridge.go` | 修改 | `StartPlatformSession` orphan 路径改为 `ResumeSession`；`ResumeSession` 传递 `ProjectDir` |
 | `internal/gateway/handler.go` | 修改 | `handleControl` +2 case: `handleReset`, `handleGC` |
 | `internal/worker/worker.go` | 修改 | +1 方法: `Worker.ResetContext()` — Worker 自行决定清空方式 |
-
-**共 6 个文件**（1 新建，5 修改）。
+| `internal/messaging/bridge.go` | 修改 | 删除字符串格式常量；`MakeFeishuEnvelope`/`MakeSlackEnvelope` 改用 `DerivePlatformSessionKey` |
+| `internal/messaging/platform_adapter.go` | 修改 | `HandleTextMessage` 接口增加 `teamID, threadTS` 参数 |
+| `internal/messaging/feishu/adapter.go` | 修改 | 适配新接口签名 |
+| `internal/messaging/slack/adapter.go` | 修改 | 从 `EventsAPIEvent.TeamID` 提取 teamID；`HandleTextMessage` 传递完整参数 |
 
 ### 5.7 internal/worker/worker.go
 
@@ -338,26 +409,53 @@ const (
 )
 ```
 
-### 5.3 internal/session/key.go（新建）
+### 5.3 internal/session/key.go（修改）
 
 ```go
 package session
 
 import (
+    "crypto/sha1"
+    "strings"
+
     "github.com/google/uuid"
     "github.com/hotplex/hotplex-worker/internal/worker"
 )
 
-// hotplexNamespace 是 HotPlex 专属命名空间 UUID（RFC 4122 §4.3）。
-// 使用固定值确保跨环境一致性。
 var hotplexNamespace = uuid.MustParse("urn:uuid:6ba7b810-9dad-11d1-80b4-00c04fd430c8")
 
-// DeriveSessionKey generates a deterministic server-side session ID using UUIDv5.
-// Same (ownerID, workerType, clientSessionID) always maps to the same session.
-func DeriveSessionKey(ownerID string, wt worker.WorkerType, clientSessionID string) string {
-    // UUIDv5 = SHA-1(namespace+name) — 确定性，无随机性
-    name := ownerID + "|" + string(wt) + "|" + clientSessionID
-    id := uuid.NewHash(hotplexNamespace, name)
+// DeriveSessionKey — Web 客户端使用（包含 workDir）
+func DeriveSessionKey(ownerID string, wt worker.WorkerType, clientSessionID string, workDir string) string {
+    name := ownerID + "|" + string(wt) + "|" + clientSessionID + "|" + workDir
+    id := uuid.NewHash(sha1.New(), hotplexNamespace, []byte(name), 5)
+    return id.String()
+}
+
+// PlatformContext — 平台消息 session 派生字段
+type PlatformContext struct {
+    Platform  string  // "slack" | "feishu"
+    TeamID    string  // Slack: workspace ID
+    ChannelID string  // Slack: channel ID
+    ThreadTS  string  // 跨平台 thread/conversation key
+    ChatID    string  // Feishu: chat ID
+    UserID    string  // 跨平台 user identity
+}
+
+// DerivePlatformSessionKey — 平台消息使用（Feishu/Slack）
+func DerivePlatformSessionKey(ownerID string, wt worker.WorkerType, ctx PlatformContext) string {
+    var parts []string
+    parts = append(parts, ctx.Platform)
+    if ctx.Platform == "slack" {
+        if ctx.TeamID != "" { parts = append(parts, ctx.TeamID) }
+        if ctx.ChannelID != "" { parts = append(parts, ctx.ChannelID) }
+        if ctx.ThreadTS != "" { parts = append(parts, ctx.ThreadTS) }
+    } else if ctx.Platform == "feishu" {
+        if ctx.ChatID != "" { parts = append(parts, ctx.ChatID) }
+        if ctx.ThreadTS != "" { parts = append(parts, ctx.ThreadTS) }
+    }
+    if ctx.UserID != "" { parts = append(parts, ctx.UserID) }
+    name := ownerID + "|" + string(wt) + "|" + strings.Join(parts, "|")
+    id := uuid.NewHash(sha1.New(), hotplexNamespace, []byte(name), 5)
     return id.String()
 }
 ```
@@ -392,109 +490,61 @@ func (m *Manager) ClearContext(ctx context.Context, sessionID string) error {
 ### 5.5 internal/gateway/conn.go:performInit
 
 ```go
-// Before (约 line 234-237)
-sessionID := initData.SessionID
-if sessionID == "" {
-    sessionID = c.sessionID
-}
+// DeriveSessionKey 现在接受 4 参数（含 workDir）
+sessionID := session.DeriveSessionKey(c.userID, initData.WorkerType, initData.SessionID, workDir)
 
-// After（无向后兼容，直接映射）
-sessionID := session.DeriveSessionKey(c.userID, initData.WorkerType, initData.SessionID)
+// ResumeSession 现在接受 workDir 参数
+if err := c.starter.ResumeSession(context.Background(), sessionID, workDir); err != nil {
+    ...
+}
 ```
 
-### 5.6 internal/gateway/handler.go
+### 5.6 internal/gateway/SessionStarter 接口
 
 ```go
-func (h *Handler) handleControl(ctx context.Context, env *events.Envelope) error {
-    data, ok := env.Event.Data.(map[string]any)
-    if !ok {
-        return h.sendErrorf(ctx, env, events.ErrCodeInvalidMessage, "control: invalid data")
-    }
-
-    action, _ := data["action"].(string)
-    h.log.Info("gateway: control received", "action", action, "session_id", env.SessionID)
-
-    switch events.ControlAction(action) {
-    // ... 现有 case ...
-
-    case events.ControlActionReset:
-        return h.handleReset(ctx, env)
-
-    case events.ControlActionGC:
-        return h.handleGC(ctx, env)
-
-    default:
-        return h.sendErrorf(ctx, env, events.ErrCodeProtocolViolation, "unknown control action: %s", action)
-    }
+type SessionStarter interface {
+    StartSession(ctx context.Context, id, userID, botID string,
+        wt worker.WorkerType, allowedTools []string, workDir string) error
+    ResumeSession(ctx context.Context, id string, workDir string) error
 }
+```
 
-func (h *Handler) handleReset(ctx context.Context, env *events.Envelope) error {
-    // 1. 所有权校验
-    if err := h.sm.ValidateOwnership(ctx, env.SessionID, env.OwnerID, ""); err != nil {
-        if errors.Is(err, session.ErrSessionNotFound) {
-            return h.sendErrorf(ctx, env, events.ErrCodeSessionNotFound, "session not found")
+### 5.7 internal/gateway/bridge.go:StartPlatformSession（v1.4 修复）
+
+```go
+func (b *Bridge) StartPlatformSession(ctx, sessionID, ownerID, workerType, workDir) error {
+    _, err := b.sm.Get(sessionID)
+    if err == nil {
+        if w := b.sm.GetWorker(sessionID); w != nil {
+            return nil
         }
-        return h.sendErrorf(ctx, env, events.ErrCodeUnauthorized, "ownership required")
+        // v1.4 修复: orphan → ResumeSession（而非 Delete + StartSession）
+        return b.ResumeSession(ctx, sessionID, workDir)
     }
-
-    // 2. Gateway: 清空 Session.Context
-    if err := h.sm.ClearContext(ctx, env.SessionID); err != nil {
-        h.log.Warn("gateway: reset clear context failed", "session_id", env.SessionID, "err", err)
-        return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "clear context failed: %v", err)
-    }
-
-    // 3. Worker: 清空运行时上下文（Worker 自行决定 in-place 或 terminate+start）
-    w := h.sm.GetWorker(env.SessionID)
-    if w != nil {
-        if err := w.ResetContext(ctx); err != nil {
-            h.log.Warn("gateway: worker reset context failed", "session_id", env.SessionID, "err", err)
-            return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "worker reset failed: %v", err)
-        }
-    }
-
-    // 4. Session → RUNNING
-    if err := h.sm.TransitionWithReason(ctx, env.SessionID, events.StateRunning, "reset"); err != nil {
-        return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "reset transition failed: %v", err)
-    }
-
-    // 7. 转发 worker 事件
-    go h.bridge.ForwardEvents(w, env.SessionID)
-
-    h.log.Info("gateway: session reset", "session_id", env.SessionID)
-    return nil
+    return b.StartSession(ctx, sessionID, ownerID, "", wt, nil, workDir)
 }
+```
 
-func (h *Handler) handleGC(ctx context.Context, env *events.Envelope) error {
-    // 1. 所有权校验
-    if err := h.sm.ValidateOwnership(ctx, env.SessionID, env.OwnerID, ""); err != nil {
-        if errors.Is(err, session.ErrSessionNotFound) {
-            return h.sendErrorf(ctx, env, events.ErrCodeSessionNotFound, "session not found")
-        }
-        return h.sendErrorf(ctx, env, events.ErrCodeUnauthorized, "ownership required")
-    }
+### 5.8 internal/messaging/bridge.go（v1.4 重构）
 
-    // 2. 终止 Worker（Worker 内部自行保存状态）
-    if w := h.sm.GetWorker(env.SessionID); w != nil {
-        if err := w.Terminate(ctx); err != nil {
-            h.log.Warn("gateway: gc worker terminate failed", "session_id", env.SessionID, "err", err)
-        }
-        h.sm.DetachWorker(env.SessionID)
-    }
+```go
+// 删除旧的字符串格式常量
+// const SessionIDFormatSlack  = "slack:%s:%s:%s:%s"
+// const SessionIDFormatFeishu = "feishu:%s:%s:%s"
 
-    // 3. Session → TERMINATED
-    if err := h.sm.TransitionWithReason(ctx, env.SessionID, events.StateTerminated, "gc"); err != nil {
-        return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "gc transition failed: %v", err)
-    }
-
-    // 4. 发送 state 通知
-    stateEvt := events.NewEnvelope(aep.NewID(), env.SessionID, h.hub.NextSeq(env.SessionID), events.State, events.StateData{
-        State:   events.StateTerminated,
-        Message: "session_archived",
+// 使用 DerivePlatformSessionKey
+func (b *Bridge) MakeFeishuEnvelope(chatID, threadTS, userID, text string) *Envelope {
+    sessionID := session.DerivePlatformSessionKey(userID, worker.WorkerType(b.workerType), session.PlatformContext{
+        Platform: "feishu", ChatID: chatID, ThreadTS: threadTS, UserID: userID,
     })
-    _ = h.hub.SendToSession(ctx, stateEvt)
+    return b.makeEnvelope(sessionID, userID, text, map[string]any{"platform": "feishu", "chat_id": chatID})
+}
 
-    h.log.Info("gateway: session gc'd", "session_id", env.SessionID)
-    return nil
+func (b *Bridge) MakeSlackEnvelope(teamID, channelID, threadTS, userID, text string) *Envelope {
+    sessionID := session.DerivePlatformSessionKey(userID, worker.WorkerType(b.workerType), session.PlatformContext{
+        Platform: "slack", TeamID: teamID, ChannelID: channelID, ThreadTS: threadTS, UserID: userID,
+    })
+    return b.makeEnvelope(sessionID, userID, text, map[string]any{"platform": "slack", "team_id": teamID, "channel_id": channelID})
 }
 ```
 
@@ -767,7 +817,7 @@ func (h *Handler) handleGC(ctx context.Context, env *events.Envelope) error {
 
 | 日期 | 版本 | 变更 |
 |------|------|------|
-| 2026-04-07 | 1.4 | **状态更新**: Phase 1 已100%完成实现；所有核心文件已验证存在并有测试覆盖；新增 WorkerSessionIDHandler 接口实现（OpenCode CLI/Server）；UUIDv5 映射和 persistWorkerSessionID 流程已完整 |
+| 2026-04-18 | 1.4 | **统一 session 映射**: 新增 `DerivePlatformSessionKey()` 供 Feishu/Slack 使用，与 Web 的 `DeriveSessionKey` 共存；所有平台 session ID 统一为 UUIDv5 格式；新增 `PlatformContext` 结构体隔离各平台字段；Slack adapter 修复 teamID/threadTS 提取；**修复 orphan 处理**: `StartPlatformSession` orphan 路径从 `Delete + StartSession` 改为 `ResumeSession`，使 gateway 重启后 worker session 内部状态可恢复；`ResumeSession` 增加 `workDir` 参数 |
 | 2026-04-07 | 1.3 | 新增第 8 节 AC（Acceptance Criteria），共 9 组 44 条验收标准；章节重新编号 |
 | 2026-04-06 | 1.2 | 移除向后兼容逻辑；改用 UUIDv5 算法替代 SHA-256 hex |
 | 2026-04-06 | 1.1 | 交叉复核源码，精确到文件/行号；明确 minimal change set |

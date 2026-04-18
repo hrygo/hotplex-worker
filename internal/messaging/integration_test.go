@@ -4,9 +4,11 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"regexp"
 	"sync"
 	"testing"
 
+	"github.com/hotplex/hotplex-worker/internal/session"
 	"github.com/hotplex/hotplex-worker/pkg/events"
 	"github.com/stretchr/testify/require"
 )
@@ -105,6 +107,8 @@ type mockHub struct{}
 
 func (m *mockHub) JoinPlatformSession(sessionID string, pc PlatformConn) {}
 
+var uuidV5Regex = regexp.MustCompile(`[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}`)
+
 func TestBridge_MakeSlackEnvelope(t *testing.T) {
 	t.Parallel()
 
@@ -128,9 +132,23 @@ func TestBridge_MakeSlackEnvelope(t *testing.T) {
 	env := br.MakeSlackEnvelope(teamID, channelID, threadTS, userID, text)
 	require.NotNil(t, env)
 
-	expectedSession := "slack:" + teamID + ":" + channelID + ":" + threadTS + ":" + userID
-	require.Equal(t, expectedSession, env.SessionID)
+	// Session ID is now a UUIDv5 derived from platform context.
+	require.Regexp(t, uuidV5Regex, env.SessionID)
 	require.Equal(t, userID, env.OwnerID)
+
+	// Deterministic: same inputs produce the same UUIDv5.
+	env2 := br.MakeSlackEnvelope(teamID, channelID, threadTS, userID, text)
+	require.Equal(t, env.SessionID, env2.SessionID)
+
+	// Matches the underlying derivation function.
+	expected := session.DerivePlatformSessionKey(userID, "claude_code", session.PlatformContext{
+		Platform:  "slack",
+		TeamID:    teamID,
+		ChannelID: channelID,
+		ThreadTS:  threadTS,
+		UserID:    userID,
+	})
+	require.Equal(t, expected, env.SessionID)
 
 	// Event.Data is a map with content and metadata
 	data, ok := env.Event.Data.(map[string]any)
@@ -160,8 +178,21 @@ func TestBridge_MakeFeishuEnvelope(t *testing.T) {
 	env := br.MakeFeishuEnvelope(chatID, threadTS, userID, text)
 	require.NotNil(t, env)
 
-	expectedSession := "feishu:" + chatID + ":" + threadTS + ":" + userID
-	require.Equal(t, expectedSession, env.SessionID)
+	// Session ID is now a UUIDv5 derived from platform context.
+	require.Regexp(t, uuidV5Regex, env.SessionID)
+
+	// Deterministic: same inputs produce the same UUIDv5.
+	env2 := br.MakeFeishuEnvelope(chatID, threadTS, userID, text)
+	require.Equal(t, env.SessionID, env2.SessionID)
+
+	// Matches the underlying derivation function.
+	expected := session.DerivePlatformSessionKey(userID, "claude_code", session.PlatformContext{
+		Platform: "feishu",
+		ChatID:   chatID,
+		ThreadTS: threadTS,
+		UserID:   userID,
+	})
+	require.Equal(t, expected, env.SessionID)
 
 	data, ok := env.Event.Data.(map[string]any)
 	require.True(t, ok)

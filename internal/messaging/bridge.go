@@ -7,18 +7,14 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/hotplex/hotplex-worker/internal/session"
+	"github.com/hotplex/hotplex-worker/internal/worker"
 	"github.com/hotplex/hotplex-worker/pkg/aep"
 	"github.com/hotplex/hotplex-worker/pkg/events"
 )
 
 // DefaultWorkerWorkDir is the fallback working directory when workDir is not configured.
 const DefaultWorkerWorkDir = "/tmp/hotplex/workspace"
-
-// Session ID formats for platform-derived sessions.
-const (
-	SessionIDFormatSlack  = "slack:%s:%s:%s:%s" // teamID:channelID:threadTS:userID
-	SessionIDFormatFeishu = "feishu:%s:%s:%s"   // chatID:threadTS:userID
-)
 
 // ConnFactory creates a PlatformConn for a given platform session.
 // Each adapter registers its own factory during wiring.
@@ -119,9 +115,15 @@ func (b *Bridge) makeEnvelope(sessionID, ownerID, text string, metadata map[stri
 }
 
 // MakeSlackEnvelope converts a Slack message to an AEP input envelope.
-// session ID format: slack:{team_id}:{channel_id}:{thread_ts}:{user_id}
+// session ID is derived via UUIDv5: ownerID + workerType + platform + teamID + channelID + threadTS + userID.
 func (b *Bridge) MakeSlackEnvelope(teamID, channelID, threadTS, userID, text string) *events.Envelope {
-	sessionID := fmt.Sprintf(SessionIDFormatSlack, teamID, channelID, threadTS, userID)
+	sessionID := session.DerivePlatformSessionKey(userID, worker.WorkerType(b.workerType), session.PlatformContext{
+		Platform:  "slack",
+		TeamID:    teamID,
+		ChannelID: channelID,
+		ThreadTS:  threadTS,
+		UserID:    userID,
+	})
 	return b.makeEnvelope(sessionID, userID, text, map[string]any{
 		"platform":   string(PlatformSlack),
 		"team_id":    teamID,
@@ -130,9 +132,14 @@ func (b *Bridge) MakeSlackEnvelope(teamID, channelID, threadTS, userID, text str
 }
 
 // MakeFeishuEnvelope converts a Feishu message to an AEP input envelope.
-// session ID format: feishu:{chat_id}:{thread_ts}:{user_id}
+// session ID is derived via UUIDv5: ownerID + workerType + platform + chatID + threadTS + userID.
 func (b *Bridge) MakeFeishuEnvelope(chatID, threadTS, userID, text string) *events.Envelope {
-	sessionID := fmt.Sprintf(SessionIDFormatFeishu, chatID, threadTS, userID)
+	sessionID := session.DerivePlatformSessionKey(userID, worker.WorkerType(b.workerType), session.PlatformContext{
+		Platform: "feishu",
+		ChatID:   chatID,
+		ThreadTS: threadTS,
+		UserID:   userID,
+	})
 	return b.makeEnvelope(sessionID, userID, text, map[string]any{
 		"platform": string(PlatformFeishu),
 		"chat_id":  chatID,

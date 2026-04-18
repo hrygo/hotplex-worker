@@ -70,11 +70,11 @@ type StreamingCardController struct {
 	lastFlushed string
 	cardKitOK   bool
 
-	chatType    string
+	chatType     string
 	replyToMsgID string
-	limiter     *FeishuRateLimiter
-	client      *lark.Client
-	log         *slog.Logger
+	limiter      *FeishuRateLimiter
+	client       *lark.Client
+	log          *slog.Logger
 }
 
 const streamingElementID = "streaming_content"

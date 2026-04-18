@@ -121,6 +121,7 @@ func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsA
 	threadTS := extractThreadTS(*msgEvent)
 	userID := msgEvent.User
 	text := extractText(*msgEvent)
+	teamID := event.TeamID // workspace identity from EventsAPIEvent
 
 	if text == "" {
 		return
@@ -145,20 +146,21 @@ func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsA
 		"channel", channelID,
 		"thread", threadTS,
 		"user", userID,
+		"team", teamID,
 		"text_len", len(text),
 	)
 
-	if err := a.HandleTextMessage(ctx, platformMsgID, channelID, userID, text); err != nil {
+	if err := a.HandleTextMessage(ctx, platformMsgID, channelID, teamID, threadTS, userID, text); err != nil {
 		a.log.Error("slack: handle message failed", "error", err)
 	}
 }
 
-func (a *Adapter) HandleTextMessage(ctx context.Context, platformMsgID, channelID, userID, text string) error {
+func (a *Adapter) HandleTextMessage(ctx context.Context, platformMsgID, channelID, teamID, threadTS, userID, text string) error {
 	if a.bridge == nil {
 		return nil
 	}
 
-	envelope := a.bridge.MakeSlackEnvelope("", channelID, "", userID, text)
+	envelope := a.bridge.MakeSlackEnvelope(teamID, channelID, threadTS, userID, text)
 	if envelope == nil {
 		return fmt.Errorf("slack: failed to build envelope")
 	}

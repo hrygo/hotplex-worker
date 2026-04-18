@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -292,7 +293,7 @@ func (a *Adapter) handleTextMessage(ctx context.Context, platformMsgID, channelI
 	return a.bridge.Handle(ctx, envelope)
 }
 
-func (a *Adapter) HandleTextMessage(ctx context.Context, platformMsgID, channelID, userID, text string) error {
+func (a *Adapter) HandleTextMessage(ctx context.Context, platformMsgID, channelID, teamID, threadTS, userID, text string) error {
 	return a.handleTextMessage(ctx, platformMsgID, channelID, "p2p", userID, text, "", "")
 }
 
@@ -407,9 +408,9 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 	}
 
 	if c.replyToMsgID != "" {
-		return c.adapter.replyMessage(ctx, c.replyToMsgID, text, false)
+		return c.adapter.replyMessage(ctx, c.replyToMsgID, stripTablesFromMarkdown(text), false)
 	}
-	return c.adapter.sendTextMessage(ctx, c.chatID, text)
+	return c.adapter.sendTextMessage(ctx, c.chatID, stripTablesFromMarkdown(text))
 }
 
 func (c *FeishuConn) Close() error {
@@ -519,6 +520,18 @@ func ptrStr(p *string) string {
 
 type textContent struct {
 	Text string `json:"text"`
+}
+
+// stripTables removes markdown table lines from text.
+// Tables in Feishu interactive card markdown are limited to 3 per card.
+// When content exceeds this limit, tables are stripped to ensure the card renders.
+var stripTables = regexp.MustCompile(`(?m)^[\|` + "`" + `\-: ].*\n?` + `|^[\|` + "`" + `\-:].*\n?`)
+
+func stripTablesFromMarkdown(text string) string {
+	if !strings.Contains(text, "|") || !strings.Contains(text, "---") {
+		return text
+	}
+	return stripTables.ReplaceAllString(text, "")
 }
 
 // buildCardContent builds a Feishu interactive card JSON using CardKit v2 format.

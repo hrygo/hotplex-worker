@@ -28,7 +28,8 @@ type PlatformAdapterInterface interface {
 
 	// HandleTextMessage processes an incoming text message from the platform.
 	// The adapter maps the platform message to an AEP Envelope and delegates to PlatformBridge.Handle.
-	HandleTextMessage(ctx context.Context, platformMsgID, channelID, userID, text string) error
+	// teamID and threadTS are optional; adapters that don't use them should ignore them.
+	HandleTextMessage(ctx context.Context, platformMsgID, channelID, teamID, threadTS, userID, text string) error
 
 	// Close gracefully terminates the platform connection.
 	Close(ctx context.Context) error

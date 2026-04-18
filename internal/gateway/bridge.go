@@ -89,7 +89,8 @@ func (b *Bridge) StartSession(ctx context.Context, id, userID, botID string, wt 
 }
 
 // ResumeSession reattaches to an existing session.
-func (b *Bridge) ResumeSession(ctx context.Context, id string) error {
+// workDir overrides the stored project directory (used by platform sessions that need a consistent workspace).
+func (b *Bridge) ResumeSession(ctx context.Context, id string, workDir string) error {
 	si, err := b.sm.Get(id)
 	if err != nil {
 		return err
@@ -131,6 +132,7 @@ func (b *Bridge) ResumeSession(ctx context.Context, id string) error {
 		UserID:          si.UserID,
 		AllowedTools:    si.AllowedTools,
 		WorkerSessionID: si.WorkerSessionID,
+		ProjectDir:      workDir,
 	}
 	if err := w.Resume(ctx, workerInfo); err != nil {
 		b.sm.DetachWorker(id)
@@ -261,7 +263,8 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string) {
 
 // StartPlatformSession creates a session for a platform message if it doesn't already exist.
 // Implements messaging.SessionStarter. Idempotent: returns nil if session exists with a live worker.
-// If the session exists but has no worker (orphan from a previous gateway restart), it is recreated.
+// If the session exists but has no worker (orphan from a previous gateway restart), it resumes
+// the existing session so the worker can restore its internal session state.
 func (b *Bridge) StartPlatformSession(ctx context.Context, sessionID, ownerID, workerType, workDir string) error {
 	b.log.Debug("bridge: StartPlatformSession called", "session_id", sessionID, "owner_id", ownerID, "worker_type", workerType, "work_dir", workDir)
 	_, err := b.sm.Get(sessionID)
@@ -269,8 +272,11 @@ func (b *Bridge) StartPlatformSession(ctx context.Context, sessionID, ownerID, w
 		if w := b.sm.GetWorker(sessionID); w != nil {
 			return nil
 		}
-		b.log.Info("gateway: orphan platform session, recreating", "session_id", sessionID)
-		_ = b.sm.Delete(ctx, sessionID)
+		// Orphan: session record exists but worker is gone (gateway restarted).
+		// Resume the session so the worker restores its internal session state
+		// (e.g., Claude Code's --resume flag, OpenCode CLI's session continuity).
+		b.log.Info("gateway: orphan platform session, resuming", "session_id", sessionID)
+		return b.ResumeSession(ctx, sessionID, workDir)
 	}
 
 	wt := worker.WorkerType(workerType)

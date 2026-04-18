@@ -26,7 +26,7 @@ import (
 type SessionStarter interface {
 	StartSession(ctx context.Context, id, userID, botID string,
 		wt worker.WorkerType, allowedTools []string, workDir string) error
-	ResumeSession(ctx context.Context, id string) error
+	ResumeSession(ctx context.Context, id string, workDir string) error
 }
 
 var _ SessionStarter = (*Bridge)(nil) // compile-time: Bridge implements SessionStarter
@@ -301,7 +301,7 @@ func (c *Conn) performInit(handler *Handler) error {
 		// ResumeSession requires a valid SessionStarter (Bridge). In test mode,
 		// starter may be nil; skip resumption and let bot_id validation proceed.
 		if c.starter != nil {
-			if err := c.starter.ResumeSession(context.Background(), sessionID); err != nil {
+			if err := c.starter.ResumeSession(context.Background(), sessionID, workDir); err != nil {
 				c.sendInitError(events.ErrCodeInternalError, "failed to resume session")
 				return fmt.Errorf("resume session: %w", err)
 			}

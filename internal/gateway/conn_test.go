@@ -1339,7 +1339,7 @@ func TestBridge_ResumeSession_Success(t *testing.T) {
 	b := NewBridge(slog.Default(), h, sm, nil)
 	b.wf = wf
 
-	err := b.ResumeSession(ctx, "sess_resume")
+	err := b.ResumeSession(ctx, "sess_resume", "")
 	require.NoError(t, err, "ResumeSession should succeed")
 
 	sm.AssertExpectations(t)
@@ -1369,7 +1369,7 @@ func TestBridge_ResumeSession_DeletedSession(t *testing.T) {
 	h := newTestHub(t)
 	b := NewBridge(slog.Default(), h, sm, nil)
 
-	err := b.ResumeSession(context.Background(), "sess_deleted")
+	err := b.ResumeSession(context.Background(), "sess_deleted", "")
 	require.Error(t, err)
 	require.True(t, errors.Is(err, session.ErrSessionNotFound))
 
@@ -1420,7 +1420,7 @@ func TestBridge_ResumeSession_NoopWorker(t *testing.T) {
 	// Use the default factory (defaultWorkerFactory) so real noop workers are created.
 	// b.wf is already defaultWorkerFactory{} from NewBridge.
 
-	err := b.ResumeSession(ctx, "sess_noop")
+	err := b.ResumeSession(ctx, "sess_noop", "")
 	require.NoError(t, err)
 
 	sm.AssertExpectations(t)
