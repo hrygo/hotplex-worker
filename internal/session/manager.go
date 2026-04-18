@@ -443,7 +443,7 @@ func (m *Manager) Delete(ctx context.Context, id string) error {
 // ValidateOwnership checks whether the given userID owns the session.
 // Returns nil if the user is the owner, or ErrOwnershipMismatch otherwise.
 // Admin bypass: if adminUserID is non-empty, it bypasses ownership check.
-func (m *Manager) ValidateOwnership(ctx context.Context, sessionID, userID string, adminUserID string) error {
+func (m *Manager) ValidateOwnership(ctx context.Context, sessionID, userID, adminUserID string) error {
 	si, err := m.Get(sessionID)
 	if err != nil {
 		return err
@@ -613,8 +613,8 @@ func (m *Manager) Close() error {
 		if w != nil {
 			// Graceful shutdown with 5s grace period
 			terminateCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
 			_ = w.Terminate(terminateCtx)
+			cancel()
 		}
 	}
 

@@ -33,6 +33,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -428,7 +429,7 @@ func (w *Worker) ResetContext(ctx context.Context) error {
 		return fmt.Errorf("opencodeserver: reset: worker not started")
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", httpAddr+"/session/"+sessionID+"/reset", nil)
+	req, err := http.NewRequestWithContext(ctx, "POST", httpAddr+"/session/"+sessionID+"/reset", http.NoBody)
 	if err != nil {
 		return fmt.Errorf("opencodeserver: reset: new request: %w", err)
 	}
@@ -437,7 +438,7 @@ func (w *Worker) ResetContext(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("opencodeserver: reset: http request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 256))
@@ -504,7 +505,7 @@ func (w *Worker) waitForServer(ctx context.Context) error {
 			return fmt.Errorf("timeout waiting for server after %v", serverReadyTimeout)
 		case <-ticker.C:
 			// Poll /health endpoint
-			req, err := http.NewRequestWithContext(ctx, "GET", w.httpAddr+"/health", nil)
+			req, err := http.NewRequestWithContext(ctx, "GET", w.httpAddr+"/health", http.NoBody)
 			if err != nil {
 				continue // Retry on request creation error
 			}
@@ -513,7 +514,7 @@ func (w *Worker) waitForServer(ctx context.Context) error {
 			if err != nil {
 				continue // Retry on connection error
 			}
-			resp.Body.Close()
+			_ = resp.Body.Close()
 
 			if resp.StatusCode == http.StatusOK {
 				return nil // Server is ready
@@ -545,7 +546,7 @@ func (w *Worker) createSession(ctx context.Context, projectDir string) (string, 
 	if err != nil {
 		return "", fmt.Errorf("http request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -596,7 +597,7 @@ func (w *Worker) readSSE(sessionID string) {
 
 	// Build SSE URL
 	url := fmt.Sprintf("%s/events?session_id=%s", w.httpAddr, sessionID)
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest("GET", url, http.NoBody)
 	if err != nil {
 		w.Log.Error("opencodeserver: create SSE request", "error", err)
 		return
@@ -610,7 +611,7 @@ func (w *Worker) readSSE(sessionID string) {
 		w.Log.Error("opencodeserver: SSE connect", "error", err)
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -625,7 +626,7 @@ func (w *Worker) readSSE(sessionID string) {
 	for {
 		line, err := reader.ReadString('\n')
 		if err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				w.Log.Debug("opencodeserver: SSE stream ended (EOF)")
 				return
 			}
@@ -743,7 +744,7 @@ func (c *conn) Send(ctx context.Context, msg *events.Envelope) error {
 	if err != nil {
 		return fmt.Errorf("opencodeserver: send input: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Check response status
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {

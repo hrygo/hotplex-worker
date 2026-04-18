@@ -3,6 +3,7 @@
 package security
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -204,7 +205,8 @@ func ValidateURLAndLog(targetURL string, log *slog.Logger, fields ...any) error 
 	err := ValidateURL(targetURL)
 	if err != nil && log != nil {
 		args := append([]any{"url", targetURL}, fields...)
-		if _, ok := err.(*SSRFProtectionError); ok {
+		var ssrfErr *SSRFProtectionError
+		if errors.As(err, &ssrfErr) {
 			args = append(args, "ssrf_reason", err.Error())
 		}
 		log.Warn("security: SSRF blocked", args...)

@@ -93,7 +93,7 @@ func (a *Adapter) runSocketMode(ctx context.Context) {
 				if !ok {
 					continue
 				}
-				a.socketMode.Ack(*evt.Request)
+				a.socketMode.Ack(*evt.Request) //nolint:errcheck // Ack must not block event processing
 				a.handleEventsAPI(ctx, eventsAPI)
 
 			case socketmode.EventTypeConnecting:
@@ -129,7 +129,7 @@ func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsA
 
 	// Thread ownership check
 	channelType := "channel"
-	if len(channelID) > 0 && channelID[0] == 'D' {
+	if channelID != "" && channelID[0] == 'D' {
 		channelType = "im"
 	}
 	if !a.ownership.ShouldRespond(channelType, threadTS, text, userID) {

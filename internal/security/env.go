@@ -25,8 +25,8 @@ var sensitiveEnvPrefixes = []string{
 
 // sensitiveEnvPatterns are regex patterns for specific sensitive key names.
 var sensitiveEnvPatterns = []*regexp.Regexp{
-	regexp.MustCompile(`(?i)(password|passwd|pwd|secret)[\d]*$`),
-	regexp.MustCompile(`(?i)(key|token|cred|credential)[\d]*$`),
+	regexp.MustCompile(`(?i)(password|passwd|pwd|secret)\d*$`),
+	regexp.MustCompile(`(?i)(key|token|cred|credential)\d*$`),
 	regexp.MustCompile(`(?i).*_(key|secret|token|password|cred)$`),
 	regexp.MustCompile(`(?i)^x[-_]?api[-_]?key$`),
 }

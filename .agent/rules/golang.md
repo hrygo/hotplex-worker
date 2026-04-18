@@ -12,11 +12,13 @@ paths:
 
 ## 格式化
 - 行宽软限制 99 字符
-- **两个 import group**：标准库 → 第三方库，无空行分隔
+- **三个 import group**：标准库 → 第三方库 → 项目内部包，用空行分隔
+- goimports 必须带 `-local github.com/hotplex/hotplex-worker`
 - 相似声明分组：`const`、`var`、类型各自集中
 - 避免不必要的 import alias
 - 减少嵌套：**优先 early return**
 - `gofmt -s` 格式化
+- 八进制字面量用 `0o755` 而非 `0755`
 
 ## 变量与类型
 - 短声明用 `:=`，零值初始化用 `var`
@@ -40,6 +42,10 @@ paths:
 - 每个错误**只处理一次**：不同时 log 又 return
 - 避免堆叠 "failed to"
 - `printf` 格式化字符串用 `const`
+- **错误比较用 `errors.Is`**，不用 `==`（支持 wrapped errors）
+- **类型断言用 `errors.As`**，不用 `err.(*Type)`（支持 wrapped errors）
+- **Best-effort 清理操作**用 `_ =` 显式忽略：`_ = resp.Body.Close()`
+- **defer 中的 Close** 用 `defer func() { _ = rows.Close() }()`
 
 ## 进程与并发
 - **边界处复制 slice/map**，防止外部意外修改

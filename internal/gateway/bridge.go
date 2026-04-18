@@ -90,7 +90,7 @@ func (b *Bridge) StartSession(ctx context.Context, id, userID, botID string, wt 
 
 // ResumeSession reattaches to an existing session.
 // workDir overrides the stored project directory (used by platform sessions that need a consistent workspace).
-func (b *Bridge) ResumeSession(ctx context.Context, id string, workDir string) error {
+func (b *Bridge) ResumeSession(ctx context.Context, id, workDir string) error {
 	si, err := b.sm.Get(id)
 	if err != nil {
 		return err

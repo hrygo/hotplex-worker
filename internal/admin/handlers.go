@@ -30,7 +30,7 @@ func (a *AdminAPI) HandleStats(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		m := byType[key]
-		m["sessions"] = m["sessions"].(int) + 1
+		m["sessions"] = m["sessions"].(int) + 1 //nolint:errcheck // guaranteed by filter logic
 	}
 
 	respondJSON(w, map[string]any{

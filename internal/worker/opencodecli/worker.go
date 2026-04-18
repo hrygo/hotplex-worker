@@ -2,6 +2,7 @@ package opencodecli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -373,7 +374,7 @@ func (w *Worker) readOutput(ctx context.Context) {
 		// and the bridge's forwardEvents goroutine reads from conn.Recv().
 		if ctx.Err() == nil {
 			if conn := w.Conn(); conn != nil {
-				conn.Close()
+				_ = conn.Close()
 			}
 		}
 	}()
@@ -405,7 +406,7 @@ func (w *Worker) readOutput(ctx context.Context) {
 
 		line, err := readLineFn()
 		if err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				return
 			}
 			w.Log.Error("opencodecli: read line", "error", err)
@@ -509,7 +510,7 @@ func (w *Worker) trySend(env *events.Envelope) {
 // closeStdin closes and nils the stdin pipe. Caller must hold w.Mu.
 func (w *Worker) closeStdin() {
 	if w.stdin != nil {
-		w.stdin.Close()
+		_ = w.stdin.Close()
 		w.stdin = nil
 	}
 }

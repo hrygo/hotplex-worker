@@ -45,18 +45,18 @@ func NewSQLiteStore(ctx context.Context, cfg *config.Config) (*SQLiteStore, erro
 
 	if cfg.DB.WALMode {
 		if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
-			db.Close()
+			_ = db.Close()
 			return nil, fmt.Errorf("session store: enable WAL: %w", err)
 		}
 	}
 	if _, err := db.Exec(fmt.Sprintf("PRAGMA busy_timeout=%d", int(cfg.DB.BusyTimeout.Milliseconds()))); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("session store: set busy_timeout: %w", err)
 	}
 
 	store := &SQLiteStore{db: db}
 	if err := store.migrate(ctx); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, err
 	}
 
@@ -215,7 +215,7 @@ func (s *SQLiteStore) List(ctx context.Context, limit, offset int) ([]*SessionIn
 	if err != nil {
 		return nil, fmt.Errorf("session store: list: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var sessions []*SessionInfo
 	for rows.Next() {
@@ -252,7 +252,7 @@ func (s *SQLiteStore) GetExpiredMaxLifetime(ctx context.Context, now time.Time) 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var ids []string
 	for rows.Next() {
@@ -271,7 +271,7 @@ func (s *SQLiteStore) GetExpiredIdle(ctx context.Context, now time.Time) ([]stri
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var ids []string
 	for rows.Next() {
@@ -359,7 +359,7 @@ func (s *SQLiteStore) GetAuditTrail(ctx context.Context, sessionID string) ([]*A
 	if err != nil {
 		return nil, fmt.Errorf("session store: get audit trail: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var records []*AuditRecord
 	for rows.Next() {

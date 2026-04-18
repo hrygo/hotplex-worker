@@ -503,14 +503,14 @@ func startMessagingAdapters(ctx context.Context, log *slog.Logger, cfg *config.C
 		}
 
 		// Inject dependencies via embedded PlatformAdapter.
-		adapter.(interface{ SetHub(messaging.HubInterface) }).SetHub(hub)
-		adapter.(interface {
+		adapter.(interface{ SetHub(messaging.HubInterface) }).SetHub(hub) //nolint:errcheck // adapter guaranteed by registration
+		adapter.(interface {                                              //nolint:errcheck // adapter guaranteed by registration
 			SetSessionManager(messaging.SessionManager)
 		}).SetSessionManager(sm)
-		adapter.(interface {
+		adapter.(interface { //nolint:errcheck // adapter guaranteed by registration
 			SetHandler(messaging.HandlerInterface)
 		}).SetHandler(handler)
-		adapter.(interface{ SetBridge(*messaging.Bridge) }).SetBridge(msgBridge)
+		adapter.(interface{ SetBridge(*messaging.Bridge) }).SetBridge(msgBridge) //nolint:errcheck // adapter guaranteed by registration
 
 		if err := adapter.Start(ctx); err != nil {
 			log.Warn("messaging: start failed", "platform", pt, "err", err)

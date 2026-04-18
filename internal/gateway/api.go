@@ -61,9 +61,15 @@ func (g *GatewayAPI) CreateSession(w http.ResponseWriter, r *http.Request) {
 	}
 	id := r.URL.Query().Get("session_id")
 	wt := worker.WorkerType(r.URL.Query().Get("worker_type"))
-	if wt == "" { wt = worker.TypeClaudeCode }
-	if id == "" { id = aep.NewSessionID() }
-	if userID == "" { userID = "anonymous" }
+	if wt == "" {
+		wt = worker.TypeClaudeCode
+	}
+	if id == "" {
+		id = aep.NewSessionID()
+	}
+	if userID == "" {
+		userID = "anonymous"
+	}
 	if err := g.bridge.StartSession(r.Context(), id, userID, botID, wt, nil, ""); err != nil {
 		http.Error(w, "failed to create session", http.StatusInternalServerError)
 		return
@@ -77,9 +83,15 @@ func (g *GatewayAPI) GetSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.PathValue("id")
-	if id == "" { http.Error(w, "session id required", http.StatusBadRequest); return }
+	if id == "" {
+		http.Error(w, "session id required", http.StatusBadRequest)
+		return
+	}
 	si, err := g.sm.Get(id)
-	if err != nil { http.Error(w, "not found", http.StatusNotFound); return }
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
 	respondJSON(w, si)
 }
 
@@ -89,7 +101,10 @@ func (g *GatewayAPI) DeleteSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.PathValue("id")
-	if id == "" { http.Error(w, "session id required", http.StatusBadRequest); return }
+	if id == "" {
+		http.Error(w, "session id required", http.StatusBadRequest)
+		return
+	}
 	if err := g.sm.Delete(r.Context(), id); err != nil {
 		http.Error(w, "failed to delete session", http.StatusInternalServerError)
 		return

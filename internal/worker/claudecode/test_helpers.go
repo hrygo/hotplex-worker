@@ -32,7 +32,7 @@ type mockConn struct {
 	stdin     io.Writer
 }
 
-func newMockConn(userID, sessionID string) *mockConn {
+func newMockConn(userID, sessionID string) *mockConn { //nolint:unparam // test helper
 	return &mockConn{
 		userID:    userID,
 		sessionID: sessionID,

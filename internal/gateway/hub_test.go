@@ -412,8 +412,7 @@ func TestHub_sendControlToSession_NoConns(t *testing.T) {
 	t.Parallel()
 	h := newTestHub(t)
 	env := events.NewEnvelope(aep.NewID(), "no_conns", 1, events.Control, nil)
-	err := h.sendControlToSession(context.Background(), env)
-	require.NoError(t, err)
+	h.sendControlToSession(context.Background(), env)
 }
 
 func TestHub_DrainBroadcast(t *testing.T) {

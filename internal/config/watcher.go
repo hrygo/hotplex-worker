@@ -127,7 +127,7 @@ func (w *Watcher) Start(ctx context.Context) error {
 		dir = w.path[:i]
 	}
 	if err := w.viper.Add(dir); err != nil {
-		w.viper.Close()
+		_ = w.viper.Close()
 		return err
 	}
 

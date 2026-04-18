@@ -4,8 +4,9 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/hotplex/hotplex-worker/internal/worker"
 	"github.com/stretchr/testify/require"
+
+	"github.com/hotplex/hotplex-worker/internal/worker"
 )
 
 func TestDeriveSessionKey_Deterministic(t *testing.T) {

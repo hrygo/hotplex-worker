@@ -23,6 +23,6 @@ var abortTriggers = map[string]bool{
 // Normalization: trim → lowercase → strip trailing punctuation.
 func IsAbortCommand(text string) bool {
 	t := strings.TrimSpace(strings.ToLower(text))
-	t = strings.TrimRight(t, ".!?…,，。;；:：\"')])")
+	t = strings.TrimRight(t, ".!?…,，。;；:：\"')]")
 	return abortTriggers[t]
 }

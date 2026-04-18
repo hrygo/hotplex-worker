@@ -17,7 +17,7 @@ import (
 func ensureDBDir(dbPath string) error {
 	dir := filepath.Dir(dbPath)
 	if dir != "." && dir != "/" {
-		if err := os.MkdirAll(dir, 0755); err != nil {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return fmt.Errorf("session store: create db dir: %w", err)
 		}
 	}

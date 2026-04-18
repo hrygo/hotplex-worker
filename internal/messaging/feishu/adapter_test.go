@@ -6,10 +6,11 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/hotplex/hotplex-worker/internal/messaging"
-	"github.com/hotplex/hotplex-worker/pkg/events"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	"github.com/stretchr/testify/require"
+
+	"github.com/hotplex/hotplex-worker/internal/messaging"
+	"github.com/hotplex/hotplex-worker/pkg/events"
 )
 
 func TestExtractResponseText_NilEnvelope(t *testing.T) {

@@ -77,7 +77,7 @@ func (v *JWTValidator) Validate(tokenString string) (*JWTClaims, error) {
 	})
 
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrUnauthorized, err)
+		return nil, fmt.Errorf("%w: %w", ErrUnauthorized, err)
 	}
 
 	claims, ok := token.Claims.(*JWTClaims)

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+
 	"github.com/hotplex/hotplex-worker/internal/worker"
 )
 
@@ -14,7 +15,7 @@ var hotplexNamespace = uuid.MustParse("urn:uuid:6ba7b810-9dad-11d1-80b4-00c04fd4
 
 // DeriveSessionKey generates a deterministic server-side session ID using UUIDv5.
 // Same (ownerID, workerType, clientSessionID, workDir) always maps to the same session.
-func DeriveSessionKey(ownerID string, wt worker.WorkerType, clientSessionID string, workDir string) string {
+func DeriveSessionKey(ownerID string, wt worker.WorkerType, clientSessionID, workDir string) string {
 	// UUIDv5 = SHA-1(namespace+name) — deterministic, no randomness.
 	name := ownerID + "|" + string(wt) + "|" + clientSessionID + "|" + workDir
 	id := uuid.NewHash(sha1.New(), hotplexNamespace, []byte(name), 5)

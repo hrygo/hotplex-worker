@@ -97,7 +97,7 @@ func (c *Conn) ReadPump(handler *Handler) {
 		// Now safe to remove from routing — state event already queued.
 		c.hub.UnregisterConn(c)
 
-		c.Close()
+		_ = c.Close()
 	}()
 
 	c.wc.SetReadLimit(maxMessageSize)

@@ -4,6 +4,7 @@ package proc
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -65,7 +66,7 @@ func New(opts Opts) *Manager {
 // Start launches a new process with the given command and arguments.
 // It sets up a new process group (PGID) so that signals can be delivered
 // to the entire subtree without affecting the gateway process.
-func (m *Manager) Start(ctx context.Context, name string, args []string, env []string, dir string) (stdin, stdout, stderr *os.File, err error) {
+func (m *Manager) Start(ctx context.Context, name string, args, env []string, dir string) (stdin, stdout, stderr *os.File, err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -85,7 +86,7 @@ func (m *Manager) Start(ctx context.Context, name string, args []string, env []s
 
 	// Ensure work dir exists; create if missing.
 	if dir != "" {
-		if err := os.MkdirAll(dir, 0755); err != nil {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return nil, nil, nil, fmt.Errorf("proc: mkdir workdir %s: %w", dir, err)
 		}
 	}
@@ -102,14 +103,14 @@ func (m *Manager) Start(ctx context.Context, name string, args []string, env []s
 		return nil, nil, nil, fmt.Errorf("proc: stdin pipe: %w", err)
 	}
 	if m.stdout, stdoutW, err = os.Pipe(); err != nil {
-		stdinR.Close()
-		m.stdin.Close()
+		_ = stdinR.Close()
+		_ = m.stdin.Close()
 		return nil, nil, nil, fmt.Errorf("proc: stdout pipe: %w", err)
 	}
 	if m.stderr, stderrW, err = os.Pipe(); err != nil {
-		stdinR.Close()
-		m.stdin.Close()
-		m.stdout.Close()
+		_ = stdinR.Close()
+		_ = m.stdin.Close()
+		_ = m.stdout.Close()
 		return nil, nil, nil, fmt.Errorf("proc: stderr pipe: %w", err)
 	}
 
@@ -118,19 +119,19 @@ func (m *Manager) Start(ctx context.Context, name string, args []string, env []s
 	cmd.Stderr = stderrW
 
 	if err := cmd.Start(); err != nil {
-		stdinR.Close()
-		stdoutW.Close()
-		stderrW.Close()
-		m.stdin.Close()
-		m.stdout.Close()
-		m.stderr.Close()
+		_ = stdinR.Close()
+		_ = stdoutW.Close()
+		_ = stderrW.Close()
+		_ = m.stdin.Close()
+		_ = m.stdout.Close()
+		_ = m.stderr.Close()
 		return nil, nil, nil, fmt.Errorf("proc: start %s: %w", name, err)
 	}
 
 	// Close parent's ends of subprocess stdin/stdout/stderr - subprocess inherited copies.
-	stdinR.Close()
-	stdoutW.Close()
-	stderrW.Close()
+	_ = stdinR.Close()
+	_ = stdoutW.Close()
+	_ = stderrW.Close()
 
 	m.cmd = cmd
 	m.started = true
@@ -315,7 +316,7 @@ func (m *Manager) ReadLine() (string, error) {
 	func() {
 		defer func() {
 			if p := recover(); p != nil {
-				if p == bufio.ErrTooLong {
+				if e, ok := p.(error); ok && errors.Is(e, bufio.ErrTooLong) {
 					scanErr = fmt.Errorf("worker output limit exceeded (10 MB line)")
 				} else {
 					panic(p)

@@ -8,7 +8,6 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -25,6 +24,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	client "github.com/hotplex/hotplex-go-client"
+
 	"github.com/hotplex/hotplex-worker/internal/config"
 	"github.com/hotplex/hotplex-worker/internal/gateway"
 	"github.com/hotplex/hotplex-worker/internal/security"
@@ -99,7 +99,7 @@ func (c *simulatedConn) emitEvents(content string) {
 
 	c.recvCh <- events.NewEnvelope(aep.NewID(), c.sessionID, 0, events.Done, events.DoneData{
 		Success: true,
-		Stats:   map[string]any{"input_tokens": 10, "output_tokens": int(len(content) / 4)},
+		Stats:   map[string]any{"input_tokens": 10, "output_tokens": len(content) / 4},
 	})
 }
 
@@ -419,26 +419,6 @@ func connectClient(t *testing.T, tg *testGateway, workerType string) *client.Cli
 	)
 	require.NoError(t, err)
 	return c
-}
-
-// waitForEvent reads events until an event of the given type is found or timeout.
-func waitForEvent(t *testing.T, ch <-chan client.Event, eventType string, timeout time.Duration) client.Event {
-	t.Helper()
-	deadline := time.After(timeout)
-	for {
-		select {
-		case evt, ok := <-ch:
-			if !ok {
-				t.Fatalf("events channel closed while waiting for %s", eventType)
-			}
-			if evt.Type == eventType {
-				return evt
-			}
-			// Skip other events.
-		case <-deadline:
-			t.Fatalf("timeout waiting for event type %s", eventType)
-		}
-	}
 }
 
 // collectEvents reads all events until done or timeout, returning them.
@@ -952,13 +932,3 @@ func TestE2E_LargeInput(t *testing.T) {
 }
 
 // ─── Helper: parse event data ───────────────────────────────────────────────
-
-// mustParseJSON is a test helper that parses JSON data from event.Data.
-func mustParseJSON(t *testing.T, data interface{}) map[string]any {
-	t.Helper()
-	b, err := json.Marshal(data)
-	require.NoError(t, err)
-	var m map[string]any
-	require.NoError(t, json.Unmarshal(b, &m))
-	return m
-}

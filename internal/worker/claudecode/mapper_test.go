@@ -3,8 +3,9 @@ package claudecode
 import (
 	"testing"
 
-	"github.com/hotplex/hotplex-worker/pkg/events"
 	"github.com/stretchr/testify/require"
+
+	"github.com/hotplex/hotplex-worker/pkg/events"
 )
 
 func TestMapper_Map_StreamEvent(t *testing.T) {

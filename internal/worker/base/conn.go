@@ -153,7 +153,7 @@ func (c *Conn) Close() error {
 	close(c.recvCh)
 
 	if c.stdin != nil {
-		c.stdin.Close()
+		_ = c.stdin.Close()
 	}
 
 	return nil

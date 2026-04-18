@@ -3,6 +3,7 @@ package claudecode
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -346,7 +347,7 @@ func (w *Worker) ResetContext(ctx context.Context) error {
 func (w *Worker) readOutput(ctx context.Context) {
 	defer func() {
 		if c := w.Conn(); c != nil {
-			c.Close()
+			_ = c.Close()
 		}
 	}()
 
@@ -369,7 +370,7 @@ func (w *Worker) readOutput(ctx context.Context) {
 
 		line, err := readLineFn()
 		if err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				return
 			}
 			w.BaseWorker.Log.Error("claudecode: read line", "error", err)

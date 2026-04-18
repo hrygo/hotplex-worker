@@ -238,7 +238,7 @@ func (h *Handler) SendSessionInvalid(ctx context.Context, sessionID, reason stri
 }
 
 // SendThrottle sends a throttle control message to the client.
-func (h *Handler) SendThrottle(ctx context.Context, sessionID string, backoffMs int, maxMessageRate int) error {
+func (h *Handler) SendThrottle(ctx context.Context, sessionID string, backoffMs, maxMessageRate int) error {
 	return h.SendControlToSession(ctx, sessionID, events.ControlActionThrottle, "rate limit exceeded", map[string]any{
 		"suggestion": map[string]any{
 			"max_message_rate": maxMessageRate,
@@ -259,7 +259,7 @@ func (h *Handler) sendErrorf(ctx context.Context, env *events.Envelope, code eve
 
 // validateOwner checks ownership and returns the session in one call.
 // This avoids the double-fetch that calling ValidateOwnership then Get separately incurs.
-func (h *Handler) validateOwner(ctx context.Context, env *events.Envelope) (*session.SessionInfo, error) {
+func (h *Handler) validateOwner(_ context.Context, env *events.Envelope) (*session.SessionInfo, error) {
 	si, err := h.sm.Get(env.SessionID)
 	if err != nil {
 		return nil, err

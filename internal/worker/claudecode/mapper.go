@@ -117,7 +117,7 @@ func (m *Mapper) Map(evt *WorkerEvent) ([]*events.Envelope, error) {
 
 // mapStream converts a stream_event to an AEP envelope.
 // thinking → events.Reasoning; all other types → events.MessageDelta.
-func (m *Mapper) mapStream(p *StreamPayload) (*events.Envelope, error) {
+func (m *Mapper) mapStream(p *StreamPayload) (*events.Envelope, error) { //nolint:unparam // consistent mapper API
 	if p.Type == "thinking" {
 		return events.NewEnvelope(
 			aep.NewID(),
@@ -144,7 +144,7 @@ func (m *Mapper) mapStream(p *StreamPayload) (*events.Envelope, error) {
 }
 
 // mapToolCall converts tool_use to tool_call event.
-func (m *Mapper) mapToolCall(p *ToolCallPayload) (*events.Envelope, error) {
+func (m *Mapper) mapToolCall(p *ToolCallPayload) (*events.Envelope, error) { //nolint:unparam // consistent mapper API
 	return events.NewEnvelope(
 		aep.NewID(),
 		m.sessionID,
@@ -159,7 +159,7 @@ func (m *Mapper) mapToolCall(p *ToolCallPayload) (*events.Envelope, error) {
 }
 
 // mapToolProgress converts tool_progress to tool_result.
-func (m *Mapper) mapToolProgress(p *ToolResultPayload) (*events.Envelope, error) {
+func (m *Mapper) mapToolProgress(p *ToolResultPayload) (*events.Envelope, error) { //nolint:unparam // consistent mapper API
 	return events.NewEnvelope(
 		aep.NewID(),
 		m.sessionID,
@@ -221,7 +221,7 @@ func (m *Mapper) mapResult(p *ResultPayload) ([]*events.Envelope, error) {
 }
 
 // mapSystem converts system status to state event.
-func (m *Mapper) mapSystem(status string) (*events.Envelope, error) {
+func (m *Mapper) mapSystem(status string) (*events.Envelope, error) { //nolint:unparam // consistent mapper API
 	state, ok := statusToSessionState(status)
 	if !ok {
 		return nil, nil
@@ -239,7 +239,7 @@ func (m *Mapper) mapSystem(status string) (*events.Envelope, error) {
 }
 
 // mapSessionState converts session_state_changed to state event.
-func (m *Mapper) mapSessionState(stateStr string) (*events.Envelope, error) {
+func (m *Mapper) mapSessionState(stateStr string) (*events.Envelope, error) { //nolint:unparam // consistent mapper API
 	state, ok := statusToSessionState(stateStr)
 	if !ok {
 		return nil, nil

@@ -98,12 +98,12 @@ func NewSQLiteMessageStore(ctx context.Context, cfg *config.Config) (*SQLiteMess
 
 	if cfg.DB.WALMode {
 		if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
-			db.Close()
+			_ = db.Close()
 			return nil, fmt.Errorf("session store: msg WAL: %w", err)
 		}
 	}
 	if _, err := db.Exec(fmt.Sprintf("PRAGMA busy_timeout=%d", int(cfg.DB.BusyTimeout.Milliseconds()))); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("session store: msg busy_timeout: %w", err)
 	}
 
@@ -220,7 +220,7 @@ func (s *SQLiteMessageStore) GetBySession(ctx context.Context, sessionID string,
 	if err != nil {
 		return nil, fmt.Errorf("session store: get events: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var records []*EventRecord
 	for rows.Next() {
@@ -271,7 +271,7 @@ func (s *SQLiteMessageStore) Query(ctx context.Context, sessionID string, fromSe
 	if err != nil {
 		return nil, fmt.Errorf("session store: query events: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var envelopes []*events.Envelope
 	for rows.Next() {

@@ -250,7 +250,8 @@ func (h *Hub) SendToSession(ctx context.Context, env *events.Envelope, afterDrai
 	}
 
 	if env.Priority == events.PriorityControl {
-		return h.sendControlToSession(spanCtx, env)
+		h.sendControlToSession(spanCtx, env)
+		return nil
 	}
 
 	// Clone before broadcast: Bridge.forwardEvents holds a reference to the
@@ -278,7 +279,7 @@ func (h *Hub) SendToSession(ctx context.Context, env *events.Envelope, afterDrai
 	return errors.New("gateway: broadcast channel closed")
 }
 
-func (h *Hub) sendControlToSession(ctx context.Context, env *events.Envelope) error {
+func (h *Hub) sendControlToSession(ctx context.Context, env *events.Envelope) {
 	h.mu.RLock()
 	sessionConns := h.sessions[env.SessionID]
 	conns := make([]SessionWriter, 0, len(sessionConns))
@@ -288,7 +289,7 @@ func (h *Hub) sendControlToSession(ctx context.Context, env *events.Envelope) er
 	h.mu.RUnlock()
 
 	if len(conns) == 0 {
-		return nil
+		return
 	}
 
 	env = events.Clone(env)
@@ -297,7 +298,6 @@ func (h *Hub) sendControlToSession(ctx context.Context, env *events.Envelope) er
 			h.log.Warn("gateway: send to conn failed", "err", err)
 		}
 	}
-	return nil
 }
 
 // HandleHTTP serves WebSocket upgrade requests at the gateway endpoint.
@@ -416,12 +416,12 @@ func (h *Hub) routeMessage(msg *EnvelopeWithConn) {
 		if c, ok := conn.(*Conn); ok {
 			if err := c.WriteMessage(websocket.TextMessage, encoded); err != nil {
 				h.log.Warn("gateway: write failed", "err", err)
-				conn.Close()
+				_ = conn.Close()
 			}
 		} else {
 			if err := conn.WriteCtx(context.Background(), msg.Env); err != nil {
 				h.log.Warn("gateway: platform write failed", "err", err)
-				conn.Close()
+				_ = conn.Close()
 			}
 		}
 	}
