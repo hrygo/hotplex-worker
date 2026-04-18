@@ -242,9 +242,6 @@ func TestManager_Start_RealProcess(t *testing.T) {
 	if testRaceEnabled {
 		t.Skip("skipping: real process tests cause TSAN OOM under -race")
 	}
-	if os.Getenv("CI") != "" {
-		t.Skip("skipping: real process tests may OOM under CI coverage instrumentation")
-	}
 
 	t.Parallel()
 
@@ -303,9 +300,6 @@ func TestManager_Terminate_GracefulExit(t *testing.T) {
 	if testRaceEnabled {
 		t.Skip("skipping: real process tests cause TSAN OOM under -race")
 	}
-	if os.Getenv("CI") != "" {
-		t.Skip("skipping: real process tests may OOM under CI coverage instrumentation")
-	}
 
 	t.Parallel()
 
@@ -362,9 +356,6 @@ func TestManager_Wait(t *testing.T) {
 	if testRaceEnabled {
 		t.Skip("skipping: real process tests cause TSAN OOM under -race")
 	}
-	if os.Getenv("CI") != "" {
-		t.Skip("skipping: real process tests may OOM under CI coverage instrumentation")
-	}
 
 	t.Parallel()
 
@@ -414,9 +405,6 @@ func TestManager_ReadLine_MultiLine(t *testing.T) {
 	if testRaceEnabled {
 		t.Skip("skipping: real process tests cause TSAN OOM under -race")
 	}
-	if os.Getenv("CI") != "" {
-		t.Skip("skipping: real process tests may OOM under CI coverage instrumentation")
-	}
 
 	t.Parallel()
 
@@ -452,9 +440,6 @@ func TestManager_ReadLine_MultiLine(t *testing.T) {
 func TestManager_Start_AllowedTools(t *testing.T) {
 	if testRaceEnabled {
 		t.Skip("skipping: real process tests cause TSAN OOM under -race")
-	}
-	if os.Getenv("CI") != "" {
-		t.Skip("skipping: real process tests may OOM under CI coverage instrumentation")
 	}
 
 	t.Parallel()
