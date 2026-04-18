@@ -16,9 +16,11 @@ import (
 // DefaultWorkerWorkDir is the fallback working directory when workDir is not configured.
 const DefaultWorkerWorkDir = "/tmp/hotplex/workspace"
 
-// ConnFactory creates a PlatformConn for a given platform session.
-// Each adapter registers its own factory during wiring.
-type ConnFactory func(sessionID string) PlatformConn
+// ConnFactory creates a PlatformConn for a given session.
+// It receives the platform-specific raw ID (e.g., chat_id for Feishu, channel_id for Slack)
+// extracted from the envelope metadata, allowing it to create a properly configured
+// connection even when the session ID is a UUID.
+type ConnFactory func(sessionID, rawID string) PlatformConn
 
 // Bridge orchestrates platform messages and gateway sessions.
 // It is the counterpart of gateway.Bridge for messaging platforms.
@@ -58,6 +60,9 @@ func NewBridge(log *slog.Logger, platform PlatformType, hub HubInterface,
 }
 
 // SetConnFactory registers the platform connection factory.
+// The factory receives the session ID and the platform-specific raw ID (e.g., chat_id
+// for Feishu) extracted from the envelope metadata, so it can create a properly
+// configured PlatformConn even when the session ID is a UUID.
 func (b *Bridge) SetConnFactory(f ConnFactory) { b.connFactory = f }
 
 // Handle routes a platform message through the AEP handler.
@@ -80,7 +85,15 @@ func (b *Bridge) Handle(ctx context.Context, env *events.Envelope) error {
 	if b.connFactory != nil && b.hub != nil {
 		b.mu.Lock()
 		if !b.joined[env.SessionID] {
-			pc := b.connFactory(env.SessionID)
+			rawID := ""
+			if md, ok := env.Event.Data.(map[string]any); ok {
+				if id, ok := md["chat_id"].(string); ok {
+					rawID = id
+				} else if id, ok := md["channel_id"].(string); ok {
+					rawID = id
+				}
+			}
+			pc := b.connFactory(env.SessionID, rawID)
 			if pc != nil {
 				b.hub.JoinPlatformSession(env.SessionID, pc)
 				b.joined[env.SessionID] = true

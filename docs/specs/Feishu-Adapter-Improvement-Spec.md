@@ -5,16 +5,16 @@ tags:
   - messaging/feishu
   - platform-adapter
 date: 2026-04-17
-status: draft
-progress: 0
+status: in-progress
+progress: 65
 priority: high
 estimated_hours: 40
 ---
 
 # Feishu Adapter 改进规格书
 
-> 版本: v1.0
-> 日期: 2026-04-17
+> 版本: v1.1
+> 日期: 2026-04-18
 > 状态: Draft
 > 交叉复核: 已对齐 `internal/messaging/feishu/adapter.go`、`internal/messaging/bridge.go`、`internal/config/config.go` 源码，已对照 OpenClaw Lark 官方插件 (`@larksuite/openclaw-lark@2026.4.1`) 源码验证所有 API 调用
 > SDK 版本: `github.com/larksuite/oapi-sdk-go/v3@v3.5.3`
@@ -287,10 +287,12 @@ text := ResolveMentions(rawText, mentions, a.botOpenID)
 |------|------|--------|---------|
 | `text` | 纯文本 | P0（已支持） | 现有 `extractTextFromContent` |
 | `post` | 富文本 | P0 | 解析 JSON → markdown |
-| `image` | 图片 | P1 | `[图片: {file_key}]` |
-| `file` | 文件 | P1 | `[文件: {file_name}]` |
+| `image` | 图片 | P0（✅已实现） | 下载到 `/tmp/hotplex/media/images/{key}.jpg`，拼接路径 |
+| `file` | 文件 | P0（✅已实现） | 下载到 `/tmp/hotplex/media/files/{key}_{name}`，拼接路径 |
+| `audio` | 语音 | P0（✅已实现） | 下载到 `/tmp/hotplex/media/audios/{key}.opus`，拼接路径 |
+| `video` | 视频 | P0（✅已实现） | 下载到 `/tmp/hotplex/media/videos/{key}.mp4`，拼接路径 |
+| `sticker` | 表情 | P0（✅已实现） | 下载到 `/tmp/hotplex/media/stickers/{key}.gif`，拼接路径 |
 | `interactive` | 交互式卡片 | P2 | 提取文本内容 |
-| 其他 | sticker/audio/video 等 | P3 | 忽略，返回空字符串 |
 
 #### 2.3.3 实现
 
@@ -301,21 +303,35 @@ package feishu
 
 import "encoding/json"
 
+// MediaInfo carries metadata about a non-text media attachment.
+type MediaInfo struct {
+    Type      string // "image", "file", "audio", "video", "sticker"
+    Key       string // image_key, file_key, etc.
+    Name      string // Original filename (file type only).
+    MessageID string // Message ID (for downloading user-sent media via MessageResource API).
+}
+
 // ConvertMessage converts Feishu raw content to AI-friendly text.
-// Returns ("", false) for unsupported types that should be silently ignored.
-func ConvertMessage(msgType, rawContent string, mentions []*larkim.MentionEvent, botOpenID string) (string, bool) {
+// Returns ("", false, nil) for unsupported types that should be silently ignored.
+func ConvertMessage(msgType, rawContent string, mentions []*larkim.MentionEvent, botOpenID, messageID string) (string, bool, *MediaInfo) {
     switch msgType {
     case "text":
         text := extractTextFromContent(rawContent)
-        return ResolveMentions(text, mentions, botOpenID), true
+        return ResolveMentions(text, mentions, botOpenID), true, nil
     case "post":
-        return convertPost(rawContent, mentions, botOpenID), true
+        return convertPost(rawContent, mentions, botOpenID), true, nil
     case "image":
-        return convertImage(rawContent), true
+        return convertImage(rawContent, messageID)
     case "file":
-        return convertFile(rawContent), true
+        return convertFile(rawContent, messageID)
+    case "audio":
+        return convertAudio(rawContent, messageID)
+    case "video":
+        return convertVideo(rawContent, messageID)
+    case "sticker":
+        return convertSticker(rawContent, messageID)
     default:
-        return "", false  // 不支持的类型，静默忽略
+        return "", false, nil
     }
 }
 
@@ -374,22 +390,36 @@ text := extractTextFromContent(ptrStr(msg.Content))
 
 // After:
 msgType := ptrStr(msg.MessageType)
-text, ok := ConvertMessage(msgType, ptrStr(msg.Content), msg.Mentions, a.botOpenID)
+text, ok, media := ConvertMessage(msgType, ptrStr(msg.Content), msg.Mentions, a.botOpenID, messageID)
 if !ok || text == "" {
     return nil
+}
+
+// Download media and append path.
+if media != nil {
+    path, err := a.downloadMedia(ctx, media)
+    if err == nil && path != "" {
+        text = text + ": " + path
+    }
 }
 ```
 
 #### 2.3.4 验收标准
 
-| ID | AC | 验证方式 |
-|----|-----|---------|
-| 2.3-1 | text 类型保持现有行为 | 回归测试 |
-| 2.3-2 | post 类型正确转换为 markdown | 单元测试 |
-| 2.3-3 | image 类型输出 `[图片: {file_key}]` | 单元测试 |
-| 2.3-4 | file 类型输出 `[文件: {file_name}]` | 单元测试 |
-| 2.3-5 | 不支持的类型静默忽略（不报错） | 单元测试 |
-| 2.3-6 | post 中的 @mention 被正确解析 | 单元测试 |
+| ID | AC | 验证方式 | 状态 |
+|----|-----|---------|------|
+| 2.3-1 | text 类型保持现有行为 | 回归测试 | ✅ |
+| 2.3-2 | post 类型正确转换为 markdown | 单元测试 | ✅ |
+| 2.3-3 | image 类型下载到本地并拼接路径 | 单元测试 | ✅ 已实现 |
+| 2.3-4 | file 类型下载到本地并拼接路径 | 单元测试 | ✅ 已实现 |
+| 2.3-5 | audio 类型下载到本地并拼接路径 | 单元测试 | ✅ 已实现 |
+| 2.3-6 | video 类型下载到本地并拼接路径 | 单元测试 | ✅ 已实现 |
+| 2.3-7 | sticker 类型下载到本地并拼接路径 | 单元测试 | ✅ 已实现 |
+| 2.3-8 | 解析失败时降级为文本占位符（不 panic） | 单元测试 | ✅ |
+| 2.3-9 | post 中的 @mention 被正确解析 | 单元测试 | ✅ |
+| 2.3-10 | 下载失败时保留纯文本（降级不阻断消息） | 单元测试 | ✅ 已实现 |
+| 2.3-11 | 文件超 10MB 跳过下载，保留纯文本 | 单元测试 | ✅ 已实现 |
+| 2.3-12 | 不支持的类型静默忽略（不报错） | 单元测试 | ✅ |
 
 ---
 
@@ -1097,10 +1127,10 @@ func isMessageExpired(msg *larkim.EventMessage) bool {
 
 | 文件 | 操作 | 说明 |
 |------|------|------|
-| `internal/messaging/feishu/adapter.go` | 修改 | handleMessage 重构：提取 chatType/rootID/parentID/mentions；bot 防御检查 |
+| `internal/messaging/feishu/adapter.go` | 修改 | handleMessage 重构：提取 chatType/rootID/parentID/mentions；bot 防御检查；downloadMedia() 方法（MessageResource API） |
 | `internal/messaging/feishu/events.go` | 修改 | extractResponseText 保持不变（已在 2.1 中确认） |
 | `internal/messaging/feishu/mention.go` | 新增 | ResolveMentions 提及解析 |
-| `internal/messaging/feishu/converter.go` | 新增 | ConvertMessage + post/image/file 转换器 |
+| `internal/messaging/feishu/converter.go` | 修改 | ConvertMessage 返回 `*MediaInfo`，支持 image/file/audio/video/sticker 下载元信息 |
 | `internal/messaging/feishu/chat_queue.go` | 新增 | ChatQueue per-chat 串行队列 |
 | `internal/messaging/feishu/adapter_test.go` | 修改 | 新增 AC 测试 |
 | `internal/messaging/bridge.go` | 修改 | MakeFeishuEnvelope 支持新 metadata 字段 |
@@ -1139,6 +1169,8 @@ P2MessageReceiveV1 Event
     ├─ 3. 消息过期检查 (createTime > 30min → skip)
     ├─ 4. 去重 (Dedup.TryRecord)
     ├─ 5. 消息类型转换 (ConvertMessage)
+    │       └─ 5a. 若为多媒体类型 → downloadMedia (MessageResource API) → 拼接本地路径
+    │       └─ 5b. 若解析失败 → 降级为纯文本占位符
     ├─ 6. @提及解析 (ResolveMentions)
     ├─ 7. 访问控制 (Gate.Check)
     ├─ 8. Abort 快速路径 (IsAbortCommand → ChatQueue.Abort)
@@ -1181,7 +1213,7 @@ Phase 3.4 (message expiry)
 | **TC-1.2** | **群聊显式唤醒** | 1. 在任意已含有机器人的沟通群，先发一句闲聊：`今天天气不错`。<br>2. 输入 `@` 唤出面板，选中 `该机器人`，接着输入：`翻译刚才这句话为英文`。 | 1. 闲聊语句不能被机器人理睬（防骚扰）。<br>2. 机器人被 `@` 的消息予以回复，且正确输出翻译，自身内容不携带多余的 `@占位符`。 |
 | **TC-1.3** | **上下游话题链 (Thread)** | 1. 寻找一条机器人在群里发出的旧消息。<br>2. 鼠标悬停，点击快捷侧栏上的 **「回复 (Reply)」** 图标（或长按操作）。<br>3. 在下方的展开框中输入 `@机器人 请补充解释一下` 并发送。 | 机器人的第二次回答**必须折叠在原话题 (Thread) 的盖楼详情页内**，而不能以一条孤立新消息的形式散落在外围的群聊瀑布流中。 |
 | **TC-1.4** | **复杂群内成员混转** | 1. 在群里发送：`@机器人 帮我评价一下 @张三（群内真人）的周报`。 | 机器人的推理和理解中能精准看到文字 `帮我评价一下 @张三 的周报`，不会被错误隔断。 |
-| **TC-1.5** | **原生媒体与富控件混排** | 1. 对屏幕使用截图功能 (如 `Command+Ctrl+Shift+4`)，直接粘贴在飞书输入框。<br>2. 随后同时输入 `帮我看看这个UI图`，点击发送。<br>3. 发送飞书内置的默认 Emoji 或动态表情大图 (Sticker)。 | 1. 截图和文字被成功融合送达 AI，AI 准确返回对图片内容的评价。<br>2. 发送的动态表情被**无害拦截抛弃**，不能触发“格式错误”等无效报错音或弹窗。 |
+| **TC-1.5** | **原生媒体与富控件混排** | 1. 对屏幕使用截图功能 (如 `Command+Ctrl+Shift+4`)，直接粘贴在飞书输入框。<br>2. 随后同时输入 `帮我看看这个UI图`，点击发送。<br>3. 发送一个文件（如 PDF/TXT）。<br>4. 发送飞书内置的默认 Emoji 或动态表情大图 (Sticker)。<br>5. 发送一段语音或短视频。 | 1. 图片/文件/语音/视频/表情均被下载到 `/tmp/hotplex/media/` 下对应子目录。<br>2. AI 收到的消息文本中携带文件本地路径（如 `[用户发送了一张图片: /tmp/hotplex/media/images/img_xxx.jpg]`）。<br>3. AI 能读取并理解媒体内容。<br>4. 下载失败不影响消息处理——降级为纯文本占位符。<br>5. 动态表情被成功下载到本地 GIF，AI 能理解表情语义。 |
 
 ### 8.2 极致交互体验测试 (UX Tests)
 

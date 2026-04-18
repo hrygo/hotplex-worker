@@ -133,6 +133,7 @@ func (b *Bridge) ResumeSession(ctx context.Context, id, workDir string) error {
 		AllowedTools:    si.AllowedTools,
 		WorkerSessionID: si.WorkerSessionID,
 		ProjectDir:      workDir,
+		ForkSession:     true, // Required by Claude Code when resuming with --session-id
 	}
 	if err := w.Resume(ctx, workerInfo); err != nil {
 		b.sm.DetachWorker(id)
@@ -273,10 +274,11 @@ func (b *Bridge) StartPlatformSession(ctx context.Context, sessionID, ownerID, w
 			return nil
 		}
 		// Orphan: session record exists but worker is gone (gateway restarted).
-		// Resume the session so the worker restores its internal session state
-		// (e.g., Claude Code's --resume flag, OpenCode CLI's session continuity).
-		b.log.Info("gateway: orphan platform session, resuming", "session_id", sessionID)
-		return b.ResumeSession(ctx, sessionID, workDir)
+		// Delete the orphan so we can create a fresh session instead of resuming,
+		// which avoids the --print --resume --session-id incompatibility in Claude Code.
+		b.log.Info("gateway: orphan platform session, deleting for fresh start", "session_id", sessionID)
+		_ = b.sm.Delete(ctx, sessionID)
+		// Fall through to StartSession below
 	}
 
 	wt := worker.WorkerType(workerType)

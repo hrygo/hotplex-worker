@@ -9,21 +9,35 @@ import (
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 )
 
+// MediaInfo carries metadata about a non-text media attachment in a Feishu message.
+type MediaInfo struct {
+	Type      string // "image", "file", "audio", "video", "sticker"
+	Key       string // image_key, file_key, etc.
+	Name      string // Original filename (file type only).
+	MessageID string // Message ID (for downloading user-sent media via MessageResource API).
+}
+
 // ConvertMessage converts a Feishu raw content to AI-friendly text based on message type.
-// Returns ("", false) for unsupported types that should be silently ignored.
-func ConvertMessage(msgType, rawContent string, mentions []*larkim.MentionEvent, botOpenID string) (string, bool) {
+// Returns ("", false, nil) for unsupported types that should be silently ignored.
+func ConvertMessage(msgType, rawContent string, mentions []*larkim.MentionEvent, botOpenID, messageID string) (string, bool, *MediaInfo) {
 	switch msgType {
 	case "text":
 		text := extractTextFromContent(rawContent)
-		return ResolveMentions(text, mentions, botOpenID), true
+		return ResolveMentions(text, mentions, botOpenID), true, nil
 	case "post":
-		return convertPost(rawContent, mentions, botOpenID), true
+		return convertPost(rawContent, mentions, botOpenID), true, nil
 	case "image":
-		return convertImage(rawContent), true
+		return convertImage(rawContent, messageID)
 	case "file":
-		return convertFile(rawContent), true
+		return convertFile(rawContent, messageID)
+	case "audio":
+		return convertAudio(rawContent, messageID)
+	case "video":
+		return convertVideo(rawContent, messageID)
+	case "sticker":
+		return convertSticker(rawContent, messageID)
 	default:
-		return "", false
+		return "", false, nil
 	}
 }
 
@@ -105,25 +119,59 @@ func buildMentionMap(mentions []*larkim.MentionEvent) map[string]*larkim.Mention
 	return m
 }
 
-// convertImage parses a Feishu image message and returns a descriptive string.
-func convertImage(rawContent string) string {
+// convertImage parses a Feishu image message and returns a descriptive string with media info.
+func convertImage(rawContent, messageID string) (string, bool, *MediaInfo) {
 	var img struct {
 		ImageKey string `json:"image_key"`
 	}
 	if err := json.Unmarshal([]byte(rawContent), &img); err != nil || img.ImageKey == "" {
-		return "[图片]"
+		return "[图片]", true, nil
 	}
-	return "[图片: " + img.ImageKey + "]"
+	return "[用户发送了一张图片]", true, &MediaInfo{Type: "image", Key: img.ImageKey, MessageID: messageID}
 }
 
-// convertFile parses a Feishu file message and returns a descriptive string.
-func convertFile(rawContent string) string {
+// convertFile parses a Feishu file message and returns a descriptive string with media info.
+func convertFile(rawContent, messageID string) (string, bool, *MediaInfo) {
 	var f struct {
 		FileName string `json:"file_name"`
 		FileKey  string `json:"file_key"`
 	}
-	if err := json.Unmarshal([]byte(rawContent), &f); err != nil || f.FileName == "" {
-		return "[文件]"
+	if err := json.Unmarshal([]byte(rawContent), &f); err != nil || f.FileKey == "" {
+		return "[文件]", true, nil
 	}
-	return "[文件: " + f.FileName + "]"
+	return "[用户发送了一个文件]", true, &MediaInfo{Type: "file", Key: f.FileKey, Name: f.FileName, MessageID: messageID}
+}
+
+// convertAudio parses a Feishu audio message and returns a descriptive string with media info.
+func convertAudio(rawContent, messageID string) (string, bool, *MediaInfo) {
+	var a struct {
+		FileKey string `json:"file_key"`
+	}
+	if err := json.Unmarshal([]byte(rawContent), &a); err != nil || a.FileKey == "" {
+		return "[语音]", true, nil
+	}
+	return "[用户发送了一条语音]", true, &MediaInfo{Type: "audio", Key: a.FileKey, MessageID: messageID}
+}
+
+// convertVideo parses a Feishu video message and returns a descriptive string with media info.
+func convertVideo(rawContent, messageID string) (string, bool, *MediaInfo) {
+	var v struct {
+		FileKey  string `json:"file_key"`
+		FileName string `json:"file_name"`
+	}
+	if err := json.Unmarshal([]byte(rawContent), &v); err != nil || v.FileKey == "" {
+		return "[视频]", true, nil
+	}
+	return "[用户发送了一段视频]", true, &MediaInfo{Type: "video", Key: v.FileKey, Name: v.FileName, MessageID: messageID}
+}
+
+// convertSticker parses a Feishu sticker message and returns a descriptive string with media info.
+func convertSticker(rawContent, messageID string) (string, bool, *MediaInfo) {
+	var s struct {
+		FileKey string `json:"file_key"`
+	}
+	if err := json.Unmarshal([]byte(rawContent), &s); err != nil || s.FileKey == "" {
+		return "[表情]", true, nil
+	}
+	return "[用户发送了一个表情]", true, &MediaInfo{Type: "sticker", Key: s.FileKey, MessageID: messageID}
 }

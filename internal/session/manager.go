@@ -54,6 +54,7 @@ type managedSession struct {
 	worker    worker.Worker
 	TurnCount int
 	startedAt time.Time
+	log       *slog.Logger
 	mu        sync.RWMutex // protects state transitions and input handling; reads use RLock
 }
 
@@ -127,7 +128,7 @@ func (m *Manager) CreateWithBot(ctx context.Context, id, userID, botID string, w
 	}
 
 	m.mu.Lock()
-	m.sessions[id] = &managedSession{info: *info}
+	m.sessions[id] = &managedSession{info: *info, log: m.log.With("worker_type", workerType)}
 	m.mu.Unlock()
 
 	m.log.Info("session: created", "id", id, "user_id", userID, "worker_type", workerType, "bot_id", botID)
@@ -156,7 +157,7 @@ func (m *Manager) Get(id string) (*SessionInfo, error) {
 	}
 
 	m.mu.Lock()
-	m.sessions[id] = &managedSession{info: *info}
+	m.sessions[id] = &managedSession{info: *info, log: m.log.With("worker_type", info.WorkerType)}
 	m.mu.Unlock()
 
 	return info, nil
@@ -742,7 +743,7 @@ func (m *Manager) getManagedSession(id string) *managedSession {
 		m.mu.Unlock()
 		return ms
 	}
-	ms = &managedSession{info: *info}
+	ms = &managedSession{info: *info, log: m.log.With("worker_type", info.WorkerType)}
 	m.sessions[id] = ms
 	m.mu.Unlock()
 	return ms

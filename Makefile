@@ -486,6 +486,9 @@ worker-start: build ## 🚀 Start gateway in background
 		echo "$(YELLOW)$(WARN) Gateway already running (PID: $$(cat $(WORKER_PID)))$(RESET)"; \
 	else \
 		echo "$(CYAN)$(ROCKET) Starting gateway...$(RESET)"; \
+		if [ -f $(CURDIR)/.env ]; then \
+			set -a; . $(CURDIR)/.env; set +a; \
+		fi; \
 		./$(BUILD_DIR)/$(BINARY_NAME)-$(GOOS)-$(GOARCH) \
 			-config $(or $(CONFIG),$(CONFIG_DIR)/config.yaml) \
 			> $(CURDIR)/$(WORKER_LOG) 2>&1 & \

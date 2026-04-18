@@ -48,7 +48,7 @@ func (q *ChatQueue) Enqueue(chatID string, task func(ctx context.Context) error)
 		go func() {
 			defer close(w.done)
 			defer cancel()
-			if err := task(ctx); err != nil && ctx.Err() == nil {
+			if err := task(ctx); err != nil && ctx.Err() == nil && q.log != nil {
 				q.log.Warn("feishu: chat queue task error", "chat_id", chatID, "error", err)
 			}
 			q.mu.Lock()
@@ -73,7 +73,7 @@ func (q *ChatQueue) Enqueue(chatID string, task func(ctx context.Context) error)
 
 		defer close(newW.done)
 		defer cancel()
-		if err := task(ctx); err != nil && ctx.Err() == nil {
+		if err := task(ctx); err != nil && ctx.Err() == nil && q.log != nil {
 			q.log.Warn("feishu: chat queue task error", "chat_id", chatID, "error", err)
 		}
 		q.mu.Lock()
@@ -99,5 +99,7 @@ func (q *ChatQueue) Abort(chatID string) {
 	}
 	w.mu.Unlock()
 
-	q.log.Debug("feishu: aborted task for chat", "chat_id", chatID)
+	if q.log != nil {
+		q.log.Debug("feishu: aborted task for chat", "chat_id", chatID)
+	}
 }

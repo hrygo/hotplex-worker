@@ -238,3 +238,72 @@ type mentionStub struct {
 	openID string
 	name   string
 }
+
+func TestDownloadMedia_NilClient(t *testing.T) {
+	t.Parallel()
+	a := &Adapter{log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	_, err := a.downloadMedia(context.Background(), &MediaInfo{Type: "image", Key: "key", MessageID: "msg"})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "missing lark client")
+}
+
+func TestDownloadMedia_NilMedia(t *testing.T) {
+	t.Parallel()
+	a := &Adapter{log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	_, err := a.downloadMedia(context.Background(), nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "missing lark client")
+}
+
+func TestDownloadMedia_EmptyMessageID(t *testing.T) {
+	t.Parallel()
+	a := &Adapter{log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	_, err := a.downloadMedia(context.Background(), &MediaInfo{Type: "image", Key: "key", MessageID: ""})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "missing")
+}
+
+func TestDownloadMedia_EmptyKey(t *testing.T) {
+	t.Parallel()
+	a := &Adapter{log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	_, err := a.downloadMedia(context.Background(), &MediaInfo{Type: "image", Key: "", MessageID: "msg"})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "missing")
+}
+
+func TestDownloadMedia_AllTypes(t *testing.T) {
+	t.Parallel()
+	// Test that all media types are accepted by the function signature.
+	// (Full download test requires mock lark client; this verifies type routing.)
+	types := []string{"image", "file", "audio", "video", "sticker"}
+	for _, typ := range types {
+		t.Run(typ, func(t *testing.T) {
+			a := &Adapter{log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+			_, err := a.downloadMedia(context.Background(), &MediaInfo{Type: typ, Key: "testkey", MessageID: "msg"})
+			// Without a lark client, all types should fail with "missing lark client"
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "missing lark client")
+		})
+	}
+}
+
+func TestMediaExtByType(t *testing.T) {
+	t.Parallel()
+	// Verify fallback extensions for each media type.
+	// These are tested via mimeExt, but also verify the constant map.
+	tests := []struct {
+		typ string
+		ext string
+	}{
+		{"image", ".jpg"},
+		{"file", ""},
+		{"audio", ".opus"},
+		{"video", ".mp4"},
+		{"sticker", ".gif"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.typ, func(t *testing.T) {
+			require.Equal(t, tt.ext, mediaExtByType[tt.typ])
+		})
+	}
+}

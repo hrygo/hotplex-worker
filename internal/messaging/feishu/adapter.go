@@ -6,7 +6,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -157,7 +160,7 @@ func (a *Adapter) fetchBotOpenID(ctx context.Context) error {
 	return nil
 }
 
-func (a *Adapter) handleMessage(_ context.Context, event *larkim.P2MessageReceiveV1) error {
+func (a *Adapter) handleMessage(ctx context.Context, event *larkim.P2MessageReceiveV1) error {
 	if event.Event == nil || event.Event.Message == nil {
 		return nil
 	}
@@ -191,9 +194,19 @@ func (a *Adapter) handleMessage(_ context.Context, event *larkim.P2MessageReceiv
 
 	// Step 5: Message type conversion.
 	msgType := ptrStr(msg.MessageType)
-	text, ok := ConvertMessage(msgType, ptrStr(msg.Content), msg.Mentions, a.botOpenID)
+	text, ok, media := ConvertMessage(msgType, ptrStr(msg.Content), msg.Mentions, a.botOpenID, messageID)
 	if !ok || text == "" {
 		return nil
+	}
+
+	// Download media to local file and append path to text.
+	if media != nil {
+		path, err := a.downloadMedia(ctx, media)
+		if err == nil && path != "" {
+			text = text + ": " + path
+		} else {
+			a.log.Warn("feishu: media download failed, sending text only", "type", media.Type, "key", media.Key, "error", err)
+		}
 	}
 
 	// Step 6: @Mention resolution is done inside ConvertMessage for text/post types.
@@ -498,6 +511,108 @@ func (a *Adapter) replyMessage(ctx context.Context, messageID, content string, r
 	}
 	a.log.Debug("feishu: reply message sent", "msg_id", messageID, "content_len", len(content))
 	return nil
+}
+
+const mediaMaxSize = 10 * 1024 * 1024 // 10 MB
+
+// mediaTypeToResourceType maps our internal media types to Feishu resource types.
+var mediaTypeToResourceType = map[string]string{
+	"image":   "image",
+	"file":    "file",
+	"audio":   "file",
+	"video":   "file",
+	"sticker": "file",
+}
+
+// mediaExtByType provides fallback extensions when Content-Type is unavailable.
+var mediaExtByType = map[string]string{
+	"image":   ".jpg",
+	"file":    "",
+	"audio":   ".opus",
+	"video":   ".mp4",
+	"sticker": ".gif",
+}
+
+func (a *Adapter) downloadMedia(ctx context.Context, media *MediaInfo) (string, error) {
+	if a.larkClient == nil || media == nil || media.MessageID == "" || media.Key == "" {
+		return "", fmt.Errorf("feishu: missing lark client, media, messageID, or key")
+	}
+
+	// Build and execute the download request.
+	req := larkim.NewGetMessageResourceReqBuilder().
+		MessageId(media.MessageID).
+		FileKey(media.Key).
+		Type(mediaTypeToResourceType[media.Type]).
+		Build()
+
+	resp, err := a.larkClient.Im.V1.MessageResource.Get(ctx, req)
+	if err != nil {
+		return "", fmt.Errorf("feishu: download %s: %w", media.Type, err)
+	}
+	if !resp.Success() {
+		return "", fmt.Errorf("feishu: download %s failed: code=%d msg=%s", media.Type, resp.Code, resp.Msg)
+	}
+
+	// Determine the output file path and extension.
+	ext := mediaExtByType[media.Type]
+	if resp.FileName != "" {
+		ext = filepath.Ext(resp.FileName)
+	} else if ct := resp.ApiResp.Header.Get("Content-Type"); ct != "" {
+		ext = mimeExt(ct)
+	}
+
+	// Build the target directory and file path.
+	mediaDir := "/tmp/hotplex/media/" + media.Type + "s"
+	if err := os.MkdirAll(mediaDir, 0o755); err != nil {
+		return "", fmt.Errorf("feishu: create media dir: %w", err)
+	}
+
+	filename := media.Key + ext
+	if media.Name != "" {
+		filename = media.Key + "_" + media.Name
+	}
+	filePath := filepath.Join(mediaDir, filename)
+
+	// Write with size guard.
+	data, err := io.ReadAll(resp.File)
+	if err != nil {
+		return "", fmt.Errorf("feishu: read file content: %w", err)
+	}
+	if len(data) > mediaMaxSize {
+		return "", fmt.Errorf("feishu: file too large: %d > %d bytes", len(data), mediaMaxSize)
+	}
+	if err := os.WriteFile(filePath, data, 0o644); err != nil {
+		return "", fmt.Errorf("feishu: write file: %w", err)
+	}
+
+	a.log.Debug("feishu: media downloaded", "type", media.Type, "key", media.Key, "path", filePath, "size", len(data))
+	return filePath, nil
+}
+
+// mimeExt maps MIME type to common file extension.
+func mimeExt(mime string) string {
+	switch mime {
+	case "image/jpeg":
+		return ".jpg"
+	case "image/png":
+		return ".png"
+	case "image/gif":
+		return ".gif"
+	case "image/webp":
+		return ".webp"
+	case "audio/opus":
+		return ".opus"
+	case "audio/mpeg":
+		return ".mp3"
+	case "audio/wav":
+		return ".wav"
+	case "video/mp4":
+		return ".mp4"
+	case "video/webm":
+		return ".webm"
+	default:
+		return ""
+	}
 }
 
 func (a *Adapter) dedupCleanupLoop() {
