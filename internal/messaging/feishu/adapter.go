@@ -93,6 +93,9 @@ func (a *Adapter) Start(ctx context.Context) error {
 		}).
 		OnP2MessageReactionCreatedV1(func(_ context.Context, _ *larkim.P2MessageReactionCreatedV1) error {
 			return nil
+		}).
+		OnP2MessageReactionDeletedV1(func(_ context.Context, _ *larkim.P2MessageReactionDeletedV1) error {
+			return nil
 		})
 
 	a.wsClient = ws.NewClient(a.appID, a.appSecret,
@@ -268,6 +271,8 @@ func (a *Adapter) handleTextMessage(ctx context.Context, platformMsgID, channelI
 	// Pre-create conn and set reply target before bridge creates it via connFactory.
 	conn := a.GetOrCreateConn(channelID)
 	conn.replyToMsgID = replyToMsgID
+	conn.platformMsgID = platformMsgID
+	conn.chatType = chatType
 
 	// Typing indicator: add reaction to user's message (non-blocking, failure is non-fatal).
 	if platformMsgID != "" {
@@ -278,14 +283,10 @@ func (a *Adapter) handleTextMessage(ctx context.Context, platformMsgID, channelI
 		}
 	}
 
-	// Streaming card: create card and send placeholder message.
+	// Prepare streaming controller (card is lazily created on first content).
 	if a.larkClient != nil && a.rateLimiter != nil {
 		ctrl := NewStreamingCardController(a.larkClient, a.rateLimiter, a.log)
-		if err := ctrl.EnsureCard(ctx, channelID, chatType, replyToMsgID); err != nil {
-			a.log.Warn("feishu: streaming card init failed, using static mode", "error", err)
-		} else {
-			conn.EnableStreaming(ctrl)
-		}
+		conn.EnableStreaming(ctrl)
 	}
 
 	return a.bridge.Handle(ctx, envelope)
@@ -327,11 +328,13 @@ func (a *Adapter) Close(ctx context.Context) error {
 }
 
 type FeishuConn struct {
-	adapter      *Adapter
-	chatID       string
-	replyToMsgID string
-	streamCtrl   *StreamingCardController
-	typingRid    string
+	adapter       *Adapter
+	chatID        string
+	chatType      string
+	replyToMsgID  string
+	platformMsgID string
+	streamCtrl    *StreamingCardController
+	typingRid     string
 }
 
 func NewFeishuConn(adapter *Adapter, chatID string) *FeishuConn {
@@ -354,10 +357,14 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 	// Handle done event before extractResponseText (which returns false for done).
 	if c.streamCtrl != nil && env.Event.Type == events.Done {
 		if c.typingRid != "" {
-			_ = c.adapter.RemoveTypingIndicator(ctx, "", c.typingRid)
+			_ = c.adapter.RemoveTypingIndicator(ctx, c.platformMsgID, c.typingRid)
 			c.typingRid = ""
 		}
-		return c.streamCtrl.Close(ctx)
+		// If card was never created (no content arrived), skip close.
+		if c.streamCtrl.IsCreated() {
+			return c.streamCtrl.Close(ctx)
+		}
+		return nil
 	}
 
 	text, ok := extractResponseText(env)
@@ -373,15 +380,30 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 	)
 
 	if c.streamCtrl != nil {
-		// Remove typing indicator when streaming content first appears.
-		if c.typingRid != "" {
-			_ = c.adapter.RemoveTypingIndicator(ctx, "", c.typingRid)
-			c.typingRid = ""
+		// Lazy-init: create card on first content arrival.
+		if !c.streamCtrl.IsCreated() {
+			if err := c.streamCtrl.EnsureCard(ctx, c.chatID, c.chatType, c.replyToMsgID, text); err != nil {
+				c.adapter.log.Warn("feishu: streaming card init failed, falling back to static", "error", err)
+				c.streamCtrl = nil
+			} else {
+				// Card created with initial content; remove typing indicator.
+				if c.typingRid != "" {
+					_ = c.adapter.RemoveTypingIndicator(ctx, c.platformMsgID, c.typingRid)
+					c.typingRid = ""
+				}
+				return nil
+			}
+		} else {
+			// Subsequent content: write + flush.
+			if c.typingRid != "" {
+				_ = c.adapter.RemoveTypingIndicator(ctx, c.platformMsgID, c.typingRid)
+				c.typingRid = ""
+			}
+			if err := c.streamCtrl.Write(text); err != nil {
+				return err
+			}
+			return c.streamCtrl.Flush(ctx)
 		}
-		if err := c.streamCtrl.Write(text); err != nil {
-			return err
-		}
-		return c.streamCtrl.Flush(ctx)
 	}
 
 	if c.replyToMsgID != "" {
@@ -395,7 +417,7 @@ func (c *FeishuConn) Close() error {
 		_ = c.streamCtrl.Abort(context.Background())
 	}
 	if c.typingRid != "" && c.adapter.larkClient != nil {
-		_ = c.adapter.RemoveTypingIndicator(context.Background(), "", c.typingRid)
+		_ = c.adapter.RemoveTypingIndicator(context.Background(), c.platformMsgID, c.typingRid)
 	}
 	c.adapter.mu.Lock()
 	defer c.adapter.mu.Unlock()

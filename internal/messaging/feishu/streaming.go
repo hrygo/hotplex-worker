@@ -95,6 +95,11 @@ func (c *StreamingCardController) getPhase() CardPhase {
 	return CardPhase(c.phase.Load())
 }
 
+// IsCreated returns true if the streaming card has been sent as a message.
+func (c *StreamingCardController) IsCreated() bool {
+	return c.getPhase() >= PhaseStreaming
+}
+
 func (c *StreamingCardController) transition(to CardPhase) bool {
 	for {
 		current := CardPhase(c.phase.Load())
@@ -110,7 +115,7 @@ func (c *StreamingCardController) transition(to CardPhase) bool {
 	}
 }
 
-func (c *StreamingCardController) EnsureCard(ctx context.Context, chatID, chatType, replyToMsgID string) error {
+func (c *StreamingCardController) EnsureCard(ctx context.Context, chatID, chatType, replyToMsgID, initialContent string) error {
 	if !c.transition(PhaseCreating) {
 		return fmt.Errorf("feishu: cannot transition from %s to creating", c.getPhase())
 	}
@@ -118,10 +123,11 @@ func (c *StreamingCardController) EnsureCard(ctx context.Context, chatID, chatTy
 	c.mu.Lock()
 	c.chatType = chatType
 	c.replyToMsgID = replyToMsgID
+	c.buf.WriteString(initialContent)
 	c.mu.Unlock()
 
-	// Step 1: Send card message first — this creates the card in the message context.
-	msgID, err := c.sendCardMessage(ctx, chatID, "")
+	// Step 1: Send card message with initial content.
+	msgID, err := c.sendCardMessage(ctx, chatID, initialContent)
 	if err != nil {
 		c.log.Warn("feishu: send card message failed, degrading to static",
 			"error", err)
@@ -134,6 +140,7 @@ func (c *StreamingCardController) EnsureCard(ctx context.Context, chatID, chatTy
 
 	c.mu.Lock()
 	c.msgID = msgID
+	c.lastFlushed = initialContent
 	c.mu.Unlock()
 
 	// Step 2: Convert msg_id → card_id so streaming updates target the message's card.
@@ -270,49 +277,30 @@ func (c *StreamingCardController) Abort(ctx context.Context) error {
 	return nil
 }
 
-func (c *StreamingCardController) createCard(ctx context.Context) (string, error) {
-	cardData := map[string]any{
-		"schema": "2.0",
-		"config": map[string]any{
-			"streaming_mode": true,
-		},
-		"body": map[string]any{
-			"elements": []any{
-				map[string]any{
-					"tag":        "markdown",
-					"element_id": streamingElementID,
-					"content":    "Thinking...",
-				},
-			},
-		},
-	}
-	dataJSON, _ := json.Marshal(cardData)
-	dataStr := string(dataJSON)
-
-	body := larkcardkit.NewCreateCardReqBodyBuilder().
-		Type("card_json").
-		Data(dataStr).
+func (c *StreamingCardController) idConvert(ctx context.Context, messageID string) (string, error) {
+	body := larkcardkit.NewIdConvertCardReqBodyBuilder().
+		MessageId(messageID).
 		Build()
 
-	req := larkcardkit.NewCreateCardReqBuilder().
+	req := larkcardkit.NewIdConvertCardReqBuilder().
 		Body(body).
 		Build()
 
-	resp, err := c.client.Cardkit.V1.Card.Create(ctx, req)
+	resp, err := c.client.Cardkit.V1.Card.IdConvert(ctx, req)
 	if err != nil {
-		return "", fmt.Errorf("cardkit create: %w", err)
+		return "", fmt.Errorf("cardkit id_convert: %w", err)
 	}
 	if !resp.Success() {
-		return "", fmt.Errorf("cardkit create failed: code=%d msg=%s", resp.Code, resp.Msg)
+		return "", fmt.Errorf("cardkit id_convert failed: code=%d msg=%s", resp.Code, resp.Msg)
 	}
-
 	if resp.Data == nil || resp.Data.CardId == nil {
-		return "", fmt.Errorf("cardkit create: missing card_id in response")
+		return "", fmt.Errorf("cardkit id_convert: missing card_id in response")
 	}
+	c.log.Debug("feishu: id_convert succeeded", "msg_id", messageID, "card_id", *resp.Data.CardId)
 	return *resp.Data.CardId, nil
 }
 
-func (c *StreamingCardController) sendCardMessage(ctx context.Context, chatID, _ string) (string, error) {
+func (c *StreamingCardController) sendCardMessage(ctx context.Context, chatID, content string) (string, error) {
 	cardContent := map[string]any{
 		"schema": "2.0",
 		"config": map[string]any{
@@ -323,7 +311,7 @@ func (c *StreamingCardController) sendCardMessage(ctx context.Context, chatID, _
 				map[string]any{
 					"tag":        "markdown",
 					"element_id": streamingElementID,
-					"content":    "Thinking...",
+					"content":    content,
 				},
 			},
 		},
