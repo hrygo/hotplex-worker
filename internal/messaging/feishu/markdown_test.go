@@ -330,3 +330,62 @@ func BenchmarkOptimizeMarkdownStyle_Complex(b *testing.B) {
 		OptimizeMarkdownStyle(text)
 	}
 }
+
+// TestPipelineIntegration tests the full pipeline: OptimizeMarkdownStyle(SanitizeForCard(text)).
+// This is the actual call order used in adapter.go and streaming.go.
+func TestPipelineIntegration(t *testing.T) {
+	t.Parallel()
+
+	table := "| a | b |\n|---|---|\n| 1 | 2 |"
+
+	tests := []struct {
+		name       string
+		text       string
+		contains   []string
+		notContain []string
+	}{
+		{
+			name: "four tables: excess wrapped without breaking subsequent markdown",
+			text: table + "\n\n" + table + "\n\n" + table + "\n\n" + table + "\n\n# Heading\n\nParagraph text",
+			contains: []string{
+				"#### Heading",   // H1 demoted to H4
+				"Paragraph text", // text after table preserved
+				"```\n",          // code block wrapping 4th table
+			},
+			notContain: []string{
+				"```\n```", // no empty code blocks (double fence on same line)
+			},
+		},
+		{
+			name: "five tables with content between: all subsequent text intact",
+			text: table + "\n\n" + table + "\n\n" + table + "\n\n" + table + "\n\nMid text\n\n" + table + "\n\n## End\n\nFinal",
+			contains: []string{
+				"Mid text",
+				"##### End", // H2 demoted to H5
+				"Final",
+			},
+		},
+		{
+			name:     "three tables at limit: no wrapping needed",
+			text:     table + "\n\n" + table + "\n\n" + table + "\n\n# After\n\nDone",
+			contains: []string{"#### After", "Done"},
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := OptimizeMarkdownStyle(SanitizeForCard(tt.text))
+			for _, want := range tt.contains {
+				require.Contains(t, got, want, "output should contain %q", want)
+			}
+			for _, notWant := range tt.notContain {
+				require.NotContains(t, got, notWant, "output should NOT contain %q", notWant)
+			}
+			// Verify no unclosed code blocks: count ``` pairs must be even.
+			fenceCount := strings.Count(got, "```")
+			require.Equal(t, 0, fenceCount%2, "code block fences must be paired (found %d)", fenceCount)
+		})
+	}
+}

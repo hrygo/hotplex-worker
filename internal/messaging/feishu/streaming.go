@@ -237,8 +237,10 @@ func (c *StreamingCardController) Close(ctx context.Context) error {
 	content := c.buf.String()
 	c.mu.Unlock()
 
-	// Final content: sanitize and optimize for best rendering.
-	content = SanitizeForCard(OptimizeMarkdownStyle(content))
+	// Final content: sanitize then optimize for best rendering.
+	// Order matters: SanitizeForCard first (wraps excess tables in code blocks),
+	// then OptimizeMarkdownStyle (extracts code blocks, processes tables, restores).
+	content = OptimizeMarkdownStyle(SanitizeForCard(content))
 
 	c.log.Debug("feishu: streaming card close",
 		"card_kit_ok", c.cardKitOK,

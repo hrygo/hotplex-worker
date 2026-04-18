@@ -294,7 +294,9 @@ func wrapTablesBeyondLimit(text string, matches []tableMatch, keepCount int) str
 	// Process back-to-front so slicing from the front doesn't shift indices.
 	for i := len(matches) - 1; i >= keepCount; i-- {
 		m := matches[i]
-		fenced := "```\n" + text[m.start:m.end] + "```"
+		tableContent := text[m.start:m.end]
+		// Ensure opening/closing fences are on their own lines.
+		fenced := "\n```\n" + tableContent + "\n```\n"
 		text = text[:m.start] + fenced + text[m.end:]
 	}
 	return text
