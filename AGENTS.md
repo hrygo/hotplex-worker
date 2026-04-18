@@ -1,10 +1,12 @@
 # PROJECT KNOWLEDGE BASE
 
+**Last updated:** 2026-04-19 · **Commit:** ece981dc · **Branch:** feat/slack-adapter-improvements
+
 ## OVERVIEW
 
 HotPlex Worker Gateway — Go 1.26 unified access layer for AI Coding Agent sessions.
-WebSocket gateway (AEP v1) abstracting Claude Code, OpenCode CLI/Server, Pi-mono protocol differences.
-Multi-language client SDKs (TS, Python, Java, Go) + AI SDK transport adapter + web chat UI.
+WebSocket gateway (AEP v1) abstracting Claude Code, OpenCode CLI/Server, ACPX, Pi-mono protocol differences.
+Multi-language client SDKs (TS, Python, Java, Go) + AI SDK transport adapter + web chat UI + bidirectional messaging (Slack/Feishu).
 
 ## ENVIRONMENT
 
@@ -50,9 +52,9 @@ cmd/worker/main.go    (~539 lines) flags, DI, signal, messaging init
 - `session/stores.go`   Multi-store registry (SQLite/Postgres)
 
 **Messaging** (Slack/Feishu bidirectional)
-- `messaging/bridge.go`   SessionStarter + ConnFactory + joined dedup
-- `messaging/platform_conn.go`  PlatformConn: WriteCtx + Close
-- `messaging/platform_adapter.go`  Base adapter + self-registration
+- `messaging/bridge.go`   SessionStarter + ConnFactory + joined dedup (3-step: StartSession → Join → Handle)
+- `messaging/platform_conn.go`  PlatformConn interface: WriteCtx + Close
+- `messaging/platform_adapter.go`  Base adapter + self-registration (Register/New/RegisteredTypes)
 - `messaging/slack/`      Socket Mode: NativeStreamingWriter, rate limiter
 - `messaging/feishu/`     ws.Client: P2 events, converter, streaming, typing, stt.go (speech-to-text)
 - `scripts/stt_server.py`  Persistent STT subprocess (SenseVoice-Small ONNX)
@@ -145,6 +147,8 @@ configs/  config.yaml, config-dev.yaml, env.example
 - `PersistentSTT` → `feishu/stt.go:185` — long-lived subprocess, JSON-over-stdio, PGID isolation
 - `FallbackSTT` → `feishu/stt.go:143` — primary + secondary fallback chain
 - `Transcriber` (interface) → `feishu/stt.go:27` — Transcribe(ctx, audioData) → (text, error)
+- `PlatformAdapterInterface` → `platform_adapter.go:21` — Platform/Start/HandleTextMessage/Close
+- Adapter registration → `platform_adapter.go:47` — `Register(t PlatformType, b Builder)`, blank import in main.go
 
 **Core**
 - `Envelope` → `pkg/events/events.go:73` — AEP v1 envelope (id, version, seq, session_id, event)
