@@ -70,9 +70,11 @@ type StreamingCardController struct {
 	lastFlushed string
 	cardKitOK   bool
 
-	limiter *FeishuRateLimiter
-	client  *lark.Client
-	log     *slog.Logger
+	chatType    string
+	replyToMsgID string
+	limiter     *FeishuRateLimiter
+	client      *lark.Client
+	log         *slog.Logger
 }
 
 const streamingElementID = "streaming_content"
@@ -108,29 +110,18 @@ func (c *StreamingCardController) transition(to CardPhase) bool {
 	}
 }
 
-func (c *StreamingCardController) EnsureCard(ctx context.Context, chatID string) error {
+func (c *StreamingCardController) EnsureCard(ctx context.Context, chatID, chatType, replyToMsgID string) error {
 	if !c.transition(PhaseCreating) {
 		return fmt.Errorf("feishu: cannot transition from %s to creating", c.getPhase())
 	}
 
-	var cardID string
-	var err error
-
-	cardID, err = c.createCard(ctx)
-	if err != nil {
-		c.log.Warn("feishu: cardkit create failed, degrading to static",
-			"error", err)
-		if c.transition(PhaseCreationFailed) {
-			return fmt.Errorf("feishu: cardkit create failed: %w", err)
-		}
-		return err
-	}
-
 	c.mu.Lock()
-	c.cardID = cardID
+	c.chatType = chatType
+	c.replyToMsgID = replyToMsgID
 	c.mu.Unlock()
 
-	msgID, err := c.sendCardMessage(ctx, chatID, cardID)
+	// Step 1: Send card message first — this creates the card in the message context.
+	msgID, err := c.sendCardMessage(ctx, chatID, "")
 	if err != nil {
 		c.log.Warn("feishu: send card message failed, degrading to static",
 			"error", err)
@@ -145,10 +136,23 @@ func (c *StreamingCardController) EnsureCard(ctx context.Context, chatID string)
 	c.msgID = msgID
 	c.mu.Unlock()
 
-	if err := c.enableStreaming(ctx); err != nil {
-		c.log.Warn("feishu: enable streaming failed, using IM patch fallback",
+	// Step 2: Convert msg_id → card_id so streaming updates target the message's card.
+	cardID, err := c.idConvert(ctx, msgID)
+	if err != nil {
+		c.log.Warn("feishu: id_convert failed, using IM patch fallback",
 			"error", err)
 		c.cardKitOK = false
+	} else {
+		c.mu.Lock()
+		c.cardID = cardID
+		c.mu.Unlock()
+
+		// Step 3: Enable streaming on the card.
+		if err := c.enableStreaming(ctx); err != nil {
+			c.log.Warn("feishu: enable streaming failed, using IM patch fallback",
+				"error", err)
+			c.cardKitOK = false
+		}
 	}
 
 	if !c.transition(PhaseStreaming) {
@@ -170,10 +174,17 @@ func (c *StreamingCardController) Flush(ctx context.Context) error {
 	c.mu.Unlock()
 
 	if content == c.lastFlushed {
+		c.log.Debug("feishu: streaming flush skipped, content unchanged")
 		return nil
 	}
 
 	seq := int(c.sequence.Add(1))
+	c.log.Debug("feishu: streaming flush",
+		"card_kit_ok", c.cardKitOK,
+		"card_id", c.cardID,
+		"msg_id", c.msgID,
+		"content_len", len(content),
+		"seq", seq)
 
 	if c.cardKitOK && c.limiter.AllowCardKit(c.cardID) {
 		if err := c.flushCardKit(ctx, content, seq); err != nil {
@@ -215,6 +226,13 @@ func (c *StreamingCardController) Close(ctx context.Context) error {
 	content := c.buf.String()
 	c.mu.Unlock()
 
+	c.log.Debug("feishu: streaming card close",
+		"card_kit_ok", c.cardKitOK,
+		"card_id", c.cardID,
+		"msg_id", c.msgID,
+		"content_len", len(content),
+		"last_flushed_len", len(c.lastFlushed))
+
 	if c.cardKitOK && c.cardID != "" {
 		seq := int(c.sequence.Add(1))
 
@@ -254,14 +272,17 @@ func (c *StreamingCardController) Abort(ctx context.Context) error {
 
 func (c *StreamingCardController) createCard(ctx context.Context) (string, error) {
 	cardData := map[string]any{
+		"schema": "2.0",
 		"config": map[string]any{
 			"streaming_mode": true,
 		},
-		"elements": []any{
-			map[string]any{
-				"tag":        "markdown",
-				"element_id": streamingElementID,
-				"content":    "Thinking...",
+		"body": map[string]any{
+			"elements": []any{
+				map[string]any{
+					"tag":        "markdown",
+					"element_id": streamingElementID,
+					"content":    "Thinking...",
+				},
 			},
 		},
 	}
@@ -293,23 +314,39 @@ func (c *StreamingCardController) createCard(ctx context.Context) (string, error
 
 func (c *StreamingCardController) sendCardMessage(ctx context.Context, chatID, _ string) (string, error) {
 	cardContent := map[string]any{
+		"schema": "2.0",
 		"config": map[string]any{
 			"streaming_mode": true,
 		},
-		"elements": []any{
-			map[string]any{
-				"tag":        "markdown",
-				"element_id": streamingElementID,
-				"content":    "Thinking...",
+		"body": map[string]any{
+			"elements": []any{
+				map[string]any{
+					"tag":        "markdown",
+					"element_id": streamingElementID,
+					"content":    "Thinking...",
+				},
 			},
 		},
 	}
 	contentJSON, _ := json.Marshal(cardContent)
 
+	// Group chat: reply to user's message. DM: send directly.
+	c.mu.Lock()
+	replyTo := c.replyToMsgID
+	isGroup := c.chatType == "group"
+	c.mu.Unlock()
+
+	if isGroup && replyTo != "" {
+		return c.replyCardMessage(ctx, replyTo, string(contentJSON))
+	}
+	return c.createCardMessage(ctx, chatID, string(contentJSON))
+}
+
+func (c *StreamingCardController) createCardMessage(ctx context.Context, chatID, contentJSON string) (string, error) {
 	body := larkim.NewCreateMessageReqBodyBuilder().
 		ReceiveId(chatID).
 		MsgType("interactive").
-		Content(string(contentJSON)).
+		Content(contentJSON).
 		Build()
 
 	req := larkim.NewCreateMessageReqBuilder().
@@ -327,6 +364,31 @@ func (c *StreamingCardController) sendCardMessage(ctx context.Context, chatID, _
 
 	if resp.Data == nil || resp.Data.MessageId == nil {
 		return "", fmt.Errorf("im message create: missing message_id in response")
+	}
+	return *resp.Data.MessageId, nil
+}
+
+func (c *StreamingCardController) replyCardMessage(ctx context.Context, messageID, contentJSON string) (string, error) {
+	body := larkim.NewReplyMessageReqBodyBuilder().
+		MsgType("interactive").
+		Content(contentJSON).
+		Build()
+
+	req := larkim.NewReplyMessageReqBuilder().
+		MessageId(messageID).
+		Body(body).
+		Build()
+
+	resp, err := c.client.Im.V1.Message.Reply(ctx, req)
+	if err != nil {
+		return "", fmt.Errorf("im message reply: %w", err)
+	}
+	if !resp.Success() {
+		return "", fmt.Errorf("im message reply failed: code=%d msg=%s", resp.Code, resp.Msg)
+	}
+
+	if resp.Data == nil || resp.Data.MessageId == nil {
+		return "", fmt.Errorf("im message reply: missing message_id in response")
 	}
 	return *resp.Data.MessageId, nil
 }
@@ -403,16 +465,20 @@ func (c *StreamingCardController) flushCardKit(ctx context.Context, content stri
 	if !resp.Success() {
 		return fmt.Errorf("cardkit element content failed: code=%d msg=%s", resp.Code, resp.Msg)
 	}
+	c.log.Debug("feishu: cardkit element content flushed", "card_id", c.cardID, "seq", seq, "content_len", len(content))
 	return nil
 }
 
 func (c *StreamingCardController) flushIMPatch(ctx context.Context, content string) error {
 	cardContent := map[string]any{
+		"schema": "2.0",
 		"config": map[string]any{},
-		"elements": []any{
-			map[string]any{
-				"tag":     "markdown",
-				"content": content,
+		"body": map[string]any{
+			"elements": []any{
+				map[string]any{
+					"tag":     "markdown",
+					"content": content,
+				},
 			},
 		},
 	}
@@ -434,6 +500,7 @@ func (c *StreamingCardController) flushIMPatch(ctx context.Context, content stri
 	if !resp.Success() {
 		return fmt.Errorf("im message patch failed: code=%d msg=%s", resp.Code, resp.Msg)
 	}
+	c.log.Debug("feishu: IM patch flushed", "msg_id", c.msgID, "content_len", len(content))
 	return nil
 }
 

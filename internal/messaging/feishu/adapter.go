@@ -90,6 +90,9 @@ func (a *Adapter) Start(ctx context.Context) error {
 		}).
 		OnP2MessageReadV1(func(_ context.Context, _ *larkim.P2MessageReadV1) error {
 			return nil
+		}).
+		OnP2MessageReactionCreatedV1(func(_ context.Context, _ *larkim.P2MessageReactionCreatedV1) error {
+			return nil
 		})
 
 	a.wsClient = ws.NewClient(a.appID, a.appSecret,
@@ -231,7 +234,7 @@ func (a *Adapter) handleMessage(_ context.Context, event *larkim.P2MessageReceiv
 	)
 
 	return a.chatQueue.Enqueue(chatID, func(qtx context.Context) error {
-		return a.handleTextMessage(qtx, messageID, chatID, userID, text, threadKey, replyToMsgID)
+		return a.handleTextMessage(qtx, messageID, chatID, chatType, userID, text, threadKey, replyToMsgID)
 	})
 }
 
@@ -247,7 +250,7 @@ func isBotMentioned(mentions []*larkim.MentionEvent, botOpenID string) bool {
 	return false
 }
 
-func (a *Adapter) handleTextMessage(ctx context.Context, platformMsgID, channelID, userID, text, threadKey, replyToMsgID string) error {
+func (a *Adapter) handleTextMessage(ctx context.Context, platformMsgID, channelID, chatType, userID, text, threadKey, replyToMsgID string) error {
 	if a.bridge == nil {
 		return nil
 	}
@@ -266,11 +269,30 @@ func (a *Adapter) handleTextMessage(ctx context.Context, platformMsgID, channelI
 	conn := a.GetOrCreateConn(channelID)
 	conn.replyToMsgID = replyToMsgID
 
+	// Typing indicator: add reaction to user's message (non-blocking, failure is non-fatal).
+	if platformMsgID != "" {
+		if rid, err := a.AddTypingIndicator(ctx, platformMsgID); err == nil && rid != "" {
+			conn.SetTypingReactionID(rid)
+		} else if err != nil {
+			a.log.Debug("feishu: typing indicator failed (non-fatal)", "error", err)
+		}
+	}
+
+	// Streaming card: create card and send placeholder message.
+	if a.larkClient != nil && a.rateLimiter != nil {
+		ctrl := NewStreamingCardController(a.larkClient, a.rateLimiter, a.log)
+		if err := ctrl.EnsureCard(ctx, channelID, chatType, replyToMsgID); err != nil {
+			a.log.Warn("feishu: streaming card init failed, using static mode", "error", err)
+		} else {
+			conn.EnableStreaming(ctrl)
+		}
+	}
+
 	return a.bridge.Handle(ctx, envelope)
 }
 
 func (a *Adapter) HandleTextMessage(ctx context.Context, platformMsgID, channelID, userID, text string) error {
-	return a.handleTextMessage(ctx, platformMsgID, channelID, userID, text, "", "")
+	return a.handleTextMessage(ctx, platformMsgID, channelID, "p2p", userID, text, "", "")
 }
 
 func (a *Adapter) GetOrCreateConn(chatID string) *FeishuConn {
@@ -329,6 +351,15 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		return fmt.Errorf("feishu: nil envelope")
 	}
 
+	// Handle done event before extractResponseText (which returns false for done).
+	if c.streamCtrl != nil && env.Event.Type == events.Done {
+		if c.typingRid != "" {
+			_ = c.adapter.RemoveTypingIndicator(ctx, "", c.typingRid)
+			c.typingRid = ""
+		}
+		return c.streamCtrl.Close(ctx)
+	}
+
 	text, ok := extractResponseText(env)
 	if !ok {
 		return nil
@@ -342,10 +373,15 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 	)
 
 	if c.streamCtrl != nil {
-		if env.Event.Type == events.Done {
-			return c.streamCtrl.Close(ctx)
+		// Remove typing indicator when streaming content first appears.
+		if c.typingRid != "" {
+			_ = c.adapter.RemoveTypingIndicator(ctx, "", c.typingRid)
+			c.typingRid = ""
 		}
-		return c.streamCtrl.Write(text)
+		if err := c.streamCtrl.Write(text); err != nil {
+			return err
+		}
+		return c.streamCtrl.Flush(ctx)
 	}
 
 	if c.replyToMsgID != "" {

@@ -7,7 +7,7 @@ import (
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 )
 
-const typingEmoji = "💡"
+const typingEmoji = "Typing"
 
 func (a *Adapter) AddTypingIndicator(ctx context.Context, messageID string) (string, error) {
 	if a.larkClient == nil {
