@@ -84,13 +84,13 @@ jobs:
       - name: Display coverage
         run: go tool cover -func=coverage.out | tail -1
 
-      - uses: actions/upload-artifact@v4.3.0
+      - uses: actions/upload-artifact@v6
         with:
           name: coverage
           path: coverage.out
 
       - name: Upload to Codecov
-        uses: codecov/codecov-action@v5.5.4
+        uses: codecov/codecov-action@v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: hrygo/hotplex-worker
@@ -114,7 +114,7 @@ jobs:
           cache: false
 
       - name: Download coverage
-        uses: actions/download-artifact@v4.3.0
+        uses: actions/download-artifact@v6
         with:
           name: coverage
           path: coverage-artifacts
