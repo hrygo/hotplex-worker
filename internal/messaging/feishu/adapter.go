@@ -449,9 +449,9 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 	}
 
 	if replyToMsgID != "" {
-		return c.adapter.replyMessage(ctx, replyToMsgID, SanitizeForCard(OptimizeMarkdownStyle(text)), false)
+		return c.adapter.replyMessage(ctx, replyToMsgID, OptimizeMarkdownStyle(SanitizeForCard(text)), false)
 	}
-	return c.adapter.sendTextMessage(ctx, chatID, SanitizeForCard(OptimizeMarkdownStyle(text)))
+	return c.adapter.sendTextMessage(ctx, chatID, OptimizeMarkdownStyle(SanitizeForCard(text)))
 }
 
 func (c *FeishuConn) Close() error {
