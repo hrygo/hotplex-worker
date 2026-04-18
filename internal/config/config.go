@@ -266,7 +266,7 @@ func Default() *Config {
 		},
 		Worker: WorkerConfig{
 			MaxLifetime:      24 * time.Hour,
-			IdleTimeout:      30 * time.Minute,
+			IdleTimeout:      60 * time.Minute,
 			ExecutionTimeout: 10 * time.Minute,
 			AllowedEnvs:      nil,
 			EnvWhitelist:     nil,

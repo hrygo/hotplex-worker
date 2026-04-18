@@ -124,7 +124,7 @@ pool:
 
 worker:
   max_lifetime: 24h           # Kill worker processes after 24h (prevent leaks)
-  idle_timeout: 30m           # Terminate idle workers after 30 minutes
+  idle_timeout: 60m           # Terminate idle workers after 60 minutes
   execution_timeout: 10m      # Maximum time for single tool/operation
 
   # Environment variable control
