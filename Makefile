@@ -107,12 +107,12 @@ run: build
 
 test:
 	@echo "$(CYAN)Testing...$(RESET)"
-	@go test -race -timeout 15m ./...
+	@GORACE="history_size=5" go test -race -timeout 15m ./...
 	@echo "  $(GREEN)✓ Tests passed$(RESET)"
 
 test-short:
 	@echo "$(CYAN)Testing...$(RESET)"
-	@go test -short -race -timeout 5m ./...
+	@GORACE="history_size=5" go test -short -race -timeout 5m ./...
 	@echo "  $(GREEN)✓ Tests passed$(RESET)"
 
 # ─────────────────────────────────────────────────────────────────────────────

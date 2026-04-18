@@ -239,6 +239,10 @@ func TestManager_ReadLine(t *testing.T) {
 // --- TestManager_Start_RealProcess -------------------------------------------
 
 func TestManager_Start_RealProcess(t *testing.T) {
+	if testRaceEnabled {
+		t.Skip("skipping: real process tests cause TSAN OOM under -race")
+	}
+
 	t.Parallel()
 
 	t.Run("start echo and read output", func(t *testing.T) {
@@ -293,6 +297,10 @@ func TestManager_Start_RealProcess(t *testing.T) {
 // --- TestManager_Terminate_Kill ----------------------------------------------
 
 func TestManager_Terminate_GracefulExit(t *testing.T) {
+	if testRaceEnabled {
+		t.Skip("skipping: real process tests cause TSAN OOM under -race")
+	}
+
 	t.Parallel()
 
 	t.Run("terminate exits cleanly with SIGTERM", func(t *testing.T) {
@@ -345,6 +353,10 @@ func TestManager_Terminate_GracefulExit(t *testing.T) {
 // --- TestManager_Wait --------------------------------------------------------
 
 func TestManager_Wait(t *testing.T) {
+	if testRaceEnabled {
+		t.Skip("skipping: real process tests cause TSAN OOM under -race")
+	}
+
 	t.Parallel()
 
 	t.Run("wait returns exit code for short-lived process", func(t *testing.T) {
@@ -390,6 +402,10 @@ func TestManager_Wait(t *testing.T) {
 // --- TestManager_ReadLine_MultiLine ------------------------------------------
 
 func TestManager_ReadLine_MultiLine(t *testing.T) {
+	if testRaceEnabled {
+		t.Skip("skipping: real process tests cause TSAN OOM under -race")
+	}
+
 	t.Parallel()
 
 	t.Run("read multiple lines from stdout", func(t *testing.T) {
@@ -422,6 +438,10 @@ func TestManager_ReadLine_MultiLine(t *testing.T) {
 // --- TestManager_Start_AllowedTools ------------------------------------------
 
 func TestManager_Start_AllowedTools(t *testing.T) {
+	if testRaceEnabled {
+		t.Skip("skipping: real process tests cause TSAN OOM under -race")
+	}
+
 	t.Parallel()
 
 	t.Run("allowed tools are appended to args", func(t *testing.T) {
