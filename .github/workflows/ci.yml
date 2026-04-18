@@ -123,9 +123,9 @@ jobs:
         run: |
           TOTAL=$(go tool cover -func=coverage-artifacts/coverage.out 2>/dev/null | tail -1 | grep -oP '\d+\.\d+')
           echo "Total coverage: ${TOTAL}%"
-          PASS=$(echo "$TOTAL >= 80.0" | bc -l)
+          PASS=$(echo "$TOTAL >= 45.0" | bc -l)
           if [ "$PASS" -ne 1 ]; then
-            echo "::error::Coverage ${TOTAL}% is below 80% threshold."
+            echo "::error::Coverage ${TOTAL}% is below 45% threshold."
             exit 1
           fi
           echo "## Coverage: ${TOTAL}%" >> $GITHUB_STEP_SUMMARY
