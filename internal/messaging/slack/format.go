@@ -19,6 +19,9 @@ func FormatMrkdwn(text string) string {
 		return "*" + strings.TrimSpace(sub[1]) + "*"
 	})
 
+	// Convert bold+italic: ***text*** → *_text_* (must be before bold)
+	text = tripletBoldRe.ReplaceAllString(text, "*_${1}_*")
+
 	// Convert bold: **text** → *text*
 	text = boldRe.ReplaceAllString(text, "*$1*")
 
@@ -38,6 +41,7 @@ func FormatMrkdwn(text string) string {
 
 var (
 	headingRe       = regexp.MustCompile(`(?m)^#{1,6}\s+(.+)$`)
+	tripletBoldRe   = regexp.MustCompile(`\*{3}(.+?)\*{3}`)
 	boldRe          = regexp.MustCompile(`\*\*(.+?)\*\*`)
 	strikethroughRe = regexp.MustCompile(`~~([^~]+)~~`)
 	linkRe          = regexp.MustCompile(`\[([^\]]+)\]\(([^)]+)\)`)

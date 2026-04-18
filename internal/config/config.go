@@ -148,6 +148,16 @@ type SlackConfig struct {
 	GroupPolicy         string   `mapstructure:"group_policy"`
 	RequireMention      bool     `mapstructure:"require_mention"`
 	AllowFrom           []string `mapstructure:"allow_from"`
+
+	// TypingStages configures multi-stage emoji progress indicators for free workspaces.
+	// Empty or nil uses DefaultStages (eyes → clock1 → hourglass → gear → hourglass).
+	TypingStages []TypingStageConfig `mapstructure:"typing_stages"`
+}
+
+// TypingStageConfig defines a single emoji reaction stage for YAML/Viper deserialization.
+type TypingStageConfig struct {
+	After time.Duration `mapstructure:"after"`
+	Emoji string        `mapstructure:"emoji"`
 }
 
 // FeishuConfig holds Feishu WebSocket adapter settings.
