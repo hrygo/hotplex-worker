@@ -16,6 +16,9 @@ internal/
   config/            # Viper config loading + file watcher + hot-reload + applyMessagingEnv
   gateway/           # WS gateway: Hub (broadcast), Conn (read/write pump), Handler, Bridge
   session/           # Session Manager (5-state machine), Pool manager, GC
+    sql/             # Externalized SQL: schema, migrations, queries (.sql files)
+    queries.go       # embed.FS SQL loader with comment stripping
+    stores.go        # Multi-store registry (SQLite/Postgres) with builder pattern
   messaging/         # Platform messaging adapters (Slack/Feishu bidirectional)
     bridge.go        # Platform Bridge: SessionStarter + ConnFactory + joined dedup
     platform_conn.go # PlatformConn interface (WriteCtx + Close)
@@ -23,7 +26,7 @@ internal/
     slack/           # Slack Socket Mode: NativeStreamingWriter, rate limiter, thread ownership
     feishu/          # Feishu ws.Client: P2 events, converter, streaming, typing, chat queue
     mock/            # Mock adapter for testing
-  worker/            # Worker interface + registry + base + 5 adapters (claudecode, opencodecli, opencodeserver, acpx, pi)
+  worker/            # Worker interface + registry + base + 6 adapters (claudecode, opencodecli, opencodeserver, acpx, pi, noop)
     acpx/             # ACPX adapter: ACP bridge, session ID passthrough, stdio I/O
     base/             # Shared BaseWorker + Conn + BuildEnv for CLI-based adapters
     proc/            # Process lifecycle (PGID isolation, layered termination)
@@ -61,7 +64,7 @@ scripts/             # Build/validation scripts
 | Symbol            | Type      | Location                             | Role                                                                              |
 | ----------------- | --------- | ------------------------------------ | --------------------------------------------------------------------------------- |
 | `main`            | func      | `cmd/worker/main.go:45`              | Entry: flags → config → wire → serve → shutdown                                   |
-| `GatewayDeps`     | struct    | `cmd/worker/main.go:248`             | DI container for all gateway dependencies                                         |
+| `GatewayDeps`     | struct    | `cmd/worker/main.go:255`             | DI container for all gateway dependencies                                         |
 | `admin.AdminAPI`  | struct    | `internal/admin/admin.go`            | Admin endpoints (stats, health, session CRUD, config)                             |
 | `Hub`             | struct    | `internal/gateway/hub.go:57`         | WS broadcast hub: conn registry, session routing, seq gen, JoinPlatformSession    |
 | `Conn`            | struct    | `internal/gateway/conn.go:27`        | Single WS connection: read/write pumps, init, heartbeat                           |
@@ -149,4 +152,4 @@ make clean                    # Clean build artifacts
 - `.claude` is symlinked to `.agent` — both directories exist
 - No `api/` directory — project uses JSON over WebSocket, not protobuf
 - Project targets POSIX only (PGID isolation requires `syscall.SysProcAttr{Setpgid: true}`)
-- Largest files: `opencodeserver/worker.go` (789), `manager.go` (752), `hub.go` (561), `config.go` (593), `opencodecli/worker.go` (515)
+- Largest files: `opencodeserver/worker.go` (802), `manager.go` (765), `hub.go` (575), `config.go` (593), `opencodecli/worker.go` (528)

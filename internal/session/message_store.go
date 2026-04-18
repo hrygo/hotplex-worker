@@ -19,9 +19,6 @@ import (
 // ErrEventNotFound is returned when no events exist for a given session.
 var ErrEventNotFound = errors.New("session store: no events found")
 
-// ErrAuditChainInvalid is returned when the audit log hash chain is broken.
-var ErrAuditChainInvalid = errors.New("session store: audit chain invalid")
-
 // EventRecord describes a single persisted event.
 type EventRecord struct {
 	ID        string
@@ -191,7 +188,7 @@ func (s *SQLiteMessageStore) flushBatch(batch []*writeReq) {
 		return
 	}
 
-	stmt, err := tx.Prepare(`INSERT OR IGNORE INTO events (id, session_id, seq, event_type, payload_json) VALUES (?, ?, ?, ?, ?)`)
+	stmt, err := tx.Prepare(queries["events.insert_batch"])
 	if err != nil {
 		_ = tx.Rollback()
 		s.log.Error("session store: batch stmt prepare", "err", err)
@@ -214,9 +211,7 @@ func (s *SQLiteMessageStore) flushBatch(batch []*writeReq) {
 
 // GetBySession returns all event records for a session from seq onwards (EVT-003).
 func (s *SQLiteMessageStore) GetBySession(ctx context.Context, sessionID string, fromSeq int64) ([]*EventRecord, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, session_id, seq, event_type, payload_json, created_at
-		 FROM events WHERE session_id = ? AND seq >= ? ORDER BY seq ASC`, sessionID, fromSeq)
+	rows, err := s.db.QueryContext(ctx, queries["message_store.get_events_by_session"], sessionID, fromSeq)
 	if err != nil {
 		return nil, fmt.Errorf("session store: get events: %w", err)
 	}
@@ -240,9 +235,7 @@ func (s *SQLiteMessageStore) GetBySession(ctx context.Context, sessionID string,
 // Returns ErrSessionNotFound if the session does not exist.
 func (s *SQLiteMessageStore) GetOwner(ctx context.Context, sessionID string) (string, error) {
 	var ownerID sql.NullString
-	err := s.db.QueryRowContext(ctx,
-		`SELECT COALESCE(owner_id, user_id) FROM sessions WHERE id = ?`, sessionID,
-	).Scan(&ownerID)
+	err := s.db.QueryRowContext(ctx, queries["message_store.get_session_owner"], sessionID).Scan(&ownerID)
 
 	if err == sql.ErrNoRows {
 		return "", ErrSessionNotFound
@@ -255,9 +248,7 @@ func (s *SQLiteMessageStore) GetOwner(ctx context.Context, sessionID string) (st
 	}
 	// Fallback: query user_id directly (for sessions created before owner_id existed).
 	var userID string
-	err = s.db.QueryRowContext(ctx,
-		`SELECT user_id FROM sessions WHERE id = ?`, sessionID,
-	).Scan(&userID)
+	err = s.db.QueryRowContext(ctx, queries["message_store.get_session_user"], sessionID).Scan(&userID)
 	if err == sql.ErrNoRows {
 		return "", ErrSessionNotFound
 	}
@@ -265,9 +256,7 @@ func (s *SQLiteMessageStore) GetOwner(ctx context.Context, sessionID string) (st
 }
 
 func (s *SQLiteMessageStore) Query(ctx context.Context, sessionID string, fromSeq int64) ([]*events.Envelope, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, session_id, seq, event_type, payload_json
-		 FROM events WHERE session_id = ? AND seq > ? ORDER BY seq ASC`, sessionID, fromSeq)
+	rows, err := s.db.QueryContext(ctx, queries["message_store.query_events"], sessionID, fromSeq)
 	if err != nil {
 		return nil, fmt.Errorf("session store: query events: %w", err)
 	}

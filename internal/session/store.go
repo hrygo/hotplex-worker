@@ -6,8 +6,10 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -15,6 +17,9 @@ import (
 	"github.com/hotplex/hotplex-worker/internal/config"
 	"github.com/hotplex/hotplex-worker/pkg/events"
 )
+
+// ErrAuditChainInvalid is returned when the audit log hash chain is broken.
+var ErrAuditChainInvalid = errors.New("session store: audit chain invalid")
 
 // Store defines the interface for session persistence.
 type Store interface {
@@ -64,83 +69,37 @@ func NewSQLiteStore(ctx context.Context, cfg *config.Config) (*SQLiteStore, erro
 }
 
 func (s *SQLiteStore) migrate(ctx context.Context) error {
-	schema := `
--- Sessions: core session metadata.
--- id is a UUIDv5 derived from (ownerID, workerType, platform, platform_key) via DerivePlatformSessionKey.
--- This deterministic mapping ensures the same platform conversation always maps to the same session.
-CREATE TABLE IF NOT EXISTS sessions (
-    id TEXT PRIMARY KEY,                     -- UUIDv5: deterministic from consistency mapping
-    user_id TEXT NOT NULL,                   -- original user ID from platform
-    owner_id TEXT,                           -- authenticated owner (NULL → falls back to user_id)
-    bot_id TEXT,                             -- SEC-007: bot isolation key
-    worker_session_id TEXT,                  -- worker-internal session ID (only OpenCode CLI/Server; Claude Code = empty, uses id directly)
-    worker_type TEXT NOT NULL,               -- worker adapter: claude_code, opencode_cli, opencode_server, etc.
-    state TEXT NOT NULL,                     -- state machine: created / running / idle / terminated / deleted
-    platform TEXT NOT NULL DEFAULT '',       -- messaging platform: slack, feishu, '' (direct WebSocket)
-    platform_key_json TEXT NOT NULL DEFAULT '', -- JSON of consistency-mapping inputs (see DerivePlatformSessionKey)
-    created_at DATETIME NOT NULL,
-    updated_at DATETIME NOT NULL,
-    expires_at DATETIME,                     -- max lifetime expiry
-    idle_expires_at DATETIME,                -- idle timeout expiry
-    is_active INTEGER NOT NULL DEFAULT 0,    -- 1 if state ∈ {created, running, idle}
-    context_json TEXT                        -- arbitrary session context (key-value)
-);
-CREATE INDEX IF NOT EXISTS idx_sessions_state ON sessions(state);
-CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
-CREATE INDEX IF NOT EXISTS idx_sessions_owner_id ON sessions(owner_id);
-CREATE INDEX IF NOT EXISTS idx_sessions_bot_id ON sessions(bot_id);
-CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
-CREATE INDEX IF NOT EXISTS idx_sessions_idle_expires_at ON sessions(idle_expires_at);
-CREATE INDEX IF NOT EXISTS idx_sessions_platform ON sessions(platform);
-
--- EVT-001: events table for AEP message persistence.
--- Append-only event log per session. Each row is one AEP envelope (done, message.delta, etc.).
--- Append-only enforced at application layer; SQLite does not support
--- standard BEFORE triggers for INSERT/UPDATE/DELETE prevention.
-CREATE TABLE IF NOT EXISTS events (
-    id TEXT PRIMARY KEY,                     -- AEP envelope ID
-    session_id TEXT NOT NULL,                -- FK to sessions.id
-    seq INTEGER NOT NULL,                    -- monotonic sequence within session
-    event_type TEXT NOT NULL,                -- AEP event type: done, message.delta, tool_call, etc.
-    payload_json TEXT NOT NULL,              -- full AEP envelope JSON
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-CREATE INDEX IF NOT EXISTS idx_events_session_id ON events(session_id);
-CREATE INDEX IF NOT EXISTS idx_events_session_seq ON events(session_id, seq);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_events_session_seq_unique ON events(session_id, seq);
-
--- EVT-008: audit_log table with hash chain for tamper-evident audit trail.
--- Each row is hashed with the previous row's hash, forming a chain.
--- Tampering with any row breaks the chain and is detectable.
-CREATE TABLE IF NOT EXISTS audit_log (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    timestamp INTEGER NOT NULL,              -- Unix epoch (seconds)
-    action TEXT NOT NULL,                    -- e.g. "session.create", "session.terminate"
-    actor_id TEXT NOT NULL,                  -- who performed the action
-    session_id TEXT NOT NULL,                -- target session
-    details TEXT,                            -- optional JSON details
-    previous_hash TEXT NOT NULL,             -- hash of previous row
-    current_hash TEXT NOT NULL               -- hash of this row (including previous_hash)
-);
-CREATE INDEX IF NOT EXISTS idx_audit_session_id ON audit_log(session_id);
-CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_log(timestamp);
-`
-	_, err := s.db.ExecContext(ctx, schema)
+	// Execute schema DDL from embedded file (SQLite supports multi-statement exec).
+	schema, err := sqlFS.ReadFile("sql/sessions.schema.sql")
 	if err != nil {
-		return fmt.Errorf("session store: migrate: %w", err)
+		return fmt.Errorf("session store: read schema: %w", err)
+	}
+	if _, err := s.db.ExecContext(ctx, string(schema)); err != nil {
+		return fmt.Errorf("session store: apply schema: %w", err)
 	}
 
-	// Migrate: add owner_id column if it doesn't exist (no-op on fresh installs).
-	// The column is nullable so existing rows remain valid; application code
-	// falls back to user_id when owner_id IS NULL.
-	_, _ = s.db.ExecContext(ctx, "ALTER TABLE sessions ADD COLUMN owner_id TEXT")
-	// Migrate: add bot_id column for SEC-007 multi-bot isolation.
-	_, _ = s.db.ExecContext(ctx, "ALTER TABLE sessions ADD COLUMN bot_id TEXT")
-	// Migrate: add platform + platform_key_json for consistency mapping persistence.
-	_, _ = s.db.ExecContext(ctx, "ALTER TABLE sessions ADD COLUMN platform TEXT NOT NULL DEFAULT ''")
-	_, _ = s.db.ExecContext(ctx, "ALTER TABLE sessions ADD COLUMN platform_key_json TEXT NOT NULL DEFAULT ''")
+	// Execute migration ALTER TABLE statements from embedded file.
+	// Errors are ignored since ALTER COLUMN is idempotent on fresh installs
+	// and silently no-op when columns already exist.
+	migrationSQL, err := sqlFS.ReadFile("sql/sessions.migrations.sql")
+	if err != nil {
+		return fmt.Errorf("session store: read migrations: %w", err)
+	}
+	_, _ = s.db.ExecContext(ctx, strings.TrimSpace(stripSQLComments(string(migrationSQL))))
 
 	return nil
+}
+
+// stripSQLComments removes single-line (--) SQL comments from text.
+func stripSQLComments(sql string) string {
+	var result strings.Builder
+	for _, line := range strings.SplitAfter(sql, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "--") {
+			result.WriteString(line)
+		}
+	}
+	return result.String()
 }
 
 func (s *SQLiteStore) Upsert(ctx context.Context, info *SessionInfo) error {
@@ -173,16 +132,7 @@ func (s *SQLiteStore) Upsert(ctx context.Context, info *SessionInfo) error {
 		}
 	}
 
-	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO sessions (id, user_id, owner_id, bot_id, worker_session_id, worker_type, state, platform, platform_key_json, created_at, updated_at, expires_at, idle_expires_at, is_active, context_json)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		 ON CONFLICT(id) DO UPDATE SET
-		   state=excluded.state,
-		   updated_at=excluded.updated_at,
-		   expires_at=excluded.expires_at,
-		   idle_expires_at=excluded.idle_expires_at,
-		   is_active=excluded.is_active,
-		   context_json=excluded.context_json`,
+	_, err := s.db.ExecContext(ctx, queries["sessions.upsert_session"],
 		info.ID, info.UserID, info.OwnerID, info.BotID, info.WorkerSessionID, info.WorkerType, string(info.State),
 		info.Platform, string(platformKeyJSON),
 		info.CreatedAt, info.UpdatedAt, info.ExpiresAt, info.IdleExpiresAt,
@@ -197,10 +147,8 @@ func (s *SQLiteStore) Get(ctx context.Context, id string) (*SessionInfo, error) 
 	var expiresAt, idleExpiresAt sql.NullTime
 	var createdAt, updatedAt time.Time
 
-	err := s.db.QueryRowContext(ctx,
-		`SELECT id, user_id, COALESCE(owner_id, user_id), worker_session_id, worker_type, state, bot_id, platform, platform_key_json, created_at, updated_at, expires_at, idle_expires_at, context_json
-		 FROM sessions WHERE id = ?`, id,
-	).Scan(&info.ID, &info.UserID, &info.OwnerID, &info.WorkerSessionID, &info.WorkerType, &info.State, &info.BotID,
+	err := s.db.QueryRowContext(ctx, queries["store.get_session"], id).Scan(
+		&info.ID, &info.UserID, &info.OwnerID, &info.WorkerSessionID, &info.WorkerType, &info.State, &info.BotID,
 		&info.Platform, &platformKeyStr,
 		&createdAt, &updatedAt, &expiresAt, &idleExpiresAt, &ctxJSON)
 
@@ -235,9 +183,7 @@ func (s *SQLiteStore) List(ctx context.Context, limit, offset int) ([]*SessionIn
 	if limit <= 0 {
 		limit = 100
 	}
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, user_id, COALESCE(owner_id, user_id), worker_session_id, worker_type, state, bot_id, platform, platform_key_json, created_at, updated_at, expires_at, idle_expires_at, context_json
-		 FROM sessions ORDER BY created_at DESC LIMIT ? OFFSET ?`, limit, offset)
+	rows, err := s.db.QueryContext(ctx, queries["store.list_sessions"], limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("session store: list: %w", err)
 	}
@@ -275,8 +221,7 @@ func (s *SQLiteStore) List(ctx context.Context, limit, offset int) ([]*SessionIn
 }
 
 func (s *SQLiteStore) GetExpiredMaxLifetime(ctx context.Context, now time.Time) ([]string, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT id FROM sessions WHERE state IN (?,?,?) AND expires_at IS NOT NULL AND expires_at <= ?`,
+	rows, err := s.db.QueryContext(ctx, queries["store.get_expired_max_lifetime"],
 		string(events.StateCreated), string(events.StateRunning), string(events.StateIdle), now)
 	if err != nil {
 		return nil, err
@@ -294,9 +239,7 @@ func (s *SQLiteStore) GetExpiredMaxLifetime(ctx context.Context, now time.Time) 
 }
 
 func (s *SQLiteStore) GetExpiredIdle(ctx context.Context, now time.Time) ([]string, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT id FROM sessions WHERE state=? AND idle_expires_at IS NOT NULL AND idle_expires_at <= ?`,
-		events.StateIdle, now)
+	rows, err := s.db.QueryContext(ctx, queries["store.get_expired_idle"], events.StateIdle, now)
 	if err != nil {
 		return nil, err
 	}
@@ -313,9 +256,7 @@ func (s *SQLiteStore) GetExpiredIdle(ctx context.Context, now time.Time) ([]stri
 }
 
 func (s *SQLiteStore) DeleteTerminated(ctx context.Context, cutoff time.Time) error {
-	_, err := s.db.ExecContext(ctx,
-		`DELETE FROM sessions WHERE state=? AND updated_at <= ?`,
-		events.StateTerminated, cutoff)
+	_, err := s.db.ExecContext(ctx, queries["store.delete_terminated"], events.StateTerminated, cutoff)
 	return err
 }
 
@@ -335,7 +276,7 @@ func (s *SQLiteStore) AppendAudit(ctx context.Context, action, actorID, sessionI
 
 	var previousHash string
 	var lastID int64
-	row := s.db.QueryRowContext(ctx, "SELECT id, current_hash FROM audit_log ORDER BY id DESC LIMIT 1")
+	row := s.db.QueryRowContext(ctx, queries["store.get_last_audit"])
 	if err := row.Scan(&lastID, &previousHash); err != nil && err != sql.ErrNoRows {
 		return fmt.Errorf("session store: get last audit entry: %w", err)
 	}
@@ -345,23 +286,22 @@ func (s *SQLiteStore) AppendAudit(ctx context.Context, action, actorID, sessionI
 
 	timestamp := time.Now().UnixMilli()
 
-	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO audit_log (timestamp, action, actor_id, session_id, details, previous_hash, current_hash)
-		 VALUES (?, ?, ?, ?, ?, ?, '')`,
-		timestamp, action, actorID, sessionID, detailsStr, previousHash,
-	)
+	res, err := s.db.ExecContext(ctx, queries["store.append_audit"],
+		timestamp, action, actorID, sessionID, detailsStr, previousHash)
 	if err != nil {
 		return fmt.Errorf("session store: insert audit: %w", err)
 	}
 
-	var id int64
-	_ = s.db.QueryRowContext(ctx, "SELECT last_insert_rowid()").Scan(&id)
+	id, err := res.LastInsertId()
+	if err != nil {
+		return fmt.Errorf("session store: get last insert id: %w", err)
+	}
 
 	data := fmt.Sprintf("%d%d%s%s%s%s%s", id, timestamp, action, actorID, sessionID, detailsStr, previousHash)
 	hash := sha256.Sum256([]byte(data))
 	currentHash := hex.EncodeToString(hash[:])
 
-	_, err = s.db.ExecContext(ctx, "UPDATE audit_log SET current_hash=? WHERE id=?", currentHash, id)
+	_, err = s.db.ExecContext(ctx, queries["store.update_audit_hash"], currentHash, id)
 	if err != nil {
 		return fmt.Errorf("session store: update audit hash: %w", err)
 	}
@@ -382,9 +322,7 @@ type AuditRecord struct {
 }
 
 func (s *SQLiteStore) GetAuditTrail(ctx context.Context, sessionID string) ([]*AuditRecord, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, timestamp, action, actor_id, session_id, details, previous_hash, current_hash
-		 FROM audit_log WHERE session_id=? ORDER BY id ASC`, sessionID)
+	rows, err := s.db.QueryContext(ctx, queries["store.get_audit_trail"], sessionID)
 	if err != nil {
 		return nil, fmt.Errorf("session store: get audit trail: %w", err)
 	}
