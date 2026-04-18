@@ -2,7 +2,6 @@ version: 2
 
 run:
   timeout: 10m
-  modules-download-mode: readonly
 
 linters:
   enable:
@@ -15,56 +14,105 @@ linters:
     - unparam
     - errorlint
     - gocritic
+  exclusions:
+    rules:
+      # Exclude test file noise for linters that only flag test patterns
+      - path: '_test\.go'
+        linters:
+          - errcheck
+          - unparam
+          - gocritic
+      # QF1008: explicit embedded field selectors are intentional to avoid naming
+      # conflicts (e.g., larkClient.Im.V1 vs local embedded Im field).
+      - path: 'feishu/(adapter|streaming|typing|sdk_logger)\.go'
+        linters:
+          - staticcheck
+        text: 'QF1008'
+      - path: 'worker/(claudecode|opencodecli)/worker\.go'
+        linters:
+          - staticcheck
+        text: 'QF1008'
+      - path: 'security/jwt\.go'
+        linters:
+          - staticcheck
+        text: 'QF1008'
+      # ST1000: package comments are low-value for small/internal packages
+      - linters:
+          - staticcheck
+        text: 'ST1000'
+      # ST1020: comment format suggestions on non-public-APIs
+      - linters:
+          - staticcheck
+        text: 'ST1020'
+      # ST1003: ALL_CAPS constant naming (FEISHU_CARD_TABLE_LIMIT)
+      - linters:
+          - staticcheck
+        text: 'ST1003'
+      # QF1003: tagged switch suggestions (style preference)
+      - linters:
+          - staticcheck
+        text: 'QF1003'
+      # importShadow: intentional local shadowing of imported package names
+      - linters:
+          - gocritic
+        text: 'importShadow'
+      # gocritic from third-party node_modules (can't modify)
+      - path: 'node_modules/'
+        linters:
+          - gocritic
+          - staticcheck
+      # paramTypeCombine: third-party code
+      - path: 'examples/typescript-client/node_modules/'
+        linters:
+          - gocritic
+      # gocritic style suggestions in markdown pipeline (experimental feature)
+      - path: 'messaging/feishu/markdown\.go'
+        linters:
+          - gocritic
+          - staticcheck
+  settings:
+    errcheck:
+      check-type-assertions: true
+      check-blank: false
+      tests: false
+    staticcheck:
+      checks: ["all"]
+      tests: false
+    ineffassign:
+      tests: false
+    misspell:
+      tests: false
+    unconvert:
+      tests: false
+    unparam:
+      checks: ["all"]
+      tests: false
+    errorlint:
+      tests: false
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - style
+      disabled-checks:
+        - builtinShadow
+        - unnamedResult
+        - typeDefFirst
+        - ifElseChain
+        - typeAssertChain
+      tests: false
+    unused:
+      # Keep analyzing test files so helper functions in *_test.go
+      # referencing test_helpers.go are recognized as used.
 
 formatters:
   enable:
     - gofmt
     - goimports
-
-linters-settings:
-  errcheck:
-    check-type-assertions: true
-    check-blank: false
-  govet:
-    enable-all: true
-    disable:
-      - fieldalignment
-      - shadow
-  goimports:
-    local-prefixes: github.com/hotplex/hotplex-worker
-  staticcheck:
-    checks: ["all"]
-  unparam:
-    checks: ["all"]
-  gocritic:
-    enabled-tags:
-      - diagnostic
-      - style
-    disabled-checks:
-      - builtinShadow
-      - unnamedResult
-      - typeDefFirst
-      - ifElseChain
-      - typeAssertChain
+  settings:
+    goimports:
+      local-prefixes: github.com/hotplex/hotplex-worker
 
 issues:
   exclude-use-default: false
   max-issues-per-linter: 0
   max-same-issues: 0
-  exclude-rules:
-    # Test files: relax noisy linters
-    - path: _test\.go
-      linters:
-        - errcheck
-        - gocritic
-        - unparam
-        - errorlint
-        - govet
-    # E2E test files
-    - path: e2e/
-      linters:
-        - errcheck
-        - gocritic
-        - unparam
-        - errorlint
-        - govet

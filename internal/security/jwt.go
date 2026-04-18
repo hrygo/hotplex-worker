@@ -166,7 +166,7 @@ func deriveECDSAP256Key(secret []byte) *ecdsa.PrivateKey {
 	s := new(big.Int).SetBytes(scalarBytes[:])
 	s.Mod(s, new(big.Int).Sub(N, big.NewInt(1)))
 	s.Add(s, big.NewInt(1))
-	x, y := elliptic.P256().ScalarBaseMult(s.Bytes())
+	x, y := elliptic.P256().ScalarBaseMult(s.Bytes()) //nolint:staticcheck // SA1019: must use deprecated scalar multiplication for deterministic ECDSA key derivation from seed
 	return &ecdsa.PrivateKey{PublicKey: ecdsa.PublicKey{Curve: elliptic.P256(), X: x, Y: y}, D: s}
 }
 
