@@ -66,6 +66,16 @@ func (a *Adapter) SetBridge(b *messaging.Bridge) {
 	a.bridge = b
 }
 
+// SetGate sets the access control gate.
+func (a *Adapter) SetGate(g *Gate) {
+	a.gate = g
+}
+
+// SetAssistantEnabled controls whether to attempt native Assistant API.
+func (a *Adapter) SetAssistantEnabled(enabled *bool) {
+	a.assistantEnabled = enabled
+}
+
 func (a *Adapter) Start(ctx context.Context) error {
 	if a.botToken == "" || a.appToken == "" {
 		return fmt.Errorf("slack: botToken and appToken required")

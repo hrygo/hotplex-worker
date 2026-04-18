@@ -483,6 +483,21 @@ func startMessagingAdapters(ctx context.Context, log *slog.Logger, cfg *config.C
 		case messaging.PlatformSlack:
 			if sa, ok := adapter.(*slack.Adapter); ok {
 				sa.Configure(cfg.Messaging.Slack.BotToken, cfg.Messaging.Slack.AppToken, msgBridge)
+				gate := slack.NewGate(
+					cfg.Messaging.Slack.DMPolicy,
+					cfg.Messaging.Slack.GroupPolicy,
+					cfg.Messaging.Slack.RequireMention,
+					cfg.Messaging.Slack.AllowFrom,
+				)
+				sa.SetGate(gate)
+				sa.SetAssistantEnabled(cfg.Messaging.Slack.AssistantAPIEnabled)
+				if stages := cfg.Messaging.Slack.TypingStages; len(stages) > 0 {
+					ts := make([]slack.TypingStage, len(stages))
+					for i, s := range stages {
+						ts[i] = slack.TypingStage{After: s.After, Emoji: s.Emoji}
+					}
+					sa.SetTypingStages(ts)
+				}
 			}
 		case messaging.PlatformFeishu:
 			if fa, ok := adapter.(*feishu.Adapter); ok {
