@@ -154,6 +154,9 @@ func (w *Worker) startLocked(_ context.Context, session worker.SessionInfo, resu
 }
 
 // buildCLIArgs constructs the Claude Code CLI argument list.
+// Session mode:
+//   - resume=true:  --resume <session-id>  (恢复已有会话)
+//   - resume=false: --session-id <id>       (创建新会话)
 func (w *Worker) buildCLIArgs(session worker.SessionInfo, resume bool) []string {
 	args := []string{
 		"--print",
@@ -163,26 +166,15 @@ func (w *Worker) buildCLIArgs(session worker.SessionInfo, resume bool) []string 
 		"--dangerously-skip-permissions",
 	}
 
-	// Session mode:
-	// - ContinueSession=true: resume latest session in current dir (--continue)
-	// - resume=true: resume specific session (--session-id --resume)
-	// - new session: let Claude create one (no --session-id)
-	if session.ContinueSession {
-		args = append(args, "--continue")
-	} else if resume {
+	// Only two session modes:
+	// - resume=true  → --resume <id>
+	// - resume=false → --session-id <id>
+	if resume {
+		args = append(args, "--resume", aep.ParseSessionID(session.SessionID))
+	} else {
 		args = append(args, "--session-id", aep.ParseSessionID(session.SessionID))
-		args = append(args, "--resume")
-		if session.ForkSession {
-			args = append(args, "--fork-session")
-		}
-		if session.ResumeSessionAt != "" {
-			args = append(args, "--resume-session-at", session.ResumeSessionAt)
-		}
-		if session.RewindFiles != "" {
-			args = append(args, "--rewind-files", session.RewindFiles)
-		}
 	}
-	// else: new session - don't pass --session-id, Claude will create one
+
 	if session.PermissionMode != "" {
 		args = append(args, "--permission-mode", session.PermissionMode)
 	}
@@ -192,6 +184,7 @@ func (w *Worker) buildCLIArgs(session worker.SessionInfo, resume bool) []string 
 	if len(session.DisallowedTools) > 0 {
 		args = append(args, "--disallowed-tools", joinTools(session.DisallowedTools))
 	}
+
 	if len(session.AllowedModels) > 0 {
 		args = append(args, "--model", session.AllowedModels[0])
 	}

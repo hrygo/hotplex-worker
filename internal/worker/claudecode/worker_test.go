@@ -188,8 +188,6 @@ func TestBuildCLIArgs_AllOptions(t *testing.T) {
 		SystemPromptReplace:    "",
 		MCPConfig:              "/path/to/mcp.json",
 		StrictMCPConfig:        true,
-		ContinueSession:        false,
-		ForkSession:            false,
 		MaxTurns:               10,
 		Bare:                   true,
 		AllowedDirs:            []string{"/extra/dir"},
@@ -205,7 +203,9 @@ func TestBuildCLIArgs_AllOptions(t *testing.T) {
 	require.Contains(t, args, "--verbose")
 	require.Contains(t, args, "--output-format", "stream-json")
 	require.Contains(t, args, "--input-format", "stream-json")
-	require.NotContains(t, args, "--session-id")
+	// resume=false → --session-id
+	require.Contains(t, args, "--session-id", "test-session")
+	require.NotContains(t, args, "--resume")
 	require.Contains(t, args, "--permission-mode", "plan")
 	require.Contains(t, args, "--disallowed-tools", "WebSearch,Edit")
 	require.Contains(t, args, "--model", "claude-sonnet-4-6")
@@ -220,9 +220,6 @@ func TestBuildCLIArgs_AllOptions(t *testing.T) {
 	require.Contains(t, args, "--json-schema", "/schemas/output.json")
 	require.Contains(t, args, "--include-hook-events")
 	require.Contains(t, args, "--include-partial-messages")
-	require.NotContains(t, args, "--resume")
-	require.NotContains(t, args, "--fork-session")
-	require.NotContains(t, args, "--resume-session-at")
 	require.Contains(t, args, "--dangerously-skip-permissions")
 	require.NotContains(t, args, "--system-prompt") // replace mode not set
 }
@@ -244,23 +241,6 @@ func TestBuildCLIArgs_SystemPromptReplace(t *testing.T) {
 	require.NotContains(t, args, "--append-system-prompt")
 }
 
-func TestBuildCLIArgs_ContinueSession(t *testing.T) {
-	t.Parallel()
-
-	w := New()
-	session := worker.SessionInfo{
-		SessionID:       "should-be-ignored",
-		UserID:          "test-user",
-		ProjectDir:      "/tmp",
-		ContinueSession: true,
-	}
-
-	args := w.buildCLIArgs(session, false)
-	require.Contains(t, args, "--continue")
-	require.NotContains(t, args, "--session-id")
-	require.NotContains(t, args, "--resume")
-}
-
 func TestBuildCLIArgs_Resume(t *testing.T) {
 	t.Parallel()
 
@@ -272,41 +252,13 @@ func TestBuildCLIArgs_Resume(t *testing.T) {
 	}
 
 	args := w.buildCLIArgs(session, true)
+	// resume=true → --resume <session-id>
 	require.Contains(t, args, "--resume")
-	require.Contains(t, args, "--session-id", "resume-session")
+	require.Contains(t, args, "resume-session")
+	require.NotContains(t, args, "--session-id")
 }
 
-func TestBuildCLIArgs_ResumeSessionAt(t *testing.T) {
-	t.Parallel()
-
-	w := New()
-	session := worker.SessionInfo{
-		SessionID:       "resume-session",
-		UserID:          "test-user",
-		ProjectDir:      "/tmp",
-		ResumeSessionAt: "msg_abc123",
-	}
-
-	args := w.buildCLIArgs(session, true)
-	require.Contains(t, args, "--resume")
-	require.Contains(t, args, "--resume-session-at", "msg_abc123")
-}
-
-func TestBuildCLIArgs_ForkSession(t *testing.T) {
-	t.Parallel()
-
-	w := New()
-	session := worker.SessionInfo{
-		SessionID:   "fork-session",
-		UserID:      "test-user",
-		ProjectDir:  "/tmp",
-		ForkSession: true,
-	}
-
-	args := w.buildCLIArgs(session, true) // resume=true to trigger --fork-session
-	require.Contains(t, args, "--resume")
-	require.Contains(t, args, "--fork-session")
-}
+// TestBuildCLIArgs_MaxTurns, TestBuildCLIArgs_MCPConfig follow below.
 
 func TestBuildCLIArgs_MaxTurns(t *testing.T) {
 	t.Parallel()
@@ -340,6 +292,8 @@ func TestBuildCLIArgs_MCPConfig(t *testing.T) {
 	require.Contains(t, args, "--strict-mcp-config")
 }
 
+// TestBuildCLIArgs_Minimal follows below.
+
 func TestBuildCLIArgs_SkipPermissions(t *testing.T) {
 	t.Parallel()
 
@@ -367,12 +321,14 @@ func TestBuildCLIArgs_Minimal(t *testing.T) {
 	}
 
 	args := w.buildCLIArgs(session, false)
-	// Required flags (7 tokens: --print, --verbose, --output-format, stream-json, --input-format, stream-json, --dangerously-skip-permissions).
-	// For new sessions, --session-id is NOT passed - Claude creates one automatically.
-	require.Len(t, args, 7)
+	// resume=false → --session-id minimal-session, so 9 tokens total:
+	// --print --verbose --output-format stream-json --input-format stream-json
+	// --dangerously-skip-permissions --session-id minimal-session
+	require.Len(t, args, 9)
 	require.Contains(t, args, "--print")
 	require.Contains(t, args, "--verbose")
-	require.NotContains(t, args, "--session-id")
+	require.Contains(t, args, "--session-id", "minimal-session")
+	require.NotContains(t, args, "--resume")
 }
 
 func TestToCompatSessionID(t *testing.T) {

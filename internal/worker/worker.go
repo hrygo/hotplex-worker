@@ -161,11 +161,10 @@ type SessionInfo struct {
 	WorkerSessionID string
 	AllowedModels   []string // models allowed for this session
 
-	// PermissionMode controls how the worker handles permission requests.
-	// Valid values: "default", "plan", "auto-accept".
-	PermissionMode string
-	// SkipPermissions bypasses all permission checks (equivalent to --dangerously-skip-permissions).
-	SkipPermissions bool
+	// MCPConfig is the path to a JSON file with MCP server configuration (--mcp-config).
+	MCPConfig string
+	// StrictMCPConfig restricts MCP servers to only those specified in MCPConfig (--strict-mcp-config).
+	StrictMCPConfig bool
 	// DisallowedTools lists tools that the worker should NOT use.
 	DisallowedTools []string
 	// SystemPrompt is appended to the worker's default system prompt (--append-system-prompt).
@@ -173,14 +172,18 @@ type SessionInfo struct {
 	// SystemPromptReplace, if non-empty, replaces the default system prompt entirely (--system-prompt).
 	// Takes precedence over SystemPrompt when set.
 	SystemPromptReplace string
-	// MCPConfig is the path to a JSON file with MCP server configuration (--mcp-config).
-	MCPConfig string
-	// StrictMCPConfig restricts MCP servers to only those specified in MCPConfig (--strict-mcp-config).
-	StrictMCPConfig bool
+	// PermissionMode controls how the worker handles permission requests.
+	// Valid values: "default", "plan", "auto-accept".
+	PermissionMode string
+	// SkipPermissions bypasses all permission checks (equivalent to --dangerously-skip-permissions).
+	SkipPermissions bool
 	// ContinueSession resumes the latest session in the current directory without a session ID.
 	ContinueSession bool
 	// ForkSession, when resuming, creates a new session ID instead of reusing the existing one.
 	ForkSession bool
+	// ResumeSessionAt restores the session up to and including the specified
+	// assistant message ID, discarding later history (--resume-session-at).
+	ResumeSessionAt string
 	// MaxTurns limits the number of agentic turns in non-interactive mode.
 	MaxTurns int
 	// Bare runs Claude Code in minimal mode, skipping hooks, LSP, and plugin sync.
@@ -191,12 +194,6 @@ type SessionInfo struct {
 	MaxBudgetUSD float64
 	// JSONSchema validates structured output against a JSON Schema (--json-schema).
 	JSONSchema string
-	// ResumeSessionAt restores the session up to and including the specified
-	// assistant message ID, discarding later history (--resume-session-at).
-	ResumeSessionAt string
-	// RewindFiles restores files to their state at the specified user message ID
-	// and exits (--rewind-files).
-	RewindFiles string
 	// IncludeHookEvents exposes all hook lifecycle events in the output stream
 	// (--include-hook-events).
 	IncludeHookEvents bool
