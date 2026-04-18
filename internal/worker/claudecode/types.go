@@ -74,14 +74,3 @@ type ControlRequestPayload struct {
 	ToolName  string          `json:"tool_name,omitempty"`
 	Input     json.RawMessage `json:"input,omitempty"`
 }
-
-// SystemEventData represents system event data.
-type SystemEventData struct {
-	Init   *SystemInitData `json:"init,omitempty"`
-	Status string          `json:"status,omitempty"`
-}
-
-// SystemInitData represents init system event data.
-type SystemInitData struct {
-	Version string `json:"version,omitempty"`
-}

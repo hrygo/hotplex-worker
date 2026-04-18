@@ -115,15 +115,13 @@ func (w *Worker) startLocked(_ context.Context, session worker.SessionInfo, resu
 	}
 
 	args := w.buildCLIArgs(session, resume)
-	env := base.BuildEnv(session, claudeCodeEnvWhitelist, "claude-code")
-
 	w.Proc = proc.New(proc.Opts{
 		Logger:       w.Log,
 		AllowedTools: session.AllowedTools,
 	})
 
 	bgCtx := context.Background()
-	stdin, _, _, err := w.Proc.Start(bgCtx, "claude", args, env, session.ProjectDir)
+	stdin, _, _, err := w.Proc.Start(bgCtx, "claude", args, base.BuildEnv(session, claudeCodeEnvWhitelist, "claude-code"), session.ProjectDir)
 	if err != nil {
 		w.Proc = nil
 		return fmt.Errorf("claudecode: start: %w", err)
@@ -485,31 +483,4 @@ func init() {
 	worker.Register(worker.TypeClaudeCode, func() (worker.Worker, error) {
 		return &Worker{BaseWorker: base.NewBaseWorker(slog.Default(), nil)}, nil
 	})
-}
-
-// ─── Session ID Compatibility ───────────────────────────────────────────────────
-
-const (
-	// csePrefix is the v2 infrastructure session ID prefix.
-	csePrefix = "cse_"
-	// sessionPrefix is the v1-compatible session ID prefix.
-	sessionPrefix = "session_"
-)
-
-// ToCompatSessionID converts a v2 infrastructure session ID (cse_*) to
-// the v1-compatible format (session_*). Non-cse IDs are returned unchanged.
-func ToCompatSessionID(id string) string {
-	if strings.HasPrefix(id, csePrefix) {
-		return sessionPrefix + id[len(csePrefix):]
-	}
-	return id
-}
-
-// ToInfraSessionID converts a v1-compatible session ID (session_*) to
-// the v2 infrastructure format (cse_*). Non-session IDs are returned unchanged.
-func ToInfraSessionID(id string) string {
-	if strings.HasPrefix(id, sessionPrefix) {
-		return csePrefix + id[len(sessionPrefix):]
-	}
-	return id
 }

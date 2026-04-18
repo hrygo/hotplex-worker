@@ -331,52 +331,6 @@ func TestBuildCLIArgs_Minimal(t *testing.T) {
 	require.NotContains(t, args, "--resume")
 }
 
-func TestToCompatSessionID(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name string
-		id   string
-		want string
-	}{
-		{"cse_v2 format converts to session_", "cse_abc123", "session_abc123"},
-		{"session_v1 format unchanged", "session_xyz789", "session_xyz789"},
-		{"other prefix unchanged", "other_123", "other_123"},
-		{"plain ID unchanged", "plain-id", "plain-id"},
-		{"empty string unchanged", "", ""},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := ToCompatSessionID(tt.id)
-			require.Equal(t, tt.want, got)
-		})
-	}
-}
-
-func TestToInfraSessionID(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name string
-		id   string
-		want string
-	}{
-		{"session_v1 format converts to cse_", "session_abc123", "cse_abc123"},
-		{"cse_v2 format unchanged", "cse_xyz789", "cse_xyz789"},
-		{"other prefix unchanged", "other_123", "other_123"},
-		{"plain ID unchanged", "plain-id", "plain-id"},
-		{"empty string unchanged", "", ""},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := ToInfraSessionID(tt.id)
-			require.Equal(t, tt.want, got)
-		})
-	}
-}
-
 func TestBuildCLIArgs_Bare(t *testing.T) {
 	t.Parallel()
 
