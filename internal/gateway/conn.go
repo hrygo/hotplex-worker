@@ -188,14 +188,6 @@ func (c *Conn) ReadPump(handler *Handler) {
 // performInit reads and processes the AEP init handshake message.
 // It blocks until either an init message is processed or an error occurs.
 func (c *Conn) performInit(handler *Handler) error {
-	// Enable init-phase buffering: WriteMessage will buffer events until
-	// markInitDone is called after init_ack is sent. This ensures init_ack
-	// is always the first message the client receives, even when state
-	// transitions during StartSession/ResumeSession race with init_ack.
-	c.mu.Lock()
-	c.initDone = false
-	c.mu.Unlock()
-
 	_, span := tracing.SpanFromContext(context.Background()).Start(context.Background(), "conn.init")
 	defer func() {
 		if span != nil {
@@ -269,6 +261,15 @@ func (c *Conn) performInit(handler *Handler) error {
 	// DeriveSessionKey(ownerID, workerType, clientSessionID, workDir) is always deterministic
 	// for the same (ownerID, workerType, clientSessionID, workDir) tuple.
 	sessionID := session.DeriveSessionKey(c.userID, initData.WorkerType, initData.SessionID, workDir)
+
+	// Enable init-phase buffering: WriteMessage will buffer events until
+	// markInitDone is called after init_ack is sent. This ensures init_ack
+	// is always the first message the client receives, even when state
+	// transitions during StartSession/ResumeSession race with init_ack.
+	// Placed after init validation so tests that don't send init remain unaffected.
+	c.mu.Lock()
+	c.initDone = false
+	c.mu.Unlock()
 
 	// Subscribe to session BEFORE creation/resume so that state events
 	// (e.g., RUNNING transition during StartSession) are delivered to this
