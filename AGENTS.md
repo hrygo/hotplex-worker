@@ -9,38 +9,48 @@ Multi-language client SDKs (TS, Python, Java, Go) + AI SDK transport adapter + w
 ## STRUCTURE
 
 ```
-cmd/worker/          # main.go (~530 lines): flags, DI wire, signal handling, messaging init
+cmd/worker/          main.go (~539 lines): flags, DI wire, signal handling, messaging init
+
 internal/
-  admin/             # Admin API: handlers, middleware, rate-limit, log buffer
-  aep/               # AEP v1 codec (JSON envelope encode/decode/validate)
-  config/            # Viper config loading + file watcher + hot-reload + applyMessagingEnv
-  gateway/           # WS gateway: Hub (broadcast), Conn (read/write pump), Handler, Bridge
-  session/           # Session Manager (5-state machine), Pool manager, GC
-    sql/             # Externalized SQL: schema, migrations, queries (.sql files)
-    queries.go       # embed.FS SQL loader with comment stripping
-    stores.go        # Multi-store registry (SQLite/Postgres) with builder pattern
-  messaging/         # Platform messaging adapters (Slack/Feishu bidirectional)
-    bridge.go        # Platform Bridge: SessionStarter + ConnFactory + joined dedup
-    platform_conn.go # PlatformConn interface (WriteCtx + Close)
-    platform_adapter.go # Base adapter + self-registration registry
-    slack/           # Slack Socket Mode: NativeStreamingWriter, rate limiter, thread ownership
-    feishu/          # Feishu ws.Client: P2 events, converter, streaming, typing, chat queue
-    mock/            # Mock adapter for testing
-  worker/            # Worker interface + registry + base + 6 adapters (claudecode, opencodecli, opencodeserver, acpx, pi, noop)
-    acpx/             # ACPX adapter: ACP bridge, session ID passthrough, stdio I/O
-    base/             # Shared BaseWorker + Conn + BuildEnv for CLI-based adapters
-    proc/            # Process lifecycle (PGID isolation, layered termination)
-  security/          # JWT (ES256), SSRF, command whitelist, env isolation, path safety, tool policy
-  metrics/           # Prometheus counters/gauges/histograms
-  tracing/           # OTel setup (idempotent)
+    admin/            Admin API: handlers, middleware, rate-limit, log buffer
+    aep/              AEP v1 codec (JSON envelope encode/decode/validate)
+    config/          Viper config loading + file watcher + hot-reload + applyMessagingEnv
+    gateway/         WS gateway: Hub (broadcast), Conn (read/write pump), Handler, Bridge
+    messaging/        Platform adapters (Slack/Feishu bidirectional)
+        bridge.go        SessionStarter + ConnFactory + joined dedup
+        platform_conn.go  PlatformConn interface (WriteCtx + Close)
+        platform_adapter.go  Base adapter + self-registration registry
+        slack/            Socket Mode: NativeStreamingWriter, rate limiter, thread ownership
+        feishu/           ws.Client: P2 events, converter, streaming, typing, chat queue
+        mock/             Mock adapter for testing
+    security/         JWT (ES256), SSRF, command whitelist, env isolation, path safety, tool policy
+    metrics/          Prometheus counters/gauges/histograms
+    tracing/          OTel setup (idempotent)
+
+    session/          Session Manager (5-state machine), Pool manager, GC
+        sql/             Externalized SQL: schema, migrations, queries (.sql files)
+        queries.go       embed.FS SQL loader with comment stripping
+        stores.go        Multi-store registry (SQLite/Postgres) with builder pattern
+
+    worker/           Worker interface + registry + base + 6 adapters
+        claudecode/      Claude Code adapter
+        opencodecli/     OpenCode CLI adapter
+        opencodeserver/  OpenCode Server adapter
+        acpx/            ACPX adapter: ACP bridge, session ID passthrough, stdio I/O
+        pi/              Pi-mono adapter
+        noop/            No-op adapter (testing)
+        base/            Shared BaseWorker + Conn + BuildEnv for CLI-based adapters
+        proc/            Process lifecycle: PGID isolation, layered SIGTERM→SIGKILL
+
 pkg/
-  events/            # Shared types: Envelope, Event, SessionState, all data structs
-  aep/               # AEP v1 codec
-client/              # Go client SDK (standalone module)
-webchat/            # Next.js web chat UI
-examples/            # Multi-language client SDKs (typescript-client, python-client, java-client)
-docs/                # Architecture, specs, security, testing, management docs
-scripts/             # Build/validation scripts
+    events/           Shared types: Envelope, Event, SessionState, all data structs
+    aep/              AEP v1 codec
+
+client/               Go client SDK (standalone module)
+webchat/             Next.js web chat UI
+examples/             Multi-language client SDKs (TS, Python, Java)
+docs/                 Architecture, specs, security, testing, management docs
+scripts/              Build/validation scripts
 ```
 
 ## WHERE TO LOOK
