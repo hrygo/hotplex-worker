@@ -5,7 +5,10 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/hotplex/hotplex-worker/internal/messaging"
 	"github.com/hotplex/hotplex-worker/pkg/events"
@@ -25,13 +28,20 @@ func init() {
 type Adapter struct {
 	messaging.PlatformAdapter
 
-	log        *slog.Logger
-	botToken   string
-	appToken   string
-	client     *slack.Client
-	socketMode *socketmode.Client
-	botID      string
-	bridge     *messaging.Bridge
+	log                *slog.Logger
+	botToken           string
+	appToken           string
+	client             *slack.Client
+	socketMode         *socketmode.Client
+	botID              string
+	bridge             *messaging.Bridge
+	dedup              *Dedup
+	userCache          *UserCache
+	statusMgr          *StatusManager
+	activeIndicators   *ActiveIndicators
+	isAssistantCapable atomic.Bool
+	assistantEnabled   *bool
+	gate               *Gate
 
 	mu            sync.RWMutex
 	rateLimiter   *ChannelRateLimiter
@@ -71,10 +81,27 @@ func (a *Adapter) Start(ctx context.Context) error {
 
 	a.rateLimiter = NewChannelRateLimiter(ctx)
 	a.ownership = NewThreadOwnershipTracker(ctx, a.botID, a.log)
+	a.dedup = NewDedup(5000, 30*time.Minute)
+	a.userCache = NewUserCache(a.client)
+	a.statusMgr = NewStatusManager(a, a.log)
+	a.activeIndicators = NewActiveIndicators()
 	a.activeStreams = make(map[string]*NativeStreamingWriter)
 	a.activeConns = make(map[string]*SlackConn)
 
 	a.log.Info("slack: starting Socket Mode", "bot_id", a.botID)
+
+	// Async probe for Assistant API capability
+	go func() {
+		probeCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		capable := a.ProbeAssistantCapability(probeCtx)
+		a.isAssistantCapable.Store(capable)
+		if capable {
+			a.log.Info("slack: Assistant API capability confirmed (paid workspace)")
+		} else {
+			a.log.Info("slack: Assistant API not available, using emoji reaction fallback")
+		}
+	}()
 
 	go a.runSocketMode(ctx)
 	return nil
@@ -114,18 +141,43 @@ func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsA
 		return
 	}
 
-	// Skip own bot messages
-	if msgEvent.BotID == a.botID {
+	// Skip all bot messages (prevent bot-to-bot loops)
+	if msgEvent.BotID != "" {
 		return
+	}
+
+	// Skip non-user subtypes
+	switch msgEvent.SubType {
+	case "message_changed", "message_deleted", "channel_join",
+		"channel_leave", "group_join", "group_leave",
+		"channel_topic", "channel_purpose":
+		return
+	}
+
+	// Message expiry: skip messages older than 30 minutes
+	if msgEvent.TimeStamp != "" {
+		if ts, err := parseSlackTS(msgEvent.TimeStamp); err == nil {
+			if time.Since(ts) > 30*time.Minute {
+				a.log.Debug("slack: skipping expired message", "ts", msgEvent.TimeStamp)
+				return
+			}
+		}
 	}
 
 	channelID := msgEvent.Channel
 	threadTS := extractThreadTS(*msgEvent)
 	userID := msgEvent.User
-	text := extractText(*msgEvent)
+	text, ok, media := a.ConvertMessage(*msgEvent)
+	if !ok {
+		return
+	}
 	teamID := event.TeamID // workspace identity from EventsAPIEvent
 
-	if text == "" {
+	// Resolve user mentions: <@UID> → @DisplayName, remove bot self-mentions
+	text = a.userCache.ResolveMentions(ctx, text, a.botID)
+	text = strings.TrimSpace(text)
+
+	if text == "" && len(media) == 0 {
 		return
 	}
 
@@ -143,6 +195,35 @@ func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsA
 	if platformMsgID == "" {
 		platformMsgID = msgEvent.TimeStamp
 	}
+	if !a.dedup.TryRecord(platformMsgID) {
+		return
+	}
+
+	// Access control gate
+	if a.gate != nil {
+		botMentioned := strings.Contains(text, "<@"+a.botID+">")
+		result := a.gate.Check(channelType, userID, botMentioned)
+		if !result.Allowed {
+			a.log.Debug("slack: gate rejected", "reason", result.Reason, "user", userID)
+			return
+		}
+	}
+
+	// Download media files and append paths to text
+	if len(media) > 0 {
+		for _, m := range media {
+			if m.DownloadURL == "" {
+				continue
+			}
+			path, err := a.downloadMedia(ctx, m)
+			if err == nil {
+				text += "\n" + path
+			} else {
+				a.log.Warn("slack: download media failed", "file", m.Name, "error", err)
+				text += fmt.Sprintf("\n[%s: %s]", m.Type, m.Name)
+			}
+		}
+	}
 
 	a.log.Debug("slack: handling message",
 		"channel", channelID,
@@ -151,6 +232,20 @@ func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsA
 		"team", teamID,
 		"text_len", len(text),
 	)
+
+	// Abort detection
+	if IsAbortCommand(text) {
+		a.log.Info("slack: abort command received", "channel", channelID)
+		return
+	}
+
+	// Start typing indicator (emoji fallback for free workspaces)
+	a.activeIndicators.Start(ctx, a, channelID, threadTS, msgEvent.TimeStamp)
+
+	// Set initial assistant status (native API for paid workspaces)
+	if a.isAssistantCapable.Load() && threadTS != "" {
+		_ = a.SetAssistantStatus(ctx, channelID, threadTS, "Initializing...")
+	}
 
 	if err := a.HandleTextMessage(ctx, platformMsgID, channelID, teamID, threadTS, userID, text); err != nil {
 		a.log.Error("slack: handle message failed", "error", err)
@@ -223,6 +318,9 @@ func (a *Adapter) Close(ctx context.Context) error {
 	if a.ownership != nil {
 		a.ownership.Stop()
 	}
+	if a.dedup != nil {
+		a.dedup.Close()
+	}
 
 	return nil
 }
@@ -233,6 +331,7 @@ type SlackConn struct {
 	adapter   *Adapter
 	channelID string
 	threadTS  string
+	messageTS string // anchor message for typing indicator cleanup
 }
 
 // NewSlackConn creates a platform connection bound to a channel/thread.
@@ -246,12 +345,25 @@ func (c *SlackConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		return fmt.Errorf("slack: nil envelope")
 	}
 
+	// Status update: map AEP event to status indicator
+	if status, text := aepEventToStatus(env); text != "" {
+		_ = c.adapter.statusMgr.Notify(ctx, c.channelID, c.threadTS, status, text)
+	}
+
+	// Clear status on done/error
+	switch env.Event.Type {
+	case events.Done, events.Error:
+		_ = c.adapter.statusMgr.Clear(ctx, c.channelID, c.threadTS)
+		c.adapter.activeIndicators.Stop(ctx, c.channelID, c.messageTS)
+		return nil
+	}
+
 	text, ok := extractResponseText(env)
 	if !ok {
 		return nil
 	}
 
-	opts := []slack.MsgOption{slack.MsgOptionText(text, false)}
+	opts := []slack.MsgOption{slack.MsgOptionText(FormatMrkdwn(text), false)}
 	if c.threadTS != "" {
 		opts = append(opts, slack.MsgOptionTS(c.threadTS))
 	}
