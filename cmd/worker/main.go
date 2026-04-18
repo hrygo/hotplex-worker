@@ -474,7 +474,7 @@ func startMessagingAdapters(ctx context.Context, log *slog.Logger, cfg *config.C
 		case messaging.PlatformSlack:
 			if sa, ok := adapter.(*slack.Adapter); ok {
 				sa.Configure(cfg.Messaging.Slack.BotToken, cfg.Messaging.Slack.AppToken, msgBridge)
-				msgBridge.SetConnFactory(func(sessionID, _ string) messaging.PlatformConn {
+				msgBridge.SetConnFactory(func(sessionID string, _ *events.Envelope) messaging.PlatformConn {
 					channelID, threadTS := slack.ExtractChannelThread(sessionID)
 					if channelID == "" {
 						return nil
@@ -492,11 +492,12 @@ func startMessagingAdapters(ctx context.Context, log *slog.Logger, cfg *config.C
 					cfg.Messaging.Feishu.AllowFrom,
 				)
 				fa.SetGate(gate)
-				msgBridge.SetConnFactory(func(sessionID, rawID string) messaging.PlatformConn {
-					if rawID == "" {
+				msgBridge.SetConnFactory(func(sessionID string, env *events.Envelope) messaging.PlatformConn {
+					chatID := feishu.ExtractChatID(env)
+					if chatID == "" {
 						return nil
 					}
-					return fa.GetOrCreateConn(rawID)
+					return fa.GetOrCreateConn(chatID)
 				})
 			}
 		}

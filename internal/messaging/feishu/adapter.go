@@ -54,14 +54,6 @@ type Adapter struct {
 
 func (a *Adapter) Platform() messaging.PlatformType { return messaging.PlatformFeishu }
 
-func ExtractChatID(sessionID string) string {
-	parts := strings.SplitN(sessionID, ":", 4)
-	if len(parts) < 4 || parts[0] != "feishu" {
-		return ""
-	}
-	return parts[1]
-}
-
 func (a *Adapter) Configure(appID, appSecret string, bridge *messaging.Bridge) {
 	a.appID = appID
 	a.appSecret = appSecret

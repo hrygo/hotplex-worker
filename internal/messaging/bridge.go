@@ -17,10 +17,9 @@ import (
 const DefaultWorkerWorkDir = "/tmp/hotplex/workspace"
 
 // ConnFactory creates a PlatformConn for a given session.
-// It receives the platform-specific raw ID (e.g., chat_id for Feishu, channel_id for Slack)
-// extracted from the envelope metadata, allowing it to create a properly configured
-// connection even when the session ID is a UUID.
-type ConnFactory func(sessionID, rawID string) PlatformConn
+// It receives the full AEP envelope so it can extract platform-specific routing
+// fields (chat_id, channel_id, etc.) directly — no guessing required upstream.
+type ConnFactory func(sessionID string, env *events.Envelope) PlatformConn
 
 // Bridge orchestrates platform messages and gateway sessions.
 // It is the counterpart of gateway.Bridge for messaging platforms.
@@ -60,9 +59,8 @@ func NewBridge(log *slog.Logger, platform PlatformType, hub HubInterface,
 }
 
 // SetConnFactory registers the platform connection factory.
-// The factory receives the session ID and the platform-specific raw ID (e.g., chat_id
-// for Feishu) extracted from the envelope metadata, so it can create a properly
-// configured PlatformConn even when the session ID is a UUID.
+// The factory receives the AEP envelope so it can extract platform-specific routing
+// fields directly — no guessing required upstream.
 func (b *Bridge) SetConnFactory(f ConnFactory) { b.connFactory = f }
 
 // Handle routes a platform message through the AEP handler.
@@ -87,26 +85,7 @@ func (b *Bridge) Handle(ctx context.Context, env *events.Envelope) error {
 	if b.connFactory != nil && b.hub != nil {
 		b.mu.Lock()
 		if !b.joined[env.SessionID] {
-			rawID := ""
-			if md, ok := env.Event.Data.(map[string]any); ok {
-				// Top-level keys: chat_id, channel_id
-				if id, ok := md["chat_id"].(string); ok {
-					rawID = id
-				} else if id, ok := md["channel_id"].(string); ok {
-					rawID = id
-				}
-				// Nested metadata: for platform messages built via makeEnvelope
-				if rawID == "" {
-					if meta, ok := md["metadata"].(map[string]any); ok {
-						if id, ok := meta["chat_id"].(string); ok {
-							rawID = id
-						} else if id, ok := meta["channel_id"].(string); ok {
-							rawID = id
-						}
-					}
-				}
-			}
-			pc := b.connFactory(env.SessionID, rawID)
+			pc := b.connFactory(env.SessionID, env)
 			if pc != nil {
 				b.hub.JoinPlatformSession(env.SessionID, pc)
 				b.joined[env.SessionID] = true
