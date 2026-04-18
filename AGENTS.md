@@ -8,100 +8,128 @@ Multi-language client SDKs (TS, Python, Java, Go) + AI SDK transport adapter + w
 
 ## STRUCTURE
 
+### Entry
 ```
-cmd/worker/          main.go (~539 lines): flags, DI wire, signal handling, messaging init
+cmd/worker/main.go    (~539 lines) flags, DI, signal, messaging init
+```
 
-internal/
-    admin/            Admin API: handlers, middleware, rate-limit, log buffer
-    aep/              AEP v1 codec (JSON envelope encode/decode/validate)
-    config/          Viper config loading + file watcher + hot-reload + applyMessagingEnv
-    gateway/         WS gateway: Hub (broadcast), Conn (read/write pump), Handler, Bridge
-    messaging/        Platform adapters (Slack/Feishu bidirectional)
-        bridge.go        SessionStarter + ConnFactory + joined dedup
-        platform_conn.go  PlatformConn interface (WriteCtx + Close)
-        platform_adapter.go  Base adapter + self-registration registry
-        slack/            Socket Mode: NativeStreamingWriter, rate limiter, thread ownership
-        feishu/           ws.Client: P2 events, converter, streaming, typing, chat queue
-        mock/             Mock adapter for testing
-    security/         JWT (ES256), SSRF, command whitelist, env isolation, path safety, tool policy
-    metrics/          Prometheus counters/gauges/histograms
-    tracing/          OTel setup (idempotent)
+### internal/
 
-    session/          Session Manager (5-state machine), Pool manager, GC
-        sql/             Externalized SQL: schema, migrations, queries (.sql files)
-        queries.go       embed.FS SQL loader with comment stripping
-        stores.go        Multi-store registry (SQLite/Postgres) with builder pattern
+**Core**
+- `admin/`      Admin API: handlers, middleware, rate-limit, log buffer
+- `aep/`        AEP v1 codec: JSON envelope encode/decode/validate
+- `config/`     Viper config + file watcher + hot-reload
 
-    worker/           Worker interface + registry + base + 6 adapters
-        claudecode/      Claude Code adapter
-        opencodecli/     OpenCode CLI adapter
-        opencodeserver/  OpenCode Server adapter
-        acpx/            ACPX adapter: ACP bridge, session ID passthrough, stdio I/O
-        pi/              Pi-mono adapter
-        noop/            No-op adapter (testing)
-        base/            Shared BaseWorker + Conn + BuildEnv for CLI-based adapters
-        proc/            Process lifecycle: PGID isolation, layered SIGTERM→SIGKILL
+**Gateway** (WebSocket)
+- `gateway/hub.go`     WS broadcast hub: conn registry, session routing, seq gen
+- `gateway/conn.go`    Single WS connection: read/write pumps, heartbeat
+- `gateway/handler.go`  AEP event dispatch (input, ping, control)
+- `gateway/bridge.go`  Session ↔ worker lifecycle orchestration
 
-pkg/
-    events/           Shared types: Envelope, Event, SessionState, all data structs
-    aep/              AEP v1 codec
+**Session**
+- `session/manager.go`   5-state machine, state transitions, GC
+- `session/store.go`     SQLite persistence (Upsert, Get, List, expired)
+- `session/message_store.go`  Event log, single-writer goroutine
+- `session/sql/`         Externalized .sql files (schema, migrations, queries)
+- `session/queries.go`  embed.FS loader + stripComments
+- `session/stores.go`   Multi-store registry (SQLite/Postgres)
 
-client/               Go client SDK (standalone module)
-webchat/             Next.js web chat UI
-examples/             Multi-language client SDKs (TS, Python, Java)
-docs/                 Architecture, specs, security, testing, management docs
-scripts/              Build/validation scripts
+**Messaging** (Slack/Feishu bidirectional)
+- `messaging/bridge.go`   SessionStarter + ConnFactory + joined dedup
+- `messaging/platform_conn.go`  PlatformConn: WriteCtx + Close
+- `messaging/platform_adapter.go`  Base adapter + self-registration
+- `messaging/slack/`      Socket Mode: NativeStreamingWriter, rate limiter
+- `messaging/feishu/`     ws.Client: P2 events, converter, streaming, typing
+- `messaging/mock/`       Mock adapter for testing
+
+**Worker** (6 adapters)
+- `worker/claudecode/`    Claude Code adapter
+- `worker/opencodecli/`    OpenCode CLI adapter
+- `worker/opencodeserver/`  OpenCode Server adapter
+- `worker/acpx/`          ACPX: ACP bridge, stdio I/O
+- `worker/pi/`            Pi-mono adapter
+- `worker/noop/`          No-op adapter (testing)
+- `worker/base/`          Shared BaseWorker + Conn + BuildEnv
+- `worker/proc/`          Process lifecycle: PGID isolation, layered SIGTERM→SIGKILL
+
+**Support**
+- `security/`   JWT (ES256), SSRF, command whitelist, env isolation, path safety
+- `metrics/`    Prometheus counters/gauges/histograms
+- `tracing/`    OpenTelemetry setup (idempotent)
+
+### pkg/
+- `events/`   Envelope, Event, SessionState, all data structs
+- `aep/`      AEP v1 codec
+
+### Top-level
+```
+client/    Go client SDK (standalone module)
+webchat/  Next.js web chat UI
+examples/  TS / Python / Java client SDKs
+docs/     Architecture, specs, security, testing, management
+scripts/  Build/validation scripts
+configs/  config.yaml, config-dev.yaml, env.example
 ```
 
 ## WHERE TO LOOK
 
-| Task                      | Location                      | Notes                                                                                          |
-| ------------------------- | ----------------------------- | ---------------------------------------------------------------------------------------------- |
-| Add new AEP event type    | `pkg/events/events.go`        | Add Kind constant + Data struct + update Validate                                              |
-| Add new Worker adapter    | `internal/worker/<name>/`     | Embed `base.BaseWorker`, implement `Start`/`Input`/`Resume` + unique I/O, register in `init()` |
-| Add platform messaging adapter | `internal/messaging/<name>/` | Embed `PlatformAdapter`, implement `Start`/`HandleTextMessage`/`Close` + PlatformConn, register in `init()` |
-| Change session lifecycle  | `internal/session/manager.go` | State machine + `TransitionWithInput` atomicity                                                |
-| Modify WebSocket protocol | `internal/gateway/conn.go`    | ReadPump/WritePump + Handler dispatch                                                          |
-| Add security validation   | `internal/security/`          | Separate file per concern (jwt, ssrf, path, env, tool, command)                                |
-| Change config structure   | `internal/config/config.go`   | Struct definitions + Default() + Validate()                                                    |
-| Add messaging config      | `internal/config/config.go`   | Add fields to SlackConfig/FeishuConfig + `applyMessagingEnv`                                   |
-| Wire platform adapter     | `cmd/worker/main.go`          | `startMessagingAdapters()`: resolve config → New adapter → Configure → SetConnFactory → Start |
-| Add Prometheus metric     | `internal/metrics/`           | Follow `hotplex_<group>_<metric>_<unit>` naming                                                |
-| Admin API endpoint        | `internal/admin/`             | handlers.go for stats/health/config, sessions.go for session CRUD                              |
+**Add new components**
+- New AEP event type → `pkg/events/events.go` — add Kind const + Data struct + Validate
+- New Worker adapter → `internal/worker/<name>/` — embed `base.BaseWorker`, implement `Start`/`Input`/`Resume`, register in `init()`
+- New messaging adapter → `internal/messaging/<name>/` — embed `PlatformAdapter`, implement `Start`/`HandleTextMessage`/`Close`
+
+**Modify existing**
+- Session lifecycle → `internal/session/manager.go` — state machine + `TransitionWithInput` atomicity
+- WebSocket protocol → `internal/gateway/conn.go` — ReadPump/WritePump + Handler dispatch
+- Config structure → `internal/config/config.go` — structs + Default() + Validate()
+- Wire messaging adapter → `cmd/worker/main.go` — `startMessagingAdapters()`: config → New → Configure → SetConnFactory → Start
+
+**Security**
+- Add validation → `internal/security/` — one file per concern (jwt, ssrf, path, env, tool, command)
+
+**Monitoring & API**
+- Prometheus metric → `internal/metrics/` — follow `hotplex_<group>_<metric>_<unit>` naming
+- Admin endpoint → `internal/admin/` — handlers.go (stats/health/config), sessions.go (CRUD)
 
 ## CODE MAP
 
-| Symbol            | Type      | Location                             | Role                                                                              |
-| ----------------- | --------- | ------------------------------------ | --------------------------------------------------------------------------------- |
-| `main`            | func      | `cmd/worker/main.go:45`              | Entry: flags → config → wire → serve → shutdown                                   |
-| `GatewayDeps`     | struct    | `cmd/worker/main.go:255`             | DI container for all gateway dependencies                                         |
-| `admin.AdminAPI`  | struct    | `internal/admin/admin.go`            | Admin endpoints (stats, health, session CRUD, config)                             |
-| `Hub`             | struct    | `internal/gateway/hub.go:57`         | WS broadcast hub: conn registry, session routing, seq gen, JoinPlatformSession    |
-| `Conn`            | struct    | `internal/gateway/conn.go:27`        | Single WS connection: read/write pumps, init, heartbeat                           |
-| `Handler`         | struct    | `internal/gateway/handler.go`        | AEP event dispatch (input, ping, control)                                         |
-| `Bridge`          | struct    | `internal/gateway/bridge.go`         | Orchestrates session ↔ worker lifecycle + StartPlatformSession                    |
-| `Manager`         | struct    | `internal/session/manager.go:34`     | Session CRUD, state transitions, GC, worker attach/detach                         |
-| `managedSession`  | struct    | `internal/session/manager.go:52`     | Per-session state + mutex + worker ref                                            |
-| `Store`           | interface | `internal/session/store.go:22`       | SQLite persistence (Upsert, Get, List, expired queries)                           |
-| `MessageStore`    | interface | `internal/session/message_store.go`  | Event log (Append, GetBySession) — single-writer goroutine                        |
-| `Worker`          | interface | `internal/worker/worker.go:84`       | Core adapter: Start/Input/Resume/Terminate/Kill/Wait/Conn/Health                  |
-| `base.BaseWorker` | struct    | `internal/worker/base/worker.go`     | Shared lifecycle: Terminate/Kill/Wait/Health/LastIO (embed in adapters)           |
-| `base.Conn`       | struct    | `internal/worker/base/conn.go`       | Stdin-based SessionConn: Send/Recv/Close (NDJSON over stdio), exported `WriteAll` |
-| `base.BuildEnv`   | func      | `internal/worker/base/env.go`        | Shared env construction: whitelist + session vars + StripNestedAgent              |
-| `base.WriteAll`   | func      | `internal/worker/base/conn.go`       | Raw fd write with EAGAIN retry + `runtime.Gosched()`                              |
-| `SessionConn`     | interface | `internal/worker/worker.go:19`       | Data plane: Send/Recv/Close bidirectional channel                                 |
-| `Capabilities`    | interface | `internal/worker/worker.go:40`       | Worker feature query (resume, streaming, tools, env)                              |
-| `proc.Manager`    | struct    | `internal/worker/proc/manager.go:26` | Process lifecycle: PGID isolation, layered SIGTERM→SIGKILL                        |
-| `JWTValidator`    | struct    | `internal/security/jwt.go:27`        | ES256 JWT validation + JTI blacklist + token generation                           |
-| `Envelope`        | struct    | `pkg/events/events.go:73`            | AEP v1 message envelope (id, version, seq, session_id, event)                     |
-| `SessionState`    | type      | `pkg/events/events.go:240`           | 5 states: Created/Running/Idle/Terminated/Deleted                                 |
-| `Config`          | struct    | `internal/config/config.go:118`      | All config: Gateway, DB, Worker, Security, Session, Pool, Admin, Messaging        |
-| `client.Client`   | struct    | `client/client.go:33`                | Go client SDK: Connect/Resume/SendInput/Close                                     |
-| `messaging.Bridge`| struct    | `internal/messaging/bridge.go`       | Platform bridge: Handle (3-step: StartSession → Join → handler.Handle)            |
-| `PlatformConn`    | interface | `internal/messaging/platform_conn.go`| WriteCtx(ctx, env) + Close() — hub-compatible write interface                     |
-| `PlatformAdapter` | struct    | `internal/messaging/platform_adapter.go`| Base type: SetHub/SetSM/SetHandler/SetBridge, embed in adapters               |
-| `pcEntry`         | struct    | `internal/gateway/hub.go:551`        | Wraps PlatformConn for sessions map, delegates WriteCtx/Close                     |
+**Entry**
+- `main` / `GatewayDeps` → `cmd/worker/main.go:45/255` — entry point, DI container
 
+**Gateway** (`internal/gateway/`)
+- `Hub` → `hub.go:57` — WS broadcast hub, conn registry, session routing, seq gen
+- `Conn` → `conn.go:27` — single WS connection, read/write pumps, heartbeat
+- `Handler` → `handler.go` — AEP event dispatch (input, ping, control)
+- `Bridge` → `bridge.go` — session ↔ worker lifecycle, StartPlatformSession
+- `pcEntry` → `hub.go:551` — wraps PlatformConn for sessions map
+
+**Session** (`internal/session/`)
+- `Manager` → `manager.go:34` — 5-state machine, transitions, GC, worker attach/detach
+- `managedSession` → `manager.go:52` — per-session state + mutex + worker ref
+- `Store` (interface) → `store.go:22` — SQLite: Upsert, Get, List, expired queries
+- `MessageStore` (interface) → `message_store.go` — event log, single-writer goroutine
+
+**Worker** (`internal/worker/`)
+- `Worker` (interface) → `worker.go:84` — Start/Input/Resume/Terminate/Kill/Wait/Conn/Health
+- `SessionConn` (interface) → `worker.go:19` — bidirectional channel: Send/Recv/Close
+- `Capabilities` (interface) → `worker.go:40` — feature query: resume, streaming, tools, env
+- `base.BaseWorker` → `base/worker.go` — shared lifecycle: Terminate/Kill/Wait/Health/LastIO
+- `base.Conn` → `base/conn.go` — stdin SessionConn: NDJSON over stdio, exported `WriteAll`
+- `base.BuildEnv` → `base/env.go` — env construction: whitelist + session vars
+- `proc.Manager` → `proc/manager.go:26` — PGID isolation, layered SIGTERM→SIGKILL
+
+**Messaging** (`internal/messaging/`)
+- `Bridge` → `bridge.go` — 3-step: StartSession → Join → handler.Handle
+- `PlatformConn` (interface) → `platform_conn.go` — WriteCtx + Close
+- `PlatformAdapter` → `platform_adapter.go` — base: SetHub/SetSM/SetHandler/SetBridge
+
+**Core**
+- `Envelope` → `pkg/events/events.go:73` — AEP v1 envelope (id, version, seq, session_id, event)
+- `SessionState` → `pkg/events/events.go:240` — Created/Running/Idle/Terminated/Deleted
+- `Config` → `config/config.go:118` — all config structs
+- `JWTValidator` → `security/jwt.go:27` — ES256 + JTI blacklist
+- `client.Client` → `client/client.go:33` — Go SDK: Connect/Resume/SendInput/Close
+- `admin.AdminAPI` → `admin/admin.go` — stats, health, config, session CRUD
 ## CONVENTIONS
 
 - **Mutex**: Explicit `mu` field, zero-value, no embedding, no pointer passing
