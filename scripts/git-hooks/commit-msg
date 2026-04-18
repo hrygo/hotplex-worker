@@ -1,0 +1,29 @@
+#!/bin/bash
+# Git commit-msg hook for HotPlex Worker
+# Enforces Conventional Commits format
+
+COMMIT_MSG_FILE=$1
+COMMIT_MSG=$(cat "$COMMIT_MSG_FILE")
+
+# ANSI color codes
+RED='\033[0;31m'
+NC='\033[0m'
+
+# Valid types: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert
+PATTERN="^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?!?: .+"
+
+if [[ ! $COMMIT_MSG =~ $PATTERN ]]; then
+    printf "${RED}❌ Invalid commit message format!${NC}\n"
+    echo "Commit messages must follow Conventional Commits guidelines:"
+    echo "  <type>(<scope>): <description>"
+    echo ""
+    echo "Examples:"
+    echo "  feat(gateway): add WebSocket compression support"
+    echo "  fix(feishu): resolve card rendering in group chats"
+    echo "  docs: update architecture diagram"
+    echo ""
+    echo "Supported types: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert"
+    exit 1
+fi
+
+exit 0
