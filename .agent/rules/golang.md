@@ -3,102 +3,263 @@ paths:
   - "**/*.go"
 ---
 
-# Go 编码规范
+# Go 代码规范
 
-> 合并自原 `go126.md`（Go 1.26 语言特性）+ `golang-style.md`（Uber Go Style Guide）
-> hotplex-worker 使用 Go 1.26，遵循 Uber Go Style Guide + 项目补充规则
-
----
-
-## 格式化
-- 行宽软限制 99 字符
-- **三个 import group**：标准库 → 第三方库 → 项目内部包，用空行分隔
-- goimports 必须带 `-local github.com/hotplex/hotplex-worker`
-- 相似声明分组：`const`、`var`、类型各自集中
-- 避免不必要的 import alias
-- 减少嵌套：**优先 early return**
-- `gofmt -s` 格式化
-- 八进制字面量用 `0o755` 而非 `0755`
-
-## 变量与类型
-- 短声明用 `:=`，零值初始化用 `var`
-- struct 初始化**使用 field name**
-- **省略零值字段**，除非有特殊含义
-- 空 map 用 `make(map[K]V)`，有初始数据用字面量
-- slice 容量已知时 `make([]T, 0, cap)` 预分配
-- 枚举从 **1 开始**（避免零值歧义）
-- **瞬间用 `time.Time`**，**时长用 `time.Duration`**
-- 原子操作用 `go.uber.org/atomic`
-
-## 接口
-- **接口值传递**，不要传指针
-- 编译时验证实现：`var _ Worker = (*ClaudeCodeWorker)(nil)`
-- receiver：value receiver 可接收值/指针，pointer receiver 只能接收指针
-
-## 错误处理
-- 静态错误：`errors.New("session not found")`
-- 动态错误：`fmt.Errorf("session %s: %w", id, err)`（保留错误链）
-- 错误变量前缀 `Err`，自定义类型后缀 `Error`（如 `SessionNotFoundError`）
-- 每个错误**只处理一次**：不同时 log 又 return
-- 避免堆叠 "failed to"
-- `printf` 格式化字符串用 `const`
-- **错误比较用 `errors.Is`**，不用 `==`（支持 wrapped errors）
-- **类型断言用 `errors.As`**，不用 `err.(*Type)`（支持 wrapped errors）
-- **Best-effort 清理操作**用 `_ =` 显式忽略：`_ = resp.Body.Close()`
-- **defer 中的 Close** 用 `defer func() { _ = rows.Close() }()`
-
-## 进程与并发
-- **边界处复制 slice/map**，防止外部意外修改
-- `sync.Mutex` / `sync.RWMutex` 零值即可，**禁止指针传递**，**禁止 embedding**，**显式命名** `mu`
-- `exec.CommandContext` 传递 ctx，goroutine 监听 `ctx.Done()`
-- nil slice 检查用 `len(s) == 0`
-
-## 其他
-- 尽可能**避免 `init()`**，保持行为确定性
-- 使用 `testify/require` 而非 `t.Fatal`
-- Functional Options 用于配置类 API：
-  ```go
-  type Option func(*Config)
-  func WithTimeout(d time.Duration) Option
-  ```
+> 适用于 hotplex-worker 项目范围的 Go 编码规范
+> 通用标准 → 见 `linting.md` | 测试规范 → 见 `testing.md`
+> 本文件聚焦其他规则未覆盖的**项目架构模式**
 
 ---
 
-## Go 1.26 语言特性
+## DI 注入模式
 
-## 默认生效（无需改代码）
-- **Green Tea GC**：GC overhead ↓ 10-40%，长驻进程直接受益
-- **Swiss Table Maps**：`make(map[K]V)` 使用新哈希表
-- **Container-Aware GOMAXPROCS**：自动适配容器 CPU 限制
-- **`io.ReadAll`**：2x faster，50% less allocation（Worker 输出流解析受益）
-- **`fmt.Errorf`**：分配减少，等价于 `errors.New`
+**禁止使用 wire/dig 等 DI 框架**，全部手动构造函数注入。
 
-## 推荐使用
-- **`log/slog`**：标准库结构化日志，统一使用
-- **Generic Interfaces**：Worker 接口类型参数化（如 `Worker[T Event]`）
-- **`weak.Value`**：session metadata LRU 缓存
-- **`slices.Clone`**：slice 边界复制的标准方式
-- **`unique.Make`**：字符串驻留
-- **`new(expr)` 增强**：支持表达式初始化值，Worker 配置简化
-- **自引用泛型约束**：更灵活的泛型设计
+```go
+// ✅ 正确：GatewayDeps 结构承载所有依赖
+type GatewayDeps struct {
+    Hub          *gateway.Hub
+    SM           *session.Manager
+    JWTValidator *security.JWTValidator
+    Bridge       *gateway.Bridge
+    // ...
+}
 
-## Goroutine 泄漏检测（高优先级）
-- 实验性 profile：`runtime/pprof` 的 `goroutineleak` 类型
-- 启用：`GOEXPERIMENT=goroutineleakprofile`
-- 预期 **Go 1.27 默认启用**
-- **必须确保所有 goroutine 有 shutdown 路径**（ctx cancel / channel close / WaitGroup）
-
-## 构建优化
-```bash
-go build -pgo=auto ./cmd/gateway  # Profile-Guided Optimization
+// ❌ 禁止：不要通过全局变量或包级别变量共享状态
+var globalState *Something  // 禁止
 ```
 
-## 现代化工具
-```bash
-go fix ./...  # 自动现代化代码（go fix 完全重写，数十个 fixer）
+---
+
+## Worker 适配器模式
+
+新增 Worker 类型时，遵循 **BaseWorker embedding** 模式：
+
+```go
+// internal/worker/<name>/worker.go
+func New(cfg *config.Config) worker.Builder {
+    return &workerAdapter{}
+}
+
+type workerAdapter struct {
+    *base.BaseWorker  // 共享生命周期：Terminate/Kill/Wait/Health
+    // 唯一字段：cmd、conn、env 等
+}
+
+func (w *workerAdapter) Start(ctx context.Context, env []string) error {
+    // 1. exec.Command with SysProcAttr{Setpgid: true}
+    // 2. 建立 stdio NDJSON 通道
+    // 3. 启动读/写 pump goroutine
+    return nil
+}
+
+func (w *workerAdapter) Input(ctx context.Context, content string) error {
+    return w.Conn.Send(events.Envelope{...})
+}
+
+// init() 中注册
+func init() {
+    worker.Register(worker.TypeOpenCodeSrv, New)
+}
 ```
 
-## Flight Recorder（生产诊断）
-```bash
-go tool trace trace.out
+**BaseWorker 提供的能力**（无需重复实现）：
+- `Terminate(ctx)` — 优雅终止
+- `Kill()` — 强制终止
+- `Wait()` — 等待进程退出
+- `Health()` — 健康检查
+- `LastIO()` — 最后一次 I/O 时间
+
+---
+
+## Messaging 适配器模式
+
+新增平台消息适配器时，遵循 **PlatformAdapter embedding** 模式：
+
+```go
+// internal/messaging/<name>/adapter.go
+func New(cfg *config.FeishuConfig) *Adapter {
+    a := &Adapter{}
+    platformadapter.Register(a)  // 注入 PlatformAdapter 基类
+    return a
+}
+
+type Adapter struct {
+    *platformadapter.PlatformAdapter  // SetHub/SetSM/SetHandler/SetBridge
+    // 唯一字段：wsClient、messageConverter 等
+}
+```
+
+**PlatformAdapter 提供的能力**：
+- `SetHub(*Hub)` — 注册 WS hub
+- `SetSM(*SessionManager)` — 注册 session manager
+- `SetHandler(*Handler)` — 注册 AEP handler
+- `SetBridge(*Bridge)` — 注册 lifecycle bridge
+
+**PlatformConn 接口**（适配器必须实现）：
+```go
+type PlatformConn interface {
+    WriteCtx(ctx context.Context, env *Envelope) error
+    Close()
+}
+```
+
+---
+
+## Admin API 包隔离模式
+
+避免循环依赖：Admin API 使用接口而非直接引用具体类型。
+
+```go
+// internal/admin/admin.go — 定义接口
+type SessionManager interface {
+    Get(id string) (*managedSession, error)
+    List(filter sessionFilter) ([]*SessionInfo, error)
+    Delete(id string) error
+}
+```
+
+```go
+// cmd/worker/main.go — 适配器桥接具体类型
+type adminDeps struct {
+    sm        *session.Manager        // 具体类型，非接口
+    hub       *gateway.Hub
+    validator *security.JWTValidator
+}
+```
+
+---
+
+## 广播通道与 Backpressure
+
+```go
+// 每个 session 一个带缓冲 channel
+ch := make(chan *Envelope, cfg.BroadcastQueueSize)  // 默认 256
+
+// Backpressure 丢弃规则
+if env.Event.Type == "message.delta" || env.Event.Type == "raw" {
+    select {
+    case ch <- env:
+    default:
+        // 静默丢弃，不返回错误
+        sessionDropped[sessionID] = true
+        return nil
+    }
+}
+// 关键事件不可丢弃
+ch <- env
+```
+
+---
+
+## 单写者 SQLite 模式
+
+所有写操作通过单写 goroutine 串行化：
+
+```go
+type SQLiteStore struct {
+    db    *sql.DB
+    write chan writeRequest  // buffered channel
+}
+
+func (s *SQLiteStore) writer() {
+    batch := make([]writeRequest, 0, 50)
+    flush := time.NewTicker(100 * time.Millisecond)
+    for {
+        select {
+        case req := <-s.write:
+            batch = append(batch, req)
+            if len(batch) >= 50 {
+                s.flush(batch)
+                batch = batch[:0]
+            }
+        case <-flush.C:
+            if len(batch) > 0 {
+                s.flush(batch)
+                batch = batch[:0]
+            }
+        }
+    }
+}
+```
+
+---
+
+## 配置热重载模式
+
+```go
+// 1. 创建 watcher
+watcher, err := config.Watch(cfgPath, func(newCfg *config.Config) {
+    // 应用新配置
+    applyMessagingEnv(newCfg)
+    gateway.UpdateConfig(newCfg)
+})
+
+// 2. defer 关闭
+defer func() { _ = watcher.Close() }()
+
+// 3. 错误日志 + 继续运行（旧配置仍然有效）
+```
+
+---
+
+## SDK Logger 重定向模式
+
+将第三方 SDK（如 Lark）的日志输出重定向到项目统一的 slog：
+
+```go
+import "github.com/larksuite/oapi-sdk-go/v3"
+
+func init() {
+    oapi.SetLogger(sdkLogger{slog: slog.Default()})
+}
+
+type sdkLogger struct{ slog *slog.Logger }
+
+func (l sdkLogger) Debug(msg string)  { l.slog.Debug(msg) }
+func (l sdkLogger) Info(msg string)   { l.slog.Info(msg) }
+func (l sdkLogger) Warn(msg string)   { l.slog.Warn(msg) }
+func (l sdkLogger) Error(msg string)  { l.slog.Error(msg) }
+```
+
+---
+
+## 错误处理层级
+
+| 场景 | 处理方式 |
+|------|---------|
+| 外部输入验证失败 | 返回 `&AppError{Code: "...", ...}` |
+| 内部逻辑错误 | `return fmt.Errorf("...: %w", err)` |
+| 第三方调用失败 | `return fmt.Errorf("invoke ...: %w", err)` |
+| 关键事件发送失败 | `log.Error(...)` + `return err` |
+| 非关键操作失败 | `_ = op()` 或 `log.Warn(...)` |
+
+---
+
+## Context 传播规范
+
+- **函数参数**：必须作为第一个参数传递 `ctx context.Context`
+- **禁止**：`context.Background()` 在请求处理路径中
+- **超时**：外部请求 30s，Worker 生命周期绑定请求 ctx
+- **禁止**存储在 struct 字段中：ctx 应沿调用链传递
+
+---
+
+## Lock 顺序（防止死锁）
+
+```go
+// 固定顺序：Manager lock → per-session lock
+func (sm *Manager) GetSession(id string) (*ManagedSession, error) {
+    sm.mu.Lock()
+    defer sm.mu.Unlock()
+
+    ms, ok := sm.sessions[id]
+    if !ok {
+        return nil, ErrSessionNotFound
+    }
+
+    // 不在这里锁 ms.mu，避免与外层锁形成循环依赖
+    // 调用方负责锁 ms.mu
+    return ms, nil
+}
 ```
