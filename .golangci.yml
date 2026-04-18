@@ -1,4 +1,4 @@
-version: 2
+version: "2"
 
 run:
   timeout: 10m
@@ -74,21 +74,6 @@ linters:
     errcheck:
       check-type-assertions: true
       check-blank: false
-      tests: false
-    staticcheck:
-      checks: ["all"]
-      tests: false
-    ineffassign:
-      tests: false
-    misspell:
-      tests: false
-    unconvert:
-      tests: false
-    unparam:
-      checks: ["all"]
-      tests: false
-    errorlint:
-      tests: false
     gocritic:
       enabled-tags:
         - diagnostic
@@ -99,10 +84,6 @@ linters:
         - typeDefFirst
         - ifElseChain
         - typeAssertChain
-      tests: false
-    unused:
-      # Keep analyzing test files so helper functions in *_test.go
-      # referencing test_helpers.go are recognized as used.
 
 formatters:
   enable:
@@ -110,9 +91,9 @@ formatters:
     - goimports
   settings:
     goimports:
-      local-prefixes: github.com/hotplex/hotplex-worker
+      local-prefixes:
+        - github.com/hotplex/hotplex-worker
 
 issues:
-  exclude-use-default: false
   max-issues-per-linter: 0
   max-same-issues: 0
