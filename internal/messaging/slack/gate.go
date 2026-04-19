@@ -5,6 +5,17 @@ const (
 	PolicyOpen      = "open"
 	PolicyAllowlist = "allowlist"
 	PolicyDisabled  = "disabled"
+
+	// Channel types.
+	ChannelIM    = "im"
+	ChannelGroup = "channel"
+	ChannelMPIM  = "mpim"
+
+	// Rejection reasons.
+	ReasonDMDisabled     = "dm_disabled"
+	ReasonGroupDisabled  = "group_disabled"
+	ReasonNotInAllowlist = "not_in_allowlist"
+	ReasonNoMention      = "no_mention"
 )
 
 // Gate controls access to the bot based on channel type and user identity.
@@ -37,13 +48,13 @@ func NewGate(dmPolicy, groupPolicy string, requireMention bool, allowFrom []stri
 
 // Check evaluates whether a message should be processed.
 func (g *Gate) Check(channelType, userID string, botMentioned bool) *GateResult {
-	if channelType == "im" {
+	if channelType == ChannelIM {
 		switch g.dmPolicy {
-		case "disabled":
-			return &GateResult{false, "dm_disabled"}
-		case "allowlist":
+		case PolicyDisabled:
+			return &GateResult{false, ReasonDMDisabled}
+		case PolicyAllowlist:
 			if !g.allowFrom[userID] {
-				return &GateResult{false, "not_in_allowlist"}
+				return &GateResult{false, ReasonNotInAllowlist}
 			}
 		}
 		return &GateResult{true, ""}
@@ -51,15 +62,15 @@ func (g *Gate) Check(channelType, userID string, botMentioned bool) *GateResult 
 
 	// Group/channel/MPIM
 	switch g.groupPolicy {
-	case "disabled":
-		return &GateResult{false, "group_disabled"}
-	case "allowlist":
+	case PolicyDisabled:
+		return &GateResult{false, ReasonGroupDisabled}
+	case PolicyAllowlist:
 		if !g.allowFrom[userID] {
-			return &GateResult{false, "not_in_allowlist"}
+			return &GateResult{false, ReasonNotInAllowlist}
 		}
 	}
 	if g.requireMention && !botMentioned {
-		return &GateResult{false, "no_mention"}
+		return &GateResult{false, ReasonNoMention}
 	}
 	return &GateResult{true, ""}
 }

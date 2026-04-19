@@ -18,6 +18,21 @@ import (
 	"github.com/slack-go/slack/socketmode"
 )
 
+const (
+	messageExpiry   = 30 * time.Minute
+	dedupMaxEntries = 5000
+	dedupTTL        = 30 * time.Minute
+	mediaPathPrefix = "/tmp/hotplex/media/slack"
+)
+
+// Subtypes that should never be processed.
+var blockedSubtypes = map[string]bool{
+	"message_changed": true, "message_deleted": true,
+	"channel_join": true, "channel_leave": true,
+	"group_join": true, "group_leave": true,
+	"channel_topic": true, "channel_purpose": true,
+}
+
 func init() {
 	messaging.Register(messaging.PlatformSlack, func(log *slog.Logger) messaging.PlatformAdapterInterface {
 		return &Adapter{log: log}
@@ -96,7 +111,7 @@ func (a *Adapter) Start(ctx context.Context) error {
 	a.rateLimiter = NewChannelRateLimiter(ctx)
 	a.slashLimiter = NewSlashRateLimiter()
 	a.ownership = NewThreadOwnershipTracker(ctx, a.botID, a.log)
-	a.dedup = NewDedup(5000, 30*time.Minute)
+	a.dedup = NewDedup(dedupMaxEntries, dedupTTL)
 	a.userCache = NewUserCache(a.client)
 	a.statusMgr = NewStatusManager(a, a.log)
 	a.activeIndicators = NewActiveIndicators()
@@ -162,16 +177,13 @@ func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsA
 		return
 	}
 
-	switch msgEvent.SubType {
-	case "message_changed", "message_deleted", "channel_join",
-		"channel_leave", "group_join", "group_leave",
-		"channel_topic", "channel_purpose":
+	if blockedSubtypes[msgEvent.SubType] {
 		return
 	}
 
 	if msgEvent.TimeStamp != "" {
 		if ts, err := parseSlackTS(msgEvent.TimeStamp); err == nil {
-			if time.Since(ts) > 30*time.Minute {
+			if time.Since(ts) > messageExpiry {
 				a.log.Debug("slack: skipping expired message", "ts", msgEvent.TimeStamp)
 				return
 			}
@@ -187,9 +199,9 @@ func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsA
 	}
 	teamID := event.TeamID
 
-	channelType := "channel"
+	channelType := ChannelGroup
 	if channelID != "" && channelID[0] == 'D' {
-		channelType = "im"
+		channelType = ChannelIM
 	}
 
 	// Access control gate (before ownership check; must be before ResolveMentions which strips <@BOTID>)
@@ -266,9 +278,6 @@ func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsA
 	}
 }
 
-// GetOrCreateConn returns an existing SlackConn for the channel/thread pair,
-// or creates and registers a new one. This ensures the same conn is reused
-// across multiple messages in the same thread, so Hub.Shutdown can close it.
 // resolveTypingStages converts config TypingStageConfig to TypingStage,
 // falling back to DefaultStages when no custom config is provided.
 func (a *Adapter) resolveTypingStages() []TypingStage {
@@ -283,6 +292,9 @@ func (a *Adapter) SetTypingStages(stages []TypingStage) {
 	a.typingStages = stages
 }
 
+// GetOrCreateConn returns an existing SlackConn for the channel/thread pair,
+// or creates and registers a new one. This ensures the same conn is reused
+// across multiple messages in the same thread, so Hub.Shutdown can close it.
 func (a *Adapter) GetOrCreateConn(channelID, threadTS string) *SlackConn {
 	key := channelID + "#" + threadTS
 	a.mu.Lock()
@@ -345,6 +357,10 @@ func (a *Adapter) Close(ctx context.Context) error {
 
 	for _, c := range conns {
 		_ = c.Close()
+	}
+
+	if a.activeIndicators != nil {
+		a.activeIndicators.CloseAll(ctx)
 	}
 
 	if a.rateLimiter != nil {

@@ -427,11 +427,10 @@ func TestE2E_ConvertMessage_BotFileSkipped(t *testing.T) {
 		{ID: "F2", Name: "user.png", Filetype: "png", User: "U_ALICE"},
 	}
 
-	text, ok, media := a.ConvertMessage(evt)
+	_, ok, media := a.ConvertMessage(evt)
 	require.True(t, ok)
 	require.Len(t, media, 1, "bot's own file should be skipped")
 	require.Equal(t, "F2", media[0].FileID)
-	_ = text
 }
 
 func TestE2E_ConvertMessage_ExternalFileSkipped(t *testing.T) {
@@ -478,7 +477,6 @@ func TestE2E_ConvertMessage_DocumentFilePlaceholder(t *testing.T) {
 	text, ok, _ := a.ConvertMessage(evt)
 	require.True(t, ok)
 	require.Contains(t, text, "[user shared a file: report.pdf]")
-	_ = text
 }
 
 func TestE2E_ConvertMessage_MultipleFiles(t *testing.T) {
