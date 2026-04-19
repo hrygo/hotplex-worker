@@ -335,6 +335,7 @@ func (a *Adapter) handleTextMessage(ctx context.Context, platformMsgID, channelI
 	conn.replyToMsgID = replyToMsgID
 	conn.platformMsgID = platformMsgID
 	conn.chatType = chatType
+	conn.startedAt = time.Now()
 	conn.mu.Unlock()
 
 	// Typing indicator: add reaction to user's message (non-blocking, failure is non-fatal).
@@ -410,6 +411,7 @@ type FeishuConn struct {
 	streamCtrl    *StreamingCardController
 	typingRid     string
 	toolRid       string
+	startedAt     time.Time // when the user sent the current message
 }
 
 func NewFeishuConn(adapter *Adapter, chatID string) *FeishuConn {
@@ -484,15 +486,21 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		return nil
 	}
 
-	// Handle tool_call: remove current reaction, add random tool emoji.
+	// Handle tool_call: update reaction to timeline emoji.
 	if env.Event.Type == events.ToolCall {
-		c.cycleReaction(ctx, randomToolEmoji())
+		c.mu.RLock()
+		elapsed := time.Since(c.startedAt)
+		c.mu.RUnlock()
+		c.cycleReaction(ctx, timelineEmoji(elapsed))
 		return nil
 	}
 
-	// Handle tool_result: remove current reaction, add Done emoji.
+	// Handle tool_result: update reaction to timeline emoji.
 	if env.Event.Type == events.ToolResult {
-		c.cycleReaction(ctx, doneEmoji)
+		c.mu.RLock()
+		elapsed := time.Since(c.startedAt)
+		c.mu.RUnlock()
+		c.cycleReaction(ctx, timelineEmoji(elapsed))
 		return nil
 	}
 

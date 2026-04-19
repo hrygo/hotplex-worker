@@ -3,22 +3,44 @@ package feishu
 import (
 	"context"
 	"fmt"
-	"math/rand"
+	"time"
 
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 )
 
 const (
 	typingEmoji = "Typing"
-	doneEmoji   = "Done"
 )
 
-// toolEmojis are randomly cycled on each tool_call to show activity.
-var toolEmojis = []string{"THINKING", "BLACKFACE", "ColdSweat", "YEAH", "YAWN"}
+// timelineEmojis maps elapsed duration thresholds to Feishu emoji_type values.
+// The emoji reflects how long the bot has been processing, giving users a
+// visual sense of progress without reading logs.
+var timelineEmojis = []struct {
+	threshold time.Duration
+	emoji     string
+}{
+	{3 * time.Second, "YEAH"},        // 耶
+	{10 * time.Second, "SMILE"},       // 呲牙
+	{30 * time.Second, "THINKING"},    // 思考
+	{1 * time.Minute, "SMUG"},         // 得意
+	{5 * time.Minute, "STRIVE"},       // 奋斗
+	{10 * time.Minute, "BLACKFACE"},   // 黑线
+	{15 * time.Minute, "NOSEPICK"},    // 抠鼻
+	{20 * time.Minute, "EMBARRASSED"}, // 尬笑
+	{25 * time.Minute, "WAIL"},        // 泪奔
+	{30 * time.Minute, "DIZZY"},       // 晕
+}
 
-// randomToolEmoji returns a random emoji from the tool pool.
-func randomToolEmoji() string {
-	return toolEmojis[rand.Intn(len(toolEmojis))]
+// timelineEmoji returns the emoji_type for the given elapsed duration.
+// Falls back to "PETRIFIED" (石化) for anything beyond 30 minutes.
+func timelineEmoji(elapsed time.Duration) string {
+	result := "PETRIFIED" // 石化 — 30m+
+	for _, t := range timelineEmojis {
+		if elapsed >= t.threshold {
+			result = t.emoji
+		}
+	}
+	return result
 }
 
 // addReaction adds an emoji reaction to a message. Returns the reaction ID.
