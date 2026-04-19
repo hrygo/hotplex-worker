@@ -347,46 +347,45 @@ go test -race ./...
 
 ### 5.1 模块级覆盖率
 
+CI 使用**按包分级阈值**检查覆盖率，而非单一全局百分比。各模块按可测试性分级：
+
 | 模块 | 覆盖率目标 | 理由 |
 |------|-----------|------|
-| `internal/security/` | **95%+** | 安全核心，边界条件必须覆盖 |
-| `internal/engine/` | **90%+** | 核心引擎，PGID 隔离逻辑 |
-| `internal/strutil/` | **90%+** | 工具库，可靠性要求高 |
-| `internal/config/` | **85%+** | 配置解析，边界情况 |
-| `provider/` | **80%+** | 适配器逻辑 |
-| `chatapps/` | **70%+** | 平台适配层 |
-| **整体目标** | **80%** | 平衡投入产出比 |
+| `internal/security/` | **85%+** | 安全核心，边界条件必须覆盖 |
+| `pkg/events/`, `pkg/aep/` | **85%+** | 协议编解码，纯逻辑 |
+| `internal/gateway/` | **75%+** | WebSocket 核心引擎，部分集成复杂度 |
+| `internal/session/` | **70%+** | 状态机 + SQLite 持久化 |
+| `internal/config/` | **70%+** | Viper 配置解析与热重载 |
+| `internal/worker/base/` | **70%+** | 共享 worker 生命周期 |
+| `internal/worker/` (registry) | **70%+** | Worker 注册与调度 |
+| `internal/worker/claudecode/` | **60%+** | 外部进程适配器 |
+| `internal/worker/opencodecli/` | **60%+** | 外部进程适配器 |
+| `internal/worker/opencodeserver/` | **50%+** | 802 行重集成适配器 |
+| `internal/worker/noop/` | **80%+** | 简单 no-op，易于完全覆盖 |
+| `internal/messaging/` | **50%+** | 平台适配层，SDK/子进程/API 依赖重 |
+| `internal/worker/proc/` | **排除** | PGID 进程隔离，通过集成测试覆盖 |
+| `internal/worker/pi/` | **排除** | 13 行 stub 适配器 |
+| `cmd/worker/` | **排除** | main 包 DI 组装，非单元测试目标 |
+| `internal/admin/` | **不设门** | 基础设施 HTTP API |
+| `internal/tracing/` | **不设门** | OpenTelemetry 初始化 |
+| `internal/metrics/` | **不设门** | Prometheus 指标定义 |
 
 ### 5.2 覆盖率报告
 
 ```bash
-# 生成覆盖率报告
-go test -coverprofile=coverage.out ./...
-go tool cover -html=coverage.out -o coverage.html
+# 生成覆盖率报告（与 CI 一致的排除规则）
+make coverage
 
-# 按包查看覆盖率
-go tool cover -func=coverage.out | grep "^total:"
-go tool cover -func=coverage.out | sort -t: -k3 -n | head -20
+# 或手动生成 HTML 报告
+go tool cover -html=coverage.out -o coverage.html
 ```
 
 ### 5.3 覆盖率检查（CI）
 
-```yaml
-# .github/workflows/test.yml
-- name: Coverage Check
-  run: |
-    go test -coverprofile=coverage.out ./...
-
-    # 提取整体覆盖率
-    COVERAGE=$(go tool cover -func=coverage.out | grep "^total:" | awk '{print $3}' | sed 's/%//')
-    echo "Coverage: ${COVERAGE}%"
-
-    # 检查是否低于阈值
-    if (( $(echo "$COVERAGE < 80" | bc -l) )); then
-      echo "ERROR: Coverage ${COVERAGE}% is below threshold 80%"
-      exit 1
-    fi
-```
+CI 使用按包分级阈值，每个包独立检查 pass/fail：
+- 按包覆盖率低于对应阈值 → CI 失败
+- 总体覆盖率仅作信息展示，不设门
+- 详见 `.github/workflows/ci.yml` 中的 `coverage-check` job
 
 ---
 

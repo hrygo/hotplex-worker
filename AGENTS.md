@@ -54,7 +54,9 @@ cmd/worker/main.go    (~539 lines) flags, DI, signal, messaging init
 - `messaging/platform_conn.go`  PlatformConn: WriteCtx + Close
 - `messaging/platform_adapter.go`  Base adapter + self-registration
 - `messaging/slack/`      Socket Mode: NativeStreamingWriter, rate limiter
-- `messaging/feishu/`     ws.Client: P2 events, converter, streaming, typing
+- `messaging/feishu/`     ws.Client: P2 events, converter, streaming, typing, stt.go (speech-to-text)
+- `scripts/stt_server.py`  Persistent STT subprocess (SenseVoice-Small ONNX)
+- `scripts/fix_onnx_model.py`  ONNX model Less node type mismatch auto-patch
 - `messaging/mock/`       Mock adapter for testing
 
 **Worker** (6 adapters)
@@ -97,6 +99,7 @@ configs/  config.yaml, config-dev.yaml, env.example
 - Session lifecycle → `internal/session/manager.go` — state machine + `TransitionWithInput` atomicity
 - WebSocket protocol → `internal/gateway/conn.go` — ReadPump/WritePump + Handler dispatch
 - Config structure → `internal/config/config.go` — structs + Default() + Validate()
+- STT config → `internal/config/config.go:161-173` — FeishuConfig.STTProvider/STTLocalCmd/STTLocalMode/STTLocalIdleTTL
 - Wire messaging adapter → `cmd/worker/main.go` — `startMessagingAdapters()`: config → New → Configure → SetConnFactory → Start
 
 **Security**
@@ -137,6 +140,11 @@ configs/  config.yaml, config-dev.yaml, env.example
 - `Bridge` → `bridge.go` — 3-step: StartSession → Join → handler.Handle
 - `PlatformConn` (interface) → `platform_conn.go` — WriteCtx + Close
 - `PlatformAdapter` → `platform_adapter.go` — base: SetHub/SetSM/SetHandler/SetBridge
+- `FeishuSTT` → `feishu/stt.go:41` — cloud transcription via Feishu speech_to_text API
+- `LocalSTT` → `feishu/stt.go:98` — ephemeral per-request external command transcription
+- `PersistentSTT` → `feishu/stt.go:185` — long-lived subprocess, JSON-over-stdio, PGID isolation
+- `FallbackSTT` → `feishu/stt.go:143` — primary + secondary fallback chain
+- `Transcriber` (interface) → `feishu/stt.go:27` — Transcribe(ctx, audioData) → (text, error)
 
 **Core**
 - `Envelope` → `pkg/events/events.go:73` — AEP v1 envelope (id, version, seq, session_id, event)
@@ -154,6 +162,7 @@ configs/  config.yaml, config-dev.yaml, env.example
 - **Testing**: `testify/require` (not `t.Fatal`), table-driven, `t.Parallel()`, `t.Cleanup()`
 - **Config**: Viper YAML + env expansion, `SecretsProvider` interface for secrets
 - **Worker registration**: `init()` + `worker.Register(WorkerType, Builder)` pattern via blank imports
+- **STT engine**: SenseVoice-Small via `funasr-onnx` (ONNX FP32, non-quantized), auto-patches ONNX model on first load, persistent subprocess for zero cold-start
 - **DI**: Manual constructor injection (no wire/dig), `GatewayDeps` struct in main.go
 - **Shutdown order**: signal → cancel ctx → tracing → hub → configWatcher → sessionMgr → HTTP server
 
@@ -207,3 +216,5 @@ make clean                    # Clean build artifacts
 - No `api/` directory — project uses JSON over WebSocket, not protobuf
 - Project targets POSIX only (PGID isolation requires `syscall.SysProcAttr{Setpgid: true}`)
 - Largest files: `opencodeserver/worker.go` (802), `manager.go` (765), `hub.go` (575), `config.go` (593), `opencodecli/worker.go` (528)
+- STT scripts (`scripts/stt_server.py`, `scripts/fix_onnx_model.py`) are also deployed to `~/.agents/skills/audio-transcribe/scripts/` for Claude Code skill use
+- STT model: `~/.cache/modelscope/hub/models/iic/SenseVoiceSmall` (~900MB), ONNX FP32 non-quantized

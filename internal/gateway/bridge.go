@@ -84,9 +84,15 @@ func (b *Bridge) StartSession(ctx context.Context, id, userID, botID string, wt 
 
 	// Forward worker events to hub. Goroutine exits when conn.Recv() is closed
 	// (happens when the worker is killed via poolMgr.Close).
-	go b.forwardEvents(w, id)
+	go b.forwardEvents(w, id, forwardOpts{})
 
 	return nil
+}
+
+// forwardOpts configures the forwardEvents goroutine behavior.
+type forwardOpts struct {
+	resumed bool   // true if this goroutine was spawned by ResumeSession
+	workDir string // workDir to use for fallback fresh start
 }
 
 // ResumeSession reattaches to an existing session.
@@ -154,7 +160,7 @@ func (b *Bridge) ResumeSession(ctx context.Context, id, workDir string) error {
 
 	// Forward worker events to hub. Same as StartSession — goroutine exits when
 	// conn.Recv() closes (worker killed via poolMgr.Close or worker exit).
-	go b.forwardEvents(w, id)
+	go b.forwardEvents(w, id, forwardOpts{resumed: true, workDir: workDir})
 
 	return nil
 }
@@ -185,8 +191,9 @@ func (b *Bridge) persistWorkerSessionID(w worker.Worker, sessionID string) {
 // EVT-004: if msgStore is configured, it appends to the event log on done events.
 // AEP-020: after the recv channel closes, calls Worker.Wait() to determine exit
 // code and sets DoneData.Success accordingly (non-zero exit = crash = success=false).
-func (b *Bridge) forwardEvents(w worker.Worker, sessionID string) {
-	b.log.Info("bridge: forwardEvents goroutine started", "session_id", sessionID)
+func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOpts) {
+	b.log.Info("bridge: forwardEvents goroutine started", "session_id", sessionID, "resumed", opts.resumed)
+	startTime := time.Now()
 	firstEvent := true
 	for env := range w.Conn().Recv() {
 		if env.Event.Type == events.Error {
@@ -259,6 +266,17 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string) {
 	case <-time.After(2 * time.Second):
 		b.log.Warn("gateway: Wait() timed out, skipping crash detection", "session_id", sessionID)
 	}
+	// Resume failure fallback: if this was a resumed worker that crashed quickly
+	// (within 15s), it likely failed to restore its conversation state (e.g.
+	// "No conversation found"). Instead of just sending a crash done, we attempt
+	// a fresh start so the user doesn't need to retry manually.
+	if exitCode != 0 && opts.resumed && time.Since(startTime) < 15*time.Second {
+		if b.attemptResumeFallback(sessionID, opts.workDir, exitCode) {
+			return // new forwardEvents goroutine took over
+		}
+		// Fallback failed; fall through to normal crash handling.
+	}
+
 	if exitCode != 0 {
 		b.log.Warn("gateway: worker exited with non-zero code, sending crash done", "session_id", sessionID, "exit_code", exitCode)
 		metrics.WorkerCrashesTotal.WithLabelValues(string(w.Type()), fmt.Sprintf("%d", exitCode)).Inc()
@@ -279,20 +297,62 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string) {
 	}
 }
 
+// attemptResumeFallback tries to recover from a failed resume by starting a
+// fresh worker. Returns true if a new forwardEvents goroutine took over.
+func (b *Bridge) attemptResumeFallback(sessionID, workDir string, exitCode int) bool {
+	b.log.Warn("gateway: worker crashed shortly after resume, attempting fresh start fallback",
+		"session_id", sessionID, "exit_code", exitCode)
+
+	// Clean up the crashed worker first.
+	if b.sm != nil {
+		b.sm.DetachWorker(sessionID)
+		if err := b.sm.Transition(context.Background(), sessionID, events.StateTerminated); err != nil {
+			b.log.Debug("bridge: transition to terminated for fallback", "session_id", sessionID, "err", err)
+		}
+	}
+
+	// Get session info for fresh start params.
+	si, err := b.sm.Get(sessionID)
+	if err != nil {
+		b.log.Error("gateway: resume fallback failed, cannot get session info", "session_id", sessionID, "err", err)
+		return false
+	}
+
+	// Start fresh worker (not resume).
+	if err := b.StartSession(context.Background(), sessionID, si.UserID, si.BotID, si.WorkerType, si.AllowedTools, workDir, si.Platform, si.PlatformKey); err != nil {
+		b.log.Error("gateway: resume fallback fresh start failed", "session_id", sessionID, "err", err)
+		return false
+	}
+
+	b.log.Info("gateway: resume fallback succeeded, fresh worker started", "session_id", sessionID)
+	// Notify the client that a fallback occurred so the UI can show a warning.
+	warnEvt := events.NewEnvelope(aep.NewID(), sessionID, b.hub.NextSeq(sessionID), events.Error, events.ErrorData{
+		Code:    events.ErrorCode("RESUME_FALLBACK"),
+		Message: fmt.Sprintf("Resume failed (exit %d), restarted with fresh session. Previous context may be lost.", exitCode),
+	})
+	_ = b.hub.SendToSession(context.Background(), warnEvt)
+	return true
+}
+
 // StartPlatformSession creates a session for a platform message if it doesn't already exist.
 // Implements messaging.SessionStarter. Idempotent: returns nil if session exists with a live worker.
 // If the session exists but has no worker (orphan from a previous gateway restart), it resumes
 // the existing session so the worker can restore its internal session state.
 func (b *Bridge) StartPlatformSession(ctx context.Context, sessionID, ownerID, workerType, workDir, platform string, platformKey map[string]string) error {
 	b.log.Debug("bridge: StartPlatformSession called", "session_id", sessionID, "owner_id", ownerID, "worker_type", workerType, "work_dir", workDir, "platform", platform)
-	_, err := b.sm.Get(sessionID)
+	si, err := b.sm.Get(sessionID)
 	if err == nil {
 		if w := b.sm.GetWorker(sessionID); w != nil {
 			return nil
 		}
-		// Orphan: session record exists but worker is gone (gateway restarted).
-		// Resume with SkipSessionID so worker runs --resume only, restoring
-		// the Claude Code session history without --print --session-id conflict.
+		// Orphan: session record exists but worker is gone (gateway restarted
+		// or previous worker crashed). For TERMINATED sessions, start fresh
+		// because the CLI conversation file may have been cleaned up.
+		// For IDLE sessions, resume to preserve conversation history.
+		if si.State == events.StateTerminated {
+			b.log.Info("gateway: orphan platform session terminated, starting fresh", "session_id", sessionID)
+			return b.StartSession(ctx, sessionID, ownerID, "", worker.WorkerType(workerType), nil, workDir, platform, platformKey)
+		}
 		b.log.Info("gateway: orphan platform session, resuming", "session_id", sessionID)
 		return b.ResumeSession(ctx, sessionID, workDir)
 	}

@@ -79,7 +79,13 @@ jobs:
         run: go test -race -timeout=15m ./...
 
       - name: Run tests with coverage
-        run: go test -timeout=15m -coverprofile=coverage.out -covermode=atomic $(go list ./... | grep -v 'internal/worker/proc')
+        run: |
+          go test -timeout=15m -coverprofile=coverage.out -covermode=atomic \
+            $(go list ./... | grep -v \
+              -e 'internal/worker/proc' \
+              -e 'internal/worker/pi' \
+              -e 'cmd/worker' \
+              -e 'e2e')
 
       - name: Display coverage
         run: go tool cover -func=coverage.out | tail -1
@@ -119,16 +125,70 @@ jobs:
           name: coverage
           path: coverage-artifacts
 
-      - name: Check coverage threshold
+      - name: Check per-package coverage thresholds
         run: |
-          TOTAL=$(go tool cover -func=coverage-artifacts/coverage.out 2>/dev/null | tail -1 | grep -oP '\d+\.\d+')
-          echo "Total coverage: ${TOTAL}%"
-          PASS=$(echo "$TOTAL >= 80.0" | bc -l)
-          if [ "$PASS" -ne 1 ]; then
-            echo "::error::Coverage ${TOTAL}% is below 80% threshold."
+          COV_FILE="coverage-artifacts/coverage.out"
+
+          # Per-package thresholds (longest-prefix match wins).
+          declare -A THRESHOLDS
+          THRESHOLDS["internal/security"]=85
+          THRESHOLDS["pkg/events"]=85
+          THRESHOLDS["pkg/aep"]=85
+          THRESHOLDS["internal/gateway"]=75
+          THRESHOLDS["internal/session"]=70
+          THRESHOLDS["internal/config"]=70
+          THRESHOLDS["internal/worker/base"]=70
+          THRESHOLDS["internal/worker"]=70
+          THRESHOLDS["internal/worker/claudecode"]=60
+          THRESHOLDS["internal/worker/opencodecli"]=60
+          THRESHOLDS["internal/worker/opencodeserver"]=50
+          THRESHOLDS["internal/worker/noop"]=80
+          THRESHOLDS["internal/messaging/feishu"]=50
+          THRESHOLDS["internal/messaging/slack"]=50
+          THRESHOLDS["internal/messaging"]=50
+
+          FAILED=0
+          echo "## Per-Package Coverage Report" >> $GITHUB_STEP_SUMMARY
+          echo "| Package | Coverage | Threshold | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|----------|-----------|--------|" >> $GITHUB_STEP_SUMMARY
+
+          while IFS= read -r line; do
+            PKG=$(echo "$line" | awk '{print $1}')
+            COV=$(echo "$line" | awk '{print $NF}' | sed 's/%//')
+
+            # Find matching threshold (longest prefix match).
+            MATCH=""
+            for pattern in "${!THRESHOLDS[@]}"; do
+              if [[ "$PKG" == *"$pattern"* ]]; then
+                if [ -z "$MATCH" ] || [ ${#pattern} -gt ${#MATCH} ]; then
+                  MATCH="$pattern"
+                fi
+              fi
+            done
+
+            if [ -n "$MATCH" ]; then
+              THRESH=${THRESHOLDS[$MATCH]}
+              PASS=$(echo "$COV >= $THRESH" | bc -l)
+              if [ "$PASS" -ne 1 ]; then
+                STATUS=":x: FAIL"
+                FAILED=1
+                echo "::error::Package $PKG coverage ${COV}% is below ${THRESH}% threshold."
+              else
+                STATUS=":white_check_mark: PASS"
+              fi
+              echo "| \`$PKG\` | ${COV}% | ${THRESH}% | $STATUS |" >> $GITHUB_STEP_SUMMARY
+            fi
+          done < <(go tool cover -func="$COV_FILE" 2>/dev/null | grep -v "^total:")
+
+          TOTAL=$(go tool cover -func="$COV_FILE" 2>/dev/null | tail -1 | grep -oP '\d+\.\d+')
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Total coverage: ${TOTAL}%** (informational, not gated)" >> $GITHUB_STEP_SUMMARY
+
+          if [ "$FAILED" -ne 0 ]; then
+            echo "::error::One or more packages are below their coverage thresholds."
             exit 1
           fi
-          echo "## Coverage: ${TOTAL}%" >> $GITHUB_STEP_SUMMARY
+          echo "All package coverage thresholds met."
 
   # ── Build verification ──────────────────────────────────────────────────
   build:

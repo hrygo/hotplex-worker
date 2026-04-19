@@ -157,6 +157,20 @@ type FeishuConfig struct {
 	GroupPolicy    string   `mapstructure:"group_policy"`
 	RequireMention bool     `mapstructure:"require_mention"`
 	AllowFrom      []string `mapstructure:"allow_from"`
+
+	// Speech-to-text configuration.
+	// Provider: "feishu" (cloud API), "local" (external command),
+	// "feishu+local" (cloud primary, local fallback), "" (disabled).
+	STTProvider string `mapstructure:"stt_provider"`
+	// Local command template. {file} is replaced with the audio file path.
+	// Example: "funasr-onnx --model iic/SenseVoiceSmall --quantize {file}"
+	STTLocalCmd string `mapstructure:"stt_local_cmd"`
+	// Local STT mode: "ephemeral" (default, per-request process) or
+	// "persistent" (long-lived subprocess, model stays in memory).
+	STTLocalMode string `mapstructure:"stt_local_mode"`
+	// Idle timeout for persistent mode. Subprocess auto-shuts down
+	// after this duration with no transcription requests. 0 = disabled.
+	STTLocalIdleTTL time.Duration `mapstructure:"stt_local_idle_ttl"`
 }
 
 // AdminConfig holds admin API settings.

@@ -1040,7 +1040,7 @@ func TestBridge_ForwardEvents_NormalEvent(t *testing.T) {
 	b := NewBridge(slog.Default(), h, nil, nil)
 	done := make(chan struct{})
 	go func() {
-		b.forwardEvents(fw, "sess_fwd")
+		b.forwardEvents(fw, "sess_fwd", forwardOpts{})
 		close(done)
 	}()
 
@@ -1088,7 +1088,7 @@ func TestBridge_ForwardEvents_DoneWithDroppedFlag(t *testing.T) {
 	b := NewBridge(slog.Default(), h, nil, nil)
 	done := make(chan struct{})
 	go func() {
-		b.forwardEvents(fw, "sess_drop")
+		b.forwardEvents(fw, "sess_drop", forwardOpts{})
 		close(done)
 	}()
 
@@ -1127,7 +1127,7 @@ func TestBridge_ForwardEvents_CrashExitCode(t *testing.T) {
 	b := NewBridge(slog.Default(), h, nil, nil)
 	done := make(chan struct{})
 	go func() {
-		b.forwardEvents(fw, "sess_crash")
+		b.forwardEvents(fw, "sess_crash", forwardOpts{})
 		close(done)
 	}()
 
@@ -1174,7 +1174,7 @@ func TestBridge_ForwardEvents_MessageStoreAppend(t *testing.T) {
 	b := NewBridge(slog.Default(), h, nil, ms)
 	done := make(chan struct{})
 	go func() {
-		b.forwardEvents(fw, "sess_append")
+		b.forwardEvents(fw, "sess_append", forwardOpts{})
 		close(done)
 	}()
 
@@ -1217,7 +1217,7 @@ func TestBridge_ForwardEvents_NilMsgStore(t *testing.T) {
 	require.NotPanics(t, func() {
 		done := make(chan struct{})
 		go func() {
-			b.forwardEvents(fw, "sess_nilms")
+			b.forwardEvents(fw, "sess_nilms", forwardOpts{})
 			close(done)
 		}()
 		// Drain the event.

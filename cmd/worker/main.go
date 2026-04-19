@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/joho/godotenv"
+	lark "github.com/larksuite/oapi-sdk-go/v3"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/hotplex/hotplex-worker/internal/admin"
@@ -485,6 +486,11 @@ func startMessagingAdapters(ctx context.Context, log *slog.Logger, cfg *config.C
 					cfg.Messaging.Feishu.AllowFrom,
 				)
 				fa.SetGate(gate)
+
+				// Wire speech-to-text transcriber.
+				if t := buildTranscriber(cfg.Messaging.Feishu, log); t != nil {
+					fa.SetTranscriber(t)
+				}
 			}
 		}
 
@@ -506,6 +512,45 @@ func startMessagingAdapters(ctx context.Context, log *slog.Logger, cfg *config.C
 		log.Info("messaging: adapter started", "platform", pt)
 	}
 	return adapters
+}
+
+// buildTranscriber creates a speech-to-text transcriber from Feishu config.
+// Returns nil if STT is disabled.
+func buildTranscriber(cfg config.FeishuConfig, log *slog.Logger) feishu.Transcriber {
+	switch cfg.STTProvider {
+	case "feishu":
+		client := lark.NewClient(cfg.AppID, cfg.AppSecret)
+		return feishu.NewFeishuSTT(client, log)
+	case "local":
+		if cfg.STTLocalCmd == "" {
+			log.Warn("feishu: stt_provider=local but stt_local_cmd is empty, STT disabled")
+			return nil
+		}
+		if cfg.STTLocalMode == "persistent" {
+			return feishu.NewPersistentSTT(cfg.STTLocalCmd, cfg.STTLocalIdleTTL, log)
+		}
+		return feishu.NewLocalSTT(cfg.STTLocalCmd, log)
+	case "feishu+local":
+		if cfg.STTLocalCmd == "" {
+			log.Warn("feishu: stt_provider=feishu+local but stt_local_cmd is empty, using feishu only")
+			client := lark.NewClient(cfg.AppID, cfg.AppSecret)
+			return feishu.NewFeishuSTT(client, log)
+		}
+		client := lark.NewClient(cfg.AppID, cfg.AppSecret)
+		var local feishu.Transcriber
+		if cfg.STTLocalMode == "persistent" {
+			local = feishu.NewPersistentSTT(cfg.STTLocalCmd, cfg.STTLocalIdleTTL, log)
+		} else {
+			local = feishu.NewLocalSTT(cfg.STTLocalCmd, log)
+		}
+		return feishu.NewFallbackSTT(
+			feishu.NewFeishuSTT(client, log),
+			local,
+			log,
+		)
+	default:
+		return nil
+	}
 }
 
 func waitForSignal() os.Signal {

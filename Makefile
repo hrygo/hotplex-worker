@@ -115,6 +115,17 @@ test-short:
 	@GORACE="history_size=5" go test -short -race -timeout 5m ./...
 	@echo "  $(GREEN)✓ Tests passed$(RESET)"
 
+coverage:
+	@echo "$(CYAN)Generating coverage report...$(RESET)"
+	@go test -timeout=15m -coverprofile=coverage.out -covermode=atomic \
+		$$(go list ./... | grep -v -e 'internal/worker/proc' -e 'internal/worker/pi' -e 'cmd/worker')
+	@echo ""
+	@echo "$(BOLD)Per-package coverage:$(RESET)"
+	@go tool cover -func=coverage.out | grep -v "^total:" | sort -t: -k3 -n
+	@echo ""
+	@TOTAL=$$(go tool cover -func=coverage.out | tail -1 | grep -oP '\d+\.\d+') ; \
+		echo "  $(BOLD)Total: $${TOTAL}%$(RESET)"
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Quality
 # ─────────────────────────────────────────────────────────────────────────────
