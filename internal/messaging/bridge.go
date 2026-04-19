@@ -97,7 +97,7 @@ func (b *Bridge) makeEnvelope(sessionID, ownerID, text string, metadata map[stri
 }
 
 // MakeSlackEnvelope converts a Slack message to an AEP input envelope.
-// session ID is derived via UUIDv5: ownerID + workerType + platform + teamID + channelID + threadTS + userID.
+// session ID is derived via UUIDv5: ownerID + workerType + platform + teamID + channelID + threadTS + userID + workDir.
 func (b *Bridge) MakeSlackEnvelope(teamID, channelID, threadTS, userID, text string) *events.Envelope {
 	sessionID := session.DerivePlatformSessionKey(userID, worker.WorkerType(b.workerType), session.PlatformContext{
 		Platform:  "slack",
@@ -105,6 +105,7 @@ func (b *Bridge) MakeSlackEnvelope(teamID, channelID, threadTS, userID, text str
 		ChannelID: channelID,
 		ThreadTS:  threadTS,
 		UserID:    userID,
+		WorkDir:   b.workDir,
 	})
 	return b.makeEnvelope(sessionID, userID, text, map[string]any{
 		"platform":   string(PlatformSlack),
@@ -116,13 +117,14 @@ func (b *Bridge) MakeSlackEnvelope(teamID, channelID, threadTS, userID, text str
 }
 
 // MakeFeishuEnvelope converts a Feishu message to an AEP input envelope.
-// session ID is derived via UUIDv5: ownerID + workerType + platform + chatID + threadTS + userID.
+// session ID is derived via UUIDv5: ownerID + workerType + platform + chatID + threadTS + userID + workDir.
 func (b *Bridge) MakeFeishuEnvelope(chatID, threadTS, userID, text string) *events.Envelope {
 	sessionID := session.DerivePlatformSessionKey(userID, worker.WorkerType(b.workerType), session.PlatformContext{
 		Platform: "feishu",
 		ChatID:   chatID,
 		ThreadTS: threadTS,
 		UserID:   userID,
+		WorkDir:  b.workDir,
 	})
 	return b.makeEnvelope(sessionID, userID, text, map[string]any{
 		"platform":  string(PlatformFeishu),

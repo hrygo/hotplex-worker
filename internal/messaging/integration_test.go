@@ -148,6 +148,7 @@ func TestBridge_MakeSlackEnvelope(t *testing.T) {
 		ChannelID: channelID,
 		ThreadTS:  threadTS,
 		UserID:    userID,
+		WorkDir:   DefaultWorkerWorkDir, // "" is replaced by NewBridge
 	})
 	require.Equal(t, expected, env.SessionID)
 
@@ -192,6 +193,7 @@ func TestBridge_MakeFeishuEnvelope(t *testing.T) {
 		ChatID:   chatID,
 		ThreadTS: threadTS,
 		UserID:   userID,
+		WorkDir:  DefaultWorkerWorkDir, // "" is replaced by NewBridge
 	})
 	require.Equal(t, expected, env.SessionID)
 

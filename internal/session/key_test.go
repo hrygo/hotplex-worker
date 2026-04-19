@@ -116,15 +116,18 @@ func TestDerivePlatformSessionKey_DifferentTuples(t *testing.T) {
 	ctx2 := PlatformContext{Platform: "feishu", ChatID: "oc2", UserID: "u1"}
 	ctx3 := PlatformContext{Platform: "slack", ChannelID: "oc1", UserID: "u1"} // same raw ID as ctx2 but different platform
 	ctx4 := PlatformContext{Platform: "feishu", ChatID: "oc1", UserID: "u2"}
+	ctx5 := PlatformContext{Platform: "feishu", ChatID: "oc1", UserID: "u1", WorkDir: "/tmp/hotplex/workspace"}
 
 	key1 := DerivePlatformSessionKey("owner1", worker.TypeClaudeCode, ctx1)
 	key2 := DerivePlatformSessionKey("owner1", worker.TypeClaudeCode, ctx2)
 	key3 := DerivePlatformSessionKey("owner1", worker.TypeClaudeCode, ctx3)
 	key4 := DerivePlatformSessionKey("owner1", worker.TypeClaudeCode, ctx4)
+	key5 := DerivePlatformSessionKey("owner1", worker.TypeClaudeCode, ctx5)
 
 	require.NotEqual(t, key1, key2, "different ChatID → different key")
 	require.NotEqual(t, key2, key3, "different Platform → different key (cross-platform isolation)")
 	require.NotEqual(t, key1, key4, "different UserID → different key")
+	require.NotEqual(t, key1, key5, "different WorkDir → different key")
 }
 
 func TestDerivePlatformSessionKey_CrossPlatformIsolation(t *testing.T) {

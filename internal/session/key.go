@@ -34,17 +34,20 @@ type PlatformContext struct {
 	// Feishu fields
 	ChatID string
 	// Universal
-	UserID string
+	UserID  string
+	WorkDir string
 }
 
 // DerivePlatformSessionKey generates a deterministic UUIDv5 for a messaging platform session.
 // Inputs are intentionally narrow: (ownerID, workerType, platformContext) — all platform identity
 // fields are namespaced by platform type, so Feishu and Slack never collide even if raw IDs match.
+// WorkDir is included so that the same conversation on different working directories produces
+// different session IDs, preventing "Session ID already in use" errors when workDir changes.
 //
 // Canonical inputs per platform:
-//   - Slack channel:  PlatformContext{Platform="slack", TeamID, ChannelID="C...", ThreadTS, UserID}
-//   - Slack DM:      PlatformContext{Platform="slack", TeamID, ChannelID="D...", ThreadTS="", UserID}
-//   - Feishu:        PlatformContext{Platform="feishu", ChatID, ThreadTS, UserID}
+//   - Slack channel:  PlatformContext{Platform="slack", TeamID, ChannelID="C...", ThreadTS, UserID, WorkDir}
+//   - Slack DM:      PlatformContext{Platform="slack", TeamID, ChannelID="D...", ThreadTS="", UserID, WorkDir}
+//   - Feishu:        PlatformContext{Platform="feishu", ChatID, ThreadTS, UserID, WorkDir}
 //   - Web:           caller should use DeriveSessionKey directly (it includes workDir + clientSessionID)
 //
 // Empty fields are excluded from the hash to ensure "no value" and "absent field"
@@ -86,6 +89,10 @@ func DerivePlatformSessionKey(ownerID string, wt worker.WorkerType, ctx Platform
 	if ctx.UserID != "" {
 		b.WriteByte('|')
 		b.WriteString(ctx.UserID)
+	}
+	if ctx.WorkDir != "" {
+		b.WriteByte('|')
+		b.WriteString(ctx.WorkDir)
 	}
 	name := b.String()
 	id := uuid.NewHash(sha1.New(), hotplexNamespace, []byte(name), 5)
