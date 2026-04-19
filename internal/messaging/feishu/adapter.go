@@ -386,31 +386,25 @@ func (c *FeishuConn) SetTypingReactionID(rid string) {
 	c.typingRid = rid
 }
 
-// cycleReaction removes the current tool reaction (if any) and adds a new one.
-// Also removes the typing indicator on first tool activity.
+// cycleReaction replaces the current tool reaction with a new one.
+// The typing indicator is kept alive throughout the session and only
+// removed on done/close to prevent message flicker from repeated add/remove.
 func (c *FeishuConn) cycleReaction(ctx context.Context, emoji string) {
 	c.mu.Lock()
-	typingRid := c.typingRid
 	toolRid := c.toolRid
 	platformMsgID := c.platformMsgID
-	c.typingRid = ""
 	c.mu.Unlock()
 
 	if platformMsgID == "" {
 		return
 	}
 
-	// Remove typing indicator on first tool activity.
-	if typingRid != "" {
-		_ = c.adapter.RemoveTypingIndicator(ctx, platformMsgID, typingRid)
-	}
-
-	// Remove previous tool reaction.
+	// Remove previous tool reaction only.
 	if toolRid != "" {
 		_ = c.adapter.removeReaction(ctx, platformMsgID, toolRid)
 	}
 
-	// Add new reaction.
+	// Add new tool reaction.
 	if rid, err := c.adapter.addReaction(ctx, platformMsgID, emoji); err == nil && rid != "" {
 		c.mu.Lock()
 		c.toolRid = rid
@@ -471,9 +465,6 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 	replyToMsgID := c.replyToMsgID
 	streamCtrl := c.streamCtrl
 	chatType := c.chatType
-	typingRid := c.typingRid
-	platformMsgID := c.platformMsgID
-	c.typingRid = "" // consumed; cleared under lock
 	c.mu.Unlock()
 
 	c.adapter.log.Debug("feishu: WriteCtx sending",
@@ -491,32 +482,16 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 				c.mu.Lock()
 				c.streamCtrl = nil
 				c.mu.Unlock()
-				if typingRid != "" {
-					_ = c.adapter.RemoveTypingIndicator(ctx, platformMsgID, typingRid)
-				}
 			} else {
-				// Card created with initial content; remove typing indicator.
-				if typingRid != "" {
-					_ = c.adapter.RemoveTypingIndicator(ctx, platformMsgID, typingRid)
-				}
 				return nil
 			}
 		} else {
 			// Subsequent content: write + flush.
-			if typingRid != "" {
-				_ = c.adapter.RemoveTypingIndicator(ctx, platformMsgID, typingRid)
-			}
-
 			if err := streamCtrl.Write(text); err != nil {
 				return err
 			}
 			return streamCtrl.Flush(ctx)
 		}
-	}
-
-	// Typing indicator consumed but no streaming card was created.
-	if typingRid != "" {
-		_ = c.adapter.RemoveTypingIndicator(ctx, platformMsgID, typingRid)
 	}
 
 	if replyToMsgID != "" {

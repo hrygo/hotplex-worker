@@ -145,7 +145,10 @@ dev: dev-start
 	@echo "  $(GREEN)✓ Dev environment ready$(RESET)"
 	@echo ""
 	@echo "    Gateway  http://localhost:8888"
-	@echo "    Webchat  http://localhost:3000"
+	@if [ -f $(WEB_CHAT_PID) ] && kill -0 $$(cat $(WEB_CHAT_PID)) 2>/dev/null; then \
+		echo "    Webchat  http://localhost:3000"; \
+	else \
+		echo "    Webchat  $(DIM)not running$(RESET)"; fi
 	@echo "    Admin    http://localhost:9999"
 	@echo ""
 	@echo "    make dev-logs     View logs"
@@ -153,7 +156,8 @@ dev: dev-start
 	@echo "    make dev-stop    Stop all"
 	@echo ""
 
-dev-start: worker-start webchat-dev
+dev-start: worker-start
+	@$(MAKE) webchat-dev || echo "  $(YELLOW)⚠$(RESET) Webchat skipped (run 'cd webchat && pnpm install' to fix)"
 
 dev-stop: webchat-stop worker-stop
 	@echo "  $(GREEN)✓ Dev environment stopped$(RESET)"
@@ -237,6 +241,10 @@ webchat-dev:
 	@if [ -f $(WEB_CHAT_PID) ] && kill -0 $$(cat $(WEB_CHAT_PID)) 2>/dev/null; then \
 		echo "$(YELLOW)Webchat already running (PID: $$(cat $(WEB_CHAT_PID)))$(RESET)"; \
 		exit 0; \
+	fi; \
+	if [ ! -d $(WEB_CHAT_DIR)/node_modules ]; then \
+		echo "$(CYAN)Installing webchat dependencies...$(RESET)"; \
+		cd $(WEB_CHAT_DIR) && pnpm install --frozen-lockfile 2>/dev/null || pnpm install; \
 	fi; \
 	echo "$(CYAN)Starting webchat...$(RESET)"; \
 	cd $(WEB_CHAT_DIR) && pnpm dev > $(WEB_CHAT_LOG) 2>&1 & \

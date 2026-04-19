@@ -29,7 +29,7 @@ const (
 
 var phaseTransitions = map[CardPhase]map[CardPhase]bool{
 	PhaseIdle:           {PhaseCreating: true},
-	PhaseCreating:       {PhaseStreaming: true, PhaseCreationFailed: true, PhaseTerminated: true},
+	PhaseCreating:       {PhaseStreaming: true, PhaseCreationFailed: true, PhaseTerminated: true, PhaseCompleted: true},
 	PhaseStreaming:      {PhaseCompleted: true, PhaseAborted: true, PhaseTerminated: true},
 	PhaseCompleted:      {},
 	PhaseAborted:        {},
@@ -143,6 +143,18 @@ func (c *StreamingCardController) EnsureCard(ctx context.Context, chatID, chatTy
 	c.msgID = msgID
 	c.lastFlushed = initialContent
 	c.mu.Unlock()
+
+	// Check if Close() was called while the card was being created.
+	// This can happen when the worker finishes before the card creation
+	// HTTP round-trip completes. In that case, finalize immediately.
+	if c.getPhase() == PhaseCompleted {
+		c.log.Debug("feishu: card created but Close() already called, finalizing")
+		content := OptimizeMarkdownStyle(SanitizeForCard(initialContent))
+		if c.cardKitOK && c.msgID != "" {
+			_ = c.flushIMPatch(ctx, content)
+		}
+		return nil
+	}
 
 	// Step 2: Convert msg_id → card_id so streaming updates target the message's card.
 	cardID, err := c.idConvert(ctx, msgID)

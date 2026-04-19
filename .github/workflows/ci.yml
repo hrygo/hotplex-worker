@@ -79,7 +79,7 @@ jobs:
         run: go test -race -timeout=15m ./...
 
       - name: Run tests with coverage
-        run: go test -timeout=15m -coverprofile=coverage.out -covermode=atomic ./...
+        run: go test -timeout=15m -coverprofile=coverage.out -covermode=atomic $(go list ./... | grep -v 'internal/worker/proc')
 
       - name: Display coverage
         run: go tool cover -func=coverage.out | tail -1

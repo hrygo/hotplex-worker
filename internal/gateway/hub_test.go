@@ -665,7 +665,9 @@ func TestHub_HandleHTTP_Success(t *testing.T) {
 	require.NoError(t, err, "WebSocket upgrade should succeed")
 	defer conn.Close()
 	require.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
-	require.Greater(t, h.ConnectionsOpen(), 0, "hub should have registered the connection")
+	require.Eventually(t, func() bool {
+		return h.ConnectionsOpen() > 0
+	}, 2*time.Second, 10*time.Millisecond, "hub should have registered the connection")
 }
 
 // TestHub_HandleHTTP_Unauthorized verifies that a request without an API key
@@ -716,11 +718,13 @@ func TestHub_HandleHTTP_WithSessionID(t *testing.T) {
 	defer conn.Close()
 	require.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
 
-	// Verify the session has a connection registered.
-	h.mu.RLock()
-	_, hasSession := h.sessions["sess_explicit"]
-	h.mu.RUnlock()
-	require.True(t, hasSession, "hub should have registered session sess_explicit")
+	// Verify the session has a connection registered (async: wait for registration).
+	require.Eventually(t, func() bool {
+		h.mu.RLock()
+		_, ok := h.sessions["sess_explicit"]
+		h.mu.RUnlock()
+		return ok
+	}, 2*time.Second, 10*time.Millisecond, "hub should have registered session sess_explicit")
 }
 
 // TestHub_HandleHTTP_GeneratesSessionID verifies that when no session_id is
@@ -748,11 +752,13 @@ func TestHub_HandleHTTP_GeneratesSessionID(t *testing.T) {
 	defer conn.Close()
 	require.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
 
-	// Hub should have at least one session registered.
-	h.mu.RLock()
-	sessionCount := len(h.sessions)
-	h.mu.RUnlock()
-	require.Equal(t, 1, sessionCount, "hub should have exactly one auto-generated session")
+	// Hub should have at least one session registered (async: wait for registration).
+	require.Eventually(t, func() bool {
+		h.mu.RLock()
+		n := len(h.sessions)
+		h.mu.RUnlock()
+		return n == 1
+	}, 2*time.Second, 10*time.Millisecond, "hub should have exactly one auto-generated session")
 }
 
 // TestHub_HandleHTTP_RejectsInvalidAPIKey verifies that a wrong API key is rejected.
