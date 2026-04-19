@@ -95,7 +95,7 @@ func (a *Adapter) downloadMedia(_ context.Context, m *MediaInfo) (string, error)
 	}
 	filename := fmt.Sprintf("%s_%s%s", m.Type, m.FileID, ext)
 
-	dir := fmt.Sprintf("/tmp/hotplex/media/slack/%ss", m.Type)
+	dir := filepath.Join(mediaPathPrefix, m.Type+"s")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}

@@ -168,3 +168,18 @@ func (ai *ActiveIndicators) Stop(ctx context.Context, channelID, messageTS strin
 		ti.Stop(ctx)
 	}
 }
+
+// CloseAll stops all active indicators. Used during adapter shutdown.
+func (ai *ActiveIndicators) CloseAll(ctx context.Context) {
+	ai.mu.Lock()
+	all := make([]*TypingIndicator, 0, len(ai.indicators))
+	for _, ti := range ai.indicators {
+		all = append(all, ti)
+	}
+	ai.indicators = nil
+	ai.mu.Unlock()
+
+	for _, ti := range all {
+		ti.Stop(ctx)
+	}
+}
