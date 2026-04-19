@@ -154,25 +154,32 @@ func (c *Client) doConnect(ctx context.Context, sessionID string, isResume bool)
 
 	// Read init_ack. Use raw JSON decode to avoid strict Validate()
 	// (init_ack from gateway may not satisfy all envelope requirements).
-	_, r, err := conn.NextReader()
-	if err != nil {
-		conn.Close()
-		return nil, fmt.Errorf("client: read init ack: %w", err)
-	}
-	raw, err := io.ReadAll(r)
-	if err != nil {
-		conn.Close()
-		return nil, fmt.Errorf("client: read init ack body: %w", err)
-	}
-
+	//
+	// The gateway may send other events (e.g. state) before init_ack arrives
+	// due to a race between the ReadPump goroutine (sending init_ack) and the
+	// Run goroutine (routing state events). Skip non-init_ack messages until
+	// the handshake response is received.
 	var ackEnv events.Envelope
-	if err := json.Unmarshal(raw, &ackEnv); err != nil {
-		conn.Close()
-		return nil, fmt.Errorf("client: decode init ack: %w", err)
-	}
-	if ackEnv.Event.Type != EventInitAck {
-		conn.Close()
-		return nil, fmt.Errorf("client: unexpected event type %q (expected init_ack)", ackEnv.Event.Type)
+	for {
+		_, r, err := conn.NextReader()
+		if err != nil {
+			conn.Close()
+			return nil, fmt.Errorf("client: read init ack: %w", err)
+		}
+		raw, err := io.ReadAll(r)
+		if err != nil {
+			conn.Close()
+			return nil, fmt.Errorf("client: read init ack body: %w", err)
+		}
+
+		if err := json.Unmarshal(raw, &ackEnv); err != nil {
+			conn.Close()
+			return nil, fmt.Errorf("client: decode init ack: %w", err)
+		}
+		if ackEnv.Event.Type == EventInitAck {
+			break
+		}
+		// Discard non-init_ack event (e.g. state arriving before handshake completes).
 	}
 
 	ack := parseInitAck(&ackEnv)
