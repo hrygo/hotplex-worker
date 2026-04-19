@@ -19,7 +19,7 @@ var timelineEmojis = []struct {
 	threshold time.Duration
 	emoji     string
 }{
-	{3 * time.Second, "YEAH"},        // 耶
+	{3 * time.Second, "YEAH"},         // 耶
 	{10 * time.Second, "SMILE"},       // 呲牙
 	{30 * time.Second, "THINKING"},    // 思考
 	{1 * time.Minute, "SMUG"},         // 得意
