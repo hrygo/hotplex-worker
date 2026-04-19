@@ -1,8 +1,8 @@
 # HotPlex Gateway 消息平台扩展架构方案
 
 > **状态**: 已实现（2026-04-17 Phase 1-3 验收通过）
-> **版本**: 2.0 — 实现版（AC 验收 36/40 通过，CardKit 流式延后）
-> **日期**: 2026-04-17
+> **版本**: 2.1 — 实现版（AC 验收 43/47 通过，CardKit 流式延后）
+> **日期**: 2026-04-19
 > **作者**: 架构设计师
 
 **v2.0 实现要点**:
@@ -117,6 +117,7 @@ internal/
     feishu/
       adapter.go                     # 飞书适配器（~260 行）：ws.Client + FeishuConn + sendTextMessage
       events.go                      # 飞书事件映射 + ExtractChatID（~40 行）
+      stt.go                         # 语音转录（~475 行）：FeishuSTT / LocalSTT / PersistentSTT / FallbackSTT
       adapter_test.go                # 单元测试（~10 tests）
       # card.go                      # [Phase 4 延后] CardKit 流式消息
 
@@ -1084,7 +1085,67 @@ func (a *Adapter) Close(ctx context.Context) error {
 }
 ```
 
-### 6.4 CardKit 流式消息
+### 6.4 Speech-to-Text (STT) 架构
+
+飞书适配器支持自动语音转录，将音频消息转换为文本后传递给 Worker。STT 子系统由四个 `Transcriber` 实现组成：
+
+#### 架构图
+
+```
+audio message (opus bytes)
+        │
+        ▼
+  ┌─────────────┐
+  │ FallbackSTT │ ← "feishu+local" mode: cloud primary, local fallback
+  │  (optional) │
+  └──────┬──────┘
+         │
+    ┌────┴────────────┐
+    │                  │
+    ▼                  ▼
+┌───────────┐   ┌────────────────┐
+│ FeishuSTT │   │ PersistentSTT  │ ← "local" mode (recommended)
+│  (cloud)  │   │  or LocalSTT   │
+│ Requires  │   │ RequiresDisk:  │
+│ Disk: No  │   │    Yes         │
+└───────────┘   └───────┬────────┘
+                        │
+                        │ JSON-over-stdio
+                        ▼
+                ┌───────────────────┐
+                │  stt_server.py    │ ← Persistent subprocess
+                │  (SenseVoice-Small│   Model loaded once in memory
+                │   ONNX FP32)      │   Auto-patch ONNX on first load
+                └───────────────────┘
+```
+
+#### Transcriber 实现
+
+| 实现 | 文件 | 说明 | RequiresDisk |
+|------|------|------|-------------|
+| `FeishuSTT` | `stt.go:41` | 调用飞书 `speech_to_text` API，PCM 内存转换 | No |
+| `LocalSTT` | `stt.go:98` | 每次请求启动外部命令（冷启动 ~2-3s） | Yes |
+| `PersistentSTT` | `stt.go:185` | 长驻子进程，PGID 隔离，idle 自动关闭 | Yes |
+| `FallbackSTT` | `stt.go:143` | primary 失败时自动降级到 secondary | Yes |
+
+#### PersistentSTT 生命周期
+
+1. **Lazy start**: 首次转录请求时启动子进程
+2. **JSON-over-stdio**: `{"audio_path": "/tmp/.../audio.opus"}` → `{"text": "...", "error": ""}`
+3. **Idle monitor**: 每 30s 检查 `lastUsed`，超过 `stt_local_idle_ttl` 自动 SIGTERM → 5s → SIGKILL
+4. **Crash recovery**: 下次请求时检测子进程退出，自动重启
+5. **Gateway shutdown**: `Adapter.Close()` → `PersistentSTT.Close()` → 有序终止
+
+#### STT 引擎: SenseVoice-Small
+
+- **模型**: `iic/SenseVoiceSmall` (~900MB ONNX)
+- **推理引擎**: `funasr-onnx` (ONNX Runtime)
+- **精度**: FP32 non-quantized (~0.35s/file, CER ~2%)
+- **语言**: 中文、英文、日语、韩语、粤语（自动检测）
+- **特殊标记**: 输出包含 `<|zh|><|HAPPY|><|Speech|>` 等标记，由 `stt_server.py` 正则剥离
+- **ONNX 补丁**: ModelScope 预导出模型的 `Less` 节点存在 float/int64 类型不匹配，`fix_onnx_model.py` 在首次加载时自动修复（插入 Cast 节点）
+
+### 6.5 CardKit 流式消息
 
 > **[Phase 4 延后]** CardKit 流式消息尚未实现。当前使用 `sendTextMessage()` 纯文本 API 作为 MVP 替代。
 > 完整的 CardKit 实现需要额外 `card.go` 文件（~80 行），包含 CardKit 创建、流式内容更新、Uuid 幂等、Sequence 控制。
@@ -1371,7 +1432,7 @@ func (h *Hub) JoinPlatformSession(sessionID string, pc PlatformConn) {
 ## 附录 C: 验收标准（AC）与跟踪矩阵
 
 > **验收日期**: 2026-04-17
-> **验收结果**: 36/40 通过，4 项延后（AC-6.5~6.8 CardKit），3 项待手动 E2E（AC-7.1~7.2 Slack）
+> **验收结果**: 43/47 通过，4 项延后（AC-6.5~6.8 CardKit），3 项待手动 E2E（AC-7.1~7.2 Slack）
 
 ### C.1 验收标准（Acceptance Criteria）
 
@@ -1446,6 +1507,13 @@ func (h *Hub) JoinPlatformSession(sessionID string, pc PlatformConn) {
 | AC-6.7 | CardKit `Sequence` 顺序控制 | 单元测试 | ❌ 延后 |
 | AC-6.8 | CardKit 50 次/秒: 直接推送 delta 无需 debounce | E2E | ❌ 延后 |
 | AC-6.9 | Token 自动刷新: SDK 后台 goroutine 处理 2h 过期 | 手动测试 | ✅ SDK 内置 |
+| AC-6.10 | FeishuSTT: 云端 speech_to_text API 转录成功 | E2E | ✅ |
+| AC-6.11 | PersistentSTT: 长驻子进程 JSON-over-stdio 转录 | E2E | ✅ |
+| AC-6.12 | PersistentSTT: idle 超时后自动关闭子进程 | 手动测试 | ✅ |
+| AC-6.13 | PersistentSTT: 子进程崩溃后自动恢复 | 手动测试 | ✅ |
+| AC-6.14 | FallbackSTT: primary 失败自动降级到 secondary | 单元测试 | ✅ |
+| AC-6.15 | ONNX 模型自动补丁: Less 节点类型修复 | 自动化 | ✅ 首次加载 |
+| AC-6.16 | 音频消息自动下载 + 转录 + 文本注入到 Worker | E2E | ✅ |
 
 #### AC-7: 端到端集成
 
@@ -1478,7 +1546,10 @@ func (h *Hub) JoinPlatformSession(sessionID string, pc PlatformConn) {
 | Slack 代码骨架校验 | §5.3 | `messaging/slack/adapter.go` | — | 编译 | P2 |
 | 飞书 ws.Client 接入 | §6.1-6.3 | `messaging/feishu/adapter.go` | 200 | 集成 | P3 |
 | 飞书事件映射 | §6.3 | `messaging/feishu/events.go` | 60 | 单元 | P3 |
-| CardKit 流式更新 | §6.4 | `messaging/feishu/card.go` | 80 | E2E | P3 |
+| CardKit 流式更新 | §6.5 | `messaging/feishu/card.go` | 80 | E2E | P3 |
+| 飞书 STT 转录 | §6.4 | `messaging/feishu/stt.go` | 475 | E2E | P3 |
+| STT 持久子进程 | §6.4 | `scripts/stt_server.py` | 104 | E2E | P3 |
+| ONNX 模型补丁 | §6.4 | `scripts/fix_onnx_model.py` | 102 | 自动化 | P3 |
 | 飞书代码骨架校验 | §6.3 | `messaging/feishu/adapter.go` | — | 编译 | P3 |
 | Slack E2E: DM → Worker → Reply | §8 Phase 2 | `messaging/slack/e2e_test.go` | 60 | E2E | P2 |
 | 飞书 E2E: 单聊 → CardKit | §8 Phase 3 | `messaging/feishu/e2e_test.go` | 60 | E2E | P3 |

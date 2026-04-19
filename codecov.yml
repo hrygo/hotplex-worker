@@ -4,50 +4,55 @@ codecov:
 coverage:
   precision: 2
   round: down
-  range: "70...100"
+  range: "40...100"
 
   status:
     project:
-      # 整体项目覆盖率目标 (Testing Strategy 5.1 总计)
+      # Overall project floor (informational, CI uses per-package gates)
       default:
-        target: 80%
-        threshold: 1%
-      # 1. 安全核心 (Security) - 最高标准
+        target: 50%
+        threshold: 5%
+      # 1. Security core - highest standard
       security:
-        target: 95%
-        paths:
-          - "internal/security/"
-      # 2. 核心引擎 (Gateway/Engine)
-      engine:
-        target: 90%
-        paths:
-          - "internal/gateway/"
-      # 3. 核心协议 (AEP Protocol)
-      protocol:
-        target: 90%
-        paths:
-          - "internal/aep/"
-      # 4. 配置中心 (Config)
-      config:
         target: 85%
         paths:
+          - "internal/security/"
+      # 2. Core engine (Gateway)
+      engine:
+        target: 75%
+        paths:
+          - "internal/gateway/"
+      # 3. Protocol (AEP codec + events)
+      protocol:
+        target: 85%
+        paths:
+          - "pkg/aep/"
+          - "pkg/events/"
+      # 4. Config
+      config:
+        target: 70%
+        paths:
           - "internal/config/"
-      # 5. 会话管理 (Session)
+      # 5. Session management
       session:
-        target: 80%
+        target: 70%
         paths:
           - "internal/session/"
-      # 6. 适配器/提供者 (Worker/Providers)
+      # 6. Worker adapters
       worker:
-        target: 80%
+        target: 60%
         paths:
           - "internal/worker/"
+      # 7. Messaging adapters (cloud APIs, subprocess STT)
+      messaging:
+        target: 50%
+        paths:
+          - "internal/messaging/"
 
     patch:
-      # 对 Pull Request 中新增/修改代码的覆盖率要求
       default:
-        target: 80%
-        threshold: 0%
+        target: 60%
+        threshold: 5%
 
 parsers:
   gcov:

@@ -4,9 +4,9 @@ tags:
   - project/HotPlex
   - messaging/feishu
   - platform-adapter
-date: 2026-04-17
+date: 2026-04-19
 status: in-progress
-progress: 65
+progress: 70
 priority: high
 estimated_hours: 40
 ---
@@ -14,7 +14,7 @@ estimated_hours: 40
 # Feishu Adapter 改进规格书
 
 > 版本: v1.1
-> 日期: 2026-04-18
+> 日期: 2026-04-19
 > 状态: Draft
 > 交叉复核: 已对齐 `internal/messaging/feishu/adapter.go`、`internal/messaging/bridge.go`、`internal/config/config.go` 源码，已对照 OpenClaw Lark 官方插件 (`@larksuite/openclaw-lark@2026.4.1`) 源码验证所有 API 调用
 > SDK 版本: `github.com/larksuite/oapi-sdk-go/v3@v3.5.3`
@@ -289,7 +289,7 @@ text := ResolveMentions(rawText, mentions, a.botOpenID)
 | `post` | 富文本 | P0 | 解析 JSON → markdown |
 | `image` | 图片 | P0（✅已实现） | 下载到 `/tmp/hotplex/media/images/{key}.jpg`，拼接路径 |
 | `file` | 文件 | P0（✅已实现） | 下载到 `/tmp/hotplex/media/files/{key}_{name}`，拼接路径 |
-| `audio` | 语音 | P0（✅已实现） | 下载到 `/tmp/hotplex/media/audios/{key}.opus`，拼接路径 |
+| `audio` | 语音 | P0（✅已实现） | 下载到 `/tmp/hotplex/media/audios/{key}.opus`，自动转录为文本（STT 引擎） |
 | `video` | 视频 | P0（✅已实现） | 下载到 `/tmp/hotplex/media/videos/{key}.mp4`，拼接路径 |
 | `sticker` | 表情 | P0（✅已实现） | 下载到 `/tmp/hotplex/media/stickers/{key}.gif`，拼接路径 |
 | `interactive` | 交互式卡片 | P2 | 提取文本内容 |
@@ -420,6 +420,41 @@ if media != nil {
 | 2.3-10 | 下载失败时保留纯文本（降级不阻断消息） | 单元测试 | ✅ 已实现 |
 | 2.3-11 | 文件超 10MB 跳过下载，保留纯文本 | 单元测试 | ✅ 已实现 |
 | 2.3-12 | 不支持的类型静默忽略（不报错） | 单元测试 | ✅ |
+
+#### 2.3.5 Speech-to-Text (STT) 语音转录
+
+音频消息（`msg_type == "audio"`）在下载后自动经过 STT 引擎转录为文本，然后注入到 Worker 输入中。用户可以在飞书中发送语音消息与 AI 对话。
+
+**STT 提供者**:
+
+| 提供者 | 配置值 | 说明 | RequiresDisk |
+|--------|--------|------|-------------|
+| 飞书云端 | `stt_provider: "feishu"` | 调用飞书 `speech_to_text` API | No |
+| 本地引擎 | `stt_provider: "local"` | SenseVoice-Small ONNX FP32 | Yes |
+| 混合模式 | `stt_provider: "feishu+local"` | 云端优先，失败降级到本地 | Yes |
+| 禁用 | `stt_provider: ""` | 不转录，音频文件路径直接传递 | N/A |
+
+**本地 STT 引擎**:
+
+- **模型**: SenseVoice-Small (`iic/SenseVoiceSmall`)，~900MB ONNX
+- **推理**: `funasr-onnx` ONNX Runtime，FP32 非量化
+- **性能**: ~0.35s/file，CER ~2%（中文）
+- **语言**: 中文、英文、日语、韩语、粤语（自动检测）
+- **持久模式** (`stt_local_mode: "persistent"`): 长驻子进程 `stt_server.py`，模型常驻内存，避免冷启动
+- **ONNX 补丁**: `fix_onnx_model.py` 自动修复 ModelScope 预导出模型的 `Less` 节点类型不匹配
+
+**配置示例**:
+
+```yaml
+messaging:
+  feishu:
+    stt_provider: "local"
+    stt_local_cmd: "python3 scripts/stt_server.py --model iic/SenseVoiceSmall"
+    stt_local_mode: "persistent"
+    stt_local_idle_ttl: "10m"
+```
+
+**实现文件**: `internal/messaging/feishu/stt.go`（Transcriber 接口 + 4 种实现）
 
 ---
 

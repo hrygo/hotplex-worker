@@ -33,13 +33,14 @@ func init() {
 type Adapter struct {
 	messaging.PlatformAdapter
 
-	log        *slog.Logger
-	appID      string
-	appSecret  string
-	wsClient   *ws.Client
-	larkClient *lark.Client
-	bridge     *messaging.Bridge
-	botOpenID  string
+	log         *slog.Logger
+	appID       string
+	appSecret   string
+	wsClient    *ws.Client
+	larkClient  *lark.Client
+	bridge      *messaging.Bridge
+	botOpenID   string
+	transcriber Transcriber
 
 	mu          sync.RWMutex
 	dedup       *Dedup
@@ -65,6 +66,10 @@ func (a *Adapter) SetBridge(b *messaging.Bridge) {
 
 func (a *Adapter) SetGate(gate *Gate) {
 	a.gate = gate
+}
+
+func (a *Adapter) SetTranscriber(t Transcriber) {
+	a.transcriber = t
 }
 
 func (a *Adapter) Start(ctx context.Context) error {
@@ -193,7 +198,35 @@ func (a *Adapter) handleMessage(ctx context.Context, event *larkim.P2MessageRece
 	// Download media to local files and build structured prompt.
 	if len(medias) > 0 {
 		var paths []string
+		var transcriptions []string
 		for _, m := range medias {
+			// Audio + STT: try transcription, conditionally skip disk write.
+			if m.Type == "audio" && a.transcriber != nil {
+				data, ext, fetchErr := a.fetchMediaBytes(ctx, m)
+				if fetchErr != nil {
+					a.log.Warn("feishu: audio fetch failed", "key", m.Key, "error", fetchErr)
+					continue
+				}
+				transcription, sttErr := a.transcriber.Transcribe(ctx, data)
+				if sttErr == nil && transcription != "" {
+					transcriptions = append(transcriptions, transcription)
+					// Pure cloud STT: skip disk write entirely.
+					if !a.transcriber.RequiresDisk() {
+						continue
+					}
+				} else if sttErr != nil {
+					a.log.Warn("feishu: stt failed, saving audio to disk", "error", sttErr)
+				}
+				// Local/fallback mode or STT failure: save to disk for the worker.
+				path, saveErr := a.saveMediaBytes(data, m, ext)
+				if saveErr != nil {
+					a.log.Warn("feishu: audio save failed", "error", saveErr)
+					continue
+				}
+				paths = append(paths, path)
+				continue
+			}
+			// Non-audio or no STT: download to disk.
 			path, err := a.downloadMedia(ctx, m)
 			if err != nil {
 				a.log.Warn("feishu: media download failed", "type", m.Type, "key", m.Key, "error", err)
@@ -203,8 +236,8 @@ func (a *Adapter) handleMessage(ctx context.Context, event *larkim.P2MessageRece
 				paths = append(paths, path)
 			}
 		}
-		if len(paths) > 0 {
-			text = BuildMediaPrompt(text, paths, medias)
+		if len(paths) > 0 || len(transcriptions) > 0 {
+			text = BuildMediaPrompt(text, paths, medias, transcriptions)
 		}
 	}
 
@@ -302,6 +335,7 @@ func (a *Adapter) handleTextMessage(ctx context.Context, platformMsgID, channelI
 	conn.replyToMsgID = replyToMsgID
 	conn.platformMsgID = platformMsgID
 	conn.chatType = chatType
+	conn.startedAt = time.Now()
 	conn.mu.Unlock()
 
 	// Typing indicator: add reaction to user's message (non-blocking, failure is non-fatal).
@@ -344,6 +378,15 @@ func (a *Adapter) Close(ctx context.Context) error {
 		a.log.Info("feishu: adapter closing")
 	}
 
+	// Shut down persistent STT subprocess if present.
+	if closer, ok := a.transcriber.(interface {
+		Close(ctx context.Context) error
+	}); ok {
+		if err := closer.Close(ctx); err != nil {
+			a.log.Warn("feishu: transcriber close", "error", err)
+		}
+	}
+
 	a.mu.Lock()
 	for _, conn := range a.activeConns {
 		_ = conn.Close()
@@ -368,6 +411,8 @@ type FeishuConn struct {
 	streamCtrl    *StreamingCardController
 	typingRid     string
 	toolRid       string
+	toolEmoji     string    // current timeline emoji, for dedup
+	startedAt     time.Time // when the user sent the current message
 }
 
 func NewFeishuConn(adapter *Adapter, chatID string) *FeishuConn {
@@ -392,10 +437,16 @@ func (c *FeishuConn) SetTypingReactionID(rid string) {
 func (c *FeishuConn) cycleReaction(ctx context.Context, emoji string) {
 	c.mu.Lock()
 	toolRid := c.toolRid
+	toolEmoji := c.toolEmoji
 	platformMsgID := c.platformMsgID
 	c.mu.Unlock()
 
 	if platformMsgID == "" {
+		return
+	}
+
+	// Dedup: skip API calls if the emoji hasn't changed.
+	if toolEmoji == emoji {
 		return
 	}
 
@@ -408,6 +459,7 @@ func (c *FeishuConn) cycleReaction(ctx context.Context, emoji string) {
 	if rid, err := c.adapter.addReaction(ctx, platformMsgID, emoji); err == nil && rid != "" {
 		c.mu.Lock()
 		c.toolRid = rid
+		c.toolEmoji = emoji
 		c.mu.Unlock()
 	} else if err != nil {
 		c.adapter.log.Debug("feishu: tool reaction failed (non-fatal)", "error", err)
@@ -433,6 +485,7 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		if toolRid != "" {
 			_ = c.adapter.removeReaction(ctx, platformMsgID, toolRid)
 			c.toolRid = ""
+			c.toolEmoji = ""
 		}
 		c.mu.Unlock()
 
@@ -442,15 +495,21 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		return nil
 	}
 
-	// Handle tool_call: remove current reaction, add random tool emoji.
+	// Handle tool_call: update reaction to timeline emoji.
 	if env.Event.Type == events.ToolCall {
-		c.cycleReaction(ctx, randomToolEmoji())
+		c.mu.RLock()
+		elapsed := time.Since(c.startedAt)
+		c.mu.RUnlock()
+		c.cycleReaction(ctx, timelineEmoji(elapsed))
 		return nil
 	}
 
-	// Handle tool_result: remove current reaction, add Done emoji.
+	// Handle tool_result: update reaction to timeline emoji.
 	if env.Event.Type == events.ToolResult {
-		c.cycleReaction(ctx, doneEmoji)
+		c.mu.RLock()
+		elapsed := time.Since(c.startedAt)
+		c.mu.RUnlock()
+		c.cycleReaction(ctx, timelineEmoji(elapsed))
 		return nil
 	}
 
@@ -618,12 +677,12 @@ var mediaExtByType = map[string]string{
 	"sticker": ".gif",
 }
 
-func (a *Adapter) downloadMedia(ctx context.Context, media *MediaInfo) (string, error) {
+// fetchMediaBytes downloads media content to memory without writing to disk.
+func (a *Adapter) fetchMediaBytes(ctx context.Context, media *MediaInfo) ([]byte, string, error) {
 	if a.larkClient == nil || media == nil || media.MessageID == "" || media.Key == "" {
-		return "", fmt.Errorf("feishu: missing lark client, media, messageID, or key")
+		return nil, "", fmt.Errorf("feishu: missing lark client, media, messageID, or key")
 	}
 
-	// Build and execute the download request.
 	req := larkim.NewGetMessageResourceReqBuilder().
 		MessageId(media.MessageID).
 		FileKey(media.Key).
@@ -632,13 +691,12 @@ func (a *Adapter) downloadMedia(ctx context.Context, media *MediaInfo) (string, 
 
 	resp, err := a.larkClient.Im.V1.MessageResource.Get(ctx, req)
 	if err != nil {
-		return "", fmt.Errorf("feishu: download %s: %w", media.Type, err)
+		return nil, "", fmt.Errorf("feishu: download %s: %w", media.Type, err)
 	}
 	if !resp.Success() {
-		return "", fmt.Errorf("feishu: download %s failed: code=%d msg=%s", media.Type, resp.Code, resp.Msg)
+		return nil, "", fmt.Errorf("feishu: download %s failed: code=%d msg=%s", media.Type, resp.Code, resp.Msg)
 	}
 
-	// Determine the output file path and extension.
 	ext := mediaExtByType[media.Type]
 	if resp.FileName != "" {
 		ext = filepath.Ext(resp.FileName)
@@ -646,7 +704,20 @@ func (a *Adapter) downloadMedia(ctx context.Context, media *MediaInfo) (string, 
 		ext = mimeExt(ct)
 	}
 
-	// Build the target directory and file path.
+	data, err := io.ReadAll(resp.File)
+	if err != nil {
+		return nil, "", fmt.Errorf("feishu: read file content: %w", err)
+	}
+	if len(data) > mediaMaxSize {
+		return nil, "", fmt.Errorf("feishu: file too large: %d > %d bytes", len(data), mediaMaxSize)
+	}
+
+	a.log.Debug("feishu: media fetched", "type", media.Type, "key", media.Key, "size", len(data))
+	return data, ext, nil
+}
+
+// saveMediaBytes writes media data to disk and returns the file path.
+func (a *Adapter) saveMediaBytes(data []byte, media *MediaInfo, ext string) (string, error) {
 	mediaDir := "/tmp/hotplex/media/" + media.Type + "s"
 	if err := os.MkdirAll(mediaDir, 0o755); err != nil {
 		return "", fmt.Errorf("feishu: create media dir: %w", err)
@@ -658,20 +729,21 @@ func (a *Adapter) downloadMedia(ctx context.Context, media *MediaInfo) (string, 
 	}
 	filePath := filepath.Join(mediaDir, filename)
 
-	// Write with size guard.
-	data, err := io.ReadAll(resp.File)
-	if err != nil {
-		return "", fmt.Errorf("feishu: read file content: %w", err)
-	}
-	if len(data) > mediaMaxSize {
-		return "", fmt.Errorf("feishu: file too large: %d > %d bytes", len(data), mediaMaxSize)
-	}
 	if err := os.WriteFile(filePath, data, 0o644); err != nil {
 		return "", fmt.Errorf("feishu: write file: %w", err)
 	}
 
-	a.log.Debug("feishu: media downloaded", "type", media.Type, "key", media.Key, "path", filePath, "size", len(data))
+	a.log.Debug("feishu: media saved", "type", media.Type, "key", media.Key, "path", filePath)
 	return filePath, nil
+}
+
+// downloadMedia fetches media and writes to disk. Convenience wrapper.
+func (a *Adapter) downloadMedia(ctx context.Context, media *MediaInfo) (string, error) {
+	data, ext, err := a.fetchMediaBytes(ctx, media)
+	if err != nil {
+		return "", err
+	}
+	return a.saveMediaBytes(data, media, ext)
 }
 
 // mimeExt maps MIME type to common file extension.

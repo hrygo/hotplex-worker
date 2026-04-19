@@ -183,8 +183,8 @@ func convertSticker(rawContent, messageID string) (string, bool, []*MediaInfo) {
 	return "[用户发送了一个表情]", true, []*MediaInfo{{Type: "sticker", Key: s.FileKey, MessageID: messageID}}
 }
 
-// BuildMediaPrompt constructs a worker-friendly prompt with media file paths and clear instructions.
-func BuildMediaPrompt(userText string, paths []string, medias []*MediaInfo) string {
+// BuildMediaPrompt constructs a worker-friendly prompt with media file paths and transcriptions.
+func BuildMediaPrompt(userText string, paths []string, medias []*MediaInfo, transcriptions []string) string {
 	var sb strings.Builder
 
 	// Count media types for natural language description.
@@ -221,12 +221,35 @@ func BuildMediaPrompt(userText string, paths []string, medias []*MediaInfo) stri
 		parts = append(parts, fmt.Sprintf("%d 个表情贴纸", stickerCount))
 	}
 
-	mediaDesc := strings.Join(parts, "、")
-	fmt.Fprintf(&sb, "[用户发送的消息包含 %s，已下载到本地，请使用 Read 工具查看后再回答]\n", mediaDesc)
-	for _, p := range paths {
-		sb.WriteString("- ")
-		sb.WriteString(p)
-		sb.WriteString("\n")
+	// Build header based on whether we have transcriptions, file paths, or both.
+	hasTranscriptions := len(transcriptions) > 0
+	hasPaths := len(paths) > 0
+
+	if hasTranscriptions && !hasPaths {
+		// Transcription only — no files to attach.
+		fmt.Fprintf(&sb, "[用户发送的消息包含 %s，已转文字]\n", strings.Join(parts, "、"))
+		for _, t := range transcriptions {
+			fmt.Fprintf(&sb, "语音内容: %s\n", t)
+		}
+	} else if hasTranscriptions && hasPaths {
+		// Both transcription and file paths available.
+		fmt.Fprintf(&sb, "[用户发送的消息包含 %s，已转文字（音频文件也已保存供参考）]\n", strings.Join(parts, "、"))
+		for _, t := range transcriptions {
+			fmt.Fprintf(&sb, "语音内容: %s\n", t)
+		}
+		for _, p := range paths {
+			sb.WriteString("- ")
+			sb.WriteString(p)
+			sb.WriteString("\n")
+		}
+	} else {
+		// File paths only (no transcription).
+		fmt.Fprintf(&sb, "[用户发送的消息包含 %s，已下载到本地，请使用 Read 工具查看后再回答]\n", strings.Join(parts, "、"))
+		for _, p := range paths {
+			sb.WriteString("- ")
+			sb.WriteString(p)
+			sb.WriteString("\n")
+		}
 	}
 
 	userText = strings.TrimSpace(userText)

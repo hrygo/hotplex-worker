@@ -520,7 +520,7 @@ func TestBuildMediaPrompt(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := BuildMediaPrompt(tt.text, tt.paths, tt.medias)
+			got := BuildMediaPrompt(tt.text, tt.paths, tt.medias, nil)
 			for _, sub := range tt.wantContains {
 				require.Contains(t, got, sub)
 			}

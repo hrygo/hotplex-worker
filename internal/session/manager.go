@@ -205,9 +205,10 @@ func (m *Manager) transitionState(ctx context.Context, ms *managedSession, from,
 		}
 		if ms.worker != nil {
 			metrics.WorkersRunning.WithLabelValues(string(ms.info.WorkerType)).Dec()
+			// Release quota only when worker is still attached (DetachWorker may
+			// have already released it on the bridge cleanup path).
+			m.releaseWorkerQuota(ms)
 		}
-		// Release quota first (safe: releaseWorkerQuota does not lock ms.mu).
-		m.releaseWorkerQuota(ms)
 		// Gracefully terminate the worker process with 5s grace period.
 		// Safe: ms.mu is held by the caller, and worker.Terminate() does not
 		// acquire any session manager locks (it uses syscall.Kill only).
