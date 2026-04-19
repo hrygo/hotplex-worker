@@ -2,17 +2,18 @@
 type: spec
 tags: [project/HotPlex, worker/stdio, worker/claudecode, messaging, gateway]
 date: 2026-04-19
-status: draft
+status: verified
 progress: 0
 priority: high
-estimated_hours: 12
+estimated_hours: 16
+verification: scripts/test_cc_context.py 10/10 passed 2026-04-19
 ---
 
 # Worker Session Control Spec
 
 ## 概述
 
-新增 Worker **stdio 直达**控制能力：context 查询、原地 compaction、原地清空。
+新增 Worker **stdio 直达**控制能力：10 项已验证命令（4 项 Control Request + 6 项 Slash Command Passthrough）。
 利用 Claude Code `--output-format stream-json` stdio 协议的原生能力，
 **绕过 Gateway Session Manager 状态机**，直接通过 stdin 与 Worker 子进程交互。
 
@@ -49,14 +50,22 @@ estimated_hours: 12
 
 ### 验证基础
 
-通过 `scripts/test_cc_context.py` 验证了三项能力在 Claude Code stream-json 协议中可用：
+通过 `scripts/test_cc_context.py` 验证了 **10/10** 命令在 Claude Code stream-json 协议中全部可用：
 
 ```
-Context Usage: 76,282 / 200,000 tokens (38%)
-Categories: System prompt (603), Tools (4,335), Memory (3,351),
-            Skills (9,073), Messages (55,228), Autocompact buffer (33,000)
-/compact → 原地执行成功，无需重启进程
-/clear   → 同理可用（验证脚本 skip）
+=== Control Requests (4/4 PASS) ===
+get_context_usage  → 76,284 / 200,000 tokens (38%), 8 categories, model confirmed
+mcp_status         → 12 MCP servers, all connected
+set_model          → success, model changed
+set_permission_mode → success, mode accepted
+
+=== User Message Passthrough (6/6 PASS) ===
+/compact  → context reduced 38% → 18%, 原地执行
+/clear    → context reduced 38% → 26%, 对话清空
+/model    → model changed, verifiable via get_context_usage
+/effort   → accepted, no structured output
+/rewind   → conversation state rewound (filesystem not affected)
+/commit   → triggers full commit workflow (git status → diff → commit)
 ```
 
 ---
@@ -74,7 +83,8 @@ Categories: System prompt (603), Tools (4,335), Memory (3,351),
 │                             → SM.Transition()                │  ← 现有
 │                             → Worker.Terminate()             │
 │                                                              │
-│  "/compact"  "/clear"  "/context"                            │
+│  "/compact"  "/clear"  "/model"  "/effort"                   │
+│  "/rewind"   "/commit"  "/context"  "/mcp"  "/perm"          │
 │                    →  ParseWorkerCommand()   ← 新增          │
 │                         → handleWorkerCommand()              │
 │                             → Worker 直接 stdin 交互         │  ← 本 spec
@@ -82,7 +92,21 @@ Categories: System prompt (603), Tools (4,335), Memory (3,351),
 └──────────────────────────────────────────────────────────────┘
 ```
 
-### 三项能力的数据流
+### 两类命令的 stdin 协议路径
+
+```
+路径 A: User Message Passthrough（6 项）
+  stdin ← {"type":"user","message":{"role":"user","content":"/compact"}}
+  stdout → assistant / result / system 事件流（走已有 readOutput 管道）
+  Worker 层：零改动，复用 Input()
+
+路径 B: Control Request（4 项）
+  stdin ← {"type":"control_request","request_id":"ctx_xxx","request":{"subtype":"get_context_usage"}}
+  stdout → {"type":"control_response","response":{"request_id":"ctx_xxx","subtype":"success",...}}
+  Worker 层：需 SendControlRequest() + pendingRequests + readOutput 扩展
+```
+
+### 数据流总览
 
 ```
                     ┌─ compact / clear ─┐
@@ -113,11 +137,25 @@ Messaging ────────► │                   │ ───► Wor
 
 ### 能力矩阵
 
-| 命令 | Slash 触发 | 自然语言 | stdin 协议 | 返回方式 | 进程影响 |
+#### Control Requests（路径 B — 结构化请求/响应）
+
+| 命令 | Slash 触发 | 自然语言 | CC subtype | 返回方式 | 进程影响 |
 |------|-----------|---------|-----------|---------|---------|
-| compact | `/compact` | `压缩` `精简` | user message `/compact` | assistant + result | 原地 |
-| clear | `/clear` | `清空` `清屏` | user message `/clear` | system/init | 原地 |
-| context | `/context` | `上下文` `容量` `token` | control_request `get_context_usage` | control_response | 只读 |
+| context_usage | `/context` | `上下文` `容量` `token` | `get_context_usage` | control_response | 只读 |
+| mcp_status | `/mcp` | `MCP状态` `工具状态` | `mcp_status` | control_response | 只读 |
+| set_model | `/model <name>` | `切换模型` | `set_model` | control_response | 原地 |
+| set_permission | `/perm <mode>` | `权限模式` | `set_permission_mode` | control_response | 原地 |
+
+#### User Message Passthrough（路径 A — slash command 透传）
+
+| 命令 | Slash 触发 | 自然语言 | stdin 内容 | 返回方式 | 进程影响 |
+|------|-----------|---------|-----------|---------|---------|
+| compact | `/compact` | `压缩` `精简` | `/compact` | assistant + result | 原地 |
+| clear | `/clear` | `清空` `清屏` | `/clear` | system/init | 原地 |
+| model | `/model <name>` | — | `/model <name>` | system/init | 原地 |
+| effort | `/effort <level>` | — | `/effort <level>` | result | 原地 |
+| rewind | `/rewind` | `回退` `撤销` | `/rewind` | result | 原地 |
+| commit | `/commit` | `提交` | `/commit` | assistant + tool_use | 原地 |
 
 ---
 
@@ -133,10 +171,12 @@ Messaging ────────► │                   │ ───► Wor
 const (
     // ... existing ...
     ContextUsage EventType = "context_usage"  // Worker context usage report
+    MCPStatus    EventType = "mcp_status"     // Worker MCP server status
+    WorkerCmd    EventType = "worker_command"  // Gateway → Worker stdio command trigger
 )
 ```
 
-**不新增 ControlAction**。compact/clear/context 不是生命周期控制，不走 ControlData。
+**不新增 ControlAction**。本 spec 的所有命令不是生命周期控制，不走 ControlData。
 
 #### 1.2 ContextUsageData 结构
 
@@ -186,10 +226,30 @@ type ContextSkillInfo struct {
 type WorkerStdioCommand string
 
 const (
-    StdioCompact      WorkerStdioCommand = "compact"       // In-place context compaction
-    StdioClear        WorkerStdioCommand = "clear"          // In-place conversation clear
-    StdioContextUsage WorkerStdioCommand = "context_usage"  // Query context usage (read-only)
+    // Control Requests (路径 B — structured request/response)
+    StdioContextUsage WorkerStdioCommand = "context_usage"    // Query context tokens (read-only)
+    StdioMCPStatus    WorkerStdioCommand = "mcp_status"       // Query MCP server status (read-only)
+    StdioSetModel     WorkerStdioCommand = "set_model"        // Change model
+    StdioSetPermMode  WorkerStdioCommand = "set_permission"   // Change permission mode
+
+    // User Message Passthrough (路径 A — slash command forwarded as user message)
+    StdioCompact WorkerStdioCommand = "compact"  // In-place context compaction
+    StdioClear   WorkerStdioCommand = "clear"    // In-place conversation clear
+    StdioModel   WorkerStdioCommand = "model"    // Switch model via /model command
+    StdioEffort  WorkerStdioCommand = "effort"   // Set reasoning effort level
+    StdioRewind  WorkerStdioCommand = "rewind"   // Rewind last exchange
+    StdioCommit  WorkerStdioCommand = "commit"   // Trigger git commit workflow
 )
+
+// IsPassthrough returns true if the command is sent as a user message (路径 A).
+func (c WorkerStdioCommand) IsPassthrough() bool {
+    switch c {
+    case StdioCompact, StdioClear, StdioModel, StdioEffort, StdioRewind, StdioCommit:
+        return true
+    default:
+        return false
+    }
+}
 ```
 
 #### 1.4 WorkerCommandData 事件载荷
@@ -201,7 +261,22 @@ const (
 // Carried in AEP Event.Data when a client requests a worker-level operation.
 type WorkerCommandData struct {
     Command WorkerStdioCommand `json:"command"`
-    Args    string             `json:"args,omitempty"` // e.g. compact instructions
+    Args    string             `json:"args,omitempty"`    // e.g. model name, effort level
+    Extra   map[string]any     `json:"extra,omitempty"`   // e.g. {"mode": "bypassPermissions"}
+}
+```
+
+#### 1.5 MCPStatusData 结构
+
+```go
+// MCPStatusData carries MCP server connection status from a worker.
+type MCPStatusData struct {
+    Servers []MCPServerInfo `json:"servers"`
+}
+
+type MCPServerInfo struct {
+    Name   string `json:"name"`
+    Status string `json:"status"` // "connected", "disconnected", "error"
 }
 ```
 
@@ -220,24 +295,44 @@ type WorkerCommandData struct {
 type WorkerCommandResult struct {
     Command events.WorkerStdioCommand
     Label   string
+    Args    string            // captured args (e.g. model name from "/model claude-sonnet-4")
+    Extra   map[string]any    // structured args
 }
 
 // workerSlashMap maps slash commands to worker stdio commands.
+// Prefix-only matches: "/model", "/effort", "/perm" capture remaining text as Args.
 var workerSlashMap = map[string]WorkerCommandResult{
+    // Control Requests
+    "/context": {events.StdioContextUsage, "context"},
+    "/mcp":     {events.StdioMCPStatus, "mcp_status"},
+    "/model":   {events.StdioSetModel, "model"},    // args: model name
+    "/perm":    {events.StdioSetPermMode, "perm"},   // args: mode name
+    // User Message Passthrough
     "/compact": {events.StdioCompact, "compact"},
     "/clear":   {events.StdioClear, "clear"},
-    "/context": {events.StdioContextUsage, "context"},
+    "/effort":  {events.StdioEffort, "effort"},      // args: level
+    "/rewind":  {events.StdioRewind, "rewind"},
+    "/commit":  {events.StdioCommit, "commit"},
 }
 
 // workerNLMap maps natural language triggers to worker stdio commands.
 var workerNLMap = map[string]WorkerCommandResult{
-    "压缩":   {events.StdioCompact, "compact"},
-    "精简":   {events.StdioCompact, "compact"},
-    "清空":   {events.StdioClear, "clear"},
-    "清屏":   {events.StdioClear, "clear"},
+    // Control Requests
     "上下文": {events.StdioContextUsage, "context"},
     "容量":   {events.StdioContextUsage, "context"},
     "token":  {events.StdioContextUsage, "context"},
+    "MCP状态": {events.StdioMCPStatus, "mcp_status"},
+    "工具状态": {events.StdioMCPStatus, "mcp_status"},
+    "切换模型": {events.StdioSetModel, "model"},
+    "权限模式": {events.StdioSetPermMode, "perm"},
+    // User Message Passthrough
+    "压缩": {events.StdioCompact, "compact"},
+    "精简": {events.StdioCompact, "compact"},
+    "清空": {events.StdioClear, "clear"},
+    "清屏": {events.StdioClear, "clear"},
+    "回退": {events.StdioRewind, "rewind"},
+    "撤销": {events.StdioRewind, "rewind"},
+    "提交": {events.StdioCommit, "commit"},
 }
 
 // ParseWorkerCommand checks whether text is a worker stdio command.
@@ -277,14 +372,15 @@ func (h *Handler) handleWorkerCommand(
     env *events.Envelope,
     cmd events.WorkerStdioCommand,
     args string,
+    extra map[string]any,
 ) error {
     info, err := h.validateOwner(ctx, env)
     if err != nil {
         return err
     }
-    if info.State != events.StateRunning {
+    if !info.State.IsActive() {
         return h.sendErrorf(ctx, env, events.ErrCodeInvalidState,
-            "worker command requires running session, current: %s", info.State)
+            "worker command requires active session, current: %s", info.State)
     }
 
     w := h.sm.GetWorker(env.SessionID)
@@ -292,42 +388,81 @@ func (h *Handler) handleWorkerCommand(
         return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "no worker attached")
     }
 
+    // Path A: User Message Passthrough — forward slash command as user message
+    if cmd.IsPassthrough() {
+        content := "/" + string(cmd)
+        if args != "" {
+            content += " " + args
+        }
+        if err := w.Input(ctx, content, nil); err != nil {
+            return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "%s: %v", cmd, err)
+        }
+        return nil
+    }
+
+    // Path B: Control Request — structured request/response via ControlRequester interface
+    type ControlRequester interface {
+        SendControlRequest(ctx context.Context, subtype string, body map[string]any) (map[string]any, error)
+    }
+    cr, ok := w.(ControlRequester)
+    if !ok {
+        return h.sendErrorf(ctx, env, events.ErrCodeNotSupported,
+            "worker type does not support control requests")
+    }
+
     switch cmd {
-    case events.StdioCompact:
-        // Passthrough: send "/compact" as user message to stdin
-        if err := w.Input(ctx, "/compact", nil); err != nil {
-            return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "compact: %v", err)
-        }
-        // Result flows back through normal assistant → result pipeline
-
-    case events.StdioClear:
-        // Passthrough: send "/clear" as user message to stdin
-        if err := w.Input(ctx, "/clear", nil); err != nil {
-            return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "clear: %v", err)
-        }
-        // CC emits system/init, normal event pipeline handles it
-
     case events.StdioContextUsage:
-        // Control request: query context via CC's get_context_usage protocol
-        type ContextQuerier interface {
-            QueryContextUsage(ctx context.Context) (*events.ContextUsageData, error)
-        }
-        cq, ok := w.(ContextQuerier)
-        if !ok {
-            return h.sendErrorf(ctx, env, events.ErrCodeNotSupported,
-                "worker type %s does not support context query", w.Type())
-        }
-        data, err := cq.QueryContextUsage(ctx)
+        resp, err := cr.SendControlRequest(ctx, "get_context_usage", nil)
         if err != nil {
             return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "context query: %v", err)
         }
-        // Broadcast result to session subscribers
+        data := mapContextUsageResponse(resp)
         respEnv := events.NewEnvelope(
             aep.NewID(), env.SessionID,
             h.hub.NextSeq(env.SessionID),
             events.ContextUsage, data,
         )
         return h.hub.SendToSession(ctx, respEnv)
+
+    case events.StdioMCPStatus:
+        resp, err := cr.SendControlRequest(ctx, "mcp_status", nil)
+        if err != nil {
+            return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "mcp status: %v", err)
+        }
+        data := mapMCPStatusResponse(resp)
+        respEnv := events.NewEnvelope(
+            aep.NewID(), env.SessionID,
+            h.hub.NextSeq(env.SessionID),
+            events.MCPStatus, data,
+        )
+        return h.hub.SendToSession(ctx, respEnv)
+
+    case events.StdioSetModel:
+        modelName := args
+        if modelName == "" {
+            modelName, _ = extra["model"].(string)
+        }
+        if modelName == "" {
+            return h.sendErrorf(ctx, env, events.ErrCodeInvalidMessage, "model name required")
+        }
+        _, err := cr.SendControlRequest(ctx, "set_model", map[string]any{"model": modelName})
+        if err != nil {
+            return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "set model: %v", err)
+        }
+        // Confirmation flows through normal event pipeline
+
+    case events.StdioSetPermMode:
+        mode := args
+        if mode == "" {
+            mode, _ = extra["mode"].(string)
+        }
+        if mode == "" {
+            return h.sendErrorf(ctx, env, events.ErrCodeInvalidMessage, "permission mode required")
+        }
+        _, err := cr.SendControlRequest(ctx, "set_permission_mode", map[string]any{"mode": mode})
+        if err != nil {
+            return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "set permission: %v", err)
+        }
 
     default:
         return h.sendErrorf(ctx, env, events.ErrCodeProtocolViolation,
@@ -366,24 +501,18 @@ case events.WorkerCommand:
 
 ### Phase 4: Worker 层实现
 
-#### 4.1 Claude Code Worker — ContextQuerier
+#### 4.1 Claude Code Worker — ControlRequester
 
 文件：`internal/worker/claudecode/worker.go`
 
 ```go
-// QueryContextUsage sends get_context_usage control request to Claude Code
-// and returns the parsed response. Implements ContextQuerier interface.
-func (w *Worker) QueryContextUsage(ctx context.Context) (*events.ContextUsageData, error) {
+// SendControlRequest sends a control_request to Claude Code via stdin
+// and returns the parsed response. Implements ControlRequester interface.
+func (w *Worker) SendControlRequest(ctx context.Context, subtype string, body map[string]any) (map[string]any, error) {
     if w.control == nil {
         return nil, fmt.Errorf("claudecode: control handler not initialized")
     }
-
-    resp, err := w.control.SendControlRequest(ctx, "get_context_usage", nil)
-    if err != nil {
-        return nil, fmt.Errorf("claudecode: context query: %w", err)
-    }
-
-    return mapContextUsageResponse(resp), nil
+    return w.control.SendControlRequest(ctx, subtype, body)
 }
 ```
 
@@ -519,12 +648,13 @@ func strVal(v any) string   { s, _ := v.(string); return s }
 func sliceVal(v any) []any  { s, _ := v.([]any); return s }
 ```
 
-#### 4.5 compact / clear — 无需 Worker 层改动
+#### 4.5 Passthrough 命令 — 无需 Worker 层改动
 
-`compact` 和 `clear` 通过 `worker.Input()` 发送，走的是已有的 `SendUserMessage` 路径。
+所有 6 项 passthrough 命令 (`/compact`, `/clear`, `/model`, `/effort`, `/rewind`, `/commit`)
+通过 `worker.Input()` 发送，走的是已有的 `SendUserMessage` 路径。
 Claude Code 将其解析为 slash command 并原地执行。结果通过正常的 `assistant` → `result` 流式管道返回。
 
-Worker 层**零改动**即可支持 compact 和 clear。
+Worker 层**零改动**即可支持所有 passthrough 命令。
 
 ---
 
@@ -533,32 +663,28 @@ Worker 层**零改动**即可支持 compact 和 clear。
 #### 5.1 接口隔离
 
 ```go
-// ContextQuerier is implemented by workers that support context usage queries.
+// ControlRequester is implemented by workers that support CC control requests.
 // Unsupported workers fail the type assertion with ErrCodeNotSupported.
-type ContextQuerier interface {
-    QueryContextUsage(ctx context.Context) (*events.ContextUsageData, error)
+type ControlRequester interface {
+    SendControlRequest(ctx context.Context, subtype string, body map[string]any) (map[string]any, error)
 }
 
-// StdioCommander is implemented by workers that support in-place commands.
-type StdioCommander interface {
-    Input(ctx context.Context, content string, metadata map[string]any) error
-    // Input already exists on the Worker interface — no new method needed
-}
+// Passthrough commands use the existing Worker.Input() interface — no new method needed.
 ```
 
 #### 5.2 Worker 能力矩阵
 
-| Worker | compact | clear | context_usage | 备注 |
-|--------|---------|-------|---------------|------|
-| claudecode | stdin passthrough | stdin passthrough | control request | 完整支持 |
-| opencodecli | stdin passthrough | stdin passthrough | N/A | 取决于 opencode 协议 |
-| opencodeserver | N/A | N/A | N/A | HTTP 协议 |
-| acpx | N/A | N/A | N/A | stdio 协议不同 |
-| pi | N/A | N/A | N/A | 私有协议 |
-| noop | N/A | N/A | N/A | 测试用 |
+| Worker | Passthrough (6) | Control Requests (4) | 备注 |
+|--------|----------------|----------------------|------|
+| claudecode | stdin passthrough | SendControlRequest | 完整支持 (10/10) |
+| opencodecli | stdin passthrough | N/A (协议不同) | 取决于 opencode 协议 |
+| opencodeserver | N/A | N/A | HTTP 协议 |
+| acpx | N/A | N/A | stdio 协议不同 |
+| pi | N/A | N/A | 私有协议 |
+| noop | N/A | N/A | 测试用 |
 
-compact/clear 走 `worker.Input()`（Worker interface 已有），理论上支持所有 stdio worker。
-context_usage 需要各 worker 独立实现 `ContextQuerier` 接口。
+Passthrough 命令走 `worker.Input()`（Worker interface 已有），理论上支持所有 stdio worker。
+Control Requests 需要各 worker 独立实现 `ControlRequester` 接口。
 
 ---
 
@@ -601,10 +727,31 @@ context_usage 需要各 worker 独立实现 `ContextQuerier` 接口。
 • MCP: 124 | Agents: 157 | Skills: 147
 ```
 
-#### 6.3 Compact/Clear 反馈
+#### 6.3 MCP Status Card (Feishu)
+
+```
+┌──────────────────────────────────┐
+│  🔌 MCP Server Status           │
+│                                  │
+│  ✅ chrome-devtools     connected│
+│  ✅ claude-mem          connected│
+│  ✅ context7            connected│
+│  ✅ playwright          connected│
+│  ✅ slack               connected│
+│  ... and 7 more                  │
+│                                  │
+│  12 servers total                │
+└──────────────────────────────────┘
+```
+
+#### 6.4 Passthrough 命令反馈
 
 - **compact**：CC 自带 assistant summary 回复，走正常流式管道，无需额外渲染
 - **clear**：CC 发出 `system/init`，平台侧发简短确认消息
+- **model**：CC 输出 `<local-command-stdout>Set model to xxx</local-command-stdout>`，解析后确认
+- **effort**：同 model，CC 输出确认消息
+- **rewind**：CC 原地回退，result 正常返回
+- **commit**：CC 触发完整 commit workflow（git status → diff → commit），走正常 assistant 管道
 
 ---
 
@@ -612,15 +759,15 @@ context_usage 需要各 worker 独立实现 `ContextQuerier` 接口。
 
 | 文件 | 改动类型 | 说明 |
 |------|---------|------|
-| `pkg/events/events.go` | 修改 | +ContextUsage EventType, +ContextUsageData struct, +WorkerStdioCommand type, +WorkerCommandData struct |
-| `internal/messaging/control_command.go` | 修改 | +ParseWorkerCommand, +WorkerCommandResult, +映射表 |
-| `internal/gateway/handler.go` | 修改 | +handleWorkerCommand, +Handle() 新 case |
+| `pkg/events/events.go` | 修改 | +ContextUsage/MCPStatus/WorkerCmd EventType, +ContextUsageData/MCPStatusData struct, +WorkerStdioCommand type (10 consts) +IsPassthrough(), +WorkerCommandData struct |
+| `internal/messaging/control_command.go` | 修改 | +ParseWorkerCommand, +WorkerCommandResult, +10 项 slash 映射 +14 项 NL 映射 |
+| `internal/gateway/handler.go` | 修改 | +handleWorkerCommand (路径 A + 路径 B), +Handle() WorkerCmd case |
 | `internal/worker/claudecode/control.go` | 修改 | +SendControlRequest, +DeliverResponse, +pendingRequests |
-| `internal/worker/claudecode/worker.go` | 修改 | +QueryContextUsage, +readOutput 扩展 control_response 路由 |
-| `internal/worker/claudecode/mapper.go` | 修改 | +mapContextUsageResponse |
-| `internal/messaging/feishu/adapter.go` | 修改 | +context_usage 事件渲染 |
-| `internal/messaging/slack/adapter.go` | 修改 | +context_usage 事件渲染 |
-| `scripts/test_cc_context.py` | 已存在 | 验证脚本 |
+| `internal/worker/claudecode/worker.go` | 修改 | +SendControlRequest (delegate to control), +readOutput 扩展 control_response 路由 |
+| `internal/worker/claudecode/mapper.go` | 修改 | +mapContextUsageResponse, +mapMCPStatusResponse |
+| `internal/messaging/feishu/adapter.go` | 修改 | +context_usage/mcp_status 事件渲染 |
+| `internal/messaging/slack/adapter.go` | 修改 | +context_usage/mcp_status 事件渲染 |
+| `scripts/test_cc_context.py` | 已存在 | 10/10 验证通过 |
 
 ---
 
@@ -630,14 +777,17 @@ context_usage 需要各 worker 独立实现 `ContextQuerier` 接口。
 
 | 测试 | 文件 | 覆盖 |
 |------|------|------|
-| ParseWorkerCommand 映射 | `control_command_test.go` | `/compact`, `压缩`, `/context`, `上下文`, `token` |
+| ParseWorkerCommand slash 映射 (10 项) | `control_command_test.go` | `/compact`, `/clear`, `/model`, `/effort`, `/rewind`, `/commit`, `/context`, `/mcp`, `/model sonnet`, `/perm bypass` |
+| ParseWorkerCommand NL 映射 | `control_command_test.go` | `压缩`, `清空`, `上下文`, `回退`, `提交` 等 |
 | ParseWorkerCommand 与 ParseControlCommand 不冲突 | `control_command_test.go` | `/reset` 走 control, `/compact` 走 worker |
-| handleWorkerCommand compact | `handler_test.go` | mock worker Input 验证收到 `/compact` |
-| handleWorkerCommand context | `handler_test.go` | mock ContextQuerier, 验证 broadcast ContextUsage |
-| handleWorkerCommand 非 running 状态 | `handler_test.go` | 返回 ErrCodeInvalidState |
-| QueryContextUsage | `worker_test.go` | mock control SendControlRequest → DeliverResponse |
+| handleWorkerCommand passthrough | `handler_test.go` | mock worker Input 验证收到 `/compact`, `/model xxx` |
+| handleWorkerCommand control_request | `handler_test.go` | mock ControlRequester, 验证 context_usage/mcp_status broadcast |
+| handleWorkerCommand 非 active 状态 | `handler_test.go` | 返回 ErrCodeInvalidState |
+| SendControlRequest | `worker_test.go` | mock stdin → DeliverResponse → pending map |
 | mapContextUsageResponse | `mapper_test.go` | CC JSON → ContextUsageData 全字段 |
+| mapMCPStatusResponse | `mapper_test.go` | CC JSON → MCPStatusData 全字段 |
 | DeliverResponse 路由 | `control_test.go` | pending request_id 匹配 |
+| IsPassthrough | `events_test.go` | passthrough 返回 true, control request 返回 false |
 
 ### 集成测试
 
@@ -645,6 +795,9 @@ context_usage 需要各 worker 独立实现 `ContextQuerier` 接口。
 |------|------|
 | E2E compact | CC worker → handleWorkerCommand(compact) → 验证 context 下降 |
 | E2E context | CC worker → handleWorkerCommand(context) → 验证返回完整结构 |
+| E2E mcp_status | CC worker → handleWorkerCommand(mcp) → 验证 server 列表 |
+| E2E set_model | CC worker → handleWorkerCommand(model sonnet) → 验证 model 变更 |
+| E2E effort | CC worker → handleWorkerCommand(effort high) → 验证命令通过 |
 | 非 CC worker | noop worker → handleWorkerCommand(context) → 验证 ErrCodeNotSupported |
 | compact 后 context | compact → context query → 验证 totalTokens 下降 |
 
@@ -653,14 +806,16 @@ context_usage 需要各 worker 独立实现 `ContextQuerier` 接口。
 ## 实施顺序
 
 ```
-Phase 1  类型定义（pkg/events）     ← 无外部依赖
-Phase 2  Messaging 解析（control_command.go） ← 无外部依赖
-Phase 3  Worker 层（claudecode/）    ← 依赖 Phase 1
-Phase 4  Gateway Handler            ← 依赖 Phase 1 + 3
-Phase 5  Messaging 渲染             ← 依赖 Phase 4
+Phase 1  类型定义（pkg/events）                       ← 无外部依赖
+Phase 2  Messaging 解析（control_command.go）          ← 无外部依赖
+Phase 3  Worker 层 ControlRequester（claudecode/）     ← 依赖 Phase 1
+Phase 4  Worker 层 readOutput 扩展（claudecode/）      ← 依赖 Phase 3
+Phase 5  Gateway Handler + handleWorkerCommand         ← 依赖 Phase 1 + 4
+Phase 6  Messaging 渲染（feishu/slack adapter.go）     ← 依赖 Phase 5
 ```
 
-Phase 1-2 无依赖可先行。Phase 3 和 4 顺序依赖。Phase 5 最后。
+Phase 1-2 无依赖可先行。Phase 3-4 是 Worker 层改动。Phase 5 是 Gateway 集成。Phase 6 是 UI 渲染。
+Passthrough 命令（6 项）在 Phase 5 后即可工作。Control Requests（4 项）需 Phase 3-4 完成。
 
 ---
 
@@ -668,19 +823,23 @@ Phase 1-2 无依赖可先行。Phase 3 和 4 顺序依赖。Phase 5 最后。
 
 | 风险 | 概率 | 影响 | 缓解 |
 |------|------|------|------|
-| CC idle 时 `get_context_usage` 不响应 | 中 | 挂起 | 查询前检查 state==running；30s ctx 超时 |
+| CC idle 时 `get_context_usage` 不响应 | 中 | 挂起 | 验证确认 idle 时也可查询；30s ctx 超时兜底 |
 | `/compact` 触发多轮 API 调用 | 低 | 成本 | CC 内部保护，compact 只在有足够上下文时触发 summary |
 | compact/clear 被识别为普通用户消息泄露到对话 | 低 | UX | CC 内部 parseSlashCommand 会识别，不产生普通回复 |
 | pendingRequests map 泄漏 | 低 | 内存泄漏 | ctx cancel 时清理；DeliverResponse 后 delete |
 | 多 Worker 并发查询 | 低 | 响应串路 | request_id 前缀 `ctx_` + UUID，per-request channel |
+| `/commit` 在自动化上下文误触发 | 中 | git 污染 | 谨慎暴露给消息平台，或需二次确认 |
+| `/rewind` 只回退对话不回退文件 | 低 | 用户困惑 | 渲染时明确提示 rewind 范围 |
 
 ---
 
 ## 未来扩展
 
-1. **自动 context 监控**：Bridge 层定期 QueryContextUsage，超过阈值自动 compact 或通知用户
+1. **自动 context 监控**：Bridge 层定期 SendControlRequest("get_context_usage")，超过阈值自动 compact 或通知用户
 2. **Context budget**：session 配置 `max_context_pct`，到达阈值自动触发 compact
 3. **Done 事件附加 context_pct**：每轮结束查询 context usage，注入 DoneData.Stats
-4. **多 Worker 支持**：opencodecli 实现 ContextQuerier（如果协议支持）
-5. **Admin API 暴露**：`GET /api/sessions/:id/context` 调用 QueryContextUsage
-6. **更多 CC slash command**：`/model`、`/cost` 等 CC 原生 slash command 均可通过此 passthrough 机制支持
+4. **多 Worker 支持**：opencodecli 实现 ControlRequester 接口（如果协议支持）
+5. **Admin API 暴露**：`GET /api/sessions/:id/context` 调用 SendControlRequest
+6. **更多 CC slash command**：CC 原生 slash command（如 `/cost`、`/bug`、`/doctor`、`/help`）均可通过此 passthrough 机制支持
+7. **`/commit` 安全限制**：对 commit 类命令增加二次确认或限制特定场景
+8. **权限模式动态切换**：结合 platform 用户角色，自动 set_permission_mode
