@@ -126,6 +126,12 @@ coverage:
 	@TOTAL=$$(go tool cover -func=coverage.out | tail -1 | grep -oP '\d+\.\d+') ; \
 		echo "  $(BOLD)Total: $${TOTAL}%$(RESET)"
 
+test-slack-e2e:
+	@echo "$(CYAN)Running Slack semi-automated E2E tests...$(RESET)"
+	@test -n "$$SLACK_BOT_TOKEN" || (echo "  $(RED)SLACK_BOT_TOKEN required$(RESET)"; exit 1)
+	@test -n "$$SLACK_APP_TOKEN" || (echo "  $(RED)SLACK_APP_TOKEN required$(RESET)"; exit 1)
+	@go test -v -tags=slack_e2e -timeout 30m ./internal/messaging/slack/...
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Quality
 # ─────────────────────────────────────────────────────────────────────────────

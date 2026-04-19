@@ -902,3 +902,63 @@ func TestE2E_ExtractText_MixedBlocks(t *testing.T) {
 	require.Contains(t, text, "from context", "ContextBlock should contribute text")
 	require.Contains(t, text, "from rich", "RichTextBlock should contribute text")
 }
+
+// ---------------------------------------------------------------------------
+// E2E: AC 4.1-12 — Gate rejected = no message sent to user (debug log only)
+// ---------------------------------------------------------------------------
+
+func TestE2E_GateRejected_NoMessageToUser(t *testing.T) {
+	t.Parallel()
+	a, calls := newAdapterWithCapture(t)
+	a.gate = NewGate("disabled", "open", false, nil)
+
+	// DM rejected by disabled policy — should not reach HandleTextMessage
+	a.handleEventsAPI(context.Background(), makeDMEvent("U_ALICE", "hello"))
+	require.Empty(t, *calls, "gate rejection should not trigger HandleTextMessage")
+}
+
+// ---------------------------------------------------------------------------
+// E2E: AC 4.1-14 — Block Kit @mention detected by gate
+// ---------------------------------------------------------------------------
+
+func TestE2E_BlockKitMentionDetected(t *testing.T) {
+	t.Parallel()
+	a, calls := newAdapterWithCapture(t)
+	a.gate = NewGate("open", "open", true, nil)
+
+	// Message with @bot mention inside a SectionBlock, text is empty
+	evt := makeGroupEvent("C123", "U_ALICE", "")
+	msg := evt.InnerEvent.Data.(*slackevents.MessageEvent)
+	msg.Text = ""
+	msg.Blocks = slack.Blocks{BlockSet: []slack.Block{
+		slack.NewSectionBlock(
+			slack.NewTextBlockObject("mrkdwn", "Hey <@B_TEST> can you help?", false, false),
+			nil, nil,
+		),
+	}}
+	msg.ClientMsgID = "cmid_blockkit_mention"
+
+	a.handleEventsAPI(context.Background(), evt)
+	require.Len(t, *calls, 1, "Block Kit mention should pass require_mention gate")
+}
+
+// ---------------------------------------------------------------------------
+// E2E: AC 5.4-4 — Large file still classified but download will reject
+// ---------------------------------------------------------------------------
+
+func TestE2E_ConvertMessage_LargeFileClassified(t *testing.T) {
+	t.Parallel()
+	a := newTestAdapter(t)
+
+	evt := slackevents.MessageEvent{Text: "see this"}
+	evt.Message = &slack.Msg{}
+	evt.Message.Files = []slack.File{
+		{ID: "F1", Name: "huge.pdf", Filetype: "pdf", Mimetype: "application/pdf", Size: 25 * 1024 * 1024},
+	}
+
+	_, ok, media := a.ConvertMessage(evt)
+	require.True(t, ok)
+	require.Len(t, media, 1)
+	require.Equal(t, "document", media[0].Type)
+	// downloadMedia will reject on size, but classification works
+}
