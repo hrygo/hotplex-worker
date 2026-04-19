@@ -725,3 +725,180 @@ func TestE2E_RateLimiter_PerChannel(t *testing.T) {
 	require.True(t, rl.Allow("C2"))
 	require.True(t, rl.Allow("C3"))
 }
+
+// ---------------------------------------------------------------------------
+// E2E: AC 2.1-6 — AuthTest failure returns error on Start
+// ---------------------------------------------------------------------------
+
+func TestE2E_AuthTestFailureReturnsError(t *testing.T) {
+	t.Parallel()
+
+	a := &Adapter{
+		log:           slog.Default(),
+		botToken:      "xoxb-invalid",
+		appToken:      "xapp-invalid",
+		activeStreams: make(map[string]*NativeStreamingWriter),
+		activeConns:   make(map[string]*SlackConn),
+	}
+
+	err := a.Start(context.Background())
+	require.Error(t, err, "invalid tokens should cause Start to fail")
+	require.Contains(t, err.Error(), "slack: auth test")
+}
+
+// ---------------------------------------------------------------------------
+// E2E: AC 2.2-5 — Dedup FIFO eviction at max capacity
+// ---------------------------------------------------------------------------
+
+func TestE2E_DedupFIFOEviction(t *testing.T) {
+	t.Parallel()
+
+	// Small capacity to trigger eviction
+	d := NewDedup(3, 30*time.Minute)
+	t.Cleanup(d.Close)
+
+	// Fill to capacity
+	require.True(t, d.TryRecord("msg1"), "msg1 should be recorded")
+	require.True(t, d.TryRecord("msg2"), "msg2 should be recorded")
+	require.True(t, d.TryRecord("msg3"), "msg3 should be recorded")
+
+	// Adding msg4 evicts msg1 (FIFO)
+	require.True(t, d.TryRecord("msg4"), "msg4 should be recorded")
+
+	// msg1 is evicted, so it can be recorded again
+	require.True(t, d.TryRecord("msg1"), "msg1 should be re-recordable after eviction")
+
+	// Adding msg5 evicts msg2 (next in FIFO order)
+	require.True(t, d.TryRecord("msg5"), "msg5 should be recorded")
+
+	// msg2 is now evicted
+	require.True(t, d.TryRecord("msg2"), "msg2 should be re-recordable after eviction")
+}
+
+// ---------------------------------------------------------------------------
+// E2E: AC 2.4-1,2,5,6 — UserCache mention resolution
+// ---------------------------------------------------------------------------
+
+func TestE2E_ResolveMentions_APIResolve(t *testing.T) {
+	t.Parallel()
+
+	// Pre-populate cache to simulate successful API resolution.
+	// Use IDs that match the mentionPattern regex: [A-Z0-9]+
+	uc := NewUserCache(nil)
+	uc.cache["U111"] = "Alice"
+
+	result := uc.ResolveMentions(context.Background(), "hello <@U111>", "B001")
+	require.Equal(t, "hello @Alice", result, "<@U111> should resolve to @Alice from cache")
+}
+
+func TestE2E_ResolveMentions_FallbackName(t *testing.T) {
+	t.Parallel()
+
+	uc := NewUserCache(nil)
+	// <@U222|Bob> — no cache entry, client is nil → resolve returns fallback "Bob"
+	result := uc.ResolveMentions(context.Background(), "hey <@U222|Bob>", "B001")
+	require.Equal(t, "hey @Bob", result, "should use inline fallback name from <@UID|Name>")
+}
+
+func TestE2E_ResolveMentions_APIFailurePreservesRaw(t *testing.T) {
+	t.Parallel()
+
+	uc := NewUserCache(nil) // nil client, no cache → resolve returns empty → raw preserved
+	result := uc.ResolveMentions(context.Background(), "hello <@U999>", "B001")
+	require.Equal(t, "hello <@U999>", result, "unresolvable mention should keep raw format")
+}
+
+func TestE2E_ResolveMentions_CacheHitNoAPICall(t *testing.T) {
+	t.Parallel()
+
+	uc := NewUserCache(nil)
+	uc.cache["U111"] = "Alice"
+
+	// Both calls succeed from cache without any client
+	r1 := uc.ResolveMentions(context.Background(), "<@U111>", "B001")
+	require.Equal(t, "@Alice", r1)
+
+	r2 := uc.ResolveMentions(context.Background(), "<@U111>", "B001")
+	require.Equal(t, "@Alice", r2)
+}
+
+// ---------------------------------------------------------------------------
+// E2E: AC 2.5-2,3,7 — Rich text block extraction (SectionBlock, ContextBlock, unknown block)
+// ---------------------------------------------------------------------------
+
+func TestE2E_ExtractText_SectionBlock(t *testing.T) {
+	t.Parallel()
+
+	evt := slackevents.MessageEvent{
+		Text:    "",
+		Channel: "C123",
+		User:    "U_ALICE",
+	}
+	evt.Blocks = slack.Blocks{BlockSet: []slack.Block{
+		slack.NewSectionBlock(slack.NewTextBlockObject("mrkdwn", "Hello from section", false, false), nil, nil),
+	}}
+
+	text := extractText(evt)
+	require.Equal(t, "Hello from section", text, "SectionBlock text should be extracted")
+}
+
+func TestE2E_ExtractText_ContextBlock(t *testing.T) {
+	t.Parallel()
+
+	evt := slackevents.MessageEvent{
+		Text:    "",
+		Channel: "C123",
+		User:    "U_ALICE",
+	}
+	evt.Blocks = slack.Blocks{BlockSet: []slack.Block{
+		slack.NewContextBlock(
+			"ctx1",
+			slack.NewTextBlockObject("mrkdwn", "context info", false, false),
+		),
+	}}
+
+	text := extractText(evt)
+	require.Equal(t, "context info", text, "ContextBlock text should be extracted")
+}
+
+func TestE2E_ExtractText_UnknownBlockSafeSkip(t *testing.T) {
+	t.Parallel()
+
+	// RichTextBlock is known, plus add a nil block to simulate unknown type
+	section := slack.NewRichTextBlock(
+		"rt1",
+		slack.NewRichTextSection(slack.NewRichTextSectionTextElement("known text", nil)),
+	)
+
+	evt := slackevents.MessageEvent{
+		Text:    "",
+		Channel: "C123",
+		User:    "U_ALICE",
+	}
+	// Only the known RichTextBlock; unknown types in BlockSet are simply not matched
+	evt.Blocks = slack.Blocks{BlockSet: []slack.Block{section}}
+
+	text := extractText(evt)
+	require.Equal(t, "known text", text, "known blocks should be extracted, unknown skipped safely")
+	require.NotPanics(t, func() { extractText(evt) }, "unknown block types must not panic")
+}
+
+func TestE2E_ExtractText_MixedBlocks(t *testing.T) {
+	t.Parallel()
+
+	evt := slackevents.MessageEvent{
+		Text:    "",
+		Channel: "C123",
+		User:    "U_ALICE",
+	}
+	evt.Blocks = slack.Blocks{BlockSet: []slack.Block{
+		slack.NewSectionBlock(slack.NewTextBlockObject("plain_text", "from section", false, false), nil, nil),
+		slack.NewContextBlock("ctx1", slack.NewTextBlockObject("mrkdwn", "from context", false, false)),
+		slack.NewRichTextBlock("rt1", slack.NewRichTextSection(slack.NewRichTextSectionTextElement("from rich", nil))),
+	}}
+
+	text := extractText(evt)
+	require.Contains(t, text, "from section", "SectionBlock should contribute text")
+	require.Contains(t, text, "from context", "ContextBlock should contribute text")
+	require.Contains(t, text, "from rich", "RichTextBlock should contribute text")
+}
