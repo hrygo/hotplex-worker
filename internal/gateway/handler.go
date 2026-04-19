@@ -299,8 +299,11 @@ func (h *Handler) handleReset(ctx context.Context, env *events.Envelope) error {
 		}
 	}
 
-	if err := h.sm.TransitionWithReason(ctx, env.SessionID, events.StateRunning, "reset"); err != nil {
-		return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "reset transition failed: %v", err)
+	// Idempotent: if already running, the state transition is a no-op.
+	if si.State != events.StateRunning {
+		if err := h.sm.TransitionWithReason(ctx, env.SessionID, events.StateRunning, "reset"); err != nil {
+			return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "reset transition failed: %v", err)
+		}
 	}
 
 	stateEvt := events.NewEnvelope(aep.NewID(), env.SessionID, h.hub.NextSeq(env.SessionID), events.State, events.StateData{
