@@ -21,6 +21,7 @@ import (
 	"github.com/larksuite/oapi-sdk-go/v3/ws"
 
 	"github.com/hotplex/hotplex-worker/internal/messaging"
+	"github.com/hotplex/hotplex-worker/pkg/aep"
 	"github.com/hotplex/hotplex-worker/pkg/events"
 )
 
@@ -273,6 +274,12 @@ func (a *Adapter) handleMessage(ctx context.Context, event *larkim.P2MessageRece
 		return nil
 	}
 
+	// Step 9: Control command detection (natural language + /command).
+	if result := messaging.ParseControlCommand(text); result != nil {
+		a.handleTextControlCommand(ctx, chatID, userID, threadKey, result)
+		return nil
+	}
+
 	replyToMsgID := parentID
 	if replyToMsgID == "" {
 		replyToMsgID = rootID
@@ -517,6 +524,9 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 	if !ok {
 		return nil
 	}
+	if env.Event.Type == events.MessageDelta && text != "" {
+		text += "\n\n"
+	}
 	text = StripInvalidImageKeys(text)
 
 	c.mu.Lock()
@@ -588,6 +598,48 @@ func (c *FeishuConn) Close() error {
 }
 
 var _ messaging.PlatformConn = (*FeishuConn)(nil)
+
+// handleTextControlCommand sends a control event derived from a text message
+// through the bridge, then sends feedback via card message.
+func (a *Adapter) handleTextControlCommand(ctx context.Context, chatID, userID, threadKey string, result *messaging.ControlCommandResult) {
+	envelope := a.bridge.MakeFeishuEnvelope(chatID, threadKey, userID, "")
+	if envelope == nil {
+		a.log.Error("feishu: text control command failed to derive session", "action", result.Label)
+		return
+	}
+
+	ctrlEnv := &events.Envelope{
+		Version:   events.Version,
+		ID:        aep.NewID(),
+		SessionID: envelope.SessionID,
+		Event: events.Event{
+			Type: events.Control,
+			Data: events.ControlData{Action: result.Action},
+		},
+		OwnerID: userID,
+	}
+
+	conn := a.GetOrCreateConn(chatID)
+	if err := a.bridge.Handle(ctx, ctrlEnv, conn); err != nil {
+		a.log.Error("feishu: text control command failed", "action", result.Label, "error", err)
+		_ = a.sendTextMessage(ctx, chatID, fmt.Sprintf("❌ 执行 %s 失败。", result.Label))
+		return
+	}
+
+	a.log.Info("feishu: text control command sent", "action", result.Label, "user", userID, "session_id", envelope.SessionID)
+	_ = a.sendTextMessage(ctx, chatID, controlFeedbackMessageCN(result.Action))
+}
+
+func controlFeedbackMessageCN(action events.ControlAction) string {
+	switch action {
+	case events.ControlActionGC:
+		return "✅ 会话已休眠，发消息即可恢复。"
+	case events.ControlActionReset:
+		return "✅ 上下文已重置。"
+	default:
+		return "✅ 已完成。"
+	}
+}
 
 func (a *Adapter) sendTextMessage(ctx context.Context, chatID, text string) error {
 	if a.larkClient == nil {

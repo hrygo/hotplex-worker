@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/hotplex/hotplex-worker/internal/messaging"
+	"github.com/hotplex/hotplex-worker/pkg/aep"
 	"github.com/hotplex/hotplex-worker/pkg/events"
 
 	"github.com/slack-go/slack"
@@ -265,6 +266,12 @@ func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsA
 		return
 	}
 
+	// Control command detection (natural language + /command in text).
+	if result := messaging.ParseControlCommand(text); result != nil {
+		a.handleTextControlCommand(ctx, teamID, channelID, threadTS, userID, result)
+		return
+	}
+
 	// Start typing indicator (emoji fallback for free workspaces)
 	a.activeIndicators.Start(ctx, a, channelID, threadTS, msgEvent.TimeStamp, a.typingStages)
 
@@ -383,6 +390,48 @@ func (a *Adapter) Close(ctx context.Context) error {
 	return nil
 }
 
+// handleTextControlCommand sends a control event derived from a text message
+// through the bridge, then sends ephemeral feedback to the user.
+func (a *Adapter) handleTextControlCommand(ctx context.Context, teamID, channelID, threadTS, userID string, result *messaging.ControlCommandResult) {
+	env := a.bridge.MakeSlackEnvelope(teamID, channelID, threadTS, userID, "")
+	if env == nil {
+		a.log.Error("slack: text control command failed to derive session", "action", result.Label)
+		return
+	}
+
+	ctrlEnv := &events.Envelope{
+		Version:   events.Version,
+		ID:        aep.NewID(),
+		SessionID: env.SessionID,
+		Event: events.Event{
+			Type: events.Control,
+			Data: events.ControlData{Action: result.Action},
+		},
+		OwnerID: userID,
+	}
+
+	conn := a.GetOrCreateConn(channelID, threadTS)
+	if err := a.bridge.Handle(ctx, ctrlEnv, conn); err != nil {
+		a.log.Error("slack: text control command failed", "action", result.Label, "error", err)
+		a.sendEphemeralOrPost(ctx, channelID, userID, fmt.Sprintf("❌ Failed to execute %s.", result.Label))
+		return
+	}
+
+	a.log.Info("slack: text control command sent", "action", result.Label, "user", userID, "session_id", env.SessionID)
+	a.sendEphemeralOrPost(ctx, channelID, userID, controlFeedbackMessage(result.Action))
+}
+
+func controlFeedbackMessage(action events.ControlAction) string {
+	switch action {
+	case events.ControlActionGC:
+		return "🗑️ Session parked. Send a message to resume."
+	case events.ControlActionReset:
+		return "🔄 Context reset."
+	default:
+		return "✅ Done."
+	}
+}
+
 // SlackConn wraps the adapter with channel/thread routing info
 // to satisfy messaging.PlatformConn for Hub.JoinPlatformSession.
 type SlackConn struct {
@@ -419,6 +468,9 @@ func (c *SlackConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 	text, ok := extractResponseText(env)
 	if !ok {
 		return nil
+	}
+	if env.Event.Type == events.MessageDelta && text != "" {
+		text += "\n\n"
 	}
 
 	opts := []slack.MsgOption{slack.MsgOptionText(FormatMrkdwn(text), false)}
