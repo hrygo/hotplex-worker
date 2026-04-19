@@ -276,7 +276,7 @@ systemctl show hotplex-worker -p MemoryCurrent,CPUUsageNSec
 After running, see `docs/specs/ACPX-Validation-Report.md` for detailed results.
 
 
-** archived spec validation script** (OpenCode CLI adapter removed)
+### ~~validate_opencode_spec.sh~~ (archived — OpenCode CLI adapter removed)
 
 **Purpose:**
 
@@ -364,7 +364,9 @@ Spec 中定义的事件类型:
 
 
 
-** output testing script** that runs actual CLI commands and captures output for analysis.
+### ~~Output testing script~~ (archived — OpenCode CLI adapter removed)
+
+Script that ran actual CLI commands and captured output for analysis.
 
 **Purpose:**
 

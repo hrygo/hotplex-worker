@@ -15,7 +15,7 @@ completion_date: 2026-04-04
 > 本文档定义了所有 HotPlex Worker Adapter 共享的公共协议层规范。
 > 每个具体 Worker 的规格应引用本文档的对应章节，而非重复定义。
 >
-> **适用范围**：Claude Code Worker、 Worker、OpenCode Server Worker
+> **适用范围**：Claude Code Worker、OpenCode Server Worker
 >
 > 高阶设计见 [[Worker-Gateway-Design]] §8。
 

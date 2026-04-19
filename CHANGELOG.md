@@ -31,7 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Gateway**: Session orphan, ping seq, and macOS `RLIMIT_AS` handling (skip on Darwin).
 - **WebSocket**: Browser reconnect race condition and strict mode compatibility.
 - **macOS**: Pipe EAGAIN handling and mutex deadlock in concurrent scenarios.
-- ****: Race condition, dead code, and code quality fixes.
+- **OpenCode CLI adapter**: Race condition, dead code, and code quality fixes.
 
 ## [1.0.0-rc] - 2026-03-31
 
