@@ -180,6 +180,7 @@ func (c *Client) doConnect(ctx context.Context, sessionID string, isResume bool)
 			break
 		}
 		// Discard non-init_ack event (e.g. state arriving before handshake completes).
+		// These are stale and will be re-delivered after the handshake.
 	}
 
 	ack := parseInitAck(&ackEnv)
