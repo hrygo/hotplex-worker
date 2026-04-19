@@ -47,6 +47,7 @@ type Adapter struct {
 
 	mu            sync.RWMutex
 	rateLimiter   *ChannelRateLimiter
+	slashLimiter  *SlashRateLimiter
 	ownership     *ThreadOwnershipTracker
 	activeStreams map[string]*NativeStreamingWriter // messageTS -> writer
 	activeConns   map[string]*SlackConn             // "channelID#threadTS" -> conn
@@ -93,6 +94,7 @@ func (a *Adapter) Start(ctx context.Context) error {
 	a.teamID = authTest.TeamID
 
 	a.rateLimiter = NewChannelRateLimiter(ctx)
+	a.slashLimiter = NewSlashRateLimiter()
 	a.ownership = NewThreadOwnershipTracker(ctx, a.botID, a.log)
 	a.dedup = NewDedup(5000, 30*time.Minute)
 	a.userCache = NewUserCache(a.client)
@@ -323,7 +325,7 @@ func (a *Adapter) NewStreamingWriter(ctx context.Context, channelID, threadTS st
 	return w
 }
 
-// Close gracefully terminates the platform connection.
+// Close gracefully terminates the platform connection. Safe to call multiple times.
 func (a *Adapter) Close(ctx context.Context) error {
 	a.log.Info("slack: adapter closing")
 
@@ -332,20 +334,34 @@ func (a *Adapter) Close(ctx context.Context) error {
 		_ = w.Close()
 	}
 	a.activeStreams = nil
+	// Collect conns to close outside the lock to avoid deadlock
+	// (SlackConn.Close also acquires a.mu).
+	conns := make([]*SlackConn, 0, len(a.activeConns))
 	for _, c := range a.activeConns {
-		_ = c.Close()
+		conns = append(conns, c)
 	}
 	a.activeConns = nil
 	a.mu.Unlock()
 
+	for _, c := range conns {
+		_ = c.Close()
+	}
+
 	if a.rateLimiter != nil {
 		a.rateLimiter.Stop()
+		a.rateLimiter = nil
+	}
+	if a.slashLimiter != nil {
+		a.slashLimiter.Stop()
+		a.slashLimiter = nil
 	}
 	if a.ownership != nil {
 		a.ownership.Stop()
+		a.ownership = nil
 	}
 	if a.dedup != nil {
 		a.dedup.Close()
+		a.dedup = nil
 	}
 
 	return nil
