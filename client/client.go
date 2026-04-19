@@ -160,6 +160,7 @@ func (c *Client) doConnect(ctx context.Context, sessionID string, isResume bool)
 	// Run goroutine (routing state events). Skip non-init_ack messages until
 	// the handshake response is received.
 	var ackEnv events.Envelope
+	var preInitEvents []Event
 	for {
 		_, r, err := conn.NextReader()
 		if err != nil {
@@ -179,8 +180,16 @@ func (c *Client) doConnect(ctx context.Context, sessionID string, isResume bool)
 		if ackEnv.Event.Type == EventInitAck {
 			break
 		}
-		// Discard non-init_ack event (e.g. state arriving before handshake completes).
-		// These are stale and will be re-delivered after the handshake.
+		// Buffer pre-init_ack events for delivery after the handshake.
+		// The gateway may route state events before init_ack due to a race
+		// between the ReadPump goroutine (sending init_ack) and the Run
+		// goroutine (routing state events via broadcast).
+		preInitEvents = append(preInitEvents, Event{
+			Type:    string(ackEnv.Event.Type),
+			Seq:     ackEnv.Seq,
+			Session: ackEnv.SessionID,
+			Data:    ackEnv.Event.Data,
+		})
 	}
 
 	ack := parseInitAck(&ackEnv)
@@ -196,6 +205,11 @@ func (c *Client) doConnect(ctx context.Context, sessionID string, isResume bool)
 	go c.recvPump()
 	go c.sendPump()
 	go c.pingPump()
+
+	// Deliver any events buffered during the handshake.
+	for _, evt := range preInitEvents {
+		c.deliver(evt)
+	}
 
 	return ack, nil
 }

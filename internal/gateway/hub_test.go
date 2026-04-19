@@ -748,11 +748,13 @@ func TestHub_HandleHTTP_GeneratesSessionID(t *testing.T) {
 	defer conn.Close()
 	require.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
 
-	// Hub should have at least one session registered.
-	h.mu.RLock()
-	sessionCount := len(h.sessions)
-	h.mu.RUnlock()
-	require.Equal(t, 1, sessionCount, "hub should have exactly one auto-generated session")
+	// Hub should have at least one session registered (async: wait for registration).
+	require.Eventually(t, func() bool {
+		h.mu.RLock()
+		n := len(h.sessions)
+		h.mu.RUnlock()
+		return n == 1
+	}, 2*time.Second, 10*time.Millisecond, "hub should have exactly one auto-generated session")
 }
 
 // TestHub_HandleHTTP_RejectsInvalidAPIKey verifies that a wrong API key is rejected.
