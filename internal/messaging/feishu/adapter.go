@@ -628,12 +628,12 @@ func (a *Adapter) handleTextControlCommand(ctx context.Context, chatID, userID, 
 	conn := a.GetOrCreateConn(chatID)
 	if err := a.bridge.Handle(ctx, ctrlEnv, conn); err != nil {
 		a.log.Error("feishu: text control command failed", "action", result.Label, "error", err)
-		_ = a.sendTextMessage(ctx, chatID, fmt.Sprintf("❌ 执行 %s 失败。", result.Label))
+		_ = a.replyMessage(ctx, threadKey, fmt.Sprintf("❌ 执行 %s 失败。", result.Label), false)
 		return
 	}
 
 	a.log.Info("feishu: text control command sent", "action", result.Label, "user", userID, "session_id", envelope.SessionID)
-	_ = a.sendTextMessage(ctx, chatID, controlFeedbackMessageCN(result.Action))
+	_ = a.replyMessage(ctx, threadKey, controlFeedbackMessageCN(result.Action), false)
 }
 
 func controlFeedbackMessageCN(action events.ControlAction) string {
