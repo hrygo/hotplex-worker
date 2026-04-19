@@ -2,7 +2,7 @@
 
 > **Purpose**: Complete guide to configuring HotPlex Worker Gateway
 >
-> **Last Updated**: 2026-04-02
+> **Last Updated**: 2026-04-19
 
 ---
 
@@ -226,6 +226,77 @@ export HOTPLEX_ADMIN_TOKEN_SCOPES='{"token_1": ["session:read", "stats:read"]}'
 
 ---
 
+## Speech-to-Text (STT) Configuration
+
+Audio messages received via messaging platforms (Feishu, Slack) are automatically transcribed to text using a local STT engine. The engine runs as a persistent subprocess to avoid per-request model loading overhead (~2-3s cold start).
+
+### Configuration Fields
+
+All STT fields are under the `feishu` section in `config.yaml`:
+
+```yaml
+messaging:
+  feishu:
+    # STT provider: "feishu" (cloud API), "local" (external command),
+    # "feishu+local" (cloud primary, local fallback), "" (disabled)
+    stt_provider: "local"
+
+    # Local STT command template. No {file} placeholder needed for persistent mode.
+    stt_local_cmd: "python3 scripts/stt_server.py --model iic/SenseVoiceSmall"
+
+    # Local STT mode: "ephemeral" (per-request process) or "persistent" (long-lived subprocess)
+    # Persistent mode keeps the model in memory, avoiding ~2-3s cold start per request.
+    stt_local_mode: "persistent"
+
+    # Idle timeout for persistent mode. Subprocess auto-shuts down after this duration
+    # with no transcription requests. 0 = disabled (never auto-shutdown).
+    stt_local_idle_ttl: "10m"
+```
+
+### Provider Options
+
+| Provider | Description | Disk Required | Latency |
+|----------|-------------|---------------|---------|
+| `""` | Disabled — audio messages not transcribed | N/A | N/A |
+| `"feishu"` | Cloud API — Feishu `speech_to_text` endpoint | No | ~500ms + network |
+| `"local"` | Local engine — SenseVoice-Small via funasr-onnx | Yes | ~350ms (ONNX FP32) |
+| `"feishu+local"` | Fallback — cloud primary, local fallback on failure | Yes | ~350-500ms |
+
+### STT Engine Details
+
+- **Model**: SenseVoice-Small (`iic/SenseVoiceSmall`), ~900MB
+- **Backend**: `funasr-onnx` ONNX FP32 (non-quantized)
+- **Languages**: Chinese (zh), English (en), Japanese (ja), Korean (ko), Cantonese (yue)
+- **Performance**: ~0.35s inference per file (ONNX FP32), CER ~2% (Chinese)
+- **Model cache**: `~/.cache/modelscope/hub/models/iic/SenseVoiceSmall/`
+- **Auto-patch**: ONNX model `Less` node type mismatch is automatically patched on first load by `scripts/fix_onnx_model.py`
+
+### Persistent Mode Protocol
+
+The persistent subprocess communicates via JSON-over-stdio:
+
+```
+Go → subprocess stdin:  {"audio_path": "/tmp/.../stt_123.opus"}\n
+Subprocess → Go stdout: {"text": "transcription result", "error": ""}\n
+```
+
+The subprocess keeps the model loaded in memory. Lifecycle:
+- **Lazy start**: Launched on first transcription request
+- **Idle timeout**: Auto-shutdown after `stt_local_idle_ttl` (configurable)
+- **Crash recovery**: Detected on next request, subprocess auto-restarts
+- **Graceful shutdown**: SIGTERM → 5s wait → SIGKILL, PGID isolation
+
+### Environment Variables
+
+```bash
+HOTPLEX_MESSAGING_FEISHU_STT_PROVIDER=local
+HOTPLEX_MESSAGING_FEISHU_STT_LOCAL_CMD="python3 /path/to/stt_server.py"
+HOTPLEX_MESSAGING_FEISHU_STT_LOCAL_MODE=persistent
+HOTPLEX_MESSAGING_FEISHU_STT_LOCAL_IDLE_TTL=10m
+```
+
+---
+
 ## Configuration Validation
 
 ### Validate Config File
@@ -297,6 +368,7 @@ vim configs/config.yaml
 - Pool settings (`max_size`, `max_idle_per_user`)
 - Session retention (`retention_period`, `gc_scan_interval`)
 - Admin settings (`rate_limit_enabled`, `requests_per_sec`)
+- STT settings (`stt_provider`, `stt_local_cmd`, `stt_local_mode`, `stt_local_idle_ttl`)
 
 **Non-reloadable fields** (require restart):
 - Network addresses (`gateway.addr`, `admin.addr`)
@@ -320,6 +392,7 @@ services:
     volumes:
       - ./configs:/etc/hotplex:ro
       - hotplex-data:/var/lib/hotplex/data
+      - stt-models:/root/.cache/modelscope  # STT model cache
 ```
 
 ### Kubernetes ConfigMap
