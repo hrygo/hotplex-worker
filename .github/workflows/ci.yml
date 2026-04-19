@@ -84,7 +84,8 @@ jobs:
             $(go list ./... | grep -v \
               -e 'internal/worker/proc' \
               -e 'internal/worker/pi' \
-              -e 'cmd/worker')
+              -e 'cmd/worker' \
+              -e 'e2e')
 
       - name: Display coverage
         run: go tool cover -func=coverage.out | tail -1
