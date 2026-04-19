@@ -203,6 +203,7 @@ func (h *Hub) LeaveSession(sessionID string, conn *Conn) {
 // JoinPlatformSession subscribes a PlatformConn to receive events for a session.
 // Unlike JoinSession, it does not register the connection in h.conns (no WS tracking)
 // and does not remove stale connections (platform SDK handles its own lifecycle).
+// Deduplicates: if the same PlatformConn is already subscribed, this is a no-op.
 func (h *Hub) JoinPlatformSession(sessionID string, pc messaging.PlatformConn) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -210,6 +211,15 @@ func (h *Hub) JoinPlatformSession(sessionID string, pc messaging.PlatformConn) {
 	if h.sessions[sessionID] == nil {
 		h.sessions[sessionID] = make(map[SessionWriter]bool)
 	}
+
+	// Deduplicate: avoid wrapping the same PlatformConn in multiple pcEntries,
+	// which would cause each event to be routed N times (content duplication).
+	for sw := range h.sessions[sessionID] {
+		if pce, ok := sw.(*pcEntry); ok && pce.pc == pc {
+			return
+		}
+	}
+
 	h.sessions[sessionID][&pcEntry{pc: pc}] = true
 }
 
