@@ -70,10 +70,32 @@ func isBotMessage(event slackevents.MessageEvent) bool {
 
 // stripMarkdown removes basic markdown formatting from text.
 func stripMarkdown(s string) string {
+	// Preserve angle-bracket content (mentions <@UID>, links <url|text>, etc.)
+	// from formatting removal by temporarily replacing with null-byte placeholders.
+	var saved []string
+	for {
+		i := strings.Index(s, "<")
+		if i < 0 {
+			break
+		}
+		j := strings.Index(s[i:], ">")
+		if j < 0 {
+			break
+		}
+		j += i
+		saved = append(saved, s[i:j+1])
+		s = s[:i] + "\x00" + s[j+1:]
+	}
+
 	s = strings.ReplaceAll(s, "*", "")
 	s = strings.ReplaceAll(s, "_", "")
 	s = strings.ReplaceAll(s, "~", "")
 	s = strings.ReplaceAll(s, "`", "")
+
+	for _, orig := range saved {
+		s = strings.Replace(s, "\x00", orig, 1)
+	}
+
 	return strings.TrimSpace(s)
 }
 
