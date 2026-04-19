@@ -320,6 +320,20 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 		return
 	}
 
+	// If session is already TERMINATED (e.g., handler client_kill), the handler
+	// already sends error + done events. Skip sending redundant crash/synthetic
+	// done — only detach and clean up.
+	if b.sm != nil {
+		si, smErr := b.sm.Get(sessionID)
+		if smErr == nil && si.State == events.StateTerminated {
+			b.log.Debug("gateway: session already terminated, skipping done for handler-killed worker", "session_id", sessionID)
+			if !fallbackAttempted {
+				b.cleanupCrashedWorker(sessionID)
+			}
+			return
+		}
+	}
+
 	if exitCode != 0 {
 		b.log.Warn("gateway: worker exited with non-zero code, sending crash done", "session_id", sessionID, "exit_code", exitCode)
 		metrics.WorkerCrashesTotal.WithLabelValues(string(w.Type()), fmt.Sprintf("%d", exitCode)).Inc()

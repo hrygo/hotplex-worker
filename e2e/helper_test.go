@@ -427,6 +427,14 @@ func collectEvents(t *testing.T, ch <-chan client.Event, timeout time.Duration) 
 	}
 }
 
+func eventTypes(evts []client.Event) []string {
+	types := make([]string, len(evts))
+	for i, evt := range evts {
+		types[i] = evt.Type
+	}
+	return types
+}
+
 func hasEventType(evts []client.Event, typ string) bool {
 	for _, evt := range evts {
 		if evt.Type == typ {

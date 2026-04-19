@@ -43,14 +43,15 @@ type Adapter struct {
 	botOpenID   string
 	transcriber Transcriber
 
-	mu          sync.RWMutex
-	dedup       *Dedup
-	activeConns map[string]*FeishuConn
-	gate        *Gate
-	chatQueue   *ChatQueue
-	rateLimiter *FeishuRateLimiter
-	dedupDone   chan struct{}
-	dedupWg     sync.WaitGroup
+	mu           sync.RWMutex
+	dedup        *Dedup
+	activeConns  map[string]*FeishuConn
+	gate         *Gate
+	chatQueue    *ChatQueue
+	interactions *messaging.InteractionManager
+	rateLimiter  *FeishuRateLimiter
+	dedupDone    chan struct{}
+	dedupWg      sync.WaitGroup
 }
 
 func (a *Adapter) Platform() messaging.PlatformType { return messaging.PlatformFeishu }
@@ -80,6 +81,7 @@ func (a *Adapter) Start(ctx context.Context) error {
 
 	a.dedup = NewDedup(dedupDefaultMaxEntries, dedupDefaultTTL)
 	a.activeConns = make(map[string]*FeishuConn)
+	a.interactions = messaging.NewInteractionManager(a.log)
 	a.chatQueue = NewChatQueue(a.log)
 	a.rateLimiter = NewFeishuRateLimiter()
 	a.dedupDone = make(chan struct{})
@@ -333,6 +335,11 @@ func (a *Adapter) handleTextMessage(ctx context.Context, platformMsgID, channelI
 
 	// Pre-create conn so its fields are ready before the bridge forwards to the handler.
 	conn := a.GetOrCreateConn(channelID)
+
+	// Check if this text is a response to a pending interaction.
+	if a.checkPendingInteraction(ctx, text, conn) {
+		return nil // text consumed as interaction response
+	}
 	conn.mu.Lock()
 	// Clean up stale reactions from previous message before switching platformMsgID.
 	if conn.platformMsgID != "" && conn.platformMsgID != platformMsgID {
@@ -524,6 +531,21 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		c.mu.RUnlock()
 		c.cycleReaction(ctx, timelineEmoji(elapsed))
 		return nil
+	}
+
+	// Handle interaction request events.
+	switch env.Event.Type {
+	case events.PermissionRequest:
+		return c.sendPermissionRequest(ctx, env)
+	case events.QuestionRequest:
+		return c.sendQuestionRequest(ctx, env)
+	case events.ElicitationRequest:
+		return c.sendElicitationRequest(ctx, env)
+	}
+
+	// Cancel pending interactions on done/error.
+	if env.Event.Type == events.Done || env.Event.Type == events.Error {
+		c.adapter.interactions.CancelAll(env.SessionID)
 	}
 
 	text, ok := extractResponseText(env)

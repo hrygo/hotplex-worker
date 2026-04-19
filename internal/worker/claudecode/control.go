@@ -103,3 +103,21 @@ func (h *ControlHandler) SendPermissionResponse(reqID string, allowed bool, reas
 		"reason":  reason,
 	})
 }
+
+// SendQuestionResponse sends a user's answers to an AskUserQuestion back to Claude Code.
+func (h *ControlHandler) SendQuestionResponse(reqID string, answers map[string]string) error {
+	return h.sendResponse(reqID, map[string]any{
+		"behavior": "allow",
+		"updatedInput": map[string]any{
+			"answers": answers,
+		},
+	})
+}
+
+// SendElicitationResponse sends a user's response to an MCP Elicitation back to Claude Code.
+func (h *ControlHandler) SendElicitationResponse(reqID, action string, content map[string]any) error {
+	return h.sendResponse(reqID, map[string]any{
+		"action":  action,
+		"content": content,
+	})
+}

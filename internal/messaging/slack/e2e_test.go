@@ -38,6 +38,7 @@ func newTestAdapter(t *testing.T) *Adapter {
 		ownership:        NewThreadOwnershipTracker(ctx, "B_TEST", slog.Default()),
 		activeStreams:    make(map[string]*NativeStreamingWriter),
 		activeConns:      make(map[string]*SlackConn),
+		interactions:     messaging.NewInteractionManager(slog.Default()),
 	}
 	// StatusManager needs the adapter pointer; set after struct creation.
 	a.statusMgr = NewStatusManager(a, slog.Default())
@@ -739,6 +740,7 @@ func TestE2E_AuthTestFailureReturnsError(t *testing.T) {
 		appToken:      "xapp-invalid",
 		activeStreams: make(map[string]*NativeStreamingWriter),
 		activeConns:   make(map[string]*SlackConn),
+		interactions:  messaging.NewInteractionManager(slog.Default()),
 	}
 
 	err := a.Start(context.Background())

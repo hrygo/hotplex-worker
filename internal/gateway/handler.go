@@ -50,6 +50,8 @@ func (h *Handler) Handle(ctx context.Context, env *events.Envelope) error {
 		return h.handleControl(ctx, env)
 	// AEP-011 / AEP-012: pass-through events from worker to all session clients.
 	case events.Reasoning, events.Step, events.PermissionRequest, events.PermissionResponse,
+		events.QuestionRequest, events.QuestionResponse,
+		events.ElicitationRequest, events.ElicitationResponse,
 		events.Message, events.MessageStart, events.MessageEnd:
 		return h.passthroughToSession(ctx, env)
 	default:
@@ -127,13 +129,17 @@ func (h *Handler) handlePing(ctx context.Context, env *events.Envelope) error {
 }
 
 var passthroughMetricLabel = map[events.Kind]string{
-	events.Reasoning:          "reasoning",
-	events.Step:               "step",
-	events.PermissionRequest:  "permission_request",
-	events.PermissionResponse: "permission_response",
-	events.Message:            "message",
-	events.MessageStart:       "message.start",
-	events.MessageEnd:         "message.end",
+	events.Reasoning:           "reasoning",
+	events.Step:                "step",
+	events.PermissionRequest:   "permission_request",
+	events.PermissionResponse:  "permission_response",
+	events.QuestionRequest:     "question_request",
+	events.QuestionResponse:    "question_response",
+	events.ElicitationRequest:  "elicitation_request",
+	events.ElicitationResponse: "elicitation_response",
+	events.Message:             "message",
+	events.MessageStart:        "message.start",
+	events.MessageEnd:          "message.end",
 }
 
 func (h *Handler) passthroughToSession(ctx context.Context, env *events.Envelope) error {

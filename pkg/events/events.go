@@ -13,25 +13,29 @@ type Kind string
 
 // AEP v1 defined event kinds.
 const (
-	Init               Kind = "init" // session initialization (client → gateway)
-	Error              Kind = "error"
-	State              Kind = "state"
-	Input              Kind = "input"
-	Done               Kind = "done"
-	Message            Kind = "message"
-	MessageStart       Kind = "message.start"
-	MessageDelta       Kind = "message.delta"
-	MessageEnd         Kind = "message.end"
-	ToolCall           Kind = "tool_call"
-	ToolResult         Kind = "tool_result"
-	Reasoning          Kind = "reasoning"
-	Step               Kind = "step"
-	Raw                Kind = "raw"
-	PermissionRequest  Kind = "permission_request"
-	PermissionResponse Kind = "permission_response"
-	Ping               Kind = "ping"
-	Pong               Kind = "pong"
-	Control            Kind = "control"
+	Init                Kind = "init" // session initialization (client → gateway)
+	Error               Kind = "error"
+	State               Kind = "state"
+	Input               Kind = "input"
+	Done                Kind = "done"
+	Message             Kind = "message"
+	MessageStart        Kind = "message.start"
+	MessageDelta        Kind = "message.delta"
+	MessageEnd          Kind = "message.end"
+	ToolCall            Kind = "tool_call"
+	ToolResult          Kind = "tool_result"
+	Reasoning           Kind = "reasoning"
+	Step                Kind = "step"
+	Raw                 Kind = "raw"
+	PermissionRequest   Kind = "permission_request"
+	PermissionResponse  Kind = "permission_response"
+	QuestionRequest     Kind = "question_request"
+	QuestionResponse    Kind = "question_response"
+	ElicitationRequest  Kind = "elicitation_request"
+	ElicitationResponse Kind = "elicitation_response"
+	Ping                Kind = "ping"
+	Pong                Kind = "pong"
+	Control             Kind = "control"
 )
 
 // Priority levels for message delivery.
@@ -215,6 +219,52 @@ type PermissionResponseData struct {
 	ID      string `json:"id"`
 	Allowed bool   `json:"allowed"`
 	Reason  string `json:"reason,omitempty"`
+}
+
+// QuestionOption represents a single selectable option in a question.
+type QuestionOption struct {
+	Label       string `json:"label"`
+	Description string `json:"description,omitempty"`
+	Preview     string `json:"preview,omitempty"`
+}
+
+// Question represents a single question with options.
+type Question struct {
+	Question    string           `json:"question"`
+	Header      string           `json:"header"`
+	Options     []QuestionOption `json:"options"`
+	MultiSelect bool             `json:"multi_select"`
+}
+
+// QuestionRequestData is the payload for QuestionRequest events (S→C — ask user a question).
+type QuestionRequestData struct {
+	ID        string     `json:"id"`
+	ToolName  string     `json:"tool_name,omitempty"` // "AskUserQuestion" | "question"
+	Questions []Question `json:"questions"`
+}
+
+// QuestionResponseData is the payload for QuestionResponse events (C→S — user answers).
+type QuestionResponseData struct {
+	ID      string            `json:"id"`
+	Answers map[string]string `json:"answers"` // question text → selected label
+}
+
+// ElicitationRequestData is the payload for ElicitationRequest events (S→C — MCP server requests user input).
+type ElicitationRequestData struct {
+	ID              string         `json:"id"`
+	MCPServerName   string         `json:"mcp_server_name"`
+	Message         string         `json:"message"`
+	Mode            string         `json:"mode,omitempty"`
+	URL             string         `json:"url,omitempty"`
+	ElicitationID   string         `json:"elicitation_id,omitempty"`
+	RequestedSchema map[string]any `json:"requested_schema,omitempty"`
+}
+
+// ElicitationResponseData is the payload for ElicitationResponse events (C→S — user responds to MCP elicitation).
+type ElicitationResponseData struct {
+	ID      string         `json:"id"`
+	Action  string         `json:"action"` // "accept" | "decline" | "cancel"
+	Content map[string]any `json:"content,omitempty"`
 }
 
 // ControlAction identifies the type of server-originated control instruction.

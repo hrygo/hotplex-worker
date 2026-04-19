@@ -67,6 +67,7 @@ type Adapter struct {
 	ownership     *ThreadOwnershipTracker
 	activeStreams map[string]*NativeStreamingWriter // messageTS -> writer
 	activeConns   map[string]*SlackConn             // "channelID#threadTS" -> conn
+	interactions  *messaging.InteractionManager
 }
 
 func (a *Adapter) Platform() messaging.PlatformType { return messaging.PlatformSlack }
@@ -162,6 +163,9 @@ func (a *Adapter) runSocketMode(ctx context.Context) {
 
 			case socketmode.EventTypeConnectionError:
 				a.log.Warn("slack: connection error", "error", evt.Data)
+
+			case socketmode.EventTypeInteractive:
+				go a.handleInteractionEvent(ctx, evt)
 			}
 		}
 	}
@@ -462,7 +466,14 @@ func (c *SlackConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 	case events.Done, events.Error:
 		_ = c.adapter.statusMgr.Clear(ctx, c.channelID, c.threadTS)
 		c.adapter.activeIndicators.Stop(ctx, c.channelID, c.messageTS)
+		c.adapter.interactions.CancelAll(env.SessionID)
 		return nil
+	case events.PermissionRequest:
+		return c.sendPermissionRequest(ctx, env)
+	case events.QuestionRequest:
+		return c.sendQuestionRequest(ctx, env)
+	case events.ElicitationRequest:
+		return c.sendElicitationRequest(ctx, env)
 	}
 
 	text, ok := extractResponseText(env)

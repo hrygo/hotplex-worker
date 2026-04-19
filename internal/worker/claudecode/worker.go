@@ -233,16 +233,38 @@ func (w *Worker) Input(ctx context.Context, content string, metadata map[string]
 		return fmt.Errorf("claudecode: not started")
 	}
 
-	// Check if this is a permission response
+	// Check if this is a control response (permission, question, or elicitation)
 	if metadata != nil {
 		if permResp, ok := metadata["permission_response"].(map[string]any); ok {
 			reqID, _ := permResp["request_id"].(string)
 			allowed, _ := permResp["allowed"].(bool)
 			reason, _ := permResp["reason"].(string)
 
-			// Send permission response to Claude Code
 			if err := w.control.SendPermissionResponse(reqID, allowed, reason); err != nil {
 				return fmt.Errorf("claudecode: permission response: %w", err)
+			}
+
+			w.SetLastIO(time.Now())
+			return nil
+		}
+		if qResp, ok := metadata["question_response"].(map[string]any); ok {
+			reqID, _ := qResp["id"].(string)
+			answers, _ := qResp["answers"].(map[string]string)
+
+			if err := w.control.SendQuestionResponse(reqID, answers); err != nil {
+				return fmt.Errorf("claudecode: question response: %w", err)
+			}
+
+			w.SetLastIO(time.Now())
+			return nil
+		}
+		if eResp, ok := metadata["elicitation_response"].(map[string]any); ok {
+			reqID, _ := eResp["id"].(string)
+			action, _ := eResp["action"].(string)
+			eContent, _ := eResp["content"].(map[string]any)
+
+			if err := w.control.SendElicitationResponse(reqID, action, eContent); err != nil {
+				return fmt.Errorf("claudecode: elicitation response: %w", err)
 			}
 
 			w.SetLastIO(time.Now())
@@ -401,27 +423,80 @@ func (w *Worker) readOutput(ctx context.Context) {
 				}
 				switch cr.Subtype {
 				case string(ControlCanUseTool):
-					// Forward to gateway for user approval
-					var input map[string]any
-					if len(cr.Input) > 0 {
-						_ = json.Unmarshal(cr.Input, &input)
-					}
-					args := []string{`{}`}
-					if len(input) > 0 {
-						if s, err := json.Marshal(input); err == nil {
-							args = []string{string(s)}
+					if cr.ToolName == "AskUserQuestion" {
+						// AskUserQuestion → QuestionRequest event
+						var questions []events.Question
+						if len(cr.Input) > 0 {
+							var input struct {
+								Questions []events.Question `json:"questions"`
+							}
+							_ = json.Unmarshal(cr.Input, &input)
+							questions = input.Questions
 						}
+						env := events.NewEnvelope(
+							aep.NewID(),
+							w.sessionID,
+							w.nextSeq(),
+							events.QuestionRequest,
+							events.QuestionRequestData{
+								ID:        cr.RequestID,
+								ToolName:  cr.ToolName,
+								Questions: questions,
+							},
+						)
+						w.trySend(env)
+					} else {
+						// Other tools → PermissionRequest event
+						var input map[string]any
+						if len(cr.Input) > 0 {
+							_ = json.Unmarshal(cr.Input, &input)
+						}
+						args := []string{`{}`}
+						if len(input) > 0 {
+							if s, err := json.Marshal(input); err == nil {
+								args = []string{string(s)}
+							}
+						}
+						env := events.NewEnvelope(
+							aep.NewID(),
+							w.sessionID,
+							w.nextSeq(),
+							events.PermissionRequest,
+							events.PermissionRequestData{
+								ID:          cr.RequestID,
+								ToolName:    cr.ToolName,
+								Description: cr.ToolName,
+								Args:        args,
+							},
+						)
+						w.trySend(env)
+					}
+				case "elicitation":
+					// MCP Elicitation → ElicitationRequest event
+					var elData struct {
+						MCPServerName   string         `json:"mcp_server_name"`
+						Message         string         `json:"message"`
+						Mode            string         `json:"mode,omitempty"`
+						URL             string         `json:"url,omitempty"`
+						ElicitationID   string         `json:"elicitation_id,omitempty"`
+						RequestedSchema map[string]any `json:"requested_schema,omitempty"`
+					}
+					if len(cr.Input) > 0 {
+						_ = json.Unmarshal(cr.Input, &elData)
 					}
 					env := events.NewEnvelope(
 						aep.NewID(),
 						w.sessionID,
 						w.nextSeq(),
-						events.PermissionRequest,
-						events.PermissionRequestData{
-							ID:          cr.RequestID,
-							ToolName:    cr.ToolName,
-							Description: cr.ToolName,
-							Args:        args,
+						events.ElicitationRequest,
+						events.ElicitationRequestData{
+							ID:              cr.RequestID,
+							MCPServerName:   elData.MCPServerName,
+							Message:         elData.Message,
+							Mode:            elData.Mode,
+							URL:             elData.URL,
+							ElicitationID:   elData.ElicitationID,
+							RequestedSchema: elData.RequestedSchema,
 						},
 					)
 					w.trySend(env)
