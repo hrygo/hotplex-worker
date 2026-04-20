@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	lark "github.com/larksuite/oapi-sdk-go/v3"
@@ -53,6 +54,7 @@ type Adapter struct {
 	rateLimiter  *FeishuRateLimiter
 	dedupDone    chan struct{}
 	dedupWg      sync.WaitGroup
+	started      atomic.Bool
 }
 
 func (a *Adapter) Platform() messaging.PlatformType { return messaging.PlatformFeishu }
@@ -76,6 +78,10 @@ func (a *Adapter) SetTranscriber(t Transcriber) {
 }
 
 func (a *Adapter) Start(ctx context.Context) error {
+	if !a.started.CompareAndSwap(false, true) {
+		a.log.Warn("feishu: adapter already started, skipping")
+		return nil
+	}
 	if a.appID == "" || a.appSecret == "" {
 		return fmt.Errorf("feishu: appID and appSecret required")
 	}
@@ -85,6 +91,7 @@ func (a *Adapter) Start(ctx context.Context) error {
 	a.interactions = messaging.NewInteractionManager(a.log)
 	a.chatQueue = NewChatQueue(a.log)
 	a.rateLimiter = NewFeishuRateLimiter()
+	a.rateLimiter.Start()
 	a.dedupDone = make(chan struct{})
 	a.dedupWg.Add(1)
 	go a.dedupCleanupLoop()
@@ -214,6 +221,7 @@ func (a *Adapter) handleMessage(ctx context.Context, event *larkim.P2MessageRece
 	if !ok || text == "" {
 		return nil
 	}
+	text = messaging.SanitizeText(text)
 
 	// Download media to local files and build structured prompt.
 	if len(medias) > 0 {
@@ -426,6 +434,10 @@ func (a *Adapter) Close(ctx context.Context) error {
 	a.dedup = nil
 	close(a.dedupDone)
 	a.dedupWg.Wait()
+	if a.rateLimiter != nil {
+		a.rateLimiter.Stop()
+		a.rateLimiter = nil
+	}
 	a.mu.Unlock()
 
 	return nil

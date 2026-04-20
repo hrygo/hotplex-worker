@@ -152,6 +152,13 @@ type SlackConfig struct {
 	// TypingStages configures multi-stage emoji progress indicators for free workspaces.
 	// Empty or nil uses DefaultStages (eyes → clock1 → hourglass → gear → hourglass).
 	TypingStages []TypingStageConfig `mapstructure:"typing_stages"`
+
+	// ReconnectBaseDelay is the initial delay between reconnection attempts.
+	// Default: 1s. The delay doubles with each attempt (exponential backoff).
+	ReconnectBaseDelay time.Duration `mapstructure:"reconnect_base_delay"`
+	// ReconnectMaxDelay is the maximum delay between reconnection attempts.
+	// Default: 60s. The delay will not exceed this value.
+	ReconnectMaxDelay time.Duration `mapstructure:"reconnect_max_delay"`
 }
 
 // TypingStageConfig defines a single emoji reaction stage for YAML/Viper deserialization.

@@ -13,6 +13,8 @@ import (
 	lark "github.com/larksuite/oapi-sdk-go/v3"
 	larkcardkit "github.com/larksuite/oapi-sdk-go/v3/service/cardkit/v1"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
+
+	"github.com/hotplex/hotplex-worker/internal/messaging"
 )
 
 type CardPhase int32
@@ -198,7 +200,8 @@ func (c *StreamingCardController) EnsureCard(ctx context.Context, chatID, chatTy
 }
 
 func (c *StreamingCardController) Write(text string) error {
-	// TTL check: reject writes after StreamTTL has elapsed.
+	text = messaging.SanitizeText(text)
+
 	c.mu.Lock()
 	if c.streamStartTime.IsZero() {
 		c.streamStartTime = time.Now()

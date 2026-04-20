@@ -62,6 +62,9 @@ type Adapter struct {
 	isAssistantCapable atomic.Bool
 	assistantEnabled   *bool
 	gate               *Gate
+	started            atomic.Bool
+	backoffBaseDelay   time.Duration
+	backoffMaxDelay    time.Duration
 
 	mu            sync.RWMutex
 	rateLimiter   *ChannelRateLimiter
@@ -96,7 +99,17 @@ func (a *Adapter) SetAssistantEnabled(enabled *bool) {
 	a.assistantEnabled = enabled
 }
 
+// SetReconnectDelays configures the exponential backoff delays for reconnection.
+func (a *Adapter) SetReconnectDelays(baseDelay, maxDelay time.Duration) {
+	a.backoffBaseDelay = baseDelay
+	a.backoffMaxDelay = maxDelay
+}
+
 func (a *Adapter) Start(ctx context.Context) error {
+	if !a.started.CompareAndSwap(false, true) {
+		a.log.Warn("slack: adapter already started, skipping")
+		return nil
+	}
 	if a.botToken == "" || a.appToken == "" {
 		return fmt.Errorf("slack: botToken and appToken required")
 	}
@@ -144,6 +157,16 @@ func (a *Adapter) Start(ctx context.Context) error {
 }
 
 func (a *Adapter) runSocketMode(ctx context.Context) {
+	baseDelay := a.backoffBaseDelay
+	if baseDelay <= 0 {
+		baseDelay = 1 * time.Second
+	}
+	maxDelay := a.backoffMaxDelay
+	if maxDelay <= 0 {
+		maxDelay = 60 * time.Second
+	}
+	backoff := newReconnectBackoff(baseDelay, maxDelay)
+
 	// Run() blocks until the WebSocket closes. Wrap it in a loop so that
 	// connection errors trigger automatic reconnect instead of silently exiting.
 	go func() {
@@ -159,7 +182,7 @@ func (a *Adapter) runSocketMode(ctx context.Context) {
 				select {
 				case <-ctx.Done():
 					return
-				case <-time.After(5 * time.Second):
+				case <-time.After(backoff.Next()):
 					a.log.Warn("slack: socket mode run error, reconnecting", "err", err)
 					continue
 				}
@@ -169,7 +192,7 @@ func (a *Adapter) runSocketMode(ctx context.Context) {
 			select {
 			case <-ctx.Done():
 				return
-			case <-time.After(1 * time.Second):
+			case <-time.After(backoff.Next()):
 			}
 		}
 	}()
@@ -205,6 +228,7 @@ func (a *Adapter) runSocketMode(ctx context.Context) {
 				a.log.Info("slack: connecting to Slack API")
 			case socketmode.EventTypeConnected:
 				a.log.Info("slack: connected to Slack API")
+				backoff.Reset()
 
 			case socketmode.EventTypeDisconnect:
 				a.log.Info("slack: disconnected by Slack, reconnecting")
@@ -257,6 +281,7 @@ func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsA
 	if !ok {
 		return
 	}
+	text = messaging.SanitizeText(text)
 	teamID := event.TeamID
 
 	channelType := ChannelGroup
@@ -501,6 +526,9 @@ type SlackConn struct {
 	channelID string
 	threadTS  string
 	messageTS string // anchor message for typing indicator cleanup
+
+	streamWriter   *NativeStreamingWriter
+	streamWriterMu sync.Mutex
 }
 
 // NewSlackConn creates a platform connection bound to a channel/thread.
@@ -525,6 +553,7 @@ func (c *SlackConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		_ = c.adapter.statusMgr.Clear(ctx, c.channelID, c.threadTS)
 		c.adapter.activeIndicators.Stop(ctx, c.channelID, c.messageTS)
 		c.adapter.interactions.CancelAll(env.SessionID)
+		c.closeStreamWriter()
 		return nil
 	case events.PermissionRequest:
 		return c.sendPermissionRequest(ctx, env)
@@ -538,7 +567,55 @@ func (c *SlackConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 	if !ok {
 		return nil
 	}
-	if env.Event.Type == events.MessageDelta && text != "" {
+	text = messaging.SanitizeText(text)
+
+	// Try streaming for delta/text events
+	if env.Event.Type == events.MessageDelta || env.Event.Type == "text" {
+		if err := c.writeWithStreaming(ctx, text); err != nil {
+			// Fall back to PostMessage on streaming failure
+			return c.writeWithPostMessage(ctx, text, env.Event.Type == events.MessageDelta)
+		}
+		return nil
+	}
+
+	// Default: use PostMessage for other event types
+	return c.writeWithPostMessage(ctx, text, false)
+}
+
+// writeWithStreaming attempts to write using the streaming API.
+func (c *SlackConn) writeWithStreaming(ctx context.Context, text string) error {
+	if text == "" {
+		return nil
+	}
+
+	if c.adapter == nil {
+		return fmt.Errorf("slack: adapter is nil")
+	}
+
+	c.streamWriterMu.Lock()
+	defer c.streamWriterMu.Unlock()
+
+	// Create new streaming writer if needed
+	if c.streamWriter == nil {
+		writer := c.adapter.NewStreamingWriter(ctx, c.channelID, c.threadTS, func(ts string) {
+			// Update threadTS if stream created a new message
+			if c.threadTS == "" && ts != "" {
+				c.threadTS = ts
+			}
+		})
+		if writer == nil {
+			return fmt.Errorf("failed to create streaming writer")
+		}
+		c.streamWriter = writer
+	}
+
+	_, err := c.streamWriter.Write([]byte(text))
+	return err
+}
+
+// writeWithPostMessage falls back to PostMessageContext.
+func (c *SlackConn) writeWithPostMessage(ctx context.Context, text string, isDelta bool) error {
+	if isDelta && text != "" {
 		text += "\n\n"
 	}
 
@@ -550,13 +627,25 @@ func (c *SlackConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 	return err
 }
 
-// Close removes the conn from the adapter registry. Streaming writers are closed
-// separately by the adapter's Close method.
+// closeStreamWriter closes and clears the stream writer.
+func (c *SlackConn) closeStreamWriter() {
+	c.streamWriterMu.Lock()
+	defer c.streamWriterMu.Unlock()
+
+	if c.streamWriter != nil {
+		_ = c.streamWriter.Close()
+		c.streamWriter = nil
+	}
+}
+
+// Close removes the conn from the adapter registry and cleans up the stream writer.
 func (c *SlackConn) Close() error {
 	key := c.channelID + "#" + c.threadTS
 	c.adapter.mu.Lock()
 	delete(c.adapter.activeConns, key)
 	c.adapter.mu.Unlock()
+
+	c.closeStreamWriter()
 	return nil
 }
 

@@ -116,6 +116,28 @@ func (a *Adapter) handleInteractionEvent(ctx context.Context, evt socketmode.Eve
 	}
 }
 
+// buildPermissionFallbackText creates plain-text fallback for permission request.
+// AC-3.6: Permission request has a fallbackText that conveys same info without blocks
+func buildPermissionFallbackText(data *events.PermissionRequestData) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "*Tool Approval Required*\nClaude Code requests permission to run: `%s`\n", data.ToolName)
+
+	if data.Description != "" && data.Description != data.ToolName {
+		fmt.Fprintf(&sb, "Description: %s\n", data.Description)
+	}
+
+	if len(data.Args) > 0 && data.Args[0] != `{}` {
+		preview := data.Args[0]
+		if len(preview) > 500 {
+			preview = preview[:500] + "..."
+		}
+		fmt.Fprintf(&sb, "Args: %s\n", preview)
+	}
+
+	fmt.Fprintf(&sb, "\nReply with 'allow %s' or 'deny %s'", data.ID, data.ID)
+	return sb.String()
+}
+
 // sendPermissionRequest posts a permission request UI to Slack.
 func (c *SlackConn) sendPermissionRequest(ctx context.Context, env *events.Envelope) error {
 	data, err := messaging.ExtractPermissionData(env)
@@ -158,6 +180,9 @@ func (c *SlackConn) sendPermissionRequest(ctx context.Context, env *events.Envel
 		),
 	}
 
+	// Sanitize blocks before sending
+	blocks = SanitizeBlocks(blocks)
+
 	opts := []slack.MsgOption{slack.MsgOptionBlocks(blocks...)}
 	if c.threadTS != "" {
 		opts = append(opts, slack.MsgOptionTS(c.threadTS))
@@ -165,7 +190,21 @@ func (c *SlackConn) sendPermissionRequest(ctx context.Context, env *events.Envel
 
 	_, msgTS, err := c.adapter.client.PostMessageContext(ctx, c.channelID, opts...)
 	if err != nil {
-		return fmt.Errorf("slack: post permission request: %w", err)
+		// AC-3.5: On invalid_blocks API error, message is resent as plain text
+		if isInvalidBlocksError(err) {
+			fallbackText := buildPermissionFallbackText(data)
+			fallbackOpts := []slack.MsgOption{slack.MsgOptionText(fallbackText, false)}
+			if c.threadTS != "" {
+				fallbackOpts = append(fallbackOpts, slack.MsgOptionTS(c.threadTS))
+			}
+			_, msgTS, err = c.adapter.client.PostMessageContext(ctx, c.channelID, fallbackOpts...)
+			if err != nil {
+				return fmt.Errorf("slack: post permission request (fallback): %w", err)
+			}
+			c.adapter.log.Warn("slack: sent permission request as plain text fallback", "request_id", data.ID)
+		} else {
+			return fmt.Errorf("slack: post permission request: %w", err)
+		}
 	}
 
 	// Register the pending interaction with timeout
@@ -178,6 +217,35 @@ func (c *SlackConn) sendPermissionRequest(ctx context.Context, env *events.Envel
 		"thread", c.threadTS)
 
 	return nil
+}
+
+// buildQuestionFallbackText creates plain-text fallback for question request.
+// AC-3.7: Question request has a fallbackText with numbered options
+func buildQuestionFallbackText(data *events.QuestionRequestData) string {
+	var sb strings.Builder
+	sb.WriteString("*Question Request*\n")
+
+	for i, q := range data.Questions {
+		headerLabel := q.Header
+		if headerLabel == "" {
+			headerLabel = "Question"
+		}
+		fmt.Fprintf(&sb, "\n*%s %d:* %s\n", headerLabel, i+1, q.Question)
+
+		if len(q.Options) > 0 {
+			sb.WriteString("Options:\n")
+			for j, opt := range q.Options {
+				label := opt.Label
+				if opt.Description != "" {
+					label += " — " + opt.Description
+				}
+				fmt.Fprintf(&sb, "  %d. %s\n", j+1, label)
+			}
+		}
+	}
+
+	fmt.Fprintf(&sb, "\nReply with the option number for request %s", data.ID)
+	return sb.String()
 }
 
 // sendQuestionRequest posts a question request UI to Slack.
@@ -225,6 +293,9 @@ func (c *SlackConn) sendQuestionRequest(ctx context.Context, env *events.Envelop
 		}
 	}
 
+	// Sanitize blocks before sending
+	blocks = SanitizeBlocks(blocks)
+
 	opts := []slack.MsgOption{slack.MsgOptionBlocks(blocks...)}
 	if c.threadTS != "" {
 		opts = append(opts, slack.MsgOptionTS(c.threadTS))
@@ -232,7 +303,21 @@ func (c *SlackConn) sendQuestionRequest(ctx context.Context, env *events.Envelop
 
 	_, msgTS, err := c.adapter.client.PostMessageContext(ctx, c.channelID, opts...)
 	if err != nil {
-		return fmt.Errorf("slack: post question request: %w", err)
+		// AC-3.5: On invalid_blocks API error, message is resent as plain text
+		if isInvalidBlocksError(err) {
+			fallbackText := buildQuestionFallbackText(data)
+			fallbackOpts := []slack.MsgOption{slack.MsgOptionText(fallbackText, false)}
+			if c.threadTS != "" {
+				fallbackOpts = append(fallbackOpts, slack.MsgOptionTS(c.threadTS))
+			}
+			_, msgTS, err = c.adapter.client.PostMessageContext(ctx, c.channelID, fallbackOpts...)
+			if err != nil {
+				return fmt.Errorf("slack: post question request (fallback): %w", err)
+			}
+			c.adapter.log.Warn("slack: sent question request as plain text fallback", "request_id", data.ID)
+		} else {
+			return fmt.Errorf("slack: post question request: %w", err)
+		}
 	}
 
 	c.adapter.registerInteraction(data.ID, env.SessionID, events.QuestionRequest, msgTS, c)
@@ -242,6 +327,21 @@ func (c *SlackConn) sendQuestionRequest(ctx context.Context, env *events.Envelop
 		"questions", len(data.Questions))
 
 	return nil
+}
+
+// buildElicitationFallbackText creates plain-text fallback for elicitation request.
+// AC-3.8: Elicitation request has a fallbackText
+func buildElicitationFallbackText(data *events.ElicitationRequestData) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "*MCP Server Request*\n`%s` requests your input:\n%s\n",
+		data.MCPServerName, data.Message)
+
+	if data.URL != "" {
+		fmt.Fprintf(&sb, "\nOpen external form: %s\n", data.URL)
+	}
+
+	fmt.Fprintf(&sb, "\nReply with 'accept %s' or 'decline %s'", data.ID, data.ID)
+	return sb.String()
 }
 
 // sendElicitationRequest posts an MCP elicitation request UI to Slack.
@@ -278,6 +378,9 @@ func (c *SlackConn) sendElicitationRequest(ctx context.Context, env *events.Enve
 		),
 	}
 
+	// Sanitize blocks before sending
+	blocks = SanitizeBlocks(blocks)
+
 	opts := []slack.MsgOption{slack.MsgOptionBlocks(blocks...)}
 	if c.threadTS != "" {
 		opts = append(opts, slack.MsgOptionTS(c.threadTS))
@@ -285,7 +388,21 @@ func (c *SlackConn) sendElicitationRequest(ctx context.Context, env *events.Enve
 
 	_, msgTS, err := c.adapter.client.PostMessageContext(ctx, c.channelID, opts...)
 	if err != nil {
-		return fmt.Errorf("slack: post elicitation request: %w", err)
+		// AC-3.5: On invalid_blocks API error, message is resent as plain text
+		if isInvalidBlocksError(err) {
+			fallbackText := buildElicitationFallbackText(data)
+			fallbackOpts := []slack.MsgOption{slack.MsgOptionText(fallbackText, false)}
+			if c.threadTS != "" {
+				fallbackOpts = append(fallbackOpts, slack.MsgOptionTS(c.threadTS))
+			}
+			_, msgTS, err = c.adapter.client.PostMessageContext(ctx, c.channelID, fallbackOpts...)
+			if err != nil {
+				return fmt.Errorf("slack: post elicitation request (fallback): %w", err)
+			}
+			c.adapter.log.Warn("slack: sent elicitation request as plain text fallback", "request_id", data.ID)
+		} else {
+			return fmt.Errorf("slack: post elicitation request: %w", err)
+		}
 	}
 
 	c.adapter.registerInteraction(data.ID, env.SessionID, events.ElicitationRequest, msgTS, c)

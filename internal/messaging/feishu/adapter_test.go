@@ -287,6 +287,44 @@ func TestDownloadMedia_AllTypes(t *testing.T) {
 	}
 }
 
+func TestAdapter_DoubleStartGuard(t *testing.T) {
+	t.Parallel()
+
+	a := &Adapter{
+		log:         slog.New(slog.NewTextHandler(io.Discard, nil)),
+		dedup:       NewDedup(100, 12*60*60*1e9),
+		activeConns: make(map[string]*FeishuConn),
+		dedupDone:   make(chan struct{}),
+	}
+
+	// First call: fails due to missing credentials (guard passes, validation fails)
+	err1 := a.Start(context.Background())
+	require.Error(t, err1)
+	require.Contains(t, err1.Error(), "appID and appSecret required")
+
+	// Second call: guard blocks, returns nil (no error, no panic)
+	err2 := a.Start(context.Background())
+	require.NoError(t, err2, "second Start() should return nil, not error")
+}
+
+func TestAdapter_CloseAfterSingleStart(t *testing.T) {
+	t.Parallel()
+
+	a := &Adapter{
+		log:         slog.New(slog.NewTextHandler(io.Discard, nil)),
+		dedup:       NewDedup(100, 12*60*60*1e9),
+		activeConns: make(map[string]*FeishuConn),
+		dedupDone:   make(chan struct{}),
+	}
+
+	// Start fails (no credentials), but guard is set
+	_ = a.Start(context.Background())
+
+	// Close should work without panic
+	err := a.Close(context.Background())
+	require.NoError(t, err)
+}
+
 func TestMediaExtByType(t *testing.T) {
 	t.Parallel()
 	// Verify fallback extensions for each media type.
