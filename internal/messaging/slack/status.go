@@ -165,11 +165,11 @@ func (a *Adapter) ClearStatus(ctx context.Context, channelID, threadTS string) e
 func (a *Adapter) handleCapabilityError(err error) {
 	if isAssistantCapabilityError(err) {
 		a.log.Warn("slack: Assistant API no longer available, switching to emoji fallback",
-			"error", err)
+			"err", err)
 		a.isAssistantCapable.Store(false)
 	} else {
 		a.log.Debug("slack: Assistant API call failed, trying emoji fallback",
-			"error", err)
+			"err", err)
 	}
 }
 
@@ -197,12 +197,12 @@ func (a *Adapter) ProbeAssistantCapability(ctx context.Context) bool {
 	if err != nil {
 		if isAssistantCapabilityError(err) {
 			a.log.Warn("slack: Assistant API not available (free workspace?), falling back to emoji reactions",
-				"error", err)
+				"err", err)
 			return false
 		}
 		// Transient error: treat as capable so runtime retries
 		a.log.Warn("slack: Assistant API probe returned unexpected error, treating as capable",
-			"error", err)
+			"err", err)
 		return true
 	}
 	return true

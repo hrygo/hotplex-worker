@@ -158,7 +158,7 @@ func (s *FallbackSTT) Transcribe(ctx context.Context, audioData []byte) (string,
 		return text, nil
 	}
 	if err != nil {
-		s.log.Warn("stt: primary failed, trying fallback", "error", err)
+		s.log.Warn("stt: primary failed, trying fallback", "err", err)
 	}
 	return s.secondary.Transcribe(ctx, audioData)
 }

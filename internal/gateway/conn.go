@@ -67,7 +67,7 @@ func newConn(hub *Hub, wc *websocket.Conn, sessionID string, starter SessionStar
 		log = hub.log
 	}
 	return &Conn{
-		log:       log,
+		log:       log.With("component", "conn"),
 		wc:        wc,
 		hub:       hub,
 		starter:   starter,
@@ -113,7 +113,7 @@ func (c *Conn) ReadPump(handler *Handler) {
 
 	// Phase 1: AEP init handshake — read the first message.
 	if err := c.performInit(handler); err != nil {
-		c.log.Warn("gateway: init handshake failed", "err", err)
+		c.log.Warn("gateway: init handshake failed", "session_id", c.sessionID, "err", err)
 		return
 	}
 
@@ -141,7 +141,7 @@ func (c *Conn) ReadPump(handler *Handler) {
 				}
 			}
 			if !errors.Is(err, websocket.ErrCloseSent) {
-				c.log.Debug("gateway: read error", "err", err)
+				c.log.Debug("gateway: read error", "session_id", c.sessionID, "err", err)
 			}
 			metrics.GatewayErrorsTotal.WithLabelValues("read_error").Inc()
 			return
@@ -331,30 +331,20 @@ func (c *Conn) performInit(handler *Handler) error {
 		}
 	} else if si.State == events.StateIdle || si.State == events.StateTerminated ||
 		(si.State == events.StateRunning && handler.sm.GetWorker(sessionID) == nil) {
-		// Session needs a worker. Use worker_session_id to decide:
-		//   - non-empty: Claude session files may exist → Resume (--resume)
-		//   - empty: session was reset or never had a worker → Start (--session-id)
-		if si.WorkerSessionID != "" && c.starter != nil {
-			c.log.Info("gateway: resuming session", "session_id", sessionID, "from_state", si.State)
+		// Session exists but needs a worker: IDLE/TERMINATED have none, RUNNING is
+		// an orphan after gateway restart. Try Resume to preserve conversation history.
+		// If Resume fails (files deleted/corrupted), fall back to Start.
+		c.log.Info("gateway: resuming session", "session_id", sessionID, "state", si.State)
+		if c.starter != nil {
 			if err := c.starter.ResumeSession(context.Background(), sessionID, workDir); err != nil {
-				// Resume failed (files gone/corrupted) — clear stale worker_session_id
-				// and fall back to Start (--session-id).
+				// Resume failed — fall back to Start (--session-id) for a fresh session.
 				c.log.Warn("gateway: resume failed, falling back to new session",
-					"session_id", sessionID, "err", err)
-				_ = handler.sm.UpdateWorkerSessionID(context.Background(), sessionID, "")
+					"session_id", sessionID, "state", si.State, "err", err)
 				if err := c.starter.StartSession(context.Background(), sessionID, c.userID, c.botID,
 					initData.WorkerType, initData.Config.AllowedTools, workDir, "", nil); err != nil {
 					c.sendInitError(events.ErrCodeInternalError, "failed to start session after resume fallback")
 					return fmt.Errorf("start session after resume fallback: %w", err)
 				}
-			}
-		} else if c.starter != nil {
-			c.log.Info("gateway: starting fresh session (no worker_session_id)",
-				"session_id", sessionID, "from_state", si.State)
-			if err := c.starter.StartSession(context.Background(), sessionID, c.userID, c.botID,
-				initData.WorkerType, initData.Config.AllowedTools, workDir, "", nil); err != nil {
-				c.sendInitError(events.ErrCodeInternalError, "failed to start session")
-				return fmt.Errorf("start session: %w", err)
 			}
 		}
 	}
@@ -423,7 +413,7 @@ func (c *Conn) WritePump() {
 			_ = c.wc.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := c.wc.WriteMessage(websocket.PingMessage, nil); err != nil {
 				c.mu.Unlock()
-				c.log.Debug("gateway: ping failed", "err", err)
+				c.log.Debug("gateway: ping failed", "session_id", c.sessionID, "err", err)
 				return
 			}
 			c.mu.Unlock()

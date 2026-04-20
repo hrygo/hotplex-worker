@@ -17,6 +17,13 @@ import (
 	"github.com/hotplex/hotplex-worker/pkg/events"
 )
 
+// intentionalExiter is an optional interface for workers that support
+// deliberate termination signaling (e.g. session reset).
+type intentionalExiter interface {
+	SetIntentionalExit(bool)
+	IsIntentionalExit() bool
+}
+
 // Bridge connects the gateway to the session manager.
 // It runs the read pump in a goroutine and proxies worker events to the hub.
 type Bridge struct {
@@ -33,7 +40,7 @@ type Bridge struct {
 // NewBridge creates a new bridge. msgStore may be nil (event persistence disabled).
 func NewBridge(log *slog.Logger, hub *Hub, sm SessionManager, msgStore session.MessageStore) *Bridge {
 	return &Bridge{
-		log:      log,
+		log:      log.With("component", "bridge"),
 		hub:      hub,
 		sm:       sm,
 		msgStore: msgStore,
@@ -88,7 +95,7 @@ func (b *Bridge) StartSession(ctx context.Context, id, userID, botID string, wt 
 
 	// Transition to RUNNING. (StateNotifier will emit state event automatically)
 	if err := b.sm.Transition(ctx, id, events.StateRunning); err != nil {
-		b.log.Warn("bridge: transition to running failed", "id", id, "err", err)
+		b.log.Warn("bridge: transition to running failed", "session_id", id, "worker_type", wt, "err", err)
 	}
 
 	// Forward worker events to hub. Goroutine exits when conn.Recv() is closed
@@ -179,7 +186,7 @@ func (b *Bridge) resumeWithOpts(ctx context.Context, id, workDir string, opts fo
 		State: stateToNotify,
 	})
 	if err := b.hub.SendToSession(ctx, stateEvt); err != nil {
-		b.log.Warn("bridge: resume state notify failed", "id", id, "err", err)
+		b.log.Warn("bridge: resume state notify failed", "session_id", id, "err", err)
 	}
 
 	// Forward worker events to hub. Same as StartSession — goroutine exits when
@@ -220,15 +227,16 @@ func (b *Bridge) persistWorkerSessionID(w worker.Worker, sessionID string) {
 // AEP-020: after the recv channel closes, calls Worker.Wait() to determine exit
 // code and sets DoneData.Success accordingly (non-zero exit = crash = success=false).
 func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOpts) {
-	b.log.Info("bridge: forwardEvents goroutine started", "session_id", sessionID, "resumed", opts.resumed)
+	workerType := w.Type()
+	b.log.Info("bridge: forwardEvents goroutine started", "session_id", sessionID, "worker_type", workerType, "resumed", opts.resumed)
 	startTime := time.Now()
 	firstEvent := true
 	doneReceived := false
 	for env := range w.Conn().Recv() {
 		if env.Event.Type == events.Error {
-			b.log.Warn("bridge: received error from worker", "session_id", sessionID, "data", env.Event.Data)
-		} else {
-			b.log.Debug("bridge: received event from worker", "session_id", sessionID, "event_type", env.Event.Type)
+			b.log.Warn("bridge: received error from worker", "session_id", sessionID, "worker_type", workerType, "data", env.Event.Data)
+		} else if b.log.Enabled(context.Background(), slog.LevelDebug) {
+			b.log.Debug("bridge: received event from worker", "session_id", sessionID, "worker_type", workerType, "event_type", env.Event.Type)
 		}
 		// Capture and persist worker-internal session ID on first event
 		if firstEvent {
@@ -245,7 +253,7 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 		if env.Event.Type == events.Done {
 			doneReceived = true
 			if b.hub.GetAndClearDropped(sessionID) {
-				b.log.Warn("gateway: handling dropped deltas before done", "session_id", sessionID)
+				b.log.Warn("bridge: handling dropped deltas before done", "session_id", sessionID, "worker_type", workerType)
 
 				// Optional: Here we could inject a raw `message` pulling full state from Worker.
 				// For now, we mutate the `done` event to pass the `dropped: true` flag inside `stats`.
@@ -267,7 +275,7 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 		}
 
 		if err := b.hub.SendToSession(context.Background(), env); err != nil {
-			b.log.Warn("bridge: forward event failed", "err", err, "session_id", sessionID)
+			b.log.Warn("bridge: forward event failed", "err", err, "session_id", sessionID, "worker_type", workerType)
 		}
 
 		// EVT-004: append to MessageStore on done events (end of each turn).
@@ -279,6 +287,13 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 				b.log.Warn("bridge: msgstore append", "err", err, "session_id", sessionID)
 			}
 		}
+	}
+
+	// Check intentional exit before Wait() to avoid racing with
+	// ResetContext.Start() which replaces Proc on the same Worker struct.
+	if ix, ok := w.(intentionalExiter); ok && ix.IsIntentionalExit() {
+		b.log.Info("bridge: worker intentionally terminated (reset), old forwardEvents exiting", "session_id", sessionID, "worker_type", workerType)
+		return
 	}
 
 	// AEP-020: Worker.Recv() closed — get exit code to determine crash vs normal exit.
@@ -299,15 +314,10 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 	case <-ch:
 		// Wait() returned; check exit code.
 	case <-time.After(waitTimeout):
-		b.log.Warn("gateway: Wait() timed out, skipping crash detection", "session_id", sessionID)
-	}
-
-	// Intentional exit: worker was deliberately terminated for reset.
-	// The new forwardEvents goroutine (started by ResetSession) handles the
-	// restarted worker. This old goroutine simply exits.
-	if ix, ok := w.(interface{ IsIntentionalExit() bool }); ok && ix.IsIntentionalExit() {
-		b.log.Info("gateway: worker intentionally terminated (reset), old forwardEvents exiting", "session_id", sessionID)
-		return
+		// Force-kill to ensure the Wait() goroutine completes and doesn't leak.
+		b.log.Warn("bridge: Wait() timed out, force-killing", "session_id", sessionID, "worker_type", workerType)
+		_ = w.Kill()
+		<-ch // drain the goroutine
 	}
 
 	// Resume retry: if the resumed worker crashed quickly (within 15s), it likely
@@ -316,7 +326,7 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 	// Skip during shutdown to avoid spawning workers that will be immediately killed.
 	fallbackAttempted := !b.closed.Load() && exitCode != 0 && opts.resumed && opts.retryDepth < 1 && time.Since(startTime) < 15*time.Second
 	if fallbackAttempted {
-		if b.attemptResumeFallback(sessionID, opts.workDir, exitCode, opts.retryDepth) {
+		if b.attemptResumeFallback(sessionID, opts.workDir, exitCode, opts.retryDepth, workerType) {
 			return // new forwardEvents goroutine took over
 		}
 		// Fallback already cleaned up (DetachWorker + Transition); skip redundant cleanup below.
@@ -335,7 +345,7 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 	if b.sm != nil {
 		si, smErr := b.sm.Get(sessionID)
 		if smErr == nil && si.State == events.StateTerminated {
-			b.log.Debug("gateway: session already terminated, skipping done for handler-killed worker", "session_id", sessionID)
+			b.log.Debug("bridge: session already terminated, skipping done for handler-killed worker", "session_id", sessionID, "worker_type", workerType)
 			if !fallbackAttempted {
 				b.cleanupCrashedWorker(sessionID)
 			}
@@ -344,8 +354,8 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 	}
 
 	if exitCode != 0 {
-		b.log.Warn("gateway: worker exited with non-zero code, sending crash done", "session_id", sessionID, "exit_code", exitCode)
-		metrics.WorkerCrashesTotal.WithLabelValues(string(w.Type()), fmt.Sprintf("%d", exitCode)).Inc()
+		b.log.Warn("bridge: worker exited with non-zero code, sending crash done", "session_id", sessionID, "worker_type", workerType, "exit_code", exitCode)
+		metrics.WorkerCrashesTotal.WithLabelValues(string(workerType), fmt.Sprintf("%d", exitCode)).Inc()
 		crashDone := events.NewEnvelope(aep.NewID(), sessionID, b.hub.NextSeq(sessionID), events.Done, events.DoneData{
 			Success: false,
 			Stats:   map[string]any{"crash_exit_code": exitCode},
@@ -355,7 +365,7 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 		// Worker exited without sending a done event (e.g., ResetContext consumed
 		// the exit code). Send a synthetic done so platform connections clean up
 		// typing indicators, streaming cards, and tool reactions.
-		b.log.Debug("gateway: sending synthetic done for platform cleanup", "session_id", sessionID)
+		b.log.Debug("bridge: sending synthetic done for platform cleanup", "session_id", sessionID, "worker_type", workerType)
 		syntheticDone := events.NewEnvelope(aep.NewID(), sessionID, b.hub.NextSeq(sessionID), events.Done, events.DoneData{
 			Success: false,
 			Stats:   map[string]any{"synthetic": true},
@@ -374,20 +384,20 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 // attemptResumeFallback retries a failed resume to preserve conversation history.
 // Returns true if a new forwardEvents goroutine took over.
 // Limits to 1 retry (via retryDepth) to prevent infinite loops on persistent failures.
-func (b *Bridge) attemptResumeFallback(sessionID, workDir string, exitCode, retryDepth int) bool {
-	b.log.Warn("gateway: worker crashed shortly after resume, retrying resume to preserve conversation",
-		"session_id", sessionID, "exit_code", exitCode, "retry_depth", retryDepth)
+func (b *Bridge) attemptResumeFallback(sessionID, workDir string, exitCode, retryDepth int, workerType worker.WorkerType) bool {
+	b.log.Warn("bridge: worker crashed shortly after resume, retrying resume to preserve conversation",
+		"session_id", sessionID, "worker_type", workerType, "exit_code", exitCode, "retry_depth", retryDepth)
 
 	// Clean up the crashed worker first.
 	b.cleanupCrashedWorker(sessionID)
 
 	// Retry ResumeSession to preserve conversation history.
 	if err := b.resumeWithOpts(context.Background(), sessionID, workDir, forwardOpts{resumed: true, workDir: workDir, retryDepth: retryDepth + 1}); err != nil {
-		b.log.Error("gateway: resume retry failed", "session_id", sessionID, "err", err)
+		b.log.Error("bridge: resume retry failed", "session_id", sessionID, "worker_type", workerType, "err", err)
 		return false
 	}
 
-	b.log.Info("gateway: resume retry succeeded", "session_id", sessionID)
+	b.log.Info("bridge: resume retry succeeded", "session_id", sessionID, "worker_type", workerType)
 	// Notify the client that a resume retry occurred.
 	warnEvt := events.NewEnvelope(aep.NewID(), sessionID, b.hub.NextSeq(sessionID), events.Error, events.ErrorData{
 		Code:    events.ErrCodeResumeRetry,
@@ -412,11 +422,12 @@ func (b *Bridge) cleanupCrashedWorker(sessionID string) {
 // StartPlatformSession creates a session for a platform message if it doesn't already exist.
 // Implements messaging.SessionStarter. Idempotent: returns nil if session exists with a live worker.
 //
-// Decision logic (DB-driven):
+// Decision logic (state-based with Resume→Start fallback):
 //  1. No DB record → Create + Start (--session-id)
 //  2. Worker alive → Reuse (forward message)
-//  3. No worker + worker_session_id non-empty → Resume (--resume), with Start fallback
-//  4. No worker + worker_session_id empty → Start (--session-id)
+//  3. No worker, state=CREATED → Start (--session-id)
+//  4. No worker, state=RUNNING/IDLE/TERMINATED → Resume (--resume)
+//     If Resume fails (files gone/corrupted), fall back to Start (--session-id)
 func (b *Bridge) StartPlatformSession(ctx context.Context, sessionID, ownerID, workerType, workDir, platform string, platformKey map[string]string) error {
 	b.log.Debug("bridge: StartPlatformSession called", "session_id", sessionID, "owner_id", ownerID, "worker_type", workerType, "work_dir", workDir, "platform", platform)
 	si, err := b.sm.Get(sessionID)
@@ -425,31 +436,24 @@ func (b *Bridge) StartPlatformSession(ctx context.Context, sessionID, ownerID, w
 			return nil
 		}
 		// Orphan: session record exists but worker is gone.
-		// Use worker_session_id to decide resume vs new:
-		//   - non-empty: Claude session files may exist on disk → try --resume
-		//   - empty: session was reset or never started → --session-id (new)
-		if si.WorkerSessionID != "" {
-			b.log.Info("gateway: orphan platform session, resuming (worker_session_id present)",
-				"session_id", sessionID, "state", si.State)
-			if err := b.ResumeSession(ctx, sessionID, workDir); err != nil {
-				// Resume failed (files gone/corrupted) — clear stale worker_session_id
-				// and fall back to Start (--session-id).
-				b.log.Warn("gateway: resume failed, falling back to new session",
-					"session_id", sessionID, "err", err)
-				_ = b.sm.UpdateWorkerSessionID(ctx, sessionID, "")
-				return b.startOrResumeOnInUse(ctx, sessionID, ownerID, worker.WorkerType(workerType), workDir, platform, platformKey)
-			}
-			return nil
+		if si.State == events.StateCreated {
+			b.log.Info("bridge: orphan platform session unstarted, starting fresh", "session_id", sessionID)
+			return b.startOrResumeOnInUse(ctx, sessionID, ownerID, worker.WorkerType(workerType), workDir, platform, platformKey)
 		}
-		// No worker_session_id — start fresh.
-		b.log.Info("gateway: orphan platform session, starting fresh (no worker_session_id)",
-			"session_id", sessionID, "state", si.State)
-		return b.startOrResumeOnInUse(ctx, sessionID, ownerID, worker.WorkerType(workerType), workDir, platform, platformKey)
+		// RUNNING/IDLE/TERMINATED — try Resume to preserve conversation history.
+		// If Resume fails (session files deleted or corrupted), fall back to Start.
+		b.log.Info("bridge: orphan platform session, resuming", "session_id", sessionID, "state", si.State)
+		if err := b.ResumeSession(ctx, sessionID, workDir); err != nil {
+			b.log.Warn("bridge: resume failed, falling back to new session",
+				"session_id", sessionID, "state", si.State, "err", err)
+			return b.startOrResumeOnInUse(ctx, sessionID, ownerID, worker.WorkerType(workerType), workDir, platform, platformKey)
+		}
+		return nil
 	}
 
 	wt := worker.WorkerType(workerType)
 	if wt == "" {
-		return fmt.Errorf("gateway: no worker_type configured for platform session %s", sessionID)
+		return fmt.Errorf("bridge: no worker_type configured for platform session %s", sessionID)
 	}
 
 	return b.startOrResumeOnInUse(ctx, sessionID, ownerID, wt, workDir, platform, platformKey)
@@ -461,7 +465,7 @@ func (b *Bridge) StartPlatformSession(ctx context.Context, sessionID, ownerID, w
 func (b *Bridge) startOrResumeOnInUse(ctx context.Context, sessionID, ownerID string, wt worker.WorkerType, workDir, platform string, platformKey map[string]string) error {
 	if err := b.StartSession(ctx, sessionID, ownerID, "", wt, nil, workDir, platform, platformKey); err != nil {
 		if isWorkerInUseError(err) {
-			b.log.Info("gateway: worker rejected as in-use, switching to resume", "session_id", sessionID, "err", err)
+			b.log.Info("bridge: worker rejected as in-use, switching to resume", "session_id", sessionID, "err", err)
 			return b.ResumeSession(ctx, sessionID, workDir)
 		}
 		return err
@@ -469,11 +473,9 @@ func (b *Bridge) startOrResumeOnInUse(ctx context.Context, sessionID, ownerID st
 	return nil
 }
 
-// ResetSession performs a true session reset: terminates the current worker,
-// clears the worker_session_id (so future lookups use --session-id, not --resume),
-// deletes Claude session files from disk, and starts a fresh worker process.
-// The old forwardEvents goroutine detects the intentionalExit flag and exits
-// cleanly; this method starts a new forwardEvents for the restarted worker.
+// ResetSession terminates the worker, deletes session files, and starts fresh.
+// Crash recovery: orphan sessions try Resume first; if files are gone,
+// StartPlatformSession falls back to Start(--session-id).
 func (b *Bridge) ResetSession(ctx context.Context, sessionID string) error {
 	w := b.sm.GetWorker(sessionID)
 	if w == nil {
@@ -481,20 +483,18 @@ func (b *Bridge) ResetSession(ctx context.Context, sessionID string) error {
 	}
 
 	// Mark intentional exit so forwardEvents skips crash handling.
-	if ix, ok := w.(interface{ SetIntentionalExit(bool) }); ok {
+	if ix, ok := w.(intentionalExiter); ok {
 		ix.SetIntentionalExit(true)
-	}
-
-	// Clear worker_session_id in DB so future session lookups use --session-id
-	// (new) instead of --resume. This is the DB signal that the Claude session
-	// files no longer exist and a fresh conversation is needed.
-	if err := b.sm.UpdateWorkerSessionID(ctx, sessionID, ""); err != nil {
-		b.log.Warn("bridge: reset: failed to clear worker_session_id", "session_id", sessionID, "err", err)
 	}
 
 	// Worker-level reset: Terminate → delete session files → Start fresh.
 	if err := w.ResetContext(ctx); err != nil {
 		return fmt.Errorf("bridge: reset worker: %w", err)
+	}
+
+	// Reset flag so new forwardEvents handles crashes normally.
+	if ix, ok := w.(intentionalExiter); ok {
+		ix.SetIntentionalExit(false)
 	}
 
 	// Start new forwardEvents goroutine for the restarted worker.

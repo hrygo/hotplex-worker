@@ -59,8 +59,9 @@ const defaultSessionStoreDir = ".claude/projects"
 type Worker struct {
 	*base.BaseWorker
 
-	sessionID  string
-	projectDir string // original working directory for the worker process
+	sessionID   string
+	projectDir  string             // original working directory for the worker process
+	origSession worker.SessionInfo // first Start's session info, reused by ResetContext
 
 	// Protocol layers
 	parser  *Parser
@@ -137,6 +138,11 @@ func (w *Worker) startLocked(_ context.Context, session worker.SessionInfo, resu
 	w.sessionID = session.SessionID
 	w.projectDir = session.ProjectDir
 	w.seq.Store(0)
+
+	// Preserve original session info for ResetContext (only on first Start).
+	if w.origSession.SessionID == "" {
+		w.origSession = session
+	}
 
 	// readLineFn: use test override if set, otherwise real proc reader.
 	if w.readLineFn == nil {
@@ -331,15 +337,17 @@ func (w *Worker) LastIO() time.Time {
 // ResetContext clears the worker runtime context for a fresh start.
 // Claude Code does not support in-place context clearing, so this:
 //  1. Terminates the current process
-//  2. Deletes session files from ~/.claude/projects/*/sessions/<id>*
+//  2. Deletes session files from ~/.claude/projects/*/<id>.jsonl and related paths
 //  3. Starts a fresh process with --session-id (same ID, no files to conflict)
+//
+// The original session configuration (AllowedTools, SystemPrompt, MCPConfig, etc.)
+// is preserved from the first Start call via origSession.
 //
 // The caller (Bridge.ResetSession) must set intentionalExit before calling this
 // so that forwardEvents skips crash handling for the old process.
 func (w *Worker) ResetContext(ctx context.Context) error {
 	w.Mu.Lock()
-	sessionID := w.sessionID
-	projectDir := w.projectDir
+	orig := w.origSession
 	w.Mu.Unlock()
 
 	if err := w.Terminate(ctx); err != nil {
@@ -351,15 +359,10 @@ func (w *Worker) ResetContext(ctx context.Context) error {
 		w.Log.Warn("claudecode: failed to delete session files, reset may fail", "err", err)
 	}
 
-	// Reconstruct session info preserving original values.
-	session := worker.SessionInfo{
-		SessionID:  sessionID,
-		ProjectDir: projectDir,
-	}
-	if conn := w.BaseWorker.Conn(); conn != nil {
-		session.UserID = conn.UserID()
-	}
-	return w.Start(ctx, session)
+	// Reuse original session config (AllowedTools, SystemPrompt, MCPConfig, etc.)
+	// but clear WorkerSessionID since the Claude session files were deleted.
+	orig.WorkerSessionID = ""
+	return w.Start(ctx, orig)
 }
 
 // deleteSessionFiles removes Claude session files to prevent "already in use" errors on reset.
@@ -413,9 +416,13 @@ func (w *Worker) deleteSessionFiles() error {
 // ─── Internal ────────────────────────────────────────────────────────────────
 
 func (w *Worker) readOutput(ctx context.Context) {
+	// Capture current Conn at entry to avoid closing the NEW Conn after reset.
+	// ResetContext.Start() replaces the Conn, but this goroutine's defer must
+	// close the OLD Conn that it was actually reading from.
+	entryConn := w.Conn()
 	defer func() {
-		if c := w.Conn(); c != nil {
-			_ = c.Close()
+		if entryConn != nil {
+			_ = entryConn.Close()
 		}
 	}()
 

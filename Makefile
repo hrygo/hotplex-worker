@@ -259,6 +259,12 @@ webchat-dev:
 		echo "$(YELLOW)Webchat already running (PID: $$(cat $(WEB_CHAT_PID)))$(RESET)"; \
 		exit 0; \
 	fi; \
+	STALE_PID=$$(lsof -ti:$(WEB_CHAT_PORT) 2>/dev/null); \
+	if [ -n "$$STALE_PID" ]; then \
+		echo "$(YELLOW)Killing stale process on port $(WEB_CHAT_PORT) (PID: $$STALE_PID)$(RESET)"; \
+		echo "$$STALE_PID" | xargs kill -9 2>/dev/null || true; \
+		rm -f $(WEB_CHAT_PID); \
+	fi; \
 	if [ ! -d $(WEB_CHAT_DIR)/node_modules ]; then \
 		echo "$(CYAN)Installing webchat dependencies...$(RESET)"; \
 		cd $(WEB_CHAT_DIR) && pnpm install --frozen-lockfile 2>/dev/null || pnpm install; \

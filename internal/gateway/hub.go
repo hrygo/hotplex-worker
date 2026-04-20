@@ -106,7 +106,7 @@ func NewHub(log *slog.Logger, cfg *config.Config) *Hub {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Hub{
-		log: log,
+		log: log.With("component", "hub"),
 		cfg: cfg,
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  cfg.Gateway.ReadBufferSize,
@@ -137,7 +137,7 @@ func (h *Hub) RegisterConn(conn *Conn) {
 	h.conns[conn] = struct{}{}
 	h.mu.Unlock()
 	metrics.GatewayConnectionsOpen.Inc()
-	h.log.Debug("gateway: conn registered", "remote", conn.RemoteAddr())
+	h.log.Debug("gateway: conn registered", "remote", conn.RemoteAddr(), "session_id", conn.sessionID)
 }
 
 // UnregisterConn removes a connection and cleans up session mappings.
@@ -153,7 +153,7 @@ func (h *Hub) UnregisterConn(conn *Conn) {
 	}
 	h.mu.Unlock()
 	metrics.GatewayConnectionsOpen.Dec()
-	h.log.Debug("gateway: conn unregistered", "remote", conn.RemoteAddr())
+	h.log.Debug("gateway: conn unregistered", "remote", conn.RemoteAddr(), "session_id", conn.sessionID)
 }
 
 // JoinSession subscribes conn to receive events for a session.
@@ -177,7 +177,7 @@ func (h *Hub) JoinSession(sessionID string, conn *Conn) {
 		for c := range existing {
 			if c != conn {
 				delete(existing, c)
-				h.log.Info("gateway: removed stale conn from session", "session_id", sessionID)
+				h.log.Info("gateway: removed stale conn from session", "session_id", sessionID, "remote", conn.RemoteAddr())
 			}
 		}
 	}
@@ -304,7 +304,7 @@ func (h *Hub) sendControlToSession(ctx context.Context, env *events.Envelope) {
 	env = events.Clone(env)
 	for _, conn := range conns {
 		if err := conn.WriteCtx(ctx, env); err != nil {
-			h.log.Warn("gateway: send to conn failed", "err", err)
+			h.log.Warn("gateway: send to conn failed", "session_id", env.SessionID, "err", err)
 		}
 	}
 }
@@ -424,12 +424,12 @@ func (h *Hub) routeMessage(msg *EnvelopeWithConn) {
 		metrics.GatewayMessagesTotal.WithLabelValues("outgoing", string(msg.Env.Event.Type)).Inc()
 		if c, ok := conn.(*Conn); ok {
 			if err := c.WriteMessage(websocket.TextMessage, encoded); err != nil {
-				h.log.Warn("gateway: write failed", "err", err)
+				h.log.Warn("gateway: write failed", "session_id", msg.Env.SessionID, "err", err)
 				_ = conn.Close()
 			}
 		} else {
 			if err := conn.WriteCtx(context.Background(), msg.Env); err != nil {
-				h.log.Warn("gateway: platform write failed", "err", err)
+				h.log.Warn("gateway: platform write failed", "session_id", msg.Env.SessionID, "err", err)
 				_ = conn.Close()
 			}
 		}

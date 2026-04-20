@@ -95,7 +95,7 @@ func NewManager(ctx context.Context, log *slog.Logger, cfg *config.Config, store
 	}
 
 	m := &Manager{
-		log:      log,
+		log:      log.With("component", "session"),
 		store:    store,
 		msgStore: msgStore,
 		cfg:      cfg,
@@ -143,7 +143,7 @@ func (m *Manager) CreateWithBot(ctx context.Context, id, userID, botID string, w
 	m.sessions[id] = &managedSession{info: *info, log: m.log.With("worker_type", workerType)}
 	m.mu.Unlock()
 
-	m.log.Info("session: created", "id", id, "user_id", userID, "worker_type", workerType, "bot_id", botID)
+	m.log.Info("session: created", "session_id", id, "user_id", userID, "worker_type", workerType, "bot_id", botID)
 	metrics.SessionsTotal.WithLabelValues(string(workerType)).Inc()
 	metrics.SessionsActive.WithLabelValues(string(events.StateCreated)).Inc()
 	return info, nil
@@ -216,7 +216,7 @@ func (m *Manager) transitionState(ctx context.Context, ms *managedSession, from,
 			terminateCtx, cancel := context.WithTimeout(ctx, gracefulShutdownTimeout)
 			defer cancel()
 			if err := ms.worker.Terminate(terminateCtx); err != nil {
-				m.log.Warn("session: worker terminate failed", "id", ms.info.ID, "err", err)
+				m.log.Warn("session: worker terminate failed", "session_id", ms.info.ID, "err", err)
 			}
 			// Nil the pointer to prevent DetachWorker from releasing quota a
 			// second time (e.g. when forwardEvents goroutine exits after the
@@ -225,7 +225,7 @@ func (m *Manager) transitionState(ctx context.Context, ms *managedSession, from,
 		}
 	}
 
-	m.log.Info("session: transitioned", "id", ms.info.ID, "from", from, "to", to)
+	m.log.Info("session: transitioned", "session_id", ms.info.ID, "from", from, "to", to)
 
 	// Update active sessions gauge.
 	metrics.SessionsActive.WithLabelValues(string(from)).Dec()
@@ -301,7 +301,8 @@ func (m *Manager) TransitionWithInput(ctx context.Context, id string, to events.
 	if ms.worker != nil {
 		maxTurns := ms.worker.MaxTurns()
 		if maxTurns > 0 && ms.TurnCount > maxTurns {
-			m.log.Warn("session: max turns exceeded, initiating anti-pollution restart")
+			m.log.Warn("session: max turns exceeded, initiating anti-pollution restart",
+				"session_id", id, "turn_count", ms.TurnCount, "max_turns", maxTurns)
 			_ = ms.worker.Kill()
 			from := ms.info.State
 			if events.IsValidTransition(from, events.StateTerminated) {
@@ -339,7 +340,7 @@ func (m *Manager) AttachWorker(id string, w worker.Worker) error {
 	if poolErr := m.pool.Acquire(userID); poolErr != nil {
 		var pe *PoolError
 		if !errors.As(poolErr, &pe) {
-			m.log.Warn("session: attach rejected", "error", poolErr, "session_id", id)
+			m.log.Warn("session: attach rejected", "err", poolErr, "session_id", id)
 			metrics.PoolAcquireTotal.WithLabelValues("pool_exhausted").Inc()
 			return ErrPoolExhausted
 		}
@@ -454,7 +455,7 @@ func (m *Manager) Delete(ctx context.Context, id string) error {
 		go m.OnTerminate(id)
 	}
 
-	m.log.Info("session: deleted", "id", id)
+	m.log.Info("session: deleted", "session_id", id)
 	return nil
 }
 
@@ -693,7 +694,8 @@ func (m *Manager) gc(ctx context.Context) {
 				timeout = m.cfg.Worker.ExecutionTimeout
 			}
 			if !lastIO.IsZero() && now.Sub(lastIO) > timeout {
-				m.log.Warn("session: zombie IO polling triggered, terminating ghost process", "id", id, "last_io", lastIO)
+				m.log.Warn("session: zombie IO polling triggered, terminating ghost process",
+					"session_id", id, "worker_type", w.Type(), "last_io", lastIO, "timeout", timeout)
 				if err := m.TransitionWithReason(ctx, id, events.StateTerminated, "zombie"); err != nil {
 					m.log.Warn("session: zombie GC transition error", "err", err)
 				}
@@ -725,12 +727,12 @@ func (m *Manager) gc(ctx context.Context) {
 
 	for _, id := range maxIds {
 		if err := m.TransitionWithReason(ctx, id, events.StateTerminated, "max_lifetime"); err != nil {
-			m.log.Warn("session: gc (max_lifetime) transition", "id", id, "err", err)
+			m.log.Warn("session: gc (max_lifetime) transition", "session_id", id, "err", err)
 		}
 	}
 	for _, id := range idleIds {
 		if err := m.TransitionWithReason(ctx, id, events.StateTerminated, "idle_timeout"); err != nil {
-			m.log.Warn("session: gc (idle) transition", "id", id, "err", err)
+			m.log.Warn("session: gc (idle) transition", "session_id", id, "err", err)
 		}
 	}
 

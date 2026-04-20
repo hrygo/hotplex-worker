@@ -109,7 +109,7 @@ func (a *Adapter) handleControlCommand(ctx context.Context, cmd slack.SlashComma
 
 	conn := a.GetOrCreateConn(cmd.ChannelID, "")
 	if err := a.bridge.Handle(ctx, env, conn); err != nil {
-		a.log.Error("slack: control event failed", "command", logPrefix, "session_id", sessionID, "error", err)
+		a.log.Error("slack: control event failed", "command", logPrefix, "session_id", sessionID, "err", err)
 		a.sendEphemeralOrPost(ctx, cmd.ChannelID, cmd.UserID, errorMsg)
 		return
 	}

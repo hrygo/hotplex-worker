@@ -31,7 +31,7 @@ type Handler struct {
 // NewHandler creates a new message handler.
 func NewHandler(log *slog.Logger, cfg *config.Config, hub *Hub, sm *session.Manager, jwtValidator *security.JWTValidator) *Handler {
 	return &Handler{
-		log:          log,
+		log:          log.With("component", "handler"),
 		cfg:          cfg,
 		hub:          hub,
 		sm:           sm,

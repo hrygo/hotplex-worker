@@ -109,7 +109,7 @@ func (a *Adapter) handleInteractionEvent(ctx context.Context, evt socketmode.Eve
 			slack.MsgOptionText(fmt.Sprintf("_Response recorded by <@%s>_", userID), false),
 		)
 		if err != nil {
-			a.log.Debug("slack: update interaction message", "error", err)
+			a.log.Debug("slack: update interaction message", "err", err)
 		}
 
 		_ = threadTS // thread context

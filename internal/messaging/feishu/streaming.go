@@ -131,7 +131,7 @@ func (c *StreamingCardController) EnsureCard(ctx context.Context, chatID, chatTy
 	msgID, err := c.sendCardMessage(ctx, chatID, sanitized)
 	if err != nil {
 		c.log.Warn("feishu: send card message failed, degrading to static",
-			"error", err)
+			"err", err)
 		c.cardKitOK = false
 		if c.transition(PhaseCreationFailed) {
 			return fmt.Errorf("feishu: send card message failed: %w", err)
@@ -160,7 +160,7 @@ func (c *StreamingCardController) EnsureCard(ctx context.Context, chatID, chatTy
 	cardID, err := c.idConvert(ctx, msgID)
 	if err != nil {
 		c.log.Warn("feishu: id_convert failed, using IM patch fallback",
-			"error", err)
+			"err", err)
 		c.cardKitOK = false
 	} else {
 		c.mu.Lock()
@@ -170,7 +170,7 @@ func (c *StreamingCardController) EnsureCard(ctx context.Context, chatID, chatTy
 		// Step 3: Enable streaming on the card.
 		if err := c.enableStreaming(ctx); err != nil {
 			c.log.Warn("feishu: enable streaming failed, using IM patch fallback",
-				"error", err)
+				"err", err)
 			c.cardKitOK = false
 		}
 	}
@@ -221,7 +221,7 @@ func (c *StreamingCardController) Flush(ctx context.Context) error {
 				return nil
 			}
 			c.log.Warn("feishu: cardkit flush failed, falling back to IM patch",
-				"error", err)
+				"err", err)
 			c.cardKitOK = false
 		} else {
 			c.mu.Lock()
@@ -233,7 +233,7 @@ func (c *StreamingCardController) Flush(ctx context.Context) error {
 
 	if c.msgID != "" && c.limiter.AllowPatch(c.msgID) {
 		if err := c.flushIMPatch(ctx, content); err != nil {
-			c.log.Warn("feishu: IM patch flush failed", "error", err)
+			c.log.Warn("feishu: IM patch flush failed", "err", err)
 			return err
 		}
 		c.mu.Lock()
@@ -270,11 +270,11 @@ func (c *StreamingCardController) Close(ctx context.Context) error {
 		seq := int(c.sequence.Add(1))
 
 		if err := c.flushCardKit(ctx, content, seq); err != nil {
-			c.log.Warn("feishu: final cardkit flush failed", "error", err)
+			c.log.Warn("feishu: final cardkit flush failed", "err", err)
 		}
 
 		if err := c.disableStreaming(ctx); err != nil {
-			c.log.Warn("feishu: disable streaming failed", "error", err)
+			c.log.Warn("feishu: disable streaming failed", "err", err)
 		}
 	}
 

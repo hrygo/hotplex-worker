@@ -162,7 +162,7 @@ func (a *Adapter) runSocketMode(ctx context.Context) {
 				a.log.Info("slack: connecting to Slack API")
 
 			case socketmode.EventTypeConnectionError:
-				a.log.Warn("slack: connection error", "error", evt.Data)
+				a.log.Warn("slack: connection error", "err", evt.Data)
 
 			case socketmode.EventTypeInteractive:
 				go a.handleInteractionEvent(ctx, evt)
@@ -251,7 +251,7 @@ func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsA
 			if err == nil {
 				text += "\n" + path
 			} else {
-				a.log.Warn("slack: download media failed", "file", m.Name, "error", err)
+				a.log.Warn("slack: download media failed", "file", m.Name, "err", err)
 				text += fmt.Sprintf("\n[%s: %s]", m.Type, m.Name)
 			}
 		}
@@ -285,7 +285,7 @@ func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsA
 	}
 
 	if err := a.HandleTextMessage(ctx, platformMsgID, channelID, teamID, threadTS, userID, text); err != nil {
-		a.log.Error("slack: handle message failed", "error", err)
+		a.log.Error("slack: handle message failed", "err", err)
 	}
 }
 
@@ -416,7 +416,7 @@ func (a *Adapter) handleTextControlCommand(ctx context.Context, teamID, channelI
 
 	conn := a.GetOrCreateConn(channelID, threadTS)
 	if err := a.bridge.Handle(ctx, ctrlEnv, conn); err != nil {
-		a.log.Error("slack: text control command failed", "action", result.Label, "error", err)
+		a.log.Error("slack: text control command failed", "action", result.Label, "err", err)
 		a.sendEphemeralOrPost(ctx, channelID, userID, fmt.Sprintf("❌ Failed to execute %s.", result.Label))
 		return
 	}

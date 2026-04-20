@@ -150,7 +150,7 @@ func (m *Manager) Start(ctx context.Context, name string, args, env []string, di
 			Cur: memLimit,
 			Max: memLimit,
 		}); err != nil {
-			m.log.Warn("proc: setrlimit RLIMIT_AS failed", "error", err)
+			m.log.Warn("proc: setrlimit RLIMIT_AS failed", "err", err)
 			// Non-fatal: log and continue.
 		}
 	}

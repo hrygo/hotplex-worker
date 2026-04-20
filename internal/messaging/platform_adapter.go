@@ -64,7 +64,7 @@ func New(pt PlatformType, log *slog.Logger) (PlatformAdapterInterface, error) {
 	if !ok {
 		return nil, fmt.Errorf("messaging: unknown platform %q", pt)
 	}
-	return b(log), nil
+	return b(log.With("platform", string(pt))), nil
 }
 
 // RegisteredTypes returns all registered platform types.
