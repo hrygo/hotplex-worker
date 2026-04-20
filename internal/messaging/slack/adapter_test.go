@@ -327,7 +327,7 @@ func TestGate_DMNotRequireMention(t *testing.T) {
 
 func TestGate_DefaultOpen(t *testing.T) {
 	t.Parallel()
-	g := NewGate("", "", false, nil, nil, nil)
+	g := NewGate(PolicyOpen, PolicyOpen, false, nil, nil, nil)
 	require.True(t, g.Check("im", "U1", false).Allowed)
 	require.True(t, g.Check("channel", "U1", false).Allowed)
 	require.True(t, g.Check("mpim", "U1", false).Allowed)

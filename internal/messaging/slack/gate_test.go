@@ -7,6 +7,7 @@ import (
 )
 
 func TestNewGate(t *testing.T) {
+	t.Parallel()
 	g := NewGate(PolicyOpen, PolicyOpen, false, []string{"U1"}, []string{"DM1"}, []string{"GP1"})
 	require.NotNil(t, g)
 	require.True(t, g.allowFrom["U1"])
@@ -15,6 +16,7 @@ func TestNewGate(t *testing.T) {
 }
 
 func TestGate_Check_DM(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		policy     string
@@ -63,7 +65,9 @@ func TestGate_Check_DM(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			g := NewGate(tt.policy, PolicyOpen, false, tt.globalList, tt.dmList, nil)
 			res := g.Check(ChannelIM, tt.userID, false)
 			require.Equal(t, tt.allowed, res.Allowed)
@@ -73,6 +77,7 @@ func TestGate_Check_DM(t *testing.T) {
 }
 
 func TestGate_Check_Group(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		policy     string
@@ -138,11 +143,33 @@ func TestGate_Check_Group(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			g := NewGate(PolicyOpen, tt.policy, tt.requireM, tt.globalList, nil, tt.groupList)
 			res := g.Check(ChannelGroup, tt.userID, tt.mentioned)
 			require.Equal(t, tt.allowed, res.Allowed)
 			require.Equal(t, tt.reason, res.Reason)
 		})
 	}
+}
+
+func TestGate_UpdateAllowFrom(t *testing.T) {
+	t.Parallel()
+	g := NewGate(PolicyAllowlist, PolicyAllowlist, false, []string{"U1"}, []string{"DM1"}, []string{"GP1"})
+
+	// Initial check
+	require.True(t, g.Check(ChannelIM, "U1", false).Allowed)
+	require.True(t, g.Check(ChannelIM, "DM1", false).Allowed)
+	require.False(t, g.Check(ChannelIM, "U2", false).Allowed)
+
+	// Update
+	g.UpdateAllowFrom([]string{"U2"}, []string{"DM2"}, []string{"GP2"})
+
+	// New check
+	require.False(t, g.Check(ChannelIM, "U1", false).Allowed)
+	require.True(t, g.Check(ChannelIM, "U2", false).Allowed)
+	require.False(t, g.Check(ChannelIM, "DM1", false).Allowed)
+	require.True(t, g.Check(ChannelIM, "DM2", false).Allowed)
+	require.True(t, g.Check(ChannelGroup, "GP2", false).Allowed)
 }
