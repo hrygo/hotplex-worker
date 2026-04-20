@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -369,17 +370,24 @@ func (h *Hub) Run() {
 			if msg == nil || msg.Env == nil {
 				continue
 			}
-			_, span := tracing.SpanFromContext(h.ctx).Start(h.ctx, "hub.broadcast")
-			span.SetAttributes(
-				tracing.Attr("session_id", msg.Env.SessionID),
-				tracing.Attr("event_type", string(msg.Env.Event.Type)),
-				tracing.Attr("seq", msg.Env.Seq),
-			)
-			h.routeMessage(msg)
-			span.End()
-			if msg.afterDrain != nil {
-				msg.afterDrain()
-			}
+			go func(msg *EnvelopeWithConn) {
+				defer func() {
+					if r := recover(); r != nil {
+						h.log.Error("hub: panic in routeMessage", "session_id", msg.Env.SessionID, "panic", r, "stack", string(debug.Stack()))
+					}
+				}()
+				_, span := tracing.SpanFromContext(h.ctx).Start(h.ctx, "hub.broadcast")
+				span.SetAttributes(
+					tracing.Attr("session_id", msg.Env.SessionID),
+					tracing.Attr("event_type", string(msg.Env.Event.Type)),
+					tracing.Attr("seq", msg.Env.Seq),
+				)
+				h.routeMessage(msg)
+				span.End()
+				if msg.afterDrain != nil {
+					msg.afterDrain()
+				}
+			}(msg)
 		}
 	}
 }

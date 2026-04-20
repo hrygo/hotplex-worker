@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -227,6 +228,11 @@ func (b *Bridge) persistWorkerSessionID(w worker.Worker, sessionID string) {
 // AEP-020: after the recv channel closes, calls Worker.Wait() to determine exit
 // code and sets DoneData.Success accordingly (non-zero exit = crash = success=false).
 func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOpts) {
+	defer func() {
+		if r := recover(); r != nil {
+			b.log.Error("bridge: panic in forwardEvents", "session_id", sessionID, "panic", r, "stack", string(debug.Stack()))
+		}
+	}()
 	workerType := w.Type()
 	b.log.Info("bridge: forwardEvents goroutine started", "session_id", sessionID, "worker_type", workerType, "resumed", opts.resumed)
 	startTime := time.Now()

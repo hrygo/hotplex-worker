@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"runtime/debug"
 
 	"github.com/hotplex/hotplex-worker/internal/config"
 	"github.com/hotplex/hotplex-worker/internal/metrics"
@@ -44,8 +45,13 @@ func NewHandler(log *slog.Logger, cfg *config.Config, hub *Hub, sm *session.Mana
 func (h *Handler) SetBridge(b *Bridge) { h.bridge = b }
 
 // Handle processes an incoming envelope from a client.
-func (h *Handler) Handle(ctx context.Context, env *events.Envelope) error {
-	h.log.Debug("gateway: Handle called", "event_type", env.Event.Type, "session_id", env.SessionID, "seq", env.Seq)
+func (h *Handler) Handle(ctx context.Context, env *events.Envelope) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			h.log.Error("gateway: panic in handler", "panic", r, "stack", string(debug.Stack()))
+			err = fmt.Errorf("handler panic: %v", r)
+		}
+	}()
 	switch env.Event.Type {
 	case events.Input:
 		return h.handleInput(ctx, env)
