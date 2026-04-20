@@ -24,13 +24,14 @@ var slashCommandMap = map[string]ControlCommandResult{
 }
 
 // naturalLanguageMap maps normalized natural language triggers to control actions.
+// All keys require $ prefix to avoid accidental matches in normal conversation.
 var naturalLanguageMap = map[string]ControlCommandResult{
 	// GC: sleep, suspend — worker stopped but session alive for resume.
-	"gc": {events.ControlActionGC, "gc"},
-	"休眠": {events.ControlActionGC, "gc"},
-	"挂起": {events.ControlActionGC, "gc"},
+	"$gc": {events.ControlActionGC, "gc"},
+	"$休眠": {events.ControlActionGC, "gc"},
+	"$挂起": {events.ControlActionGC, "gc"},
 	// Reset: start over — same session ID, fresh context.
-	"重置": {events.ControlActionReset, "reset"},
+	"$重置": {events.ControlActionReset, "reset"},
 }
 
 // ParseControlCommand checks whether text is a control command.

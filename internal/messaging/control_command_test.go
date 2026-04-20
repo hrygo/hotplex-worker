@@ -42,15 +42,15 @@ func TestParseControlCommand_NaturalLanguage(t *testing.T) {
 		input  string
 		action events.ControlAction
 	}{
-		// GC: sleep/suspend
-		{"gc", "gc", events.ControlActionGC},
-		{"休眠", "休眠", events.ControlActionGC},
-		{"挂起", "挂起", events.ControlActionGC},
-		{"休眠 with punct", "休眠。", events.ControlActionGC},
-		{"挂起 with space+punct", " 挂起！", events.ControlActionGC},
-		// Reset: start over
-		{"重置", "重置", events.ControlActionReset},
-		{"重置 with punct", "重置。", events.ControlActionReset},
+		// GC: sleep/suspend ($ prefix required)
+		{"gc", "$gc", events.ControlActionGC},
+		{"休眠", "$休眠", events.ControlActionGC},
+		{"挂起", "$挂起", events.ControlActionGC},
+		{"休眠 with punct", "$休眠。", events.ControlActionGC},
+		{"挂起 with space+punct", " $挂起！", events.ControlActionGC},
+		// Reset: start over ($ prefix required)
+		{"重置", "$重置", events.ControlActionReset},
+		{"重置 with punct", "$重置。", events.ControlActionReset},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -82,6 +82,10 @@ func TestParseControlCommand_NotACommand(t *testing.T) {
 		{"removed alias new", "new"},
 		{"removed alias 从头开始", "从头开始"},
 		{"removed alias 清空重来", "清空重来"},
+		{"bare gc without $", "gc"},
+		{"bare 休眠 without $", "休眠"},
+		{"bare 挂起 without $", "挂起"},
+		{"bare 重置 without $", "重置"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
