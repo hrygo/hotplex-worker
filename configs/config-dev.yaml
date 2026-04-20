@@ -27,7 +27,7 @@ pool:
 
 worker:
   idle_timeout: 5m           # Shorter idle timeout for faster cleanup
-  execution_timeout: 5m      # Shorter execution timeout
+  execution_timeout: 5m      # Shorter zombie IO timeout for dev
 
 # ─────────────────────────────────────────────────────────────────────────────
 # MESSAGING PLATFORM ADAPTERS (Development)
