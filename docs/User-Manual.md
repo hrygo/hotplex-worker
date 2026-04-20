@@ -211,6 +211,19 @@ admin:
   requests_per_sec: 10
   burst: 20
 
+messaging:
+  feishu:
+    enabled: true
+    dm_policy: "allowlist"
+    group_policy: "allowlist"
+    require_mention: true
+    allow_dm_from: ["ou_dm_only"]
+    allow_group_from: ["ou_group_only"]
+    allow_from: ["ou_admin"]
+  slack:
+    enabled: true
+    require_mention: true
+
 inherits: "./defaults.yaml"   # optional: parent config
 ```
 
@@ -263,6 +276,9 @@ All non-sensitive fields have production defaults. Binary runs with zero config.
 | `admin.addr` | `:9999` | |
 | `admin.rate_limit_enabled` | `true` | |
 | `admin.requests_per_sec` | `10` | |
+| `messaging.*.dm_policy` | `allowlist` | `open`, `allowlist`, `disabled` |
+| `messaging.*.group_policy` | `allowlist` | `open`, `allowlist`, `disabled` |
+| `messaging.*.require_mention` | `true` | |
 
 ### 4.4 Config Inheritance
 

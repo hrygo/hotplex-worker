@@ -161,24 +161,35 @@ log:
 # MESSAGING PLATFORM CONFIGURATION
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Slack Socket Mode
-# messaging:
-#   slack:
-#     enabled: false
-#     bot_token: ""
-#     app_token: ""
-#     worker_type: "claude_code"
-#     work_dir: ""        # Working directory for worker processes
+messaging:
+  # Slack Socket Mode
+  slack:
+    enabled: false
+    bot_token: ""
+    app_token: ""
+    worker_type: "claude_code"
+    work_dir: ""        # Working directory for worker processes
+    
+    # Access Control Policies: open (allow all), allowlist (restrict), disabled (block)
+    dm_policy: "allowlist"    # Policy for direct messages (options: open, allowlist, disabled)
+    group_policy: "allowlist"  # Policy for channels and group DMs (options: open, allowlist, disabled)
+    require_mention: true     # In channels, bot must be @mentioned (default: true)
+    allow_from: []            # Global whitelist - authorized for BOTH DM and groups
+    allow_dm_from: []         # Whitelist for direct messages only
+    allow_group_from: []      # Whitelist for channels/groups only
 
-# Feishu/Lark WebSocket
-# messaging:
-#   feishu:
-#     enabled: false
-#     app_id: ""
-#     app_secret: ""
-#     worker_type: "claude_code"
-#     work_dir: ""
-#     dm_policy: "open"        # open | allowlist | disabled
-#     group_policy: "open"     # open | allowlist | disabled
-#     require_mention: true     # in groups, bot must be @mentioned
-#     allow_from: []            # open_id allowlist for DM/group
+  # Feishu/Lark WebSocket
+  feishu:
+    enabled: false
+    app_id: ""
+    app_secret: ""
+    worker_type: "claude_code"
+    work_dir: ""
+    
+    # Access Control Policies: open (allow all), allowlist (restrict), disabled (block)
+    dm_policy: "allowlist"   # Policy for 1-on-1 chats (options: open, allowlist, disabled)
+    group_policy: "allowlist" # Policy for groups and topic groups (options: open, allowlist, disabled)
+    require_mention: true     # In groups, bot must be @mentioned (default: true)
+    allow_from: []            # Global whitelist - authorized for BOTH DM and groups
+    allow_dm_from: []         # Whitelist for direct messages only
+    allow_group_from: []      # Whitelist for groups/topic groups only

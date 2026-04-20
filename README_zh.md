@@ -32,13 +32,13 @@ Hotplex 是一个单进程 Go 网关，通过 **一个 WebSocket 接口** 接入
 
 ## 特性
 
-- **AEP v1 协议** — 23 种事件类型的 WebSocket 信令：流式输出、权限交互、问答交互、MCP Elicitation
-- **会话状态机** — 5 状态生命周期（Created → Running → Idle → Terminated → Deleted），支持断线恢复
-- **Worker 适配器** — 插件式：Claude Code、OpenCode Server。BaseWorker embedding 模式，轻松扩展
-- **多渠道接入** — Slack（Socket Mode）和飞书（WebSocket Events）双向消息桥接
+- **AEP v1 协议** — 23+ 种事件类型的 WebSocket 信令：流式输出、权限交互、问答交互、MCP Elicitation、用户交互
+- **会话状态机** — 5 状态生命周期（Created → Running → Idle → Terminated → Deleted），支持崩溃恢复和断线恢复
+- **Worker 适配器** — 插件式：Claude Code、OpenCode Server、ACPX、Pi-mono。BaseWorker embedding 模式，轻松扩展
+- **多渠道接入** — Slack（Socket Mode）和飞书（WebSocket Events）双向消息桥接，支持用户交互
 - **Web Chat UI** — Next.js 15 + React 19 + Vercel AI SDK，开箱即用
 - **多语言 SDK** — Go、TypeScript、Python、Java
-- **企业级特性** — JWT ES256 认证、Admin API、Prometheus 指标、OpenTelemetry 链路追踪、配置热重载
+- **企业级特性** — JWT ES256 认证、Admin API、Prometheus 指标、OpenTelemetry 链路追踪、配置热重载、语音转文字
 
 ## 快速开始
 
@@ -177,6 +177,9 @@ curl -H "Authorization: Bearer <admin-token>" http://localhost:9999/api/v1/sessi
 │  │  ┌──────────────┐  ┌─────────────────────────┐   ││
 │  │  │ Claude Code  │  │ OpenCode Server         │   ││
 │  │  │ (NDJSON/stdio)│  │ (NDJSON/stdio)         │   ││
+│  │  ├──────────────┤  ├─────────────────────────┤   ││
+│  │  │ ACPX         │  │ Pi-mono                 │   ││
+│  │  │ (ACP/stdio)  │  │ (raw stdout)            │   ││
 │  │  └──────────────┘  └─────────────────────────┘   ││
 │  └──────────────────────────────────────────────────┘│
 │  ┌──────────┐ ┌──────────┐ ┌──────┐ ┌─────────────┐ │
@@ -193,7 +196,7 @@ curl -H "Authorization: Bearer <admin-token>" http://localhost:9999/api/v1/sessi
 ```go
 // internal/worker/<name>/worker.go
 type workerAdapter struct {
-    *base.BaseWorker  // 共享生命周期：Terminate, Kill, Wait, Health
+    *base.BaseWorker  // 共享生命周期：Terminate, Kill, Wait, Health, LastIO
 }
 
 func (w *workerAdapter) Start(ctx context.Context, env []string) error {

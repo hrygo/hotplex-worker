@@ -16,22 +16,34 @@ type Gate struct {
 	dmPolicy       string          // open | allowlist | disabled
 	groupPolicy    string          // open | allowlist | disabled
 	requireMention bool            // in groups, bot must be @mentioned
-	allowFrom      map[string]bool // open_id allowlist
+	allowFrom      map[string]bool // global allowlist
+	allowDMFrom    map[string]bool // dm-only allowlist
+	allowGroupFrom map[string]bool // group-only allowlist
 
 	mu sync.RWMutex
 }
 
 // NewGate creates a Gate from the given FeishuConfig access control settings.
-func NewGate(dmPolicy, groupPolicy string, requireMention bool, allowFrom []string) *Gate {
+func NewGate(dmPolicy, groupPolicy string, requireMention bool, allowFrom, allowDMFrom, allowGroupFrom []string) *Gate {
 	af := make(map[string]bool, len(allowFrom))
 	for _, id := range allowFrom {
 		af[id] = true
+	}
+	adm := make(map[string]bool, len(allowDMFrom))
+	for _, id := range allowDMFrom {
+		adm[id] = true
+	}
+	agp := make(map[string]bool, len(allowGroupFrom))
+	for _, id := range allowGroupFrom {
+		agp[id] = true
 	}
 	return &Gate{
 		dmPolicy:       dmPolicy,
 		groupPolicy:    groupPolicy,
 		requireMention: requireMention,
 		allowFrom:      af,
+		allowDMFrom:    adm,
+		allowGroupFrom: agp,
 	}
 }
 
@@ -59,7 +71,8 @@ func (g *Gate) checkDM(userID string) *GateResult {
 	case "disabled":
 		return &GateResult{Allowed: false, Reason: "dm_disabled"}
 	case "allowlist":
-		if !g.allowFrom[userID] {
+		// Check both global and DM-specific whitelists.
+		if !g.allowFrom[userID] && !g.allowDMFrom[userID] {
 			return &GateResult{Allowed: false, Reason: "not_in_allowlist"}
 		}
 	}
@@ -75,7 +88,8 @@ func (g *Gate) checkGroup(userID string, botMentioned bool) *GateResult {
 	case "disabled":
 		return &GateResult{Allowed: false, Reason: "group_disabled"}
 	case "allowlist":
-		if !g.allowFrom[userID] {
+		// Check both global and group-specific whitelists.
+		if !g.allowFrom[userID] && !g.allowGroupFrom[userID] {
 			return &GateResult{Allowed: false, Reason: "not_in_allowlist"}
 		}
 	}
@@ -85,8 +99,8 @@ func (g *Gate) checkGroup(userID string, botMentioned bool) *GateResult {
 	return &GateResult{Allowed: true}
 }
 
-// UpdateAllowFrom replaces the allowlist with a new set of user IDs.
-func (g *Gate) UpdateAllowFrom(allowFrom []string) {
+// UpdateAllowFrom replaces the allowlists with new sets of user IDs.
+func (g *Gate) UpdateAllowFrom(allowFrom, allowDMFrom, allowGroupFrom []string) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
@@ -94,5 +108,16 @@ func (g *Gate) UpdateAllowFrom(allowFrom []string) {
 	for _, id := range allowFrom {
 		af[id] = true
 	}
+	adm := make(map[string]bool, len(allowDMFrom))
+	for _, id := range allowDMFrom {
+		adm[id] = true
+	}
+	agp := make(map[string]bool, len(allowGroupFrom))
+	for _, id := range allowGroupFrom {
+		agp[id] = true
+	}
+
 	g.allowFrom = af
+	g.allowDMFrom = adm
+	g.allowGroupFrom = agp
 }

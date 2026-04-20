@@ -1,6 +1,6 @@
 # PROJECT KNOWLEDGE BASE
 
-**Last updated:** 2026-04-19 · **Commit:** ece981dc · **Branch:** feat/slack-adapter-improvements
+**Last updated:** 2026-04-20 · **Commit:** b6537b3b · **Branch:** feat/slack-adapter-improvements
 
 ## OVERVIEW
 
@@ -55,13 +55,16 @@ cmd/worker/main.go    (~539 lines) flags, DI, signal, messaging init
 - `messaging/bridge.go`   SessionStarter + ConnFactory + joined dedup (3-step: StartSession → Join → Handle)
 - `messaging/platform_conn.go`  PlatformConn interface: WriteCtx + Close
 - `messaging/platform_adapter.go`  Base adapter + self-registration (Register/New/RegisteredTypes)
-- `messaging/slack/`      Socket Mode: NativeStreamingWriter, rate limiter
-- `messaging/feishu/`     ws.Client: P2 events, converter, streaming, typing, stt.go (speech-to-text)
+- `messaging/interaction.go`  InteractionManager: user permission/Q&A/elicitation with timeout + auto-deny
+- `messaging/control_command.go`  Slash commands + natural language control triggers ($prefix)
+- `messaging/sanitize.go`  Text sanitization: control chars, null bytes, BOM, surrogates
+- `messaging/slack/`      Socket Mode: NativeStreamingWriter, chunker, dedup, validator, interaction, backoff
+- `messaging/feishu/`     ws.Client: P2 events, converter, streaming, typing, interaction, stt (speech-to-text)
 - `scripts/stt_server.py`  Persistent STT subprocess (SenseVoice-Small ONNX)
 - `scripts/fix_onnx_model.py`  ONNX model Less node type mismatch auto-patch
 - `messaging/mock/`       Mock adapter for testing
 
-**Worker** (5 adapters)
+**Worker** (4 adapters)
 - `worker/claudecode/`    Claude Code adapter
 - `worker/opencodeserver/`  OpenCode Server adapter
 - `worker/acpx/`          ACPX: ACP bridge, stdio I/O
@@ -118,8 +121,8 @@ configs/  config.yaml, config-dev.yaml, env.example
 **Gateway** (`internal/gateway/`)
 - `Hub` → `hub.go:57` — WS broadcast hub, conn registry, session routing, seq gen
 - `Conn` → `conn.go:27` — single WS connection, read/write pumps, heartbeat
-- `Handler` → `handler.go` — AEP event dispatch (input, ping, control)
-- `Bridge` → `bridge.go` — session ↔ worker lifecycle, StartPlatformSession
+- `Handler` → `handler.go` — AEP event dispatch (input, ping, control) + panic recovery
+- `Bridge` → `bridge.go` — session ↔ worker lifecycle, StartPlatformSession, fresh start fallback, InputRecoverer
 - `pcEntry` → `hub.go:551` — wraps PlatformConn for sessions map
 
 **Session** (`internal/session/`)
@@ -132,8 +135,9 @@ configs/  config.yaml, config-dev.yaml, env.example
 - `Worker` (interface) → `worker.go:84` — Start/Input/Resume/Terminate/Kill/Wait/Conn/Health
 - `SessionConn` (interface) → `worker.go:19` — bidirectional channel: Send/Recv/Close
 - `Capabilities` (interface) → `worker.go:40` — feature query: resume, streaming, tools, env
+- `InputRecoverer` (interface) → `worker.go:141` — LastInput() for crash recovery input re-delivery
 - `base.BaseWorker` → `base/worker.go` — shared lifecycle: Terminate/Kill/Wait/Health/LastIO
-- `base.Conn` → `base/conn.go` — stdin SessionConn: NDJSON over stdio, exported `WriteAll`
+- `base.Conn` → `base/conn.go` — stdin SessionConn: NDJSON over stdio, exported `WriteAll`, implements `InputRecoverer`
 - `base.BuildEnv` → `base/env.go` — env construction: whitelist + session vars
 - `proc.Manager` → `proc/manager.go:26` — PGID isolation, layered SIGTERM→SIGKILL
 
@@ -141,6 +145,9 @@ configs/  config.yaml, config-dev.yaml, env.example
 - `Bridge` → `bridge.go` — 3-step: StartSession → Join → handler.Handle
 - `PlatformConn` (interface) → `platform_conn.go` — WriteCtx + Close
 - `PlatformAdapter` → `platform_adapter.go` — base: SetHub/SetSM/SetHandler/SetBridge
+- `InteractionManager` → `interaction.go` — PendingInteraction registry with timeout + auto-deny (5min default)
+- `ParseControlCommand` → `control_command.go` — slash commands (/gc, /reset, /park) + $prefix natural language
+- `SanitizeText` → `sanitize.go` — removes control chars, null bytes, BOM, surrogates
 - `FeishuSTT` → `feishu/stt.go:41` — cloud transcription via Feishu speech_to_text API
 - `LocalSTT` → `feishu/stt.go:98` — ephemeral per-request external command transcription
 - `PersistentSTT` → `feishu/stt.go:185` — long-lived subprocess, JSON-over-stdio, PGID isolation
@@ -168,6 +175,10 @@ configs/  config.yaml, config-dev.yaml, env.example
 - **STT engine**: SenseVoice-Small via `funasr-onnx` (ONNX FP32, non-quantized), auto-patches ONNX model on first load, persistent subprocess for zero cold-start
 - **DI**: Manual constructor injection (no wire/dig), `GatewayDeps` struct in main.go
 - **Shutdown order**: signal → cancel ctx → tracing → hub → configWatcher → sessionMgr → HTTP server
+- **Panic recovery**: Gateway handler + bridge forwardEvents must recover panics, log error, return `handler panic` / `bridge panic` to caller
+- **Control commands**: Natural language triggers require `$` prefix (e.g. `$gc`, `$休眠`) to prevent accidental matches; slash commands (`/gc`, `/reset`, `/park`) have no prefix
+- **Text sanitization**: All user-facing text output passes through `SanitizeText()` before delivery to messaging platforms
+- **Interaction timeout**: Permission/Q&A/elicitation requests auto-deny after 5 minutes to prevent indefinite blocking
 
 ## ANTI-PATTERNS (THIS PROJECT)
 
@@ -193,6 +204,10 @@ configs/  config.yaml, config-dev.yaml, env.example
 - **Gateway split**: conn.go (WebSocket lifecycle), handler.go (AEP dispatch), bridge.go (session orchestration) — same package, separate concerns
 - **Config hot-reload**: File watcher with rollback capability, updates live config reference
 - **Single-writer SQLite**: Channel-based write serialization with batch flush (50 items / 100ms)
+- **InputRecoverer**: Workers implement `LastInput() string` via base.Conn; bridge extracts last input from dead worker for crash recovery re-delivery
+- **Fresh start fallback**: When resume fails after retry, bridge creates a fresh worker and re-delivers the last input — conversation history is lost but user gets a response
+- **Feishu streaming card 4-layer defense**: TTL guard → integrity check → retry with backoff → IM Patch fallback for degraded CardKit
+- **Slack message pipeline**: chunker (split long messages) → dedup (TTL-based duplicate filter) → format (markdown conversion) → rate limiter → send
 
 ## COMMANDS
 
@@ -218,6 +233,8 @@ make clean                    # Clean build artifacts
 - `.claude` is symlinked to `.agent` — both directories exist
 - No `api/` directory — project uses JSON over WebSocket, not protobuf
 - Project targets POSIX only (PGID isolation requires `syscall.SysProcAttr{Setpgid: true}`)
-- Largest files: `opencodeserver/worker.go` (802), `manager.go` (765), `hub.go` (575), `config.go` (593)
+- Largest files: `opencodeserver/worker.go`, `manager.go`, `bridge.go`, `config.go`, `hub.go`
 - STT scripts (`scripts/stt_server.py`, `scripts/fix_onnx_model.py`) are also deployed to `~/.agents/skills/audio-transcribe/scripts/` for Claude Code skill use
 - STT model: `~/.cache/modelscope/hub/models/iic/SenseVoiceSmall` (~900MB), ONNX FP32 non-quantized
+- Zombie IO timeout default: 30 minutes (configurable via `worker.execution_timeout`)
+- OpenCode CLI adapter removed — replaced by OpenCode Server adapter

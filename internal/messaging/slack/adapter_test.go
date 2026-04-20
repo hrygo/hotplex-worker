@@ -273,14 +273,14 @@ func (e errFake) Error() string { return string(e) }
 
 func TestGate_DMOpen(t *testing.T) {
 	t.Parallel()
-	g := NewGate("open", "open", false, nil)
+	g := NewGate("open", "open", false, nil, nil, nil)
 	r := g.Check("im", "U1", false)
 	require.True(t, r.Allowed)
 }
 
 func TestGate_DMDisabled(t *testing.T) {
 	t.Parallel()
-	g := NewGate("disabled", "open", false, nil)
+	g := NewGate("disabled", "open", false, nil, nil, nil)
 	r := g.Check("im", "U1", false)
 	require.False(t, r.Allowed)
 	require.Equal(t, "dm_disabled", r.Reason)
@@ -288,7 +288,7 @@ func TestGate_DMDisabled(t *testing.T) {
 
 func TestGate_DMAllowlist(t *testing.T) {
 	t.Parallel()
-	g := NewGate("allowlist", "open", false, []string{"U1"})
+	g := NewGate("allowlist", "open", false, []string{"U1"}, nil, nil)
 	r := g.Check("im", "U1", false)
 	require.True(t, r.Allowed)
 
@@ -299,7 +299,7 @@ func TestGate_DMAllowlist(t *testing.T) {
 
 func TestGate_GroupDisabled(t *testing.T) {
 	t.Parallel()
-	g := NewGate("open", "disabled", false, nil)
+	g := NewGate("open", "disabled", false, nil, nil, nil)
 	r := g.Check("channel", "U1", false)
 	require.False(t, r.Allowed)
 	require.Equal(t, "group_disabled", r.Reason)
@@ -307,7 +307,7 @@ func TestGate_GroupDisabled(t *testing.T) {
 
 func TestGate_RequireMention(t *testing.T) {
 	t.Parallel()
-	g := NewGate("open", "open", true, nil)
+	g := NewGate("open", "open", true, nil, nil, nil)
 
 	r := g.Check("channel", "U1", false)
 	require.False(t, r.Allowed)
@@ -319,7 +319,7 @@ func TestGate_RequireMention(t *testing.T) {
 
 func TestGate_DMNotRequireMention(t *testing.T) {
 	t.Parallel()
-	g := NewGate("open", "open", true, nil)
+	g := NewGate("open", "open", true, nil, nil, nil)
 	// DM should not require mention
 	r := g.Check("im", "U1", false)
 	require.True(t, r.Allowed)
@@ -327,7 +327,7 @@ func TestGate_DMNotRequireMention(t *testing.T) {
 
 func TestGate_DefaultOpen(t *testing.T) {
 	t.Parallel()
-	g := NewGate("", "", false, nil)
+	g := NewGate("", "", false, nil, nil, nil)
 	require.True(t, g.Check("im", "U1", false).Allowed)
 	require.True(t, g.Check("channel", "U1", false).Allowed)
 	require.True(t, g.Check("mpim", "U1", false).Allowed)
@@ -546,7 +546,7 @@ func TestHandleCapabilityError_Degrades(t *testing.T) {
 
 func TestGate_GroupAllowlist(t *testing.T) {
 	t.Parallel()
-	g := NewGate("open", "allowlist", false, []string{"U_ALLOWED"})
+	g := NewGate("open", "allowlist", false, []string{"U_ALLOWED"}, nil, nil)
 
 	result := g.Check(ChannelGroup, "U_ALLOWED", false)
 	require.True(t, result.Allowed, "whitelisted user in group should pass")

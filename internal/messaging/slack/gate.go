@@ -23,7 +23,9 @@ type Gate struct {
 	dmPolicy       string // open | allowlist | disabled
 	groupPolicy    string // open | allowlist | disabled
 	requireMention bool
-	allowFrom      map[string]bool
+	allowFrom      map[string]bool // global
+	allowDMFrom    map[string]bool // dm
+	allowGroupFrom map[string]bool // group
 }
 
 // GateResult holds the access decision.
@@ -33,15 +35,23 @@ type GateResult struct {
 }
 
 // NewGate creates a new access control gate.
-func NewGate(dmPolicy, groupPolicy string, requireMention bool, allowFrom []string) *Gate {
+func NewGate(dmPolicy, groupPolicy string, requireMention bool, allowFrom, allowDMFrom, allowGroupFrom []string) *Gate {
 	g := &Gate{
 		dmPolicy:       dmPolicy,
 		groupPolicy:    groupPolicy,
 		requireMention: requireMention,
 		allowFrom:      make(map[string]bool),
+		allowDMFrom:    make(map[string]bool),
+		allowGroupFrom: make(map[string]bool),
 	}
 	for _, u := range allowFrom {
 		g.allowFrom[u] = true
+	}
+	for _, u := range allowDMFrom {
+		g.allowDMFrom[u] = true
+	}
+	for _, u := range allowGroupFrom {
+		g.allowGroupFrom[u] = true
 	}
 	return g
 }
@@ -53,7 +63,7 @@ func (g *Gate) Check(channelType, userID string, botMentioned bool) *GateResult 
 		case PolicyDisabled:
 			return &GateResult{false, ReasonDMDisabled}
 		case PolicyAllowlist:
-			if !g.allowFrom[userID] {
+			if !g.allowFrom[userID] && !g.allowDMFrom[userID] {
 				return &GateResult{false, ReasonNotInAllowlist}
 			}
 		}
@@ -65,7 +75,7 @@ func (g *Gate) Check(channelType, userID string, botMentioned bool) *GateResult 
 	case PolicyDisabled:
 		return &GateResult{false, ReasonGroupDisabled}
 	case PolicyAllowlist:
-		if !g.allowFrom[userID] {
+		if !g.allowFrom[userID] && !g.allowGroupFrom[userID] {
 			return &GateResult{false, ReasonNotInAllowlist}
 		}
 	}

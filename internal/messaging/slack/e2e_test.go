@@ -236,7 +236,7 @@ func TestE2E_DedupFallbackToTimestamp(t *testing.T) {
 func TestE2E_GateDMDisabled(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
-	a.gate = NewGate("disabled", "open", false, nil)
+	a.gate = NewGate("disabled", "open", false, nil, nil, nil)
 
 	require.False(t, handleAndCheck(t, a, makeDMEvent("U_ALICE", "hello")),
 		"DM should be rejected when dm_policy=disabled")
@@ -245,7 +245,7 @@ func TestE2E_GateDMDisabled(t *testing.T) {
 func TestE2E_GateDMAllowlist(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
-	a.gate = NewGate("allowlist", "open", false, []string{"U_ALLOWED"})
+	a.gate = NewGate("allowlist", "open", false, []string{"U_ALLOWED"}, nil, nil)
 
 	require.True(t, handleAndCheck(t, a, makeDMEvent("U_ALLOWED", "hello")),
 		"allowlisted user should pass")
@@ -256,7 +256,7 @@ func TestE2E_GateDMAllowlist(t *testing.T) {
 func TestE2E_GateGroupRequireMention(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
-	a.gate = NewGate("open", "open", true, nil)
+	a.gate = NewGate("open", "open", true, nil, nil, nil)
 
 	require.False(t, handleAndCheck(t, a, makeGroupEvent("C123", "U_ALICE", "hello")),
 		"group message without @bot should be rejected")
@@ -267,7 +267,7 @@ func TestE2E_GateGroupRequireMention(t *testing.T) {
 func TestE2E_GateGroupDisabled(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
-	a.gate = NewGate("open", "disabled", false, nil)
+	a.gate = NewGate("open", "disabled", false, nil, nil, nil)
 
 	require.False(t, handleAndCheck(t, a, makeGroupEvent("C123", "U_ALICE", "hello")),
 		"group messages should be rejected when group_policy=disabled")
@@ -319,7 +319,7 @@ func TestE2E_RichTextPasses(t *testing.T) {
 func TestE2E_MPIMUsesGroupPolicy(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
-	a.gate = NewGate("open", "disabled", false, nil)
+	a.gate = NewGate("open", "disabled", false, nil, nil, nil)
 
 	// MPIM channel IDs start with 'G'
 	require.False(t, handleAndCheck(t, a, makeGroupEvent("G12345", "U_ALICE", "hello")),
@@ -347,7 +347,7 @@ func TestE2E_Capture_MentionTextStripped(t *testing.T) {
 
 	// Mention should be stripped from text
 	evt := makeGroupEvent("C123", "U_ALICE", "<@B_TEST> help me")
-	a.gate = NewGate("open", "open", true, nil)
+	a.gate = NewGate("open", "open", true, nil, nil, nil)
 
 	a.handleEventsAPI(context.Background(), evt)
 	require.Len(t, *calls, 1)
@@ -912,7 +912,7 @@ func TestE2E_ExtractText_MixedBlocks(t *testing.T) {
 func TestE2E_GateRejected_NoMessageToUser(t *testing.T) {
 	t.Parallel()
 	a, calls := newAdapterWithCapture(t)
-	a.gate = NewGate("disabled", "open", false, nil)
+	a.gate = NewGate("disabled", "open", false, nil, nil, nil)
 
 	// DM rejected by disabled policy — should not reach HandleTextMessage
 	a.handleEventsAPI(context.Background(), makeDMEvent("U_ALICE", "hello"))
@@ -926,7 +926,7 @@ func TestE2E_GateRejected_NoMessageToUser(t *testing.T) {
 func TestE2E_BlockKitMentionDetected(t *testing.T) {
 	t.Parallel()
 	a, calls := newAdapterWithCapture(t)
-	a.gate = NewGate("open", "open", true, nil)
+	a.gate = NewGate("open", "open", true, nil, nil, nil)
 
 	// Message with @bot mention inside a SectionBlock, text is empty
 	evt := makeGroupEvent("C123", "U_ALICE", "")

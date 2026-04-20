@@ -72,3 +72,31 @@ defer func() {
     }
 }()
 ```
+
+---
+
+## InputRecoverer 接口
+
+Worker crash recovery 需要从已死 Worker 提取最后输入用于重投递：
+
+```go
+// worker.go
+type InputRecoverer interface {
+    LastInput() string
+}
+
+// base.Conn 实现 — 记录每次 Send 的内容
+func (c *Conn) Send(ctx context.Context, env Envelope) error {
+    c.mu.Lock()
+    if env.Event.Type == events.KindInput {
+        c.lastInput = extractContent(env)
+    }
+    c.mu.Unlock()
+    // ... 实际发送
+}
+```
+
+**使用场景**：
+- Worker 崩溃后 bridge 通过 `conn.(worker.InputRecoverer)` 提取 `LastInput()`
+- Fresh start fallback 时将最后输入重投递到新 Worker
+- 确保 crash recovery 后用户不丢失最后一次操作

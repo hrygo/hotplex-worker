@@ -492,6 +492,8 @@ func startMessagingAdapters(ctx context.Context, log *slog.Logger, cfg *config.C
 					cfg.Messaging.Slack.GroupPolicy,
 					cfg.Messaging.Slack.RequireMention,
 					cfg.Messaging.Slack.AllowFrom,
+					cfg.Messaging.Slack.AllowDMFrom,
+					cfg.Messaging.Slack.AllowGroupFrom,
 				)
 				sa.SetGate(gate)
 				sa.SetAssistantEnabled(cfg.Messaging.Slack.AssistantAPIEnabled)
@@ -512,6 +514,8 @@ func startMessagingAdapters(ctx context.Context, log *slog.Logger, cfg *config.C
 					cfg.Messaging.Feishu.GroupPolicy,
 					cfg.Messaging.Feishu.RequireMention,
 					cfg.Messaging.Feishu.AllowFrom,
+					cfg.Messaging.Feishu.AllowDMFrom,
+					cfg.Messaging.Feishu.AllowGroupFrom,
 				)
 				fa.SetGate(gate)
 
