@@ -1,5 +1,9 @@
 package slack
 
+import (
+	"sync"
+)
+
 // Gate policy constants.
 const (
 	PolicyOpen      = "open"
@@ -26,6 +30,8 @@ type Gate struct {
 	allowFrom      map[string]bool // global
 	allowDMFrom    map[string]bool // dm
 	allowGroupFrom map[string]bool // group
+
+	mu sync.RWMutex
 }
 
 // GateResult holds the access decision.
@@ -58,6 +64,9 @@ func NewGate(dmPolicy, groupPolicy string, requireMention bool, allowFrom, allow
 
 // Check evaluates whether a message should be processed.
 func (g *Gate) Check(channelType, userID string, botMentioned bool) *GateResult {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
 	if channelType == ChannelIM {
 		switch g.dmPolicy {
 		case PolicyDisabled:
@@ -83,4 +92,27 @@ func (g *Gate) Check(channelType, userID string, botMentioned bool) *GateResult 
 		return &GateResult{false, ReasonNoMention}
 	}
 	return &GateResult{true, ""}
+}
+
+// UpdateAllowFrom replaces the allowlists with new sets of user IDs.
+func (g *Gate) UpdateAllowFrom(allowFrom, allowDMFrom, allowGroupFrom []string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	af := make(map[string]bool, len(allowFrom))
+	for _, u := range allowFrom {
+		af[u] = true
+	}
+	adm := make(map[string]bool, len(allowDMFrom))
+	for _, u := range allowDMFrom {
+		adm[u] = true
+	}
+	agp := make(map[string]bool, len(allowGroupFrom))
+	for _, u := range allowGroupFrom {
+		agp[u] = true
+	}
+
+	g.allowFrom = af
+	g.allowDMFrom = adm
+	g.allowGroupFrom = agp
 }
