@@ -287,13 +287,16 @@ webchat-stop:
 		sleep 1; \
 		kill -9 $$PID 2>/dev/null || true; \
 		rm -f $(WEB_CHAT_PID); \
-		echo "  $(GREEN)✓$(RESET) Webchat stopped"; \
 	elif [ -n "$$(lsof -ti:$(WEB_CHAT_PORT) 2>/dev/null)" ]; then \
 		echo "$(YELLOW)Stale PID, killing by port...$(RESET)"; \
-		lsof -ti:$(WEB_CHAT_PORT) 2>/dev/null | xargs kill -9 2>/dev/null || true; \
-		echo "  $(GREEN)✓$(RESET) Webchat stopped"; \
 	else \
-		echo "$(DIM)Webchat not running$(RESET)"; fi
+		echo "$(DIM)Webchat not running$(RESET)"; exit 0; fi; \
+	REMAINING=$$(lsof -ti:$(WEB_CHAT_PORT) 2>/dev/null); \
+	if [ -n "$$REMAINING" ]; then \
+		echo "$(YELLOW)Killing orphan node processes on port $(WEB_CHAT_PORT)...$(RESET)"; \
+		echo "$$REMAINING" | xargs kill -9 2>/dev/null || true; \
+	fi; \
+	echo "  $(GREEN)✓$(RESET) Webchat stopped"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Clean
