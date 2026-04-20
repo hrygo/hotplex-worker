@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
@@ -84,7 +85,7 @@ func fileCategory(f slack.File) string {
 }
 
 // downloadMedia downloads a file from Slack to local storage.
-func (a *Adapter) downloadMedia(_ context.Context, m *MediaInfo) (string, error) {
+func (a *Adapter) downloadMedia(ctx context.Context, m *MediaInfo) (string, error) {
 	if m.Size > mediaMaxSize {
 		return "", fmt.Errorf("file too large: %d bytes", m.Size)
 	}
@@ -107,7 +108,11 @@ func (a *Adapter) downloadMedia(_ context.Context, m *MediaInfo) (string, error)
 	}
 	defer func() { _ = f.Close() }()
 
-	if err := a.client.GetFile(m.DownloadURL, f); err != nil {
+	// Add a 30-second timeout for the network download.
+	downloadCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	if err := a.client.GetFileContext(downloadCtx, m.DownloadURL, f); err != nil {
 		_ = os.Remove(path)
 		return "", fmt.Errorf("get file: %w", err)
 	}

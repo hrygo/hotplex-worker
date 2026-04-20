@@ -132,7 +132,7 @@ func TestFormatMrkdwn(t *testing.T) {
 		{"plain text", "hello world", "hello world"},
 		{"mixed", "**bold** and `**code**`", "*bold* and `**code**`"},
 		{"bold italic", "***bold italic***", "*_bold italic_*"},
-		{"italic preserved", "*italic*", "*italic*"},
+		{"italic to underscore", "*italic*", "_italic_"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -464,8 +464,8 @@ func TestActiveIndicators_StartStop(t *testing.T) {
 func TestUserCache_ResolveMentions_MultipleMentions(t *testing.T) {
 	t.Parallel()
 	uc := NewUserCache(nil)
-	uc.cache["U111"] = "Alice"
-	uc.cache["U222"] = "Bob"
+	uc.cache["U111"] = cacheEntry{name: "Alice", expiresAt: time.Now().Add(time.Hour)}
+	uc.cache["U222"] = cacheEntry{name: "Bob", expiresAt: time.Now().Add(time.Hour)}
 
 	result := uc.ResolveMentions(context.Background(), "<@U111> and <@U222>", "B001")
 	require.Equal(t, "@Alice and @Bob", result, "all mentions should be resolved")
@@ -478,7 +478,7 @@ func TestUserCache_ResolveMentions_MultipleMentions(t *testing.T) {
 func TestUserCache_ResolveMentions_MixedFormats(t *testing.T) {
 	t.Parallel()
 	uc := NewUserCache(nil)
-	uc.cache["U111"] = "Alice"
+	uc.cache["U111"] = cacheEntry{name: "Alice", expiresAt: time.Now().Add(time.Hour)}
 
 	// <@U111> resolved from cache, <@U222|Bob> uses inline fallback
 	result := uc.ResolveMentions(context.Background(), "<@U111> and <@U222|Bob>", "B001")

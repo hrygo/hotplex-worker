@@ -14,6 +14,8 @@ import (
 	"github.com/hotplex/hotplex-worker/pkg/aep"
 	"github.com/hotplex/hotplex-worker/pkg/events"
 
+	"runtime/debug"
+
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
 	"github.com/slack-go/slack/socketmode"
@@ -118,6 +120,7 @@ func (a *Adapter) Start(ctx context.Context) error {
 	a.statusMgr = NewStatusManager(a, a.log)
 	a.activeIndicators = NewActiveIndicators()
 	a.typingStages = a.resolveTypingStages()
+	a.interactions = messaging.NewInteractionManager(a.log)
 	a.activeStreams = make(map[string]*NativeStreamingWriter)
 	a.activeConns = make(map[string]*SlackConn)
 
@@ -141,10 +144,33 @@ func (a *Adapter) Start(ctx context.Context) error {
 }
 
 func (a *Adapter) runSocketMode(ctx context.Context) {
-	// Start the Socket Mode WebSocket connection — Run() pumps events into the Events channel.
+	// Run() blocks until the WebSocket closes. Wrap it in a loop so that
+	// connection errors trigger automatic reconnect instead of silently exiting.
 	go func() {
-		if err := a.socketMode.Run(); err != nil && ctx.Err() == nil {
-			a.log.Error("slack: socket mode run error", "err", err)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+
+			a.log.Info("slack: socket mode connecting")
+			if err := a.socketMode.Run(); err != nil {
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(5 * time.Second):
+					a.log.Warn("slack: socket mode run error, reconnecting", "err", err)
+					continue
+				}
+			}
+			// Run() returned without error (clean close); reconnect.
+			a.log.Info("slack: socket mode closed, reconnecting")
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(1 * time.Second):
+			}
 		}
 	}()
 
@@ -154,7 +180,10 @@ func (a *Adapter) runSocketMode(ctx context.Context) {
 			return
 		case evt, ok := <-a.socketMode.Events:
 			if !ok {
-				return
+				// Channel closed — Run() exited. The reconnect goroutine above will
+				// detect this and restart the connection.
+				a.log.Warn("slack: events channel closed, waiting for reconnect")
+				continue
 			}
 			switch evt.Type {
 			case socketmode.EventTypeEventsAPI:
@@ -163,16 +192,35 @@ func (a *Adapter) runSocketMode(ctx context.Context) {
 					continue
 				}
 				a.socketMode.Ack(*evt.Request) //nolint:errcheck // Ack must not block event processing
-				a.handleEventsAPI(ctx, eventsAPI)
+				go func() {
+					defer func() {
+						if r := recover(); r != nil {
+							a.log.Error("slack: panic in event handler", "panic", r, "stack", string(debug.Stack()))
+						}
+					}()
+					a.handleEventsAPI(ctx, eventsAPI)
+				}()
 
 			case socketmode.EventTypeConnecting:
 				a.log.Info("slack: connecting to Slack API")
+			case socketmode.EventTypeConnected:
+				a.log.Info("slack: connected to Slack API")
+
+			case socketmode.EventTypeDisconnect:
+				a.log.Info("slack: disconnected by Slack, reconnecting")
 
 			case socketmode.EventTypeConnectionError:
 				a.log.Warn("slack: connection error", "err", evt.Data)
 
 			case socketmode.EventTypeInteractive:
-				go a.handleInteractionEvent(ctx, evt)
+				go func() {
+					defer func() {
+						if r := recover(); r != nil {
+							a.log.Error("slack: panic in interaction handler", "panic", r, "stack", string(debug.Stack()))
+						}
+					}()
+					a.handleInteractionEvent(ctx, evt)
+				}()
 			}
 		}
 	}
@@ -396,6 +444,9 @@ func (a *Adapter) Close(ctx context.Context) error {
 	if a.dedup != nil {
 		a.dedup.Close()
 		a.dedup = nil
+	}
+	if a.userCache != nil {
+		a.userCache.Close()
 	}
 
 	return nil

@@ -787,7 +787,7 @@ func TestE2E_ResolveMentions_APIResolve(t *testing.T) {
 	// Pre-populate cache to simulate successful API resolution.
 	// Use IDs that match the mentionPattern regex: [A-Z0-9]+
 	uc := NewUserCache(nil)
-	uc.cache["U111"] = "Alice"
+	uc.cache["U111"] = cacheEntry{name: "Alice", expiresAt: time.Now().Add(time.Hour)}
 
 	result := uc.ResolveMentions(context.Background(), "hello <@U111>", "B001")
 	require.Equal(t, "hello @Alice", result, "<@U111> should resolve to @Alice from cache")
@@ -814,7 +814,7 @@ func TestE2E_ResolveMentions_CacheHitNoAPICall(t *testing.T) {
 	t.Parallel()
 
 	uc := NewUserCache(nil)
-	uc.cache["U111"] = "Alice"
+	uc.cache["U111"] = cacheEntry{name: "Alice", expiresAt: time.Now().Add(time.Hour)}
 
 	// Both calls succeed from cache without any client
 	r1 := uc.ResolveMentions(context.Background(), "<@U111>", "B001")
