@@ -296,7 +296,7 @@ func Default() *Config {
 		Worker: WorkerConfig{
 			MaxLifetime:      24 * time.Hour,
 			IdleTimeout:      60 * time.Minute,
-			ExecutionTimeout: 10 * time.Minute,
+			ExecutionTimeout: 30 * time.Minute,
 			AllowedEnvs:      nil,
 			EnvWhitelist:     nil,
 			DefaultWorkDir:   "/tmp/hotplex/workspace",

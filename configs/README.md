@@ -167,7 +167,7 @@ HotPlex Worker Gateway 默认占用两个端口，请根据安全策略配置防
 | `pool.max_memory_per_user`| `2GB` | `HOTPLEX_POOL_MAX_MEMORY_PER_USER` | 单个会话运行时的内存硬配额 (Bytes) |
 | `worker.max_lifetime` | `24h` | - | 容器实例的强制生命周期限制 |
 | `worker.idle_timeout` | `30m` | - | 容器无活动自动关停超长 |
-| `worker.execution_timeout`| `10m` | - | 单条指令执行的最长等待时间 |
+| `worker.execution_timeout`| `30m` | - | Worker 无 IO 输出的僵尸超时 |
 | `worker.env_whitelist` | `[]` | - | 注入到容器内的环境变量白名单 (Security) |
 
 ---

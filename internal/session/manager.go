@@ -688,8 +688,8 @@ func (m *Manager) gc(ctx context.Context) {
 		if w != nil {
 			// LastIO() is now part of the Worker interface — direct call, no type assertion needed
 			lastIO := w.LastIO()
-			// Default 5 minutes zombie timeout if config missing
-			timeout := 5 * time.Minute
+			// Default zombie IO timeout (overridden by config worker.execution_timeout)
+			timeout := 30 * time.Minute
 			if m.cfg.Worker.ExecutionTimeout > 0 {
 				timeout = m.cfg.Worker.ExecutionTimeout
 			}

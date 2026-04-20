@@ -41,7 +41,7 @@ pool:
 worker:
   max_lifetime: 24h          # Restart workers daily
   idle_timeout: 30m          # Cleanup idle workers after 30m
-  execution_timeout: 10m     # Allow long-running operations
+  execution_timeout: 30m     # Zombie IO timeout — terminate worker with no output
 
 # ─────────────────────────────────────────────────────────────────────────────
 # MESSAGING PLATFORM CONFIGURATION
