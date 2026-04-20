@@ -135,6 +135,13 @@ type WorkerHealth struct {
 	Error     string     `json:"error,omitempty"`
 }
 
+// InputRecoverer is an optional interface for session connections that cache
+// the last user input for crash recovery re-delivery. Bridge detects
+// implementations via type assertion to recover input after resume failure.
+type InputRecoverer interface {
+	LastInput() string
+}
+
 // WorkerSessionIDHandler is an optional interface for workers that manage
 // their own internal session IDs separate from the Gateway session ID.
 // Bridge detects implementations via type assertion and uses them to
