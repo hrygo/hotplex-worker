@@ -39,13 +39,30 @@ func redactURL(s string) string {
 	return s
 }
 
+// sdkDebugSilent lists Feishu SDK Debug log message substrings that are
+// silenced during normal operation (every ~2 min heartbeat cycle). These are
+// routine ping/pong keep-alive messages that don't carry actionable info.
+// Failures still surface via Warn/Error level.
+var sdkDebugSilent = []string{
+	"ping success",
+	"receive pong",
+}
+
 // SlogLogger implements larkcore.Logger, wrapping slog.Logger.
 // This ensures all Feishu SDK logs use the same JSON format and level
 // as the application logs, with sensitive URL params redacted.
+// Normal heartbeat messages (ping success, receive pong) are silenced
+// to reduce log noise — failures still surface via Warn/Error level.
 type SlogLogger struct{ *slog.Logger }
 
 func (s SlogLogger) Debug(_ context.Context, args ...any) {
-	s.Logger.Log(context.Background(), slog.LevelDebug, redactURL(fmt.Sprint(args...)))
+	msg := fmt.Sprint(args...)
+	for _, sub := range sdkDebugSilent {
+		if strings.Contains(msg, sub) {
+			return
+		}
+	}
+	s.Logger.Log(context.Background(), slog.LevelDebug, redactURL(msg))
 }
 func (s SlogLogger) Info(_ context.Context, args ...any) {
 	s.Logger.Log(context.Background(), slog.LevelInfo, redactURL(fmt.Sprint(args...)))

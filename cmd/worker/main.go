@@ -495,6 +495,7 @@ func startMessagingAdapters(ctx context.Context, log *slog.Logger, cfg *config.C
 				)
 				sa.SetGate(gate)
 				sa.SetAssistantEnabled(cfg.Messaging.Slack.AssistantAPIEnabled)
+				sa.SetReconnectDelays(cfg.Messaging.Slack.ReconnectBaseDelay, cfg.Messaging.Slack.ReconnectMaxDelay)
 				if stages := cfg.Messaging.Slack.TypingStages; len(stages) > 0 {
 					ts := make([]slack.TypingStage, len(stages))
 					for i, s := range stages {

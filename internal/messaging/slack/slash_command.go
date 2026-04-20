@@ -17,20 +17,27 @@ const (
 	CommandReset      = "/reset"
 	CommandDisconnect = "/dc"
 
-	slashCooldown = 5 * time.Second
+	slashCooldown      = 5 * time.Second
+	slashSweepInterval = 5 * time.Minute
+	slashEntryTTL      = 10 * time.Minute
 )
 
 // SlashRateLimiter provides per-user cooldown for slash commands.
 type SlashRateLimiter struct {
 	mu       sync.Mutex
 	lastUsed map[string]time.Time
+	done     chan struct{}
+	wg       sync.WaitGroup
 }
 
 // NewSlashRateLimiter creates a new slash command rate limiter.
 func NewSlashRateLimiter() *SlashRateLimiter {
-	return &SlashRateLimiter{
+	r := &SlashRateLimiter{
 		lastUsed: make(map[string]time.Time),
+		done:     make(chan struct{}),
 	}
+	r.Start()
+	return r
 }
 
 // Allow reports whether a slash command from the given user is allowed.
@@ -47,8 +54,40 @@ func (r *SlashRateLimiter) Allow(userID string) bool {
 	return true
 }
 
-// Stop is a no-op, provided for interface consistency with cleanup patterns.
-func (r *SlashRateLimiter) Stop() {}
+// Start launches the background sweep goroutine.
+func (r *SlashRateLimiter) Start() {
+	r.wg.Add(1)
+	go r.sweepLoop()
+}
+
+// sweepLoop periodically removes stale entries from lastUsed map.
+func (r *SlashRateLimiter) sweepLoop() {
+	defer r.wg.Done()
+	ticker := time.NewTicker(slashSweepInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-r.done:
+			return
+		case <-ticker.C:
+			r.mu.Lock()
+			now := time.Now()
+			for userID, last := range r.lastUsed {
+				if now.Sub(last) > slashEntryTTL {
+					delete(r.lastUsed, userID)
+				}
+			}
+			r.mu.Unlock()
+		}
+	}
+}
+
+// Stop cleanly terminates the sweep goroutine.
+func (r *SlashRateLimiter) Stop() {
+	close(r.done)
+	r.wg.Wait()
+}
 
 func (a *Adapter) handleSlashCommandEvent(ctx context.Context, evt socketmode.Event) { //nolint:unused // wired in runSocketMode when slash commands enabled
 	cmd, ok := evt.Data.(slack.SlashCommand)

@@ -6,6 +6,10 @@ import (
 	"time"
 )
 
+const (
+	feishuSweepInterval = 5 * time.Minute
+)
+
 // FeishuRateLimiter provides per-resource rate limiting for Feishu API calls.
 // CardKit streaming is limited to 1 update per 100ms per card.
 // IM patch is limited to 1 update per 1500ms per message.
@@ -17,6 +21,9 @@ type FeishuRateLimiter struct {
 
 	lastCardKit map[string]time.Time // cardID → last update time
 	lastPatch   map[string]time.Time // msgID → last update time
+
+	done     chan struct{}
+	stopOnce sync.Once
 }
 
 // NewFeishuRateLimiter creates a rate limiter with standard intervals.
@@ -26,6 +33,7 @@ func NewFeishuRateLimiter() *FeishuRateLimiter {
 		patchLimit:   1500 * time.Millisecond,
 		lastCardKit:  make(map[string]time.Time),
 		lastPatch:    make(map[string]time.Time),
+		done:         make(chan struct{}),
 	}
 }
 
@@ -76,4 +84,30 @@ func (r *FeishuRateLimiter) Sweep() {
 			delete(r.lastPatch, id)
 		}
 	}
+}
+
+// Start launches the background sweep goroutine.
+func (r *FeishuRateLimiter) Start() {
+	go r.sweepLoop()
+}
+
+func (r *FeishuRateLimiter) sweepLoop() {
+	ticker := time.NewTicker(feishuSweepInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-r.done:
+			return
+		case <-ticker.C:
+			r.Sweep()
+		}
+	}
+}
+
+// Stop cleanly terminates the sweep goroutine using sync.Once to prevent double-close panic.
+func (r *FeishuRateLimiter) Stop() {
+	r.stopOnce.Do(func() {
+		close(r.done)
+	})
 }
