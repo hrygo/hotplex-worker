@@ -141,6 +141,13 @@ func (a *Adapter) Start(ctx context.Context) error {
 }
 
 func (a *Adapter) runSocketMode(ctx context.Context) {
+	// Start the Socket Mode WebSocket connection — Run() pumps events into the Events channel.
+	go func() {
+		if err := a.socketMode.Run(); err != nil && ctx.Err() == nil {
+			a.log.Error("slack: socket mode run error", "err", err)
+		}
+	}()
+
 	for {
 		select {
 		case <-ctx.Done():

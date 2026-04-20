@@ -200,8 +200,8 @@ func (a *Adapter) ProbeAssistantCapability(ctx context.Context) bool {
 				"err", err)
 			return false
 		}
-		// Transient error: treat as capable so runtime retries
-		a.log.Warn("slack: Assistant API probe returned unexpected error, treating as capable",
+		// Transient or benign error (e.g. channel_not_found from empty params): treat as capable
+		a.log.Info("slack: Assistant API probe skipped (benign error), assuming capable",
 			"err", err)
 		return true
 	}
