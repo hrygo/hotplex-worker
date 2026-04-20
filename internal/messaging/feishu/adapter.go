@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -89,7 +90,13 @@ func (a *Adapter) Start(ctx context.Context) error {
 	go a.dedupCleanupLoop()
 
 	eventHandler := dispatcher.NewEventDispatcher("", "").
-		OnP2MessageReceiveV1(func(ctx context.Context, event *larkim.P2MessageReceiveV1) error {
+		OnP2MessageReceiveV1(func(ctx context.Context, event *larkim.P2MessageReceiveV1) (err error) {
+			defer func() {
+				if r := recover(); r != nil {
+					a.log.Error("feishu: panic in message handler", "panic", r, "stack", string(debug.Stack()))
+					err = fmt.Errorf("feishu handler panic: %v", r)
+				}
+			}()
 			return a.handleMessage(ctx, event)
 		}).
 		OnP2MessageReadV1(func(_ context.Context, _ *larkim.P2MessageReadV1) error {
@@ -127,7 +134,11 @@ func (a *Adapter) Start(ctx context.Context) error {
 }
 
 func (a *Adapter) fetchBotOpenID(ctx context.Context) error {
-	resp, err := a.larkClient.Get(ctx, "/open-apis/bot/v3/info", nil, "tenant_access_token")
+	// Add a bounded timeout to prevent startup hanging on the bot info API.
+	botCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	resp, err := a.larkClient.Get(botCtx, "/open-apis/bot/v3/info", nil, "tenant_access_token")
 	if err != nil {
 		return fmt.Errorf("bot info API: %w", err)
 	}
@@ -773,7 +784,11 @@ func (a *Adapter) fetchMediaBytes(ctx context.Context, media *MediaInfo) ([]byte
 		Type(mediaTypeToResourceType[media.Type]).
 		Build()
 
-	resp, err := a.larkClient.Im.V1.MessageResource.Get(ctx, req)
+	// Add a 30-second timeout for the media download.
+	downloadCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	resp, err := a.larkClient.Im.V1.MessageResource.Get(downloadCtx, req)
 	if err != nil {
 		return nil, "", fmt.Errorf("feishu: download %s: %w", media.Type, err)
 	}

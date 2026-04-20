@@ -43,11 +43,19 @@ func NewInteractionManager(log *slog.Logger) *InteractionManager {
 }
 
 // Register adds a new pending interaction and starts its timeout timer.
+// If an interaction with the same ID already exists, this is a no-op.
 func (m *InteractionManager) Register(pi *PendingInteraction) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
+
+	// Dedup: avoid spawning multiple timeout goroutines for the same request ID.
+	if _, exists := m.pending[pi.ID]; exists {
+		m.mu.Unlock()
+		m.log.Debug("interaction: duplicate register, ignoring", "request_id", pi.ID)
+		return
+	}
 
 	m.pending[pi.ID] = pi
+	m.mu.Unlock()
 
 	// Start timeout goroutine
 	go m.watchTimeout(pi)
