@@ -202,7 +202,7 @@ scanInterval := cfg.Session.GCScanInterval // 默认 60s
 |------|------|
 | IDLE session idle_expires_at ≤ now | → TERMINATED（idle_timeout） |
 | session expires_at ≤ now（max_lifetime） | → TERMINATED（max_lifetime） |
-| RUNNING session LastIO() > execution_timeout | → TERMINATED（zombie） |
+| RUNNING session LastIO() > execution_timeout | → TERMINATED（zombie, 默认 30 分钟） |
 | TERMINATED session updated_at ≤ now - retention_period | → DELETE FROM sessions |
 
 ### GC goroutine shutdown
@@ -263,3 +263,34 @@ func NewSQLiteStore(path string) (*SQLiteStore, error) {
     // 写入通过单写 goroutine 串行化
 }
 ```
+
+---
+
+## Crash Recovery（InputRecoverer + Fresh Start）
+
+### InputRecoverer 接口
+当 Worker 崩溃后，bridge 通过 `InputRecoverer` 提取最后一条输入用于重投递：
+
+```go
+// worker.go
+type InputRecoverer interface {
+    LastInput() string
+}
+
+// base.Conn 实现
+func (c *Conn) LastInput() string {
+    c.mu.Lock()
+    defer c.mu.Unlock()
+    return c.lastInput
+}
+```
+
+### Fresh Start Fallback 流程
+1. Worker 崩溃，bridge 检测到退出
+2. 尝试 resume（重启 Worker 进程恢复对话）
+3. Resume 失败 → 进入 fresh start fallback：
+   - 创建全新 Worker 进程
+   - 从 `InputRecoverer` 提取最后输入
+   - 将最后输入重新投递到新 Worker
+   - 对话历史丢失，但用户得到响应
+4. Fresh start 也失败 → 返回错误给客户端

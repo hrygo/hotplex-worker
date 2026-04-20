@@ -32,13 +32,13 @@ Hotplex is a single-process Go gateway that gives you **one WebSocket interface*
 
 ## Features
 
-- **AEP v1 Protocol** — 23 event types over WebSocket: streaming, permissions, Q&A, MCP Elicitation
-- **Session State Machine** — 5-state lifecycle (Created → Running → Idle → Terminated → Deleted) with automatic reconnection
-- **Worker Adapters** — Plugin-based: Claude Code, OpenCode Server. Add your own with the BaseWorker embedding pattern
-- **Multi-Channel** — Bidirectional bridge to Slack (Socket Mode) and Feishu (WebSocket Events)
+- **AEP v1 Protocol** — 23+ event types over WebSocket: streaming, permissions, Q&A, MCP Elicitation, user interactions
+- **Session State Machine** — 5-state lifecycle (Created → Running → Idle → Terminated → Deleted) with crash recovery and automatic reconnection
+- **Worker Adapters** — Plugin-based: Claude Code, OpenCode Server, ACPX, Pi-mono. Add your own with the BaseWorker embedding pattern
+- **Multi-Channel** — Bidirectional bridge to Slack (Socket Mode) and Feishu (WebSocket Events) with user interaction support
 - **Web Chat UI** — Next.js 15 + React 19 + Vercel AI SDK, ready out of the box
 - **Multi-Language SDKs** — Go, TypeScript, Python, Java
-- **Enterprise Ready** — JWT ES256 auth, Admin API, Prometheus metrics, OpenTelemetry tracing, hot-reload config
+- **Enterprise Ready** — JWT ES256 auth, Admin API, Prometheus metrics, OpenTelemetry tracing, hot-reload config, speech-to-text
 
 ## Quick Start
 
@@ -177,6 +177,9 @@ curl -H "Authorization: Bearer <admin-token>" http://localhost:9999/api/v1/sessi
 │  │  ┌──────────────┐  ┌─────────────────────────┐   ││
 │  │  │ Claude Code  │  │ OpenCode Server         │   ││
 │  │  │ (NDJSON/stdio)│  │ (NDJSON/stdio)         │   ││
+│  │  ├──────────────┤  ├─────────────────────────┤   ││
+│  │  │ ACPX         │  │ Pi-mono                 │   ││
+│  │  │ (ACP/stdio)  │  │ (raw stdout)            │   ││
 │  │  └──────────────┘  └─────────────────────────┘   ││
 │  └──────────────────────────────────────────────────┘│
 │  ┌──────────┐ ┌──────────┐ ┌──────┐ ┌─────────────┐ │
@@ -193,7 +196,7 @@ curl -H "Authorization: Bearer <admin-token>" http://localhost:9999/api/v1/sessi
 ```go
 // internal/worker/<name>/worker.go
 type workerAdapter struct {
-    *base.BaseWorker  // shared lifecycle: Terminate, Kill, Wait, Health
+    *base.BaseWorker  // shared lifecycle: Terminate, Kill, Wait, Health, LastIO
 }
 
 func (w *workerAdapter) Start(ctx context.Context, env []string) error {
@@ -237,6 +240,7 @@ func (a *Adapter) HandleTextMessage(ctx context.Context, msg *Message) error { .
 | `db.path` | `data/hotplex-worker.db` | SQLite database path |
 | `log.level` | `info` | Log level (debug/info/warn/error) |
 | `log.format` | `json` | Log format (text for dev, json for prod) |
+| `messaging.*.require_mention` | `true` | In channels/groups, bot must be @mentioned |
 
 Full reference: [docs/management/Config-Reference.md](docs/management/Config-Reference.md)
 
@@ -251,11 +255,22 @@ HOTPLEX_ADMIN_TOKEN_1=<admin API access token>
 HOTPLEX_MESSAGING_SLACK_ENABLED=true
 HOTPLEX_MESSAGING_SLACK_BOT_TOKEN=xoxb-...
 HOTPLEX_MESSAGING_SLACK_APP_TOKEN=xapp-...
+HOTPLEX_MESSAGING_SLACK_REQUIRE_MENTION=true  # Default: true
+HOTPLEX_MESSAGING_SLACK_DM_POLICY=allowlist   # open | allowlist | disabled (default: allowlist)
+HOTPLEX_MESSAGING_SLACK_ALLOW_DM_FROM=U12345
+HOTPLEX_MESSAGING_SLACK_ALLOW_GROUP_FROM=U67890
+HOTPLEX_MESSAGING_SLACK_ALLOW_FROM=U_ADMIN
 
 # Feishu integration
 HOTPLEX_MESSAGING_FEISHU_ENABLED=true
 HOTPLEX_MESSAGING_FEISHU_APP_ID=cli_...
 HOTPLEX_MESSAGING_FEISHU_APP_SECRET=...
+HOTPLEX_MESSAGING_FEISHU_REQUIRE_MENTION=true # Default: true
+HOTPLEX_MESSAGING_FEISHU_DM_POLICY=allowlist  # open | allowlist | disabled (default: allowlist)
+HOTPLEX_MESSAGING_FEISHU_GROUP_POLICY=allowlist # open | allowlist | disabled (default: allowlist)
+HOTPLEX_MESSAGING_FEISHU_ALLOW_DM_FROM=ou_dm_xxx
+HOTPLEX_MESSAGING_FEISHU_ALLOW_GROUP_FROM=ou_group_yyy
+HOTPLEX_MESSAGING_FEISHU_ALLOW_FROM=ou_admin_zzz
 ```
 
 ## Deploy

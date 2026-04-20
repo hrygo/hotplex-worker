@@ -144,10 +144,12 @@ type SlackConfig struct {
 	WorkerType          string   `mapstructure:"worker_type"`
 	WorkDir             string   `mapstructure:"work_dir"`
 	AssistantAPIEnabled *bool    `mapstructure:"assistant_api_enabled"`
-	DMPolicy            string   `mapstructure:"dm_policy"`
-	GroupPolicy         string   `mapstructure:"group_policy"`
+	DMPolicy            string   `mapstructure:"dm_policy"`    // Policy for 1-on-1 chats: open, allowlist, disabled
+	GroupPolicy         string   `mapstructure:"group_policy"` // Policy for channels/groups: open, allowlist, disabled
 	RequireMention      bool     `mapstructure:"require_mention"`
 	AllowFrom           []string `mapstructure:"allow_from"`
+	AllowDMFrom         []string `mapstructure:"allow_dm_from"`
+	AllowGroupFrom      []string `mapstructure:"allow_group_from"`
 
 	// TypingStages configures multi-stage emoji progress indicators for free workspaces.
 	// Empty or nil uses DefaultStages (eyes → clock1 → hourglass → gear → hourglass).
@@ -175,10 +177,12 @@ type FeishuConfig struct {
 	WorkerType string `mapstructure:"worker_type"`
 	WorkDir    string `mapstructure:"work_dir"`
 
-	DMPolicy       string   `mapstructure:"dm_policy"`
-	GroupPolicy    string   `mapstructure:"group_policy"`
+	DMPolicy       string   `mapstructure:"dm_policy"`    // Policy for 1-on-1 chats: open, allowlist, disabled
+	GroupPolicy    string   `mapstructure:"group_policy"` // Policy for groups: open, allowlist, disabled
 	RequireMention bool     `mapstructure:"require_mention"`
 	AllowFrom      []string `mapstructure:"allow_from"`
+	AllowDMFrom    []string `mapstructure:"allow_dm_from"`
+	AllowGroupFrom []string `mapstructure:"allow_group_from"`
 
 	// Speech-to-text configuration.
 	// Provider: "feishu" (cloud API), "local" (external command),
@@ -341,6 +345,18 @@ func Default() *Config {
 		Log: LogConfig{
 			Level:  "info",
 			Format: "json",
+		},
+		Messaging: MessagingConfig{
+			Feishu: FeishuConfig{
+				RequireMention: true,
+				DMPolicy:       "allowlist",
+				GroupPolicy:    "allowlist",
+			},
+			Slack: SlackConfig{
+				RequireMention: true,
+				DMPolicy:       "allowlist",
+				GroupPolicy:    "allowlist",
+			},
 		},
 	}
 }

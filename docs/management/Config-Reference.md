@@ -289,10 +289,63 @@ The subprocess keeps the model loaded in memory. Lifecycle:
 ### Environment Variables
 
 ```bash
+HOTPLEX_MESSAGING_FEISHU_REQUIRE_MENTION=true # Default: true
+HOTPLEX_MESSAGING_FEISHU_DM_POLICY=allowlist  # open | allowlist | disabled (default: allowlist)
+HOTPLEX_MESSAGING_FEISHU_GROUP_POLICY=allowlist # open | allowlist | disabled (default: allowlist)
 HOTPLEX_MESSAGING_FEISHU_STT_PROVIDER=local
 HOTPLEX_MESSAGING_FEISHU_STT_LOCAL_CMD="python3 /path/to/stt_server.py"
 HOTPLEX_MESSAGING_FEISHU_STT_LOCAL_MODE=persistent
 HOTPLEX_MESSAGING_FEISHU_STT_LOCAL_IDLE_TTL=10m
+```
+
+---
+
+## Messaging Access Control
+
+Messaging platforms (Slack, Feishu) support granular access control to ensure the bot only responds to authorized users in specific contexts.
+
+### Configuration Fields
+
+Both Slack and Feishu adapters support these common fields:
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `dm_policy` | string | `allowlist` | Policy for direct messages (`open`, `allowlist`, `disabled`). |
+| `group_policy` | string | `allowlist` | Policy for channels/groups (`open`, `allowlist`, `disabled`). |
+| `require_mention`| bool | `true` | If true, the bot only responds in groups when @mentioned. |
+| `allow_from` | []string| `[]` | Global whitelist (authorized for both DM and groups). |
+| `allow_dm_from`| []string| `[]` | Whitelist specifically for direct messages. |
+| `allow_group_from`| []string| `[]` | Whitelist specifically for groups/channels. |
+
+### Policies
+
+| Policy | Description |
+|--------|-------------|
+| `open` | (Default) Allows all users to interact with the bot. |
+| `allowlist` | Only allows users listed in `allow_from` to interact. |
+| `disabled` | Completely disables the bot for that chat type. |
+
+### Example: Locked-down Group
+
+In this example, the bot is restricted to specific users in groups and requires an @mention.
+
+```yaml
+messaging:
+  feishu:
+    enabled: true
+    dm_policy: "allowlist"
+    group_policy: "allowlist"
+    require_mention: true
+    allow_from:
+      - "ou_12345678"  # Only this user can trigger the bot in groups
+```
+
+### Example: Disabled DMs
+
+```yaml
+messaging:
+  slack:
+    dm_policy: "disabled"  # Users cannot interact with the bot in DMs
 ```
 
 ---

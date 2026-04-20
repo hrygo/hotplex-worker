@@ -316,3 +316,29 @@ func CompareKeys(a, b string) bool {
     return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }
 ```
+
+---
+
+## SDK 日志脱敏
+
+第三方 SDK URL 中的敏感参数必须在日志输出前清除：
+
+```go
+// feishu/sdk_logger.go
+func redactSensitiveURLParams(urlStr string) string {
+    u, err := url.Parse(urlStr)
+    if err != nil {
+        return "[REDACTED]"
+    }
+    // 移除 app_secret, token 等敏感查询参数
+    sensitiveParams := []string{"app_secret", "token", "access_token", "refresh_token"}
+    q := u.Query()
+    for _, p := range sensitiveParams {
+        if q.Get(p) != "" {
+            q.Set(p, "[REDACTED]")
+        }
+    }
+    u.RawQuery = q.Encode()
+    return u.String()
+}
+```
