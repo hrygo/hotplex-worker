@@ -34,7 +34,27 @@ Client                Gateway                Worker
   |<-- done -------------|                      |
 ```
 
-### 1.2 Tool Call（Autonomous 模式）
+### 1.2 Structured Streaming（message.start / delta / end 三段式）
+
+```
+Client                Gateway                Worker
+  |--- input ----------->|                      |
+  |                      |--- send ----------->|
+  |                      |                      |
+  |                      |<-- message.start ----|  { id: "msg_1", role: "assistant" }
+  |<-- message.start ----|                      |
+  |                      |<-- message.delta ----|  { message_id: "msg_1", content: "Sure..." }
+  |<-- message.delta ----|                      |
+  |                      |<-- message.delta ----|  { message_id: "msg_1", content: " Here is..." }
+  |<-- message.delta ----|                      |
+  |                      |<-- message.end ------|  { message_id: "msg_1" }
+  |<-- message.end ------|                      |
+  |                      |                      |
+  |                      |<-- done -------------|
+  |<-- done -------------|                      |
+```
+
+### 1.3 Tool Call（Autonomous 模式）
 
 Worker 自行执行 tool，Client 仅收到通知。
 
@@ -43,37 +63,41 @@ Client                Gateway                Worker
   |--- input ----------->|                      |
   |                      |--- send ----------->|
   |                      |                      |
-  |                      |<-- message.delta ----|
-  |<-- message.delta ----|       "Sure..."      |
+  |                      |<-- message.delta ----|  { message_id: "msg_1", content: "Sure..." }
+  |<-- message.delta ----|                      |
   |                      |                      |
-  |                      |<-- tool_call --------|  [Worker 内部执行 tool]
+  |                      |<-- tool_call --------|  { id: "c1", name: "read_file", input: {...} }
   |<-- tool_call --------|                      |  ← 通知 Client（仅展示）
   |                      |                      |
-  |                      |<-- tool_result ------|  [Worker 获得 tool 结果]
+  |                      |<-- tool_result ------|  { id: "c1", output: "file content..." }
   |<-- tool_result ------|                      |  ← 通知 Client（仅展示）
   |                      |                      |
-  |                      |<-- message.delta ----|
-  |<-- message.delta ----|       "Here is..."   |
+  |                      |<-- message.delta ----|  { message_id: "msg_1", content: "Here is..." }
+  |<-- message.delta ----|                      |
   |                      |                      |
   |                      |<-- done -------------|
   |<-- done -------------|                      |
 ```
 
-### 1.3 Handshake（Init）
+### 1.4 Handshake（Init）
 
 ```
 Client                                    Gateway
   |--- init ─────────────────────────────────>|
   |    { version, worker_type, session_id?,   |
-  |      config?, client_caps }               |
+  |      config?, auth?, client_caps }        |
   |                                          |
   |<--- init_ack ─────────────────────────────|
   |    { session_id, state, server_caps }     |
+  |    server_caps: {                         |
+  |      protocol_version, worker_type,       |
+  |      supports_resume, supports_delta, ... |
+  |    }                                     |
   |                                          |
   |    (双向通信开始)                          |
 ```
 
-### 1.4 Reconnect / Resume
+### 1.5 Reconnect / Resume
 
 **成功场景**：
 
@@ -100,8 +124,8 @@ Client (old)        Gateway           Worker         Client (new)
 Client (new)        Gateway           Worker
      |                  |                X  (已 crash)
      |--- init (session_id) ----------->|
-     |<--- error (WORKER_CRASH) --------|
-     |<--- done (success: false) -------|
+     |<--- init_ack(state:deleted,       |
+     |         code:WORKER_CRASH) -------|
      |<--- WS close --------------------|
 ```
 
@@ -110,11 +134,12 @@ Client (new)        Gateway           Worker
 ```
 Client (new)        Gateway
      |--- init (session_id) ----------->|
-     |<--- error (SESSION_EXPIRED) -----|
+     |<--- init_ack(state:deleted,       |
+     |         code:SESSION_EXPIRED) ----|
      |<--- WS close --------------------|
 ```
 
-### 1.5 Worker Crash（执行中断）
+### 1.6 Worker Crash（执行中断）
 
 ```
 Client                Gateway                Worker
@@ -125,19 +150,23 @@ Client                Gateway                Worker
   |                      |                      X  (process crash)
   |                      |<-- EOF --------------|
   |<-- error(WORKER_CRASH)                      |
+  |    { code: "WORKER_CRASH",                  |
+  |      message: "exit code 139 (SIGSEGV)" }  |
   |<-- done(false) ------|                      |
 ```
 
-### 1.6 Init 失败
+### 1.7 Init 失败
 
 ```
 Client                Gateway
   |--- init (worker_type: "unknown") --->|
-  |<-- error (PROTOCOL_ERROR) -----------|
+  |<-- init_ack(state:deleted,           |
+  |    error:"init: worker_type required",|
+  |    code:INVALID_MESSAGE) -------------|
   |<-- WS close -------------------------|
 ```
 
-### 1.7 Session Busy（拒绝并发 Input）
+### 1.8 Session Busy（拒绝并发 Input）
 
 ```
 Client                Gateway                Worker
@@ -145,14 +174,16 @@ Client                Gateway                Worker
   |                      |                      |
   |--- input_2 -------->|                      |  (state = running)
   |<-- error(SESSION_BUSY)                     |
+  |    { code: "SESSION_BUSY",                 |
+  |      message: "session is running" }       |
 ```
 
-### 1.8 Heartbeat
+### 1.9 Heartbeat
 
 ```
 Client                Gateway
   |--- ping ------------>|
-  |                      |  (30s interval)
+  |                      |  (30s interval, seq=0)
   |<--- pong(state:idle)-|
   |                      |
   |--- ping ------------>|
@@ -163,7 +194,7 @@ Client                Gateway
   |    (marked disconnected, session preserved)
 ```
 
-### 1.9 Worker 启动失败
+### 1.10 Worker 启动失败
 
 Runtime 启动阶段（`CREATED` 状态）进程立即 crash（binary 不存在 / 权限不足 / 环境错误）。
 
@@ -175,13 +206,14 @@ Client                Gateway                Worker
   |                      |<-- exit(1) -----------|
   |<-- state(terminated)-|                      |
   |<-- error(WORKER_START_FAILED) ---------------|
-  |       { details: { exit_code: 1, stderr: "..." } }
+  |       { code: "WORKER_START_FAILED",         |
+  |         message: "..." }                     |
   |<-- done(false) ------|                      |
 ```
 
 > Session 直接从 `CREATED` → `TERMINATED`，不经过 `RUNNING`。
 
-### 1.10 Worker 僵死超时
+### 1.11 Worker 僵死超时
 
 Worker 进程存在但长时间无输出（僵死）。Gateway 通过 `execution_timeout` 检测并强制终止。
 
@@ -197,30 +229,31 @@ Client                Gateway                Worker
   |                      |--- SIGKILL ------->|  (forced)
   |                      |<-- exit(137) ------|
   |<-- error(EXECUTION_TIMEOUT)               |
-  |       { details: { timeout_ms: 300000 } }
+  |       { code: "EXECUTION_TIMEOUT",        |
+  |         message: "..." }                  |
   |<-- done(false) ------|                    |
 ```
 
-### 1.11 多 Tool 并行调用
+### 1.12 多 Tool 串行调用
 
-Worker 在一轮执行中串行调用多个 tool（Claude Code 当前模型为串行，未来可能并行）。
+Worker 在一轮执行中串行调用多个 tool。
 
 ```
 Client                Gateway                Worker
   |--- input ----------->|--- send ----------->|
   |                      |                      |
   |<-- message.delta ----|<-- delta ------------|  "Analyzing..."
-  |<-- tool_call(id:c1) -|<-- tool_use(c1) ----|  [executing read_file]
-  |<-- tool_result(c1) --|<-- tool_result(c1) -|
-  |<-- tool_call(id:c2) -|<-- tool_use(c2) ----|  [executing write_file]
-  |<-- tool_result(c2) --|<-- tool_result(c2) -|
+  |<-- tool_call(id:c1) -|<-- tool_call(c1) ----|  { id: "c1", name: "read_file", input: {path: "..."} }
+  |<-- tool_result(c1) --|<-- tool_result(c1) -|  { id: "c1", output: "..." }
+  |<-- tool_call(id:c2) -|<-- tool_call(c2) ----|  { id: "c2", name: "write_file", input: {path: "..."} }
+  |<-- tool_result(c2) --|<-- tool_result(c2) -|  { id: "c2", output: "..." }
   |<-- message.delta ----|<-- delta ------------|  "Done!"
   |<-- done ------------>|<-- result ----------|
 ```
 
-> **并行场景**：如果 Worker 支持并行 tool 调用，event 序列可能为 `tool_call(c1) → tool_call(c2) → tool_result(c1) → tool_result(c2)`。Client 通过 `tool_call_id` 关联配对，不应假设严格串行。
+> **并行场景**：如果 Worker 支持并行 tool 调用，event 序列可能为 `tool_call(c1) → tool_call(c2) → tool_result(c1) → tool_result(c2)`。Client 通过 `id` 关联配对，不应假设严格串行。
 
-### 1.12 Admin 强制终止
+### 1.13 Admin 强制终止
 
 Admin API 绕过正常终止流程，直接清理 session。
 
@@ -234,6 +267,64 @@ Admin                 Gateway                Worker
 ```
 
 > 如果有活跃 WS Client 连接，Gateway 在 DB 清理后发送 `error(PROCESS_SIGKILL)` + `done(false)` + WS close。
+
+### 1.14 Permission 交互流
+
+Worker 需要用户确认权限时。
+
+```
+Client                Gateway                Worker
+  |--- input ----------->|--- send ----------->|
+  |                      |                      |
+  |                      |<-- permission_request -|  { id: "perm_1", tool_name: "write_file", ... }
+  |<-- permission_request -|                    |
+  |                      |                      |
+  |--- permission_response >|-- permission_response >|  { id: "perm_1", allowed: true }
+  |                      |                      |
+  |                      |<-- message.delta ----|  (Worker 继续执行)
+  |<-- message.delta ----|                      |
+  |                      |<-- done -------------|
+  |<-- done -------------|                      |
+```
+
+### 1.15 Question 交互流
+
+Worker 需要用户做出选择时。
+
+```
+Client                Gateway                Worker
+  |--- input ----------->|--- send ----------->|
+  |                      |                      |
+  |                      |<-- question_request --|  { id: "q_1", questions: [...] }
+  |<-- question_request --|                     |
+  |                      |                      |
+  |--- question_response >|-- question_response >|  { id: "q_1", answers: {...} }
+  |                      |                      |
+  |                      |<-- message.delta ----|  (Worker 根据选择继续)
+  |<-- message.delta ----|                      |
+  |                      |<-- done -------------|
+  |<-- done -------------|                      |
+```
+
+### 1.16 Elicitation 交互流（MCP 服务器用户输入）
+
+MCP 服务器需要用户提供输入时。
+
+```
+Client                Gateway                Worker ←→ MCP Server
+  |--- input ----------->|--- send ----------->|         |
+  |                      |                      |<-- req -|
+  |                      |<-- elicitation_request -|       |
+  |<-- elicitation_request -|                    |         |
+  |                      |                      |         |
+  |--- elicitation_response >|-- elicitation_response >|  |
+  |                      |                      |--> resp -|
+  |                      |                      |         |
+  |                      |<-- message.delta ----|         |
+  |<-- message.delta ----|                      |         |
+  |                      |<-- done -------------|         |
+  |<-- done -------------|                      |         |
+```
 
 ---
 
@@ -281,7 +372,7 @@ stateDiagram-v2
 | `RUNNING` | 执行完毕 | `IDLE` | 正常 |
 | `IDLE` | 收到新 input | `RUNNING` | 正常 |
 | `RUNNING` | crash / timeout / kill | `TERMINATED` | 异常 |
-| `IDLE` | timeout / GC / kill | `TERATED` | 异常 |
+| `IDLE` | timeout / GC / kill | `TERMINATED` | 异常 |
 | `TERMINATED` | resume（重启 runtime） | `RUNNING` | 恢复 |
 | `TERMINATED` | GC / 生命周期结束 | `DELETED` | 终态 |
 | `RUNNING` / `IDLE` | admin force kill | `DELETED` | 管理操作 |
@@ -302,17 +393,23 @@ state(running)
   │
   ▼
 [ STREAMING ] ←─────────────────────┐
-  │   ╲                              │
+  │                                   │
+  ├── message.start (推荐)            │
+  │   ├── message.delta*              │
+  │   └── message.end                 │
+  │                                   │
+  ├── message.delta* (兼容)           │
+  │   ╲                               │
   │    ╲__ tool_call                  │
-  │         │                        │
-  │         ▼                        │
-  │     tool_result ─────────────────┘
+  │         │                         │
+  │         ▼                         │
+  │     tool_result ──────────────────┘
   │
   ▼
-message (optional)
+message (optional, 非流式兼容)
   │
   ▼
-state(idle) (optional — v1.1 增强)
+state(idle) (optional)
   │
   ▼
 done ────────────────────────────→ END
@@ -336,10 +433,11 @@ done ─────────────────────────
 | `state(running)` 必须是 turn 的第一个 event | 标志执行开始 |
 | `done` 必须是 turn 的最后一个 event | 标志执行结束 |
 | `error` 必须在 `done` 之前 | error 不终止 turn，done 才终止 |
-| `tool_call` → `tool_result` 必须通过 `tool_call_id` 配对 | 支持并行 tool 调用 |
-| `message.delta` → `message` 聚合约束 | message 是所有 delta 的完整聚合 |
+| `tool_call` → `tool_result` 必须通过 `id` 配对 | 支持并行 tool 调用 |
+| `message.start` → `message.delta` → `message.end` 通过 `message_id` 关联 | 三段式流式生命周期 |
+| `message.delta` 可被 backpressure 丢弃 | 丢弃不消耗 seq |
+| `done.dropped` 标记本轮是否有过丢弃 | UI 对账依据 |
 | WS close 必须在 `done` 之后 | 协议层优雅关闭 |
-| `done` 后可选发送 `state(idle)` | v1.1 增强：让 Client 无需依赖心跳感知 idle |
 
 > **Error 全局性**：`error` 可从 `[STREAMING]`、`tool_call`、`tool_result` 任何节点触发，是 Event Flow 的全局终止弧。一旦触发，后续只能是 `done(false)`。
 
@@ -347,18 +445,19 @@ done ─────────────────────────
 
 ## 3. Real Trace 示例
 
-### 3.1 Claude 风格 Trace（SDK 级 Agent）
+### 3.1 Claude 风格 Trace（SDK 级 Agent — Structured Streaming）
 
 ```
 event                       seq  data
 ──────────────────────────────────────────────────
 state(running)              1    { state: "running" }
-message.delta               2    { delta: { type: "text", text: "Sure..." } }
-tool_call                   3    { id: "c1", name: "read_file", arguments: {...} }
-tool_result                 4    { tool_call_id: "c1", result: "file content..." }
-message.delta               5    { delta: { type: "text", text: "Here is..." } }
-message                     6    { role: "assistant", content: [...] }
-done                        7    { success: true, stats: { duration_ms: 5200, tool_calls: 1 } }
+message.start               2    { id: "msg_1", role: "assistant", content_type: "text" }
+message.delta               3    { message_id: "msg_1", content: "Sure..." }
+tool_call                   4    { id: "c1", name: "read_file", input: {"path": "/app/main.py"} }
+tool_result                 5    { id: "c1", output: "file content..." }
+message.delta               6    { message_id: "msg_1", content: "Here is..." }
+message.end                 7    { message_id: "msg_1" }
+done                        8    { success: true, stats: { duration_ms: 5200, tool_calls: 1 } }
 ```
 
 ### 3.2 CLI Agent Trace（Raw Stdout Worker）
@@ -368,9 +467,9 @@ Worker 原始输出 → Worker Adapter 转换 → AEP Event：
 ```
 Worker 原始输出                  AEP Event（seq）    kind
 ─────────────────────────────────────────────────────────────
-stdout: "Analyzing project..."   1                  message.delta { delta: { type: "text", text: "Analyzing project..." } }
-stdout: "Found bug"              2                  message.delta { delta: { type: "text", text: "\nFound bug" } }
-stdout: "Fix applied"            3                  message.delta { delta: { type: "text", text: "\nFix applied" } }
+stdout: "Analyzing project..."   1                  message.delta { message_id: "msg_1", content: "Analyzing project..." }
+stdout: "Found bug"              2                  message.delta { message_id: "msg_1", content: "\nFound bug" }
+stdout: "Fix applied"            3                  message.delta { message_id: "msg_1", content: "\nFix applied" }
 (exit code 0)                    4                  done { success: true, stats: { duration_ms: 1200, tool_calls: 0 } }
 ```
 
@@ -381,8 +480,8 @@ stdout: "Fix applied"            3                  message.delta { delta: { typ
 ```
 Worker 原始输出                  AEP Event（seq）    kind
 ─────────────────────────────────────────────────────────────
-stdout: "Running tests..."       1                  message.delta { delta: { type: "text", text: "Running tests..." } }
-stdout: "2 tests failed"         2                  message.delta { delta: { type: "text", text: "\n2 tests failed" } }
+stdout: "Running tests..."       1                  message.delta { message_id: "msg_1", content: "Running tests..." }
+stdout: "2 tests failed"         2                  message.delta { message_id: "msg_1", content: "\n2 tests failed" }
 (exit code 1)                    3                  done { success: false, stats: { duration_ms: 800, tool_calls: 0 } }
 ```
 
@@ -394,7 +493,7 @@ stdout: "2 tests failed"         2                  message.delta { delta: { typ
 event                       seq  data
 ──────────────────────────────────────────────────
 state(running)              1    { state: "running" }
-message.delta               2    { delta: { type: "text", text: "starting..." } }
+message.delta               2    { message_id: "msg_1", content: "starting..." }
 error                       3    { code: "WORKER_CRASH", message: "exit code 139 (SIGSEGV)" }
 done                        4    { success: false }
 ```
@@ -406,12 +505,57 @@ event                       seq  data
 ──────────────────────────────────────────────────
 input                       —    { content: "first task" }
 state(running)              1    { state: "running" }
-message.delta               2    { delta: { type: "text", text: "Working..." } }
+message.delta               2    { message_id: "msg_1", content: "Working..." }
 input                       —    { content: "second task" }   ← 发送时 state = running
 error                       3    { code: "SESSION_BUSY", message: "session is running" }
 ```
 
 > **控制面 vs 数据面**：`input` 无 seq（控制面消息），`error(SESSION_BUSY)` 有 seq（作为数据面 event 插入当前 turn stream）。Client 需区分 "turn 内 error"（如 WORKER_CRASH）和 "turn 外拒绝 error"（SESSION_BUSY）。
+
+### 3.5 Permission Trace（权限交互）
+
+```
+event                       seq  data
+──────────────────────────────────────────────────
+state(running)              1    { state: "running" }
+message.delta               2    { message_id: "msg_1", content: "I need to write..." }
+permission_request          3    { id: "perm_1", tool_name: "write_file", description: "Write to /app/main.py", args: ["/app/main.py"] }
+(permission_response)       —    { id: "perm_1", allowed: true }                    ← Client 响应（控制面）
+message.delta               4    { message_id: "msg_1", content: "File written." }
+done                        5    { success: true }
+```
+
+### 3.6 Question Trace（结构化用户提问）
+
+```
+event                       seq  data
+──────────────────────────────────────────────────
+state(running)              1    { state: "running" }
+message.delta               2    { message_id: "msg_1", content: "Which approach?" }
+question_request            3    { id: "q_1", tool_name: "AskUserQuestion",
+                                     questions: [{
+                                       question: "Which approach?", header: "Approach",
+                                       options: [{ label: "A", description: "Refactor" }, { label: "B", description: "Rewrite" }],
+                                       multi_select: false
+                                     }] }
+(question_response)         —    { id: "q_1", answers: { "Which approach?": "A" } }  ← Client 响应
+message.delta               4    { message_id: "msg_1", content: "Refactoring..." }
+done                        5    { success: true }
+```
+
+### 3.7 Elicitation Trace（MCP 服务器用户输入）
+
+```
+event                       seq  data
+──────────────────────────────────────────────────
+state(running)              1    { state: "running" }
+elicitation_request         2    { id: "el_1", mcp_server_name: "github-mcp",
+                                     message: "Enter your GitHub token",
+                                     requested_schema: { type: "object", properties: { token: { type: "string" } } } }
+(elicitation_response)      —    { id: "el_1", action: "accept", content: { token: "ghp_..." } }  ← Client 响应
+message.delta               3    { message_id: "msg_1", content: "Connected to GitHub." }
+done                        4    { success: true }
+```
 
 ---
 
@@ -427,7 +571,7 @@ Client                Gateway                Worker
   |                    |                      X  (crash!)
   |                    |<-- EOF --------------|
   |                    | (init 仍在处理中)
-  |<-- error(WORKER_CRASH) + done(false) ----|
+  |<-- init_ack(state:deleted, code:WORKER_CRASH)
   |<-- WS close -------|
 ```
 
@@ -473,20 +617,23 @@ Client (old)     Gateway           Client (new)
 
 | 约束 | 来源 | 说明 |
 |------|------|------|
-| `init` 必须是 WS 连接的第一条消息 | §1.3 | 所有后续交互依赖 init 成功 |
+| `init` 必须是 WS 连接的第一条消息 | §1.4 | 所有后续交互依赖 init 成功 |
 | `state(running)` 必须是 turn 的第一个 S→C event | Trace 3.1 | seq=1 总是 state(running) |
 | `done` 必须是 turn 的最后一个 S→C event | Trace 3.1/3.3 | turn 的终止符 |
-| `error` 必须在 `done` 之前 | §1.5, Trace 3.3 | error 不终止 turn，done 才终止 |
-| `tool_call` → `tool_result` 必须通过 `tool_call_id` 配对 | §1.2, Trace 3.1 | 支持并行 tool 调用 |
-| `message.delta` → `message` 聚合约束 | Trace 3.1 | message 是所有 delta 的完整聚合 |
-| WS close 必须在 `done` 之后 | §1.4, §1.6 | 协议层优雅关闭 |
+| `error` 必须在 `done` 之前 | §1.6, Trace 3.3 | error 不终止 turn，done 才终止 |
+| `tool_call` → `tool_result` 必须通过 `id` 配对 | §1.3, Trace 3.1 | 支持并行 tool 调用 |
+| `message.start` → `message.delta` → `message.end` 通过 `message_id` 关联 | §1.2 | 三段式流式生命周期 |
+| `message.delta` 可被 backpressure 丢弃，丢弃不消耗 seq | §9 | seq 无 gap |
+| `done.dropped` 标记本轮是否有过丢弃 | §3.13 | UI 对账依据 |
+| WS close 必须在 `done` 之后 | §1.5, §1.7 | 协议层优雅关闭 |
+| `ping`/`pong` 无 seq（seq=0） | §3.14 | 心跳与业务序号无关 |
 
 ### 5.2 时间约束
 
 | 约束 | 值 | 来源 |
 |------|-----|------|
-| Heartbeat 间隔 | 30s（默认，可配置） | §1.8 |
-| 断开检测阈值 | 3 次未响应 = 90s | §1.8 |
+| Heartbeat 间隔 | 30s（默认，可配置） | §1.9 |
+| 断开检测阈值 | 3 次未响应 = 90s | §1.9 |
 | Init 处理超时 | 30s（建议） | Gateway 实现 |
 | SIGTERM 等待窗口 | 5s | Worker-Gateway-Design §12.5 |
 | execution_timeout | 可配置（默认 300s） | Gateway 实现 |
