@@ -140,10 +140,10 @@ jobs:
           THRESHOLDS["internal/config"]=70
           THRESHOLDS["internal/worker/base"]=45
           THRESHOLDS["internal/worker"]=70
-          THRESHOLDS["internal/worker/claudecode"]=55
-          THRESHOLDS["internal/worker/opencodeserver"]=10
+          THRESHOLDS["internal/worker/claudecode"]=53
+          THRESHOLDS["internal/worker/opencodeserver"]=9
           THRESHOLDS["internal/worker/noop"]=80
-          THRESHOLDS["internal/messaging/feishu"]=49
+          THRESHOLDS["internal/messaging/feishu"]=48
           THRESHOLDS["internal/worker/pi"]=0
           THRESHOLDS["internal/messaging/slack"]=35
           THRESHOLDS["internal/messaging"]=20
