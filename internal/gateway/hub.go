@@ -143,14 +143,17 @@ func (h *Hub) RegisterConn(conn *Conn) {
 }
 
 // UnregisterConn removes a connection and cleans up session mappings.
+// Session-level entries (seqGen, sessionDropped) are cleaned up when a session
+// has no remaining connections.
 func (h *Hub) UnregisterConn(conn *Conn) {
 	h.mu.Lock()
 	delete(h.conns, conn)
-	// Remove from all session maps.
 	for sid, conns := range h.sessions {
 		delete(conns, conn)
 		if len(conns) == 0 {
 			delete(h.sessions, sid)
+			delete(h.sessionDropped, sid)
+			h.seqGen.Remove(sid)
 		}
 	}
 	h.mu.Unlock()
@@ -191,12 +194,16 @@ func (h *Hub) JoinSession(sessionID string, conn *Conn) {
 }
 
 // LeaveSession unsubscribes conn from a session.
+// If the session has no remaining connections, session-level entries (seqGen,
+// sessionDropped) are cleaned up to prevent memory leaks.
 func (h *Hub) LeaveSession(sessionID string, conn *Conn) {
 	h.mu.Lock()
 	if conns, ok := h.sessions[sessionID]; ok {
 		delete(conns, conn)
 		if len(conns) == 0 {
 			delete(h.sessions, sessionID)
+			delete(h.sessionDropped, sessionID)
+			h.seqGen.Remove(sessionID)
 		}
 	}
 	h.mu.Unlock()
@@ -440,11 +447,14 @@ func (h *Hub) routeMessage(msg *EnvelopeWithConn) {
 			if err := conn.WriteCtx(context.Background(), msg.Env); err != nil {
 				h.log.Warn("gateway: platform write failed", "session_id", msg.Env.SessionID, "err", err)
 				_ = conn.Close()
-				// Remove stale pcEntry from sessions map to prevent message
-				// duplication when a new PlatformConn is created for the same chat.
 				h.mu.Lock()
 				if sessionConns, ok := h.sessions[msg.Env.SessionID]; ok {
 					delete(sessionConns, conn)
+					if len(sessionConns) == 0 {
+						delete(h.sessions, msg.Env.SessionID)
+						delete(h.sessionDropped, msg.Env.SessionID)
+						h.seqGen.Remove(msg.Env.SessionID)
+					}
 				}
 				h.mu.Unlock()
 			}
@@ -586,6 +596,13 @@ func (g *SeqGen) Next(sessionID string) int64 {
 	n := g.seq[sessionID] + 1
 	g.seq[sessionID] = n
 	return n
+}
+
+// Remove deletes the sequence counter for a session.
+func (g *SeqGen) Remove(sessionID string) {
+	g.mu.Lock()
+	delete(g.seq, sessionID)
+	g.mu.Unlock()
 }
 
 // pcEntry wraps a PlatformConn so it can be stored in the sessions map alongside

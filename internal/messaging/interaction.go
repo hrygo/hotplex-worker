@@ -3,6 +3,7 @@ package messaging
 import (
 	"fmt"
 	"log/slog"
+	"slices"
 	"sync"
 	"time"
 
@@ -90,7 +91,7 @@ func (m *InteractionManager) Len() int {
 }
 
 // GetAll returns a snapshot of all pending interactions.
-// The returned slice is ordered by registration time (most recent first).
+// The returned slice is ordered by creation time (most recent first).
 func (m *InteractionManager) GetAll() []*PendingInteraction {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -99,6 +100,31 @@ func (m *InteractionManager) GetAll() []*PendingInteraction {
 	for _, pi := range m.pending {
 		result = append(result, pi)
 	}
+	slices.SortFunc(result, func(a, b *PendingInteraction) int {
+		return b.CreatedAt.Compare(a.CreatedAt)
+	})
+	return result
+}
+
+// GetBySession returns pending interactions for a specific session, ordered by
+// creation time (most recent first). Returns nil if sessionID is empty or no
+// interactions match.
+func (m *InteractionManager) GetBySession(sessionID string) []*PendingInteraction {
+	if sessionID == "" {
+		return nil
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	var result []*PendingInteraction
+	for _, pi := range m.pending {
+		if pi.SessionID == sessionID {
+			result = append(result, pi)
+		}
+	}
+	slices.SortFunc(result, func(a, b *PendingInteraction) int {
+		return b.CreatedAt.Compare(a.CreatedAt)
+	})
 	return result
 }
 

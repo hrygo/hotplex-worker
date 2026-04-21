@@ -173,19 +173,23 @@ func (a *Adapter) checkPendingInteraction(ctx context.Context, text string, conn
 		return false
 	}
 
-	normalized := strings.ToLower(strings.TrimSpace(text))
+	conn.mu.RLock()
+	sid := conn.sessionID
+	conn.mu.RUnlock()
 
-	// Check all pending interactions (they share the same conn via session)
-	// Find the most recent pending interaction for this conn
-	var matched *messaging.PendingInteraction
-	pending := a.interactions.GetAll()
-	for _, pi := range pending {
-		matched = pi
-		break // take the first (most recent) pending interaction
+	var candidates []*messaging.PendingInteraction
+	if sid != "" {
+		candidates = a.interactions.GetBySession(sid)
+	} else {
+		candidates = a.interactions.GetAll()
 	}
-	if matched == nil {
+	if len(candidates) == 0 {
 		return false
 	}
+
+	normalized := strings.ToLower(strings.TrimSpace(text))
+
+	matched := candidates[0]
 
 	var metadata map[string]any
 

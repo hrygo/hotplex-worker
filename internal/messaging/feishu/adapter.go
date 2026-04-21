@@ -426,6 +426,11 @@ func (a *Adapter) Close(ctx context.Context) error {
 		}
 	}
 
+	// Close chat queue to drain all worker goroutines.
+	if a.chatQueue != nil {
+		a.chatQueue.Close()
+	}
+
 	a.mu.Lock()
 
 	// Collect conns, clear map, then close outside lock to avoid deadlock.
@@ -460,6 +465,7 @@ type FeishuConn struct {
 	chatType      string
 	replyToMsgID  string
 	platformMsgID string
+	sessionID     string
 	streamCtrl    *StreamingCardController
 	typingRid     string
 	toolRid       string
@@ -521,6 +527,12 @@ func (c *FeishuConn) cycleReaction(ctx context.Context, emoji string) {
 func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 	if env == nil {
 		return fmt.Errorf("feishu: nil envelope")
+	}
+
+	if env.SessionID != "" {
+		c.mu.Lock()
+		c.sessionID = env.SessionID
+		c.mu.Unlock()
 	}
 
 	// Handle done event before extractResponseText (which returns false for done).

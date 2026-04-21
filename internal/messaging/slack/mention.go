@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/slack-go/slack"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -56,28 +57,60 @@ func (uc *UserCache) Close() {
 
 // ResolveMentions replaces <@UID> with @DisplayName.
 // Bot self-mentions are removed. Non-resolvable mentions kept as-is.
+// Resolves all mentions in parallel using errgroup for better throughput.
 func (uc *UserCache) ResolveMentions(ctx context.Context, text, botID string) string {
-	return mentionPattern.ReplaceAllStringFunc(text, func(match string) string {
-		parts := mentionPattern.FindStringSubmatch(match)
-		if len(parts) < 2 {
-			return match
-		}
-		userID := parts[1]
-		inlineName := "" // from <@UID|Name> format
-		if len(parts) >= 3 {
-			inlineName = parts[2]
-		}
+	matches := mentionPattern.FindAllStringSubmatchIndex(text, -1)
+	if len(matches) == 0 {
+		return text
+	}
 
-		if userID == botID {
-			return "" // remove bot self-mention
-		}
+	type resolveResult struct {
+		start int
+		end   int
+		repl  string
+	}
 
-		name := uc.resolve(ctx, userID, inlineName)
-		if name != "" {
-			return "@" + name
-		}
-		return match // keep <@UID> if unresolvable
-	})
+	results := make([]resolveResult, len(matches))
+	g, gctx := errgroup.WithContext(ctx)
+
+	for i, loc := range matches {
+		i, loc := i, loc
+		g.Go(func() error {
+			submatch := mentionPattern.FindStringSubmatch(text[loc[0]:loc[1]])
+			if len(submatch) < 2 {
+				results[i] = resolveResult{start: loc[0], end: loc[1], repl: text[loc[0]:loc[1]]}
+				return nil
+			}
+			userID := submatch[1]
+			inlineName := ""
+			if len(submatch) >= 3 {
+				inlineName = submatch[2]
+			}
+
+			if userID == botID {
+				results[i] = resolveResult{start: loc[0], end: loc[1], repl: ""}
+				return nil
+			}
+
+			name := uc.resolve(gctx, userID, inlineName)
+			if name != "" {
+				results[i] = resolveResult{start: loc[0], end: loc[1], repl: "@" + name}
+			} else {
+				results[i] = resolveResult{start: loc[0], end: loc[1], repl: text[loc[0]:loc[1]]}
+			}
+			return nil
+		})
+	}
+
+	_ = g.Wait()
+
+	// Build result string by replacing from end to start (preserving indices).
+	result := []byte(text)
+	for i := len(results) - 1; i >= 0; i-- {
+		r := results[i]
+		result = append(result[:r.start], append([]byte(r.repl), result[r.end:]...)...)
+	}
+	return string(result)
 }
 
 func (uc *UserCache) resolve(ctx context.Context, userID, fallback string) string {

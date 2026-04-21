@@ -296,7 +296,15 @@ func (m *Manager) TransitionWithInput(ctx context.Context, id string, to events.
 	ms.mu.Lock()
 	defer ms.mu.Unlock()
 
+	from := ms.info.State
+
 	// Anti-pollution: enforce max turns limit.
+	// TurnCount is incremented after transition validation to avoid
+	// burning turns on invalid transitions.
+	if !events.IsValidTransition(from, to) {
+		return fmt.Errorf("%w: %s → %s", ErrInvalidTransition, from, to)
+	}
+
 	ms.TurnCount++
 	if ms.worker != nil {
 		maxTurns := ms.worker.MaxTurns()
@@ -304,17 +312,11 @@ func (m *Manager) TransitionWithInput(ctx context.Context, id string, to events.
 			m.log.Warn("session: max turns exceeded, initiating anti-pollution restart",
 				"session_id", id, "turn_count", ms.TurnCount, "max_turns", maxTurns)
 			_ = ms.worker.Kill()
-			from := ms.info.State
 			if events.IsValidTransition(from, events.StateTerminated) {
 				_ = m.transitionState(ctx, ms, from, events.StateTerminated, "max_turns")
 			}
 			return ErrMaxTurnsReached
 		}
-	}
-
-	from := ms.info.State
-	if !events.IsValidTransition(from, to) {
-		return fmt.Errorf("%w: %s → %s", ErrInvalidTransition, from, to)
 	}
 
 	return m.transitionState(ctx, ms, from, to, "client_input")

@@ -78,6 +78,7 @@ type Adapter struct {
 	activeStreams map[string]*NativeStreamingWriter // messageTS -> writer
 	activeConns   map[string]*SlackConn             // "channelID#threadTS" -> conn
 	interactions  *messaging.InteractionManager
+	closed        atomic.Bool
 }
 
 func (a *Adapter) Platform() messaging.PlatformType { return messaging.PlatformSlack }
@@ -390,6 +391,9 @@ func (a *Adapter) GetOrCreateConn(channelID, threadTS string) *SlackConn {
 	key := channelID + "#" + threadTS
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if a.closed.Load() {
+		return nil
+	}
 	if c, ok := a.activeConns[key]; ok {
 		return c
 	}
@@ -410,24 +414,31 @@ func (a *Adapter) HandleTextMessage(ctx context.Context, platformMsgID, channelI
 	}
 
 	conn := a.GetOrCreateConn(channelID, threadTS)
+	if conn == nil {
+		return fmt.Errorf("slack: adapter closed, dropping message for channel %s", channelID)
+	}
 	return a.bridge.Handle(ctx, envelope, conn)
 }
 
 // NewStreamingWriter creates a streaming writer for the given channel/thread.
 func (a *Adapter) NewStreamingWriter(ctx context.Context, channelID, threadTS string, onComplete func(string)) *NativeStreamingWriter {
 	w := NewNativeStreamingWriter(ctx, a.client, channelID, threadTS, a.rateLimiter, func(ts string) {
-		a.mu.Lock()
-		delete(a.activeStreams, ts)
-		a.mu.Unlock()
+		if !a.closed.Load() {
+			a.mu.Lock()
+			delete(a.activeStreams, ts)
+			a.mu.Unlock()
+		}
 		if onComplete != nil {
 			onComplete(ts)
 		}
 	}, func(w *NativeStreamingWriter) {
-		a.mu.Lock()
-		if w.messageTS != "" {
-			a.activeStreams[w.messageTS] = w
+		if !a.closed.Load() {
+			a.mu.Lock()
+			if w.messageTS != "" {
+				a.activeStreams[w.messageTS] = w
+			}
+			a.mu.Unlock()
 		}
-		a.mu.Unlock()
 	})
 	return w
 }
@@ -435,19 +446,22 @@ func (a *Adapter) NewStreamingWriter(ctx context.Context, channelID, threadTS st
 // Close gracefully terminates the platform connection. Safe to call multiple times.
 func (a *Adapter) Close(ctx context.Context) error {
 	a.log.Info("slack: adapter closing")
+	a.closed.Store(true)
 
 	a.mu.Lock()
 	for _, w := range a.activeStreams {
 		_ = w.Close()
 	}
-	a.activeStreams = nil
-	// Collect conns to close outside the lock to avoid deadlock
-	// (SlackConn.Close also acquires a.mu).
+	for k := range a.activeStreams {
+		delete(a.activeStreams, k)
+	}
 	conns := make([]*SlackConn, 0, len(a.activeConns))
 	for _, c := range a.activeConns {
 		conns = append(conns, c)
 	}
-	a.activeConns = nil
+	for k := range a.activeConns {
+		delete(a.activeConns, k)
+	}
 	a.mu.Unlock()
 
 	for _, c := range conns {
@@ -500,6 +514,10 @@ func (a *Adapter) handleTextControlCommand(ctx context.Context, teamID, channelI
 	}
 
 	conn := a.GetOrCreateConn(channelID, threadTS)
+	if conn == nil {
+		a.log.Warn("slack: adapter closed, dropping control command", "action", result.Label)
+		return
+	}
 	if err := a.bridge.Handle(ctx, ctrlEnv, conn); err != nil {
 		a.log.Error("slack: text control command failed", "action", result.Label, "err", err)
 		a.sendEphemeralOrPost(ctx, channelID, userID, fmt.Sprintf("❌ Failed to execute %s.", result.Label))

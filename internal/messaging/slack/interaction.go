@@ -58,7 +58,7 @@ func (a *Adapter) handleInteractionEvent(ctx context.Context, evt socketmode.Eve
 		pi, ok := a.interactions.Complete(requestID)
 		if !ok {
 			a.log.Warn("slack: interaction not found or expired", "request_id", requestID)
-			return
+			continue
 		}
 
 		// Build response metadata and send through the bridge
