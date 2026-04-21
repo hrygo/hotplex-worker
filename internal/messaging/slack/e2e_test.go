@@ -373,7 +373,7 @@ func TestE2E_StatusManager_Dedup(t *testing.T) {
 	_ = sm.Notify(ctx, "C1", "123", StatusToolUse, "Using read_file...")
 
 	// Clear resets dedup
-	_ = sm.Clear(ctx, "C1", "123")
+	sm.Clear(ctx, "C1", "123")
 
 	// After clear, same status can be sent again
 	_ = sm.Notify(ctx, "C1", "123", StatusThinking, "Thinking...")
@@ -386,7 +386,7 @@ func TestE2E_StatusManager_ClearResetsState(t *testing.T) {
 	ctx := context.Background()
 
 	_ = sm.Notify(ctx, "C1", "123", StatusThinking, "Thinking...")
-	_ = sm.Clear(ctx, "C1", "123")
+	sm.Clear(ctx, "C1", "123")
 	_ = sm.Notify(ctx, "C1", "123", StatusThinking, "Thinking...")
 }
 
