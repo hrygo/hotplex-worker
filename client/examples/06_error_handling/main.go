@@ -8,7 +8,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"math/rand/v2"
 	"os"
 	"os/signal"
@@ -33,9 +32,10 @@ func main() {
 	// Connect with retry + exponential backoff.
 	c, err := connectWithRetry(ctx, gatewayURL, apiKey, 3)
 	if err != nil {
-		log.Fatalf("failed to connect after retries: %v", err)
+		fmt.Fprintf(os.Stderr, "Error: failed to connect after retries: %v\n", err)
+		return
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }() //nolint:errcheck // example cleanup
 
 	// Send with per-operation timeout.
 	sendCtx, sendCancel := context.WithTimeout(ctx, 15*time.Second)
@@ -58,24 +58,29 @@ func main() {
 		for evt := range c.Events() {
 			switch evt.Type {
 			case client.EventMessageDelta:
-				fmt.Print(fieldStr(evt.Data, "content"))
+				if d, ok := evt.Data.(map[string]any); ok {
+					fmt.Print(d["content"])
+				}
 			case client.EventDone:
 				fmt.Println("\nDone.")
 				return
 			case client.EventError:
-				code := fieldStr(evt.Data, "code")
-				msg := fieldStr(evt.Data, "message")
-				switch code {
-				case string(client.ErrCodeSessionBusy):
-					fmt.Fprintf(os.Stderr, "\nRecoverable: session busy — %s\n", msg)
-				case string(client.ErrCodeUnauthorized):
-					fmt.Fprintf(os.Stderr, "\nFatal: unauthorized — %s\n", msg)
+				errData, ok := evt.AsErrorData()
+				if !ok {
+					fmt.Fprintf(os.Stderr, "\nGeneric Error: %v\n", evt.Data)
 					return
-				case string(client.ErrCodeSessionNotFound):
-					fmt.Fprintf(os.Stderr, "\nFatal: session not found — %s\n", msg)
+				}
+				switch errData.Code {
+				case client.ErrCodeSessionBusy:
+					fmt.Fprintf(os.Stderr, "\nRecoverable: session busy — %s\n", errData.Message)
+				case client.ErrCodeUnauthorized:
+					fmt.Fprintf(os.Stderr, "\nFatal: unauthorized — %s\n", errData.Message)
+					return
+				case client.ErrCodeSessionNotFound:
+					fmt.Fprintf(os.Stderr, "\nFatal: session not found — %s\n", errData.Message)
 					return
 				default:
-					fmt.Fprintf(os.Stderr, "\nError [%s]: %s\n", code, msg)
+					fmt.Fprintf(os.Stderr, "\nError [%s]: %s\n", errData.Code, errData.Message)
 					return
 				}
 			}
@@ -90,6 +95,9 @@ func main() {
 }
 
 func connectWithRetry(ctx context.Context, gatewayURL, apiKey string, maxAttempts int) (*client.Client, error) {
+	// NOTE: For simple use cases, client.AutoReconnect(true) is preferred as it
+	// handles transparent reconnection in the background. This example shows
+	// manual retry logic for more granular control.
 	var lastErr error
 	for attempt := range maxAttempts {
 		if attempt > 0 {
@@ -117,7 +125,7 @@ func connectWithRetry(ctx context.Context, gatewayURL, apiKey string, maxAttempt
 
 		ack, err := c.Connect(ctx)
 		if err != nil {
-			c.Close()
+			_ = c.Close() //nolint:errcheck // retry cleanup
 			lastErr = fmt.Errorf("connect: %w", err)
 			fmt.Fprintf(os.Stderr, "Attempt %d failed: %v\n", attempt+1, lastErr)
 			continue
@@ -134,19 +142,4 @@ func envOr(key, fallback string) string {
 		return v
 	}
 	return fallback
-}
-
-func fieldStr(data any, key string) string {
-	m, ok := data.(map[string]any)
-	if !ok {
-		return ""
-	}
-	v := m[key]
-	if v == nil {
-		return ""
-	}
-	if s, ok := v.(string); ok {
-		return s
-	}
-	return fmt.Sprintf("%v", v)
 }

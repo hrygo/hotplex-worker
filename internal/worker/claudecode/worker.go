@@ -359,6 +359,14 @@ func (w *Worker) ResetContext(ctx context.Context) error {
 		w.Log.Warn("claudecode: failed to delete session files, reset may fail", "err", err)
 	}
 
+	// Reset readLineFn so the next Start() assigns the new Proc.ReadLine.
+	// Without this, the second Start reuses the OLD Proc.ReadLine which reads
+	// from the terminated process's stdout pipe, causing readOutput to exit
+	// immediately on EOF → forwardEvents force-kills the new worker after 2s.
+	w.Mu.Lock()
+	w.readLineFn = nil
+	w.Mu.Unlock()
+
 	// Reuse original session config (AllowedTools, SystemPrompt, MCPConfig, etc.)
 	// but clear WorkerSessionID since the Claude session files were deleted.
 	orig.WorkerSessionID = ""

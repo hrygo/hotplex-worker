@@ -8,7 +8,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"syscall"
@@ -37,15 +36,18 @@ func main() {
 		client.URL(gatewayURL),
 		client.WorkerType("claude_code"),
 		client.APIKey(apiKey),
+		client.AutoReconnect(true),
 	)
 	if err != nil {
-		log.Fatalf("create client: %v", err)
+		fmt.Fprintf(os.Stderr, "Error: create client: %v\n", err)
+		os.Exit(1) //nolint:gocritic // example exit
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }() //nolint:errcheck // example cleanup
 
 	ack, err := c.Connect(ctx)
 	if err != nil {
-		log.Fatalf("connect: %v", err)
+		fmt.Fprintf(os.Stderr, "Error: connect: %v\n", err)
+		return
 	}
 	fmt.Printf("Connected  session=%s  state=%s\n", ack.SessionID, ack.State)
 
@@ -55,13 +57,18 @@ func main() {
 		for evt := range c.Events() {
 			switch evt.Type {
 			case client.EventMessageDelta:
-				fmt.Print(fieldStr(evt.Data, "content"))
+				if d, ok := evt.Data.(map[string]any); ok {
+					fmt.Print(d["content"])
+				}
 			case client.EventDone:
-				fmt.Println("\nDone.")
+				if done, ok := evt.AsDoneData(); ok {
+					fmt.Printf("\nDone (success=%v).\n", done.Success)
+				}
 				return
 			case client.EventError:
-				fmt.Fprintf(os.Stderr, "\nError: %s — %s\n",
-					fieldStr(evt.Data, "code"), fieldStr(evt.Data, "message"))
+				if errData, ok := evt.AsErrorData(); ok {
+					fmt.Fprintf(os.Stderr, "\nError: %s — %s\n", errData.Code, errData.Message)
+				}
 				return
 			}
 		}
@@ -69,7 +76,8 @@ func main() {
 
 	fmt.Printf("> %s\n", task)
 	if err := c.SendInput(ctx, task); err != nil {
-		log.Fatalf("send input: %v", err)
+		fmt.Fprintf(os.Stderr, "Error: send input: %v\n", err)
+		return
 	}
 
 	select {
@@ -86,19 +94,4 @@ func envOr(key, fallback string) string {
 		return v
 	}
 	return fallback
-}
-
-func fieldStr(data any, key string) string {
-	m, ok := data.(map[string]any)
-	if !ok {
-		return ""
-	}
-	v := m[key]
-	if v == nil {
-		return ""
-	}
-	if s, ok := v.(string); ok {
-		return s
-	}
-	return fmt.Sprintf("%v", v)
 }

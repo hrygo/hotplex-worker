@@ -12,7 +12,6 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"syscall"
@@ -42,13 +41,15 @@ func main() {
 		client.APIKey(apiKey),
 	)
 	if err != nil {
-		log.Fatalf("create client: %v", err)
+		fmt.Fprintf(os.Stderr, "Error: create client: %v\n", err)
+		os.Exit(1) //nolint:gocritic // example exit
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }() //nolint:errcheck // example cleanup
 
 	ack, err := c.Connect(ctx)
 	if err != nil {
-		log.Fatalf("connect: %v", err)
+		fmt.Fprintf(os.Stderr, "Error: connect: %v\n", err)
+		return
 	}
 	fmt.Printf("Chat session: %s\nType a message and press Enter. Type 'exit' or 'quit' to end.\n\n", ack.SessionID)
 
@@ -59,7 +60,9 @@ func main() {
 		for evt := range c.Events() {
 			switch evt.Type {
 			case client.EventMessageDelta:
-				fmt.Print(fieldStr(evt.Data, "content"))
+				if d, ok := evt.Data.(map[string]any); ok {
+					fmt.Print(d["content"])
+				}
 			case client.EventMessageEnd:
 				fmt.Println()
 			case client.EventState:
@@ -70,7 +73,9 @@ func main() {
 					}
 				}
 			case client.EventDone:
-				fmt.Println("\nSession ended.")
+				if done, ok := evt.AsDoneData(); ok {
+					fmt.Printf("\nDone (success=%v).\n", done.Success)
+				}
 				cancel()
 				return
 			case client.EventError:

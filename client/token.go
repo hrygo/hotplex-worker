@@ -21,6 +21,7 @@ type TokenGenerator struct {
 	privateKey *ecdsa.PrivateKey
 	issuer     string
 	audience   string
+	botID      string
 }
 
 // NewTokenGenerator creates a TokenGenerator from an ECDSA P-256 private key.
@@ -45,6 +46,12 @@ func (g *TokenGenerator) WithAudience(aud string) *TokenGenerator {
 	return g
 }
 
+// WithBotID sets a custom Bot ID claim for isolation (default "").
+func (g *TokenGenerator) WithBotID(id string) *TokenGenerator {
+	g.botID = id
+	return g
+}
+
 // Generate creates a JWT token for the given subject and scopes.
 func (g *TokenGenerator) Generate(subject string, scopes []string, ttl time.Duration) (string, error) {
 	now := time.Now()
@@ -57,6 +64,9 @@ func (g *TokenGenerator) Generate(subject string, scopes []string, ttl time.Dura
 		"nbf":    now.Unix(),
 		"jti":    uuid.NewString(),
 		"scopes": scopes,
+	}
+	if g.botID != "" {
+		claims["bot_id"] = g.botID
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodES256, claims)
 	return token.SignedString(g.privateKey)
@@ -101,7 +111,7 @@ func deriveECDSAP256Key(seed []byte) *ecdsa.PrivateKey {
 	s := new(big.Int).SetBytes(scalarBytes[:])
 	s.Mod(s, new(big.Int).Sub(N, big.NewInt(1)))
 	s.Add(s, big.NewInt(1))
-	x, y := elliptic.P256().ScalarBaseMult(s.Bytes())
+	x, y := elliptic.P256().ScalarBaseMult(s.Bytes()) //nolint:staticcheck // SA1019: must use deprecated scalar multiplication for deterministic ECDSA key derivation from seed
 	return &ecdsa.PrivateKey{
 		PublicKey: ecdsa.PublicKey{Curve: elliptic.P256(), X: x, Y: y},
 		D:         s,
