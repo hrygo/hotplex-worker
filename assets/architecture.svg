@@ -1,0 +1,129 @@
+<svg width="960" height="540" viewBox="0 0 960 540" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- CSS Styles for Uniformity -->
+  <style>
+    .header { font: bold 18px Inter, system-ui, sans-serif; fill: #ffffff; }
+    .subheader { font: 500 12px Inter, system-ui, sans-serif; fill: #ffffff; opacity: 0.8; letter-spacing: 0.1em; text-transform: uppercase; }
+    .section-label { font: 700 12px Inter, system-ui, sans-serif; fill: #64748B; letter-spacing: 0.05em; text-transform: uppercase; }
+    .item-text { font: 500 14px Inter, system-ui, sans-serif; fill: #1E293B; }
+    .item-subtext { font: 400 11px Inter, system-ui, sans-serif; fill: #64748B; opacity: 0.8; }
+    .pill-text { font: 600 14px Inter, system-ui, sans-serif; fill: #ffffff; }
+    .tech-stack { font: 700 11px Inter, system-ui, sans-serif; fill: #ffffff; opacity: 0.9; letter-spacing: 0.02em; }
+  </style>
+
+  <!-- Definitions -->
+  <defs>
+    <linearGradient id="grad_gateway" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4F46E5" />
+      <stop offset="100%" stop-color="#7C3AED" />
+    </linearGradient>
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="110%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="6" />
+      <feOffset dx="0" dy="4" result="offsetblur" />
+      <feComponentTransfer><feFuncA type="linear" slope="0.12" /></feComponentTransfer>
+      <feMerge><feMergeNode /><feMergeNode in="SourceGraphic" /></feMerge>
+    </filter>
+    <marker id="arrow_indigo" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#4F46E5" />
+    </marker>
+    <marker id="arrow_grey" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#94A3B8" />
+    </marker>
+  </defs>
+
+  <!-- COLUMN 1: INBOUND CHANNELS -->
+  <g filter="url(#shadow)">
+    <rect x="40" y="40" width="250" height="460" rx="20" fill="white" stroke="#E2E8F0" stroke-width="1.5" />
+    <text x="165" y="80" class="section-label" text-anchor="middle">📥 Inbound Channels</text>
+    
+    <g transform="translate(60, 110)">
+      <!-- Web Chat -->
+      <rect x="0" y="0" width="210" height="65" rx="12" fill="#F5F3FF" />
+      <rect x="12" y="15" width="24" height="24" rx="6" fill="#8B5CF6" />
+      <text x="48" y="32" class="item-text" fill="#4C1D95">Web Chat Interface</text>
+      <text x="48" y="48" class="item-subtext" fill="#7C3AED">Next.js 15 · React 19</text>
+      
+      <!-- Slack -->
+      <rect x="0" y="80" width="210" height="65" rx="12" fill="#FDF2F8" />
+      <rect x="12" y="95" width="24" height="24" rx="6" fill="#EC4899" />
+      <text x="48" y="112" class="item-text" fill="#831843">Slack Assistant</text>
+      <text x="48" y="128" class="item-subtext" fill="#DB2777">Socket Mode (RTC)</text>
+      
+      <!-- Feishu -->
+      <rect x="0" y="160" width="210" height="65" rx="12" fill="#ECFDF5" />
+      <rect x="12" y="175" width="24" height="24" rx="6" fill="#10B981" />
+      <text x="48" y="192" class="item-text" fill="#064E3B">Feishu/Lark Bot</text>
+      <text x="48" y="208" class="item-subtext" fill="#059669">WebSocket · Events</text>
+      
+      <!-- SDKs -->
+      <rect x="0" y="240" width="210" height="65" rx="12" fill="#F8FAFC" />
+      <rect x="12" y="255" width="24" height="24" rx="6" fill="#64748B" />
+      <text x="48" y="272" class="item-text" fill="#1E293B">Multi-language SDKs</text>
+      <text x="48" y="288" class="item-subtext">Go · TS · Python · Java</text>
+    </g>
+  </g>
+
+  <!-- Connectors Left -->
+  <path d="M290 270 H315" stroke="#CBD5E1" stroke-width="2" fill="none" marker-end="url(#arrow_grey)" />
+
+  <!-- COLUMN 2: HOTPLEX GATEWAY HUB -->
+  <g filter="url(#shadow)">
+    <rect x="320" y="20" width="320" height="500" rx="24" fill="url(#grad_gateway)" />
+    
+    <text x="480" y="65" class="header" text-anchor="middle">🌐 Hotplex Gateway</text>
+    <text x="480" y="88" class="subheader" text-anchor="middle">Agent Event Protocol v1 Engine</text>
+    
+    <line x1="360" y1="110" x2="600" y2="110" stroke="white" stroke-opacity="0.2" stroke-width="2" />
+
+    <!-- CORE CAPABILITIES -->
+    <g transform="translate(340, 135)">
+      <rect x="0" y="0" width="280" height="52" rx="10" fill="white" fill-opacity="0.1" />
+      <text x="15" y="32" class="pill-text">🛡️ AEP v1 Protocol Adapter</text>
+      
+      <rect x="0" y="67" width="280" height="52" rx="10" fill="white" fill-opacity="0.1" />
+      <text x="15" y="99" class="pill-text">💾 Stateful Session Persistence</text>
+      
+      <rect x="0" y="134" width="280" height="52" rx="10" fill="white" fill-opacity="0.1" />
+      <text x="15" y="166" class="pill-text">🌉 Multi-Channel Messaging</text>
+      
+      <rect x="0" y="201" width="280" height="52" rx="10" fill="white" fill-opacity="0.1" />
+      <text x="15" y="233" class="pill-text">⚙️ Process Isolation (PGID)</text>
+      
+      <rect x="0" y="268" width="280" height="52" rx="10" fill="white" fill-opacity="0.1" />
+      <text x="15" y="300" class="pill-text">📈 OTel &amp; Prom Observability</text>
+    </g>
+    
+    <!-- Verified Tech Stack Footer -->
+    <rect x="365" y="465" width="230" height="32" rx="16" fill="black" fill-opacity="0.2" />
+    <text x="480" y="486" class="tech-stack" text-anchor="middle">GO 1.26 · SQLITE WAL · DOCKER</text>
+  </g>
+
+  <!-- Connectors Right -->
+  <path d="M640 270 H665" stroke="#4F46E5" stroke-width="2" fill="none" marker-end="url(#arrow_indigo)" />
+
+  <!-- COLUMN 3: AGENT BACKENDS -->
+  <g filter="url(#shadow)">
+    <rect x="670" y="40" width="250" height="460" rx="20" fill="white" stroke="#E2E8F0" stroke-width="1.5" />
+    <text x="795" y="80" class="section-label" text-anchor="middle">🤖 Agent Backends</text>
+    
+    <g transform="translate(690, 110)">
+      <!-- Claude Code -->
+      <rect x="0" y="0" width="210" height="85" rx="14" fill="#FFF7ED" />
+      <text x="105" y="35" class="item-text" fill="#9A3412" text-anchor="middle">Claude Code</text>
+      <text x="105" y="55" class="item-subtext" fill="#C2410C" text-anchor="middle">Agentic Coding Runtime</text>
+      <text x="105" y="72" class="item-subtext" fill="#9A3412" text-anchor="middle" font-weight="700">NDJSON OVER STDIO</text>
+      
+      <!-- OpenCode Server -->
+      <rect x="0" y="100" width="210" height="85" rx="14" fill="#F0F9FF" />
+      <text x="105" y="135" class="item-text" fill="#0369A1" text-anchor="middle">OpenCode Server</text>
+      <text x="105" y="155" class="item-subtext" fill="#0284C7" text-anchor="middle">API-based Coding Service</text>
+      <text x="105" y="172" class="item-subtext" fill="#0369A1" text-anchor="middle" font-weight="700">HTTP &amp; SSE INTERFACE</text>
+      
+      <!-- Pi-mono -->
+      <rect x="0" y="200" width="210" height="85" rx="14" fill="#FDF4FF" />
+      <text x="105" y="235" class="item-text" fill="#701A75" text-anchor="middle">Pi-mono Adapter</text>
+      <text x="105" y="255" class="item-subtext" fill="#A21CAF" text-anchor="middle">Pythonic Runtime Adapter</text>
+      <text x="105" y="272" class="item-subtext" fill="#701A75" text-anchor="middle" font-weight="700">RAW STDOUT STREAM</text>
+    </g>
+  </g>
+
+</svg>
