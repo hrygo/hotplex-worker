@@ -153,10 +153,9 @@ func (a *Adapter) SetAssistantStatus(ctx context.Context, channelID, threadTS, s
 	return a.client.SetAssistantThreadsStatusContext(ctx, params)
 }
 
-// SetStatus sets the AI status. It uses Assistant API when available;
-// reaction emoji is a fallback only when Assistant API is unavailable.
-// The two paths are mutually exclusive: if Assistant API succeeds, no emoji
-// is added; if it fails, emoji fallback is used instead.
+// SetStatus sets the AI status. Uses Assistant API when available;
+// reaction emoji is a fallback only when it is not. The two paths are
+// mutually exclusive: one or the other, never both.
 func (a *Adapter) SetStatus(ctx context.Context, channelID, threadTS string, status StatusType, text string) error {
 	if a.client == nil {
 		return nil
@@ -170,19 +169,13 @@ func (a *Adapter) SetStatus(ctx context.Context, channelID, threadTS string, sta
 			return nil
 		}
 		a.handleCapabilityError(err)
-		// Assistant API failed; fall through to emoji fallback.
 	}
 	return a.setStatusWithEmojiFallback(ctx, channelID, threadTS, status)
 }
 
-// ClearStatus clears the AI status. It mirrors SetStatus:
-//   - When Assistant API is capable: clears the Assistant Status.
-//     If the call fails, it falls back to clearing the reaction emoji.
-//   - When Assistant API is not capable: clears the tracked reaction emoji.
-//
-// Both cleanup paths are attempted to handle edge cases where the active
-// status mechanism changed during the session (e.g. runtime degradation
-// from Assistant API to emoji, or if the workspace later gains API access).
+// ClearStatus clears the AI status. Uses Assistant API when capable,
+// or removes the reaction emoji when it is not. The two paths are
+// mutually exclusive to avoid unnecessary API calls.
 func (a *Adapter) ClearStatus(ctx context.Context, channelID, threadTS string) error {
 	if a.client == nil {
 		return nil
@@ -193,11 +186,7 @@ func (a *Adapter) ClearStatus(ctx context.Context, channelID, threadTS string) e
 			return nil
 		}
 		a.handleCapabilityError(err)
-		// Assistant API call failed; fall through to emoji cleanup as well.
 	}
-	// Always attempt emoji cleanup. This is safe because setStatusWithEmojiFallback
-	// only adds emoji when the emoji path is used; calling Clear when it wasn't
-	// is a no-op (emojiState[key] is already empty).
 	a.statusMgr.Clear(ctx, channelID, threadTS)
 	return nil
 }
