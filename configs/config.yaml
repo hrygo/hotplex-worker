@@ -127,6 +127,18 @@ worker:
   idle_timeout: 60m           # Terminate idle workers after 60 minutes
   execution_timeout: 30m      # Zombie IO timeout — terminate worker with no output
 
+  # LLM Provider Error Auto-Retry
+  # When Claude Code encounters 429/529/400/network errors, automatically detect
+  # → exponential backoff → send "继续" to retry. Default: disabled.
+  auto_retry:
+    enabled: true
+    max_retries: 3               # Maximum retry attempts (default: 3)
+    base_delay: 5s               # Initial delay between retries (default: 5s)
+    max_delay: 120s              # Maximum delay cap (default: 120s)
+    retry_input: "继续"           # Text sent to worker on retry
+    notify_user: true             # true: notify user during retry, false: silent
+    patterns: []                  # Custom regex patterns (empty = use built-in defaults)
+
   # Environment variable control
   # Workers inherit a whitelist of safe environment variables
   allowed_envs: []            # Additional envs to pass through

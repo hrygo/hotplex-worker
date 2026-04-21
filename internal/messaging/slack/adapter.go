@@ -30,7 +30,8 @@ const (
 	mediaPathPrefix  = "/tmp/hotplex/media/slack"
 	mediaCleanupInt  = 6 * time.Hour
 	mediaTTL         = 24 * time.Hour
-	maxMessageLength = 3800 // Slack limit is ~4000
+	maxMessageLength = 3800            // Slack limit is ~4000
+	errPrefix        = "\u26a0\ufe0f " // ⚠️
 )
 
 // Subtypes that should never be processed.
@@ -74,7 +75,6 @@ type Adapter struct {
 	mu            sync.RWMutex
 	rateLimiter   *ChannelRateLimiter
 	slashLimiter  *SlashRateLimiter
-	ownership     *ThreadOwnershipTracker
 	activeStreams map[string]*NativeStreamingWriter // messageTS -> writer
 	activeConns   map[string]*SlackConn             // "channelID#threadTS" -> conn
 	interactions  *messaging.InteractionManager
@@ -132,7 +132,6 @@ func (a *Adapter) Start(ctx context.Context) error {
 
 	a.rateLimiter = NewChannelRateLimiter(ctx)
 	a.slashLimiter = NewSlashRateLimiter()
-	a.ownership = NewThreadOwnershipTracker(ctx, a.botID, a.log)
 	a.dedup = NewDedup(dedupMaxEntries, dedupTTL)
 	a.userCache = NewUserCache(a.client)
 	a.statusMgr = NewStatusManager(a, a.log)
@@ -295,7 +294,7 @@ func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsA
 		channelType = ChannelIM
 	}
 
-	// Access control gate (before ownership check; must be before ResolveMentions which strips <@BOTID>)
+	// Access control gate (must run before ResolveMentions which strips <@BOTID>)
 	if a.gate != nil {
 		botMentioned := strings.Contains(text, "<@"+a.botID+">")
 		result := a.gate.Check(channelType, userID, botMentioned)
@@ -303,11 +302,6 @@ func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsA
 			a.log.Debug("slack: gate rejected", "reason", result.Reason, "user", userID)
 			return
 		}
-	}
-
-	// Thread ownership check
-	if !a.ownership.ShouldRespond(channelType, threadTS, text, userID) {
-		return
 	}
 
 	// Dedup
@@ -406,6 +400,7 @@ func (a *Adapter) GetOrCreateConn(channelID, threadTS string) *SlackConn {
 
 func (a *Adapter) HandleTextMessage(ctx context.Context, platformMsgID, channelID, teamID, threadTS, userID, text string) error {
 	if a.bridge == nil {
+		a.log.Warn("slack: bridge not configured, dropping message", "channel", channelID, "user", userID)
 		return nil
 	}
 
@@ -473,10 +468,6 @@ func (a *Adapter) Close(ctx context.Context) error {
 		a.slashLimiter = nil
 	}
 	a.mu.Unlock()
-	if a.ownership != nil {
-		a.ownership.Stop()
-		a.ownership = nil
-	}
 	if a.dedup != nil {
 		a.dedup.Close()
 		a.dedup = nil
@@ -516,6 +507,14 @@ func (a *Adapter) handleTextControlCommand(ctx context.Context, teamID, channelI
 	}
 
 	a.log.Info("slack: text control command sent", "action", result.Label, "user", userID, "session_id", env.SessionID)
+
+	// Reset/GC kills the worker without a guaranteed done event, so stale
+	// pending interactions (permission/question/elicitation) may survive.
+	// Cancel them now so stale interactive buttons don't route to the new worker.
+	if result.Action == events.ControlActionReset || result.Action == events.ControlActionGC {
+		a.interactions.CancelAll(env.SessionID)
+	}
+
 	a.sendEphemeralOrPost(ctx, channelID, userID, controlFeedbackMessage(result.Action))
 }
 
@@ -565,6 +564,12 @@ func (c *SlackConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		c.adapter.activeIndicators.Stop(ctx, c.channelID, c.messageTS)
 		c.adapter.interactions.CancelAll(env.SessionID)
 		c.closeStreamWriter()
+		if env.Event.Type == events.Error {
+			if errMsg := extractErrorMessage(env); errMsg != "" {
+				// Async: PostMessage is synchronous HTTP and must not block Hub broadcast.
+				go func() { _ = c.writeWithPostMessage(ctx, FormatMrkdwn(errPrefix+errMsg), false) }()
+			}
+		}
 		return nil
 	case events.PermissionRequest:
 		return c.sendPermissionRequest(ctx, env)
@@ -628,6 +633,9 @@ func (c *SlackConn) writeWithStreaming(ctx context.Context, text string) error {
 // writeWithPostMessage falls back to PostMessageContext.
 // Handles long messages by chunking them into multiple calls.
 func (c *SlackConn) writeWithPostMessage(ctx context.Context, text string, isDelta bool) error {
+	if c.adapter == nil || c.adapter.client == nil {
+		return fmt.Errorf("slack: client not initialized")
+	}
 	if isDelta && text != "" {
 		text += "\n\n"
 	}
@@ -701,6 +709,19 @@ func extractResponseText(env *events.Envelope) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// extractErrorMessage tries ErrorData then map[string]any fallback.
+func extractErrorMessage(env *events.Envelope) string {
+	if d, ok := env.Event.Data.(events.ErrorData); ok {
+		return d.Message
+	}
+	if m, ok := env.Event.Data.(map[string]any); ok {
+		if msg, ok := m["message"].(string); ok {
+			return msg
+		}
+	}
+	return ""
 }
 
 func (a *Adapter) cleanupMedia(ctx context.Context) {

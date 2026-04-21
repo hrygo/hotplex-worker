@@ -242,12 +242,42 @@ type DBConfig struct {
 
 // WorkerConfig holds per-worker defaults.
 type WorkerConfig struct {
-	MaxLifetime      time.Duration `mapstructure:"max_lifetime"`
-	IdleTimeout      time.Duration `mapstructure:"idle_timeout"`
-	ExecutionTimeout time.Duration `mapstructure:"execution_timeout"`
-	AllowedEnvs      []string      `mapstructure:"allowed_envs"`
-	EnvWhitelist     []string      `mapstructure:"env_whitelist"`
-	DefaultWorkDir   string        `mapstructure:"default_work_dir"`
+	MaxLifetime      time.Duration   `mapstructure:"max_lifetime"`
+	IdleTimeout      time.Duration   `mapstructure:"idle_timeout"`
+	ExecutionTimeout time.Duration   `mapstructure:"execution_timeout"`
+	AllowedEnvs      []string        `mapstructure:"allowed_envs"`
+	EnvWhitelist     []string        `mapstructure:"env_whitelist"`
+	DefaultWorkDir   string          `mapstructure:"default_work_dir"`
+	AutoRetry        AutoRetryConfig `mapstructure:"auto_retry"`
+}
+
+// AutoRetryConfig controls automatic retry behavior when LLM provider returns
+// temporary errors (429 rate limit, 529 overload, 400 bad request, etc.).
+type AutoRetryConfig struct {
+	Enabled    bool          `mapstructure:"enabled"`
+	MaxRetries int           `mapstructure:"max_retries"`
+	BaseDelay  time.Duration `mapstructure:"base_delay"`
+	MaxDelay   time.Duration `mapstructure:"max_delay"`
+	RetryInput string        `mapstructure:"retry_input"`
+	NotifyUser bool          `mapstructure:"notify_user"`
+	Patterns   []string      `mapstructure:"patterns"`
+}
+
+// Defaults applies sensible defaults to AutoRetryConfig and returns the updated struct.
+func (c AutoRetryConfig) Defaults() AutoRetryConfig {
+	if c.MaxRetries <= 0 {
+		c.MaxRetries = 3
+	}
+	if c.BaseDelay <= 0 {
+		c.BaseDelay = 5 * time.Second
+	}
+	if c.MaxDelay <= 0 {
+		c.MaxDelay = 120 * time.Second
+	}
+	if c.RetryInput == "" {
+		c.RetryInput = "继续"
+	}
+	return c
 }
 
 // SecurityConfig holds auth and input validation settings.
@@ -311,6 +341,7 @@ func Default() *Config {
 			AllowedEnvs:      nil,
 			EnvWhitelist:     nil,
 			DefaultWorkDir:   "/tmp/hotplex/workspace",
+			AutoRetry:        AutoRetryConfig{Enabled: true, MaxRetries: 3, BaseDelay: 5 * time.Second, MaxDelay: 120 * time.Second, RetryInput: "继续", NotifyUser: true},
 		},
 		Security: SecurityConfig{
 			APIKeyHeader:   "X-API-Key",

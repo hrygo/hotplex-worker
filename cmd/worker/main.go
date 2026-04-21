@@ -176,6 +176,13 @@ func run() error {
 	bridge := gateway.NewBridge(log, hub, sm, msgStore)
 	handler.SetBridge(bridge)
 
+	// Wire LLM auto-retry if enabled.
+	if cfg.Worker.AutoRetry.Enabled {
+		retryCtrl := gateway.NewLLMRetryController(cfg.Worker.AutoRetry, log)
+		bridge.SetRetryController(retryCtrl)
+		log.Info("gateway: LLM auto-retry enabled", "max_retries", cfg.Worker.AutoRetry.MaxRetries, "base_delay", cfg.Worker.AutoRetry.BaseDelay)
+	}
+
 	mux := http.NewServeMux()
 	deps := &GatewayDeps{
 		Log:           log,

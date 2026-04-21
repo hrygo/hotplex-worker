@@ -28,24 +28,28 @@ type resetGenerationer interface {
 // Bridge connects the gateway to the session manager.
 // It runs the read pump in a goroutine and proxies worker events to the hub.
 type Bridge struct {
-	log      *slog.Logger
-	hub      *Hub
-	sm       SessionManager
-	msgStore session.MessageStore // EVT-004: optional; nil means event persistence disabled
-	wf       WorkerFactory
+	log       *slog.Logger
+	hub       *Hub
+	sm        SessionManager
+	msgStore  session.MessageStore // EVT-004: optional; nil means event persistence disabled
+	wf        WorkerFactory
+	retryCtrl *LLMRetryController
 
-	fwdWg  sync.WaitGroup // tracks active forwardEvents goroutines
-	closed atomic.Bool    // set during shutdown to skip crash detection
+	fwdWg         sync.WaitGroup // tracks active forwardEvents goroutines
+	closed        atomic.Bool    // set during shutdown to skip crash detection
+	retryCancelMu sync.Mutex
+	retryCancel   map[string]chan struct{} // sessionID → cancel channel
 }
 
 // NewBridge creates a new bridge. msgStore may be nil (event persistence disabled).
 func NewBridge(log *slog.Logger, hub *Hub, sm SessionManager, msgStore session.MessageStore) *Bridge {
 	return &Bridge{
-		log:      log.With("component", "bridge"),
-		hub:      hub,
-		sm:       sm,
-		msgStore: msgStore,
-		wf:       defaultWorkerFactory{},
+		log:         log.With("component", "bridge"),
+		hub:         hub,
+		sm:          sm,
+		msgStore:    msgStore,
+		wf:          defaultWorkerFactory{},
+		retryCancel: make(map[string]chan struct{}),
 	}
 }
 
@@ -53,6 +57,11 @@ func NewBridge(log *slog.Logger, hub *Hub, sm SessionManager, msgStore session.M
 // simulated workers without requiring external CLI binaries.
 func (b *Bridge) SetWorkerFactory(wf WorkerFactory) {
 	b.wf = wf
+}
+
+// SetRetryController enables automatic LLM error retry.
+func (b *Bridge) SetRetryController(ctrl *LLMRetryController) {
+	b.retryCtrl = ctrl
 }
 
 // StartSession creates a new session and starts a worker.
@@ -246,9 +255,18 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 	if rg, ok := w.(resetGenerationer); ok {
 		myGen = rg.LoadResetGeneration()
 	}
+
+	// LLM retry: accumulate turn text and error data for retry detection.
+	var turnText strings.Builder
+	var lastError *events.ErrorData
+
 	for env := range w.Conn().Recv() {
 		if env.Event.Type == events.Error {
 			b.log.Warn("bridge: received error from worker", "session_id", sessionID, "worker_type", workerType, "data", env.Event.Data)
+			// Capture last error for retry detection.
+			if ed, ok := env.Event.Data.(events.ErrorData); ok {
+				lastError = &ed
+			}
 		} else if b.log.Enabled(context.Background(), slog.LevelDebug) {
 			b.log.Debug("bridge: received event from worker", "session_id", sessionID, "worker_type", workerType, "event_type", env.Event.Type)
 		}
@@ -262,6 +280,13 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 		env = events.Clone(env)
 		env.SessionID = sessionID
 		// Seq is assigned by hub.SendToSession via SeqGen (seq=0 triggers auto-assignment).
+
+		// LLM retry: accumulate text from streaming output.
+		if env.Event.Type == events.MessageDelta || env.Event.Type == events.Message {
+			if content := extractMessageContent(env); content != "" {
+				turnText.WriteString(content)
+			}
+		}
 
 		// UI Reconciliation (Fallback full message if silent dropped)
 		if env.Event.Type == events.Done {
@@ -300,6 +325,19 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 			if err := b.msgStore.Append(context.Background(), env.SessionID, env.Seq, string(env.Event.Type), payload); err != nil {
 				b.log.Warn("bridge: msgstore append", "err", err, "session_id", sessionID)
 			}
+		}
+
+		// LLM retry: check after Done is forwarded and persisted.
+		if env.Event.Type == events.Done && b.retryCtrl != nil {
+			if shouldRetry, attempt := b.retryCtrl.ShouldRetry(sessionID, turnText.String(), lastError); shouldRetry {
+				b.autoRetry(context.Background(), w, sessionID, attempt)
+				turnText.Reset()
+				lastError = nil
+				continue
+			}
+			b.retryCtrl.RecordSuccess(sessionID)
+			turnText.Reset()
+			lastError = nil
 		}
 	}
 
@@ -625,4 +663,74 @@ func isWorkerInUseError(err error) bool {
 func (b *Bridge) Shutdown() {
 	b.closed.Store(true)
 	b.fwdWg.Wait()
+}
+
+// CancelRetry cancels any pending auto-retry for a session.
+// Called by handler when a user sends a new input.
+func (b *Bridge) CancelRetry(sessionID string) {
+	b.retryCancelMu.Lock()
+	defer b.retryCancelMu.Unlock()
+	if ch, ok := b.retryCancel[sessionID]; ok {
+		close(ch)
+		delete(b.retryCancel, sessionID)
+	}
+}
+
+// autoRetry performs exponential backoff then sends the retry input to the worker.
+func (b *Bridge) autoRetry(ctx context.Context, w worker.Worker, sessionID string, attempt int) {
+	delay := b.retryCtrl.Delay(attempt)
+
+	// Notify user if enabled.
+	if b.retryCtrl.ShouldNotify() {
+		msg := b.retryCtrl.NotifyMessage(attempt)
+		notifyEnv := buildNotifyEnvelope(sessionID, msg, b.hub.NextSeq(sessionID))
+		_ = b.hub.SendToSession(ctx, notifyEnv)
+	}
+
+	// Register cancel channel.
+	cancelCh := make(chan struct{})
+	b.retryCancelMu.Lock()
+	b.retryCancel[sessionID] = cancelCh
+	b.retryCancelMu.Unlock()
+
+	// Wait with backoff, respecting cancellation.
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return
+	case <-cancelCh:
+		b.log.Info("bridge: auto-retry cancelled by user input", "session_id", sessionID)
+		return
+	case <-timer.C:
+	}
+
+	// Send retry input to worker.
+	b.log.Info("bridge: auto-retry sending input", "session_id", sessionID, "attempt", attempt)
+	if err := w.Input(ctx, b.retryCtrl.RetryInput(), nil); err != nil {
+		b.log.Warn("bridge: auto-retry input failed", "session_id", sessionID, "err", err)
+	}
+
+	// Clean up cancel channel.
+	b.retryCancelMu.Lock()
+	delete(b.retryCancel, sessionID)
+	b.retryCancelMu.Unlock()
+}
+
+// extractMessageContent extracts text content from a message or message_delta event.
+func extractMessageContent(env *events.Envelope) string {
+	switch env.Event.Type {
+	case events.Message, events.MessageDelta:
+		if m, ok := env.Event.Data.(map[string]any); ok {
+			if content, ok := m["content"].(string); ok {
+				return content
+			}
+		}
+	}
+	return ""
+}
+
+// buildNotifyEnvelope creates a synthetic Message event for user notifications.
+func buildNotifyEnvelope(sessionID, msg string, seq int64) *events.Envelope {
+	return events.NewEnvelope(aep.NewID(), sessionID, seq, events.Message, map[string]any{"content": msg})
 }

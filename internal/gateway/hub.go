@@ -10,6 +10,7 @@ import (
 	"os"
 	"runtime/debug"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -439,6 +440,13 @@ func (h *Hub) routeMessage(msg *EnvelopeWithConn) {
 			if err := conn.WriteCtx(context.Background(), msg.Env); err != nil {
 				h.log.Warn("gateway: platform write failed", "session_id", msg.Env.SessionID, "err", err)
 				_ = conn.Close()
+				// Remove stale pcEntry from sessions map to prevent message
+				// duplication when a new PlatformConn is created for the same chat.
+				h.mu.Lock()
+				if sessionConns, ok := h.sessions[msg.Env.SessionID]; ok {
+					delete(sessionConns, conn)
+				}
+				h.mu.Unlock()
 			}
 		}
 	}
@@ -582,14 +590,21 @@ func (g *SeqGen) Next(sessionID string) int64 {
 
 // pcEntry wraps a PlatformConn so it can be stored in the sessions map alongside
 // *Conn entries. It delegates WriteCtx and Close to the underlying PlatformConn.
+// The closed flag prevents stale entries from sending duplicate messages after
+// the underlying PlatformConn has been closed (e.g., due to a write error).
 type pcEntry struct {
-	pc messaging.PlatformConn
+	pc     messaging.PlatformConn
+	closed atomic.Bool
 }
 
 func (e *pcEntry) WriteCtx(ctx context.Context, env *events.Envelope) error {
+	if e.closed.Load() {
+		return nil // idempotent: ignore writes to closed entries
+	}
 	return e.pc.WriteCtx(ctx, env)
 }
 
 func (e *pcEntry) Close() error {
+	e.closed.Store(true)
 	return e.pc.Close()
 }

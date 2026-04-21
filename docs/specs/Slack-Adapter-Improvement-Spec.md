@@ -36,7 +36,7 @@ estimated_hours: 40
 
 ### 1.2 现状分析（逐行验证）
 
-**源码规模**: 6 文件 / ~1045 行（`adapter.go` 278 + `events.go` 60 + `stream.go` 277 + `rate_limiter.go` 80 + `thread_ownership.go` 149 + `adapter_test.go` 201）
+**源码规模**: 5 文件 / ~896 行（`adapter.go` 278 + `events.go` 60 + `stream.go` 277 + `rate_limiter.go` 80 + `adapter_test.go` 201）
 
 | 维度 | 当前状态（源码行号） | 差距等级 |
 |------|---------------------|---------|

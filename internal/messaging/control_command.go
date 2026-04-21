@@ -31,7 +31,8 @@ var naturalLanguageMap = map[string]ControlCommandResult{
 	"$休眠": {events.ControlActionGC, "gc"},
 	"$挂起": {events.ControlActionGC, "gc"},
 	// Reset: start over — same session ID, fresh context.
-	"$重置": {events.ControlActionReset, "reset"},
+	"$重置":    {events.ControlActionReset, "reset"},
+	"$reset": {events.ControlActionReset, "reset"},
 }
 
 // ParseControlCommand checks whether text is a control command.

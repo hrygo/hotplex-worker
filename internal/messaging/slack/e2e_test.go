@@ -35,7 +35,6 @@ func newTestAdapter(t *testing.T) *Adapter {
 		activeIndicators: NewActiveIndicators(),
 		typingStages:     []TypingStage{{After: 0, Emoji: "eyes"}}, // single stage → runStages loop body never executes
 		rateLimiter:      NewChannelRateLimiter(ctx),
-		ownership:        NewThreadOwnershipTracker(ctx, "B_TEST", slog.Default()),
 		activeStreams:    make(map[string]*NativeStreamingWriter),
 		activeConns:      make(map[string]*SlackConn),
 		interactions:     messaging.NewInteractionManager(slog.Default()),
@@ -691,10 +690,10 @@ func TestE2E_FormatMrkdwn_TableRendering(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// E2E: Thread ownership
+// E2E: Group @mention
 // ---------------------------------------------------------------------------
 
-func TestE2E_ThreadOwnership_BotOwnsThread(t *testing.T) {
+func TestE2E_GroupMention_PassesFilter(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
 

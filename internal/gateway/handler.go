@@ -73,6 +73,11 @@ func (h *Handler) Handle(ctx context.Context, env *events.Envelope) (err error) 
 func (h *Handler) handleInput(ctx context.Context, env *events.Envelope) error {
 	h.log.Debug("gateway: handleInput called", "session_id", env.SessionID, "seq", env.Seq)
 
+	// Cancel pending auto-retry if user sends new input during backoff.
+	if h.bridge != nil {
+		h.bridge.CancelRetry(env.SessionID)
+	}
+
 	data, ok := env.Event.Data.(map[string]any)
 	if !ok {
 		h.log.Warn("gateway: handleInput malformed data", "session_id", env.SessionID)
@@ -111,11 +116,13 @@ func (h *Handler) handleInput(ctx context.Context, env *events.Envelope) error {
 		h.log.Debug("gateway: delivering input to worker", "session_id", env.SessionID, "content_preview", content)
 		if err := w.Input(ctx, content, nil); err != nil {
 			h.log.Warn("gateway: worker input", "err", err, "session_id", env.SessionID)
+			_ = h.sendErrorf(ctx, env, events.ErrCodeInternalError, "worker input failed: %v", err)
 		} else {
 			h.log.Info("gateway: input delivered to worker", "session_id", env.SessionID)
 		}
 	} else {
 		h.log.Error("gateway: handleInput no worker found", "session_id", env.SessionID)
+		_ = h.sendErrorf(ctx, env, events.ErrCodeSessionNotFound, "no worker attached to session")
 	}
 
 	return nil

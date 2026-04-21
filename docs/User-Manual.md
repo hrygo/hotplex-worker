@@ -2,7 +2,7 @@
 
 > HotPlex Worker Gateway is a WebSocket-based access layer for AI Coding Agent sessions, supporting Claude Code, and OpenCode Server adapters.
 >
-> **Version:** `v1.0.0` (Git SHA injected at build time)
+> **Version:** `v1.0.1` (Git SHA injected at build time)
 > **Binary:** `hotplex-worker`
 > **Protocol:** AEP v1 (Agent Exchange Protocol)
 > **Runtime:** Go 1.26+
@@ -19,6 +19,7 @@
 6. [AEP WebSocket Protocol](#6-aep-websocket-protocol)
 7. [Admin API Reference](#7-admin-api-reference)
 8. [Session Lifecycle](#8-session-lifecycle)
+   - [8.4 LLM Error Auto-Retry](#84-llm-error-auto-retry)
 9. [Security](#9-security)
 10. [Observability](#10-observability)
 11. [Hot Reload](#11-hot-reload)
@@ -679,6 +680,18 @@ GC (after 7d)   → deleted
 - Idle sessions (no activity) are cleaned up after `session.retention_period` (default 7 days)
 - GC scan runs every `session.gc_scan_interval` (default 1 minute)
 - Terminated sessions are immediately eligible for GC
+
+### 8.4 LLM Error Auto-Retry
+
+When the AI provider returns temporary errors (429 rate limit, 529 overload, network issues, 5xx errors), the gateway automatically retries with exponential backoff — no manual "继续" needed.
+
+- **Enabled by default** — configurable via `worker.auto_retry.enabled`
+- **Max 3 retries** — configurable via `worker.auto_retry.max_retries`
+- **Backoff**: 5s → 10s → 20s (with ±25% jitter, cap at 120s)
+- **User interrupt**: Sending a new message cancels pending retry immediately
+- **Notifications**: User sees `🔄 遇到临时错误，正在自动重试...` during retry
+
+See [[management/Config-Reference]] for full configuration options.
 
 ---
 

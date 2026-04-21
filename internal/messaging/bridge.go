@@ -61,7 +61,7 @@ func (b *Bridge) Handle(ctx context.Context, env *events.Envelope, pc PlatformCo
 		// Extract platform key from envelope metadata for persistence.
 		platform, platformKey := b.extractPlatformKey(env)
 		if err := b.starter.StartPlatformSession(ctx, env.SessionID, env.OwnerID, b.workerType, b.workDir, platform, platformKey); err != nil {
-			b.log.Debug("messaging bridge: session start skipped or failed",
+			b.log.Warn("messaging bridge: session start failed",
 				"session_id", env.SessionID, "worker_type", b.workerType, "err", err)
 		}
 	}

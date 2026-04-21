@@ -2,7 +2,7 @@
 
 > **Purpose**: Complete guide to configuring HotPlex Worker Gateway
 >
-> **Last Updated**: 2026-04-19
+> **Last Updated**: 2026-04-21
 
 ---
 
@@ -296,6 +296,78 @@ HOTPLEX_MESSAGING_FEISHU_STT_PROVIDER=local
 HOTPLEX_MESSAGING_FEISHU_STT_LOCAL_CMD="python3 /path/to/stt_server.py"
 HOTPLEX_MESSAGING_FEISHU_STT_LOCAL_MODE=persistent
 HOTPLEX_MESSAGING_FEISHU_STT_LOCAL_IDLE_TTL=10m
+```
+
+---
+
+## LLM Provider Error Auto-Retry
+
+When Claude Code encounters temporary errors (429 rate limit, 529 overload, network errors, 5xx server errors), the gateway can automatically detect → wait with exponential backoff → send "继续" to retry the turn. This eliminates the need for users to manually type "继续" when rate limits occur.
+
+### Configuration Fields
+
+```yaml
+worker:
+  auto_retry:
+    enabled: true               # Enable auto-retry (default: true)
+    max_retries: 3             # Maximum retry attempts (default: 3)
+    base_delay: 5s              # Initial delay between retries (default: 5s)
+    max_delay: 120s             # Maximum delay cap (default: 120s)
+    retry_input: "继续"          # Text sent to worker on retry (default: "继续")
+    notify_user: true            # Show retry notification to user (default: true)
+    patterns: []                 # Custom regex patterns (empty = use built-in defaults)
+```
+
+### Error Patterns
+
+Built-in patterns (case-insensitive regex, applied at turn completion):
+
+| Pattern | Matches |
+|---------|--------|
+| `429` / `rate limit` / `too many requests` | Rate limit errors |
+| `529` / `overloaded` / `service unavailable` | Service overload |
+| `API Error.*reject` | API rejection errors |
+| `network` / `connection reset` / `ECONNREFUSED` / `timeout` | Network errors |
+| `500` / `502` / `503` / `server error` | Server-side errors |
+
+### Backoff Strategy
+
+- **Formula**: `base_delay × 2^(attempt-1) ± 25% jitter`
+- **Example**: Attempt 1 → ~5s, Attempt 2 → ~10s, Attempt 3 → ~20s
+- **Caps at**: `max_delay` (default 120s)
+- **User interrupt**: If the user sends a new message during backoff, retry is cancelled immediately
+
+### User Notifications
+
+When `notify_user: true`, the gateway sends a synthetic `message` event to the user:
+
+```
+🔄 遇到临时错误，正在自动重试 (1/3)...
+```
+
+After all retries are exhausted:
+
+```
+⚠️ 自动重试已耗尽 (3次)，请手动发送「继续」或重新提问。
+```
+
+### Environment Variables
+
+```bash
+HOTPLEX_WORKER_AUTO_RETRY_ENABLED=true
+HOTPLEX_WORKER_AUTO_RETRY_MAX_RETRIES=3
+HOTPLEX_WORKER_AUTO_RETRY_BASE_DELAY=5s
+HOTPLEX_WORKER_AUTO_RETRY_MAX_DELAY=120s
+HOTPLEX_WORKER_AUTO_RETRY_RETRY_INPUT=继续
+HOTPLEX_WORKER_AUTO_RETRY_NOTIFY_USER=true
+```
+
+### Disabling Auto-Retry
+
+```yaml
+worker:
+  auto_retry:
+    enabled: false  # Disable if you prefer manual control
 ```
 
 ---

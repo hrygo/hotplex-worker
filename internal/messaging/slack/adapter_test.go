@@ -1197,3 +1197,50 @@ func TestChunkContent_Integration(t *testing.T) {
 		require.Contains(t, chunk, "[", "Each chunk should have a [N/M] prefix")
 	}
 }
+
+// --- extractErrorMessage: P0 fix verification ---
+
+func TestExtractErrorMessage_TypedErrorData(t *testing.T) {
+	t.Parallel()
+
+	env := &events.Envelope{
+		Event: events.Event{
+			Type: events.Error,
+			Data: events.ErrorData{Code: events.ErrCodeSessionNotFound, Message: "session not found"},
+		},
+	}
+	require.Equal(t, "session not found", extractErrorMessage(env))
+}
+
+func TestExtractErrorMessage_MapData(t *testing.T) {
+	t.Parallel()
+
+	env := &events.Envelope{
+		Event: events.Event{
+			Type: events.Error,
+			Data: map[string]any{"message": "something went wrong", "code": "INTERNAL_ERROR"},
+		},
+	}
+	require.Equal(t, "something went wrong", extractErrorMessage(env))
+}
+
+func TestExtractErrorMessage_NilData(t *testing.T) {
+	t.Parallel()
+
+	env := &events.Envelope{
+		Event: events.Event{Type: events.Error},
+	}
+	require.Equal(t, "", extractErrorMessage(env))
+}
+
+func TestExtractErrorMessage_EmptyMessage(t *testing.T) {
+	t.Parallel()
+
+	env := &events.Envelope{
+		Event: events.Event{
+			Type: events.Error,
+			Data: events.ErrorData{Code: events.ErrCodeInternalError, Message: ""},
+		},
+	}
+	require.Equal(t, "", extractErrorMessage(env))
+}

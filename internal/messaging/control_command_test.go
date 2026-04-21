@@ -51,6 +51,8 @@ func TestParseControlCommand_NaturalLanguage(t *testing.T) {
 		// Reset: start over ($ prefix required)
 		{"重置", "$重置", events.ControlActionReset},
 		{"重置 with punct", "$重置。", events.ControlActionReset},
+		{"reset", "$reset", events.ControlActionReset},
+		{"reset with punct", "$reset?", events.ControlActionReset},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
