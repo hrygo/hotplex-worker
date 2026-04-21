@@ -18,11 +18,11 @@ import (
 	"github.com/hotplex/hotplex-worker/pkg/events"
 )
 
-// intentionalExiter is an optional interface for workers that support
-// deliberate termination signaling (e.g. session reset).
-type intentionalExiter interface {
-	SetIntentionalExit(bool)
-	IsIntentionalExit() bool
+// resetGenerationer is an optional interface for workers that support
+// reset-aware crash handling via a monotonic generation counter.
+type resetGenerationer interface {
+	IncResetGeneration() int64
+	LoadResetGeneration() int64
 }
 
 // Bridge connects the gateway to the session manager.
@@ -238,6 +238,14 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 	startTime := time.Now()
 	firstEvent := true
 	doneReceived := false
+
+	// Capture reset generation at goroutine start. If a reset happens while
+	// this goroutine is running, the generation will differ when we check
+	// after the recv channel closes, and we exit cleanly without crash handling.
+	var myGen int64
+	if rg, ok := w.(resetGenerationer); ok {
+		myGen = rg.LoadResetGeneration()
+	}
 	for env := range w.Conn().Recv() {
 		if env.Event.Type == events.Error {
 			b.log.Warn("bridge: received error from worker", "session_id", sessionID, "worker_type", workerType, "data", env.Event.Data)
@@ -295,10 +303,12 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 		}
 	}
 
-	// Check intentional exit before Wait() to avoid racing with
-	// ResetContext.Start() which replaces Proc on the same Worker struct.
-	if ix, ok := w.(intentionalExiter); ok && ix.IsIntentionalExit() {
-		b.log.Info("bridge: worker intentionally terminated (reset), old forwardEvents exiting", "session_id", sessionID, "worker_type", workerType)
+	// Check reset generation: if a reset happened while this goroutine was
+	// running, the generation counter will differ from our captured value.
+	// This is race-free because the counter is monotonic — OLD forwardEvents
+	// always sees a different generation than what it captured at start.
+	if rg, ok := w.(resetGenerationer); ok && rg.LoadResetGeneration() != myGen {
+		b.log.Info("bridge: worker reset, old forwardEvents exiting", "session_id", sessionID, "worker_type", workerType, "my_gen", myGen, "cur_gen", rg.LoadResetGeneration())
 		return
 	}
 
@@ -578,9 +588,13 @@ func (b *Bridge) ResetSession(ctx context.Context, sessionID string) error {
 		return fmt.Errorf("bridge: reset: no worker for session %s", sessionID)
 	}
 
-	// Mark intentional exit so forwardEvents skips crash handling.
-	if ix, ok := w.(intentionalExiter); ok {
-		ix.SetIntentionalExit(true)
+	// Increment reset generation so OLD forwardEvents detects the reset
+	// after its recv channel closes and exits cleanly without crash handling.
+	// The generation counter is monotonic, eliminating the race that existed
+	// with the previous boolean flag (where ResetSession reset the flag to
+	// false before OLD forwardEvents could check it).
+	if rg, ok := w.(resetGenerationer); ok {
+		rg.IncResetGeneration()
 	}
 
 	// Worker-level reset: Terminate → delete session files → Start fresh.
@@ -588,13 +602,13 @@ func (b *Bridge) ResetSession(ctx context.Context, sessionID string) error {
 		return fmt.Errorf("bridge: reset worker: %w", err)
 	}
 
-	// Reset flag so new forwardEvents handles crashes normally.
-	if ix, ok := w.(intentionalExiter); ok {
-		ix.SetIntentionalExit(false)
-	}
-
 	// Start new forwardEvents goroutine for the restarted worker.
-	go b.forwardEvents(w, sessionID, forwardOpts{})
+	// Track with fwdWg so Shutdown() waits for it (previously missing).
+	b.fwdWg.Add(1)
+	go func() {
+		defer b.fwdWg.Done()
+		b.forwardEvents(w, sessionID, forwardOpts{})
+	}()
 
 	return nil
 }

@@ -37,9 +37,14 @@ type BaseWorker struct {
 	Mu        sync.Mutex
 	conn      *Conn // stdin-based conn, nil for HTTP-based adapters
 
-	// intentionalExit is set before a deliberate Terminate+Start cycle (e.g. reset)
-	// so forwardEvents knows to skip crash handling.
-	intentionalExit atomic.Bool
+	// resetGen is a monotonic counter incremented before each deliberate
+	// Terminate+Start cycle (e.g. session reset). forwardEvents captures the
+	// value at goroutine start and checks after the recv channel closes: if the
+	// current generation differs from its captured value, another reset happened
+	// and the OLD forwardEvents should exit cleanly without crash handling.
+	// This replaces the previous boolean flag which suffered from a race where
+	// ResetSession reset the flag to false before OLD forwardEvents could check it.
+	resetGen atomic.Int64
 }
 
 // NewBaseWorker creates a new BaseWorker with the given logger and config.
@@ -185,9 +190,10 @@ func (w *BaseWorker) Conn() worker.SessionConn {
 	return w.conn
 }
 
-// SetIntentionalExit marks the worker for an intentional termination cycle.
-// forwardEvents checks this flag to skip crash handling (crash done, cleanup).
-func (w *BaseWorker) SetIntentionalExit(v bool) { w.intentionalExit.Store(v) }
+// IncResetGeneration increments the reset generation counter and returns the new value.
+// Called by Bridge.ResetSession before the Terminate+Start cycle.
+func (w *BaseWorker) IncResetGeneration() int64 { return w.resetGen.Add(1) }
 
-// IsIntentionalExit reports whether the worker is in an intentional termination cycle.
-func (w *BaseWorker) IsIntentionalExit() bool { return w.intentionalExit.Load() }
+// LoadResetGeneration returns the current reset generation counter.
+// forwardEvents captures this at goroutine start to detect resets.
+func (w *BaseWorker) LoadResetGeneration() int64 { return w.resetGen.Load() }
