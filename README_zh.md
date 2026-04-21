@@ -9,12 +9,12 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/hotplex/hotplex-worker/actions/workflows/ci.yml"><img src="https://github.com/hotplex/hotplex-worker/actions/workflows/ci.yml/badge.svg" alt="CI 状态"></a>
+  <a href="https://github.com/hrygo/hotplex-worker/actions/workflows/ci.yml"><img src="https://github.com/hrygo/hotplex-worker/actions/workflows/ci.yml/badge.svg" alt="CI 状态"></a>
   <a href="https://github.com/hotplex/hotplex-worker/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-3B82F6?style=flat-square" alt="许可证"></a>
   <img src="https://img.shields.io/badge/Go-1.26+-00ADD8?style=flat-square&logo=go" alt="Go">
   <img src="https://img.shields.io/badge/协议-AEP%20v1-7C3AED?style=flat-square" alt="AEP v1">
   <img src="https://img.shields.io/badge/平台-Slack%20%7C%20飞书-E11D48?style=flat-square" alt="平台">
-  <a href="https://github.com/hotplex/hotplex-worker/stargazers"><img src="https://img.shields.io/github/stars/hotplex/hotplex-worker?style=flat-square" alt="Stars"></a>
+  <a href="https://github.com/hrygo/hotplex-worker/stargazers"><img src="https://img.shields.io/github/stars/hrygo/hotplex-worker?style=flat-square" alt="Stars"></a>
 </p>
 
 ---
