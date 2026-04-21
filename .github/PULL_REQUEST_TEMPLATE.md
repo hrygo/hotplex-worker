@@ -1,29 +1,35 @@
 ## Description
 
-Provide a brief summary of the changes and the problem they solve.
+简要说明改了什么、解决了什么问题。
 
 ## Related Issues
 
-Resolves # (issue)
+> **⚠️ 必须关联 Issue**
+>
+> - 分支带 Issue ID（如 `feat/123-description`）→ 必须填入对应编号：`Resolves #123`
+> - 分支无 Issue ID（如 `feat/description`）→ 必须新建 Issue 或确认无需关联后填 `Refs #N`
+> - **禁止留空或填占位符**（如 `# (issue)`、`#xxx`），CI 会拒绝无数字的提交
+
+Resolves #18
 Refs # (issue)
 
 ## Type of Change
 
-- [ ] :bug: Bug fix (non-breaking change which fixes an issue)
-- [ ] :sparkles: New feature (non-breaking change which adds functionality)
-- [ ] :fire: Breaking change (fix or feature that would cause existing functionality to not work as expected)
-- [ ] :books: Documentation update
-- [ ] :rocket: Performance improvement
-- [ ] :white_check_mark: Testing update
+- [ ] :bug: Bug fix（非破坏性修复）
+- [ ] :sparkles: New feature（新增功能）
+- [ ] :fire: Breaking change（破坏性变更，可能影响现有功能）
+- [ ] :books: Documentation update（文档更新）
+- [ ] :rocket: Performance improvement（性能优化）
+- [ ] :white_check_mark: Testing update（测试更新）
 
 ## Checklist
 
-- [ ] My code follows the [CONTRIBUTING.md](file:///Users/huangzhonghui/hotplex-worker/CONTRIBUTING.md) guidelines.
-- [ ] I have verified that `make lint` passes.
-- [ ] I have added tests that prove my fix is effective or that my feature works.
-- [ ] New and existing unit tests pass locally with my changes (`make test`).
-- [ ] I have updated the documentation accordingly.
-- [ ] My changes generate no new warnings.
+- [ ] 代码符合 [CONTRIBUTING.md](file:///Users/huangzhonghui/hotplex-worker/CONTRIBUTING.md) 规范
+- [ ] `make lint` 通过
+- [ ] 新增测试覆盖此次改动（或确认无需测试）
+- [ ] `make test` 本地通过
+- [ ] 文档已同步更新
+- [ ] 无新增警告
 
 ## Screenshots (if applicable)
 
