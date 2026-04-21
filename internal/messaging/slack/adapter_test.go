@@ -1244,3 +1244,84 @@ func TestExtractErrorMessage_EmptyMessage(t *testing.T) {
 	}
 	require.Equal(t, "", extractErrorMessage(env))
 }
+
+// ---------------------------------------------------------------------------
+// StatusManager emoji tracking + cleanup
+// ---------------------------------------------------------------------------
+
+func TestStatusManager_EmojiTrackAndClear(t *testing.T) {
+	t.Parallel()
+
+	sm := NewStatusManager(nil, slog.Default())
+	ctx := context.Background()
+	ch, ts := "C123", "1234.5678"
+	key := ch + ":" + ts
+
+	sm.trackEmoji(ch, ts, "brain")
+	require.Equal(t, "brain", sm.emojiState[key], "emoji should be tracked")
+
+	sm.Clear(ctx, ch, ts)
+	require.Equal(t, "", sm.emojiState[key], "emoji should be cleared from state")
+}
+
+func TestStatusManager_Clear_NoTrackedEmoji(t *testing.T) {
+	t.Parallel()
+
+	sm := NewStatusManager(nil, slog.Default())
+	sm.Clear(context.Background(), "C1", "TS1")
+	require.Empty(t, sm.emojiState)
+}
+
+func TestStatusManager_Clear_Idempotent(t *testing.T) {
+	t.Parallel()
+
+	sm := NewStatusManager(nil, slog.Default())
+	sm.trackEmoji("C1", "TS1", "brain")
+
+	sm.Clear(context.Background(), "C1", "TS1")
+
+	sm.Clear(context.Background(), "C1", "TS1")
+	require.Equal(t, "", sm.emojiState["C1:TS1"])
+}
+
+func TestStatusManager_MultipleStatusCycles(t *testing.T) {
+	t.Parallel()
+
+	sm := NewStatusManager(nil, slog.Default())
+	key := "C99:9999.0000"
+
+	sm.trackEmoji("C99", "9999.0000", "brain")
+	require.Equal(t, "brain", sm.emojiState[key])
+
+	sm.Clear(context.Background(), "C99", "9999.0000")
+	require.Equal(t, "", sm.emojiState[key])
+
+	sm.trackEmoji("C99", "9999.0000", "gear")
+	require.Equal(t, "gear", sm.emojiState[key])
+
+	sm.Clear(context.Background(), "C99", "9999.0000")
+	require.Equal(t, "", sm.emojiState[key])
+}
+
+func TestStatusManager_IndependentThreads(t *testing.T) {
+	t.Parallel()
+
+	sm := NewStatusManager(nil, slog.Default())
+
+	sm.trackEmoji("C1", "T1", "brain")
+	sm.trackEmoji("C1", "T2", "gear")
+
+	sm.Clear(context.Background(), "C1", "T1")
+	require.Equal(t, "", sm.emojiState["C1:T1"], "T1 cleared")
+	require.Equal(t, "gear", sm.emojiState["C1:T2"], "T2 unaffected")
+}
+
+func TestStatusManager_ClearEmojiLocked_NilAdapter(t *testing.T) {
+	t.Parallel()
+
+	sm := NewStatusManager(nil, slog.Default())
+	sm.trackEmoji("C1", "T1", "brain")
+
+	// clearEmojiLocked with nil adapter should not panic.
+	sm.clearEmojiLocked(context.Background(), "C1", "T1")
+}

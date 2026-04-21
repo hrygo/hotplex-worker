@@ -652,6 +652,24 @@ func applyMessagingEnv(cfg *Config) {
 	if v := os.Getenv("HOTPLEX_MESSAGING_SLACK_WORK_DIR"); v != "" {
 		cfg.Messaging.Slack.WorkDir = v
 	}
+	if v := os.Getenv("HOTPLEX_MESSAGING_SLACK_DM_POLICY"); v != "" {
+		cfg.Messaging.Slack.DMPolicy = v
+	}
+	if v := os.Getenv("HOTPLEX_MESSAGING_SLACK_GROUP_POLICY"); v != "" {
+		cfg.Messaging.Slack.GroupPolicy = v
+	}
+	if v := os.Getenv("HOTPLEX_MESSAGING_SLACK_REQUIRE_MENTION"); v != "" {
+		cfg.Messaging.Slack.RequireMention = strings.EqualFold(v, "true")
+	}
+	if v := os.Getenv("HOTPLEX_MESSAGING_SLACK_ALLOW_FROM"); v != "" {
+		cfg.Messaging.Slack.AllowFrom = strings.Split(v, ",")
+	}
+	if v := os.Getenv("HOTPLEX_MESSAGING_SLACK_ALLOW_DM_FROM"); v != "" {
+		cfg.Messaging.Slack.AllowDMFrom = strings.Split(v, ",")
+	}
+	if v := os.Getenv("HOTPLEX_MESSAGING_SLACK_ALLOW_GROUP_FROM"); v != "" {
+		cfg.Messaging.Slack.AllowGroupFrom = strings.Split(v, ",")
+	}
 	if v := os.Getenv("HOTPLEX_MESSAGING_FEISHU_DM_POLICY"); v != "" {
 		cfg.Messaging.Feishu.DMPolicy = v
 	}
@@ -663,6 +681,12 @@ func applyMessagingEnv(cfg *Config) {
 	}
 	if v := os.Getenv("HOTPLEX_MESSAGING_FEISHU_ALLOW_FROM"); v != "" {
 		cfg.Messaging.Feishu.AllowFrom = strings.Split(v, ",")
+	}
+	if v := os.Getenv("HOTPLEX_MESSAGING_FEISHU_ALLOW_DM_FROM"); v != "" {
+		cfg.Messaging.Feishu.AllowDMFrom = strings.Split(v, ",")
+	}
+	if v := os.Getenv("HOTPLEX_MESSAGING_FEISHU_ALLOW_GROUP_FROM"); v != "" {
+		cfg.Messaging.Feishu.AllowGroupFrom = strings.Split(v, ",")
 	}
 }
 

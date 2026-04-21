@@ -587,10 +587,10 @@ func (c *SlackConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		_ = c.adapter.statusMgr.Notify(ctx, c.channelID, c.threadTS, status, text)
 	}
 
-	// Clear status on done/error
+	// Clear status indicator on done/error
 	switch env.Event.Type {
 	case events.Done, events.Error:
-		_ = c.adapter.statusMgr.Clear(ctx, c.channelID, c.threadTS)
+		c.adapter.statusMgr.Clear(ctx, c.channelID, c.threadTS)
 		c.adapter.activeIndicators.Stop(ctx, c.channelID, c.messageTS)
 		c.adapter.interactions.CancelAll(env.SessionID)
 		c.closeStreamWriter()
@@ -703,6 +703,12 @@ func (c *SlackConn) Close() error {
 	c.adapter.mu.Unlock()
 
 	c.closeStreamWriter()
+
+	// Clean up typing indicator + status emoji (same as done/error path in WriteCtx).
+	ctx := context.Background()
+	c.adapter.activeIndicators.Stop(ctx, c.channelID, c.messageTS)
+	c.adapter.statusMgr.Clear(ctx, c.channelID, c.threadTS)
+
 	return nil
 }
 

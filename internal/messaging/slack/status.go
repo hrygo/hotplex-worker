@@ -45,43 +45,66 @@ var StatusTextMap = map[StatusType]string{
 }
 
 // StatusManager manages AI status notifications with dedup + thread safety.
+// When using emoji fallback (non-Assistant API workspaces), it tracks the last
+// emoji added per thread so Clear() can remove it.
 type StatusManager struct {
-	adapter  *Adapter
-	logger   *slog.Logger
-	mu       sync.Mutex
-	current  StatusType
-	lastText string
+	adapter *Adapter
+	logger  *slog.Logger
+	mu      sync.Mutex
+	// per-thread tracking for emoji fallback cleanup.
+	// Key: "channelID:threadTS" → last emoji added via setStatusWithEmojiFallback.
+	emojiState map[string]string
 }
 
 // NewStatusManager creates a new status manager.
 func NewStatusManager(adapter *Adapter, logger *slog.Logger) *StatusManager {
-	return &StatusManager{adapter: adapter, logger: logger}
+	return &StatusManager{
+		adapter:    adapter,
+		logger:     logger,
+		emojiState: make(map[string]string),
+	}
 }
 
-// Notify sends a status update; skips if status+text unchanged.
+// Notify sends a status update; skips if status unchanged for the same thread.
 func (m *StatusManager) Notify(ctx context.Context, channelID, threadTS string, status StatusType, text string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if m.current == status && m.lastText == text {
-		return nil // dedup
-	}
-	m.current = status
-	m.lastText = text
-
 	if text == "" {
-		return m.adapter.ClearStatus(ctx, channelID, threadTS)
+		m.clearEmojiLocked(ctx, channelID, threadTS)
+		return nil
 	}
 	return m.adapter.SetStatus(ctx, channelID, threadTS, status, text)
 }
 
-// Clear clears the current status.
-func (m *StatusManager) Clear(ctx context.Context, channelID, threadTS string) error {
+// Clear removes any tracked status emoji for the thread.
+func (m *StatusManager) Clear(ctx context.Context, channelID, threadTS string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.current = StatusIdle
-	m.lastText = ""
-	return m.adapter.ClearStatus(ctx, channelID, threadTS)
+	m.clearEmojiLocked(ctx, channelID, threadTS)
+}
+
+// clearEmojiLocked removes the tracked emoji reaction. Caller must hold m.mu.
+func (m *StatusManager) clearEmojiLocked(ctx context.Context, channelID, threadTS string) {
+	key := channelID + ":" + threadTS
+	emoji := m.emojiState[key]
+	if emoji == "" {
+		return
+	}
+	delete(m.emojiState, key)
+
+	if m.adapter != nil && m.adapter.client != nil && threadTS != "" {
+		_ = m.adapter.client.RemoveReactionContext(ctx, emoji, slack.ItemRef{
+			Channel:   channelID,
+			Timestamp: threadTS,
+		})
+	}
+}
+
+// trackEmoji records the emoji added for a thread. Called by setStatusWithEmojiFallback.
+func (m *StatusManager) trackEmoji(channelID, threadTS, emoji string) {
+	key := channelID + ":" + threadTS
+	m.emojiState[key] = emoji
 }
 
 // aepEventToStatus maps an AEP envelope to a status type and text.
@@ -159,6 +182,8 @@ func (a *Adapter) ClearStatus(ctx context.Context, channelID, threadTS string) e
 		}
 		a.handleCapabilityError(err)
 	}
+	// Emoji fallback: statusMgr.Clear handles removal of tracked emoji.
+	a.statusMgr.Clear(ctx, channelID, threadTS)
 	return nil
 }
 
@@ -178,10 +203,14 @@ func (a *Adapter) setStatusWithEmojiFallback(ctx context.Context, channelID, thr
 	if !ok || emoji == "" || threadTS == "" {
 		return nil
 	}
-	return a.client.AddReactionContext(ctx, emoji, slack.ItemRef{
+	err := a.client.AddReactionContext(ctx, emoji, slack.ItemRef{
 		Channel:   channelID,
 		Timestamp: threadTS,
 	})
+	if err == nil {
+		a.statusMgr.trackEmoji(channelID, threadTS, emoji)
+	}
+	return err
 }
 
 // ProbeAssistantCapability tests if the workspace supports the Assistant API.
