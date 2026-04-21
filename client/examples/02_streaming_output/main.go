@@ -10,7 +10,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"strings"
@@ -36,13 +35,15 @@ func main() {
 		client.APIKey(apiKey),
 	)
 	if err != nil {
-		log.Fatalf("create client: %v", err)
+		fmt.Fprintf(os.Stderr, "Error: create client: %v\n", err)
+		os.Exit(1) //nolint:gocritic // example exit
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }() //nolint:errcheck // example cleanup
 
 	ack, err := c.Connect(ctx)
 	if err != nil {
-		log.Fatalf("connect: %v", err)
+		fmt.Fprintf(os.Stderr, "Error: connect: %v\n", err)
+		return
 	}
 	fmt.Printf("Session: %s\n\n", ack.SessionID)
 
@@ -78,9 +79,10 @@ func main() {
 		}
 	}()
 
-	fmt.Printf("> %s\n\n", task)
+	fmt.Printf("> %s\n", task)
 	if err := c.SendInput(ctx, task); err != nil {
-		log.Fatalf("send input: %v", err)
+		fmt.Fprintf(os.Stderr, "Error: send input: %v\n", err)
+		return
 	}
 
 	select {

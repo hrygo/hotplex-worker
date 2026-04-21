@@ -40,6 +40,10 @@ type Client struct {
 	// heartbeat config
 	pingInterval time.Duration
 
+	// reconnection config
+	autoReconnect bool
+	metadata      map[string]any
+
 	// runtime state
 	mu        sync.Mutex
 	conn      *websocket.Conn
@@ -64,6 +68,78 @@ type Event struct {
 	Seq     int64       `json:"seq"`
 	Session string      `json:"session"`
 	Data    interface{} `json:"data,omitempty"`
+}
+
+// AsDoneData parses event data as DoneData.
+func (e Event) AsDoneData() (DoneData, bool) {
+	d, ok := e.Data.(map[string]any)
+	if !ok {
+		return DoneData{}, false
+	}
+	var res DoneData
+	b, _ := json.Marshal(d)
+	_ = json.Unmarshal(b, &res)
+	return res, true
+}
+
+// AsErrorData parses event data as ErrorData.
+func (e Event) AsErrorData() (ErrorData, bool) {
+	d, ok := e.Data.(map[string]any)
+	if !ok {
+		return ErrorData{}, false
+	}
+	var res ErrorData
+	b, _ := json.Marshal(d)
+	_ = json.Unmarshal(b, &res)
+	return res, true
+}
+
+// AsToolCallData parses event data as ToolCallData.
+func (e Event) AsToolCallData() (ToolCallData, bool) {
+	d, ok := e.Data.(map[string]any)
+	if !ok {
+		return ToolCallData{}, false
+	}
+	var res ToolCallData
+	b, _ := json.Marshal(d)
+	_ = json.Unmarshal(b, &res)
+	return res, true
+}
+
+// AsPermissionRequestData parses event data as PermissionRequestData.
+func (e Event) AsPermissionRequestData() (PermissionRequestData, bool) {
+	d, ok := e.Data.(map[string]any)
+	if !ok {
+		return PermissionRequestData{}, false
+	}
+	var res PermissionRequestData
+	b, _ := json.Marshal(d)
+	_ = json.Unmarshal(b, &res)
+	return res, true
+}
+
+// AsQuestionRequestData parses event data as QuestionRequestData.
+func (e Event) AsQuestionRequestData() (QuestionRequestData, bool) {
+	d, ok := e.Data.(map[string]any)
+	if !ok {
+		return QuestionRequestData{}, false
+	}
+	var res QuestionRequestData
+	b, _ := json.Marshal(d)
+	_ = json.Unmarshal(b, &res)
+	return res, true
+}
+
+// AsElicitationRequestData parses event data as ElicitationRequestData.
+func (e Event) AsElicitationRequestData() (ElicitationRequestData, bool) {
+	d, ok := e.Data.(map[string]any)
+	if !ok {
+		return ElicitationRequestData{}, false
+	}
+	var res ElicitationRequestData
+	b, _ := json.Marshal(d)
+	_ = json.Unmarshal(b, &res)
+	return res, true
 }
 
 // New creates a new client with the given options.
@@ -95,7 +171,36 @@ func (c *Client) Connect(ctx context.Context) (*InitAckData, error) {
 	if sessionID == "" {
 		sessionID = aep.NewSessionID()
 	}
-	return c.doConnect(ctx, sessionID, false)
+
+	if !c.autoReconnect {
+		return c.doConnect(ctx, sessionID, false)
+	}
+
+	// Reconnection loop
+	var (
+		ack     *InitAckData
+		err     error
+		attempt int
+	)
+	for {
+		ack, err = c.doConnect(ctx, sessionID, attempt > 0)
+		if err == nil {
+			return ack, nil
+		}
+
+		attempt++
+		c.logger.Warn("client: connect failed, retrying", "attempt", attempt, "err", err)
+
+		backoff := backoffDuration(attempt)
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-c.ctx.Done():
+			return nil, errors.New("client: closed")
+		case <-time.After(backoff):
+			// retry
+		}
+	}
 }
 
 // Resume attaches to an existing session.
@@ -130,9 +235,13 @@ func (c *Client) doConnect(ctx context.Context, sessionID string, isResume bool)
 				"error", "state", "done", "message", "message.start",
 				"message.delta", "message.end", "tool_call", "tool_result",
 				"reasoning", "step", "raw", "permission_request",
-				"control", "ping", "pong",
+				"control", "ping", "pong", "question_request",
+				"question_response", "elicitation_request", "elicitation_response",
 			},
 		},
+	}
+	if c.metadata != nil {
+		initData["config"] = map[string]any{"metadata": c.metadata}
 	}
 	if c.authToken != "" {
 		initData["auth"] = map[string]any{"token": c.authToken}
@@ -142,13 +251,16 @@ func (c *Client) doConnect(ctx context.Context, sessionID string, isResume bool)
 	}
 
 	env := aep.NewEnvelope(aep.NewID(), sessionID, 1, events.Init, initData)
+	env.Priority = PriorityControl
 	frame, err := aep.EncodeJSON(env)
 	if err != nil {
-		conn.Close()
+		if c.conn != nil {
+			_ = c.conn.Close()
+		}
 		return nil, fmt.Errorf("client: send init: %w", err)
 	}
 	if err := conn.WriteMessage(websocket.TextMessage, frame); err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, fmt.Errorf("client: send init: %w", err)
 	}
 
@@ -164,26 +276,27 @@ func (c *Client) doConnect(ctx context.Context, sessionID string, isResume bool)
 	for {
 		_, r, err := conn.NextReader()
 		if err != nil {
-			conn.Close()
+			if c.conn != nil {
+				_ = c.conn.Close()
+			}
 			return nil, fmt.Errorf("client: read init ack: %w", err)
 		}
 		raw, err := io.ReadAll(r)
 		if err != nil {
-			conn.Close()
+			_ = conn.Close()
 			return nil, fmt.Errorf("client: read init ack body: %w", err)
 		}
 
 		if err := json.Unmarshal(raw, &ackEnv); err != nil {
-			conn.Close()
+			_ = conn.Close()
 			return nil, fmt.Errorf("client: decode init ack: %w", err)
 		}
-		if ackEnv.Event.Type == EventInitAck {
+		if ackEnv.Event.Type == "init_ack" {
 			break
 		}
 		// Buffer pre-init_ack events for delivery after the handshake.
 		// The gateway may route state events before init_ack due to a race
-		// between the ReadPump goroutine (sending init_ack) and the Run
-		// goroutine (routing state events via broadcast).
+		// between the Bridge (starting worker) and Conn (sending init_ack).
 		preInitEvents = append(preInitEvents, Event{
 			Type:    string(ackEnv.Event.Type),
 			Seq:     ackEnv.Seq,
@@ -234,8 +347,12 @@ func (c *Client) State() SessionState {
 }
 
 // SendInput sends a user input message.
-func (c *Client) SendInput(ctx context.Context, content string) error {
-	return c.send(ctx, events.Input, map[string]any{"content": content})
+func (c *Client) SendInput(ctx context.Context, content string, metadata ...map[string]any) error {
+	data := map[string]any{"content": content}
+	if len(metadata) > 0 && metadata[0] != nil {
+		data["metadata"] = metadata[0]
+	}
+	return c.send(ctx, events.Input, data, PriorityData)
 }
 
 // SendPermissionResponse approves or denies a tool permission.
@@ -244,14 +361,31 @@ func (c *Client) SendPermissionResponse(ctx context.Context, id string, approved
 	if reason != "" {
 		data["reason"] = reason
 	}
-	return c.send(ctx, events.PermissionResponse, data)
+	return c.send(ctx, events.PermissionResponse, data, PriorityControl)
+}
+
+// SendQuestionResponse sends answers to a question request.
+func (c *Client) SendQuestionResponse(ctx context.Context, id string, answers map[string]string) error {
+	return c.send(ctx, events.QuestionResponse, QuestionResponseData{
+		ID:      id,
+		Answers: answers,
+	}, PriorityControl)
+}
+
+// SendElicitationResponse sends a response to an elicit request.
+func (c *Client) SendElicitationResponse(ctx context.Context, id, action string, content map[string]any) error {
+	return c.send(ctx, events.ElicitationResponse, ElicitationResponseData{
+		ID:      id,
+		Action:  action,
+		Content: content,
+	}, PriorityControl)
 }
 
 // SendControl sends a control action ("terminate" | "delete").
 func (c *Client) SendControl(ctx context.Context, action string) error {
 	return c.send(ctx, events.Control, &events.ControlData{
 		Action: events.ControlAction(action),
-	})
+	}, PriorityControl)
 }
 
 // SendReset sends a reset control action to clear session context.
@@ -271,7 +405,7 @@ func (c *Client) sendControlWithReason(ctx context.Context, action events.Contro
 	if reason != "" {
 		data.Reason = reason
 	}
-	return c.send(ctx, events.Control, data)
+	return c.send(ctx, events.Control, data, PriorityControl)
 }
 
 // Close gracefully shuts down the client.
@@ -302,7 +436,7 @@ func (c *Client) Close() error {
 
 // ─── Private ─────────────────────────────────────────────────────────────────
 
-func (c *Client) send(ctx context.Context, kind events.Kind, data any) error {
+func (c *Client) send(ctx context.Context, kind events.Kind, data any, priority Priority) error {
 	c.mu.Lock()
 	closed := c.closed
 	sessionID := c.sessionID
@@ -316,6 +450,7 @@ func (c *Client) send(ctx context.Context, kind events.Kind, data any) error {
 	}
 
 	env := aep.NewEnvelope(aep.NewID(), sessionID, seq, kind, data)
+	env.Priority = priority
 	frame, err := aep.EncodeJSON(env)
 	if err != nil {
 		return err
@@ -496,4 +631,14 @@ func isClosedWS(err error) bool {
 		websocket.CloseGoingAway,
 		websocket.CloseNoStatusReceived,
 	)
+}
+
+func backoffDuration(attempt int) time.Duration {
+	const base = 1 * time.Second
+	const max = 30 * time.Second
+	d := base * (1 << uint(attempt-1))
+	if d > max {
+		return max
+	}
+	return d
 }

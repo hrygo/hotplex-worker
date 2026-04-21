@@ -14,7 +14,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"strings"
@@ -56,11 +56,13 @@ func main() {
 	if signingKey != "" {
 		gen, err := client.NewTokenGenerator(signingKey)
 		if err != nil {
-			log.Fatalf("token generator: %v", err)
+			fmt.Fprintf(os.Stderr, "Error: token generator: %v\n", err)
+			os.Exit(1) //nolint:gocritic // example exit
 		}
 		token, err := gen.Generate("production-user", []string{"read", "write"}, 1*time.Hour)
 		if err != nil {
-			log.Fatalf("generate token: %v", err)
+			fmt.Fprintf(os.Stderr, "Error: generate token: %v\n", err)
+			os.Exit(1) //nolint:gocritic // example exit
 		}
 		authToken = token
 		fmt.Println("Auth: JWT")
@@ -81,6 +83,8 @@ func main() {
 	opts := []client.Option{
 		client.URL(gatewayURL),
 		client.WorkerType(workerType),
+		client.AutoReconnect(true),
+		client.Logger(slog.Default()),
 	}
 	if authToken != "" {
 		opts = append(opts, client.AuthToken(authToken))
@@ -91,9 +95,10 @@ func main() {
 
 	c, err := client.New(ctx, opts...)
 	if err != nil {
-		log.Fatalf("create client: %v", err)
+		fmt.Fprintf(os.Stderr, "Error: create client: %v\n", err)
+		os.Exit(1) //nolint:gocritic // example exit
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }() //nolint:errcheck // example cleanup
 
 	st := &sessionStats{startTime: time.Now()}
 
@@ -105,7 +110,7 @@ func main() {
 		fmt.Println("\n\nShutdown requested...")
 		_ = c.SendControl(context.Background(), client.ControlActionTerminate)
 		time.Sleep(500 * time.Millisecond)
-		c.Close()
+		_ = c.Close() //nolint:errcheck // signal cleanup
 		cancel()
 		os.Exit(0)
 	}()
@@ -122,7 +127,8 @@ func main() {
 		ack, err = c.Connect(ctx)
 	}
 	if err != nil {
-		log.Fatalf("connection failed: %v", err)
+		fmt.Fprintf(os.Stderr, "Error: connection failed: %v\n", err)
+		return
 	}
 
 	fmt.Printf("Session:  %s\n", ack.SessionID)
@@ -135,7 +141,8 @@ func main() {
 
 	fmt.Printf("\n> %s\n", truncate(task, 80))
 	if err := c.SendInput(ctx, task); err != nil {
-		log.Fatalf("send input: %v", err)
+		fmt.Fprintf(os.Stderr, "Error: send input: %v\n", err)
+		return
 	}
 
 	<-ctx.Done()
@@ -162,30 +169,35 @@ func handleEvents(c *client.Client, st *sessionStats) {
 				fmt.Printf("\n  [reasoning: %s]\n", truncate(content, 120))
 			}
 		case client.EventPermissionRequest:
-			id := fieldStr(evt.Data, "id")
-			toolName := fieldStr(evt.Data, "tool_name")
-			if allowPolicy[toolName] {
-				_ = c.SendPermissionResponse(context.Background(), id, true, "auto-approved")
-			} else {
-				_ = c.SendPermissionResponse(context.Background(), id, false, "requires manual review")
+			if d, ok := evt.AsPermissionRequestData(); ok {
+				if allowPolicy[d.ToolName] {
+					_ = c.SendPermissionResponse(context.Background(), d.ID, true, "auto-approved")
+				} else {
+					_ = c.SendPermissionResponse(context.Background(), d.ID, false, "requires manual review")
+				}
 			}
 		case client.EventState:
-			fmt.Printf("\n[state: %s]\n", fieldStr(evt.Data, "state"))
+			if d, ok := evt.Data.(map[string]any); ok {
+				fmt.Printf("\n[state: %s]\n", d["state"])
+			}
 		case client.EventDone:
 			printDoneSummary(c, st, evt)
-			c.Close()
+			_ = c.Close() //nolint:errcheck // session done
 			os.Exit(0)
 		case client.EventError:
-			fmt.Fprintf(os.Stderr, "\n[ERROR %s] %s\n",
-				fieldStr(evt.Data, "code"), fieldStr(evt.Data, "message"))
-			c.Close()
-			os.Exit(1)
+			if d, ok := evt.AsErrorData(); ok {
+				fmt.Fprintf(os.Stderr, "\n[ERROR %s] %s\n", d.Code, d.Message)
+			} else {
+				fmt.Fprintf(os.Stderr, "\n[ERROR] %v\n", evt.Data)
+			}
+			_ = c.Close() //nolint:errcheck // error exit
+			os.Exit(1)    //nolint:gocritic // example exit
 		}
 	}
 }
 
 func printDoneSummary(c *client.Client, st *sessionStats, evt client.Event) {
-	data, ok := evt.Data.(map[string]any)
+	done, ok := evt.AsDoneData()
 	if !ok {
 		return
 	}
@@ -194,24 +206,23 @@ func printDoneSummary(c *client.Client, st *sessionStats, evt client.Event) {
 	fmt.Printf("Session ID:  %s\n", c.SessionID())
 	fmt.Printf("Duration:    %.1fs\n", time.Since(st.startTime).Seconds())
 	fmt.Printf("Tool calls:  %d\n", st.toolCalls)
+	fmt.Printf("Success:     %v\n", done.Success)
+	fmt.Printf("Dropped:     %v\n", done.Dropped)
 
-	if v, ok := data["success"].(bool); ok {
-		fmt.Printf("Success:     %v\n", v)
-	}
-	if stats, ok := data["stats"].(map[string]any); ok {
-		if v := fieldFloat64(stats, "input_tokens"); v > 0 {
+	if done.Stats != nil {
+		if v := fieldFloat64(done.Stats, "input_tokens"); v > 0 {
 			st.inputToks = int64(v)
 			fmt.Printf("Input tok:   %d\n", st.inputToks)
 		}
-		if v := fieldFloat64(stats, "output_tokens"); v > 0 {
+		if v := fieldFloat64(done.Stats, "output_tokens"); v > 0 {
 			st.outputToks = int64(v)
 			fmt.Printf("Output tok:  %d\n", st.outputToks)
 		}
-		if v := fieldFloat64(stats, "cost_usd"); v > 0 {
+		if v := fieldFloat64(done.Stats, "cost_usd"); v > 0 {
 			st.costUSD = v
 			fmt.Printf("Cost:        $%.4f\n", st.costUSD)
 		}
-		if v := fieldStr(stats, "model"); v != "" {
+		if v := fieldStr(done.Stats, "model"); v != "" {
 			st.model = v
 			fmt.Printf("Model:       %s\n", st.model)
 		}

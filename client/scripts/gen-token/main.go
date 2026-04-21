@@ -18,6 +18,7 @@ var (
 	flagScopes   = flag.String("scopes", "read,write", "comma-separated scopes")
 	flagTTL      = flag.Duration("ttl", 1*time.Hour, "token TTL (e.g. 1h, 30m)")
 	flagAudience = flag.String("aud", "gateway", "JWT audience")
+	flagBotID    = flag.String("bot-id", "", "Bot ID for isolation (SEC-007)")
 )
 
 func main() {
@@ -40,7 +41,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	token, err := gen.WithAudience(*flagAudience).Generate(*flagSubject, strings.Split(*flagScopes, ","), *flagTTL)
+	_ = gen.WithAudience(*flagAudience)
+	if *flagBotID != "" {
+		_ = gen.WithBotID(*flagBotID)
+	}
+
+	token, err := gen.Generate(*flagSubject, strings.Split(*flagScopes, ","), *flagTTL)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "generate token: %v\n", err)
 		os.Exit(1)
