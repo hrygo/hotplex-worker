@@ -94,7 +94,7 @@ func TestExtractResponseText_RawData(t *testing.T) {
 func TestFeishuConn_WriteCtx_NilEnvelope(t *testing.T) {
 	t.Parallel()
 	adapter := &Adapter{log: slog.New(slog.NewTextHandler(io.Discard, nil)), dedup: NewDedup(100, 12*60*60*1e9), activeConns: make(map[string]*FeishuConn), dedupDone: make(chan struct{})}
-	conn := NewFeishuConn(adapter, "test_chat")
+	conn := NewFeishuConn(adapter, "test_chat", "")
 
 	err := conn.WriteCtx(context.Background(), nil)
 	require.Error(t, err)

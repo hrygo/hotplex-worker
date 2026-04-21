@@ -356,7 +356,7 @@ func (a *Adapter) handleTextMessage(ctx context.Context, platformMsgID, channelI
 	}
 
 	// Pre-create conn so its fields are ready before the bridge forwards to the handler.
-	conn := a.GetOrCreateConn(channelID)
+	conn := a.GetOrCreateConn(channelID, threadKey)
 
 	// Check if this text is a response to a pending interaction.
 	if a.checkPendingInteraction(ctx, text, conn) {
@@ -402,16 +402,17 @@ func (a *Adapter) HandleTextMessage(ctx context.Context, platformMsgID, channelI
 	return a.handleTextMessage(ctx, platformMsgID, channelID, "p2p", userID, text, "", "")
 }
 
-func (a *Adapter) GetOrCreateConn(chatID string) *FeishuConn {
+func (a *Adapter) GetOrCreateConn(chatID, threadKey string) *FeishuConn {
+	key := chatID + "#" + threadKey
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	if conn, ok := a.activeConns[chatID]; ok {
+	if conn, ok := a.activeConns[key]; ok {
 		return conn
 	}
 
-	conn := NewFeishuConn(a, chatID)
-	a.activeConns[chatID] = conn
+	conn := NewFeishuConn(a, chatID, threadKey)
+	a.activeConns[key] = conn
 	return conn
 }
 
@@ -461,8 +462,9 @@ func (a *Adapter) Close(ctx context.Context) error {
 }
 
 type FeishuConn struct {
-	adapter *Adapter
-	chatID  string
+	adapter   *Adapter
+	chatID    string
+	threadKey string
 
 	mu            sync.RWMutex
 	chatType      string
@@ -476,8 +478,8 @@ type FeishuConn struct {
 	startedAt     time.Time // when the user sent the current message
 }
 
-func NewFeishuConn(adapter *Adapter, chatID string) *FeishuConn {
-	return &FeishuConn{adapter: adapter, chatID: chatID}
+func NewFeishuConn(adapter *Adapter, chatID, threadKey string) *FeishuConn {
+	return &FeishuConn{adapter: adapter, chatID: chatID, threadKey: threadKey}
 }
 
 func (c *FeishuConn) EnableStreaming(ctrl *StreamingCardController) {
@@ -667,7 +669,7 @@ func (c *FeishuConn) Close() error {
 		_ = c.adapter.removeReaction(context.Background(), platformMsgID, toolRid)
 	}
 	c.adapter.mu.Lock()
-	delete(c.adapter.activeConns, c.chatID)
+	delete(c.adapter.activeConns, c.chatID+"#"+c.threadKey)
 	c.adapter.mu.Unlock()
 	return nil
 }
@@ -694,7 +696,7 @@ func (a *Adapter) handleTextControlCommand(ctx context.Context, chatID, userID, 
 		OwnerID: userID,
 	}
 
-	conn := a.GetOrCreateConn(chatID)
+	conn := a.GetOrCreateConn(chatID, threadKey)
 	if err := a.bridge.Handle(ctx, ctrlEnv, conn); err != nil {
 		a.log.Error("feishu: text control command failed", "action", result.Label, "err", err)
 		_ = a.replyMessage(ctx, threadKey, fmt.Sprintf("❌ 执行 %s 失败。", result.Label), false)

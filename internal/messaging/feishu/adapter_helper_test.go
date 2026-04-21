@@ -175,7 +175,7 @@ func TestNewFeishuConn(t *testing.T) {
 		activeConns: make(map[string]*FeishuConn),
 		dedupDone:   make(chan struct{}),
 	}
-	conn := NewFeishuConn(adapter, "chat123")
+	conn := NewFeishuConn(adapter, "chat123", "")
 
 	require.Equal(t, "chat123", conn.chatID)
 	require.Same(t, adapter, conn.adapter)
@@ -191,7 +191,7 @@ func TestFeishuConn_EnableStreaming(t *testing.T) {
 		activeConns: make(map[string]*FeishuConn),
 		dedupDone:   make(chan struct{}),
 	}
-	conn := NewFeishuConn(adapter, "chat123")
+	conn := NewFeishuConn(adapter, "chat123", "")
 
 	// nil controller should not panic
 	conn.EnableStreaming(nil)
@@ -209,7 +209,7 @@ func TestFeishuConn_SetTypingReactionID(t *testing.T) {
 		activeConns: make(map[string]*FeishuConn),
 		dedupDone:   make(chan struct{}),
 	}
-	conn := NewFeishuConn(adapter, "chat123")
+	conn := NewFeishuConn(adapter, "chat123", "")
 
 	// Set and clear should not panic
 	conn.SetTypingReactionID("msg123")
@@ -249,7 +249,7 @@ func TestFeishuConn_CycleReaction_NoOp(t *testing.T) {
 		activeConns: make(map[string]*FeishuConn),
 		dedupDone:   make(chan struct{}),
 	}
-	conn := NewFeishuConn(adapter, "chat123")
+	conn := NewFeishuConn(adapter, "chat123", "")
 
 	// cycleReaction with no existing state should not panic
 	conn.cycleReaction(context.Background(), "TOOL_USE")
@@ -263,7 +263,7 @@ func TestFeishuConn_CycleReaction_SameEmojiDedup(t *testing.T) {
 		activeConns: make(map[string]*FeishuConn),
 		dedupDone:   make(chan struct{}),
 	}
-	conn := NewFeishuConn(adapter, "chat123")
+	conn := NewFeishuConn(adapter, "chat123", "")
 
 	// Set platformMsgID so the early return (platformMsgID=="") is skipped,
 	// but same emoji means no API calls happen.
