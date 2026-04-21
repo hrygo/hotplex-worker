@@ -315,8 +315,8 @@ func (s *PersistentSTT) start(_ context.Context) error {
 	s.started = true
 
 	// Track PID for orphan cleanup.
-	if proc.GlobalTracker() != nil {
-		if err := proc.GlobalTracker().Write("stt-server", s.pgid); err != nil {
+	if tracker := proc.GlobalTracker(); tracker != nil {
+		if err := tracker.Write("stt-server", s.pgid); err != nil {
 			s.log.Warn("persistent stt: pidfile write", "err", err)
 		}
 	}
@@ -384,8 +384,8 @@ func (s *PersistentSTT) terminate(ctx context.Context) {
 	s.started = false
 
 	// Clean up PID file.
-	if proc.GlobalTracker() != nil {
-		_ = proc.GlobalTracker().Remove("stt-server")
+	if tracker := proc.GlobalTracker(); tracker != nil {
+		_ = tracker.Remove("stt-server")
 	}
 
 	s.log.Info("persistent stt: stopped")
@@ -411,8 +411,8 @@ func (s *PersistentSTT) kill() {
 	s.started = false
 
 	// Clean up PID file.
-	if proc.GlobalTracker() != nil {
-		_ = proc.GlobalTracker().Remove("stt-server")
+	if tracker := proc.GlobalTracker(); tracker != nil {
+		_ = tracker.Remove("stt-server")
 	}
 }
 

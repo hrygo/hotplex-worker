@@ -143,11 +143,7 @@ func (m *Manager) Start(ctx context.Context, name string, args, env []string, di
 	}
 
 	// Write PID file if tracker is configured.
-	if tracker := GlobalTracker(); tracker != nil && m.pidKey != "" {
-		if err := tracker.Write(m.pidKey, m.pgid); err != nil {
-			m.log.Warn("proc: pidfile write", "key", m.pidKey, "err", err)
-		}
-	}
+	m.trackPID()
 
 	// Limit process virtual address space (RLIMIT_AS) to 512 MB.
 	// This prevents runaway worker processes from exhausting the gateway's memory.
@@ -211,9 +207,7 @@ func (m *Manager) Terminate(ctx context.Context, sig syscall.Signal, gracePeriod
 	select {
 	case <-done:
 		m.captureExitCode()
-		if tracker := GlobalTracker(); tracker != nil && pidKey != "" {
-			_ = tracker.Remove(pidKey)
-		}
+		m.untrackPID(pidKey)
 		return nil
 	case <-time.After(gracePeriod):
 		m.log.Warn("proc: graceful shutdown timeout, sending SIGKILL", "pgid", pgid)
@@ -238,9 +232,7 @@ func (m *Manager) Kill() error {
 	}
 	_ = m.cmd.Wait()
 	m.captureExitCodeLocked()
-	if tracker := GlobalTracker(); tracker != nil && m.pidKey != "" {
-		_ = tracker.Remove(m.pidKey)
-	}
+	m.untrackPID(m.pidKey)
 	return nil
 }
 
@@ -280,6 +272,23 @@ func (m *Manager) SetPIDKey(key string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.pidKey = key
+}
+
+// trackPID writes the current PGID to the tracker. Must be called after Start()
+// when m.pgid is set. Safe to call even if tracker is nil.
+func (m *Manager) trackPID() {
+	if t := GlobalTracker(); t != nil && m.pidKey != "" {
+		if err := t.Write(m.pidKey, m.pgid); err != nil {
+			m.log.Warn("proc: pidfile write", "key", m.pidKey, "err", err)
+		}
+	}
+}
+
+// untrackPID removes the PID file for key. Safe to call even if tracker is nil.
+func (m *Manager) untrackPID(key string) {
+	if t := GlobalTracker(); t != nil && key != "" {
+		_ = t.Remove(key)
+	}
 }
 
 // IsRunning returns true if the process has been started and has not exited.

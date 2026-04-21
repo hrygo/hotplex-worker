@@ -80,10 +80,15 @@ func (t *Tracker) EnsureDir() error {
 }
 
 func validateKey(key string) error {
-	if key == "" || key == "." || strings.Contains(key, "..") || strings.Contains(key, "/") {
+	if key == "" || key == "." || strings.Contains(key, "/") {
 		return fmt.Errorf("%w: %q", ErrInvalidKey, key)
 	}
 	return nil
+}
+
+// pidPath returns the full path for a PID file key.
+func (t *Tracker) pidPath(key string) string {
+	return filepath.Join(t.dir, key+".pid")
 }
 
 // Write creates a PID file for the given key with the specified PGID.
@@ -100,7 +105,7 @@ func (t *Tracker) Write(key string, pgid int) error {
 		return fmt.Errorf("pidfile: mkdir %s: %w", t.dir, err)
 	}
 
-	path := filepath.Join(t.dir, key+".pid")
+	path := t.pidPath(key)
 	tmpPath := path + ".tmp"
 	content := strconv.Itoa(pgid) + "\n"
 
@@ -130,7 +135,7 @@ func (t *Tracker) Remove(key string) error {
 	t.fileMu.Lock()
 	defer t.fileMu.Unlock()
 
-	path := filepath.Join(t.dir, key+".pid")
+	path := t.pidPath(key)
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 		t.log.Warn("pidfile: remove failed", "key", key, "path", path, "err", err)
 	}

@@ -149,13 +149,8 @@ func (h *Hub) RegisterConn(conn *Conn) {
 func (h *Hub) UnregisterConn(conn *Conn) {
 	h.mu.Lock()
 	delete(h.conns, conn)
-	for sid, conns := range h.sessions {
-		delete(conns, conn)
-		if len(conns) == 0 {
-			delete(h.sessions, sid)
-			delete(h.sessionDropped, sid)
-			h.seqGen.Remove(sid)
-		}
+	for sid := range h.sessions {
+		h.removeSession(sid, conn)
 	}
 	h.mu.Unlock()
 	metrics.GatewayConnectionsOpen.Dec()
@@ -199,6 +194,13 @@ func (h *Hub) JoinSession(sessionID string, conn *Conn) {
 // sessionDropped) are cleaned up to prevent memory leaks.
 func (h *Hub) LeaveSession(sessionID string, conn *Conn) {
 	h.mu.Lock()
+	h.removeSession(sessionID, conn)
+	h.mu.Unlock()
+}
+
+// removeSession removes conn from sessionID and cleans up empty sessions.
+// Caller must hold h.mu.
+func (h *Hub) removeSession(sessionID string, conn SessionWriter) {
 	if conns, ok := h.sessions[sessionID]; ok {
 		delete(conns, conn)
 		if len(conns) == 0 {
@@ -207,7 +209,6 @@ func (h *Hub) LeaveSession(sessionID string, conn *Conn) {
 			h.seqGen.Remove(sessionID)
 		}
 	}
-	h.mu.Unlock()
 }
 
 // JoinPlatformSession subscribes a PlatformConn to receive events for a session.
@@ -444,14 +445,7 @@ func (h *Hub) routeMessage(msg *EnvelopeWithConn) {
 				h.log.Warn("gateway: platform write enqueue failed", "session_id", msg.Env.SessionID, "err", err)
 				_ = conn.Close()
 				h.mu.Lock()
-				if sessionConns, ok := h.sessions[msg.Env.SessionID]; ok {
-					delete(sessionConns, conn)
-					if len(sessionConns) == 0 {
-						delete(h.sessions, msg.Env.SessionID)
-						delete(h.sessionDropped, msg.Env.SessionID)
-						h.seqGen.Remove(msg.Env.SessionID)
-					}
-				}
+				h.removeSession(msg.Env.SessionID, conn)
 				h.mu.Unlock()
 			}
 		}
