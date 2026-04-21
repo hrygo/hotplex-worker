@@ -422,27 +422,19 @@ func (h *Hub) routeMessage(msg *EnvelopeWithConn) {
 		h.LogHandler(level, fmt.Sprintf("event %s seq=%d", msg.Env.Event.Type, msg.Env.Seq), msg.Env.SessionID)
 	}
 
-	// Lazy JSON encode: only compute if there are WebSocket conns.
 	var encoded []byte
-	needEncode := false
-	for _, conn := range conns {
-		if _, ok := conn.(*Conn); ok {
-			needEncode = true
-			break
-		}
-	}
-	if needEncode {
-		var err error
-		encoded, err = aep.EncodeJSON(msg.Env)
-		if err != nil {
-			h.log.Error("gateway: encode failed", "err", err)
-			return
-		}
-	}
-
+	var err error
 	for _, conn := range conns {
 		metrics.GatewayMessagesTotal.WithLabelValues("outgoing", string(msg.Env.Event.Type)).Inc()
 		if c, ok := conn.(*Conn); ok {
+			// Lazy encode: only compute when first WS conn is seen.
+			if encoded == nil {
+				encoded, err = aep.EncodeJSON(msg.Env)
+				if err != nil {
+					h.log.Error("gateway: encode failed", "err", err)
+					return
+				}
+			}
 			if err := c.WriteMessage(websocket.TextMessage, encoded); err != nil {
 				h.log.Warn("gateway: write failed", "session_id", msg.Env.SessionID, "err", err)
 				_ = conn.Close()
@@ -713,18 +705,18 @@ func (e *pcEntry) writeLoop() {
 	}()
 
 	var db strings.Builder
-	var sessionID string
 	var timer *time.Timer
 	var timerCh <-chan time.Time
+	var pendingSID string // tracks SessionID for pending coalesced deltas
 
-	flush := func() {
+	flush := func(sid string) {
 		if db.Len() == 0 {
 			return
 		}
 		merged := &events.Envelope{
 			Version:   events.Version,
 			ID:        aep.NewID(),
-			SessionID: sessionID,
+			SessionID: sid,
 			Event: events.Event{
 				Type: events.MessageDelta,
 				Data: events.MessageDeltaData{
@@ -732,7 +724,7 @@ func (e *pcEntry) writeLoop() {
 				},
 			},
 		}
-		metrics.GatewayDeltaFlushTotal.WithLabelValues(sessionID).Inc()
+		metrics.GatewayDeltaFlushTotal.WithLabelValues(sid).Inc()
 		db.Reset()
 		if timer != nil {
 			timer.Stop()
@@ -745,20 +737,20 @@ func (e *pcEntry) writeLoop() {
 		select {
 		case env, ok := <-e.ch:
 			if !ok {
-				flush()
+				flush(pendingSID)
 				return
 			}
 
 			if isDroppable(env.Event.Type) {
 				content := extractDeltaContent(env)
 				if db.Len() == 0 {
-					sessionID = env.SessionID
+					pendingSID = env.SessionID
 				}
 				db.WriteString(content)
 				metrics.GatewayDeltaCoalescedTotal.WithLabelValues(env.SessionID).Inc()
 
 				if utf8.RuneCountInString(db.String()) >= e.cfg.CoalesceSize {
-					flush()
+					flush(pendingSID)
 				} else if timer == nil {
 					timer = time.NewTimer(e.cfg.CoalesceIntvl)
 					timerCh = timer.C
@@ -766,12 +758,12 @@ func (e *pcEntry) writeLoop() {
 					timer.Reset(e.cfg.CoalesceIntvl)
 				}
 			} else {
-				flush()
+				flush(pendingSID)
 				e.writeOne(env)
 			}
 
 		case <-timerCh:
-			flush()
+			flush(pendingSID)
 		}
 	}
 }
@@ -790,9 +782,7 @@ func (e *pcEntry) writeOne(env *events.Envelope) {
 func extractDeltaContent(env *events.Envelope) string {
 	switch env.Event.Type {
 	case events.MessageDelta:
-		if d, ok := env.Event.Data.(events.MessageDeltaData); ok {
-			return d.Content
-		}
+		// Data arrives as map[string]any from JSON unmarshal; struct type never matches.
 		if m, ok := env.Event.Data.(map[string]any); ok {
 			if c, _ := m["content"].(string); c != "" {
 				return c

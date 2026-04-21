@@ -636,11 +636,11 @@ func TestPCEntry_WriteCtx_DroppableDroppedAtThreshold(t *testing.T) {
 
 	// Fill channel directly (bypassing WriteCtx to avoid writeLoop drain race).
 	for i := 0; i < cfg.WriteBuffer; i++ {
-		e.ch <- events.NewEnvelope(aep.NewID(), "s1", int64(i+1), events.MessageDelta, events.MessageDeltaData{Content: "x"})
+		e.ch <- events.NewEnvelope(aep.NewID(), "s1", int64(i+1), events.MessageDelta, map[string]any{"content": "x"})
 	}
 
 	// Channel is now full (len=4 >= DropThreshold=2). Droppable should be silently dropped.
-	env := events.NewEnvelope(aep.NewID(), "s1", 99, events.MessageDelta, events.MessageDeltaData{Content: "y"})
+	env := events.NewEnvelope(aep.NewID(), "s1", 99, events.MessageDelta, map[string]any{"content": "y"})
 	err := e.WriteCtx(context.Background(), env)
 	require.NoError(t, err, "droppable event should return nil even when dropped")
 
@@ -671,11 +671,11 @@ func TestPCEntry_WriteCtx_DroppableDroppedDefault(t *testing.T) {
 
 	// Fill channel to capacity.
 	for i := 0; i < cfg.WriteBuffer; i++ {
-		e.ch <- events.NewEnvelope(aep.NewID(), "s1", int64(i+1), events.MessageDelta, events.MessageDeltaData{Content: "x"})
+		e.ch <- events.NewEnvelope(aep.NewID(), "s1", int64(i+1), events.MessageDelta, map[string]any{"content": "x"})
 	}
 
 	// Now len(ch) >= DropThreshold, so the fast-path check should drop.
-	env := events.NewEnvelope(aep.NewID(), "s1", 99, events.MessageDelta, events.MessageDeltaData{Content: "y"})
+	env := events.NewEnvelope(aep.NewID(), "s1", 99, events.MessageDelta, map[string]any{"content": "y"})
 	err := e.WriteCtx(context.Background(), env)
 	require.NoError(t, err)
 }
@@ -694,7 +694,7 @@ func TestPCEntry_WriteCtx_GuaranteedBlocks(t *testing.T) {
 
 	// Fill the buffer.
 	for i := 0; i < cfg.WriteBuffer; i++ {
-		env := events.NewEnvelope(aep.NewID(), "s1", int64(i+1), events.MessageDelta, events.MessageDeltaData{Content: "x"})
+		env := events.NewEnvelope(aep.NewID(), "s1", int64(i+1), events.MessageDelta, map[string]any{"content": "x"})
 		_ = e.WriteCtx(context.Background(), env)
 	}
 
@@ -722,7 +722,7 @@ func TestPCEntry_Close_DrainsPending(t *testing.T) {
 	e := newPCEntry(pc, cfg)
 
 	for i := 0; i < 3; i++ {
-		env := events.NewEnvelope(aep.NewID(), "s1", int64(i+1), events.MessageDelta, events.MessageDeltaData{Content: fmt.Sprintf("msg%d", i)})
+		env := events.NewEnvelope(aep.NewID(), "s1", int64(i+1), events.MessageDelta, map[string]any{"content": fmt.Sprintf("msg%d", i)})
 		_ = e.WriteCtx(context.Background(), env)
 	}
 
@@ -745,7 +745,7 @@ func TestPCEntry_DeltaCoalescing_MergesDeltas(t *testing.T) {
 	defer e.Close()
 
 	for i := 0; i < 5; i++ {
-		env := events.NewEnvelope(aep.NewID(), "s1", int64(i+1), events.MessageDelta, events.MessageDeltaData{Content: "a"})
+		env := events.NewEnvelope(aep.NewID(), "s1", int64(i+1), events.MessageDelta, map[string]any{"content": "a"})
 		_ = e.WriteCtx(context.Background(), env)
 	}
 
@@ -774,7 +774,7 @@ func TestPCEntry_DeltaCoalescing_SizeFlush(t *testing.T) {
 
 	// Send 3 chars * 2 = 6 runes > CoalesceSize(5).
 	for i := 0; i < 2; i++ {
-		env := events.NewEnvelope(aep.NewID(), "s1", int64(i+1), events.MessageDelta, events.MessageDeltaData{Content: "abc"})
+		env := events.NewEnvelope(aep.NewID(), "s1", int64(i+1), events.MessageDelta, map[string]any{"content": "abc"})
 		_ = e.WriteCtx(context.Background(), env)
 	}
 
@@ -798,7 +798,7 @@ func TestPCEntry_DeltaCoalescing_NonDeltaFlushes(t *testing.T) {
 	e := newPCEntry(pc, cfg)
 	defer e.Close()
 
-	delta := events.NewEnvelope(aep.NewID(), "s1", 1, events.MessageDelta, events.MessageDeltaData{Content: "hello"})
+	delta := events.NewEnvelope(aep.NewID(), "s1", 1, events.MessageDelta, map[string]any{"content": "hello"})
 	_ = e.WriteCtx(context.Background(), delta)
 
 	done := events.NewEnvelope(aep.NewID(), "s1", 2, events.Done, events.DoneData{Success: true})
@@ -824,7 +824,7 @@ func TestPCEntry_DeltaCoalescing_TimerFlush(t *testing.T) {
 	e := newPCEntry(pc, cfg)
 	defer e.Close()
 
-	delta := events.NewEnvelope(aep.NewID(), "s1", 1, events.MessageDelta, events.MessageDeltaData{Content: "x"})
+	delta := events.NewEnvelope(aep.NewID(), "s1", 1, events.MessageDelta, map[string]any{"content": "x"})
 	_ = e.WriteCtx(context.Background(), delta)
 
 	require.Eventually(t, func() bool {
@@ -847,7 +847,7 @@ func TestPCEntry_ExtractDeltaContent(t *testing.T) {
 	}{
 		{
 			"message.delta struct",
-			events.NewEnvelope("id", "s", 1, events.MessageDelta, events.MessageDeltaData{Content: "hello"}),
+			events.NewEnvelope("id", "s", 1, events.MessageDelta, map[string]any{"content": "hello"}),
 			"hello",
 		},
 		{
