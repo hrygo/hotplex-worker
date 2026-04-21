@@ -176,6 +176,7 @@ func (a *Adapter) runSocketMode(ctx context.Context) {
 	// Run() blocks until the WebSocket closes. Wrap it in a loop so that
 	// connection errors trigger automatic reconnect instead of silently exiting.
 	go func() {
+		attempt := 1
 		for {
 			select {
 			case <-ctx.Done():
@@ -183,18 +184,19 @@ func (a *Adapter) runSocketMode(ctx context.Context) {
 			default:
 			}
 
-			a.log.Info("slack: socket mode connecting")
+			a.log.Info("slack: starting socket mode", "attempt", attempt)
 			if err := a.socketMode.Run(); err != nil {
 				select {
 				case <-ctx.Done():
 					return
 				case <-time.After(backoff.Next()):
-					a.log.Warn("slack: socket mode run error, reconnecting", "err", err)
+					a.log.Warn("slack: socket mode error, will retry", "err", err, "attempt", attempt)
+					attempt++
 					continue
 				}
 			}
 			// Run() returned without error (clean close); reconnect.
-			a.log.Info("slack: socket mode closed, reconnecting")
+			a.log.Info("slack: socket closed by remote, will reconnect", "attempt", attempt)
 			select {
 			case <-ctx.Done():
 				return
@@ -231,16 +233,16 @@ func (a *Adapter) runSocketMode(ctx context.Context) {
 				}()
 
 			case socketmode.EventTypeConnecting:
-				a.log.Info("slack: connecting to Slack API")
+				a.log.Info("slack: websocket handshake in progress")
 			case socketmode.EventTypeConnected:
-				a.log.Info("slack: connected to Slack API")
+				a.log.Info("slack: websocket established, ready to receive events")
 				backoff.Reset()
 
 			case socketmode.EventTypeDisconnect:
-				a.log.Info("slack: disconnected by Slack, reconnecting")
+				a.log.Info("slack: disconnected by Slack server, reconnecting...")
 
 			case socketmode.EventTypeConnectionError:
-				a.log.Warn("slack: connection error", "err", evt.Data)
+				a.log.Warn("slack: websocket connection error, retrying...", "err", evt.Data)
 
 			case socketmode.EventTypeInteractive:
 				go func() {
