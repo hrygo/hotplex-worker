@@ -15,7 +15,6 @@
 **v1.2 修订要点**:
 - 流式消息: `NativeStreamingWriter` 封装 `io.WriteCloser`，完整性校验 + TTL 检测 + Fallback
 - 速率限制: `golang.org/x/time/rate` token bucket 替代简单 buffer
-- 线程所有权: 多 Bot 场景下 `ThreadOwnershipTracker`（R1-R5 规则）
 - 编译时检查: 所有接口实现添加 `_ Interface = (*Adapter)(nil)` 校验
 - Session ID: `{platform}:{team/chat}:{channel}:{thread_ts}:{user_id}` 同时包含线程和用户标识
 
@@ -29,7 +28,7 @@
 
 | 指标 | 规划值 | 实际值 |
 |------|--------|--------|
-| 新增代码行 | ~650 行 | ~1460 行（含流式/限流/线程所有权） |
+| 新增代码行 | ~650 行 | ~1310 行（含流式/限流） |
 | 核心文件改动 | 0 行 | hub.go +20 行（JoinPlatformSession） |
 | 新增文件 | 4 个（不含测试） | 10 个（不含测试） |
 | 运行时依赖 | `slack-go/slack`, `larksuite/oapi-sdk-go/v3` | 同左 + `joho/godotenv` |
@@ -112,7 +111,6 @@ internal/
       events.go                      # Slack 事件映射 + ExtractChannelThread（~60 行）
       stream.go                      # NativeStreamingWriter（~250 行）：三阶段流式 API
       rate_limiter.go                # ChannelRateLimiter（~60 行）：per-channel token bucket
-      thread_ownership.go            # ThreadOwnershipTracker（~150 行）：R1-R5 规则
       adapter_test.go                # 单元测试（~14 tests）
     feishu/
       adapter.go                     # 飞书适配器（~260 行）：ws.Client + FeishuConn + sendTextMessage
@@ -139,7 +137,7 @@ internal/worker/          → internal/messaging/
   worker.go (接口)           platform_conn.go (PlatformConn 接口)
   registry.go (自注册)       platform_adapter.go (自注册基座)
   claudecode/ (CLI 进程)     slack/ (WebSocket 长连接)
-  opencodecli/              feishu/
+  feishu/
 ```
 
 ---
@@ -815,64 +813,6 @@ func (r *ChannelRateLimiter) Allow(channelID string) bool {
 | `chat.stopStream` 无特殊限制 | 仅在 Worker 完成/错误时调用一次 |
 | Socket Mode 连接数 | 单进程单连接，SDK 自动重连 |
 
-### 5.6 线程所有权追踪（多 Bot 场景）
-
-借鉴 ~/hotplex chatapps/slack/thread_ownership.go (202 行) 的成熟模式，在多 Bot 共存时避免响应冲突：
-
-```go
-// internal/messaging/slack/thread_ownership.go
-
-type ThreadKey string
-
-func NewThreadKey(channelID, threadTS string) ThreadKey {
-	return ThreadKey(channelID + ":" + threadTS)
-}
-
-type ThreadOwnershipTracker struct {
-	mu           sync.RWMutex
-	ownedThreads map[ThreadKey]*time.Time
-	ttl          time.Duration
-	logger       *slog.Logger
-	ctx          context.Context
-	cancel       context.CancelFunc
-}
-
-// 所有权规则（R1-R5）：
-// R1: 首次响应 → 声明所有权
-// R2: 仅所有者响应非 @ 消息
-// R3: @BotB 在 BotA 的线程中 → BotB 抢占，BotA 释放
-// R4: @BotA @BotB → 双方独立声明所有权
-// R5: @其他人（不含本 Bot）→ 释放所有权
-
-func (t *ThreadOwnershipTracker) Claim(key ThreadKey) bool {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if _, exists := t.ownedThreads[key]; !exists {
-		now := time.Now()
-		t.ownedThreads[key] = &now
-		return true // 新声明
-	}
-	now := time.Now()
-	t.ownedThreads[key] = &now
-	return false // 已有所有权，更新活跃时间
-}
-
-func (t *ThreadOwnershipTracker) Release(key ThreadKey) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	delete(t.ownedThreads, key)
-}
-
-func (t *ThreadOwnershipTracker) Owns(key ThreadKey) bool {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-	ts, exists := t.ownedThreads[key]
-	return exists && time.Since(*ts) <= t.ttl
-}
-```
-
-后台 goroutine 定期清理超过 TTL（默认 24h）的所有权记录。Adapter 在处理每条消息前调用 `ShouldRespond(channelType, threadTS, text, userID)` 决策是否响应。
-
 ---
 
 ## 6. 飞书适配器设计
@@ -1311,8 +1251,7 @@ func (a *Adapter) streamCardContent(ctx context.Context, cardID, elementID, text
 2. 实现 `internal/messaging/slack/events.go` — 事件映射 + ExtractChannelThread
 3. 实现 `internal/messaging/slack/stream.go` — NativeStreamingWriter 三阶段流式
 4. 实现 `internal/messaging/slack/rate_limiter.go` — per-channel token bucket
-5. 实现 `internal/messaging/slack/thread_ownership.go` — ThreadOwnershipTracker R1-R5
-6. 14 个单元测试全绿
+5. 14 个单元测试全绿
 
 ### Phase 3: 飞书适配器（~350 行） — ✅ 已完成
 
@@ -1480,7 +1419,6 @@ func (h *Hub) JoinPlatformSession(sessionID string, pc PlatformConn) {
 | AC-5.1 | Socket Mode 启动后接收 `EventsAPI` 事件 | E2E: 发送 Slack 消息 | ✅ |
 | AC-5.2 | 消息去重: 同一 `ClientMsgID` 不重复处理 | 单元测试 | ✅ |
 | AC-5.3 | 过滤非 @mention 和 bot 消息（main channel） | 单元测试 | ✅ |
-| AC-5.4 | 线程内非 @mention 消息由所有者响应（R2） | 单元测试: ThreadOwnershipTracker | ✅ |
 | AC-5.5 | `NativeStreamingWriter` 首次 Write 调用 `StartStream` | 单元测试 | ✅ |
 | AC-5.6 | `NativeStreamingWriter` 每 150ms 或 20 字符触发 `AppendStream` | 单元测试 | ✅ |
 | AC-5.7 | `NativeStreamingWriter` Close 时调用 `StopStream` | 单元测试 | ✅ |
@@ -1490,9 +1428,6 @@ func (h *Hub) JoinPlatformSession(sessionID string, pc PlatformConn) {
 | AC-5.11 | 超过 3000 字符自动分块 | 单元测试 | ✅ |
 | AC-5.12 | `golang.org/x/time/rate` 限流: 1rps, burst=3 | 单元测试: 快速请求被限流 | ✅ |
 | AC-5.13 | 限流器 TTL 10 分钟未使用自动清理 | 单元测试: 模拟时间流逝 | ✅ |
-| AC-5.14 | `ThreadOwnershipTracker`: @BotB 在 BotA 线程中 → BotB 抢占 | 单元测试: R3 | ✅ |
-| AC-5.15 | `ThreadOwnershipTracker`: @其他人 → 释放所有权 | 单元测试: R5 | ✅ |
-| AC-5.16 | `ThreadOwnershipTracker`: 24h 未活跃自动过期 | 单元测试: 模拟时间流逝 | ✅ |
 
 #### AC-6: 飞书适配器
 
@@ -1542,7 +1477,6 @@ func (h *Hub) JoinPlatformSession(sessionID string, pc PlatformConn) {
 | Slack 事件映射 | §5.3 | `messaging/slack/events.go` | 60 | 单元 | P2 |
 | NativeStreamingWriter | §5.4 | `messaging/slack/stream.go` | 120 | 单元 | P2 |
 | Slack 速率限制 | §5.5 | `messaging/slack/rate_limiter.go` | 40 | 单元 | P2 |
-| ThreadOwnershipTracker | §5.6 | `messaging/slack/thread_ownership.go` | 80 | 单元 | P2 |
 | Slack 代码骨架校验 | §5.3 | `messaging/slack/adapter.go` | — | 编译 | P2 |
 | 飞书 ws.Client 接入 | §6.1-6.3 | `messaging/feishu/adapter.go` | 200 | 集成 | P3 |
 | 飞书事件映射 | §6.3 | `messaging/feishu/events.go` | 60 | 单元 | P3 |

@@ -42,7 +42,7 @@ Worker-Gateway-Design（系统设计）
     │  §5.4 竞态防护 ───────────► Appendix §4 竞态分析
     │  §6 数据模型 ─────────────► SQLite sessions 表
     │  §7 Worker 抽象 ───────────► Appendix §3 真实 Trace
-    │  §8 Worker 集成规格 ──────► OpenCode CLI/Server 详细规格
+    │  §8 Worker 集成规格 ──────►/Server 详细规格
     │  §9 消息协议 ─────────────► AEP v1（完整协议规范）
     │  §11 WS 生命周期 ─────────► Appendix §1 时序图
     │  §13 持久化职责 ──────────► Worker 自身负责（无 event_log）

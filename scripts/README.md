@@ -11,8 +11,6 @@ This directory contains installation and deployment scripts for HotPlex Worker G
 | `docker-build.sh` | Build Docker image | `./scripts/docker-build.sh` |
 | `uninstall.sh` | Complete uninstallation | `sudo ./scripts/uninstall.sh` |
 | `validate-acpx-spec.sh` | Validate ACPX spec via acpx CLI | `./scripts/validate-acpx-spec.sh` |
-| `validate-opencode-cli-spec.sh` | Validate OpenCode CLI spec against source code | `./scripts/validate-opencode-cli-spec.sh` |
-| `test-opencode-cli-output.sh` | Test OpenCode CLI actual output format | `./scripts/test-opencode-cli-output.sh [test_case]` |
 | `hotplex-worker.service` | Systemd service unit | Install via `install.sh` |
 
 ## Installation Scripts
@@ -277,9 +275,8 @@ systemctl show hotplex-worker -p MemoryCurrent,CPUUsageNSec
 
 After running, see `docs/specs/ACPX-Validation-Report.md` for detailed results.
 
-### validate-opencode-cli-spec.sh
 
-**OpenCode CLI spec validation script** that analyzes OpenCode CLI source code and compares it with Worker-OpenCode-CLI-Spec.md.
+### ~~validate_opencode_spec.sh~~ (archived — OpenCode CLI adapter removed)
 
 **Purpose:**
 
@@ -292,14 +289,13 @@ After running, see `docs/specs/ACPX-Validation-Report.md` for detailed results.
 **Requirements:**
 
 - OpenCode source code at `~/opencode`
-- Spec document at `docs/specs/Worker-OpenCode-CLI-Spec.md`
+- Spec document at `docs/archive/Worker-OpenCode-CLI-Spec.md (archived)`
 - Standard Unix tools (grep, jq)
 
 **Usage:**
 
 ```bash
 # Run full validation
-./scripts/validate-opencode-cli-spec.sh
 
 # Output includes:
 # - CLI parameter verification (✅ confirmed, ⚠️ pending, ❌ missing)
@@ -320,11 +316,11 @@ After running, see `docs/specs/ACPX-Validation-Report.md` for detailed results.
 **Sample output:**
 
 ```
-=== OpenCode CLI Spec 验证工具 ===
+=== Spec 验证工具 ===
 
 [1/5] 检查文件存在性
 ✓ Spec 文件存在
-✓ OpenCode CLI 源码存在
+✓ 源码存在
 
 [2/5] 验证 CLI 参数
 ✓ run
@@ -366,11 +362,11 @@ Spec 中定义的事件类型:
 
 **Analysis report:**
 
-After running, see `docs/research/opencode-cli-implementation-analysis.md` for detailed analysis.
 
-### test-opencode-cli-output.sh
 
-**OpenCode CLI output testing script** that runs actual CLI commands and captures output for analysis.
+### ~~Output testing script~~ (archived — OpenCode CLI adapter removed)
+
+Script that ran actual CLI commands and captured output for analysis.
 
 **Purpose:**
 
@@ -383,7 +379,7 @@ After running, see `docs/research/opencode-cli-implementation-analysis.md` for d
 
 **Requirements:**
 
-- OpenCode CLI installed at `~/opencode`
+- installed at `~/opencode`
 - `bun` runtime
 - `jq` for JSON parsing
 - Valid API keys (OPENAI_API_KEY or OPENCODE_API_KEY)
@@ -392,15 +388,8 @@ After running, see `docs/research/opencode-cli-implementation-analysis.md` for d
 
 ```bash
 # Run all tests
-./scripts/test-opencode-cli-output.sh
 
 # Run specific test
-./scripts/test-opencode-cli-output.sh 1       # Basic output
-./scripts/test-opencode-cli-output.sh tool    # Tool usage
-./scripts/test-opencode-cli-output.sh error   # Error handling
-./scripts/test-opencode-cli-output.sh session # Session management
-./scripts/test-opencode-cli-output.sh env     # Environment injection
-./scripts/test-opencode-cli-output.sh format  # Format comparison
 
 # Output saved to test-output/ directory
 ```
@@ -417,7 +406,7 @@ After running, see `docs/research/opencode-cli-implementation-analysis.md` for d
 **Sample output:**
 
 ```
-=== OpenCode CLI 输出测试 ===
+=== 输出测试 ===
 
 [Test 1] 基本文本输出
 运行: bun run opencode run --format json 'Reply with: Hello, World!'

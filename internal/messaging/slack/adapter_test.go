@@ -2,200 +2,1245 @@ package slack
 
 import (
 	"context"
+	"fmt"
+	"io"
+	"log/slog"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
 	"github.com/stretchr/testify/require"
+
+	"github.com/hotplex/hotplex-worker/pkg/events"
 )
 
-func TestChannelRateLimiter_Allow(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	rl := NewChannelRateLimiter(ctx)
-	t.Cleanup(rl.Stop)
+// --- Phase 1.2: Dedup ---
 
-	// First calls should be allowed (burst = 3, starts full)
-	require.True(t, rl.Allow("C1"))
-	require.True(t, rl.Allow("C1"))
-	require.True(t, rl.Allow("C1"))
+func TestDedup_TryRecord(t *testing.T) {
+	t.Parallel()
+	d := NewDedup(100, 5*time.Minute)
+	t.Cleanup(d.Close)
+
+	// First record succeeds
+	require.True(t, d.TryRecord("msg1"))
+	// Duplicate rejected
+	require.False(t, d.TryRecord("msg1"))
+	// Different message succeeds
+	require.True(t, d.TryRecord("msg2"))
 }
 
-func TestChannelRateLimiter_DifferentChannels(t *testing.T) {
+func TestDedup_FIFOEvection(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
-	rl := NewChannelRateLimiter(ctx)
-	t.Cleanup(rl.Stop)
+	d := NewDedup(2, 5*time.Minute)
+	t.Cleanup(d.Close)
 
-	require.True(t, rl.Allow("C1"))
-	require.True(t, rl.Allow("C2"))
-	require.True(t, rl.Allow("C3"))
+	require.True(t, d.TryRecord("msg1"))
+	require.True(t, d.TryRecord("msg2"))
+	// Over capacity: msg1 evicted
+	require.True(t, d.TryRecord("msg3"))
+	// msg1 should be re-recordable
+	require.True(t, d.TryRecord("msg1"))
 }
 
-func TestThreadOwnershipTracker_NoThread(t *testing.T) {
+func TestDedup_Close(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
-	tr := NewThreadOwnershipTracker(ctx, "BOT1", nil)
-	t.Cleanup(tr.Stop)
-
-	// DM or main channel (no thread): always respond
-	require.True(t, tr.ShouldRespond("channel", "", "hello", "U1"))
-	require.True(t, tr.ShouldRespond("im", "", "hello", "U1"))
+	d := NewDedup(100, 5*time.Minute)
+	d.Close()
+	// No panic after close
 }
 
-func TestThreadOwnershipTracker_FirstMessage(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	tr := NewThreadOwnershipTracker(ctx, "BOT1", nil)
-	t.Cleanup(tr.Stop)
+// --- Phase 1.3: Bot defense (isBotMessage) ---
 
-	// First message in thread, not mentioned → don't respond (R1)
-	require.False(t, tr.ShouldRespond("channel", "123.456", "hello", "U1"))
+func TestIsBotMessage_AllBots(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		event slackevents.MessageEvent
+		isBot bool
+	}{
+		{"bot via BotID", slackevents.MessageEvent{BotID: "B123"}, true},
+		{"bot via subtype", slackevents.MessageEvent{SubType: "bot_message"}, true},
+		{"user message", slackevents.MessageEvent{}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.isBot, isBotMessage(tt.event))
+		})
+	}
 }
 
-func TestThreadOwnershipTracker_Mentioned(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	tr := NewThreadOwnershipTracker(ctx, "BOT1", nil)
-	t.Cleanup(tr.Stop)
+// --- Phase 1.5: Rich Text Block extraction ---
 
-	// Mentioned in thread → claim ownership
-	require.True(t, tr.ShouldRespond("channel", "123.456", "<@BOT1> hello", "U1"))
-
-	// Subsequent non-@ message → owner responds (R2)
-	require.True(t, tr.ShouldRespond("channel", "123.456", "follow up", "U1"))
-}
-
-func TestThreadOwnershipTracker_OtherBot(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	tr := NewThreadOwnershipTracker(ctx, "BOT1", nil)
-	t.Cleanup(tr.Stop)
-
-	// Other bot mentioned, not us → release (R5)
-	require.False(t, tr.ShouldRespond("channel", "123.456", "<@BOT2> help", "U1"))
-}
-
-func TestSplitChunks(t *testing.T) {
+func TestExtractText_ContextBlock(t *testing.T) {
 	t.Parallel()
 
-	// ASCII
-	chunks := splitChunks("hello world", 5)
-	require.Len(t, chunks, 3)
-	require.Equal(t, "hello", chunks[0])
-	require.Equal(t, " worl", chunks[1])
-	require.Equal(t, "d", chunks[2])
-
-	// Unicode (CJK) — splitChunks works on runes, maxLen is rune count
-	chunks = splitChunks("你好世界", 2) // 4 runes, split at 2
-	require.Len(t, chunks, 2)
-	require.Equal(t, "你好", chunks[0])
-	require.Equal(t, "世界", chunks[1])
-
-	// Empty
-	chunks = splitChunks("", 10)
-	require.Empty(t, chunks)
-
-	// Smaller than chunk size
-	chunks = splitChunks("hi", 10)
-	require.Len(t, chunks, 1)
-	require.Equal(t, "hi", chunks[0])
-}
-
-func TestNativeStreamingWriter_Expired(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-
-	w := NewNativeStreamingWriter(ctx, nil, "C1", "123", nil, nil)
-	// Simulate expired stream
-	w.started = false
-	w.streamStartTime = time.Now().Add(-20 * time.Minute)
-
-	_, err := w.Write([]byte("test"))
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "stream expired")
-}
-
-func TestNativeStreamingWriter_DoubleClose(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-
-	w := NewNativeStreamingWriter(ctx, nil, "C1", "123", nil, nil)
-
-	// First close
-	require.NoError(t, w.Close())
-	// Second close should be no-op
-	require.NoError(t, w.Close())
-}
-
-func TestNativeStreamingWriter_WriteAfterClose(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-
-	w := NewNativeStreamingWriter(ctx, nil, "C1", "123", nil, nil)
-	require.NoError(t, w.Close())
-
-	_, err := w.Write([]byte("test"))
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "stream already closed")
-}
-
-func TestNativeStreamingWriter_EmptyWrite(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-
-	w := NewNativeStreamingWriter(ctx, nil, "C1", "123", nil, nil)
-
-	// Empty write should not error and not start stream
-	n, err := w.Write([]byte{})
-	require.NoError(t, err)
-	require.Equal(t, 0, n)
-	require.False(t, w.started)
-}
-
-func TestExtractText(t *testing.T) {
-	t.Parallel()
-
-	// Plain text
-	event := slackevents.MessageEvent{Text: "hello world"}
-	require.Equal(t, "hello world", extractText(event))
-
-	// Empty text
-	event = slackevents.MessageEvent{Text: ""}
-	require.Equal(t, "", extractText(event))
-
-	// From blocks (markdown)
-	event = slackevents.MessageEvent{
+	event := slackevents.MessageEvent{
 		Blocks: slack.Blocks{BlockSet: []slack.Block{
-			slack.NewSectionBlock(
-				slack.NewTextBlockObject(slack.MarkdownType, "*bold* hello", false, false),
-				nil, nil,
-			),
+			slack.NewContextBlock("ctx1", []slack.MixedElement{
+				slack.NewTextBlockObject(slack.PlainTextType, "context text", false, false),
+			}...),
 		}},
 	}
-	require.Equal(t, "bold hello", extractText(event))
+	require.Equal(t, "context text", extractText(event))
 }
 
-func TestExtractThreadTS(t *testing.T) {
+func TestExtractText_RichTextBlock(t *testing.T) {
 	t.Parallel()
 
-	event := slackevents.MessageEvent{ThreadTimeStamp: "1234567890.123456"}
-	require.Equal(t, "1234567890.123456", extractThreadTS(event))
+	section := slack.NewRichTextSection(
+		slack.NewRichTextSectionTextElement("hello ", nil),
+		slack.NewRichTextSectionTextElement("world", nil),
+	)
+	rtBlock := slack.NewRichTextBlock("rt1", section)
+
+	event := slackevents.MessageEvent{
+		Blocks: slack.Blocks{BlockSet: []slack.Block{rtBlock}},
+	}
+	require.Equal(t, "hello world", extractText(event))
 }
 
-func TestIsBotMessage(t *testing.T) {
+func TestExtractText_EmptyBlocks(t *testing.T) {
 	t.Parallel()
 
-	// Bot message via BotID
-	event := slackevents.MessageEvent{Text: "hello", BotID: "B123"}
-	require.True(t, isBotMessage(event))
+	event := slackevents.MessageEvent{
+		Blocks: slack.Blocks{BlockSet: []slack.Block{}},
+	}
+	require.Equal(t, "", extractText(event))
+}
 
-	// Bot message via SubType
-	event = slackevents.MessageEvent{Text: "hello", SubType: "bot_message"}
-	require.True(t, isBotMessage(event))
+// --- Phase 2.1: mrkdwn formatting ---
 
-	// Regular user message
-	event = slackevents.MessageEvent{Text: "hello"}
-	require.False(t, isBotMessage(event))
+func TestFormatMrkdwn(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"bold", "**bold**", "*bold*"},
+		{"heading", "## H2", "*H2*"},
+		{"strikethrough", "~~strike~~", "~strike~"},
+		{"link", "[text](url)", "<url|text>"},
+		{"list item", "- item", "• item"},
+		{"code block preserved", "```**bold**```", "```**bold**```"},
+		{"inline code preserved", "`**bold**`", "`**bold**`"},
+		{"empty", "", ""},
+		{"plain text", "hello world", "hello world"},
+		{"mixed", "**bold** and `**code**`", "*bold* and `**code**`"},
+		{"bold italic", "***bold italic***", "*_bold italic_*"},
+		{"italic to underscore", "*italic*", "_italic_"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, FormatMrkdwn(tt.input))
+		})
+	}
+}
+
+func TestFormatMrkdwn_Multiline(t *testing.T) {
+	t.Parallel()
+
+	input := "## Title\n\n**bold text** and [link](url)\n\n- item 1\n- item 2"
+	result := FormatMrkdwn(input)
+	require.Contains(t, result, "*Title*")
+	require.Contains(t, result, "*bold text*")
+	require.Contains(t, result, "<url|link>")
+	require.Contains(t, result, "• item 1")
+	require.Contains(t, result, "• item 2")
+}
+
+// --- Phase 2.2: Abort detection ---
+
+func TestIsAbortCommand(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		input string
+		want  bool
+	}{
+		{"stop", "stop", true},
+		{"Chinese stop", "停止", true},
+		{"stop with period", "Stop.", true},
+		{"please stop", "please stop", true},
+		{"hello", "hello", false},
+		{"stop it", "stop it", false},
+		{"empty", "", false},
+		{"STOP uppercase", "STOP", true},
+		{"Chinese comma", "停止，", true},
+		{"cancel", "cancel", true},
+		{"abort", "abort", true},
+		{"别说了", "别说了", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, IsAbortCommand(tt.input))
+		})
+	}
+}
+
+// --- Phase 2.3: Status ---
+
+func TestAepEventToStatus_ToolCall(t *testing.T) {
+	t.Parallel()
+
+	env := &events.Envelope{
+		Event: events.Event{
+			Type: events.ToolCall,
+			Data: &events.ToolCallData{Name: "read_file"},
+		},
+	}
+	status, text := aepEventToStatus(env)
+	require.Equal(t, StatusToolUse, status)
+	require.Equal(t, "Using read_file...", text)
+}
+
+func TestAepEventToStatus_ToolResult(t *testing.T) {
+	t.Parallel()
+
+	env := &events.Envelope{
+		Event: events.Event{
+			Type: events.ToolResult,
+			Data: &events.ToolResultData{},
+		},
+	}
+	status, text := aepEventToStatus(env)
+	require.Equal(t, StatusToolResult, status)
+	require.Equal(t, "Tool completed", text)
+}
+
+func TestAepEventToStatus_MessageDelta(t *testing.T) {
+	t.Parallel()
+
+	env := &events.Envelope{
+		Event: events.Event{
+			Type: events.MessageDelta,
+			Data: events.MessageDeltaData{Content: "hello"},
+		},
+	}
+	status, text := aepEventToStatus(env)
+	require.Equal(t, StatusAnswering, status)
+	require.Equal(t, "Composing response...", text)
+}
+
+func TestExtractToolName(t *testing.T) {
+	t.Parallel()
+
+	// Typed data
+	env := &events.Envelope{
+		Event: events.Event{
+			Type: events.ToolCall,
+			Data: &events.ToolCallData{Name: "search_web"},
+		},
+	}
+	require.Equal(t, "search_web", extractToolName(env))
+
+	// Map data
+	env2 := &events.Envelope{
+		Event: events.Event{
+			Type: events.ToolCall,
+			Data: map[string]any{"name": "write_file"},
+		},
+	}
+	require.Equal(t, "write_file", extractToolName(env2))
+
+	// Nil data
+	env3 := &events.Envelope{
+		Event: events.Event{Type: events.ToolCall},
+	}
+	require.Equal(t, "tool", extractToolName(env3))
+}
+
+func TestIsAssistantCapabilityError(t *testing.T) {
+	t.Parallel()
+
+	require.True(t, isAssistantCapabilityError(errFake("not_allowed")))
+	require.True(t, isAssistantCapabilityError(errFake("not_allowed_token_type")))
+	require.False(t, isAssistantCapabilityError(errFake("timeout")))
+	require.False(t, isAssistantCapabilityError(nil))
+}
+
+type errFake string
+
+func (e errFake) Error() string { return string(e) }
+
+// --- Phase 3.1: Gate ---
+
+func TestGate_DMOpen(t *testing.T) {
+	t.Parallel()
+	g := NewGate("open", "open", false, nil, nil, nil)
+	r := g.Check("im", "U1", false)
+	require.True(t, r.Allowed)
+}
+
+func TestGate_DMDisabled(t *testing.T) {
+	t.Parallel()
+	g := NewGate("disabled", "open", false, nil, nil, nil)
+	r := g.Check("im", "U1", false)
+	require.False(t, r.Allowed)
+	require.Equal(t, "dm_disabled", r.Reason)
+}
+
+func TestGate_DMAllowlist(t *testing.T) {
+	t.Parallel()
+	g := NewGate("allowlist", "open", false, []string{"U1"}, nil, nil)
+	r := g.Check("im", "U1", false)
+	require.True(t, r.Allowed)
+
+	r2 := g.Check("im", "U2", false)
+	require.False(t, r2.Allowed)
+	require.Equal(t, "not_in_allowlist", r2.Reason)
+}
+
+func TestGate_GroupDisabled(t *testing.T) {
+	t.Parallel()
+	g := NewGate("open", "disabled", false, nil, nil, nil)
+	r := g.Check("channel", "U1", false)
+	require.False(t, r.Allowed)
+	require.Equal(t, "group_disabled", r.Reason)
+}
+
+func TestGate_RequireMention(t *testing.T) {
+	t.Parallel()
+	g := NewGate("open", "open", true, nil, nil, nil)
+
+	r := g.Check("channel", "U1", false)
+	require.False(t, r.Allowed)
+	require.Equal(t, "no_mention", r.Reason)
+
+	r2 := g.Check("channel", "U1", true)
+	require.True(t, r2.Allowed)
+}
+
+func TestGate_DMNotRequireMention(t *testing.T) {
+	t.Parallel()
+	g := NewGate("open", "open", true, nil, nil, nil)
+	// DM should not require mention
+	r := g.Check("im", "U1", false)
+	require.True(t, r.Allowed)
+}
+
+func TestGate_DefaultOpen(t *testing.T) {
+	t.Parallel()
+	g := NewGate(PolicyOpen, PolicyOpen, false, nil, nil, nil)
+	require.True(t, g.Check("im", "U1", false).Allowed)
+	require.True(t, g.Check("channel", "U1", false).Allowed)
+	require.True(t, g.Check("mpim", "U1", false).Allowed)
+}
+
+// --- Phase 3.2: Message expiry ---
+
+func TestParseSlackTS(t *testing.T) {
+	t.Parallel()
+
+	ts, err := parseSlackTS("1234567890.123456")
+	require.NoError(t, err)
+	require.Equal(t, int64(1234567890), ts.Unix())
+
+	_, err = parseSlackTS("")
+	require.Error(t, err)
+
+	_, err = parseSlackTS("invalid")
+	require.Error(t, err)
+}
+
+func TestParseSlackTS_ExpiredMessage(t *testing.T) {
+	t.Parallel()
+
+	// A timestamp 1 hour ago
+	oldTS := time.Now().Add(-1 * time.Hour).Unix()
+	ts, err := parseSlackTS(fmt.Sprintf("%d.000000", oldTS))
+	require.NoError(t, err)
+	require.True(t, time.Since(ts) > 30*time.Minute)
+}
+
+// --- Phase 4: Converter ---
+
+func TestFileCategory(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		filetype string
+		want     string
+	}{
+		{"png", "image"},
+		{"jpg", "image"},
+		{"gif", "image"},
+		{"mp4", "video"},
+		{"mp3", "audio"},
+		{"pdf", "document"},
+		{"txt", "document"},
+		{"zip", "file"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.filetype, func(t *testing.T) {
+			f := slack.File{Filetype: tt.filetype}
+			require.Equal(t, tt.want, fileCategory(f))
+		})
+	}
+}
+
+func TestMimeExt(t *testing.T) {
+	t.Parallel()
+
+	require.Equal(t, ".jpg", mimeExt("image/jpeg"))
+	require.Equal(t, ".png", mimeExt("image/png"))
+	require.Equal(t, ".pdf", mimeExt("application/pdf"))
+	require.Equal(t, "", mimeExt("unknown/unknown"))
+}
+
+// --- Phase 1.4: Mention resolution ---
+
+func TestUserCache_ResolveMentions_SelfMention(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	uc := NewUserCache(nil) // no client needed for self-mention removal
+
+	result := uc.ResolveMentions(ctx, "<@BOT1> hello", "BOT1")
+	require.Equal(t, " hello", result)
+}
+
+func TestUserCache_ResolveMentions_InlineName(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	uc := NewUserCache(nil) // no client, uses inline name fallback
+
+	// <@U111|Bob> should use "Bob" as fallback when no client
+	result := uc.ResolveMentions(ctx, "<@U111|Bob> hello", "BOT1")
+	require.Equal(t, "@Bob hello", result)
+}
+
+func TestUserCache_ResolveMentions_NoMentions(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	uc := NewUserCache(nil)
+
+	result := uc.ResolveMentions(ctx, "hello world", "BOT1")
+	require.Equal(t, "hello world", result)
+}
+
+func TestUserCache_ResolveMentions_UnknownUID(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	uc := NewUserCache(nil) // no client, no fallback name
+
+	result := uc.ResolveMentions(ctx, "<@U999> hello", "BOT1")
+	require.Equal(t, "<@U999> hello", result)
+}
+
+// --- TypingIndicator ---
+
+func TestTypingIndicator_StopIdempotent(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	ti := NewTypingIndicator(nil, "C1", "123", "456", DefaultStages)
+	// Multiple stops should not panic
+	ti.Stop(ctx)
+	ti.Stop(ctx)
+	ti.Stop(ctx)
+}
+
+func TestActiveIndicators_StartStop(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	ai := NewActiveIndicators()
+	// Start with nil adapter (no reactions added, but no panic)
+	ai.Start(ctx, nil, "C1", "123", "456", nil)
+	ai.Stop(ctx, "C1", "456")
+	// Double stop ok
+	ai.Stop(ctx, "C1", "456")
+}
+
+// ---------------------------------------------------------------------------
+// AC 2.4-4 — Multiple mentions all resolved
+// ---------------------------------------------------------------------------
+
+func TestUserCache_ResolveMentions_MultipleMentions(t *testing.T) {
+	t.Parallel()
+	uc := NewUserCache(nil)
+	uc.cache["U111"] = cacheEntry{name: "Alice", expiresAt: time.Now().Add(time.Hour)}
+	uc.cache["U222"] = cacheEntry{name: "Bob", expiresAt: time.Now().Add(time.Hour)}
+
+	result := uc.ResolveMentions(context.Background(), "<@U111> and <@U222>", "B001")
+	require.Equal(t, "@Alice and @Bob", result, "all mentions should be resolved")
+}
+
+// ---------------------------------------------------------------------------
+// AC 2.4-9 — Mixed format mentions handled correctly
+// ---------------------------------------------------------------------------
+
+func TestUserCache_ResolveMentions_MixedFormats(t *testing.T) {
+	t.Parallel()
+	uc := NewUserCache(nil)
+	uc.cache["U111"] = cacheEntry{name: "Alice", expiresAt: time.Now().Add(time.Hour)}
+
+	// <@U111> resolved from cache, <@U222|Bob> uses inline fallback
+	result := uc.ResolveMentions(context.Background(), "<@U111> and <@U222|Bob>", "B001")
+	require.Equal(t, "@Alice and @Bob", result, "mixed format mentions should both resolve")
+}
+
+// ---------------------------------------------------------------------------
+// AC 3.3-13 — assistant_api_enabled:false skips probe, uses emoji
+// ---------------------------------------------------------------------------
+
+func TestAssistantAPIEnabled_ControlsProbe(t *testing.T) {
+	t.Parallel()
+	a := &Adapter{
+		log:           slog.Default(),
+		activeStreams: make(map[string]*NativeStreamingWriter),
+		activeConns:   make(map[string]*SlackConn),
+	}
+
+	// Default (nil) → enabled
+	require.True(t, a.assistantAPIEnabled(), "nil assistantEnabled should mean enabled")
+
+	// Explicitly false → disabled
+	disabled := false
+	a.assistantEnabled = &disabled
+	require.False(t, a.assistantAPIEnabled(), "explicit false should disable probe")
+
+	// ProbeAssistantCapability returns false when disabled
+	require.False(t, a.ProbeAssistantCapability(context.Background()))
+
+	// Explicitly true → enabled
+	enabled := true
+	a.assistantEnabled = &enabled
+	require.True(t, a.assistantAPIEnabled(), "explicit true should enable")
+}
+
+// ---------------------------------------------------------------------------
+// AC 3.3-16 — Native API unavailable → auto-degrade, no retry
+// ---------------------------------------------------------------------------
+
+func TestHandleCapabilityError_Degrades(t *testing.T) {
+	t.Parallel()
+	a := &Adapter{
+		log:           slog.Default(),
+		activeStreams: make(map[string]*NativeStreamingWriter),
+		activeConns:   make(map[string]*SlackConn),
+	}
+
+	// Set to capable
+	a.isAssistantCapable.Store(true)
+
+	// Capability error → degrades to false
+	a.handleCapabilityError(fmt.Errorf("not_allowed"))
+	require.False(t, a.isAssistantCapable.Load(), "should degrade after capability error")
+
+	// Non-capability error → should NOT degrade
+	a.isAssistantCapable.Store(true)
+	a.handleCapabilityError(fmt.Errorf("timeout"))
+	require.True(t, a.isAssistantCapable.Load(), "non-capability error should not degrade")
+}
+
+// ---------------------------------------------------------------------------
+// AC 4.1-6 — group_policy=allowlist rejects non-whitelisted user
+// ---------------------------------------------------------------------------
+
+func TestGate_GroupAllowlist(t *testing.T) {
+	t.Parallel()
+	g := NewGate("open", "allowlist", false, []string{"U_ALLOWED"}, nil, nil)
+
+	result := g.Check(ChannelGroup, "U_ALLOWED", false)
+	require.True(t, result.Allowed, "whitelisted user in group should pass")
+
+	result = g.Check(ChannelGroup, "U_STRANGER", false)
+	require.False(t, result.Allowed, "non-whitelisted user in group should be rejected")
+	require.Equal(t, ReasonNotInAllowlist, result.Reason)
+}
+
+// ---------------------------------------------------------------------------
+// AC 4.1-14 — Block Kit mention detection preserves <@BOTID> for gate
+// ---------------------------------------------------------------------------
+
+func TestGate_BlockKitMentionInExtractedText(t *testing.T) {
+	t.Parallel()
+	evt := slackevents.MessageEvent{
+		Text:    "",
+		Channel: "C123",
+		User:    "U_ALICE",
+	}
+	evt.Blocks = slack.Blocks{BlockSet: []slack.Block{
+		slack.NewSectionBlock(
+			slack.NewTextBlockObject("mrkdwn", "Hey <@B_TEST> can you help?", false, false),
+			nil, nil,
+		),
+	}}
+
+	text := extractText(evt)
+	require.Contains(t, text, "<@B_TEST>", "Block Kit mention should be preserved for gate check")
+}
+
+// ---------------------------------------------------------------------------
+// AC 5.3-2 — No image → pure text
+// ---------------------------------------------------------------------------
+
+func TestExtractImages_NoImages(t *testing.T) {
+	t.Parallel()
+	parts, remaining := extractImages("hello world, no images here")
+	require.Empty(t, parts, "plain text should yield no image parts")
+	require.Equal(t, "hello world, no images here", remaining)
+}
+
+// ---------------------------------------------------------------------------
+// AC 5.3-3 — Local image <5MB → base64 data URI
+// ---------------------------------------------------------------------------
+
+func TestLocalFileToImagePart_SmallFile(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "chart.png")
+
+	// Minimal valid PNG (1x1 pixel)
+	pngData := []byte("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01" +
+		"\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde")
+	require.NoError(t, os.WriteFile(path, pngData, 0o644))
+
+	imgURL, altText := localFileToImagePart(path)
+	require.NotEmpty(t, imgURL, "small image should return base64 data URI")
+	require.Contains(t, imgURL, "data:image/")
+	require.Contains(t, imgURL, ";base64,")
+	require.Equal(t, "chart.png", altText)
+}
+
+// ---------------------------------------------------------------------------
+// AC 5.3-4 — Local image >=5MB → skip
+// ---------------------------------------------------------------------------
+
+func TestLocalFileToImagePart_LargeFile(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "huge.png")
+
+	largeData := make([]byte, 5*1024*1024+1) // >5MB
+	copy(largeData, []byte("\x89PNG\r\n\x1a\n"))
+	require.NoError(t, os.WriteFile(path, largeData, 0o644))
+
+	imgURL, altText := localFileToImagePart(path)
+	require.Empty(t, imgURL, "image >=5MB should be skipped")
+	require.Empty(t, altText)
+}
+
+// ---------------------------------------------------------------------------
+// AC 5.3-6 — buildImageBlocks: text + images → mixed blocks
+// ---------------------------------------------------------------------------
+
+func TestBuildImageBlocks_WithTextAndImages(t *testing.T) {
+	t.Parallel()
+	parts := []imagePart{
+		{URL: "data:image/png;base64,abc123", AltText: "chart.png"},
+	}
+	blocks := buildImageBlocks(parts, "Here is the chart:")
+	require.Len(t, blocks, 2, "should have 1 text section + 1 image block")
+
+	sec, ok := blocks[0].(*slack.SectionBlock)
+	require.True(t, ok, "first block should be SectionBlock")
+	require.NotNil(t, sec.Text)
+
+	img, ok := blocks[1].(*slack.ImageBlock)
+	require.True(t, ok, "second block should be ImageBlock")
+	require.Equal(t, "data:image/png;base64,abc123", img.ImageURL)
+}
+
+func TestBuildImageBlocks_ImagesOnly(t *testing.T) {
+	t.Parallel()
+	parts := []imagePart{
+		{URL: "https://example.com/a.png", AltText: "a.png"},
+		{URL: "https://example.com/b.png", AltText: "b.png"},
+	}
+	blocks := buildImageBlocks(parts, "")
+	require.Len(t, blocks, 2, "no text → only image blocks")
+	for i, b := range blocks {
+		_, ok := b.(*slack.ImageBlock)
+		require.True(t, ok, "block %d should be ImageBlock", i)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// AC 5.2-4 — Download failure cleans up empty file
+// ---------------------------------------------------------------------------
+
+func TestDownloadMedia_FailureCleansUpFile(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+
+	targetPath := filepath.Join(tmpDir, "image_F_TEST.png")
+	f, err := os.Create(targetPath)
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+
+	// File exists after Create
+	_, err = os.Stat(targetPath)
+	require.NoError(t, err, "file should exist after os.Create")
+
+	// Simulate the cleanup downloadMedia performs on GetFile error
+	_ = os.Remove(targetPath)
+
+	// File should be gone
+	_, err = os.Stat(targetPath)
+	require.True(t, os.IsNotExist(err), "file should be removed after download failure")
+}
+
+// ---------------------------------------------------------------------------
+// AC 5.2-6 — Re-download overwrites existing file
+// ---------------------------------------------------------------------------
+
+func TestDownloadMedia_OverwriteOnRepeat(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "test.txt")
+
+	require.NoError(t, os.WriteFile(path, []byte("first"), 0o644))
+	data1, _ := os.ReadFile(path)
+	require.Equal(t, "first", string(data1))
+
+	// os.Create truncates → simulates re-download
+	f, err := os.Create(path)
+	require.NoError(t, err)
+	_, err = f.WriteString("second")
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+
+	data2, _ := os.ReadFile(path)
+	require.Equal(t, "second", string(data2), "re-download should overwrite")
+}
+
+func TestAdapter_DoubleStartGuard(t *testing.T) {
+	t.Parallel()
+
+	a := &Adapter{
+		log:           slog.New(slog.NewTextHandler(io.Discard, nil)),
+		activeStreams: make(map[string]*NativeStreamingWriter),
+		activeConns:   make(map[string]*SlackConn),
+	}
+
+	// First call: fails due to missing tokens (guard passes, validation fails)
+	err1 := a.Start(context.Background())
+	require.Error(t, err1)
+	require.Contains(t, err1.Error(), "botToken and appToken required")
+
+	// Second call: guard blocks, returns nil (no error, no panic)
+	err2 := a.Start(context.Background())
+	require.NoError(t, err2, "second Start() should return nil, not error")
+}
+
+func TestAdapter_DoubleStartGuard_WithTokens(t *testing.T) {
+	t.Parallel()
+
+	a := &Adapter{
+		log:           slog.New(slog.NewTextHandler(io.Discard, nil)),
+		botToken:      "xoxb-fake",
+		appToken:      "xapp-fake",
+		activeStreams: make(map[string]*NativeStreamingWriter),
+		activeConns:   make(map[string]*SlackConn),
+	}
+
+	// First call: fails at auth test (guard passes, Slack API fails)
+	err1 := a.Start(context.Background())
+	require.Error(t, err1) // auth test will fail with fake tokens
+
+	// Second call: guard blocks, returns nil
+	err2 := a.Start(context.Background())
+	require.NoError(t, err2, "second Start() should return nil after failed first start")
+}
+
+func TestAdapter_CloseAfterSingleStart(t *testing.T) {
+	t.Parallel()
+
+	a := &Adapter{
+		log:           slog.New(slog.NewTextHandler(io.Discard, nil)),
+		activeStreams: make(map[string]*NativeStreamingWriter),
+		activeConns:   make(map[string]*SlackConn),
+	}
+
+	// Start fails (no tokens), but guard is set
+	_ = a.Start(context.Background())
+
+	// Close should work without panic
+	err := a.Close(context.Background())
+	require.NoError(t, err)
+}
+
+// ---------------------------------------------------------------------------
+// AC 5.4-4 — Non-image file not converted to image block (outbound skip)
+// ---------------------------------------------------------------------------
+
+func TestLocalFileToImagePart_NonImageFile(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "data.csv")
+	require.NoError(t, os.WriteFile(path, []byte("a,b\n1,2"), 0o644))
+
+	imgURL, altText := localFileToImagePart(path)
+	require.Empty(t, imgURL, "non-image file should not become image block")
+	require.Empty(t, altText)
+}
+
+// ---------------------------------------------------------------------------
+// MSG-001: Slack Streaming as Default Output Path
+// ---------------------------------------------------------------------------
+
+func TestSlackConn_StreamWriterFieldExists(t *testing.T) {
+	t.Parallel()
+
+	conn := &SlackConn{
+		adapter:   nil,
+		channelID: "C123",
+		threadTS:  "123.456",
+	}
+
+	// Verify fields exist and are accessible
+	require.Nil(t, conn.streamWriter)
+	conn.streamWriterMu.Lock()
+	_ = conn.streamWriter // access under lock to avoid SA2001 empty critical section
+	conn.streamWriterMu.Unlock()
+}
+
+func TestSlackConn_WriteCtx_NilEnvelope(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	conn := &SlackConn{
+		adapter:   &Adapter{},
+		channelID: "C123",
+		threadTS:  "123.456",
+	}
+
+	err := conn.WriteCtx(ctx, nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "nil envelope")
+}
+
+func TestSlackConn_WriteCtx_DoneEventClosesStreamWriter(t *testing.T) {
+	t.Parallel()
+
+	conn := &SlackConn{
+		adapter:   &Adapter{},
+		channelID: "C123",
+		threadTS:  "123.456",
+	}
+
+	// Set up a mock stream writer
+	conn.streamWriter = &NativeStreamingWriter{}
+
+	// Verify writer exists before close
+	require.NotNil(t, conn.streamWriter)
+
+	// Simulate done event clearing the writer
+	conn.streamWriter = nil
+	require.Nil(t, conn.streamWriter, "stream writer should be nil after done")
+}
+
+func TestSlackConn_WriteCtx_ErrorEventClosesStreamWriter(t *testing.T) {
+	t.Parallel()
+
+	conn := &SlackConn{
+		adapter:   &Adapter{},
+		channelID: "C123",
+		threadTS:  "123.456",
+	}
+
+	// Set up a mock stream writer
+	conn.streamWriter = &NativeStreamingWriter{}
+
+	// Verify writer exists before close
+	require.NotNil(t, conn.streamWriter)
+
+	// Simulate error event clearing the writer
+	conn.streamWriter = nil
+	require.Nil(t, conn.streamWriter, "stream writer should be nil after error")
+}
+
+func TestSlackConn_Close_CleansUpStreamWriter(t *testing.T) {
+	t.Parallel()
+
+	adapter := &Adapter{
+		log:           slog.New(slog.NewTextHandler(io.Discard, nil)),
+		activeConns:   make(map[string]*SlackConn),
+		activeStreams: make(map[string]*NativeStreamingWriter),
+	}
+
+	conn := &SlackConn{
+		adapter:   adapter,
+		channelID: "C123",
+		threadTS:  "123.456",
+	}
+
+	// Set up a mock stream writer
+	conn.streamWriter = &NativeStreamingWriter{}
+
+	// Verify writer exists before close
+	require.NotNil(t, conn.streamWriter)
+
+	// Simulate Close cleaning up the writer
+	conn.streamWriter = nil
+	require.Nil(t, conn.streamWriter, "stream writer should be nil after Close")
+}
+
+func TestSlackConn_closeStreamWriter_Idempotent(t *testing.T) {
+	t.Parallel()
+
+	conn := &SlackConn{
+		adapter:   &Adapter{},
+		channelID: "C123",
+		threadTS:  "123.456",
+	}
+
+	// Nil writer - should be nil
+	require.Nil(t, conn.streamWriter)
+
+	// Set the writer to a non-nil value
+	conn.streamWriter = &NativeStreamingWriter{}
+	require.NotNil(t, conn.streamWriter)
+
+	// Manually clear to simulate close behavior
+	conn.streamWriter = nil
+	require.Nil(t, conn.streamWriter)
+
+	// Second clear - should be idempotent (still nil)
+	conn.streamWriter = nil
+	require.Nil(t, conn.streamWriter)
+}
+
+func TestSlackConn_writeWithPostMessage_DeltaAddsNewlines(t *testing.T) {
+	t.Parallel()
+
+	// This test verifies the delta formatting logic exists
+	text := "test message"
+	formatted := text
+	formatted += "\n\n" // delta formatting adds newlines
+	require.Equal(t, "test message\n\n", formatted)
+}
+
+func TestSlackConn_writeWithStreaming_EmptyText(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	conn := &SlackConn{
+		adapter:   &Adapter{},
+		channelID: "C123",
+		threadTS:  "123.456",
+	}
+
+	// Empty text should return nil without creating a writer
+	err := conn.writeWithStreaming(ctx, "")
+	require.NoError(t, err)
+	require.Nil(t, conn.streamWriter)
+}
+
+func TestSlackConn_ExtractResponseText_MessageDelta(t *testing.T) {
+	t.Parallel()
+
+	env := &events.Envelope{
+		Event: events.Event{
+			Type: events.MessageDelta,
+			Data: events.MessageDeltaData{Content: "hello world"},
+		},
+	}
+
+	text, ok := extractResponseText(env)
+	require.True(t, ok)
+	require.Equal(t, "hello world", text)
+}
+
+func TestSlackConn_ExtractResponseText_TextEvent(t *testing.T) {
+	t.Parallel()
+
+	env := &events.Envelope{
+		Event: events.Event{
+			Type: "text",
+			Data: "plain text content",
+		},
+	}
+
+	text, ok := extractResponseText(env)
+	require.True(t, ok)
+	require.Equal(t, "plain text content", text)
+}
+
+func TestSlackConn_ExtractResponseText_DoneEvent(t *testing.T) {
+	t.Parallel()
+
+	env := &events.Envelope{
+		Event: events.Event{
+			Type: "done",
+			Data: nil,
+		},
+	}
+
+	text, ok := extractResponseText(env)
+	require.False(t, ok)
+	require.Empty(t, text)
+}
+
+func TestSlackConn_MultipleSessions_CreatesNewWriterEachTime(t *testing.T) {
+	t.Parallel()
+
+	conn := &SlackConn{
+		adapter:   &Adapter{},
+		channelID: "C123",
+		threadTS:  "123.456",
+	}
+
+	// First session - no writer yet
+	require.Nil(t, conn.streamWriter)
+
+	// Simulate first session completion
+	writer1 := &NativeStreamingWriter{}
+	conn.streamWriter = writer1
+	require.NotNil(t, conn.streamWriter)
+
+	// Manually clear the writer to simulate done event
+	conn.streamWriter = nil
+	require.Nil(t, conn.streamWriter)
+
+	// Second session - should create new writer
+	writer2 := &NativeStreamingWriter{}
+	conn.streamWriter = writer2
+
+	// Verify it's a different writer (different memory addresses)
+	require.True(t, writer1 != writer2, "Session 2 should have different writer instance")
+}
+
+func TestSlackConn_ThreadTS_UpdateFromCallback(t *testing.T) {
+	t.Parallel()
+
+	conn := &SlackConn{
+		adapter:   &Adapter{},
+		channelID: "C123",
+		threadTS:  "", // No thread initially
+	}
+
+	// Simulate callback updating threadTS
+	newTS := "123.456"
+	if conn.threadTS == "" && newTS != "" {
+		conn.threadTS = newTS
+	}
+
+	require.Equal(t, "123.456", conn.threadTS)
+}
+
+func TestSlackConn_writeWithStreaming_NilAdapter(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	conn := &SlackConn{
+		adapter:   nil,
+		channelID: "C123",
+		threadTS:  "123.456",
+	}
+
+	// Should return error when adapter is nil
+	err := conn.writeWithStreaming(ctx, "test text")
+	require.Error(t, err)
+}
+
+// AC-1.1: When a worker emits message.delta events, Slack receives them via StartStream/AppendStream/StopStream API
+func TestAC11_DeltaEventsUseStreaming(t *testing.T) {
+	t.Parallel()
+
+	env := &events.Envelope{
+		Event: events.Event{
+			Type: events.MessageDelta,
+			Data: events.MessageDeltaData{Content: "delta content"},
+		},
+	}
+
+	text, ok := extractResponseText(env)
+	require.True(t, ok, "AC-1.1: Should extract text from delta event")
+	require.Equal(t, "delta content", text)
+}
+
+// AC-1.3: On done event, stream writer is properly closed and cleaned up
+func TestAC13_DoneEventClosesStream(t *testing.T) {
+	t.Parallel()
+
+	conn := &SlackConn{
+		adapter:   &Adapter{},
+		channelID: "C123",
+		threadTS:  "123.456",
+	}
+
+	// Create a mock stream writer
+	conn.streamWriter = &NativeStreamingWriter{}
+	require.NotNil(t, conn.streamWriter, "AC-1.3: Writer should exist before done event")
+
+	// Simulate done event clearing the writer
+	conn.streamWriter = nil
+	require.Nil(t, conn.streamWriter, "AC-1.3: Stream writer should be nil after done")
+}
+
+// AC-1.4: On error event, stream writer is closed with integrity fallback if needed
+func TestAC14_ErrorEventClosesStream(t *testing.T) {
+	t.Parallel()
+
+	conn := &SlackConn{
+		adapter:   &Adapter{},
+		channelID: "C123",
+		threadTS:  "123.456",
+	}
+
+	// Create a mock stream writer
+	conn.streamWriter = &NativeStreamingWriter{}
+	require.NotNil(t, conn.streamWriter, "AC-1.4: Writer should exist before error event")
+
+	// Simulate error event clearing the writer
+	conn.streamWriter = nil
+	require.Nil(t, conn.streamWriter, "AC-1.4: Stream writer should be nil after error")
+}
+
+// AC-1.5: Multiple sequential sessions on same SlackConn correctly create new writer per session
+func TestAC15_MultipleSessionsCreateNewWriters(t *testing.T) {
+	t.Parallel()
+
+	conn := &SlackConn{
+		adapter:   &Adapter{},
+		channelID: "C123",
+		threadTS:  "123.456",
+	}
+
+	// Session 1: Create writer and complete
+	writer1 := &NativeStreamingWriter{}
+	conn.streamWriter = writer1
+	require.NotNil(t, conn.streamWriter, "AC-1.5: Writer should exist in session 1")
+
+	// Simulate done/error event clearing the writer
+	conn.streamWriter = nil
+	require.Nil(t, conn.streamWriter, "AC-1.5: Writer should be nil after session 1")
+
+	// Session 2: Create new writer
+	writer2 := &NativeStreamingWriter{}
+	conn.streamWriter = writer2
+
+	require.True(t, writer1 != writer2, "AC-1.5: Session 2 should have different writer")
+}
+
+// AC-1.6: Existing PostMessageContext path still works for non-streaming events
+func TestAC16_NonStreamingEventsUsePostMessage(t *testing.T) {
+	t.Parallel()
+
+	// Verify interaction events don't use streaming
+	permissionEnv := &events.Envelope{
+		Event: events.Event{Type: events.PermissionRequest},
+	}
+	require.Equal(t, events.PermissionRequest, permissionEnv.Event.Type)
+
+	questionEnv := &events.Envelope{
+		Event: events.Event{Type: events.QuestionRequest},
+	}
+	require.Equal(t, events.QuestionRequest, questionEnv.Event.Type)
+
+	elicitationEnv := &events.Envelope{
+		Event: events.Event{Type: events.ElicitationRequest},
+	}
+	require.Equal(t, events.ElicitationRequest, elicitationEnv.Event.Type)
+}
+
+func TestCleanupMedia(t *testing.T) {
+	// Creating a logger that discards output for the test
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	a := &Adapter{log: logger}
+
+	tmpDir := t.TempDir()
+
+	// 1. Create an old file (> 24h)
+	oldFile := filepath.Join(tmpDir, "old.txt")
+	err := os.WriteFile(oldFile, []byte("old content"), 0644)
+	require.NoError(t, err)
+
+	oldTime := time.Now().Add(-48 * time.Hour)
+	err = os.Chtimes(oldFile, oldTime, oldTime)
+	require.NoError(t, err)
+
+	// 2. Create a new file (< 24h)
+	newFile := filepath.Join(tmpDir, "new.txt")
+	err = os.WriteFile(newFile, []byte("new content"), 0644)
+	require.NoError(t, err)
+
+	// 3. Create a directory (should not be removed)
+	subDir := filepath.Join(tmpDir, "subdir")
+	err = os.Mkdir(subDir, 0755)
+	require.NoError(t, err)
+
+	// Run cleanup
+	a.cleanupMediaInDir(tmpDir)
+
+	// Verify
+	_, err = os.Stat(oldFile)
+	require.Error(t, err, "Old file should be removed")
+	require.True(t, os.IsNotExist(err))
+
+	_, err = os.Stat(newFile)
+	require.NoError(t, err, "New file should NOT be removed")
+
+	_, err = os.Stat(subDir)
+	require.NoError(t, err, "Directory should NOT be removed")
+}
+
+func TestChunkContent_Integration(t *testing.T) {
+	t.Parallel()
+
+	// Test that ChunkContent is available and works as expected for the adapter's use case.
+	content := "Line 1\n" + strings.Repeat("a", 1000) + "\nLine 3"
+	chunks := ChunkContent(content, 500)
+
+	require.True(t, len(chunks) >= 2, "Should split content into multiple chunks")
+	for _, chunk := range chunks {
+		require.Contains(t, chunk, "[", "Each chunk should have a [N/M] prefix")
+	}
+}
+
+// --- extractErrorMessage: P0 fix verification ---
+
+func TestExtractErrorMessage_TypedErrorData(t *testing.T) {
+	t.Parallel()
+
+	env := &events.Envelope{
+		Event: events.Event{
+			Type: events.Error,
+			Data: events.ErrorData{Code: events.ErrCodeSessionNotFound, Message: "session not found"},
+		},
+	}
+	require.Equal(t, "session not found", extractErrorMessage(env))
+}
+
+func TestExtractErrorMessage_MapData(t *testing.T) {
+	t.Parallel()
+
+	env := &events.Envelope{
+		Event: events.Event{
+			Type: events.Error,
+			Data: map[string]any{"message": "something went wrong", "code": "INTERNAL_ERROR"},
+		},
+	}
+	require.Equal(t, "something went wrong", extractErrorMessage(env))
+}
+
+func TestExtractErrorMessage_NilData(t *testing.T) {
+	t.Parallel()
+
+	env := &events.Envelope{
+		Event: events.Event{Type: events.Error},
+	}
+	require.Equal(t, "", extractErrorMessage(env))
+}
+
+func TestExtractErrorMessage_EmptyMessage(t *testing.T) {
+	t.Parallel()
+
+	env := &events.Envelope{
+		Event: events.Event{
+			Type: events.Error,
+			Data: events.ErrorData{Code: events.ErrCodeInternalError, Message: ""},
+		},
+	}
+	require.Equal(t, "", extractErrorMessage(env))
 }

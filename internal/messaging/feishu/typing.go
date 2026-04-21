@@ -19,7 +19,7 @@ var timelineEmojis = []struct {
 	threshold time.Duration
 	emoji     string
 }{
-	{3 * time.Second, "YEAH"},         // 耶
+	{0, "YEAH"},                       // 耶
 	{10 * time.Second, "SMILE"},       // 呲牙
 	{30 * time.Second, "THINKING"},    // 思考
 	{1 * time.Minute, "SMUG"},         // 得意
@@ -32,13 +32,16 @@ var timelineEmojis = []struct {
 }
 
 // timelineEmoji returns the emoji_type for the given elapsed duration.
-// Falls back to "PETRIFIED" (石化) for anything beyond 30 minutes.
 func timelineEmoji(elapsed time.Duration) string {
-	result := "PETRIFIED" // 石化 — 30m+
+	result := ""
 	for _, t := range timelineEmojis {
 		if elapsed >= t.threshold {
 			result = t.emoji
 		}
+	}
+	// No match means < 0 (impossible), but guard anyway.
+	if result == "" {
+		return timelineEmojis[0].emoji
 	}
 	return result
 }

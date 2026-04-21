@@ -196,7 +196,7 @@ import type { UIMessage, ChatTransport } from 'ai';
 
 export interface HotPlexConfig {
   url: string;
-  workerType: 'claude_code' | 'opencode_cli' | 'opencode_server';
+  workerType: 'claude_code' | 'opencode_server';
   authToken?: string;
   sessionId?: string;
   reconnect?: {

@@ -2,6 +2,7 @@ package feishu
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -11,6 +12,14 @@ import (
 // Prevents goroutine leaks from tasks blocked on external APIs indefinitely.
 const chatTaskTimeout = 10 * time.Minute
 
+// chatIdleTimeout is how long a worker goroutine waits for new tasks before
+// self-cleaning. Prevents goroutine leaks from one-off chats.
+const chatIdleTimeout = 5 * time.Minute
+
+// ChatQueue serializes message sends per chatID to prevent reordering.
+// Each chatID gets a dedicated goroutine that processes tasks sequentially
+// through a buffered channel, eliminating race conditions that existed in the
+// previous goroutine-chaining approach.
 type ChatQueue struct {
 	log     *slog.Logger
 	mu      sync.Mutex
@@ -18,9 +27,9 @@ type ChatQueue struct {
 }
 
 type chatWorker struct {
+	tasks  chan func(ctx context.Context) error
 	mu     sync.Mutex
 	cancel context.CancelFunc
-	done   chan struct{}
 }
 
 func NewChatQueue(log *slog.Logger) *ChatQueue {
@@ -30,60 +39,73 @@ func NewChatQueue(log *slog.Logger) *ChatQueue {
 	}
 }
 
+// Enqueue submits a task for serial execution on the given chatID.
+// If no worker exists for the chatID, one is created.
+// Returns an error if the per-chatID task channel is full.
 func (q *ChatQueue) Enqueue(chatID string, task func(ctx context.Context) error) error {
 	q.mu.Lock()
 	w, exists := q.workers[chatID]
 	if !exists {
-		w = &chatWorker{done: make(chan struct{})}
+		w = &chatWorker{
+			tasks: make(chan func(ctx context.Context) error, 64),
+		}
 		q.workers[chatID] = w
 	}
 	q.mu.Unlock()
 
 	if !exists {
-		ctx, cancel := context.WithTimeout(context.Background(), chatTaskTimeout)
-		w.mu.Lock()
-		w.cancel = cancel
-		w.mu.Unlock()
+		go q.runWorker(chatID, w)
+	}
 
-		go func() {
-			defer close(w.done)
-			defer cancel()
-			if err := task(ctx); err != nil && ctx.Err() == nil && q.log != nil {
-				q.log.Warn("feishu: chat queue task error", "chat_id", chatID, "error", err)
+	select {
+	case w.tasks <- task:
+		return nil
+	default:
+		return fmt.Errorf("feishu: chat queue full for %s", chatID)
+	}
+}
+
+// runWorker processes tasks from the channel sequentially for a single chatID.
+// It exits when: (1) the channel is closed (via Close), or (2) idle timeout
+// elapses with no new tasks. On exit, it removes itself from the workers map.
+func (q *ChatQueue) runWorker(chatID string, w *chatWorker) {
+	idleTimer := time.NewTimer(chatIdleTimeout)
+	defer idleTimer.Stop()
+
+	for {
+		select {
+		case task, ok := <-w.tasks:
+			if !ok {
+				q.mu.Lock()
+				delete(q.workers, chatID)
+				q.mu.Unlock()
+				return
 			}
+			if !idleTimer.Stop() {
+				<-idleTimer.C
+			}
+			idleTimer.Reset(chatIdleTimeout)
+
+			ctx, cancel := context.WithTimeout(context.Background(), chatTaskTimeout)
+			w.mu.Lock()
+			w.cancel = cancel
+			w.mu.Unlock()
+
+			if err := task(ctx); err != nil && ctx.Err() == nil && q.log != nil {
+				q.log.Warn("feishu: chat queue task error", "chat_id", chatID, "err", err)
+			}
+			cancel()
+
+		case <-idleTimer.C:
 			q.mu.Lock()
 			delete(q.workers, chatID)
 			q.mu.Unlock()
-		}()
-		return nil
-	}
-
-	go func() {
-		<-w.done
-
-		q.mu.Lock()
-		newW := &chatWorker{done: make(chan struct{})}
-		q.workers[chatID] = newW
-		q.mu.Unlock()
-
-		ctx, cancel := context.WithTimeout(context.Background(), chatTaskTimeout)
-		newW.mu.Lock()
-		newW.cancel = cancel
-		newW.mu.Unlock()
-
-		defer close(newW.done)
-		defer cancel()
-		if err := task(ctx); err != nil && ctx.Err() == nil && q.log != nil {
-			q.log.Warn("feishu: chat queue task error", "chat_id", chatID, "error", err)
+			return
 		}
-		q.mu.Lock()
-		delete(q.workers, chatID)
-		q.mu.Unlock()
-	}()
-
-	return nil
+	}
 }
 
+// Abort cancels the currently running task for the given chatID.
 func (q *ChatQueue) Abort(chatID string) {
 	q.mu.Lock()
 	w, exists := q.workers[chatID]
@@ -101,5 +123,20 @@ func (q *ChatQueue) Abort(chatID string) {
 
 	if q.log != nil {
 		q.log.Debug("feishu: aborted task for chat", "chat_id", chatID)
+	}
+}
+
+// Close shuts down all worker goroutines by closing their task channels.
+// It waits for all in-flight tasks to complete.
+func (q *ChatQueue) Close() {
+	q.mu.Lock()
+	workers := make(map[string]*chatWorker, len(q.workers))
+	for k, v := range q.workers {
+		workers[k] = v
+	}
+	q.mu.Unlock()
+
+	for _, w := range workers {
+		close(w.tasks)
 	}
 }

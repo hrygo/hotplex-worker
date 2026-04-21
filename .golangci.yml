@@ -28,7 +28,7 @@ linters:
         linters:
           - staticcheck
         text: 'QF1008'
-      - path: 'worker/(claudecode|opencodecli)/worker\.go'
+      - path: 'worker/claudecode/worker\.go'
         linters:
           - staticcheck
         text: 'QF1008'

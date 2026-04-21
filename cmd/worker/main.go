@@ -30,7 +30,6 @@ import (
 	"github.com/hotplex/hotplex-worker/internal/tracing"
 	"github.com/hotplex/hotplex-worker/internal/worker"
 	_ "github.com/hotplex/hotplex-worker/internal/worker/claudecode"
-	_ "github.com/hotplex/hotplex-worker/internal/worker/opencodecli"
 	_ "github.com/hotplex/hotplex-worker/internal/worker/opencodeserver"
 	_ "github.com/hotplex/hotplex-worker/internal/worker/pi"
 	"github.com/hotplex/hotplex-worker/pkg/aep"
@@ -76,7 +75,15 @@ func run() error {
 		level = slog.LevelInfo
 	}
 
-	opts := &slog.HandlerOptions{Level: level}
+	opts := &slog.HandlerOptions{
+		Level: level,
+		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+			if len(groups) == 0 && a.Key == slog.TimeKey {
+				return slog.String(slog.TimeKey, a.Value.Time().Format("2006-01-02T15:04:05.0000"))
+			}
+			return a
+		},
+	}
 	if cfg.Log.Format == "text" {
 		logHandler = slog.NewTextHandler(os.Stdout, opts)
 	} else {
@@ -167,6 +174,14 @@ func run() error {
 
 	handler := gateway.NewHandler(log, cfg, hub, sm, jwtValidator)
 	bridge := gateway.NewBridge(log, hub, sm, msgStore)
+	handler.SetBridge(bridge)
+
+	// Wire LLM auto-retry if enabled.
+	if cfg.Worker.AutoRetry.Enabled {
+		retryCtrl := gateway.NewLLMRetryController(cfg.Worker.AutoRetry, log)
+		bridge.SetRetryController(retryCtrl)
+		log.Info("gateway: LLM auto-retry enabled", "max_retries", cfg.Worker.AutoRetry.MaxRetries, "base_delay", cfg.Worker.AutoRetry.BaseDelay)
+	}
 
 	mux := http.NewServeMux()
 	deps := &GatewayDeps{
@@ -227,6 +242,10 @@ func run() error {
 			log.Warn("messaging: adapter close", "err", err)
 		}
 	}
+
+	// Wait for all bridge forwardEvents goroutines to finish before
+	// closing the session store (which would cause "sql: database is closed" errors).
+	bridge.Shutdown()
 
 	if err := sm.Close(); err != nil {
 		log.Warn("gateway: session manager close", "err", err)
@@ -475,6 +494,24 @@ func startMessagingAdapters(ctx context.Context, log *slog.Logger, cfg *config.C
 		case messaging.PlatformSlack:
 			if sa, ok := adapter.(*slack.Adapter); ok {
 				sa.Configure(cfg.Messaging.Slack.BotToken, cfg.Messaging.Slack.AppToken, msgBridge)
+				gate := slack.NewGate(
+					cfg.Messaging.Slack.DMPolicy,
+					cfg.Messaging.Slack.GroupPolicy,
+					cfg.Messaging.Slack.RequireMention,
+					cfg.Messaging.Slack.AllowFrom,
+					cfg.Messaging.Slack.AllowDMFrom,
+					cfg.Messaging.Slack.AllowGroupFrom,
+				)
+				sa.SetGate(gate)
+				sa.SetAssistantEnabled(cfg.Messaging.Slack.AssistantAPIEnabled)
+				sa.SetReconnectDelays(cfg.Messaging.Slack.ReconnectBaseDelay, cfg.Messaging.Slack.ReconnectMaxDelay)
+				if stages := cfg.Messaging.Slack.TypingStages; len(stages) > 0 {
+					ts := make([]slack.TypingStage, len(stages))
+					for i, s := range stages {
+						ts[i] = slack.TypingStage{After: s.After, Emoji: s.Emoji}
+					}
+					sa.SetTypingStages(ts)
+				}
 			}
 		case messaging.PlatformFeishu:
 			if fa, ok := adapter.(*feishu.Adapter); ok {
@@ -484,6 +521,8 @@ func startMessagingAdapters(ctx context.Context, log *slog.Logger, cfg *config.C
 					cfg.Messaging.Feishu.GroupPolicy,
 					cfg.Messaging.Feishu.RequireMention,
 					cfg.Messaging.Feishu.AllowFrom,
+					cfg.Messaging.Feishu.AllowDMFrom,
+					cfg.Messaging.Feishu.AllowGroupFrom,
 				)
 				fa.SetGate(gate)
 

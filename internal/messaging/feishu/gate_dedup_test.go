@@ -11,23 +11,27 @@ import (
 
 func TestNewGate(t *testing.T) {
 	t.Parallel()
-	g := NewGate("open", "open", false, []string{"ou_1", "ou_2"})
+	g := NewGate("open", "open", false, []string{"ou_1", "ou_2"}, []string{"ou_dm"}, []string{"ou_group"})
 	require.NotNil(t, g)
 	require.True(t, g.allowFrom["ou_1"])
 	require.True(t, g.allowFrom["ou_2"])
+	require.True(t, g.allowDMFrom["ou_dm"])
+	require.True(t, g.allowGroupFrom["ou_group"])
 }
 
 func TestNewGate_EmptyAllowlist(t *testing.T) {
 	t.Parallel()
-	g := NewGate("open", "open", false, nil)
+	g := NewGate("open", "open", false, nil, nil, nil)
 	require.NotNil(t, g)
 	require.Len(t, g.allowFrom, 0)
+	require.Len(t, g.allowDMFrom, 0)
+	require.Len(t, g.allowGroupFrom, 0)
 }
 
 // TC-4.1-1: dm_policy=disabled 拒绝所有 DM
 func TestGate_DM_Disabled(t *testing.T) {
 	t.Parallel()
-	g := NewGate("disabled", "open", false, nil)
+	g := NewGate("disabled", "open", false, nil, nil, nil)
 	result := g.Check("p2p", "ou_any", false)
 	require.False(t, result.Allowed)
 	require.Equal(t, "dm_disabled", result.Reason)
@@ -36,7 +40,7 @@ func TestGate_DM_Disabled(t *testing.T) {
 // TC-4.1-2: dm_policy=open 允许所有 DM
 func TestGate_DM_Open(t *testing.T) {
 	t.Parallel()
-	g := NewGate("open", "open", false, nil)
+	g := NewGate("open", "open", false, nil, nil, nil)
 	result := g.Check("p2p", "ou_any", false)
 	require.True(t, result.Allowed)
 	require.Empty(t, result.Reason)
@@ -45,11 +49,15 @@ func TestGate_DM_Open(t *testing.T) {
 // TC-4.1-3: dm_policy=allowlist 仅允许白名单用户 DM
 func TestGate_DM_Allowlist(t *testing.T) {
 	t.Parallel()
-	g := NewGate("allowlist", "open", false, []string{"ou_allowed"})
-	result := g.Check("p2p", "ou_allowed", false)
-	require.True(t, result.Allowed)
-
-	result = g.Check("p2p", "ou_denied", false)
+	g := NewGate("allowlist", "open", false, []string{"ou_global"}, []string{"ou_dm"}, nil)
+	// Global allowed
+	require.True(t, g.Check("p2p", "ou_global", false).Allowed)
+	// DM specific allowed
+	require.True(t, g.Check("p2p", "ou_dm", false).Allowed)
+	// Group specific NOT allowed for DM
+	require.False(t, g.Check("p2p", "ou_group", false).Allowed)
+	// Totally denied
+	result := g.Check("p2p", "ou_denied", false)
 	require.False(t, result.Allowed)
 	require.Equal(t, "not_in_allowlist", result.Reason)
 }
@@ -57,7 +65,7 @@ func TestGate_DM_Allowlist(t *testing.T) {
 // TC-4.1-4: group_policy=disabled 拒绝所有群消息
 func TestGate_Group_Disabled(t *testing.T) {
 	t.Parallel()
-	g := NewGate("open", "disabled", false, nil)
+	g := NewGate("open", "disabled", false, nil, nil, nil)
 	result := g.Check("group", "ou_any", false)
 	require.False(t, result.Allowed)
 	require.Equal(t, "group_disabled", result.Reason)
@@ -66,7 +74,7 @@ func TestGate_Group_Disabled(t *testing.T) {
 // TC-4.1-5: require_mention=true 且未 @bot 时拒绝
 func TestGate_Group_NoMention(t *testing.T) {
 	t.Parallel()
-	g := NewGate("open", "open", true, nil)
+	g := NewGate("open", "open", true, nil, nil, nil)
 	result := g.Check("group", "ou_any", false) // bot not mentioned
 	require.False(t, result.Allowed)
 	require.Equal(t, "no_mention", result.Reason)
@@ -75,7 +83,7 @@ func TestGate_Group_NoMention(t *testing.T) {
 // TC-4.1-6: require_mention=true 且已 @bot 时允许
 func TestGate_Group_WithMention(t *testing.T) {
 	t.Parallel()
-	g := NewGate("open", "open", true, nil)
+	g := NewGate("open", "open", true, nil, nil, nil)
 	result := g.Check("group", "ou_any", true) // bot mentioned
 	require.True(t, result.Allowed)
 }
@@ -83,7 +91,7 @@ func TestGate_Group_WithMention(t *testing.T) {
 // TC-4.1-7: topic_group 与 group 策略一致
 func TestGate_TopicGroup_UsesGroupPolicy(t *testing.T) {
 	t.Parallel()
-	g := NewGate("open", "disabled", false, nil)
+	g := NewGate("open", "disabled", false, nil, nil, nil)
 	result := g.Check("topic_group", "ou_any", false)
 	require.False(t, result.Allowed)
 	require.Equal(t, "group_disabled", result.Reason)
@@ -92,11 +100,15 @@ func TestGate_TopicGroup_UsesGroupPolicy(t *testing.T) {
 // TC-4.1-3 extended: group allowlist
 func TestGate_Group_Allowlist(t *testing.T) {
 	t.Parallel()
-	g := NewGate("open", "allowlist", false, []string{"ou_allowed"})
-	result := g.Check("group", "ou_allowed", false)
-	require.True(t, result.Allowed)
-
-	result = g.Check("group", "ou_denied", false)
+	g := NewGate("open", "allowlist", false, []string{"ou_global"}, nil, []string{"ou_group"})
+	// Global allowed
+	require.True(t, g.Check("group", "ou_global", false).Allowed)
+	// Group specific allowed
+	require.True(t, g.Check("group", "ou_group", false).Allowed)
+	// DM specific NOT allowed for group
+	require.False(t, g.Check("group", "ou_dm", false).Allowed)
+	// Totally denied
+	result := g.Check("group", "ou_denied", false)
 	require.False(t, result.Allowed)
 	require.Equal(t, "not_in_allowlist", result.Reason)
 }
@@ -104,7 +116,7 @@ func TestGate_Group_Allowlist(t *testing.T) {
 // TC-4.1-6 extended: group with mention + allowlist
 func TestGate_Group_RequireMention_Allowlist(t *testing.T) {
 	t.Parallel()
-	g := NewGate("open", "allowlist", true, []string{"ou_allowed"})
+	g := NewGate("open", "allowlist", true, []string{"ou_allowed"}, nil, nil)
 	result := g.Check("group", "ou_allowed", true)
 	require.True(t, result.Allowed)
 
@@ -119,14 +131,16 @@ func TestGate_Group_RequireMention_Allowlist(t *testing.T) {
 
 func TestGate_UpdateAllowFrom(t *testing.T) {
 	t.Parallel()
-	g := NewGate("allowlist", "allowlist", false, []string{"ou_1"})
+	g := NewGate("allowlist", "allowlist", false, []string{"ou_1"}, []string{"ou_dm1"}, []string{"ou_gp1"})
 	require.True(t, g.allowFrom["ou_1"])
-	require.False(t, g.allowFrom["ou_2"])
+	require.True(t, g.allowDMFrom["ou_dm1"])
+	require.True(t, g.allowGroupFrom["ou_gp1"])
 
-	g.UpdateAllowFrom([]string{"ou_2", "ou_3"})
+	g.UpdateAllowFrom([]string{"ou_2"}, []string{"ou_dm2"}, []string{"ou_gp2"})
 	require.False(t, g.allowFrom["ou_1"])
 	require.True(t, g.allowFrom["ou_2"])
-	require.True(t, g.allowFrom["ou_3"])
+	require.True(t, g.allowDMFrom["ou_dm2"])
+	require.True(t, g.allowGroupFrom["ou_gp2"])
 }
 
 // ─── Dedup: message expiry tests ─────────────────────────────────────────────

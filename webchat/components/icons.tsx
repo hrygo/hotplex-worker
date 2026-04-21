@@ -20,7 +20,6 @@ export function BrandIcon({ size = 28, style, className }: { size?: number; styl
 
 export const WORKER_DISPLAY: Record<string, string> = {
   claude_code: "claude",
-  opencode_cli: "opencode",
   opencode_server: "opencode",
   acpx: "acpx",
   pimon: "pimon",

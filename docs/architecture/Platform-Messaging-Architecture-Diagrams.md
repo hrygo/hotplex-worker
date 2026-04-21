@@ -69,7 +69,7 @@
 │                                        ▼                                           │
 │   ┌─────────────────────────────────────────────────────────────────────────┐     │
 │   │                      Worker Registry + 5 Adapters                         │     │
-│   │  ClaudeCode │ OpenCodeCLI │ OpenCodeSrv │ ACPX │ Pi-mono             │     │
+│   │  ClaudeCode │ OpenCodeSrv │ ACPX │ Pi-mono             │     │
 │   │  (stdio)     │  (stdio)     │  (HTTP)      │(NDJSON)│ (stdio)         │     │
 │   └─────────────────────────────────────────────────────────────────────────┘     │
 └──────────────────────────────────────────────────────────────────────────────────────┘
@@ -102,7 +102,7 @@ internal/
     worker.go    Worker 接口
     registry.go  自注册工厂
     base/        共享生命周期基座
-    claudecode/ opencodecli/ opencodesrv/ acpx/ pimon/
+    claudecode/ opencodesrv/ acpx/ pimon/
 
   messaging/           ★ NEW (~650 行, 零核心文件改动)
   ├── platform_conn.go       PlatformConn 接口 (WriteCtx + Close)
@@ -312,7 +312,7 @@ PlatformConn 接口 (messaging/platform_conn.go)
 │  New       func New(t, log) Worker       func New(t, log)       │
 ├─────────────────────────────────────────────────────────────────┤
 │  init()   claudecode/ → Register()      slack/ → Register()    │
-│           opencodecli/→ Register()       feishu/ → Register()   │
+│           feishu/ → Register()   │
 │           ...                            ...                    │
 └─────────────────────────────────────────────────────────────────┘
 ```

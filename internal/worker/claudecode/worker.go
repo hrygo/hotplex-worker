@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
+	"os/user"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -56,7 +59,9 @@ const defaultSessionStoreDir = ".claude/projects"
 type Worker struct {
 	*base.BaseWorker
 
-	sessionID string
+	sessionID   string
+	projectDir  string             // original working directory for the worker process
+	origSession worker.SessionInfo // first Start's session info, reused by ResetContext
 
 	// Protocol layers
 	parser  *Parser
@@ -131,7 +136,13 @@ func (w *Worker) startLocked(_ context.Context, session worker.SessionInfo, resu
 	w.cancel = cancel
 
 	w.sessionID = session.SessionID
+	w.projectDir = session.ProjectDir
 	w.seq.Store(0)
+
+	// Preserve original session info for ResetContext (only on first Start).
+	if w.origSession.SessionID == "" {
+		w.origSession = session
+	}
 
 	// readLineFn: use test override if set, otherwise real proc reader.
 	if w.readLineFn == nil {
@@ -233,16 +244,38 @@ func (w *Worker) Input(ctx context.Context, content string, metadata map[string]
 		return fmt.Errorf("claudecode: not started")
 	}
 
-	// Check if this is a permission response
+	// Check if this is a control response (permission, question, or elicitation)
 	if metadata != nil {
 		if permResp, ok := metadata["permission_response"].(map[string]any); ok {
 			reqID, _ := permResp["request_id"].(string)
 			allowed, _ := permResp["allowed"].(bool)
 			reason, _ := permResp["reason"].(string)
 
-			// Send permission response to Claude Code
 			if err := w.control.SendPermissionResponse(reqID, allowed, reason); err != nil {
 				return fmt.Errorf("claudecode: permission response: %w", err)
+			}
+
+			w.SetLastIO(time.Now())
+			return nil
+		}
+		if qResp, ok := metadata["question_response"].(map[string]any); ok {
+			reqID, _ := qResp["id"].(string)
+			answers, _ := qResp["answers"].(map[string]string)
+
+			if err := w.control.SendQuestionResponse(reqID, answers); err != nil {
+				return fmt.Errorf("claudecode: question response: %w", err)
+			}
+
+			w.SetLastIO(time.Now())
+			return nil
+		}
+		if eResp, ok := metadata["elicitation_response"].(map[string]any); ok {
+			reqID, _ := eResp["id"].(string)
+			action, _ := eResp["action"].(string)
+			eContent, _ := eResp["content"].(map[string]any)
+
+			if err := w.control.SendElicitationResponse(reqID, action, eContent); err != nil {
+				return fmt.Errorf("claudecode: elicitation response: %w", err)
 			}
 
 			w.SetLastIO(time.Now())
@@ -301,44 +334,103 @@ func (w *Worker) LastIO() time.Time {
 	return w.BaseWorker.LastIO()
 }
 
-// ResetContext clears the worker runtime context.
-// Claude Code does not support in-place context clearing, so this terminates the
-// current process and starts a fresh one with --resume to recreate session files.
-// The Gateway layer has already called sm.ClearContext() to clear SessionInfo.Context.
+// ResetContext clears the worker runtime context for a fresh start.
+// Claude Code does not support in-place context clearing, so this:
+//  1. Terminates the current process
+//  2. Deletes session files from ~/.claude/projects/*/<id>.jsonl and related paths
+//  3. Starts a fresh process with --session-id (same ID, no files to conflict)
+//
+// The original session configuration (AllowedTools, SystemPrompt, MCPConfig, etc.)
+// is preserved from the first Start call via origSession.
+//
+// The caller (Bridge.ResetSession) must set intentionalExit before calling this
+// so that forwardEvents skips crash handling for the old process.
 func (w *Worker) ResetContext(ctx context.Context) error {
 	w.Mu.Lock()
-	sessionID := w.sessionID
+	orig := w.origSession
 	w.Mu.Unlock()
 
 	if err := w.Terminate(ctx); err != nil {
 		return fmt.Errorf("claudecode: reset terminate: %w", err)
 	}
 
-	// Reconstruct session info from current worker state.
-	conn := w.BaseWorker.Conn()
-	var userID, projectDir string
-	if conn != nil {
-		userID = conn.UserID()
-		projectDir = conn.SessionID() // same as sessionID for claudecode
-	}
-	if projectDir == "" {
-		projectDir = sessionID
+	// Delete session files so --session-id won't hit "already in use".
+	if err := w.deleteSessionFiles(); err != nil {
+		w.Log.Warn("claudecode: failed to delete session files, reset may fail", "err", err)
 	}
 
-	session := worker.SessionInfo{
-		SessionID:  sessionID,
-		UserID:     userID,
-		ProjectDir: projectDir,
+	// Reset readLineFn so the next Start() assigns the new Proc.ReadLine.
+	// Without this, the second Start reuses the OLD Proc.ReadLine which reads
+	// from the terminated process's stdout pipe, causing readOutput to exit
+	// immediately on EOF → forwardEvents force-kills the new worker after 2s.
+	w.Mu.Lock()
+	w.readLineFn = nil
+	w.Mu.Unlock()
+
+	// Reuse original session config (AllowedTools, SystemPrompt, MCPConfig, etc.)
+	// but clear WorkerSessionID since the Claude session files were deleted.
+	orig.WorkerSessionID = ""
+	return w.Start(ctx, orig)
+}
+
+// deleteSessionFiles removes Claude session files to prevent "already in use" errors on reset.
+// Claude Code stores session data at:
+//   - ~/.claude/projects/<hash>/<uuid>.jsonl  (conversation transcript)
+//   - ~/.claude/projects/<hash>/<uuid>         (session metadata directory)
+//   - ~/.claude/session-env/<uuid>              (session environment)
+//
+// The glob spans all project hashes since the hash algorithm is internal to Claude Code.
+func (w *Worker) deleteSessionFiles() error {
+	currentUser, err := user.Current()
+	if err != nil {
+		return fmt.Errorf("get home dir: %w", err)
 	}
-	return w.Start(ctx, session)
+	homeDir := currentUser.HomeDir
+
+	parsedID := aep.ParseSessionID(w.sessionID)
+
+	patterns := []string{
+		filepath.Join(homeDir, ".claude", "projects", "*", parsedID+".jsonl"), // transcript
+		filepath.Join(homeDir, ".claude", "projects", "*", parsedID),          // metadata dir
+		filepath.Join(homeDir, ".claude", "session-env", parsedID),            // env
+	}
+
+	var (
+		firstErr error
+		total    int
+	)
+	for _, pattern := range patterns {
+		matches, err := filepath.Glob(pattern)
+		if err != nil {
+			w.Log.Warn("claudecode: glob session files", "pattern", pattern, "err", err)
+			continue
+		}
+		for _, m := range matches {
+			if err := os.RemoveAll(m); err != nil && firstErr == nil {
+				firstErr = err
+				w.Log.Warn("claudecode: failed to remove session file", "path", m, "err", err)
+			} else {
+				w.Log.Debug("claudecode: removed session file", "path", m)
+				total++
+			}
+		}
+	}
+	if total > 0 {
+		w.Log.Info("claudecode: deleted session files for reset", "count", total, "session_id", w.sessionID)
+	}
+	return firstErr
 }
 
 // ─── Internal ────────────────────────────────────────────────────────────────
 
 func (w *Worker) readOutput(ctx context.Context) {
+	// Capture current Conn at entry to avoid closing the NEW Conn after reset.
+	// ResetContext.Start() replaces the Conn, but this goroutine's defer must
+	// close the OLD Conn that it was actually reading from.
+	entryConn := w.Conn()
 	defer func() {
-		if c := w.Conn(); c != nil {
-			_ = c.Close()
+		if entryConn != nil {
+			_ = entryConn.Close()
 		}
 	}()
 
@@ -401,27 +493,80 @@ func (w *Worker) readOutput(ctx context.Context) {
 				}
 				switch cr.Subtype {
 				case string(ControlCanUseTool):
-					// Forward to gateway for user approval
-					var input map[string]any
-					if len(cr.Input) > 0 {
-						_ = json.Unmarshal(cr.Input, &input)
-					}
-					args := []string{`{}`}
-					if len(input) > 0 {
-						if s, err := json.Marshal(input); err == nil {
-							args = []string{string(s)}
+					if cr.ToolName == "AskUserQuestion" {
+						// AskUserQuestion → QuestionRequest event
+						var questions []events.Question
+						if len(cr.Input) > 0 {
+							var input struct {
+								Questions []events.Question `json:"questions"`
+							}
+							_ = json.Unmarshal(cr.Input, &input)
+							questions = input.Questions
 						}
+						env := events.NewEnvelope(
+							aep.NewID(),
+							w.sessionID,
+							w.nextSeq(),
+							events.QuestionRequest,
+							events.QuestionRequestData{
+								ID:        cr.RequestID,
+								ToolName:  cr.ToolName,
+								Questions: questions,
+							},
+						)
+						w.trySend(env)
+					} else {
+						// Other tools → PermissionRequest event
+						var input map[string]any
+						if len(cr.Input) > 0 {
+							_ = json.Unmarshal(cr.Input, &input)
+						}
+						args := []string{`{}`}
+						if len(input) > 0 {
+							if s, err := json.Marshal(input); err == nil {
+								args = []string{string(s)}
+							}
+						}
+						env := events.NewEnvelope(
+							aep.NewID(),
+							w.sessionID,
+							w.nextSeq(),
+							events.PermissionRequest,
+							events.PermissionRequestData{
+								ID:          cr.RequestID,
+								ToolName:    cr.ToolName,
+								Description: cr.ToolName,
+								Args:        args,
+							},
+						)
+						w.trySend(env)
+					}
+				case "elicitation":
+					// MCP Elicitation → ElicitationRequest event
+					var elData struct {
+						MCPServerName   string         `json:"mcp_server_name"`
+						Message         string         `json:"message"`
+						Mode            string         `json:"mode,omitempty"`
+						URL             string         `json:"url,omitempty"`
+						ElicitationID   string         `json:"elicitation_id,omitempty"`
+						RequestedSchema map[string]any `json:"requested_schema,omitempty"`
+					}
+					if evt.RawMessage != nil && len(evt.RawMessage.Response) > 0 {
+						_ = json.Unmarshal(evt.RawMessage.Response, &elData)
 					}
 					env := events.NewEnvelope(
 						aep.NewID(),
 						w.sessionID,
 						w.nextSeq(),
-						events.PermissionRequest,
-						events.PermissionRequestData{
-							ID:          cr.RequestID,
-							ToolName:    cr.ToolName,
-							Description: cr.ToolName,
-							Args:        args,
+						events.ElicitationRequest,
+						events.ElicitationRequestData{
+							ID:              cr.RequestID,
+							MCPServerName:   elData.MCPServerName,
+							Message:         elData.Message,
+							Mode:            elData.Mode,
+							URL:             elData.URL,
+							ElicitationID:   elData.ElicitationID,
+							RequestedSchema: elData.RequestedSchema,
 						},
 					)
 					w.trySend(env)

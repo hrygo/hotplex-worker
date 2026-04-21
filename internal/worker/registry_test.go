@@ -35,7 +35,7 @@ func TestRegister(t *testing.T) {
 	t.Run("nil builder triggers panic", func(t *testing.T) {
 		withRegistry(t, func() {
 			require.Panics(t, func() {
-				Register(TypeOpenCodeCLI, nil)
+				Register(TypeOpenCodeSrv, nil)
 			}, "Register with nil builder must panic")
 		})
 	})
@@ -98,7 +98,7 @@ func TestRegisteredTypes(t *testing.T) {
 	t.Run("multiple registrations returns all types", func(t *testing.T) {
 		withRegistry(t, func() {
 			Register(TypeClaudeCode, func() (Worker, error) { return nil, nil })
-			Register(TypeOpenCodeCLI, func() (Worker, error) { return nil, nil })
+			Register(TypeOpenCodeSrv, func() (Worker, error) { return nil, nil })
 			Register(TypePimon, func() (Worker, error) { return nil, nil })
 
 			types := RegisteredTypes()
@@ -109,7 +109,7 @@ func TestRegisteredTypes(t *testing.T) {
 				typeSet[t2] = true
 			}
 			require.True(t, typeSet[TypeClaudeCode])
-			require.True(t, typeSet[TypeOpenCodeCLI])
+			require.True(t, typeSet[TypeOpenCodeSrv])
 			require.True(t, typeSet[TypePimon])
 		})
 	})

@@ -36,6 +36,15 @@ type BaseWorker struct {
 	lastIO    atomic.Int64 // unix nano, use LastIO() and SetLastIO() accessors
 	Mu        sync.Mutex
 	conn      *Conn // stdin-based conn, nil for HTTP-based adapters
+
+	// resetGen is a monotonic counter incremented before each deliberate
+	// Terminate+Start cycle (e.g. session reset). forwardEvents captures the
+	// value at goroutine start and checks after the recv channel closes: if the
+	// current generation differs from its captured value, another reset happened
+	// and the OLD forwardEvents should exit cleanly without crash handling.
+	// This replaces the previous boolean flag which suffered from a race where
+	// ResetSession reset the flag to false before OLD forwardEvents could check it.
+	resetGen atomic.Int64
 }
 
 // NewBaseWorker creates a new BaseWorker with the given logger and config.
@@ -180,3 +189,11 @@ func (w *BaseWorker) Conn() worker.SessionConn {
 	}
 	return w.conn
 }
+
+// IncResetGeneration increments the reset generation counter and returns the new value.
+// Called by Bridge.ResetSession before the Terminate+Start cycle.
+func (w *BaseWorker) IncResetGeneration() int64 { return w.resetGen.Add(1) }
+
+// LoadResetGeneration returns the current reset generation counter.
+// forwardEvents captures this at goroutine start to detect resets.
+func (w *BaseWorker) LoadResetGeneration() int64 { return w.resetGen.Load() }

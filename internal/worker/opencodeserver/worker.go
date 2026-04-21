@@ -288,6 +288,26 @@ func (w *Worker) Input(ctx context.Context, content string, metadata map[string]
 		return fmt.Errorf("opencodeserver: worker not started")
 	}
 
+	// Route interaction responses to OpenCode REST API endpoints.
+	if metadata != nil {
+		if permResp, ok := metadata["permission_response"].(map[string]any); ok {
+			reqID, _ := permResp["request_id"].(string)
+			allowed, _ := permResp["allowed"].(bool)
+			reply := "once"
+			if !allowed {
+				reply = "reject"
+			}
+			return w.httpPost(ctx, fmt.Sprintf("/permission/%s/reply", reqID),
+				map[string]string{"reply": reply})
+		}
+		if qResp, ok := metadata["question_response"].(map[string]any); ok {
+			reqID, _ := qResp["id"].(string)
+			answers, _ := qResp["answers"].(map[string]string)
+			return w.httpPost(ctx, fmt.Sprintf("/question/%s/reply", reqID),
+				map[string][][]string{"answers": answersToArrays(answers)})
+		}
+	}
+
 	// Construct AEP envelope with input event
 	msg := events.NewEnvelope(
 		aep.NewID(),
@@ -648,6 +668,22 @@ func (w *Worker) readSSE(sessionID string) {
 		// Decode AEP envelope
 		env, err := aep.DecodeLine([]byte(data))
 		if err != nil {
+			// Not AEP — try parsing as OpenCode bus event
+			var busEvent struct {
+				Type       string          `json:"type"`
+				Properties json.RawMessage `json:"properties"`
+			}
+			if jsonErr := json.Unmarshal([]byte(data), &busEvent); jsonErr == nil {
+				switch busEvent.Type {
+				case "permission.asked":
+					w.handlePermissionAsked(sessionID, busEvent.Properties)
+				case "question.asked":
+					w.handleQuestionAsked(sessionID, busEvent.Properties)
+				default:
+					w.Log.Debug("opencodeserver: unhandled bus event", "type", busEvent.Type)
+				}
+				continue
+			}
 			w.Log.Warn("opencodeserver: decode SSE data",
 				"error", err,
 				"data", data)
@@ -682,6 +718,120 @@ func (w *Worker) readSSE(sessionID string) {
 				"event_id", env.ID)
 		}
 	}
+}
+
+// ─── OpenCode Bus Event Handlers ──────────────────────────────────────────────
+
+// handlePermissionAsked converts a permission.asked bus event to an AEP
+// PermissionRequest envelope and forwards it to the recv channel.
+func (w *Worker) handlePermissionAsked(sessionID string, props json.RawMessage) {
+	var data struct {
+		ID       string         `json:"id"`
+		Metadata map[string]any `json:"metadata"`
+	}
+	if err := json.Unmarshal(props, &data); err != nil {
+		w.Log.Warn("opencodeserver: parse permission.asked", "error", err)
+		return
+	}
+
+	toolName, _ := data.Metadata["tool"].(string)
+	args, _ := json.Marshal(data.Metadata)
+	env := events.NewEnvelope(
+		aep.NewID(), sessionID, 0,
+		events.PermissionRequest,
+		events.PermissionRequestData{
+			ID:          data.ID,
+			ToolName:    toolName,
+			Description: toolName,
+			Args:        []string{string(args)},
+		},
+	)
+	w.trySend(env)
+}
+
+// handleQuestionAsked converts a question.asked bus event to an AEP
+// QuestionRequest envelope and forwards it to the recv channel.
+func (w *Worker) handleQuestionAsked(sessionID string, props json.RawMessage) {
+	var data struct {
+		ID        string            `json:"id"`
+		Questions []events.Question `json:"questions"`
+	}
+	if err := json.Unmarshal(props, &data); err != nil {
+		w.Log.Warn("opencodeserver: parse question.asked", "error", err)
+		return
+	}
+
+	env := events.NewEnvelope(
+		aep.NewID(), sessionID, 0,
+		events.QuestionRequest,
+		events.QuestionRequestData{
+			ID:        data.ID,
+			Questions: data.Questions,
+		},
+	)
+	w.trySend(env)
+}
+
+func (w *Worker) trySend(env *events.Envelope) {
+	w.Mu.Lock()
+	c := w.httpConn
+	closed := c == nil
+	w.Mu.Unlock()
+
+	if closed {
+		return
+	}
+
+	w.SetLastIO(time.Now())
+	select {
+	case c.recvCh <- env:
+	default:
+		w.Log.Warn("opencodeserver: recv channel full, dropping bus event",
+			"event_type", env.Event.Type)
+	}
+}
+
+// httpPost sends a JSON POST request to the OpenCode server.
+func (w *Worker) httpPost(ctx context.Context, path string, payload any) error {
+	w.Mu.Lock()
+	addr := w.httpAddr
+	w.Mu.Unlock()
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("opencodeserver: marshal payload: %w", err)
+	}
+
+	url := addr + path
+	req, err := http.NewRequestWithContext(ctx, "POST", url, strings.NewReader(string(body)))
+	if err != nil {
+		return fmt.Errorf("opencodeserver: create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := w.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("opencodeserver: post %s: %w", path, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("opencodeserver: post %s failed: status %d, body: %s",
+			path, resp.StatusCode, string(respBody))
+	}
+
+	return nil
+}
+
+// answersToArrays converts a map[string]string to [][]string for OpenCode's
+// question reply API which expects answer values only.
+func answersToArrays(m map[string]string) [][]string {
+	result := make([][]string, 0, len(m))
+	for _, v := range m {
+		result = append(result, []string{v})
+	}
+	return result
 }
 
 // ─── SessionConn Implementation ───────────────────────────────────────────────

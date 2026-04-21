@@ -137,12 +137,36 @@ type MessagingConfig struct {
 
 // SlackConfig holds Slack Socket Mode adapter settings.
 type SlackConfig struct {
-	Enabled    bool   `mapstructure:"enabled"`
-	BotToken   string `mapstructure:"bot_token"`
-	AppToken   string `mapstructure:"app_token"`
-	SocketMode bool   `mapstructure:"socket_mode"`
-	WorkerType string `mapstructure:"worker_type"`
-	WorkDir    string `mapstructure:"work_dir"`
+	Enabled             bool     `mapstructure:"enabled"`
+	BotToken            string   `mapstructure:"bot_token"`
+	AppToken            string   `mapstructure:"app_token"`
+	SocketMode          bool     `mapstructure:"socket_mode"`
+	WorkerType          string   `mapstructure:"worker_type"`
+	WorkDir             string   `mapstructure:"work_dir"`
+	AssistantAPIEnabled *bool    `mapstructure:"assistant_api_enabled"`
+	DMPolicy            string   `mapstructure:"dm_policy"`    // Policy for 1-on-1 chats: open, allowlist, disabled
+	GroupPolicy         string   `mapstructure:"group_policy"` // Policy for channels/groups: open, allowlist, disabled
+	RequireMention      bool     `mapstructure:"require_mention"`
+	AllowFrom           []string `mapstructure:"allow_from"`
+	AllowDMFrom         []string `mapstructure:"allow_dm_from"`
+	AllowGroupFrom      []string `mapstructure:"allow_group_from"`
+
+	// TypingStages configures multi-stage emoji progress indicators for free workspaces.
+	// Empty or nil uses DefaultStages (eyes → clock1 → hourglass → gear → hourglass).
+	TypingStages []TypingStageConfig `mapstructure:"typing_stages"`
+
+	// ReconnectBaseDelay is the initial delay between reconnection attempts.
+	// Default: 1s. The delay doubles with each attempt (exponential backoff).
+	ReconnectBaseDelay time.Duration `mapstructure:"reconnect_base_delay"`
+	// ReconnectMaxDelay is the maximum delay between reconnection attempts.
+	// Default: 60s. The delay will not exceed this value.
+	ReconnectMaxDelay time.Duration `mapstructure:"reconnect_max_delay"`
+}
+
+// TypingStageConfig defines a single emoji reaction stage for YAML/Viper deserialization.
+type TypingStageConfig struct {
+	After time.Duration `mapstructure:"after"`
+	Emoji string        `mapstructure:"emoji"`
 }
 
 // FeishuConfig holds Feishu WebSocket adapter settings.
@@ -153,10 +177,12 @@ type FeishuConfig struct {
 	WorkerType string `mapstructure:"worker_type"`
 	WorkDir    string `mapstructure:"work_dir"`
 
-	DMPolicy       string   `mapstructure:"dm_policy"`
-	GroupPolicy    string   `mapstructure:"group_policy"`
+	DMPolicy       string   `mapstructure:"dm_policy"`    // Policy for 1-on-1 chats: open, allowlist, disabled
+	GroupPolicy    string   `mapstructure:"group_policy"` // Policy for groups: open, allowlist, disabled
 	RequireMention bool     `mapstructure:"require_mention"`
 	AllowFrom      []string `mapstructure:"allow_from"`
+	AllowDMFrom    []string `mapstructure:"allow_dm_from"`
+	AllowGroupFrom []string `mapstructure:"allow_group_from"`
 
 	// Speech-to-text configuration.
 	// Provider: "feishu" (cloud API), "local" (external command),
@@ -216,12 +242,42 @@ type DBConfig struct {
 
 // WorkerConfig holds per-worker defaults.
 type WorkerConfig struct {
-	MaxLifetime      time.Duration `mapstructure:"max_lifetime"`
-	IdleTimeout      time.Duration `mapstructure:"idle_timeout"`
-	ExecutionTimeout time.Duration `mapstructure:"execution_timeout"`
-	AllowedEnvs      []string      `mapstructure:"allowed_envs"`
-	EnvWhitelist     []string      `mapstructure:"env_whitelist"`
-	DefaultWorkDir   string        `mapstructure:"default_work_dir"`
+	MaxLifetime      time.Duration   `mapstructure:"max_lifetime"`
+	IdleTimeout      time.Duration   `mapstructure:"idle_timeout"`
+	ExecutionTimeout time.Duration   `mapstructure:"execution_timeout"`
+	AllowedEnvs      []string        `mapstructure:"allowed_envs"`
+	EnvWhitelist     []string        `mapstructure:"env_whitelist"`
+	DefaultWorkDir   string          `mapstructure:"default_work_dir"`
+	AutoRetry        AutoRetryConfig `mapstructure:"auto_retry"`
+}
+
+// AutoRetryConfig controls automatic retry behavior when LLM provider returns
+// temporary errors (429 rate limit, 529 overload, 400 bad request, etc.).
+type AutoRetryConfig struct {
+	Enabled    bool          `mapstructure:"enabled"`
+	MaxRetries int           `mapstructure:"max_retries"`
+	BaseDelay  time.Duration `mapstructure:"base_delay"`
+	MaxDelay   time.Duration `mapstructure:"max_delay"`
+	RetryInput string        `mapstructure:"retry_input"`
+	NotifyUser bool          `mapstructure:"notify_user"`
+	Patterns   []string      `mapstructure:"patterns"`
+}
+
+// Defaults applies sensible defaults to AutoRetryConfig and returns the updated struct.
+func (c AutoRetryConfig) Defaults() AutoRetryConfig {
+	if c.MaxRetries <= 0 {
+		c.MaxRetries = 3
+	}
+	if c.BaseDelay <= 0 {
+		c.BaseDelay = 5 * time.Second
+	}
+	if c.MaxDelay <= 0 {
+		c.MaxDelay = 120 * time.Second
+	}
+	if c.RetryInput == "" {
+		c.RetryInput = "继续"
+	}
+	return c
 }
 
 // SecurityConfig holds auth and input validation settings.
@@ -281,10 +337,11 @@ func Default() *Config {
 		Worker: WorkerConfig{
 			MaxLifetime:      24 * time.Hour,
 			IdleTimeout:      60 * time.Minute,
-			ExecutionTimeout: 10 * time.Minute,
+			ExecutionTimeout: 30 * time.Minute,
 			AllowedEnvs:      nil,
 			EnvWhitelist:     nil,
 			DefaultWorkDir:   "/tmp/hotplex/workspace",
+			AutoRetry:        AutoRetryConfig{Enabled: true, MaxRetries: 3, BaseDelay: 5 * time.Second, MaxDelay: 120 * time.Second, RetryInput: "继续", NotifyUser: true},
 		},
 		Security: SecurityConfig{
 			APIKeyHeader:   "X-API-Key",
@@ -319,6 +376,18 @@ func Default() *Config {
 		Log: LogConfig{
 			Level:  "info",
 			Format: "json",
+		},
+		Messaging: MessagingConfig{
+			Feishu: FeishuConfig{
+				RequireMention: true,
+				DMPolicy:       "allowlist",
+				GroupPolicy:    "allowlist",
+			},
+			Slack: SlackConfig{
+				RequireMention: true,
+				DMPolicy:       "allowlist",
+				GroupPolicy:    "allowlist",
+			},
 		},
 	}
 }

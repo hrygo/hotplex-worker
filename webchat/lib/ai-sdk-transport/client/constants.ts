@@ -96,7 +96,6 @@ export type ControlAction = typeof ControlAction[keyof typeof ControlAction];
 // Worker types (from internal/worker/worker.go:72-77)
 export const WorkerType = {
   ClaudeCode: 'claude_code',
-  OpenCodeCLI: 'opencode_cli',
   OpenCodeServer: 'opencode_server',
   PiMono: 'pi-mono',
 } as const;

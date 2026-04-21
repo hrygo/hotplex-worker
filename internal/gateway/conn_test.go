@@ -179,7 +179,6 @@ func TestBackoffDuration(t *testing.T) {
 func TestSessionStateForWorker(t *testing.T) {
 	t.Parallel()
 	require.Equal(t, events.StateCreated, SessionStateForWorker(worker.TypeClaudeCode))
-	require.Equal(t, events.StateCreated, SessionStateForWorker(worker.TypeOpenCodeCLI))
 	require.Equal(t, events.StateCreated, SessionStateForWorker(worker.TypeOpenCodeSrv))
 	require.Equal(t, events.StateCreated, SessionStateForWorker(worker.TypePimon))
 }

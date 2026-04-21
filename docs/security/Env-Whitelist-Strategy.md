@@ -70,9 +70,6 @@ var WorkerEnvWhitelist = map[string][]string{
     "claude-code": append(BaseEnvWhitelist,
         "CLAUDE_API_KEY", "CLAUDE_MODEL", "CLAUDE_BASE_URL",
     ),
-    "opencode-cli": append(BaseEnvWhitelist,
-        "OPENAI_API_KEY", "OPENCODE_API_KEY",
-    ),
     "opencode-server": {},  // Server 模式无需环境变量
 }
 ```
@@ -336,7 +333,6 @@ worker:
       claude-code:
         - CLAUDE_API_KEY
         - CLAUDE_MODEL
-      opencode-cli:
         - OPENAI_API_KEY
       opencode-server: []
 

@@ -4,7 +4,7 @@ AI SDK ChatTransport adapter for HotPlex Worker Gateway (AEP v1 over WebSocket).
 
 ## Overview
 
-This package provides a bridge between Vercel AI SDK's `useChat` hook and HotPlex Worker Gateway's WebSocket-based AEP v1 protocol. It enables you to build chat interfaces using HotPlex's AI coding agents (Claude Code, OpenCode CLI) with the familiar AI SDK patterns.
+This package provides a bridge between Vercel AI SDK's `useChat` hook and HotPlex Worker Gateway's WebSocket-based AEP v1 protocol. It enables you to build chat interfaces using HotPlex's AI coding agents (Claude Code) with the familiar AI SDK patterns.
 
 ## Architecture
 
@@ -106,7 +106,6 @@ Creates a framework-agnostic route handler for HotPlex chat.
 ```typescript
 interface HotPlexRouteConfig {
   url: string;           // WebSocket URL of HotPlex gateway
-  workerType: string;    // 'claude_code' | 'opencode_cli' | 'opencode_server'
   authToken?: string;    // Optional authentication token
 }
 ```

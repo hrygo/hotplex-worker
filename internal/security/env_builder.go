@@ -22,11 +22,6 @@ var WorkerEnvWhitelist = map[string][]string{
 		"CLAUDE_API_KEY", "CLAUDE_MODEL", "CLAUDE_BASE_URL",
 		"CLAUDE_CODE_MODE", "CLAUDE_DISABLE_AUTO_PERMISSIONS",
 	},
-	"opencode-cli": {
-		"OPENAI_API_KEY", "OPENAI_BASE_URL",
-		"OPENCODE_API_KEY", "OPENCODE_BASE_URL",
-	},
-	// opencode-server: no extra env vars needed
 }
 
 // HotPlexRequired contains the required HotPlex environment variables.

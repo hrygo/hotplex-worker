@@ -2,7 +2,7 @@
 
 > **Purpose**: Restore HotPlex Worker Gateway service after failure or data loss.
 >
-> **Last Updated**: 2026-04-02
+> **Last Updated**: 2026-04-21
 > **Version**: 1.0.0
 
 ---
@@ -75,6 +75,7 @@ sqlite3 "$LATEST" "PRAGMA integrity_check;"
 **Automatic Recovery**:
 - systemd: Auto-restart on failure (RestartSec=5s)
 - Docker: Restart policy `unless-stopped`
+- **LLM Rate Limit Auto-Retry**: If the worker crashes due to a temporary error (429 rate limit, 529 overload, network error), the gateway automatically retries with exponential backoff — no manual intervention needed. See [[management/Config-Reference]] for configuration.
 
 **Manual Intervention** (if auto-restart fails):
 ```bash
@@ -250,6 +251,8 @@ After recovery:
 - [ ] Verify all sessions are accessible
 - [ ] Check database integrity: `sqlite3 hotplex-worker.db "PRAGMA integrity_check;"`
 - [ ] Review logs for errors: `journalctl -u hotplex-worker -n 100`
+- [ ] Check LLM auto-retry stats in logs: `grep "llm_retry" logs/*.log`
+- [ ] Verify auto-retry config is correct if rate limit errors were involved
 - [ ] Update monitoring alerts if needed
 - [ ] Document root cause in incident report
 - [ ] Schedule post-mortem review
@@ -310,3 +313,4 @@ journalctl -u hotplex-worker -p warning -n 50
 | Version | Date | Changes | Author |
 |---------|------|---------|--------|
 | 1.0.0 | 2026-04-02 | Initial version | HotPlex Team |
+| 1.0.1 | 2026-04-21 | Add LLM auto-retry to crash recovery; update recovery checklist | HotPlex Team |

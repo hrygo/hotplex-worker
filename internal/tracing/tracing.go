@@ -52,7 +52,7 @@ func Init(ctx context.Context, log *slog.Logger, serviceName string) {
 		// stdout is safe for containers (JSON lines to stdout → log collector).
 		exp, err := stdouttrace.New(stdouttrace.WithPrettyPrint())
 		if err != nil {
-			log.Warn("tracing: stdout exporter creation failed, disabling", "error", err)
+			log.Warn("tracing: stdout exporter creation failed, disabling", "err", err)
 			Tracer = noopTracer()
 			return
 		}
@@ -64,7 +64,7 @@ func Init(ctx context.Context, log *slog.Logger, serviceName string) {
 			),
 		)
 		if err != nil {
-			log.Warn("tracing: resource creation failed, disabling", "error", err)
+			log.Warn("tracing: resource creation failed, disabling", "err", err)
 			Tracer = noopTracer()
 			return
 		}

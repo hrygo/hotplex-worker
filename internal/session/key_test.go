@@ -24,7 +24,7 @@ func TestDeriveSessionKey_DifferentTuples(t *testing.T) {
 
 	key1 := DeriveSessionKey("u1", worker.TypeClaudeCode, "s1", "/tmp/hotplex/workspace")
 	key2 := DeriveSessionKey("u2", worker.TypeClaudeCode, "s1", "/tmp/hotplex/workspace")
-	key3 := DeriveSessionKey("u1", worker.TypeOpenCodeCLI, "s1", "/tmp/hotplex/workspace")
+	key3 := DeriveSessionKey("u1", worker.TypeOpenCodeSrv, "s1", "/tmp/hotplex/workspace")
 	key4 := DeriveSessionKey("u1", worker.TypeClaudeCode, "s2", "/tmp/hotplex/workspace")
 	key5 := DeriveSessionKey("u1", worker.TypeClaudeCode, "s1", "/tmp/hotplex/projects/foo")
 
@@ -48,7 +48,7 @@ func TestDeriveSessionKey_UUIDv5Format(t *testing.T) {
 		workDir    string
 	}{
 		{"u1", worker.TypeClaudeCode, "s1", "/tmp/hotplex/workspace"},
-		{"user_long_id", worker.TypeOpenCodeCLI, "my-session-123", "/tmp/hotplex/projects/app"},
+		{"user_long_id", worker.TypeOpenCodeSrv, "my-session-123", "/tmp/hotplex/projects/app"},
 		{"", worker.TypePimon, "", ""},
 		{"owner", worker.TypeOpenCodeSrv, "session-with-dashes", "/var/hotplex/projects"},
 	}
@@ -79,7 +79,6 @@ func TestDeriveSessionKey_AllWorkerTypes(t *testing.T) {
 	sessionID := "test-session"
 	for _, wt := range []worker.WorkerType{
 		worker.TypeClaudeCode,
-		worker.TypeOpenCodeCLI,
 		worker.TypeOpenCodeSrv,
 		worker.TypePimon,
 		worker.TypeUnknown,
@@ -221,7 +220,6 @@ func TestDerivePlatformSessionKey_AllWorkerTypes(t *testing.T) {
 	ctx := PlatformContext{Platform: "feishu", ChatID: "oc1", UserID: "u1"}
 	for _, wt := range []worker.WorkerType{
 		worker.TypeClaudeCode,
-		worker.TypeOpenCodeCLI,
 		worker.TypeOpenCodeSrv,
 		worker.TypePimon,
 		worker.TypeUnknown,

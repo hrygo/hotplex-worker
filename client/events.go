@@ -8,26 +8,30 @@ const Version = events.Version // "aep/v1"
 
 // Event kind constants matching pkg/events/events.go.
 const (
-	EventInit               = string(events.Init)
-	EventError              = string(events.Error)
-	EventState              = string(events.State)
-	EventInput              = string(events.Input)
-	EventDone               = string(events.Done)
-	EventMessage            = string(events.Message)
-	EventMessageStart       = string(events.MessageStart)
-	EventMessageDelta       = string(events.MessageDelta)
-	EventMessageEnd         = string(events.MessageEnd)
-	EventToolCall           = string(events.ToolCall)
-	EventToolResult         = string(events.ToolResult)
-	EventReasoning          = string(events.Reasoning)
-	EventStep               = string(events.Step)
-	EventRaw                = string(events.Raw)
-	EventPermissionRequest  = string(events.PermissionRequest)
-	EventPermissionResponse = string(events.PermissionResponse)
-	EventPing               = string(events.Ping)
-	EventPong               = string(events.Pong)
-	EventControl            = string(events.Control)
-	EventInitAck            = "init_ack"
+	EventInit                = string(events.Init)
+	EventError               = string(events.Error)
+	EventState               = string(events.State)
+	EventInput               = string(events.Input)
+	EventDone                = string(events.Done)
+	EventMessage             = string(events.Message)
+	EventMessageStart        = string(events.MessageStart)
+	EventMessageDelta        = string(events.MessageDelta)
+	EventMessageEnd          = string(events.MessageEnd)
+	EventToolCall            = string(events.ToolCall)
+	EventToolResult          = string(events.ToolResult)
+	EventReasoning           = string(events.Reasoning)
+	EventStep                = string(events.Step)
+	EventRaw                 = string(events.Raw)
+	EventPermissionRequest   = string(events.PermissionRequest)
+	EventPermissionResponse  = string(events.PermissionResponse)
+	EventQuestionRequest     = string(events.QuestionRequest)
+	EventQuestionResponse    = string(events.QuestionResponse)
+	EventElicitationRequest  = string(events.ElicitationRequest)
+	EventElicitationResponse = string(events.ElicitationResponse)
+	EventPing                = string(events.Ping)
+	EventPong                = string(events.Pong)
+	EventControl             = string(events.Control)
+	EventInitAck             = "init_ack"
 )
 
 // ControlAction constants for client-initiated control.
@@ -63,8 +67,9 @@ const (
 
 // DoneData is the payload of a done event.
 type DoneData struct {
-	Success bool   `json:"success"`
-	Stats   *Stats `json:"stats,omitempty"`
+	Success bool           `json:"success"`
+	Stats   map[string]any `json:"stats,omitempty"`
+	Dropped bool           `json:"dropped,omitempty"`
 }
 
 // Stats holds session statistics.
@@ -102,10 +107,65 @@ type ToolResultData struct {
 
 // PermissionRequestData is the payload of a permission_request event.
 type PermissionRequestData struct {
-	ID          string `json:"id"`
-	ToolName    string `json:"tool_name"`
-	Description string `json:"description,omitempty"`
+	ID          string   `json:"id"`
+	ToolName    string   `json:"tool_name"`
+	Description string   `json:"description,omitempty"`
+	Args        []string `json:"args,omitempty"`
 }
+
+// QuestionOption represents a single selectable option in a question.
+type QuestionOption struct {
+	Label       string `json:"label"`
+	Description string `json:"description,omitempty"`
+	Preview     string `json:"preview,omitempty"`
+}
+
+// Question represents a single question with options.
+type Question struct {
+	Question    string           `json:"question"`
+	Header      string           `json:"header"`
+	Options     []QuestionOption `json:"options"`
+	MultiSelect bool             `json:"multi_select"`
+}
+
+// QuestionRequestData is the payload of a question_request event.
+type QuestionRequestData struct {
+	ID        string     `json:"id"`
+	ToolName  string     `json:"tool_name,omitempty"`
+	Questions []Question `json:"questions"`
+}
+
+// QuestionResponseData is the payload of a question_response event.
+type QuestionResponseData struct {
+	ID      string            `json:"id"`
+	Answers map[string]string `json:"answers"`
+}
+
+// ElicitationRequestData is the payload of an elicitation_request event.
+type ElicitationRequestData struct {
+	ID              string         `json:"id"`
+	MCPServerName   string         `json:"mcp_server_name"`
+	Message         string         `json:"message"`
+	Mode            string         `json:"mode,omitempty"`
+	URL             string         `json:"url,omitempty"`
+	ElicitationID   string         `json:"elicitation_id,omitempty"`
+	RequestedSchema map[string]any `json:"requested_schema,omitempty"`
+}
+
+// ElicitationResponseData is the payload of an elicitation_response event.
+type ElicitationResponseData struct {
+	ID      string         `json:"id"`
+	Action  string         `json:"action"` // "accept" | "decline" | "cancel"
+	Content map[string]any `json:"content,omitempty"`
+}
+
+// Priority is the message delivery priority.
+type Priority = events.Priority
+
+const (
+	PriorityControl = events.PriorityControl
+	PriorityData    = events.PriorityData
+)
 
 // InitAckData is returned after the server acknowledges the init handshake.
 type InitAckData struct {

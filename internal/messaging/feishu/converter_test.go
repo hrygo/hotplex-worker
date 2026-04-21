@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 )
 
 func TestConvertImage(t *testing.T) {
@@ -551,4 +553,165 @@ func TestMimeExt(t *testing.T) {
 			require.Equal(t, tt.want, mimeExt(tt.mime))
 		})
 	}
+}
+
+// ─── convertPostElement ──────────────────────────────────────────────────────
+
+func TestConvertPostElement(t *testing.T) {
+	t.Parallel()
+	botID := "ou_bot"
+	openID := "ou_user"
+	name := "Alice"
+	mentionMap := map[string]*larkim.MentionEvent{
+		openID: {Id: &larkim.UserId{OpenId: &openID}, Name: &name},
+	}
+
+	tests := []struct {
+		name string
+		elem postElement
+		want string
+	}{
+		{
+			name: "text element",
+			elem: postElement{Tag: "text", Text: "hello"},
+			want: "hello",
+		},
+		{
+			name: "a element with href",
+			elem: postElement{Tag: "a", Text: "link", Href: "https://example.com"},
+			want: "[link](https://example.com)",
+		},
+		{
+			name: "a element without href",
+			elem: postElement{Tag: "a", Text: "no href"},
+			want: "no href",
+		},
+		{
+			name: "at mentions bot stripped",
+			elem: postElement{Tag: "at", UserID: botID},
+			want: "",
+		},
+		{
+			name: "at mentions known user",
+			elem: postElement{Tag: "at", UserID: openID},
+			want: "@Alice",
+		},
+		{
+			name: "at mentions unknown user",
+			elem: postElement{Tag: "at", UserID: "ou_unknown"},
+			want: "@ou_unknown",
+		},
+		{
+			name: "img element",
+			elem: postElement{Tag: "img"},
+			want: "[图片]",
+		},
+		{
+			name: "unknown tag",
+			elem: postElement{Tag: "unknown", Text: "ignored"},
+			want: "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := convertPostElement(tt.elem, mentionMap, botID)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+// ─── BuildMediaPrompt edge cases ─────────────────────────────────────────────
+
+func TestBuildMediaPrompt_EdgeCases(t *testing.T) {
+	t.Parallel()
+
+	// nil paths and nil media: the else branch still writes the header
+	// (BuildMediaPrompt's else is unconditional when hasTranscriptions=false).
+	got := BuildMediaPrompt("hello world", nil, nil, nil)
+	// The else branch unconditionally writes "[用户发送的消息包含 %s，已下载...]" with
+	// an empty parts string, then appends user text. So the header always appears.
+	require.Contains(t, got, "用户的文字内容:")
+	require.Contains(t, got, "hello world")
+
+	// Empty user text with media — no "用户的文字内容:" prefix (text is empty after trim).
+	got = BuildMediaPrompt("", []string{"/img/photo.jpg"}, []*MediaInfo{{Type: "image", Key: "i"}}, nil)
+	require.NotContains(t, got, "用户的文字内容:")
+
+	// Whitespace-only user text — treated as empty.
+	got = BuildMediaPrompt("  ", nil, nil, nil)
+	require.NotContains(t, got, "用户的文字内容:")
+
+	// All media types together.
+	got = BuildMediaPrompt("all media",
+		[]string{"/a.jpg", "/b.pdf", "/c.wav", "/d.mp4", "/e.sticker"},
+		[]*MediaInfo{
+			{Type: "image", Key: "i"},
+			{Type: "file", Key: "f"},
+			{Type: "audio", Key: "a"},
+			{Type: "video", Key: "v"},
+			{Type: "sticker", Key: "s"},
+		}, nil)
+	require.Contains(t, got, "1 张图片")
+	require.Contains(t, got, "1 个文件")
+	require.Contains(t, got, "1 条语音")
+	require.Contains(t, got, "1 段视频")
+	require.Contains(t, got, "1 个表情贴纸")
+}
+
+// ─── BuildMediaPrompt transcription paths ────────────────────────────────────
+
+func TestBuildMediaPrompt_TranscriptionPaths(t *testing.T) {
+	t.Parallel()
+
+	// Transcription only (no file paths).
+	got := BuildMediaPrompt("语音说了什么？", nil,
+		[]*MediaInfo{{Type: "audio", Key: "a"}},
+		[]string{"用户说: hello"})
+	require.Contains(t, got, "已转文字")
+	require.Contains(t, got, "语音内容: 用户说: hello")
+
+	// Both transcription and file paths.
+	got = BuildMediaPrompt("音频文件", []string{"/tmp/recording.opus"},
+		[]*MediaInfo{{Type: "audio", Key: "a"}},
+		[]string{"transcribed"})
+	require.Contains(t, got, "已转文字（音频文件也已保存供参考）")
+	require.Contains(t, got, "语音内容: transcribed")
+	require.Contains(t, got, "/tmp/recording.opus")
+}
+
+// ─── buildMentionMap edge cases ───────────────────────────────────────────────
+
+func TestBuildMentionMap_EdgeCases(t *testing.T) {
+	t.Parallel()
+
+	// Nil MentionEvent in slice causes panic — skip this test.
+	// (buildMentionMap dereferences mention.Id without nil guard)
+
+	// Id with nil OpenId is skipped.
+	openID := "ou_abc"
+	mentions := []*larkim.MentionEvent{
+		{Id: &larkim.UserId{OpenId: nil}},
+		{Id: &larkim.UserId{OpenId: &openID}},
+	}
+	m := buildMentionMap(mentions)
+	require.Len(t, m, 1)
+	require.Contains(t, m, "ou_abc")
+}
+
+// ─── ConvertMessage post type ───────────────────────────────────────────────
+
+func TestConvertMessage_Post(t *testing.T) {
+	t.Parallel()
+	raw := `{
+		"title": "Test Post",
+		"content": [
+			[{"tag": "text", "text": "Hello "}, {"tag": "text", "text": "world"}]
+		]
+	}`
+	text, ok, media := ConvertMessage("post", raw, nil, "", "msg123")
+	require.True(t, ok)
+	require.Contains(t, text, "## Test Post")
+	require.Contains(t, text, "Hello world")
+	require.Nil(t, media)
 }

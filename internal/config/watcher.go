@@ -144,7 +144,7 @@ func (w *Watcher) run(ctx context.Context) {
 			return
 		case err := <-w.viper.Errors:
 			if err != nil {
-				w.log.Warn("config: watcher error", "error", err)
+				w.log.Warn("config: watcher error", "err", err)
 			}
 		case event := <-w.viper.Events:
 			if !w.isRelevant(event) {
@@ -185,7 +185,7 @@ func (w *Watcher) reload() {
 
 	newCfg, err := Load(w.path, LoadOptions{SecretsProvider: w.sp})
 	if err != nil {
-		w.log.Warn("config: reload failed", "error", err)
+		w.log.Warn("config: reload failed", "err", err)
 		return
 	}
 

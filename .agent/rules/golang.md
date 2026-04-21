@@ -233,6 +233,66 @@ func (l sdkLogger) Error(msg string)  { l.slog.Error(msg) }
 | 第三方调用失败 | `return fmt.Errorf("invoke ...: %w", err)` |
 | 关键事件发送失败 | `log.Error(...)` + `return err` |
 | 非关键操作失败 | `_ = op()` 或 `log.Warn(...)` |
+| Handler/Bridge panic | `recover()` + `log.Error("panic", ...)` + `return fmt.Errorf("handler/bridge panic: %v", r)` |
+
+---
+
+## Panic Recovery 模式
+
+Gateway handler 和 bridge forwardEvents 必须包含 panic recovery：
+
+```go
+func (h *Handler) Handle(ctx context.Context, env *Envelope) (err error) {
+    defer func() {
+        if r := recover(); r != nil {
+            h.log.Error("gateway: panic in handler", "error", r, "session_id", env.SessionID)
+            err = fmt.Errorf("handler panic: %v", r)
+        }
+    }()
+    // ... normal handling
+}
+```
+
+---
+
+## 控制命令模式
+
+Messaging 通道的控制命令通过两层 map 解析：
+
+```go
+// control_command.go
+var slashCommandMap = map[string]events.ControlAction{
+    "/gc":      events.ControlActionGC,
+    "/reset":   events.ControlActionReset,
+    "/park":    events.ControlActionPark,
+    "/restart": events.ControlActionRestart,
+    "/new":     events.ControlActionNew,
+}
+
+// 自然语言触发必须带 $ 前缀
+var naturalLanguageMap = map[string]events.ControlAction{
+    "$gc":    events.ControlActionGC,
+    "$休眠":  events.ControlActionPark,
+    "$挂起":  events.ControlActionPark,
+    "$重置":  events.ControlActionReset,
+}
+```
+
+**设计决策**：自然语言 map 使用 `$` 前缀防止用户日常对话意外触发控制命令。
+
+---
+
+## 文本清洗模式
+
+所有用户面向的文本输出通过 `SanitizeText()` 清洗：
+
+```go
+// sanitize.go
+func SanitizeText(s string) string {
+    // 移除: control chars (保留 \t\n), null bytes, BOM, surrogates
+    // 保留: tabs, newlines, normal Unicode
+}
+```
 
 ---
 

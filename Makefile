@@ -126,6 +126,12 @@ coverage:
 	@TOTAL=$$(go tool cover -func=coverage.out | tail -1 | grep -oP '\d+\.\d+') ; \
 		echo "  $(BOLD)Total: $${TOTAL}%$(RESET)"
 
+test-slack-e2e:
+	@echo "$(CYAN)Running Slack semi-automated E2E tests...$(RESET)"
+	@test -n "$$SLACK_BOT_TOKEN" || (echo "  $(RED)SLACK_BOT_TOKEN required$(RESET)"; exit 1)
+	@test -n "$$SLACK_APP_TOKEN" || (echo "  $(RED)SLACK_APP_TOKEN required$(RESET)"; exit 1)
+	@go test -v -tags=slack_e2e -timeout 30m ./internal/messaging/slack/...
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Quality
 # ─────────────────────────────────────────────────────────────────────────────
@@ -253,35 +259,60 @@ webchat-dev:
 		echo "$(YELLOW)Webchat already running (PID: $$(cat $(WEB_CHAT_PID)))$(RESET)"; \
 		exit 0; \
 	fi; \
+	STALE_PID=$$(lsof -ti:$(WEB_CHAT_PORT) 2>/dev/null); \
+	if [ -n "$$STALE_PID" ]; then \
+		echo "$(YELLOW)Port $(WEB_CHAT_PORT) occupied (PID: $$STALE_PID), killing...$(RESET)"; \
+		echo "$$STALE_PID" | xargs kill -9 2>/dev/null || true; \
+		sleep 1; \
+		STALE_PID=$$(lsof -ti:$(WEB_CHAT_PORT) 2>/dev/null); \
+		if [ -n "$$STALE_PID" ]; then \
+			echo "$(RED)✗$(RESET) Port $(WEB_CHAT_PORT) still occupied after kill, aborting"; \
+			exit 1; \
+		fi; \
+		rm -f $(WEB_CHAT_PID); \
+	fi; \
 	if [ ! -d $(WEB_CHAT_DIR)/node_modules ]; then \
 		echo "$(CYAN)Installing webchat dependencies...$(RESET)"; \
 		cd $(WEB_CHAT_DIR) && pnpm install --frozen-lockfile 2>/dev/null || pnpm install; \
 	fi; \
-	echo "$(CYAN)Starting webchat...$(RESET)"; \
-	cd $(WEB_CHAT_DIR) && pnpm dev > $(WEB_CHAT_LOG) 2>&1 & \
+	echo "$(CYAN)Starting webchat on port $(WEB_CHAT_PORT)...$(RESET)"; \
+	cd $(WEB_CHAT_DIR) && PORT=$(WEB_CHAT_PORT) pnpm dev --port $(WEB_CHAT_PORT) > $(WEB_CHAT_LOG) 2>&1 & \
 	echo $$! > $(WEB_CHAT_PID); \
-	sleep 2; \
+	sleep 3; \
 	if kill -0 $$(cat $(WEB_CHAT_PID)) 2>/dev/null; then \
-		echo "  $(GREEN)✓$(RESET) Webchat started (PID: $$(cat $(WEB_CHAT_PID)))"; \
+		if lsof -ti:$(WEB_CHAT_PORT) >/dev/null 2>&1; then \
+			echo "  $(GREEN)✓$(RESET) Webchat started (PID: $$(cat $(WEB_CHAT_PID)), port $(WEB_CHAT_PORT))"; \
+		else \
+			echo "  $(YELLOW)⚠$(RESET) Process running but port $(WEB_CHAT_PORT) not bound (may have picked another port)"; \
+		fi; \
 	else \
 		echo "  $(RED)✗$(RESET) Webchat failed to start"; \
 		cat $(WEB_CHAT_LOG); exit 1; fi
 
 webchat-stop:
-	@if [ -f $(WEB_CHAT_PID) ] && kill -0 $$(cat $(WEB_CHAT_PID)) 2>/dev/null; then \
+	@PID=""; \
+	if [ -f $(WEB_CHAT_PID) ] && kill -0 $$(cat $(WEB_CHAT_PID)) 2>/dev/null; then \
 		PID=$$(cat $(WEB_CHAT_PID)); \
 		echo "$(CYAN)Stopping webchat (PID: $$PID)...$(RESET)"; \
 		kill -TERM $$PID 2>/dev/null; \
 		sleep 1; \
-		kill -9 $$PID 2>/dev/null || true; \
-		rm -f $(WEB_CHAT_PID); \
-		echo "  $(GREEN)✓$(RESET) Webchat stopped"; \
-	elif [ -n "$$(lsof -ti:$(WEB_CHAT_PORT) 2>/dev/null)" ]; then \
-		echo "$(YELLOW)Stale PID, killing by port...$(RESET)"; \
-		lsof -ti:$(WEB_CHAT_PORT) 2>/dev/null | xargs kill -9 2>/dev/null || true; \
-		echo "  $(GREEN)✓$(RESET) Webchat stopped"; \
-	else \
-		echo "$(DIM)Webchat not running$(RESET)"; fi
+	fi; \
+	REMAINING=$$(lsof -ti:$(WEB_CHAT_PORT) 2>/dev/null); \
+	if [ -n "$$REMAINING" ]; then \
+		if [ -z "$$PID" ]; then echo "$(YELLOW)No PID file, killing by port...$(RESET)"; fi; \
+		echo "$(YELLOW)Force-killing processes on port $(WEB_CHAT_PORT) (PID: $$REMAINING)...$(RESET)"; \
+		echo "$$REMAINING" | xargs kill -9 2>/dev/null || true; \
+		sleep 1; \
+		REMAINING=$$(lsof -ti:$(WEB_CHAT_PORT) 2>/dev/null); \
+		if [ -n "$$REMAINING" ]; then \
+			echo "$(RED)✗$(RESET) Port $(WEB_CHAT_PORT) still occupied after kill"; \
+			exit 1; \
+		fi; \
+	elif [ -z "$$PID" ]; then \
+		echo "$(DIM)Webchat not running$(RESET)"; exit 0; \
+	fi; \
+	rm -f $(WEB_CHAT_PID); \
+	echo "  $(GREEN)✓$(RESET) Webchat stopped"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Clean

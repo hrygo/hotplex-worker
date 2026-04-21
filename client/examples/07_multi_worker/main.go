@@ -20,7 +20,6 @@ import (
 
 var workerTypes = []string{
 	"claude_code",
-	"opencode_cli",
 	"opencode_server",
 	"acpx",
 }
@@ -61,7 +60,7 @@ func testWorker(ctx context.Context, gatewayURL, apiKey, workerType, task string
 		fmt.Printf("%-20s %-10s — %v\n", workerType, "FAIL", err)
 		return
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }() //nolint:errcheck // example cleanup
 
 	ack, err := c.Connect(ctx)
 	if err != nil {

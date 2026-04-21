@@ -47,14 +47,18 @@ func main() {
         for evt := range c.Events() {
             switch evt.Type {
             case client.EventMessageDelta:
-                if m, ok := evt.Data.(map[string]any); ok {
-                    fmt.Print(m["content"])
+                if d, ok := evt.Data.(map[string]any); ok {
+                    fmt.Print(d["content"])
                 }
             case client.EventDone:
-                fmt.Println("\n--- done ---")
+                if done, ok := evt.AsDoneData(); ok {
+                    fmt.Printf("\n--- done (success: %v) ---\n", done.Success)
+                }
                 os.Exit(0)
             case client.EventError:
-                fmt.Fprintf(os.Stderr, "error: %v\n", evt.Data)
+                if errData, ok := evt.AsErrorData(); ok {
+                    fmt.Fprintf(os.Stderr, "error %s: %s\n", errData.Code, errData.Message)
+                }
                 os.Exit(1)
             }
         }
@@ -80,6 +84,9 @@ client.AuthToken("jwt-token")               // JWT bearer token
 client.APIKey("sk-xxx")                     // API key header
 client.PingInterval(30 * time.Second)       // heartbeat (default 54s)
 client.ClientSessionID("my-session-001")    // client-managed session ID (UUIDv5 mapped)
+client.AutoReconnect(true)                  // enable automatic reconnection
+client.Logger(slog.Default())               // custom logger
+client.Metadata(map[string]any{"p": "v"})   // init handshake metadata
 ```
 
 ### Connection
@@ -95,8 +102,10 @@ ack, err := c.Resume(ctx, "sess_xxx")       // returns *InitAckData
 ### Sending
 
 ```go
-c.SendInput(ctx, "your message")                         // user input
+c.SendInput(ctx, "your message", metadata)               // user input + opt. metadata
 c.SendPermissionResponse(ctx, "id", true, "approved")    // approve tool
+c.SendQuestionResponse(ctx, "id", answers)               // answer question
+c.SendElicitationResponse(ctx, "id", "accept", content)  // respond to elicit
 c.SendControl(ctx, "terminate")                           // terminate session
 c.SendReset(ctx, "user_requested")                       // clear context, restart worker
 c.SendGC(ctx, "user_idle")                               // archive session, terminate worker
@@ -109,7 +118,11 @@ for evt := range c.Events() {
     // evt.Type    — event type string (see constants below)
     // evt.Seq     — monotonic sequence number
     // evt.Session — session ID
-    // evt.Data    — event payload (map[string]any)
+    // evt.Data    — event payload (use helpers below)
+
+    if done, ok := evt.AsDoneData(); ok { /* ... */ }
+    if err, ok := evt.AsErrorData(); ok { /* ... */ }
+    if tc, ok := evt.AsToolCallData(); ok { /* ... */ }
 }
 ```
 
@@ -141,6 +154,8 @@ c.Close()         // graceful shutdown
 | `EventRaw` | Passthrough agent data |
 | `EventReasoning` | Agent "thinking" tokens |
 | `EventStep` | Higher-level task step |
+| `EventQuestionRequest` | Worker asks a question |
+| `EventElicitationRequest` | MCP elicitation request |
 
 ## Data Types
 

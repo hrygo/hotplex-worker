@@ -186,7 +186,7 @@ Authorization: Bearer <admin_token>
       "avg_memory_mb": 512,
       "avg_cpu_percent": 30.0
     },
-    "opencode_cli": {
+    "opencode_server": {
       "sessions": 15,
       "processes": 15,
       "avg_memory_mb": 256,
@@ -265,7 +265,7 @@ GET /admin/health HTTP/1.1
     },
     "workers": {
       "status": "healthy",
-      "types": ["claude-code", "opencode-cli"]
+      "types": ["claude-code", "opencode-server"]
     }
   },
   "version": "v1.0",
@@ -299,7 +299,7 @@ Authorization: Bearer <admin_token>
       "test_passed": true
     },
     {
-      "type": "opencode-cli",
+      "type": "opencode-server",
       "status": "healthy",
       "available_sessions": 5,
       "test_passed": true

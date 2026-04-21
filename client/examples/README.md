@@ -32,7 +32,7 @@ go run ./01_quickstart
 | `HOTPLEX_GATEWAY_URL` | `ws://localhost:8888/ws` | Gateway WebSocket URL |
 | `HOTPLEX_API_KEY` | — | API Key for authentication |
 | `HOTPLEX_SIGNING_KEY` | — | ES256 signing key (PEM/hex/base64) for JWT auth |
-| `HOTPLEX_WORKER_TYPE` | `claude_code` | Worker type (claude_code, opencode_cli, opencode_server, acpx) |
+| `HOTPLEX_WORKER_TYPE` | `claude_code` | Worker type (claude_code, opencode_server, acpx) |
 | `HOTPLEX_SESSION_ID` | — | Existing session ID (for resume) |
 | `HOTPLEX_TASK` | *(varies)* | Task prompt to send |
 | `HOTPLEX_AUTO_APPROVE` | — | Set to `1` to auto-approve all permissions |

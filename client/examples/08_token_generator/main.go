@@ -36,19 +36,19 @@ func main() {
 		fmt.Fprintln(os.Stderr, "\nKey formats: PEM file path, 64-char hex, or 44-char base64")
 		fmt.Fprintln(os.Stderr, "\nFlags:")
 		flag.PrintDefaults()
-		os.Exit(1)
+		os.Exit(1) //nolint:gocritic // example exit
 	}
 
 	gen, err := client.NewTokenGenerator(keyStr)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to load key: %v\n", err)
-		os.Exit(1)
+		os.Exit(1) //nolint:gocritic // example exit
 	}
 
 	token, err := gen.WithAudience(*audience).Generate(*subject, strings.Split(*scopes, ","), *ttl)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to generate token: %v\n", err)
-		os.Exit(1)
+		os.Exit(1) //nolint:gocritic // example exit
 	}
 
 	fmt.Println(token)

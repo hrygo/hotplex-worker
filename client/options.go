@@ -1,6 +1,7 @@
 package client
 
 import (
+	"log/slog"
 	"time"
 )
 
@@ -15,7 +16,7 @@ func URL(rawurl string) Option {
 	}
 }
 
-// WorkerType sets the worker type (e.g. "claude_code", "opencode_cli").
+// WorkerType sets the worker type (e.g. "claude_code", "opencode_server").
 func WorkerType(t string) Option {
 	return func(c *Client) error {
 		c.workerType = t
@@ -52,6 +53,32 @@ func PingInterval(d time.Duration) Option {
 func ClientSessionID(id string) Option {
 	return func(c *Client) error {
 		c.clientSessionID = id
+		return nil
+	}
+}
+
+// AutoReconnect enables automatic reconnection with exponential backoff.
+func AutoReconnect(enabled bool) Option {
+	return func(c *Client) error {
+		c.autoReconnect = enabled
+		return nil
+	}
+}
+
+// Logger sets the slog.Logger for the client.
+func Logger(logger *slog.Logger) Option {
+	return func(c *Client) error {
+		if logger != nil {
+			c.logger = logger
+		}
+		return nil
+	}
+}
+
+// Metadata adds optional metadata to the init handshake.
+func Metadata(metadata map[string]any) Option {
+	return func(c *Client) error {
+		c.metadata = metadata
 		return nil
 	}
 }

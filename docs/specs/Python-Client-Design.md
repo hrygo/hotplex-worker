@@ -282,7 +282,6 @@ from typing import Any, Generic, TypeVar
 # 枚举类型
 class WorkerType(StrEnum):
     CLAUDE_CODE = "claude_code"
-    OPENCODE_CLI = "opencode_cli"
     OPENCODE_SERVER = "opencode_server"
     PI_MONO = "pi-mono"
 
@@ -938,7 +937,7 @@ pytest tests/ -v --cov=hotplex_client
 
 1. **同步 API 包装**：提供同步版本的 HotPlexClient（基于 asyncio.run）
 2. **Admin API 客户端**：集成 HTTP 调用（使用 httpx）
-3. **更多 worker 类型**：支持 OpenCode CLI/Server、Pi-mono
+3. **更多 worker 类型**：支持/Server、Pi-mono
 4. **监控集成**：OpenTelemetry tracing/metrics
 5. **连接池**：多 session 并发管理
 6. **PyPI 发布**：如果社区需求强烈，可发布到 PyPI

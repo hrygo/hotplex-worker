@@ -15,7 +15,7 @@ completion_date: 2026-04-04
 > 本文档定义了所有 HotPlex Worker Adapter 共享的公共协议层规范。
 > 每个具体 Worker 的规格应引用本文档的对应章节，而非重复定义。
 >
-> **适用范围**：Claude Code Worker、OpenCode CLI Worker、OpenCode Server Worker
+> **适用范围**：Claude Code Worker、OpenCode Server Worker
 >
 > 高阶设计见 [[Worker-Gateway-Design]] §8。
 
@@ -66,7 +66,6 @@ completion_date: 2026-04-04
 | Worker | Transport | Protocol | Resume | Control |
 |--------|-----------|----------|--------|---------|
 | **Claude Code** | stdio | SDK NDJSON | ✅ | ✅ |
-| **OpenCode CLI** | stdio | AEP v1 NDJSON | ❌ | ❌ |
 | **OpenCode Server** | HTTP+SSE | AEP v1 NDJSON | ✅ | ❌ |
 
 ---
@@ -373,7 +372,7 @@ func hasPrefixMatch(key string, patterns []string) bool {
 | 变量 | 说明 | 示例 |
 |------|------|------|
 | `HOTPLEX_SESSION_ID` | 会话唯一标识 | `sess_abc123` |
-| `HOTPLEX_WORKER_TYPE` | Worker 类型标签 | `claude-code`, `opencode-cli`, `opencode-server` |
+| `HOTPLEX_WORKER_TYPE` | Worker 类型标签 | `claude-code`, `opencode-server` |
 
 ### 6.4 StripNestedAgent
 
@@ -434,7 +433,6 @@ type Worker interface {
 // internal/worker/worker.go:10-13
 const (
     TypeClaudeCode  WorkerType = "claude-code"
-    TypeOpenCodeCLI WorkerType = "opencode-cli"
     TypeOpenCodeSrv WorkerType = "opencode-server"
     TypePimon       WorkerType = "pimon"
 )
@@ -442,16 +440,16 @@ const (
 
 ### 7.3 Capability 对比矩阵
 
-| Capability | Claude Code | OpenCode CLI | OpenCode Server |
-|------------|:-----------:|:------------:|:---------------:|
-| `Type()` | `claude-code` | `opencode-cli` | `opencode-server` |
-| `SupportsResume()` | ✅ | ❌ | ✅ |
-| `SupportsStreaming()` | ✅ | ✅ | ✅ |
-| `SupportsTools()` | ✅ | ✅ | ✅ |
-| `EnvWhitelist()` | `ANTHROPIC_*` | `OPENAI_*`, `OPENCODE_*` | `OPENAI_*`, `OPENCODE_*` |
-| `SessionStoreDir()` | `~/.claude/...` | `""` | `""` |
-| `MaxTurns()` | 可配置 | 0（无限制） | 0（无限制） |
-| `Modalities()` | `["text", "code"]` | `["text", "code"]` | `["text", "code"]` |
+| Capability | Claude Code | OpenCode Server |
+|------------|:-----------:|:---------------:|
+| `Type()` | `claude-code` | `opencode-server` |
+| `SupportsResume()` | ✅ | ✅ |
+| `SupportsStreaming()` | ✅ | ✅ |
+| `SupportsTools()` | ✅ | ✅ |
+| `EnvWhitelist()` | `ANTHROPIC_*` | `OPENAI_*`, `OPENCODE_*` |
+| `SessionStoreDir()` | `~/.claude/...` | `""` |
+| `MaxTurns()` | 可配置 | 0（无限制） |
+| `Modalities()` | `["text", "code"]` | `["text", "code"]` |
 
 ---
 
@@ -532,7 +530,6 @@ if exitCode != 0 {
 | Worker | 路径 |
 |--------|------|
 | Claude Code | `internal/worker/claudecode/` |
-| OpenCode CLI | `internal/worker/opencodecli/` |
 | OpenCode Server | `internal/worker/opencodeserver/` |
 
 ---
@@ -544,7 +541,6 @@ if exitCode != 0 {
 | Worker Spec | 引用章节 |
 |-------------|---------|
 | `Worker-ClaudeCode-Spec.md` | §2（Envelope）、§3（NDJSON）、§4（背压）、§5（终止）、§6（环境变量）、§7（Capability） |
-| `Worker-OpenCode-CLI-Spec.md` | §2（Envelope）、§3（NDJSON）、§4（背压）、§5（终止）、§6（环境变量）、§7（Capability） |
 | `Worker-OpenCode-Server-Spec.md` | §2（Envelope）、§3（NDJSON）、§4（背压）、§5（终止）、§6（环境变量）、§7（Capability） |
 
 ---

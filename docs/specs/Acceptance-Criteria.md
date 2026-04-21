@@ -476,7 +476,7 @@ version: v1.0
 
 **验收标准**:
 - Given ClaudeCode Worker, When Capabilities 检查, Then Type()=='claude_code', SupportsResume()==true, SessionStoreDir() 返回非空路径
-- Given OpenCode CLI Worker, When Capabilities 检查, Then Type()=='opencode_cli', SupportsResume()==false，EnvWhitelist 列出允许的环境变量名
+- Given Worker, When Capabilities 检查, Then Type()=='opencode_server', SupportsResume()==true，EnvWhitelist 列出允许的环境变量名
 - Given Pi-mono Worker, When Capabilities 检查, Then Type()=='pi-mono', SupportsResume()==false，SessionStoreDir()==''
 
 ### WK-003 — Claude Code Worker：--resume 恢复持久会话
@@ -486,11 +486,11 @@ version: v1.0
 - Given Start(session) 启动, When exec.CommandContext 构造, Then args 包含 --print, --session-id, --model 等参数
 - Given Resume(session) 调用, When 构造命令, Then args 包含 --resume 参数（区别于 Start）
 
-### WK-004 — OpenCode CLI Worker：无 --session-id，从 step_start 事件提取 sessionID
-**描述**: OpenCode CLI 不提供会话恢复机制，sessionID 需要从 Worker 输出的 step_start 事件中提取。
+### WK-004 — Worker：无 --session-id，从 step_start 事件提取 sessionID
+**描述**: 不提供会话恢复机制，sessionID 需要从 Worker 输出的 step_start 事件中提取。
 
 **验收标准**:
-- Given OpenCode CLI Worker 启动, When 构造命令, Then args 不包含 --session-id 相关参数
+- Given Worker 启动, When 构造命令, Then args 不包含 --session-id 相关参数
 - Given Worker 输出第一行 step_start 事件, When Parser 解析, Then 从 event.data.session_id 或 event.data.id 提取并记录 sessionID
 
 ### WK-005 — OpenCode Server Worker：HTTP+SSE 托管进程模式
@@ -711,7 +711,6 @@ version: v1.0
 
 **验收标准**:
 - Given workerType = 'claude-code', When AddWorkerType 后 Build, Then whitelisted vars 包含 CLAUDE_API_KEY, CLAUDE_MODEL, CLAUDE_BASE_URL
-- Given workerType = 'opencode-cli', When AddWorkerType 后 Build, Then whitelisted vars 包含 OPENAI_API_KEY, OPENAI_BASE_URL, OPENCODE_API_KEY
 
 ### SEC-032 — ProtectedEnvVars 绝对不可被覆盖
 **描述**: SafeEnvBuilder.AddHotPlexVar 和 AddSecret 必须拒绝任何尝试设置 ProtectedEnvVars 中的变量。

@@ -22,7 +22,7 @@ completion_date: 2026-03-30
 
 This document describes the implemented application framework for the HotPlex Worker Gateway.
 The framework provides the complete infrastructure layer required to run Worker adapters,
-excluding the adapters themselves (Claude Code, OpenCode CLI, etc.).
+excluding the adapters themselves (Claude Code, etc.).
 
 **What was built:**
 
@@ -65,7 +65,7 @@ internal/session          internal/pool           internal/worker
 | `internal/config` | YAML config loading via Viper; environment variable overrides |
 | `internal/session` | SQLite WAL persistence; 5-state machine; atomic transitions; background GC |
 | `internal/pool` | Per-user session quota; global size limits; Release() on delete |
-| `internal/worker` | Worker/SessionConn/Capabilities interfaces; NoOp stub |
+| `internal/worker` | Worker/SessionConn/Capabilities interfaces; worker type registry |
 | `internal/worker/proc` | Process lifecycle: Start (PGID), Terminate (SIGTERM → SIGKILL), Kill (SIGKILL) |
 | `internal/gateway` | WebSocket Hub; per-session routing; ping/pong heartbeat; connection dedup |
 | `internal/security` | API Key auth; InputValidator; EnvValidator |
@@ -202,4 +202,3 @@ Test coverage targets for v1:
 1. Write unit tests for core packages
 2. Implement first concrete Worker adapter (Claude Code)
 3. Add integration test with real WebSocket client
-4. Implement `worker/opencode_cli/` adapter

@@ -88,7 +88,7 @@ version: v1.1
 | 47 | **WK-001** | SessionConn 接口必须实现 | 🔴 P0 | 🟩 PASS | Claude Code | `registry_test.go` 编译时验证`var _ Worker = (*XWorker)(nil)` |
 | 48 | **WK-002** | Capabilities 接口正确声明各 Worker 类型能力 | 🟡 P1 | 🟩 PASS | Claude Code | `registry_test.go` Capabilities接口+各Worker类型测试 |
 | 49 | **WK-003** | Claude Code Worker：--resume 恢复持久会话 | 🟡 P1 | 🟩 PASS | Claude Code | `claudecode/worker.go` --resume CLI参数+`worker_test.go` |
-| 50 | **WK-004** | OpenCode CLI Worker：无 --session-id，从 step_start 提取 sessionID | 🟡 P1 | 🟩 PASS | Claude Code | `opencodecli/worker_test.go` sessionID提取测试 |
+| 50 | **WK-004** | Worker：无 --session-id，从 step_start 提取 sessionID | 🟡 P1 | 🟩 PASS | Claude Code | `opencodeserver/worker_test.go` HTTP session tests |
 | 51 | **WK-005** | OpenCode Server Worker：HTTP+SSE 托管进程模式 | ⚪ P2 | 🟩 PASS | Claude Code | `opencodeserver/worker_test.go` SSE连接测试 |
 | 52 | **WK-006** | Hot-multiplexing：持久 Worker 在 turn 之间保持进程存活 | 🟡 P1 | 🟩 PASS | Claude Code | `manager_test.go` Worker进程存活测试 |
 | 53 | **WK-007** | PGID 隔离：Setpgid=true 防止信号误伤 Gateway 进程 | 🔴 P0 | 🟩 PASS | Claude Code | `proc/manager_test.go` PGID隔离测试 |
@@ -288,8 +288,7 @@ internal/gateway                76.4%   WS Hub/Conn/Handler/Bridge
 internal/session                70.9%   状态机/GC/SQLite/Pool
 internal/worker                 100.0%  Worker接口/注册表
 internal/worker/base             58.3%   BaseWorker/Conn/Env
-internal/worker/claudecode       70.8%   Parser/Mapper/ControlHandler
-internal/worker/opencodecli      45.8%   OpenCode CLI适配器
+internal/worker/claudecode       70.8%   Parser/Mapper/ControlHandler45.8%适配器
 internal/worker/opencodeserver    50.7%   OpenCode Server适配器
 internal/worker/proc             23.4%   进程管理（需要真实进程）
 internal/worker/noop             100.0%  Noop Worker

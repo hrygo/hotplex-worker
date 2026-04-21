@@ -38,7 +38,7 @@ type SessionConn interface {
 
 // Capabilities describes what a worker adapter supports.
 type Capabilities interface {
-	// Type returns the worker type identifier (e.g. "claude_code", "opencode_cli").
+	// Type returns the worker type identifier (e.g. "claude_code", "opencode_server").
 	Type() WorkerType
 
 	// SupportsResume returns true if the worker can resume a previous session.
@@ -71,7 +71,6 @@ type WorkerType string
 
 const (
 	TypeClaudeCode  WorkerType = "claude_code"
-	TypeOpenCodeCLI WorkerType = "opencode_cli"
 	TypeOpenCodeSrv WorkerType = "opencode_server"
 	TypeACPX        WorkerType = "acpx"
 	TypePimon       WorkerType = "pi-mono"
@@ -136,6 +135,13 @@ type WorkerHealth struct {
 	Error     string     `json:"error,omitempty"`
 }
 
+// InputRecoverer is an optional interface for session connections that cache
+// the last user input for crash recovery re-delivery. Bridge detects
+// implementations via type assertion to recover input after resume failure.
+type InputRecoverer interface {
+	LastInput() string
+}
+
 // WorkerSessionIDHandler is an optional interface for workers that manage
 // their own internal session IDs separate from the Gateway session ID.
 // Bridge detects implementations via type assertion and uses them to
@@ -155,7 +161,7 @@ type SessionInfo struct {
 	AllowedTools []string // tools allowed for this session (from InitConfig.AllowedTools)
 
 	// WorkerSessionID is the internal session ID used by the worker runtime.
-	// For workers that manage their own session state (OpenCode CLI, OpenCode Server),
+	// For workers that manage their own session state (OpenCode Server),
 	// this field carries the worker-internal session ID for persistence and resume.
 	// Empty for workers that use Gateway SessionID directly (Claude Code).
 	WorkerSessionID string

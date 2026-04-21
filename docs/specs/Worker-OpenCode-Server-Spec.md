@@ -736,18 +736,18 @@ type conn struct {
 
 ---
 
-## 13. 与 OpenCode CLI Worker 的差异
+## 13. OpenCode Server Worker 特性总结
 
-| 特性           | OpenCode CLI Worker              | OpenCode Server Worker   | 状态 |
-| -------------- | -------------------------------- | ------------------------ | ---- |
-| **Transport**  | stdio                            | HTTP + SSE               | ✅    |
-| **命令**       | `opencode run --format json`     | `opencode serve`         | ✅    |
-| **Session ID** | 内部生成（从 `step_start` 提取） | 外部指定或内部生成       | ✅    |
-| **Resume**     | **不支持**                       | **支持**                 | ✅    |
-| **进程模型**   | 单会话                           | 多会话复用               | ✅    |
-| **事件格式**   | NDJSON stdout                    | SSE `data: {json}`       | ✅    |
-| **通信方式**   | 双向 stdio                       | 请求/响应 + 订阅         | ✅    |
-| **背压处理**   | 256 channel                      | 256 channel              | ✅    |
+| 特性           | 设计                              | 状态 |
+| -------------- | --------------------------------- | ---- |
+| **Transport**  | HTTP + SSE                        | ✅    |
+| **命令**       | `opencode serve --port 18789`     | ✅    |
+| **Session ID** | 外部指定或内部生成                | ✅    |
+| **Resume**     | **支持**                          | ✅    |
+| **进程模型**   | 多会话复用                        | ✅    |
+| **事件格式**   | SSE `data: {json}`                | ✅    |
+| **通信方式**   | 请求/响应 + 订阅                  | ✅    |
+| **背压处理**   | 256 channel                       | ✅    |
 
 ---
 

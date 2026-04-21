@@ -100,7 +100,7 @@ func TestChatQueue_Abort(t *testing.T) {
 	require.Eventually(t, func() bool { return aborted.Load() }, 500*time.Millisecond, 10*time.Millisecond)
 }
 
-// TC-2.4-4: worker 空闲后自动清理
+// TC-2.4-4: worker 空闲超时后自动清理
 func TestChatQueue_WorkerCleanup(t *testing.T) {
 	t.Parallel()
 	q := NewChatQueue(nil)
@@ -109,14 +109,48 @@ func TestChatQueue_WorkerCleanup(t *testing.T) {
 		return nil
 	}))
 
-	// Wait for task to complete.
-	time.Sleep(50 * time.Millisecond)
+	require.Eventually(t, func() bool {
+		q.mu.Lock()
+		_, exists := q.workers["chat_cleanup"]
+		q.mu.Unlock()
+		return exists
+	}, 100*time.Millisecond, 10*time.Millisecond, "worker should exist after task completes")
 
-	// Worker should be cleaned up.
+	q.Close()
+
+	require.Eventually(t, func() bool {
+		q.mu.Lock()
+		_, exists := q.workers["chat_cleanup"]
+		q.mu.Unlock()
+		return !exists
+	}, 500*time.Millisecond, 10*time.Millisecond, "worker should be removed after Close()")
+}
+
+func TestChatQueue_WorkerReuse(t *testing.T) {
+	t.Parallel()
+	q := NewChatQueue(nil)
+
+	var counter atomic.Int32
+
+	require.NoError(t, q.Enqueue("chat_reuse", func(_ context.Context) error {
+		counter.Add(1)
+		return nil
+	}))
+	require.NoError(t, q.Enqueue("chat_reuse", func(_ context.Context) error {
+		counter.Add(1)
+		return nil
+	}))
+
+	require.Eventually(t, func() bool {
+		return counter.Load() == 2
+	}, 500*time.Millisecond, 10*time.Millisecond)
+
 	q.mu.Lock()
-	_, exists := q.workers["chat_cleanup"]
+	_, exists := q.workers["chat_reuse"]
 	q.mu.Unlock()
-	require.False(t, exists, "worker should be removed after task completion")
+	require.True(t, exists, "worker should persist for task reuse")
+
+	q.Close()
 }
 
 // Test: multiple rapid messages for same chat are queued and processed in order.

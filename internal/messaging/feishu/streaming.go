@@ -13,6 +13,8 @@ import (
 	lark "github.com/larksuite/oapi-sdk-go/v3"
 	larkcardkit "github.com/larksuite/oapi-sdk-go/v3/service/cardkit/v1"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
+
+	"github.com/hotplex/hotplex-worker/internal/messaging"
 )
 
 type CardPhase int32
@@ -65,10 +67,18 @@ type StreamingCardController struct {
 	msgID     string
 	sequence  atomic.Int64
 
-	mu          sync.Mutex
-	buf         strings.Builder
-	lastFlushed string
-	cardKitOK   bool
+	mu              sync.Mutex
+	buf             strings.Builder
+	lastFlushed     string
+	cardKitOK       bool
+	streamingActive bool // true once enableStreaming succeeds; disables on disableStreaming
+
+	// Reliability tracking (mirrors Slack NativeStreamingWriter).
+	streamStartTime time.Time
+	streamExpired   bool
+	bytesWritten    int64
+	bytesFlushed    int64
+	failedFlushes   int
 
 	chatType     string
 	replyToMsgID string
@@ -79,15 +89,20 @@ type StreamingCardController struct {
 
 const streamingElementID = "streaming_content"
 
+// StreamTTL is the maximum duration a streaming card can remain active.
+// Matches the Slack NativeStreamingWriter TTL for consistency.
+const StreamTTL = 10 * time.Minute
+
 func NewStreamingCardController(client *lark.Client, limiter *FeishuRateLimiter, log *slog.Logger) *StreamingCardController {
 	var p atomic.Int32
 	p.Store(int32(PhaseIdle))
 	return &StreamingCardController{
-		limiter:   limiter,
-		client:    client,
-		log:       log,
-		cardKitOK: true,
-		elementID: streamingElementID,
+		limiter:         limiter,
+		client:          client,
+		log:             log,
+		cardKitOK:       true,
+		elementID:       streamingElementID,
+		streamStartTime: time.Now(),
 	}
 }
 
@@ -131,7 +146,7 @@ func (c *StreamingCardController) EnsureCard(ctx context.Context, chatID, chatTy
 	msgID, err := c.sendCardMessage(ctx, chatID, sanitized)
 	if err != nil {
 		c.log.Warn("feishu: send card message failed, degrading to static",
-			"error", err)
+			"err", err)
 		c.cardKitOK = false
 		if c.transition(PhaseCreationFailed) {
 			return fmt.Errorf("feishu: send card message failed: %w", err)
@@ -142,6 +157,7 @@ func (c *StreamingCardController) EnsureCard(ctx context.Context, chatID, chatTy
 	c.mu.Lock()
 	c.msgID = msgID
 	c.lastFlushed = initialContent
+	c.streamingActive = true // card already sent with streaming_mode: true
 	c.mu.Unlock()
 
 	// Check if Close() was called while the card was being created.
@@ -151,7 +167,7 @@ func (c *StreamingCardController) EnsureCard(ctx context.Context, chatID, chatTy
 		c.log.Debug("feishu: card created but Close() already called, finalizing")
 		content := OptimizeMarkdownStyle(SanitizeForCard(initialContent))
 		if c.cardKitOK && c.msgID != "" {
-			_ = c.flushIMPatch(ctx, content)
+			_ = c.flushIMPatchWithConfig(ctx, content)
 		}
 		return nil
 	}
@@ -160,7 +176,7 @@ func (c *StreamingCardController) EnsureCard(ctx context.Context, chatID, chatTy
 	cardID, err := c.idConvert(ctx, msgID)
 	if err != nil {
 		c.log.Warn("feishu: id_convert failed, using IM patch fallback",
-			"error", err)
+			"err", err)
 		c.cardKitOK = false
 	} else {
 		c.mu.Lock()
@@ -170,8 +186,10 @@ func (c *StreamingCardController) EnsureCard(ctx context.Context, chatID, chatTy
 		// Step 3: Enable streaming on the card.
 		if err := c.enableStreaming(ctx); err != nil {
 			c.log.Warn("feishu: enable streaming failed, using IM patch fallback",
-				"error", err)
+				"err", err)
 			c.cardKitOK = false
+		} else {
+			c.streamingActive = true
 		}
 	}
 
@@ -182,8 +200,24 @@ func (c *StreamingCardController) EnsureCard(ctx context.Context, chatID, chatTy
 }
 
 func (c *StreamingCardController) Write(text string) error {
+	text = messaging.SanitizeText(text)
+
 	c.mu.Lock()
+	if c.streamStartTime.IsZero() {
+		c.streamStartTime = time.Now()
+	}
+	elapsed := time.Since(c.streamStartTime)
+	if elapsed > StreamTTL {
+		if !c.streamExpired {
+			c.streamExpired = true
+			c.log.Warn("feishu: streaming TTL exceeded, rejecting further writes",
+				"elapsed", elapsed.Round(time.Second))
+		}
+		c.mu.Unlock()
+		return fmt.Errorf("feishu: streaming expired after %v", StreamTTL)
+	}
 	c.buf.WriteString(text)
+	c.bytesWritten += int64(len(text))
 	c.mu.Unlock()
 	return nil
 }
@@ -210,22 +244,32 @@ func (c *StreamingCardController) Flush(ctx context.Context) error {
 		"seq", seq)
 
 	if c.cardKitOK && c.limiter.AllowCardKit(c.cardID) {
-		if err := c.flushCardKit(ctx, content, seq); err != nil {
+		if err := c.flushCardKitWithRetry(ctx, content, seq); err != nil {
 			if isCardRateLimitError(err) {
 				c.log.Debug("feishu: cardkit rate limited, skipping frame")
+				c.mu.Lock()
+				c.failedFlushes++
+				c.mu.Unlock()
 				return nil
 			}
 			if isCardTableLimitError(err) {
 				c.log.Warn("feishu: cardkit table limit exceeded, disabling streaming")
 				c.cardKitOK = false
+				c.mu.Lock()
+				c.failedFlushes++
+				c.mu.Unlock()
 				return nil
 			}
 			c.log.Warn("feishu: cardkit flush failed, falling back to IM patch",
-				"error", err)
+				"err", err)
 			c.cardKitOK = false
+			c.mu.Lock()
+			c.failedFlushes++
+			c.mu.Unlock()
 		} else {
 			c.mu.Lock()
 			c.lastFlushed = content
+			c.bytesFlushed += int64(len(content))
 			c.mu.Unlock()
 			return nil
 		}
@@ -233,11 +277,15 @@ func (c *StreamingCardController) Flush(ctx context.Context) error {
 
 	if c.msgID != "" && c.limiter.AllowPatch(c.msgID) {
 		if err := c.flushIMPatch(ctx, content); err != nil {
-			c.log.Warn("feishu: IM patch flush failed", "error", err)
+			c.log.Warn("feishu: IM patch flush failed", "err", err)
+			c.mu.Lock()
+			c.failedFlushes++
+			c.mu.Unlock()
 			return err
 		}
 		c.mu.Lock()
 		c.lastFlushed = content
+		c.bytesFlushed += int64(len(content))
 		c.mu.Unlock()
 	}
 
@@ -259,6 +307,19 @@ func (c *StreamingCardController) Close(ctx context.Context) error {
 	// then OptimizeMarkdownStyle (extracts code blocks, processes tables, restores).
 	content = OptimizeMarkdownStyle(SanitizeForCard(content))
 
+	// Integrity check: if bytesWritten >> bytesFlushed, the stream lost content.
+	c.mu.Lock()
+	integrityOK := (c.bytesWritten == 0 && c.bytesFlushed == 0) ||
+		c.bytesFlushed >= c.bytesWritten*9/10
+	if !integrityOK {
+		c.log.Warn("feishu: streaming integrity check failed",
+			"bytes_written", c.bytesWritten,
+			"bytes_flushed", c.bytesFlushed,
+			"failed_flushes", c.failedFlushes)
+		content += "\n\n> ⚠️ _部分输出可能因速率限制而丢失。_"
+	}
+	c.mu.Unlock()
+
 	c.log.Debug("feishu: streaming card close",
 		"card_kit_ok", c.cardKitOK,
 		"card_id", c.cardID,
@@ -270,12 +331,40 @@ func (c *StreamingCardController) Close(ctx context.Context) error {
 		seq := int(c.sequence.Add(1))
 
 		if err := c.flushCardKit(ctx, content, seq); err != nil {
-			c.log.Warn("feishu: final cardkit flush failed", "error", err)
+			c.log.Warn("feishu: final cardkit flush failed", "err", err)
 		}
+	} else if !c.cardKitOK && c.msgID != "" {
+		// CardKit degraded: use IM Patch with final config (streaming_mode=false + summary)
+		// to ensure the card renders correctly without stale streaming state.
+		c.log.Debug("feishu: cardkit degraded, using IM patch with final config")
+		_ = c.flushIMPatchWithConfig(ctx, content)
+	}
 
-		if err := c.disableStreaming(ctx); err != nil {
-			c.log.Warn("feishu: disable streaming failed", "error", err)
+	// Update lastFlushed so disableStreaming can use it for the summary preview.
+	c.mu.Lock()
+	c.lastFlushed = content
+	c.mu.Unlock()
+
+	// Always disable streaming if it was enabled, even after cardKitOK degraded.
+	// Without this, the card stays in "generating" state permanently.
+	if c.streamingActive {
+		c.mu.Lock()
+		cardID := c.cardID
+		c.mu.Unlock()
+
+		if cardID != "" {
+			if err := c.disableStreaming(ctx); err != nil {
+				c.log.Warn("feishu: disable streaming failed", "err", err)
+			} else {
+				c.log.Info("feishu: streaming stopped",
+					"card_id", cardID,
+					"cardkit_mode", c.cardKitOK,
+					"summary_len", len(truncateForSummary(c.lastFlushed)))
+			}
+		} else {
+			c.log.Warn("feishu: cannot disable streaming — cardID is empty (id_convert failed), card may stay in generating state")
 		}
+		c.streamingActive = false
 	}
 
 	return nil
@@ -291,8 +380,9 @@ func (c *StreamingCardController) Abort(ctx context.Context) error {
 	msgID := c.msgID
 	c.mu.Unlock()
 
-	if cardID != "" && c.cardKitOK {
+	if c.streamingActive && cardID != "" {
 		_ = c.disableStreaming(ctx)
+		c.streamingActive = false
 	}
 
 	if msgID != "" {
@@ -330,6 +420,9 @@ func (c *StreamingCardController) sendCardMessage(ctx context.Context, chatID, c
 		"schema": "2.0",
 		"config": map[string]any{
 			"streaming_mode": true,
+			"summary": map[string]any{
+				"content": truncateForSummary(content),
+			},
 		},
 		"body": map[string]any{
 			"elements": []any{
@@ -432,8 +525,20 @@ func (c *StreamingCardController) enableStreaming(ctx context.Context) error {
 }
 
 func (c *StreamingCardController) disableStreaming(ctx context.Context) error {
+	// Clear the "[生成中...]" summary by providing a content preview.
+	// When streaming_mode is enabled, Feishu defaults summary to "[Generating...]"
+	// which persists even after disableStreaming unless we override it.
+	c.mu.Lock()
+	summary := truncateForSummary(c.lastFlushed)
+	c.mu.Unlock()
+
 	settingsJSON, _ := json.Marshal(map[string]any{
-		"streaming_mode": false,
+		"config": map[string]any{
+			"streaming_mode": false,
+			"summary": map[string]any{
+				"content": summary,
+			},
+		},
 	})
 
 	body := larkcardkit.NewSettingsCardReqBodyBuilder().
@@ -453,6 +558,8 @@ func (c *StreamingCardController) disableStreaming(ctx context.Context) error {
 	if !resp.Success() {
 		return fmt.Errorf("cardkit settings disable streaming failed: code=%d msg=%s", resp.Code, resp.Msg)
 	}
+	c.log.Debug("feishu: streaming disabled", "card_id", c.cardID)
+
 	return nil
 }
 
@@ -480,6 +587,22 @@ func (c *StreamingCardController) flushCardKit(ctx context.Context, content stri
 	}
 	c.log.Debug("feishu: cardkit element content flushed", "card_id", c.cardID, "seq", seq, "content_len", len(content))
 	return nil
+}
+
+// flushCardKitWithRetry attempts to flush to CardKit with a single retry on transient failure.
+func (c *StreamingCardController) flushCardKitWithRetry(ctx context.Context, content string, seq int) error {
+	err := c.flushCardKit(ctx, content, seq)
+	if err == nil {
+		return nil
+	}
+	// Single retry with 50ms backoff for transient network issues.
+	c.log.Debug("feishu: cardkit flush failed, retrying", "err", err)
+	select {
+	case <-time.After(50 * time.Millisecond):
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	return c.flushCardKit(ctx, content, seq)
 }
 
 func (c *StreamingCardController) flushIMPatch(ctx context.Context, content string) error {
@@ -517,6 +640,50 @@ func (c *StreamingCardController) flushIMPatch(ctx context.Context, content stri
 	return nil
 }
 
+// flushIMPatchWithConfig sends a final IM Patch with streaming_mode disabled and summary set.
+// Used in Close() when CardKit is degraded but we need to ensure the card renders correctly.
+func (c *StreamingCardController) flushIMPatchWithConfig(ctx context.Context, content string) error {
+	summary := truncateForSummary(content)
+	cardContent := map[string]any{
+		"schema": "2.0",
+		"config": map[string]any{
+			"streaming_mode": false,
+			"summary": map[string]any{
+				"content": summary,
+			},
+		},
+		"body": map[string]any{
+			"elements": []any{
+				map[string]any{
+					"tag":     "markdown",
+					"content": content,
+				},
+			},
+		},
+	}
+	contentJSON, _ := json.Marshal(cardContent)
+
+	body := larkim.NewPatchMessageReqBodyBuilder().
+		Content(string(contentJSON)).
+		Build()
+
+	req := larkim.NewPatchMessageReqBuilder().
+		MessageId(c.msgID).
+		Body(body).
+		Build()
+
+	resp, err := c.client.Im.V1.Message.Patch(ctx, req)
+	if err != nil {
+		return fmt.Errorf("im message patch with config: %w", err)
+	}
+	if !resp.Success() {
+		return fmt.Errorf("im message patch with config failed: code=%d msg=%s", resp.Code, resp.Msg)
+	}
+	c.log.Info("feishu: IM patch with final config flushed (cardkit degraded)",
+		"msg_id", c.msgID, "content_len", len(content), "summary", summary)
+	return nil
+}
+
 func (c *StreamingCardController) sendAbortMessage(ctx context.Context, msgID string) {
 	_ = c.adapterReplyMessage(ctx, msgID, "_Aborted._")
 }
@@ -539,6 +706,39 @@ func (c *StreamingCardController) adapterReplyMessage(ctx context.Context, msgID
 		return fmt.Errorf("reply failed: code=%d msg=%s", resp.Code, resp.Msg)
 	}
 	return nil
+}
+
+// truncateForSummary produces a plain-text preview suitable for the card summary field.
+// It strips markdown syntax and truncates to a reasonable length for chat list display.
+func truncateForSummary(content string) string {
+	s := strings.TrimSpace(content)
+
+	// Collapse to first line for a single-line preview.
+	if idx := strings.IndexByte(s, '\n'); idx > 0 {
+		s = s[:idx]
+	}
+
+	// Strip markdown syntax: headings (# ), bold/italic (**text**, *text*),
+	// code spans (`text`), and emphasis (_text_).
+	// Use regexp-free approach: remove runs of # * ` _ that are adjacent to
+	// word boundaries. Simple ReplaceAll is sufficient for a chat-list preview.
+	s = strings.TrimSpace(s)
+	for _, ch := range []string{"#", "*", "`", "_"} {
+		s = strings.ReplaceAll(s, ch, "")
+	}
+	s = strings.TrimSpace(s)
+
+	if s == "" {
+		return ""
+	}
+
+	// Truncate by runes (not bytes) to avoid splitting multi-byte Chinese chars.
+	const maxRunes = 50
+	runes := []rune(s)
+	if len(runes) <= maxRunes {
+		return string(runes)
+	}
+	return string(runes[:maxRunes])
 }
 
 func isCardRateLimitError(err error) bool {

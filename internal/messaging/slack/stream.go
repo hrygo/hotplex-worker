@@ -3,8 +3,10 @@ package slack
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"time"
 	"unicode/utf8"
@@ -21,10 +23,74 @@ const (
 	StreamTTL        = 10 * time.Minute
 )
 
+func isStreamStateError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := err.Error()
+	return containsAny(errStr, []string{
+		"message_not_in_streaming_state",
+		"not_in_channel",
+		"channel_not_found",
+		"message_not_found",
+	})
+}
+
+func isRateLimitError(err error) (bool, time.Duration) {
+	if err == nil {
+		return false, 0
+	}
+
+	var rateLimitErr *slack.RateLimitedError
+	if errors.As(err, &rateLimitErr) {
+		return true, rateLimitErr.RetryAfter
+	}
+
+	errStr := err.Error()
+	if strings.Contains(errStr, "429") || strings.Contains(errStr, "rate_limit") {
+		return true, time.Second
+	}
+
+	return false, 0
+}
+
+func isAuthError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := err.Error()
+	return containsAny(errStr, []string{
+		"invalid_auth",
+		"missing_scope",
+		"not_allowed",
+		"account_inactive",
+		"invalid_token",
+		"token_revoked",
+	})
+}
+
+func isRetryableError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return !isStreamStateError(err) && !isAuthError(err)
+}
+
+func containsAny(str string, substrs []string) bool {
+	for _, substr := range substrs {
+		if strings.Contains(str, substr) {
+			return true
+		}
+	}
+	return false
+}
+
 // NativeStreamingWriter wraps Slack's three-phase streaming API
 // into a standard io.WriteCloser. First Write() starts the stream,
 // subsequent calls buffer content, Close() ends it with fallback.
 type NativeStreamingWriter struct {
+	// ctx is stored because the writer needs it for the lifecycle of the stream,
+	// and the goroutines spawned by Write/flushBuffer need access to it.
 	ctx       context.Context
 	client    *slack.Client
 	channelID string
@@ -34,6 +100,7 @@ type NativeStreamingWriter struct {
 	started     bool
 	closed      bool
 	onComplete  func(string)
+	onRegister  func(*NativeStreamingWriter)
 	messageTS   string
 	rateLimiter *ChannelRateLimiter
 
@@ -56,13 +123,14 @@ type NativeStreamingWriter struct {
 
 // NewNativeStreamingWriter creates a new streaming writer for Slack.
 func NewNativeStreamingWriter(ctx context.Context, client *slack.Client, channelID, threadTS string,
-	rateLimiter *ChannelRateLimiter, onComplete func(string)) *NativeStreamingWriter {
+	rateLimiter *ChannelRateLimiter, onComplete func(string), onRegister func(*NativeStreamingWriter)) *NativeStreamingWriter {
 	w := &NativeStreamingWriter{
 		ctx:          ctx,
 		client:       client,
 		channelID:    channelID,
 		threadTS:     threadTS,
 		onComplete:   onComplete,
+		onRegister:   onRegister,
 		rateLimiter:  rateLimiter,
 		flushTrigger: make(chan struct{}, 1),
 		closeChan:    make(chan struct{}),
@@ -79,6 +147,9 @@ func (w *NativeStreamingWriter) Write(p []byte) (int, error) {
 
 	if w.closed {
 		return 0, fmt.Errorf("stream already closed")
+	}
+	if w.streamExpired {
+		return 0, fmt.Errorf("stream expired")
 	}
 	if len(p) == 0 {
 		return 0, nil
@@ -107,6 +178,9 @@ func (w *NativeStreamingWriter) Write(p []byte) (int, error) {
 		w.messageTS = streamTS
 		w.started = true
 		w.streamStartTime = time.Now()
+		if w.onRegister != nil {
+			w.onRegister(w)
+		}
 	}
 
 	w.buf.Write(p)
@@ -165,8 +239,8 @@ func (w *NativeStreamingWriter) flushBuffer() {
 	}
 
 	// Chunk if too large
-	if len(content) > maxAppendSize {
-		chunks := splitChunks(content, maxAppendSize)
+	if utf8.RuneCountInString(content) > maxAppendSize {
+		chunks := ChunkContent(content, maxAppendSize)
 		for _, chunk := range chunks {
 			if err := w.appendWithRetry(chunk); err != nil {
 				w.mu.Lock()
@@ -196,7 +270,32 @@ func (w *NativeStreamingWriter) appendWithRetry(content string) error {
 			return nil
 		}
 		lastErr = err
-		time.Sleep(retryDelay)
+
+		if isStreamStateError(err) || isAuthError(err) {
+			w.mu.Lock()
+			w.streamExpired = true
+			w.mu.Unlock()
+			return err
+		}
+
+		if isRateLimited, retryAfter := isRateLimitError(err); isRateLimited {
+			timer := time.NewTimer(retryAfter)
+			select {
+			case <-timer.C:
+				continue
+			case <-w.ctx.Done():
+				timer.Stop()
+				return w.ctx.Err()
+			}
+		}
+
+		if i < maxAppendRetries-1 {
+			select {
+			case <-time.After(retryDelay):
+			case <-w.ctx.Done():
+				return w.ctx.Err()
+			}
+		}
 	}
 	return lastErr
 }
@@ -209,12 +308,12 @@ func (w *NativeStreamingWriter) Close() error {
 		return nil
 	}
 	w.closed = true
+	streamExpired := w.streamExpired
 	w.mu.Unlock()
 
 	close(w.closeChan)
 	w.wg.Wait()
 
-	// 最后一次捕获状态 — buf still has rate-limited content after goroutine stops
 	w.mu.Lock()
 	started := w.started
 	bytesWritten := w.bytesWritten
@@ -227,20 +326,23 @@ func (w *NativeStreamingWriter) Close() error {
 		return nil
 	}
 
-	// 完整性校验
 	integrityOK := len(failedChunks) == 0 && bytesWritten == bytesFlushed
 
-	// 结束远端流
-	_, _, _ = w.client.StopStreamContext(w.ctx, w.channelID, w.messageTS)
+	// Use a fresh context for cleanup since w.ctx may be cancelled
+	cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	_, _, _ = w.client.StopStreamContext(cleanupCtx, w.channelID, w.messageTS)
 
 	if w.onComplete != nil {
 		w.onComplete(w.messageTS)
 	}
 
-	// Fallback: 流失败时用普通消息补发未送达内容
-	if !integrityOK {
+	if !integrityOK || streamExpired {
 		var fallbackText string
-		if len(failedChunks) > 0 {
+		if streamExpired {
+			fallbackText = "⚠️ *Stream expired, sending complete content:*\n\n"
+		} else if len(failedChunks) > 0 {
 			fallbackText = "⚠️ *Stream interrupted, resending incomplete content:*\n\n"
 			for _, chunk := range failedChunks {
 				fallbackText += chunk
@@ -250,7 +352,7 @@ func (w *NativeStreamingWriter) Close() error {
 			fallbackText += remainingBuf
 		}
 		if fallbackText != "" {
-			_, _, _ = w.client.PostMessageContext(w.ctx, w.channelID, slack.MsgOptionText(fallbackText, false))
+			_, _, _ = w.client.PostMessageContext(cleanupCtx, w.channelID, slack.MsgOptionText(fallbackText, false))
 		}
 	}
 	return nil
@@ -258,20 +360,3 @@ func (w *NativeStreamingWriter) Close() error {
 
 // Compile-time check
 var _ io.WriteCloser = (*NativeStreamingWriter)(nil)
-
-// splitChunks splits a string into chunks of maxLen bytes at rune boundaries.
-func splitChunks(s string, maxLen int) []string {
-	var chunks []string
-	runes := []rune(s)
-	start := 0
-	for start < len(runes) {
-		end := start + maxLen
-		if end > len(runes) {
-			end = len(runes)
-		}
-		// Back up if we'd split in the middle of a multi-byte rune (shouldn't happen with []rune)
-		chunks = append(chunks, string(runes[start:end]))
-		start = end
-	}
-	return chunks
-}

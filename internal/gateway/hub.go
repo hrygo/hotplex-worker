@@ -8,7 +8,9 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"runtime/debug"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -106,7 +108,7 @@ func NewHub(log *slog.Logger, cfg *config.Config) *Hub {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Hub{
-		log: log,
+		log: log.With("component", "hub"),
 		cfg: cfg,
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  cfg.Gateway.ReadBufferSize,
@@ -137,23 +139,26 @@ func (h *Hub) RegisterConn(conn *Conn) {
 	h.conns[conn] = struct{}{}
 	h.mu.Unlock()
 	metrics.GatewayConnectionsOpen.Inc()
-	h.log.Debug("gateway: conn registered", "remote", conn.RemoteAddr())
+	h.log.Debug("gateway: conn registered", "remote", conn.RemoteAddr(), "session_id", conn.sessionID)
 }
 
 // UnregisterConn removes a connection and cleans up session mappings.
+// Session-level entries (seqGen, sessionDropped) are cleaned up when a session
+// has no remaining connections.
 func (h *Hub) UnregisterConn(conn *Conn) {
 	h.mu.Lock()
 	delete(h.conns, conn)
-	// Remove from all session maps.
 	for sid, conns := range h.sessions {
 		delete(conns, conn)
 		if len(conns) == 0 {
 			delete(h.sessions, sid)
+			delete(h.sessionDropped, sid)
+			h.seqGen.Remove(sid)
 		}
 	}
 	h.mu.Unlock()
 	metrics.GatewayConnectionsOpen.Dec()
-	h.log.Debug("gateway: conn unregistered", "remote", conn.RemoteAddr())
+	h.log.Debug("gateway: conn unregistered", "remote", conn.RemoteAddr(), "session_id", conn.sessionID)
 }
 
 // JoinSession subscribes conn to receive events for a session.
@@ -177,7 +182,7 @@ func (h *Hub) JoinSession(sessionID string, conn *Conn) {
 		for c := range existing {
 			if c != conn {
 				delete(existing, c)
-				h.log.Info("gateway: removed stale conn from session", "session_id", sessionID)
+				h.log.Info("gateway: removed stale conn from session", "session_id", sessionID, "remote", conn.RemoteAddr())
 			}
 		}
 	}
@@ -189,12 +194,16 @@ func (h *Hub) JoinSession(sessionID string, conn *Conn) {
 }
 
 // LeaveSession unsubscribes conn from a session.
+// If the session has no remaining connections, session-level entries (seqGen,
+// sessionDropped) are cleaned up to prevent memory leaks.
 func (h *Hub) LeaveSession(sessionID string, conn *Conn) {
 	h.mu.Lock()
 	if conns, ok := h.sessions[sessionID]; ok {
 		delete(conns, conn)
 		if len(conns) == 0 {
 			delete(h.sessions, sessionID)
+			delete(h.sessionDropped, sessionID)
+			h.seqGen.Remove(sessionID)
 		}
 	}
 	h.mu.Unlock()
@@ -304,7 +313,7 @@ func (h *Hub) sendControlToSession(ctx context.Context, env *events.Envelope) {
 	env = events.Clone(env)
 	for _, conn := range conns {
 		if err := conn.WriteCtx(ctx, env); err != nil {
-			h.log.Warn("gateway: send to conn failed", "err", err)
+			h.log.Warn("gateway: send to conn failed", "session_id", env.SessionID, "err", err)
 		}
 	}
 }
@@ -369,17 +378,24 @@ func (h *Hub) Run() {
 			if msg == nil || msg.Env == nil {
 				continue
 			}
-			_, span := tracing.SpanFromContext(h.ctx).Start(h.ctx, "hub.broadcast")
-			span.SetAttributes(
-				tracing.Attr("session_id", msg.Env.SessionID),
-				tracing.Attr("event_type", string(msg.Env.Event.Type)),
-				tracing.Attr("seq", msg.Env.Seq),
-			)
-			h.routeMessage(msg)
-			span.End()
-			if msg.afterDrain != nil {
-				msg.afterDrain()
-			}
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						h.log.Error("hub: panic in routeMessage", "session_id", msg.Env.SessionID, "panic", r, "stack", string(debug.Stack()))
+					}
+				}()
+				_, span := tracing.SpanFromContext(h.ctx).Start(h.ctx, "hub.broadcast")
+				span.SetAttributes(
+					tracing.Attr("session_id", msg.Env.SessionID),
+					tracing.Attr("event_type", string(msg.Env.Event.Type)),
+					tracing.Attr("seq", msg.Env.Seq),
+				)
+				h.routeMessage(msg)
+				span.End()
+				if msg.afterDrain != nil {
+					msg.afterDrain()
+				}
+			}()
 		}
 	}
 }
@@ -424,13 +440,23 @@ func (h *Hub) routeMessage(msg *EnvelopeWithConn) {
 		metrics.GatewayMessagesTotal.WithLabelValues("outgoing", string(msg.Env.Event.Type)).Inc()
 		if c, ok := conn.(*Conn); ok {
 			if err := c.WriteMessage(websocket.TextMessage, encoded); err != nil {
-				h.log.Warn("gateway: write failed", "err", err)
+				h.log.Warn("gateway: write failed", "session_id", msg.Env.SessionID, "err", err)
 				_ = conn.Close()
 			}
 		} else {
 			if err := conn.WriteCtx(context.Background(), msg.Env); err != nil {
-				h.log.Warn("gateway: platform write failed", "err", err)
+				h.log.Warn("gateway: platform write failed", "session_id", msg.Env.SessionID, "err", err)
 				_ = conn.Close()
+				h.mu.Lock()
+				if sessionConns, ok := h.sessions[msg.Env.SessionID]; ok {
+					delete(sessionConns, conn)
+					if len(sessionConns) == 0 {
+						delete(h.sessions, msg.Env.SessionID)
+						delete(h.sessionDropped, msg.Env.SessionID)
+						h.seqGen.Remove(msg.Env.SessionID)
+					}
+				}
+				h.mu.Unlock()
 			}
 		}
 	}
@@ -572,16 +598,30 @@ func (g *SeqGen) Next(sessionID string) int64 {
 	return n
 }
 
+// Remove deletes the sequence counter for a session.
+func (g *SeqGen) Remove(sessionID string) {
+	g.mu.Lock()
+	delete(g.seq, sessionID)
+	g.mu.Unlock()
+}
+
 // pcEntry wraps a PlatformConn so it can be stored in the sessions map alongside
 // *Conn entries. It delegates WriteCtx and Close to the underlying PlatformConn.
+// The closed flag prevents stale entries from sending duplicate messages after
+// the underlying PlatformConn has been closed (e.g., due to a write error).
 type pcEntry struct {
-	pc messaging.PlatformConn
+	pc     messaging.PlatformConn
+	closed atomic.Bool
 }
 
 func (e *pcEntry) WriteCtx(ctx context.Context, env *events.Envelope) error {
+	if e.closed.Load() {
+		return nil // idempotent: ignore writes to closed entries
+	}
 	return e.pc.WriteCtx(ctx, env)
 }
 
 func (e *pcEntry) Close() error {
+	e.closed.Store(true)
 	return e.pc.Close()
 }

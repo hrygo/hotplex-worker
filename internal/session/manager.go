@@ -72,7 +72,7 @@ type SessionInfo struct {
 	IdleExpiresAt *time.Time          `json:"idle_expires_at,omitempty"`
 	Context       map[string]any      `json:"context,omitempty"`
 	// WorkerSessionID is the session ID used by the worker runtime itself.
-	// Only populated for workers that auto-generate their own session IDs (OpenCode CLI/Server).
+	// Only populated for workers that auto-generate their own session IDs (OpenCode Server).
 	// For Claude Code this is always empty — the gateway's ID IS the worker's session ID
 	// (passed via --session-id / --resume).
 	WorkerSessionID string `json:"worker_session_id,omitempty"`
@@ -95,7 +95,7 @@ func NewManager(ctx context.Context, log *slog.Logger, cfg *config.Config, store
 	}
 
 	m := &Manager{
-		log:      log,
+		log:      log.With("component", "session"),
 		store:    store,
 		msgStore: msgStore,
 		cfg:      cfg,
@@ -143,7 +143,7 @@ func (m *Manager) CreateWithBot(ctx context.Context, id, userID, botID string, w
 	m.sessions[id] = &managedSession{info: *info, log: m.log.With("worker_type", workerType)}
 	m.mu.Unlock()
 
-	m.log.Info("session: created", "id", id, "user_id", userID, "worker_type", workerType, "bot_id", botID)
+	m.log.Info("session: created", "session_id", id, "user_id", userID, "worker_type", workerType, "bot_id", botID)
 	metrics.SessionsTotal.WithLabelValues(string(workerType)).Inc()
 	metrics.SessionsActive.WithLabelValues(string(events.StateCreated)).Inc()
 	return info, nil
@@ -216,12 +216,16 @@ func (m *Manager) transitionState(ctx context.Context, ms *managedSession, from,
 			terminateCtx, cancel := context.WithTimeout(ctx, gracefulShutdownTimeout)
 			defer cancel()
 			if err := ms.worker.Terminate(terminateCtx); err != nil {
-				m.log.Warn("session: worker terminate failed", "id", ms.info.ID, "err", err)
+				m.log.Warn("session: worker terminate failed", "session_id", ms.info.ID, "err", err)
 			}
+			// Nil the pointer to prevent DetachWorker from releasing quota a
+			// second time (e.g. when forwardEvents goroutine exits after the
+			// worker process dies). Without this, pool.totalCount underflows.
+			ms.worker = nil
 		}
 	}
 
-	m.log.Info("session: transitioned", "id", ms.info.ID, "from", from, "to", to)
+	m.log.Info("session: transitioned", "session_id", ms.info.ID, "from", from, "to", to)
 
 	// Update active sessions gauge.
 	metrics.SessionsActive.WithLabelValues(string(from)).Dec()
@@ -292,24 +296,27 @@ func (m *Manager) TransitionWithInput(ctx context.Context, id string, to events.
 	ms.mu.Lock()
 	defer ms.mu.Unlock()
 
+	from := ms.info.State
+
 	// Anti-pollution: enforce max turns limit.
+	// TurnCount is incremented after transition validation to avoid
+	// burning turns on invalid transitions.
+	if !events.IsValidTransition(from, to) {
+		return fmt.Errorf("%w: %s → %s", ErrInvalidTransition, from, to)
+	}
+
 	ms.TurnCount++
 	if ms.worker != nil {
 		maxTurns := ms.worker.MaxTurns()
 		if maxTurns > 0 && ms.TurnCount > maxTurns {
-			m.log.Warn("session: max turns exceeded, initiating anti-pollution restart")
+			m.log.Warn("session: max turns exceeded, initiating anti-pollution restart",
+				"session_id", id, "turn_count", ms.TurnCount, "max_turns", maxTurns)
 			_ = ms.worker.Kill()
-			from := ms.info.State
 			if events.IsValidTransition(from, events.StateTerminated) {
 				_ = m.transitionState(ctx, ms, from, events.StateTerminated, "max_turns")
 			}
 			return ErrMaxTurnsReached
 		}
-	}
-
-	from := ms.info.State
-	if !events.IsValidTransition(from, to) {
-		return fmt.Errorf("%w: %s → %s", ErrInvalidTransition, from, to)
 	}
 
 	return m.transitionState(ctx, ms, from, to, "client_input")
@@ -335,7 +342,7 @@ func (m *Manager) AttachWorker(id string, w worker.Worker) error {
 	if poolErr := m.pool.Acquire(userID); poolErr != nil {
 		var pe *PoolError
 		if !errors.As(poolErr, &pe) {
-			m.log.Warn("session: attach rejected", "error", poolErr, "session_id", id)
+			m.log.Warn("session: attach rejected", "err", poolErr, "session_id", id)
 			metrics.PoolAcquireTotal.WithLabelValues("pool_exhausted").Inc()
 			return ErrPoolExhausted
 		}
@@ -450,7 +457,7 @@ func (m *Manager) Delete(ctx context.Context, id string) error {
 		go m.OnTerminate(id)
 	}
 
-	m.log.Info("session: deleted", "id", id)
+	m.log.Info("session: deleted", "session_id", id)
 	return nil
 }
 
@@ -498,7 +505,7 @@ func (m *Manager) ClearContext(ctx context.Context, sessionID string) error {
 }
 
 // UpdateWorkerSessionID persists the worker-internal session ID for resume support.
-// Workers that manage their own session IDs (OpenCode CLI, OpenCode Server) call this
+// Workers that manage their own session IDs (OpenCode Server) call this
 // to store the ID so it can be restored on resume.
 func (m *Manager) UpdateWorkerSessionID(ctx context.Context, id, workerSessionID string) error {
 	if m == nil {
@@ -683,13 +690,14 @@ func (m *Manager) gc(ctx context.Context) {
 		if w != nil {
 			// LastIO() is now part of the Worker interface — direct call, no type assertion needed
 			lastIO := w.LastIO()
-			// Default 5 minutes zombie timeout if config missing
-			timeout := 5 * time.Minute
+			// Default zombie IO timeout (overridden by config worker.execution_timeout)
+			timeout := 30 * time.Minute
 			if m.cfg.Worker.ExecutionTimeout > 0 {
 				timeout = m.cfg.Worker.ExecutionTimeout
 			}
 			if !lastIO.IsZero() && now.Sub(lastIO) > timeout {
-				m.log.Warn("session: zombie IO polling triggered, terminating ghost process", "id", id, "last_io", lastIO)
+				m.log.Warn("session: zombie IO polling triggered, terminating ghost process",
+					"session_id", id, "worker_type", w.Type(), "last_io", lastIO, "timeout", timeout)
 				if err := m.TransitionWithReason(ctx, id, events.StateTerminated, "zombie"); err != nil {
 					m.log.Warn("session: zombie GC transition error", "err", err)
 				}
@@ -721,20 +729,23 @@ func (m *Manager) gc(ctx context.Context) {
 
 	for _, id := range maxIds {
 		if err := m.TransitionWithReason(ctx, id, events.StateTerminated, "max_lifetime"); err != nil {
-			m.log.Warn("session: gc (max_lifetime) transition", "id", id, "err", err)
+			m.log.Warn("session: gc (max_lifetime) transition", "session_id", id, "err", err)
 		}
 	}
 	for _, id := range idleIds {
 		if err := m.TransitionWithReason(ctx, id, events.StateTerminated, "idle_timeout"); err != nil {
-			m.log.Warn("session: gc (idle) transition", "id", id, "err", err)
+			m.log.Warn("session: gc (idle) transition", "session_id", id, "err", err)
 		}
 	}
 
-	// 3. Delete TERMINATED sessions past retention_period.
-	cutoff := now.Add(-m.cfg.Session.RetentionPeriod)
-	if err := m.store.DeleteTerminated(ctx, cutoff); err != nil {
-		m.log.Error("session: gc (retention) delete", "err", err)
-	}
+	// 3. Retention cleanup is intentionally NOT performed here.
+	// TERMINATED session records serve as "resume decision flags" — their
+	// existence tells the gateway that a previous session existed and that
+	// the worker's session files may still be on disk (e.g. Claude Code's
+	// ~/.claude/projects/<hash>/sessions/), enabling --resume to restore
+	// the conversation. Deleting DB records would force --session-id (new
+	// session) instead of --resume, losing conversation history.
+	// Physical deletion should be an explicit admin action, not automatic GC.
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

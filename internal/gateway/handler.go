@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"runtime/debug"
 
 	"github.com/hotplex/hotplex-worker/internal/config"
 	"github.com/hotplex/hotplex-worker/internal/metrics"
@@ -25,12 +26,13 @@ type Handler struct {
 	hub          *Hub
 	sm           *session.Manager
 	jwtValidator *security.JWTValidator
+	bridge       *Bridge // set via SetBridge; nil during tests
 }
 
 // NewHandler creates a new message handler.
 func NewHandler(log *slog.Logger, cfg *config.Config, hub *Hub, sm *session.Manager, jwtValidator *security.JWTValidator) *Handler {
 	return &Handler{
-		log:          log,
+		log:          log.With("component", "handler"),
 		cfg:          cfg,
 		hub:          hub,
 		sm:           sm,
@@ -38,9 +40,18 @@ func NewHandler(log *slog.Logger, cfg *config.Config, hub *Hub, sm *session.Mana
 	}
 }
 
+// SetBridge injects the Bridge for lifecycle operations (reset).
+// Must be called after NewHandler and NewBridge.
+func (h *Handler) SetBridge(b *Bridge) { h.bridge = b }
+
 // Handle processes an incoming envelope from a client.
-func (h *Handler) Handle(ctx context.Context, env *events.Envelope) error {
-	h.log.Debug("gateway: Handle called", "event_type", env.Event.Type, "session_id", env.SessionID, "seq", env.Seq)
+func (h *Handler) Handle(ctx context.Context, env *events.Envelope) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			h.log.Error("gateway: panic in handler", "panic", r, "stack", string(debug.Stack()))
+			err = fmt.Errorf("handler panic: %v", r)
+		}
+	}()
 	switch env.Event.Type {
 	case events.Input:
 		return h.handleInput(ctx, env)
@@ -50,6 +61,8 @@ func (h *Handler) Handle(ctx context.Context, env *events.Envelope) error {
 		return h.handleControl(ctx, env)
 	// AEP-011 / AEP-012: pass-through events from worker to all session clients.
 	case events.Reasoning, events.Step, events.PermissionRequest, events.PermissionResponse,
+		events.QuestionRequest, events.QuestionResponse,
+		events.ElicitationRequest, events.ElicitationResponse,
 		events.Message, events.MessageStart, events.MessageEnd:
 		return h.passthroughToSession(ctx, env)
 	default:
@@ -59,6 +72,11 @@ func (h *Handler) Handle(ctx context.Context, env *events.Envelope) error {
 
 func (h *Handler) handleInput(ctx context.Context, env *events.Envelope) error {
 	h.log.Debug("gateway: handleInput called", "session_id", env.SessionID, "seq", env.Seq)
+
+	// Cancel pending auto-retry if user sends new input during backoff.
+	if h.bridge != nil {
+		h.bridge.CancelRetry(env.SessionID)
+	}
 
 	data, ok := env.Event.Data.(map[string]any)
 	if !ok {
@@ -98,11 +116,13 @@ func (h *Handler) handleInput(ctx context.Context, env *events.Envelope) error {
 		h.log.Debug("gateway: delivering input to worker", "session_id", env.SessionID, "content_preview", content)
 		if err := w.Input(ctx, content, nil); err != nil {
 			h.log.Warn("gateway: worker input", "err", err, "session_id", env.SessionID)
+			_ = h.sendErrorf(ctx, env, events.ErrCodeInternalError, "worker input failed: %v", err)
 		} else {
 			h.log.Info("gateway: input delivered to worker", "session_id", env.SessionID)
 		}
 	} else {
 		h.log.Error("gateway: handleInput no worker found", "session_id", env.SessionID)
+		_ = h.sendErrorf(ctx, env, events.ErrCodeSessionNotFound, "no worker attached to session")
 	}
 
 	return nil
@@ -127,13 +147,17 @@ func (h *Handler) handlePing(ctx context.Context, env *events.Envelope) error {
 }
 
 var passthroughMetricLabel = map[events.Kind]string{
-	events.Reasoning:          "reasoning",
-	events.Step:               "step",
-	events.PermissionRequest:  "permission_request",
-	events.PermissionResponse: "permission_response",
-	events.Message:            "message",
-	events.MessageStart:       "message.start",
-	events.MessageEnd:         "message.end",
+	events.Reasoning:           "reasoning",
+	events.Step:                "step",
+	events.PermissionRequest:   "permission_request",
+	events.PermissionResponse:  "permission_response",
+	events.QuestionRequest:     "question_request",
+	events.QuestionResponse:    "question_response",
+	events.ElicitationRequest:  "elicitation_request",
+	events.ElicitationResponse: "elicitation_response",
+	events.Message:             "message",
+	events.MessageStart:        "message.start",
+	events.MessageEnd:          "message.end",
 }
 
 func (h *Handler) passthroughToSession(ctx context.Context, env *events.Envelope) error {
@@ -147,12 +171,16 @@ func (h *Handler) passthroughToSession(ctx context.Context, env *events.Envelope
 // Server-originated control messages (reconnect, session_invalid, throttle) are
 // sent via SendControlToSession.
 func (h *Handler) handleControl(ctx context.Context, env *events.Envelope) error {
-	data, ok := env.Event.Data.(map[string]any)
-	if !ok {
+	var action string
+	switch d := env.Event.Data.(type) {
+	case events.ControlData:
+		action = string(d.Action)
+	case map[string]any:
+		action, _ = d["action"].(string)
+	default:
 		return h.sendErrorf(ctx, env, events.ErrCodeInvalidMessage, "control: invalid data")
 	}
 
-	action, _ := data["action"].(string)
 	h.log.Info("gateway: control received", "action", action, "session_id", env.SessionID)
 
 	switch events.ControlAction(action) {
@@ -282,21 +310,27 @@ func (h *Handler) handleReset(ctx context.Context, env *events.Envelope) error {
 		return h.sendErrorf(ctx, env, events.ErrCodeProtocolViolation, "reset not allowed in state: %s", si.State)
 	}
 
-	if err := h.sm.ClearContext(ctx, env.SessionID); err != nil {
-		h.log.Warn("gateway: reset clear context failed", "session_id", env.SessionID, "err", err)
-		return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "clear context failed: %v", err)
-	}
-
-	w := h.sm.GetWorker(env.SessionID)
-	if w != nil {
-		if err := w.ResetContext(ctx); err != nil {
-			h.log.Warn("gateway: worker reset context failed", "session_id", env.SessionID, "err", err)
-			return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "worker reset failed: %v", err)
+	// Delegate to Bridge for full lifecycle: intentional exit flag,
+	// worker Terminate → delete files → Start, and new forwardEvents goroutine.
+	if h.bridge != nil {
+		if err := h.bridge.ResetSession(ctx, env.SessionID); err != nil {
+			return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "reset failed: %v", err)
+		}
+	} else {
+		// Test mode (no bridge): reset worker directly.
+		w := h.sm.GetWorker(env.SessionID)
+		if w != nil {
+			if err := w.ResetContext(ctx); err != nil {
+				return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "worker reset failed: %v", err)
+			}
 		}
 	}
 
-	if err := h.sm.TransitionWithReason(ctx, env.SessionID, events.StateRunning, "reset"); err != nil {
-		return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "reset transition failed: %v", err)
+	// Idempotent: if already running, the state transition is a no-op.
+	if si.State != events.StateRunning {
+		if err := h.sm.TransitionWithReason(ctx, env.SessionID, events.StateRunning, "reset"); err != nil {
+			return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "reset transition failed: %v", err)
+		}
 	}
 
 	stateEvt := events.NewEnvelope(aep.NewID(), env.SessionID, h.hub.NextSeq(env.SessionID), events.State, events.StateData{

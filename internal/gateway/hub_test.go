@@ -713,12 +713,10 @@ func TestHub_HandleHTTP_WithSessionID(t *testing.T) {
 	header := http.Header{}
 	header.Set("X-API-Key", "test-key")
 
-	conn, resp, err := websocket.DefaultDialer.Dial(u, header)
+	conn, _, err := websocket.DefaultDialer.Dial(u, header)
 	require.NoError(t, err, "WebSocket upgrade should succeed with session_id param")
 	defer conn.Close()
-	require.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
-
-	// Verify the session has a connection registered (async: wait for registration).
+	// Verify the session has a connection registered (Eventually: registration races with WS upgrade under coverage).
 	require.Eventually(t, func() bool {
 		h.mu.RLock()
 		_, ok := h.sessions["sess_explicit"]

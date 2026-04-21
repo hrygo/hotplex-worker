@@ -2,7 +2,7 @@
 
 Web chat interface for HotPlex Worker Gateway, built with Next.js App Router and Vercel AI SDK.
 
-The most straightforward way to try HotPlex — just connect and chat with AI coding agents (Claude Code, OpenCode CLI, etc.) through your browser.
+The most straightforward way to try HotPlex — just connect and chat with AI coding agents (Claude Code, etc.) through your browser.
 
 ## Prerequisites
 

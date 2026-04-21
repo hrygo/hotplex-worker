@@ -88,8 +88,8 @@ WORKDIR /home/hotplex
 # Copy binary from builder
 COPY --from=builder /build/bin/hotplex-worker /usr/local/bin/hotplex-worker
 
-# Copy default config (if exists)
-COPY --chown=hotplex:hotplex configs/ /etc/hotplex/ 2>/dev/null || true
+# Copy default config
+COPY --chown=hotplex:hotplex configs/ /etc/hotplex/
 
 # Expose ports
 # 8888: WebSocket gateway

@@ -125,7 +125,19 @@ pool:
 worker:
   max_lifetime: 24h           # Kill worker processes after 24h (prevent leaks)
   idle_timeout: 60m           # Terminate idle workers after 60 minutes
-  execution_timeout: 10m      # Maximum time for single tool/operation
+  execution_timeout: 30m      # Zombie IO timeout — terminate worker with no output
+
+  # LLM Provider Error Auto-Retry
+  # When Claude Code encounters 429/529/400/network errors, automatically detect
+  # → exponential backoff → send "继续" to retry. Default: disabled.
+  auto_retry:
+    enabled: true
+    max_retries: 3               # Maximum retry attempts (default: 3)
+    base_delay: 5s               # Initial delay between retries (default: 5s)
+    max_delay: 120s              # Maximum delay cap (default: 120s)
+    retry_input: "继续"           # Text sent to worker on retry
+    notify_user: true             # true: notify user during retry, false: silent
+    patterns: []                  # Custom regex patterns (empty = use built-in defaults)
 
   # Environment variable control
   # Workers inherit a whitelist of safe environment variables
@@ -161,24 +173,35 @@ log:
 # MESSAGING PLATFORM CONFIGURATION
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Slack Socket Mode
-# messaging:
-#   slack:
-#     enabled: false
-#     bot_token: ""
-#     app_token: ""
-#     worker_type: "claude_code"
-#     work_dir: ""        # Working directory for worker processes
+messaging:
+  # Slack Socket Mode
+  slack:
+    enabled: false
+    bot_token: ""
+    app_token: ""
+    worker_type: "claude_code"
+    work_dir: ""        # Working directory for worker processes
+    
+    # Access Control Policies: open (allow all), allowlist (restrict), disabled (block)
+    dm_policy: "allowlist"    # Policy for direct messages (options: open, allowlist, disabled)
+    group_policy: "allowlist"  # Policy for channels and group DMs (options: open, allowlist, disabled)
+    require_mention: true     # In channels, bot must be @mentioned (default: true)
+    allow_from: []            # Global whitelist - authorized for BOTH DM and groups
+    allow_dm_from: []         # Whitelist for direct messages only
+    allow_group_from: []      # Whitelist for channels/groups only
 
-# Feishu/Lark WebSocket
-# messaging:
-#   feishu:
-#     enabled: false
-#     app_id: ""
-#     app_secret: ""
-#     worker_type: "claude_code"
-#     work_dir: ""
-#     dm_policy: "open"        # open | allowlist | disabled
-#     group_policy: "open"     # open | allowlist | disabled
-#     require_mention: true     # in groups, bot must be @mentioned
-#     allow_from: []            # open_id allowlist for DM/group
+  # Feishu/Lark WebSocket
+  feishu:
+    enabled: false
+    app_id: ""
+    app_secret: ""
+    worker_type: "claude_code"
+    work_dir: ""
+    
+    # Access Control Policies: open (allow all), allowlist (restrict), disabled (block)
+    dm_policy: "allowlist"   # Policy for 1-on-1 chats (options: open, allowlist, disabled)
+    group_policy: "allowlist" # Policy for groups and topic groups (options: open, allowlist, disabled)
+    require_mention: true     # In groups, bot must be @mentioned (default: true)
+    allow_from: []            # Global whitelist - authorized for BOTH DM and groups
+    allow_dm_from: []         # Whitelist for direct messages only
+    allow_group_from: []      # Whitelist for groups/topic groups only

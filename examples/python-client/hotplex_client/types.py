@@ -26,7 +26,6 @@ class WorkerType(StrEnum):
     """Worker type identifiers."""
 
     CLAUDE_CODE = "claude_code"
-    OPENCODE_CLI = "opencode_cli"
     OPENCODE_SERVER = "opencode_server"
     PI_MONO = "pi-mono"
 

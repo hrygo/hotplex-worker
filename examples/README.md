@@ -329,7 +329,6 @@ Client                           Gateway                    Worker
 | 类型 | 协议 | 描述 |
 |------|------|------|
 | `claude-code` | stdio/NDJSON | Claude Code CLI |
-| `opencode-cli` | stdio/NDJSON | OpenCode CLI |
 | `opencode-server` | HTTP/SSE | OpenCode Server |
 | `pi-mono` | stdio | Pi-mono 协议（stub） |
 

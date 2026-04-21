@@ -14,7 +14,7 @@ import (
 	"github.com/hotplex/hotplex-worker/pkg/events"
 )
 
-// Conn implements worker.SessionConn for stdin-based workers (claudecode, opencodecli).
+// Conn implements worker.SessionConn for stdin-based workers (claudecode, opencodeserver).
 type Conn struct {
 	userID    string
 	sessionID string
@@ -23,6 +23,7 @@ type Conn struct {
 	log       *slog.Logger
 	mu        sync.Mutex
 	closed    bool
+	lastInput string // last user message content; used for crash recovery re-delivery
 }
 
 // Claude Code stream-json input message types.
@@ -100,6 +101,7 @@ func (c *Conn) SendUserMessage(ctx context.Context, content string) error {
 		c.mu.Unlock()
 		return fmt.Errorf("base: connection closed")
 	}
+	c.lastInput = content // capture for crash recovery re-delivery
 	c.mu.Unlock()
 
 	msg := claudeUserMessage{
@@ -169,9 +171,17 @@ func (c *Conn) SessionID() string {
 	return c.sessionID
 }
 
-// SetSessionID updates the session identifier (for opencodecli's session ID extraction).
+// SetSessionID updates the session identifier (for opencodeserver's session ID extraction).
 func (c *Conn) SetSessionID(id string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.sessionID = id
+}
+
+// LastInput returns the content of the most recent user message sent via SendUserMessage.
+// Used by bridge crash recovery to re-deliver input to a fresh worker after resume failure.
+func (c *Conn) LastInput() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.lastInput
 }

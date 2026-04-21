@@ -27,7 +27,7 @@ pool:
 
 worker:
   idle_timeout: 5m           # Shorter idle timeout for faster cleanup
-  execution_timeout: 5m      # Shorter execution timeout
+  execution_timeout: 5m      # Shorter zombie IO timeout for dev
 
 # ─────────────────────────────────────────────────────────────────────────────
 # MESSAGING PLATFORM ADAPTERS (Development)
@@ -35,12 +35,19 @@ worker:
 
 messaging:
   slack:
-    enabled: false
+    enabled: true
     bot_token: ""
     app_token: ""
     socket_mode: true
     worker_type: "claude_code"
     work_dir: ""
+    # Access Control Policies: open, allowlist, disabled
+    dm_policy: "allowlist"
+    group_policy: "allowlist"
+    require_mention: true
+    allow_from: []
+    allow_dm_from: []
+    allow_group_from: []
 
   feishu:
     enabled: true
@@ -48,7 +55,10 @@ messaging:
     app_secret: ""
     worker_type: "claude_code"
     work_dir: ""
-    dm_policy: "open"
-    group_policy: "open"
+    # Access Control Policies: open, allowlist, disabled
+    dm_policy: "allowlist"
+    group_policy: "allowlist"
     require_mention: true
     allow_from: []
+    allow_dm_from: []
+    allow_group_from: []

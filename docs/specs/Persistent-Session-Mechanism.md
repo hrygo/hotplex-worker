@@ -62,12 +62,12 @@ HotPlex Worker Gateway 持久会话机制，支持：
 │                                                                │
 │  各 Worker 自行实现会话持久化，上层透明：                         │
 │  ClaudeCode:  claude --resume <session_id>                      │
-│  OpenCodeCLI: opencode run --resume <session_id>                │
+│  OpenCodeServer: opencode serve + HTTP API                │
 │  OpenCodeSrv:  HTTP POST /session/<id>/resume                  │
 │                                                                │
 │  reset 实现（各 Worker 自行决定）：                              │
 │  ClaudeCode:  terminate + start（claude 删除旧会话文件）         │
-│  OpenCodeCLI: terminate + start                                │
+│  OpenCodeServer: terminate + start                                │
 │  OpenCodeSrv:  发送 HTTP POST /session/<id>/reset             │
 └────────────────────────────────────────────────────────────────┘
 ```
@@ -648,7 +648,7 @@ func (b *Bridge) MakeSlackEnvelope(teamID, channelID, threadTS, userID, text str
 |----|------|---------|
 | AC-1.1 | `DeriveSessionKey("u1", "claude_code", "s1")` 连续调用 N 次（≥1000），返回完全相同的 UUIDv5 字符串 | 单元测试 loop |
 | AC-1.2 | `DeriveSessionKey("u1", "claude_code", "s1")` ≠ `DeriveSessionKey("u2", "claude_code", "s1")` | 单元测试 |
-| AC-1.3 | `DeriveSessionKey("u1", "claude_code", "s1")` ≠ `DeriveSessionKey("u1", "opencode_cli", "s1")` | 单元测试 |
+| AC-1.3 | `DeriveSessionKey("u1", "claude_code", "s1")` ≠ `DeriveSessionKey("u1", "s1")` | 单元测试 |
 | AC-1.4 | `DeriveSessionKey("u1", "claude_code", "s1")` ≠ `DeriveSessionKey("u1", "claude_code", "s2")` | 单元测试 |
 | AC-1.5 | 输出格式匹配正则 `/[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/` | 单元测试 |
 | AC-1.6 | 不同机器（不同主机名/IP）上相同三元组生成相同 UUID | 多机验证脚本 |
@@ -730,7 +730,7 @@ func (b *Bridge) MakeSlackEnvelope(teamID, channelID, threadTS, userID, text str
 |----|------|---------|
 | AC-7.1 | `Worker` interface 新增 `ResetContext(ctx context.Context) error` 方法 | 编译检查 |
 | AC-7.2 | ClaudeCodeWorker: `ResetContext` 执行 `Terminate()` + `Start()` | mock 测试 |
-| AC-7.3 | OpenCodeCLIWorker: `ResetContext` 执行 `Terminate()` + `Start()` | mock 测试 |
+| AC-7.3 | OpenCodeServerWorker: `ResetContext` 执行 `Terminate()` + `Start()` | mock 测试 |
 | AC-7.4 | OpenCodeSrvWorker: `ResetContext` 发送 HTTP POST `/session/<id>/reset` | mock 测试 |
 | AC-7.5 | 所有 Worker adapter 实现 `var _ Worker = (*Worker)(nil)` 编译验证 | 编译检查 |
 
@@ -798,7 +798,7 @@ func (b *Bridge) MakeSlackEnvelope(teamID, channelID, threadTS, userID, text str
 - [x] `internal/gateway/conn.go` — `performInit` 调用 `DeriveSessionKey`（conn.go:237）
 - [x] `internal/gateway/handler.go` — `handleReset`（handler.go:273）+ `handleGC`（handler.go:312）+ 33+测试
 - [x] `internal/worker/worker.go` — `Worker.ResetContext()` 接口定义（worker.go:119,124）
-- [x] 所有 Worker adapters 实现 `ResetContext`: ClaudeCode, OpenCodeCLI, OpenCodeSrv, NoOp
+- [x] 所有 Worker adapters 实现 `ResetContext`: ClaudeCode, OpenCodeSrv, NoOp
 - [x] 单元测试覆盖: manager_test.go (ClearContext 6测试), handler_test.go (handleReset/GC 33测试), key_test.go
 
 ### 阶段二：文档 ✅ 已完成

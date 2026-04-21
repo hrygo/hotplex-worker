@@ -1218,6 +1218,57 @@ func TestManager_ReleaseWorkerQuota(t *testing.T) {
 	require.Equal(t, 0, total)
 }
 
+func TestManager_TransitionTerminated_NilsWorker(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	cfg := config.Default()
+	store := new(mockStore)
+	store.Test(t)
+	store.On("Upsert", mock.Anything, mock.AnythingOfType("*session.SessionInfo")).Return(nil)
+	store.On("Close").Return(nil)
+
+	m, err := NewManager(ctx, nil, cfg, store, nil)
+	require.NoError(t, err)
+	defer m.Close()
+
+	// Seed a RUNNING session with a mock worker.
+	seed := &SessionInfo{
+		ID:         "sess_worker_nil",
+		UserID:     "user_worker_nil",
+		WorkerType: worker.TypeClaudeCode,
+		State:      events.StateRunning,
+		CreatedAt:  time.Now(),
+		UpdatedAt:  time.Now(),
+	}
+	ms := &managedSession{info: *seed}
+	m.mu.Lock()
+	m.sessions["sess_worker_nil"] = ms
+	m.mu.Unlock()
+
+	w := newMockWorker(worker.TypeClaudeCode, 0)
+	w.On("Terminate", mock.Anything).Return(nil)
+	_ = m.AttachWorker("sess_worker_nil", w)
+
+	total, _, _ := m.Stats()
+	require.Equal(t, 1, total)
+
+	// Transition to TERMINATED — should nil the worker pointer.
+	err = m.TransitionWithReason(ctx, "sess_worker_nil", events.StateTerminated, "zombie")
+	require.NoError(t, err)
+
+	// Worker pointer must be nil to prevent double release by DetachWorker.
+	ms.mu.RLock()
+	workerPtr := ms.worker
+	ms.mu.RUnlock()
+	require.Nil(t, workerPtr, "worker pointer should be nil after transition to TERMINATED")
+
+	// DetachWorker should be a no-op (no pool underflow).
+	m.DetachWorker("sess_worker_nil")
+	total, _, _ = m.Stats()
+	require.Equal(t, 0, total, "pool should be at 0, not negative")
+}
+
 // ─── WorkerHealthStatuses tests ───────────────────────────────────────────────
 
 func TestManager_WorkerHealthStatuses(t *testing.T) {
@@ -1302,7 +1353,7 @@ func TestManager_GC_ZombieDetection(t *testing.T) {
 
 	w := newMockWorker(worker.TypeClaudeCode, 0)
 	w.On("Terminate", mock.Anything).Return(nil)
-	w.lastIO = now.Add(-10 * time.Minute) // zombie: no IO in 10 minutes
+	w.lastIO = now.Add(-31 * time.Minute) // zombie: no IO beyond 30m default execution_timeout
 	_ = m.AttachWorker("sess_zombie", w)
 
 	store.On("Upsert", mock.Anything, mock.AnythingOfType("*session.SessionInfo")).Return(nil)
@@ -1443,7 +1494,7 @@ func TestManager_GC_ExpiredIdleTimeout(t *testing.T) {
 	require.Equal(t, events.StateTerminated, state)
 }
 
-func TestManager_GC_DeleteTerminated(t *testing.T) {
+func TestManager_GC_NoRetentionCleanup(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -1455,14 +1506,105 @@ func TestManager_GC_DeleteTerminated(t *testing.T) {
 		Return([]string(nil), nil)
 	store.On("GetExpiredIdle", mock.Anything, mock.AnythingOfType("time.Time")).
 		Return([]string(nil), nil)
-	store.On("DeleteTerminated", mock.Anything, mock.AnythingOfType("time.Time")).
-		Return(nil)
+	// DeleteTerminated is NOT expected — retention cleanup is intentionally
+	// removed so that TERMINATED records serve as "resume decision flags".
 	store.On("Close").Return(nil)
 
 	m, err := NewManager(ctx, nil, cfg, store, nil)
 	require.NoError(t, err)
 
-	m.gc(ctx) // should call DeleteTerminated
+	m.gc(ctx)
+}
+
+func TestManager_GC_TerminatedSessionPreserved(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	cfg := config.Default()
+	store := new(mockStore)
+	store.Test(t)
+
+	store.On("GetExpiredMaxLifetime", mock.Anything, mock.AnythingOfType("time.Time")).
+		Return([]string(nil), nil)
+	store.On("GetExpiredIdle", mock.Anything, mock.AnythingOfType("time.Time")).
+		Return([]string(nil), nil)
+	store.On("Close").Return(nil)
+
+	m, err := NewManager(ctx, nil, cfg, store, nil)
+	require.NoError(t, err)
+
+	// Seed a TERMINATED session with UpdatedAt old enough to be past retention.
+	oldTime := time.Now().Add(-cfg.Session.RetentionPeriod - time.Hour)
+	ms := &managedSession{
+		info: SessionInfo{
+			ID:         "sess_retention_preserved",
+			UserID:     "user1",
+			WorkerType: worker.TypeClaudeCode,
+			State:      events.StateTerminated,
+			CreatedAt:  oldTime,
+			UpdatedAt:  oldTime,
+		},
+	}
+	m.mu.Lock()
+	m.sessions["sess_retention_preserved"] = ms
+	m.mu.Unlock()
+
+	// Before GC: session exists in memory.
+	_, ok := m.sessions["sess_retention_preserved"]
+	require.True(t, ok, "session should exist in memory before GC")
+
+	m.gc(ctx)
+
+	// After GC: session STILL in memory because retention cleanup is removed.
+	// TERMINATED records are "resume decision flags" and should not be auto-deleted.
+	m.mu.RLock()
+	_, ok = m.sessions["sess_retention_preserved"]
+	m.mu.RUnlock()
+	require.True(t, ok, "TERMINATED session should remain in memory after GC (resume decision flag)")
+}
+
+func TestManager_GC_TerminatedSession_DBError_NoImpact(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	cfg := config.Default()
+	store := new(mockStore)
+	store.Test(t)
+
+	// Even if the store had a DeleteTerminated method that errored, GC should
+	// be unaffected because retention cleanup is no longer performed.
+	store.On("GetExpiredMaxLifetime", mock.Anything, mock.AnythingOfType("time.Time")).
+		Return([]string(nil), errors.New("db error"))
+	store.On("GetExpiredIdle", mock.Anything, mock.AnythingOfType("time.Time")).
+		Return([]string(nil), errors.New("db error"))
+	store.On("Close").Return(nil)
+
+	m, err := NewManager(ctx, nil, cfg, store, nil)
+	require.NoError(t, err)
+
+	// Seed a TERMINATED session.
+	oldTime := time.Now().Add(-cfg.Session.RetentionPeriod - time.Hour)
+	ms := &managedSession{
+		info: SessionInfo{
+			ID:         "sess_retention_noop",
+			UserID:     "user1",
+			WorkerType: worker.TypeClaudeCode,
+			State:      events.StateTerminated,
+			CreatedAt:  oldTime,
+			UpdatedAt:  oldTime,
+		},
+	}
+	m.mu.Lock()
+	m.sessions["sess_retention_noop"] = ms
+	m.mu.Unlock()
+
+	// gc should not panic and should not touch TERMINATED sessions.
+	m.gc(ctx)
+
+	m.mu.RLock()
+	_, ok := m.sessions["sess_retention_noop"]
+	m.mu.RUnlock()
+	require.True(t, ok, "TERMINATED session should remain after GC even with store errors")
 }
 
 func TestManager_GC_NoPanicOnStoreErrors(t *testing.T) {
@@ -1477,8 +1619,7 @@ func TestManager_GC_NoPanicOnStoreErrors(t *testing.T) {
 		Return([]string(nil), errors.New("db error"))
 	store.On("GetExpiredIdle", mock.Anything, mock.AnythingOfType("time.Time")).
 		Return([]string(nil), errors.New("db error"))
-	store.On("DeleteTerminated", mock.Anything, mock.AnythingOfType("time.Time")).
-		Return(errors.New("db error"))
+	// DeleteTerminated no longer called — retention cleanup removed.
 	store.On("Close").Return(nil)
 
 	m, err := NewManager(ctx, nil, cfg, store, nil)
@@ -1615,7 +1756,7 @@ func TestManager_ClearContext_PreservesOtherFields(t *testing.T) {
 		UserID:     "user_preserve",
 		OwnerID:    "owner_preserve",
 		BotID:      "bot_preserve",
-		WorkerType: worker.TypeOpenCodeCLI,
+		WorkerType: worker.TypeOpenCodeSrv,
 		State:      events.StateRunning,
 		CreatedAt:  now.Add(-30 * time.Minute),
 		UpdatedAt:  now.Add(-30 * time.Minute),
@@ -1638,7 +1779,7 @@ func TestManager_ClearContext_PreservesOtherFields(t *testing.T) {
 	require.Equal(t, "user_preserve", ms.info.UserID)
 	require.Equal(t, "owner_preserve", ms.info.OwnerID)
 	require.Equal(t, "bot_preserve", ms.info.BotID)
-	require.Equal(t, worker.TypeOpenCodeCLI, ms.info.WorkerType)
+	require.Equal(t, worker.TypeOpenCodeSrv, ms.info.WorkerType)
 	require.Equal(t, events.StateRunning, ms.info.State)
 	require.Empty(t, ms.info.Context)
 }

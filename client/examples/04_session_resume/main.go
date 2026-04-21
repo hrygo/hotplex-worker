@@ -11,7 +11,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"strings"
@@ -45,37 +44,38 @@ func main() {
 		client.ClientSessionID("resume-demo-session"),
 	)
 	if err != nil {
-		log.Fatalf("create client 1: %v", err)
+		fmt.Fprintf(os.Stderr, "Error: create client 1: %v\n", err)
+		os.Exit(1) //nolint:gocritic // example exit
 	}
 
-	ack, err := c1.Connect(ctx)
+	ack1, err := c1.Connect(ctx)
 	if err != nil {
-		log.Fatalf("connect 1: %v", err)
+		fmt.Fprintf(os.Stderr, "Error: connect 1: %v\n", err)
+		return
 	}
-	sessionID := ack.SessionID
+	sessionID := ack1.SessionID
 	fmt.Printf("Created session: %s\n", sessionID)
 
 	runAndPrint(ctx, c1, "Remember this number: 42")
 
-	c1.Close()
-	fmt.Println("Client 1 closed. Session preserved on server.")
+	_ = c1.Close() //nolint:errcheck // example cleanup
+	fmt.Println("Client 1 closed. Waiting 2 seconds...")
+	time.Sleep(2 * time.Second)
 
 	// Phase 2: Resume session.
 	banner("Phase 2 — Resume Session")
 
-	c2, err := client.New(ctx,
-		client.URL(gatewayURL),
-		client.WorkerType("claude_code"),
-		client.APIKey(apiKey),
-	)
+	c2, err := client.New(ctx, client.URL(gatewayURL), client.APIKey(apiKey))
 	if err != nil {
-		log.Fatalf("create client 2: %v", err)
+		fmt.Fprintf(os.Stderr, "Error: create client 2: %v\n", err)
+		os.Exit(1) //nolint:gocritic // example exit
 	}
-	defer c2.Close()
+	defer func() { _ = c2.Close() }() //nolint:errcheck // example cleanup
 
 	ack2, err := c2.Resume(ctx, sessionID)
 	if err != nil {
-		log.Fatalf("resume: %v", err)
+		fmt.Fprintf(os.Stderr, "Error: resume failed: %v\n", err)
+		return
 	}
 	fmt.Printf("Resumed session: %s  state=%s\n", ack2.SessionID, ack2.State)
 
@@ -108,7 +108,8 @@ func runAndPrint(ctx context.Context, c *client.Client, input string) {
 	sendCtx, sendCancel := context.WithTimeout(ctx, 10*time.Second)
 	if err := c.SendInput(sendCtx, input); err != nil {
 		sendCancel()
-		log.Fatalf("send: %v", err)
+		fmt.Fprintf(os.Stderr, "Error: send: %v\n", err)
+		return
 	}
 	sendCancel()
 

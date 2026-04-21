@@ -330,8 +330,7 @@ tags:
 | ---------------------- | ------------------------------------------------------- |
 | `base.BaseWorker`      | Shared lifecycle (Terminate, Kill, Wait, Health)        |
 | `ClaudeCodeWorker`     | Claude CLI adapter with stream-json protocol            |
-| `OpenCodeCLIWorker`    | OpenCode CLI adapter with json-lines protocol           |
-| `OpenCodeSrvWorker`    | OpenCode server adapter with HTTP+SSE                   |
+| `OpenCodeSrvWorker`     | OpenCode server adapter with HTTP+SSE                   |
 | Platform Compatibility | `proc.Manager` skips RLIMIT_AS on macOS (not supported) |
 
 ---

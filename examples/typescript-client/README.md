@@ -107,7 +107,7 @@ new HotPlexClient(config: ClientConfig)
 | Option | Type | Required | Default | Description |
 |--------|------|----------|---------|-------------|
 | `url` | `string` | ✅ | - | Gateway WebSocket URL (e.g., `ws://localhost:8888`) |
-| `workerType` | `WorkerType` | ✅ | - | Worker type (`CLAUDE_CODE`, `OPENCODE_CLI`, etc.) |
+| `workerType` | `WorkerType` | ✅ | - | Worker type (`CLAUDE_CODE`, `OPENCODE_SERVER`, etc.) |
 | `authToken` | `string` | ❌ | - | API key or JWT token |
 | `sessionId` | `string` | ❌ | auto | Resume existing session |
 | `reconnect` | `boolean` | ❌ | `true` | Enable auto-reconnection |

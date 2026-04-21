@@ -88,11 +88,6 @@ func TestSafeEnvBuilder_AddWorkerType(t *testing.T) {
 			wantInList: []string{"CLAUDE_API_KEY", "CLAUDE_MODEL", "CLAUDE_BASE_URL"},
 		},
 		{
-			name:       "opencode-cli worker",
-			workerType: "opencode-cli",
-			wantInList: []string{"OPENAI_API_KEY", "OPENCODE_API_KEY"},
-		},
-		{
 			name:       "opencode-server worker",
 			workerType: "opencode-server",
 			wantInList: []string{}, // no extra vars

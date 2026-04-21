@@ -172,6 +172,24 @@ if env.Event.Type != "init" {
 ## Worker 类型映射
 | Worker | 事件映射 |
 |--------|---------|
-| Claude Code | tool_use → tool_call |
-| OpenCode CLI | step_start → 提取 sessionID |
+| Claude Code | tool_use → tool_call, permission_request → user interaction |
+| | step_start → 提取 sessionID |
+| OpenCode Server | NDJSON/stdio protocol |
 | pi-mono (raw stdout) | 每行 stdout → 一条 message.delta |
+
+## 用户交互事件
+
+### 交互类型
+- `permission_request` — S→C: 请求用户授权（tool 执行等）
+- `question_request` — S→C: 请求用户回答问题
+- `elicitation_request` — S→C: MCP server 请求用户输入
+
+### 交互超时
+- 默认 5 分钟自动拒绝（auto-deny）
+- 通过 `InteractionManager` 管理，支持 Register/Complete/CancelAll
+- 超时后自动发送拒绝响应，避免无限阻塞
+
+### Control 事件
+- C→S: `terminate` / `delete` / `gc` / `reset` / `park` / `restart`
+- Messaging 通道触发方式：slash 命令 (`/gc`, `/reset`) 或自然语言 (`$gc`, `$休眠`)
+- 自然语言触发**必须**带 `$` 前缀，防止误匹配
