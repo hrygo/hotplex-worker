@@ -321,7 +321,7 @@ func setupTestGateway(t *testing.T) *testGateway {
 	// Return not-found for all store lookups (Manager holds sessions in memory after Create).
 	store.On("Get", mock.Anything, mock.AnythingOfType("string")).Return(nil, session.ErrSessionNotFound)
 
-	sm, err := session.NewManager(ctx, log, cfg, store, nil)
+	sm, err := session.NewManager(ctx, log, cfg, nil, store, nil)
 	require.NoError(t, err)
 
 	hub := gateway.NewHub(log, cfg)
