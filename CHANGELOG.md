@@ -5,7 +5,7 @@ All notable changes to the HotPlex Worker Gateway project will be documented in 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.1.0] - 2026-04-21
+## [1.1.0] - 2026-04-23
 
 ### Added
 
@@ -20,16 +20,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Message Chunking (Slack)**: Robust delivery system for long AI responses, bypassing Slack's 4000-character limit.
   - **Control Commands**: Support for natural language triggers (prefixed with `$`) and slash commands (`/reset`, `/park`, `/gc`).
   - **User Interaction Layer**: Standardized Q&A and permission elicitation flows with auto-deny (5-minute timeout).
+  - **Help Command**: `/help` command with bilingual (EN/CN) UI and TableBlock rendering for Slack and Feishu.
+  - **Status Indicators**: Worker command status feedback for reset, park, and other control operations.
 - **Gateway Core**:
   - **LLM Auto-Retry**: Built-in retry controller with exponential backoff for transient AI provider failures.
   - **Fresh Start Fallback**: Automatic creation of new workers with input re-delivery when session resumption fails.
   - **ACPX Adapter**: Stdio-based worker bridge for enhanced tooling integration.
+  - **Per-Conn Async Writer**: Delta coalescing writer per platform connection to reduce redundant writes and improve throughput.
+- **Worker**:
+  - **Stdio Session Control**: Worker command passthrough via stdio for seamless control command integration.
 - **Docs**:
   - New bilingual (EN/CN) README and product whitepaper.
   - Updated AEP v1 protocol specification and handshake diagrams.
+  - Restructured docs directory with dedicated Reference Manual.
 
 ### Changed
 
+- **Config**: `MaxIdlePerUser` default raised from 3 to 5; config tuning for improved session pooling.
 - **Security**: Implemented granular 3-layer whitelists and security policies for tool/command execution.
 - **Worker Configuration**: Increased default zombie IO timeout from 10m to 30m for long-running batch tasks.
 - **Feishu Logic**: Redacted sensitive URL parameters in SDK logs and optimized card streaming state management.
@@ -42,6 +49,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Media Management**: Implemented automatic cleanup for temporary media files in the Slack adapter.
 - **Stability**: Added panic recovery to all gateway handlers and messaging adapters.
 - **macOS Compatibility**: Fixed pipe `EAGAIN` handling and adjusted `RLIMIT_AS` (address space) constraints.
+- **Slack**: Fixed `clearStatus` infinite recursion that called itself instead of `statusMgr.Clear`.
+- **Slack**: Fixed help and other worker commands replying to wrong thread — now always replies in the original thread.
+- **Slack**: Deduplicated emoji decoration in context usage display (skills list).
+- **Messaging**: Serialized reset commands with message handling to prevent first message loss after reset.
+- **Test**: Fixed `TestAnswersToArrays` flaky test caused by non-deterministic map iteration order.
 
 ## [1.0.0] - 2026-04-11
 
