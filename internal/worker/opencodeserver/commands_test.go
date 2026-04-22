@@ -964,8 +964,7 @@ func TestAnswersToArrays(t *testing.T) {
 			result := answersToArrays(tt.input)
 			require.Len(t, result, tt.wantLen)
 			if tt.wantLen == 2 {
-				require.Equal(t, []string{"answer1"}, result[0])
-				require.Equal(t, []string{"answer2"}, result[1])
+				require.ElementsMatch(t, [][]string{{"answer1"}, {"answer2"}}, result)
 			}
 		})
 	}
