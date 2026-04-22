@@ -67,8 +67,8 @@ session:
 pool:
   min_size: 0
   max_size: 100
-  max_idle_per_user: 10
-  max_memory_per_user: 8589934592  # 8GB
+  max_idle_per_user: 5
+  max_memory_per_user: 3221225472  # 3GB
 
 # ─────────────────────────────────────────────────────────────────────────────
 # WORKER

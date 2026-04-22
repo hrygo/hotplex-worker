@@ -921,16 +921,13 @@ func (c *SlackConn) sendContextUsage(ctx context.Context, env *events.Envelope) 
 	if d.Model != "" {
 		plainText += fmt.Sprintf("\n🤖 Model: %s", d.Model)
 	}
-	var catParts []string
-	for _, cat := range d.Categories {
-		catParts = append(catParts, fmt.Sprintf("%s: %d", cat.Name, cat.Tokens))
-	}
+	catParts := formatCategoryParts(d.Categories)
 	if len(catParts) > 0 {
 		plainText += "\n📂 " + strings.Join(catParts, " · ")
 	}
 
 	// Primary: TableBlock (may be rejected by workspaces without the beta feature)
-	blocks := c.buildContextUsageTable(d)
+	blocks := c.buildContextUsageTable(d, catParts)
 	opts := []slack.MsgOption{
 		slack.MsgOptionBlocks(blocks...),
 		slack.MsgOptionText(plainText, false),
@@ -948,7 +945,7 @@ func (c *SlackConn) sendContextUsage(ctx context.Context, env *events.Envelope) 
 
 	// Fallback: ContextBlock (universally supported)
 	c.adapter.log.Warn("slack: context usage TableBlock rejected, falling back to ContextBlock", "err", err)
-	fbBlocks := c.buildContextUsageFallback(d)
+	fbBlocks := c.buildContextUsageFallback(d, catParts)
 	fbOpts := []slack.MsgOption{
 		slack.MsgOptionBlocks(fbBlocks...),
 		slack.MsgOptionText(plainText, false),
@@ -961,7 +958,7 @@ func (c *SlackConn) sendContextUsage(ctx context.Context, env *events.Envelope) 
 }
 
 // buildContextUsageTable builds a TableBlock for context usage (primary format).
-func (c *SlackConn) buildContextUsageTable(d events.ContextUsageData) []slack.Block {
+func (c *SlackConn) buildContextUsageTable(d events.ContextUsageData, catParts []string) []slack.Block {
 	table := slack.NewTableBlock("context_usage")
 	table = table.WithColumnSettings(
 		slack.ColumnSetting{Align: slack.ColumnAlignmentLeft, IsWrapped: false},
@@ -971,11 +968,6 @@ func (c *SlackConn) buildContextUsageTable(d events.ContextUsageData) []slack.Bl
 	table.AddRow(richTextCell("📊 Usage"), richTextCell(fmt.Sprintf("%d%% (%d / %d)", d.Percentage, d.TotalTokens, d.MaxTokens)))
 	if d.Model != "" {
 		table.AddRow(richTextCell("🤖 Model"), richTextCell(d.Model))
-	}
-	// Merge categories into one row
-	var catParts []string
-	for _, cat := range d.Categories {
-		catParts = append(catParts, fmt.Sprintf("%s: %d", cat.Name, cat.Tokens))
 	}
 	if len(catParts) > 0 {
 		table.AddRow(richTextCell("📂 Context"), richTextCell(strings.Join(catParts, " · ")))
@@ -996,14 +988,10 @@ func (c *SlackConn) buildContextUsageTable(d events.ContextUsageData) []slack.Bl
 }
 
 // buildContextUsageFallback builds ContextBlock fallback when TableBlock is rejected.
-func (c *SlackConn) buildContextUsageFallback(d events.ContextUsageData) []slack.Block {
+func (c *SlackConn) buildContextUsageFallback(d events.ContextUsageData, catParts []string) []slack.Block {
 	parts := []string{fmt.Sprintf("📊 *Context Usage* — %d%% (%d / %d)", d.Percentage, d.TotalTokens, d.MaxTokens)}
 	if d.Model != "" {
 		parts = append(parts, fmt.Sprintf("🤖 Model: %s", d.Model))
-	}
-	var catParts []string
-	for _, cat := range d.Categories {
-		catParts = append(catParts, fmt.Sprintf("%s: %d", cat.Name, cat.Tokens))
 	}
 	if len(catParts) > 0 {
 		parts = append(parts, "📂 "+strings.Join(catParts, " · "))
@@ -1018,6 +1006,23 @@ func richTextCell(text string) *slack.RichTextBlock {
 		slack.NewRichTextSectionTextElement(text, nil),
 	)
 	return slack.NewRichTextBlock("", section)
+}
+
+// formatCategoryParts formats context categories as "Name: Tokens" pairs.
+func formatCategoryParts(categories []events.ContextCategory) []string {
+	parts := make([]string, 0, len(categories))
+	for _, cat := range categories {
+		parts = append(parts, fmt.Sprintf("%s: %d", cat.Name, cat.Tokens))
+	}
+	return parts
+}
+
+// mcpServerIcon returns the status icon for an MCP server.
+func mcpServerIcon(status string) string {
+	if status == "connected" || status == "ok" {
+		return "✅"
+	}
+	return "❌"
 }
 
 func (c *SlackConn) sendMCPStatus(ctx context.Context, env *events.Envelope) error {
@@ -1039,11 +1044,7 @@ func (c *SlackConn) sendMCPStatus(ctx context.Context, env *events.Envelope) err
 	var sb strings.Builder
 	sb.WriteString("🔌 MCP Server Status\n")
 	for _, s := range d.Servers {
-		icon := "✅"
-		if s.Status != "connected" && s.Status != "ok" {
-			icon = "❌"
-		}
-		fmt.Fprintf(&sb, "%s %s — %s\n", icon, s.Name, s.Status)
+		fmt.Fprintf(&sb, "%s %s — %s\n", mcpServerIcon(s.Status), s.Name, s.Status)
 	}
 	plainText := sb.String()
 
@@ -1054,11 +1055,7 @@ func (c *SlackConn) sendMCPStatus(ctx context.Context, env *events.Envelope) err
 	)
 	table.AddRow(richTextCell("🔌 MCP Status"), richTextCell(fmt.Sprintf("%d servers", len(d.Servers))))
 	for _, s := range d.Servers {
-		icon := "✅"
-		if s.Status != "connected" && s.Status != "ok" {
-			icon = "❌"
-		}
-		table.AddRow(richTextCell(icon+" "+s.Name), richTextCell(s.Status))
+		table.AddRow(richTextCell(mcpServerIcon(s.Status)+" "+s.Name), richTextCell(s.Status))
 	}
 
 	blocks := []slack.Block{table}

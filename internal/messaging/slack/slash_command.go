@@ -110,7 +110,7 @@ func (a *Adapter) handleSlashCommandEvent(ctx context.Context, evt socketmode.Ev
 
 	if a.slashLimiter != nil && !a.slashLimiter.Allow(cmd.UserID) {
 		a.log.Warn("slack: slash command rate limited", "user_id", cmd.UserID)
-		a.sendEphemeralOrPost(ctx, cmd.ChannelID, cmd.UserID, "⚠️ Rate limit exceeded. Please wait a moment.")
+		a.sendEphemeralOrPost(ctx, cmd.ChannelID, "", cmd.UserID, "⚠️ Rate limit exceeded. Please wait a moment.")
 		return
 	}
 
@@ -118,7 +118,7 @@ func (a *Adapter) handleSlashCommandEvent(ctx context.Context, evt socketmode.Ev
 		result := a.gate.Check("channel", cmd.UserID, false)
 		if !result.Allowed {
 			a.log.Debug("slack: gate rejected slash command", "reason", result.Reason, "user", cmd.UserID)
-			a.sendEphemeralOrPost(ctx, cmd.ChannelID, cmd.UserID, "🚫 You are not authorized to use this command.")
+			a.sendEphemeralOrPost(ctx, cmd.ChannelID, "", cmd.UserID, "🚫 You are not authorized to use this command.")
 			return
 		}
 	}
@@ -131,7 +131,7 @@ func (a *Adapter) handleSlashCommandEvent(ctx context.Context, evt socketmode.Ev
 		a.handleControlCommand(ctx, cmd, events.ControlActionTerminate,
 			"/dc", "👋 Disconnecting. Context preserved for next message.", "❌ Failed to disconnect. No active conversation.")
 	default:
-		a.sendEphemeralOrPost(ctx, cmd.ChannelID, cmd.UserID, fmt.Sprintf("Unknown command: %s", cmd.Command))
+		a.sendEphemeralOrPost(ctx, cmd.ChannelID, "", cmd.UserID, fmt.Sprintf("Unknown command: %s", cmd.Command))
 	}
 }
 
@@ -156,25 +156,29 @@ func (a *Adapter) handleControlCommand(ctx context.Context, cmd slack.SlashComma
 	}
 	if err := a.bridge.Handle(ctx, env, conn); err != nil {
 		a.log.Error("slack: control event failed", "command", logPrefix, "session_id", sessionID, "err", err)
-		a.sendEphemeralOrPost(ctx, cmd.ChannelID, cmd.UserID, errorMsg)
+		a.sendEphemeralOrPost(ctx, cmd.ChannelID, "", cmd.UserID, errorMsg)
 		return
 	}
 
 	a.log.Info("slack: control sent", "command", logPrefix, "session_id", sessionID, "user", cmd.UserID)
-	a.sendEphemeralOrPost(ctx, cmd.ChannelID, cmd.UserID, successMsg)
+	a.sendEphemeralOrPost(ctx, cmd.ChannelID, "", cmd.UserID, successMsg)
 }
 
-func (a *Adapter) sendEphemeralOrPost(ctx context.Context, channelID, userID, text string) { //nolint:unused // wired via slash command handlers
+func (a *Adapter) sendEphemeralOrPost(ctx context.Context, channelID, threadTS, userID, text string) { //nolint:unused // wired via slash command handlers
 	if userID != "" && channelID != "" && channelID[0] != 'D' {
-		if _, err := a.client.PostEphemeralContext(ctx, channelID, userID,
-			slack.MsgOptionText(text, false),
-		); err == nil {
+		opts := []slack.MsgOption{slack.MsgOptionText(text, false)}
+		if threadTS != "" {
+			opts = append(opts, slack.MsgOptionTS(threadTS))
+		}
+		if _, err := a.client.PostEphemeralContext(ctx, channelID, userID, opts...); err == nil {
 			return
 		}
 	}
-	_, _, _ = a.client.PostMessageContext(ctx, channelID,
-		slack.MsgOptionText(text, false),
-	)
+	opts := []slack.MsgOption{slack.MsgOptionText(text, false)}
+	if threadTS != "" {
+		opts = append(opts, slack.MsgOptionTS(threadTS))
+	}
+	_, _, _ = a.client.PostMessageContext(ctx, channelID, opts...)
 }
 
 func (a *Adapter) deriveSessionIDFromCommand(cmd slack.SlashCommand) string { //nolint:unused // wired via handleControlCommand

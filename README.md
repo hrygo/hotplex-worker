@@ -127,7 +127,7 @@ Hotplex uses Viper for configuration with support for environment variable overr
 
 | Area | Guide |
 |:---|:---|
-| **Getting Started** | [User Manual](docs/User-Manual.md) · [Whitepaper](docs/Product-Whitepaper.md) |
+| **Getting Started** | [Quick Start](docs/User-Manual.md) · [Reference Manual](docs/Reference-Manual.md) · [Whitepaper](docs/Product-Whitepaper.md) |
 | **Protocol** | [AEP v1 Specification](docs/architecture/AEP-v1-Protocol.md) |
 | **Internals** | [Gateway Design](docs/architecture/Worker-Gateway-Design.md) · [Security](docs/security/Security-Authentication.md) |
 | **Management** | [Admin API](docs/management/Admin-API-Design.md) · [Testing](docs/testing/Testing-Strategy.md) |

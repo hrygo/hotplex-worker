@@ -382,8 +382,8 @@ func Default() *Config {
 		Pool: PoolConfig{
 			MinSize:          0,
 			MaxSize:          100,
-			MaxIdlePerUser:   3,
-			MaxMemoryPerUser: 2 << 30, // 2 GB
+			MaxIdlePerUser:   5,
+			MaxMemoryPerUser: 3 << 30, // 3 GB
 		},
 		Admin: AdminConfig{
 			Enabled:            true,
@@ -454,6 +454,29 @@ func Load(filePath string, opts LoadOptions) (*Config, error) {
 	v.SetEnvPrefix("HOTPLEX")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
+
+	// Explicitly bind common keys to ensure Unmarshal picks up environment variables.
+	// Viper's AutomaticEnv only works during Unmarshal if keys are known.
+	_ = v.BindEnv("log.level")
+	_ = v.BindEnv("log.format")
+	_ = v.BindEnv("db.path")
+	_ = v.BindEnv("db.wal_mode")
+	_ = v.BindEnv("gateway.addr")
+	_ = v.BindEnv("admin.enabled")
+	_ = v.BindEnv("admin.addr")
+	_ = v.BindEnv("session.max_concurrent")
+	_ = v.BindEnv("session.retention_period")
+	_ = v.BindEnv("pool.max_size")
+	_ = v.BindEnv("pool.max_idle_per_user")
+	_ = v.BindEnv("pool.max_memory_per_user")
+	_ = v.BindEnv("worker.default_work_dir")
+	_ = v.BindEnv("worker.max_lifetime")
+	_ = v.BindEnv("worker.idle_timeout")
+	_ = v.BindEnv("worker.execution_timeout")
+	_ = v.BindEnv("worker.auto_retry.enabled")
+	_ = v.BindEnv("worker.auto_retry.max_retries")
+	_ = v.BindEnv("security.jwt_audience")
+	_ = v.BindEnv("security.api_key_header")
 
 	if err := v.Unmarshal(cfg); err != nil {
 		return nil, fmt.Errorf("config: environment override: %w", err)

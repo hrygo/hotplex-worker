@@ -127,7 +127,7 @@ Hotplex 使用 Viper 进行配置管理，并支持环境变量覆盖。
 
 | 领域 | 指南 |
 |:---|:---|
-| **入门指南** | [用户手册](docs/User-Manual.md) · [产品白皮书](docs/Product-Whitepaper.md) |
+| **入门指南** | [快速上手](docs/User-Manual.md) · [技术参考手册](docs/Reference-Manual.md) · [产品白皮书](docs/Product-Whitepaper.md) |
 | **协议规范** | [AEP v1 协议详解](docs/architecture/AEP-v1-Protocol.md) |
 | **内部设计** | [网关架构设计](docs/architecture/Worker-Gateway-Design.md) · [安全认证](docs/security/Security-Authentication.md) |
 | **运维管理** | [Admin API 手册](docs/management/Admin-API-Design.md) · [测试策略](docs/testing/Testing-Strategy.md) |

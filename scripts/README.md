@@ -670,7 +670,8 @@ lsof -i :9999
 
 ## Additional Resources
 
-- **User Manual**: `docs/User-Manual.md`
+- **Quick Start Guide**: `docs/User-Manual.md`
+- **Reference Manual**: `docs/Reference-Manual.md`
 - **Configuration Guide**: `docs/management/Config-Management.md`
 - **Admin API**: `docs/management/Admin-API-Design.md`
 - **Security**: `docs/security/Security-Authentication.md`

@@ -781,7 +781,7 @@ func (c *FeishuConn) sendContextUsage(ctx context.Context, env *events.Envelope)
 		extras = append(extras, fmt.Sprintf("⚡ %d skills (%d included, %d tokens)", d.Skills.Total, d.Skills.Included, d.Skills.Tokens))
 	}
 	if len(extras) > 0 {
-		sb.WriteString("\n📎 " + strings.Join(extras, " · "))
+		sb.WriteString("\n" + strings.Join(extras, " · "))
 	}
 
 	c.mu.RLock()

@@ -485,7 +485,13 @@ func (w *Worker) readOutput(ctx context.Context) {
 			if json.Unmarshal([]byte(line), &respWrap) == nil && respWrap.Response != nil && w.control != nil {
 				reqID, _ := respWrap.Response["request_id"].(string)
 				if reqID != "" {
-					w.control.DeliverResponse(reqID, respWrap.Response)
+					// Unwrap nested payload: Claude Code returns
+					// {"response":{"request_id":"...","response":{actual data}}}
+					payload := respWrap.Response
+					if inner, ok := payload["response"].(map[string]any); ok {
+						payload = inner
+					}
+					w.control.DeliverResponse(reqID, payload)
 					continue
 				}
 			}

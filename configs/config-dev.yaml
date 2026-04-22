@@ -20,11 +20,11 @@ session:
 
 pool:
   max_size: 50
-  max_memory_per_user: 4294967296  # 4GB (~8 concurrent workers)
+  max_memory_per_user: 3221225472  # 3GB (~6 concurrent workers)
 
 worker:
-  idle_timeout: 5m
-  execution_timeout: 5m
+  idle_timeout: 30m
+  execution_timeout: 30m
 
 log:
   level: "info"

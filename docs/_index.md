@@ -37,7 +37,7 @@ status: active
 | [[security/AI-Tool-Policy]] | AI 工具权限控制 | AllowedTools、Bash 命令拦截 |
 | [[security/SSRF-Protection]] | SSRF 防护 | URL 验证、IP 阻断、DNS 重绑定防护 |
 | **[操作手册 (Manuals)]** | | |
-| [[STT-SETUP]] | STT 安装手册 | 飞书 STT 云端配置、本地模型安装、ONNX 修补 |
+| [[STT-Setup]] | STT 安装手册 | 飞书 STT 云端配置、本地模型安装、ONNX 修补 |
 | [[User-Manual]] | 用户手册 | 快速开始、安装构建、CLI 参数与操作指南 |
 | [[management/Config-Reference]] | 配置参考手册 | 完整 YAML 字段说明与环境变量映射表 |
 | [[Disaster-Recovery]] | 灾难恢复手册 | 故障切换、备份恢复与容灾预案 |
