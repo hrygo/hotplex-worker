@@ -310,9 +310,24 @@ func (a *Adapter) handleMessage(ctx context.Context, event *larkim.P2MessageRece
 	}
 
 	return a.chatQueue.Enqueue(chatID, func(qtx context.Context) error {
+		// Help command - reply directly without involving the worker.
+		if messaging.IsHelpCommand(text) {
+			_ = a.replyMessage(qtx, messageID, messaging.HelpText(), false)
+			return nil
+		}
+
 		// Control command detection (natural language + /command).
 		if result := messaging.ParseControlCommand(text); result != nil {
 			a.handleTextControlCommand(qtx, chatID, userID, threadKey, messageID, result)
+			return nil
+		}
+
+		// Worker command detection (slash + $ natural language).
+		// Only intercept structured commands (context, mcp, model, perm).
+		// Passthrough commands (compact, clear, rewind, effort, commit)
+		// fall through to normal input — they aren't supported in stream-json mode.
+		if cmdResult := messaging.ParseWorkerCommand(text); cmdResult != nil && !cmdResult.Command.IsPassthrough() {
+			a.handleTextWorkerCommand(qtx, chatID, chatType, userID, threadKey, messageID, replyToMsgID, cmdResult)
 			return nil
 		}
 
@@ -494,6 +509,36 @@ func (c *FeishuConn) SetTypingReactionID(rid string) {
 	c.typingRid = rid
 }
 
+// setProcessingReaction adds a "THINKING" reaction to the user's message.
+// Returns the reaction ID for later cleanup. Non-fatal on failure.
+func (c *FeishuConn) setProcessingReaction(ctx context.Context) string {
+	c.mu.RLock()
+	msgID := c.platformMsgID
+	c.mu.RUnlock()
+	if msgID == "" {
+		return ""
+	}
+	rid, err := c.adapter.addReaction(ctx, msgID, "THINKING")
+	if err != nil {
+		c.adapter.log.Debug("feishu: processing reaction failed (non-fatal)", "err", err)
+	}
+	return rid
+}
+
+// clearProcessingReaction removes a previously set processing reaction.
+func (c *FeishuConn) clearProcessingReaction(ctx context.Context, rid string) {
+	if rid == "" {
+		return
+	}
+	c.mu.RLock()
+	msgID := c.platformMsgID
+	c.mu.RUnlock()
+	if msgID == "" {
+		return
+	}
+	_ = c.adapter.removeReaction(ctx, msgID, rid)
+}
+
 // cycleReaction replaces the current tool reaction with a new one.
 // The typing indicator is kept alive throughout the session and only
 // removed on done/close to prevent message flicker from repeated add/remove.
@@ -585,15 +630,30 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 	// Handle interaction request events.
 	switch env.Event.Type {
 	case events.PermissionRequest:
-		return c.sendPermissionRequest(ctx, env)
+		rid := c.setProcessingReaction(ctx)
+		pErr := c.sendPermissionRequest(ctx, env)
+		c.clearProcessingReaction(ctx, rid)
+		return pErr
 	case events.QuestionRequest:
-		return c.sendQuestionRequest(ctx, env)
+		rid := c.setProcessingReaction(ctx)
+		qErr := c.sendQuestionRequest(ctx, env)
+		c.clearProcessingReaction(ctx, rid)
+		return qErr
 	case events.ElicitationRequest:
-		return c.sendElicitationRequest(ctx, env)
+		rid := c.setProcessingReaction(ctx)
+		eErr := c.sendElicitationRequest(ctx, env)
+		c.clearProcessingReaction(ctx, rid)
+		return eErr
 	case events.ContextUsage:
-		return c.sendContextUsage(ctx, env)
+		rid := c.setProcessingReaction(ctx)
+		cuErr := c.sendContextUsage(ctx, env)
+		c.clearProcessingReaction(ctx, rid)
+		return cuErr
 	case events.MCPStatus:
-		return c.sendMCPStatus(ctx, env)
+		rid := c.setProcessingReaction(ctx)
+		mErr := c.sendMCPStatus(ctx, env)
+		c.clearProcessingReaction(ctx, rid)
+		return mErr
 	}
 
 	// Cancel pending interactions on done/error.
@@ -696,23 +756,29 @@ func (c *FeishuConn) sendContextUsage(ctx context.Context, env *events.Envelope)
 		fmt.Fprintf(&sb, "\n🤖 Model: %s", d.Model)
 	}
 	if len(d.Categories) > 0 {
-		sb.WriteString("\n📋 Categories:")
+		var catParts []string
 		for _, cat := range d.Categories {
-			fmt.Fprintf(&sb, "\n  • %s: %d tokens", cat.Name, cat.Tokens)
+			if d.Skills.Total > 0 && strings.EqualFold(cat.Name, "Skills") {
+				continue
+			}
+			catParts = append(catParts, fmt.Sprintf("%s: %d", cat.Name, cat.Tokens))
+		}
+		if len(catParts) > 0 {
+			sb.WriteString("\n📂 " + strings.Join(catParts, " · "))
 		}
 	}
 	var extras []string
 	if d.MemoryFiles > 0 {
-		extras = append(extras, fmt.Sprintf("%d memory files", d.MemoryFiles))
+		extras = append(extras, fmt.Sprintf("📁 %d memory files", d.MemoryFiles))
 	}
 	if d.MCPTools > 0 {
-		extras = append(extras, fmt.Sprintf("%d MCP tools", d.MCPTools))
+		extras = append(extras, fmt.Sprintf("🔧 %d MCP tools", d.MCPTools))
 	}
 	if d.Agents > 0 {
-		extras = append(extras, fmt.Sprintf("%d agents", d.Agents))
+		extras = append(extras, fmt.Sprintf("🤖 %d agents", d.Agents))
 	}
 	if d.Skills.Total > 0 {
-		extras = append(extras, fmt.Sprintf("%d skills (%d included, %d tokens)", d.Skills.Total, d.Skills.Included, d.Skills.Tokens))
+		extras = append(extras, fmt.Sprintf("⚡ %d skills (%d included, %d tokens)", d.Skills.Total, d.Skills.Included, d.Skills.Tokens))
 	}
 	if len(extras) > 0 {
 		sb.WriteString("\n📎 " + strings.Join(extras, " · "))
@@ -806,6 +872,51 @@ func (a *Adapter) handleTextControlCommand(ctx context.Context, chatID, userID, 
 	} else {
 		_ = a.sendTextMessage(ctx, chatID, controlFeedbackMessageCN(result.Action))
 	}
+}
+
+func (a *Adapter) handleTextWorkerCommand(ctx context.Context, chatID, chatType, userID, threadKey, platformMsgID, replyToMsgID string, result *messaging.WorkerCommandResult) {
+	envelope := a.bridge.MakeFeishuEnvelope(chatID, threadKey, userID, "")
+	if envelope == nil {
+		a.log.Error("feishu: worker command failed to derive session", "command", result.Label)
+		return
+	}
+
+	cmdEnv := &events.Envelope{
+		Version:   events.Version,
+		ID:        aep.NewID(),
+		SessionID: envelope.SessionID,
+		Event: events.Event{
+			Type: events.WorkerCmd,
+			Data: events.WorkerCommandData{
+				Command: result.Command,
+				Args:    result.Args,
+				Extra:   result.Extra,
+			},
+		},
+		OwnerID: userID,
+	}
+
+	conn := a.GetOrCreateConn(chatID, threadKey)
+
+	// Set conn fields for async response delivery.
+	conn.mu.Lock()
+	conn.platformMsgID = platformMsgID
+	conn.replyToMsgID = replyToMsgID
+	conn.chatType = chatType
+	conn.startedAt = time.Now()
+	conn.mu.Unlock()
+
+	if err := a.bridge.Handle(ctx, cmdEnv, conn); err != nil {
+		a.log.Error("feishu: worker command failed", "command", result.Label, "err", err)
+		if platformMsgID != "" {
+			_ = a.replyMessage(ctx, platformMsgID, fmt.Sprintf("❌ 执行 %s 失败。", result.Label), false)
+		} else {
+			_ = a.sendTextMessage(ctx, chatID, fmt.Sprintf("❌ 执行 %s 失败。", result.Label))
+		}
+		return
+	}
+
+	a.log.Info("feishu: worker command sent", "command", result.Label, "user", userID, "session_id", envelope.SessionID)
 }
 
 func controlFeedbackMessageCN(action events.ControlAction) string {
