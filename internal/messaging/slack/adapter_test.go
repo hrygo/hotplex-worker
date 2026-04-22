@@ -1654,3 +1654,104 @@ func TestSlackConn_WriteCtx_ContextUsageWithAllOptionalFields(t *testing.T) {
 	err := conn.WriteCtx(ctx, env)
 	require.Error(t, err)
 }
+
+// ---------------------------------------------------------------------------
+// Phase 4.3 — Image Block integration in writeWithPostMessage
+// ---------------------------------------------------------------------------
+
+func TestExtractImages_LocalMediaPath(t *testing.T) {
+	t.Parallel()
+	imgDir := filepath.Join(MediaPathPrefix, "images")
+	require.NoError(t, os.MkdirAll(imgDir, 0o755))
+	pngData := []byte("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01" +
+		"\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde")
+	targetPath := filepath.Join(imgDir, "image_test123.png")
+	require.NoError(t, os.WriteFile(targetPath, pngData, 0o644))
+	t.Cleanup(func() { _ = os.RemoveAll(MediaPathPrefix) })
+
+	text := "Here is the chart:\n" + targetPath
+	parts, remaining := extractImages(text)
+	require.Len(t, parts, 1, "should extract 1 image from local path")
+	require.Contains(t, parts[0].URL, "data:image/")
+	require.Equal(t, "Here is the chart:", remaining)
+}
+
+func TestExtractImages_URLImage(t *testing.T) {
+	t.Parallel()
+	text := "Chart below:\nhttps://example.com/chart.png\nend"
+	parts, remaining := extractImages(text)
+	require.Len(t, parts, 1)
+	require.Equal(t, "https://example.com/chart.png", parts[0].URL)
+	require.Contains(t, remaining, "Chart below:")
+	require.Contains(t, remaining, "end")
+}
+
+func TestExtractImages_MixedContent(t *testing.T) {
+	t.Parallel()
+	text := "Analysis complete.\nhttps://cdn.example.com/result.png\nSee above."
+	parts, remaining := extractImages(text)
+	require.Len(t, parts, 1)
+	require.Contains(t, remaining, "Analysis complete.")
+	require.Contains(t, remaining, "See above.")
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4.4 — File upload detection
+// ---------------------------------------------------------------------------
+
+func TestUploadableExtensions_Coverage(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		ext      string
+		expected bool
+	}{
+		{".pdf", true},
+		{".csv", true},
+		{".xlsx", true},
+		{".docx", true},
+		{".png", false},
+		{".txt", false},
+		{".jpg", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.ext, func(t *testing.T) {
+			t.Parallel()
+			found := false
+			for _, e := range uploadableExtensions {
+				if e == tt.ext {
+					found = true
+					break
+				}
+			}
+			require.Equal(t, tt.expected, found)
+		})
+	}
+}
+
+func TestTryFileUpload_NoUploadablePath(t *testing.T) {
+	t.Parallel()
+	conn := &SlackConn{}
+	require.False(t, conn.tryFileUpload(context.Background(), "hello world"))
+	require.False(t, conn.tryFileUpload(context.Background(), "report.txt"))
+}
+
+func TestTryFileUpload_WithTempFile(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	pdfPath := filepath.Join(dir, "report.pdf")
+	require.NoError(t, os.WriteFile(pdfPath, []byte("%PDF-1.4 test"), 0o644))
+
+	conn := &SlackConn{}
+	require.False(t, conn.tryFileUpload(context.Background(), pdfPath))
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4.3 — tryImageBlocks with no images
+// ---------------------------------------------------------------------------
+
+func TestTryImageBlocks_NoImages(t *testing.T) {
+	t.Parallel()
+	conn := &SlackConn{adapter: &Adapter{}, channelID: "C_TEST", threadTS: "1234.5678"}
+	err := conn.tryImageBlocks(context.Background(), "plain text only")
+	require.Error(t, err, "should fail when no images found")
+}
