@@ -83,20 +83,22 @@ var workerSlashMap = map[string]events.WorkerStdioCommand{
 // workerNLMap maps natural language triggers to worker stdio commands.
 // All keys require $ prefix to avoid accidental matches in normal conversation.
 var workerNLMap = map[string]events.WorkerStdioCommand{
-	"$上下文":   events.StdioContextUsage,
-	"$容量":    events.StdioContextUsage,
-	"$token": events.StdioContextUsage,
-	"$MCP状态": events.StdioMCPStatus,
-	"$工具状态":  events.StdioMCPStatus,
-	"$切换模型":  events.StdioSetModel,
-	"$权限模式":  events.StdioSetPermMode,
-	"$压缩":    events.StdioCompact,
-	"$精简":    events.StdioCompact,
-	"$清空":    events.StdioClear,
-	"$清屏":    events.StdioClear,
-	"$回退":    events.StdioRewind,
-	"$撤销":    events.StdioRewind,
-	"$提交":    events.StdioCommit,
+	"$context": events.StdioContextUsage,
+	"$上下文":     events.StdioContextUsage,
+	"$mcp":     events.StdioMCPStatus,
+	"$model":   events.StdioSetModel,
+	"$切换模型":    events.StdioSetModel,
+	"$perm":    events.StdioSetPermMode,
+	"$权限模式":    events.StdioSetPermMode,
+	"$compact": events.StdioCompact,
+	"$压缩":      events.StdioCompact,
+	"$clear":   events.StdioClear,
+	"$清空":      events.StdioClear,
+	"$effort":  events.StdioEffort,
+	"$rewind":  events.StdioRewind,
+	"$回退":      events.StdioRewind,
+	"$commit":  events.StdioCommit,
+	"$提交":      events.StdioCommit,
 }
 
 // WorkerCommandResult holds the parsed worker stdio command and its arguments.

@@ -99,18 +99,21 @@ func TestParseWorkerCommand_NaturalLanguage(t *testing.T) {
 		want  events.WorkerStdioCommand
 	}{
 		{"上下文", "$上下文", events.StdioContextUsage},
-		{"容量", "$容量", events.StdioContextUsage},
-		{"token", "$token", events.StdioContextUsage},
-		{"工具状态", "$工具状态", events.StdioMCPStatus},
+		{"context", "$context", events.StdioContextUsage},
+		{"mcp", "$mcp", events.StdioMCPStatus},
 		{"切换模型", "$切换模型", events.StdioSetModel},
+		{"model", "$model", events.StdioSetModel},
 		{"权限模式", "$权限模式", events.StdioSetPermMode},
+		{"perm", "$perm", events.StdioSetPermMode},
 		{"压缩", "$压缩", events.StdioCompact},
-		{"精简", "$精简", events.StdioCompact},
+		{"compact", "$compact", events.StdioCompact},
 		{"清空", "$清空", events.StdioClear},
-		{"清屏", "$清屏", events.StdioClear},
+		{"clear", "$clear", events.StdioClear},
+		{"effort", "$effort", events.StdioEffort},
 		{"回退", "$回退", events.StdioRewind},
-		{"撤销", "$撤销", events.StdioRewind},
+		{"rewind", "$rewind", events.StdioRewind},
 		{"提交", "$提交", events.StdioCommit},
+		{"commit", "$commit", events.StdioCommit},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -150,7 +153,7 @@ func TestParseWorkerCommand_NotACommand(t *testing.T) {
 		{"normal text", "hello"},
 		{"unknown slash", "/unknown"},
 		{"bare 上下文 without $", "上下文"},
-		{"bare token without $", "token"},
+		{"bare context without $", "context"},
 		{"empty", ""},
 		{"whitespace", "   "},
 	}
