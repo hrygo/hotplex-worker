@@ -1,6 +1,7 @@
 package events
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -376,6 +377,23 @@ func TestIsValidTransition_InvalidStateConstant(t *testing.T) {
 	require.False(t, result, "Transition to unknown state should return false")
 }
 
+func TestWorkerStdioCommandIsPassthrough(t *testing.T) {
+	passthrough := []WorkerStdioCommand{
+		StdioCompact, StdioClear, StdioModel,
+		StdioEffort, StdioRewind, StdioCommit,
+	}
+	notPassthrough := []WorkerStdioCommand{
+		StdioContextUsage, StdioMCPStatus,
+		StdioSetModel, StdioSetPermMode,
+	}
+	for _, cmd := range passthrough {
+		require.True(t, cmd.IsPassthrough(), string(cmd))
+	}
+	for _, cmd := range notPassthrough {
+		require.False(t, cmd.IsPassthrough(), string(cmd))
+	}
+}
+
 func TestNewEnvelope_TimestampUniqueness(t *testing.T) {
 	// Create multiple envelopes and ensure timestamps are set independently
 	envelope1 := NewEnvelope("id1", "session1", 1, Ping, nil)
@@ -389,4 +407,148 @@ func TestNewEnvelope_TimestampUniqueness(t *testing.T) {
 	// Timestamps should be different (unless created in same millisecond)
 	require.GreaterOrEqual(t, envelope2.Timestamp, envelope1.Timestamp,
 		"Second envelope timestamp should be >= first envelope timestamp")
+}
+
+func TestClone(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		envelope *Envelope
+	}{
+		{
+			name: "normal envelope",
+			envelope: &Envelope{
+				ID:        "test-id",
+				Version:   Version,
+				Seq:       42,
+				Timestamp: 1234567890,
+				SessionID: "session-123",
+				Priority:  PriorityData,
+				OwnerID:   "user-123",
+				Event: Event{
+					Type: Message,
+					Data: &MessageData{
+						ID:      "msg-456",
+						Role:    "assistant",
+						Content: "Hello, world!",
+					},
+				},
+			},
+		},
+		{
+			name: "envelope with nested data",
+			envelope: &Envelope{
+				ID:        "state-id",
+				Version:   Version,
+				Seq:       99,
+				Timestamp: 9876543210,
+				SessionID: "session-456",
+				Priority:  PriorityControl,
+				OwnerID:   "user-456",
+				Event: Event{
+					Type: State,
+					Data: &StateData{
+						State:   StateRunning,
+						Message: "Session started successfully",
+					},
+				},
+			},
+		},
+		{
+			name: "envelope with nil data",
+			envelope: &Envelope{
+				ID:        "nil-data-id",
+				Version:   Version,
+				Seq:       0,
+				Timestamp: 1111111111,
+				SessionID: "session-nil",
+				Priority:  "",
+				OwnerID:   "",
+				Event: Event{
+					Type: Ping,
+					Data: nil,
+				},
+			},
+		},
+		{
+			name: "envelope with map data",
+			envelope: &Envelope{
+				ID:        "map-data-id",
+				Version:   Version,
+				Seq:       77,
+				Timestamp: 2222222222,
+				SessionID: "session-map",
+				Priority:  PriorityData,
+				OwnerID:   "user-map",
+				Event: Event{
+					Type: ContextUsage,
+					Data: map[string]any{
+						"totalTokens": float64(1000),
+						"maxTokens":   float64(2000),
+						"model":       "test-model",
+					},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			clone := Clone(tt.envelope)
+
+			require.Equal(t, tt.envelope.ID, clone.ID)
+			require.Equal(t, tt.envelope.Version, clone.Version)
+			require.Equal(t, tt.envelope.Seq, clone.Seq)
+			require.Equal(t, tt.envelope.Timestamp, clone.Timestamp)
+			require.Equal(t, tt.envelope.SessionID, clone.SessionID)
+			require.Equal(t, tt.envelope.Priority, clone.Priority)
+			require.Equal(t, tt.envelope.Event.Type, clone.Event.Type)
+
+			// For complex data types, compare the actual values
+			// JSON marshal/unmarshal may produce different field ordering
+			if tt.envelope.Event.Data == nil {
+				require.Nil(t, clone.Event.Data)
+			} else {
+				// Use JSON equality for complex types
+				originalJSON, err := json.Marshal(tt.envelope.Event.Data)
+				require.NoError(t, err)
+				cloneJSON, err := json.Marshal(clone.Event.Data)
+				require.NoError(t, err)
+
+				var originalUnmarshaled, cloneUnmarshaled interface{}
+				err = json.Unmarshal(originalJSON, &originalUnmarshaled)
+				require.NoError(t, err)
+				err = json.Unmarshal(cloneJSON, &cloneUnmarshaled)
+				require.NoError(t, err)
+
+				require.Equal(t, originalUnmarshaled, cloneUnmarshaled)
+			}
+
+			originalID := tt.envelope.ID
+			tt.envelope.ID = "modified-id"
+			require.NotEqual(t, tt.envelope.ID, clone.ID)
+			require.Equal(t, originalID, clone.ID)
+
+			tt.envelope.ID = originalID
+		})
+	}
+}
+
+func TestClone_EmptyEnvelope(t *testing.T) {
+	t.Parallel()
+
+	// Test with nil envelope (edge case)
+	result := Clone(nil)
+	require.NotNil(t, result)
+	require.Equal(t, &Envelope{}, result)
+
+	// Test with zero-value envelope
+	emptyEnv := &Envelope{}
+	clone := Clone(emptyEnv)
+	require.NotNil(t, clone)
+	require.Equal(t, emptyEnv, clone)
+	require.NotSame(t, emptyEnv, clone) // Should be different pointer
 }

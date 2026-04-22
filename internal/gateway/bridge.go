@@ -259,6 +259,7 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 	// LLM retry: accumulate turn text and error data for retry detection.
 	var turnText strings.Builder
 	var lastError *events.ErrorData
+	var pendingError *events.Envelope // buffered error event; suppressed if retry triggers
 
 	for env := range w.Conn().Recv() {
 		if env.Event.Type == events.Error {
@@ -266,6 +267,16 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 			// Capture last error for retry detection.
 			if ed, ok := env.Event.Data.(events.ErrorData); ok {
 				lastError = &ed
+			}
+			// When retry is enabled, buffer the error event instead of forwarding
+			// immediately. If the subsequent Done triggers a retry, the error is
+			// suppressed (user sees the notify message instead of raw LLM error).
+			// If no retry triggers, the error is forwarded after Done.
+			if b.retryCtrl != nil {
+				cloned := events.Clone(env)
+				cloned.SessionID = sessionID
+				pendingError = cloned
+				continue
 			}
 		} else if b.log.Enabled(context.Background(), slog.LevelDebug) {
 			b.log.Debug("bridge: received event from worker", "session_id", sessionID, "worker_type", workerType, "event_type", env.Event.Type)
@@ -294,15 +305,12 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 			if b.hub.GetAndClearDropped(sessionID) {
 				b.log.Warn("bridge: handling dropped deltas before done", "session_id", sessionID, "worker_type", workerType)
 
-				// Optional: Here we could inject a raw `message` pulling full state from Worker.
-				// For now, we mutate the `done` event to pass the `dropped: true` flag inside `stats`.
 				if dataMap, ok := env.Event.Data.(map[string]any); ok {
 					if stats, ok := dataMap["stats"].(map[string]any); ok {
 						stats["dropped"] = true
 					} else {
 						dataMap["stats"] = map[string]any{"dropped": true}
 					}
-					// Update with custom DoneData if needed
 				} else if doneData, ok := env.Event.Data.(events.DoneData); ok {
 					doneData.Dropped = true
 					env.Event.Data = doneData
@@ -317,9 +325,15 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 			b.log.Warn("bridge: forward event failed", "err", err, "session_id", sessionID, "worker_type", workerType)
 		}
 
+		// Flush buffered error on non-Done events (no retry decision possible yet).
+		if pendingError != nil && env.Event.Type != events.Done {
+			if err := b.hub.SendToSession(context.Background(), pendingError); err != nil {
+				b.log.Warn("bridge: forward buffered error failed", "err", err, "session_id", sessionID, "worker_type", workerType)
+			}
+			pendingError = nil
+		}
+
 		// EVT-004: append to MessageStore on done events (end of each turn).
-		// The Append call is async and non-blocking; failures are logged but do not
-		// affect the event stream.
 		if b.msgStore != nil && env.Event.Type == events.Done {
 			payload, _ := aep.EncodeJSON(env)
 			if err := b.msgStore.Append(context.Background(), env.SessionID, env.Seq, string(env.Event.Type), payload); err != nil {
@@ -330,10 +344,19 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 		// LLM retry: check after Done is forwarded and persisted.
 		if env.Event.Type == events.Done && b.retryCtrl != nil {
 			if shouldRetry, attempt := b.retryCtrl.ShouldRetry(sessionID, turnText.String(), lastError); shouldRetry {
+				// Suppress buffered error — user sees the notify message instead of raw LLM error.
+				pendingError = nil
 				b.autoRetry(context.Background(), w, sessionID, attempt)
 				turnText.Reset()
 				lastError = nil
 				continue
+			}
+			// No retry — flush buffered error event to client.
+			if pendingError != nil {
+				if err := b.hub.SendToSession(context.Background(), pendingError); err != nil {
+					b.log.Warn("bridge: forward buffered error failed", "err", err, "session_id", sessionID, "worker_type", workerType)
+				}
+				pendingError = nil
 			}
 			b.retryCtrl.RecordSuccess(sessionID)
 			turnText.Reset()

@@ -1,6 +1,6 @@
 # PROJECT KNOWLEDGE BASE
 
-**Last updated:** 2026-04-21 · **Commit:** 4cddd1a0 · **Branch:** feat/slack-adapter-improvements
+**Last updated:** 2026-04-22 · **Commit:** 1b69bfd2 · **Branch:** feat/21-worker-stdio-session-control
 
 ## OVERVIEW
 
@@ -27,7 +27,7 @@ cp configs/env.example .env
 
 ### Entry
 ```
-cmd/worker/main.go    (~610 lines) flags, DI, signal, messaging init, LLM retry init
+cmd/worker/main.go    (~656 lines) flags, DI, signal, messaging init, LLM retry init
 ```
 
 ### internal/
@@ -44,6 +44,8 @@ cmd/worker/main.go    (~610 lines) flags, DI, signal, messaging init, LLM retry 
 - `gateway/bridge.go`  Session ↔ worker lifecycle orchestration + LLM retry integration
 - `gateway/llm_retry.go`  LLMRetryController: exponential backoff on retryable errors
 - `gateway/api.go`     GatewayAPI: HTTP session endpoints (list/get/terminate)
+- `gateway/init.go`    Init handshake: InitData, InitAckData, caps, 30s timeout
+- `gateway/heartbeat.go` Missed ping counter with stop channel
 
 **Session**
 - `session/manager.go`   5-state machine, state transitions, GC
@@ -85,6 +87,7 @@ cmd/worker/main.go    (~610 lines) flags, DI, signal, messaging init, LLM retry 
 
 ### pkg/
 - `events/`   Envelope, Event, SessionState, all data structs
+- `events/helpers.go`  Shared mapper helpers for event data extraction
 - `aep/`      AEP v1 codec
 
 ### Top-level
@@ -197,6 +200,8 @@ configs/  config.yaml, config-dev.yaml, env.example
 - **Interaction timeout**: Permission/Q&A/elicitation requests auto-deny after 5 minutes to prevent indefinite blocking
 - **Session key derivation**: UUIDv5 deterministic mapping from (ownerID, workerType, clientSessionID, workDir) for cross-environment consistency
 - **LLM auto-retry**: Configurable retryable error patterns (429, 5xx, network errors) with exponential backoff; per-session attempt tracking
+- **Documentation**: 增量文档中文优先，重要文档中英双语。技术术语保留英文原文。增量文档（Issue/PR 模板、配置说明、changelog）用中文；重要文档（根 README、架构设计、协议规范）拆分为独立的中英文文件（如 `README.md` + `README_zh.md`），文件头部互相链接跳转
+- **File safety (multi-agent)**: 当前环境存在多 Agent 协同工作，对文件执行还原（`git restore`）、恢复、撤销（`git checkout`）、暂存（`git stash`）等操作前，**必须先在 `/tmp` 下创建备份**（`cp <file> /tmp/<file>.bak.$(date +%s)`），防止其他 Agent 的未提交改动被意外覆盖或丢失
 
 ## ANTI-PATTERNS (THIS PROJECT)
 
@@ -253,10 +258,11 @@ make clean                    # Clean build artifacts
 ## NOTES
 
 - `configs/` config-dev.yaml / config-prod.yaml / config.yaml / env.example / grafana / monitoring
+- `CLAUDE.md` is symlinked to `AGENTS.md` — edit AGENTS.md only, CLAUDE.md auto-follows
 - `.claude` is symlinked to `.agent` — both directories exist
 - No `api/` directory — project uses JSON over WebSocket, not protobuf
 - Project targets POSIX only (PGID isolation requires `syscall.SysProcAttr{Setpgid: true}`)
-- Largest files: `opencodeserver/worker.go` (952), `feishu/adapter.go` (976), `bridge.go` (736), `hub.go` (814), `config.go` (676), `slack/adapter.go` (792), `manager.go` (777)
+- Largest files: `feishu/adapter.go` (1065), `opencodeserver/worker.go` (1001), `slack/adapter.go` (915), `hub.go` (798), `manager.go` (777), `bridge.go` (766), `config.go` (728), `main.go` (656)
 - STT scripts (`scripts/stt_server.py`, `scripts/fix_onnx_model.py`) are also deployed to `~/.agents/skills/audio-transcribe/scripts/` for Claude Code skill use
 - STT model: `~/.cache/modelscope/hub/models/iic/SenseVoiceSmall` (~900MB), ONNX FP32 non-quantized
 - Zombie IO timeout default: 30 minutes (configurable via `worker.execution_timeout`)

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strconv"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -16,33 +16,35 @@ import (
 // without requiring a restart. All other fields are treated as static.
 // Format: "TopLevel.NestedField" (matches mapstructure tags).
 var HotReloadableFields = map[string]bool{
-	"gateway.addr":                 true,
-	"gateway.ping_interval":        true,
-	"gateway.pong_timeout":         true,
-	"gateway.write_timeout":        true,
-	"gateway.idle_timeout":         true,
-	"gateway.broadcast_queue_size": true,
-	"session.gc_scan_interval":     true,
-	"session.max_concurrent":       true,
-	"pool.max_size":                true,
-	"pool.max_idle_per_user":       true,
-	"worker.max_lifetime":          true,
-	"worker.idle_timeout":          true,
-	"worker.execution_timeout":     true,
-	"admin.requests_per_sec":       true,
-	"admin.burst":                  true,
+	"log.level":                true,
+	"session.gc_scan_interval": true,
+	"pool.max_size":            true,
+	"pool.max_idle_per_user":   true,
+	"security.api_keys":        true,
+	"security.allowed_origins": true,
+	"worker.max_lifetime":      true,
+	"worker.idle_timeout":      true,
+	"worker.execution_timeout": true,
+	"worker.auto_retry":        true,
+	"admin.requests_per_sec":   true,
+	"admin.burst":              true,
+	"admin.tokens":             true,
 }
 
 // StaticFields are config fields that require a restart to take effect.
 // Changing these at runtime is logged but the value is NOT applied.
 var StaticFields = map[string]bool{
-	"security.api_keys":      true,
-	"security.tls_enabled":   true,
-	"security.tls_cert_file": true,
-	"security.tls_key_file":  true,
-	"security.jwt_secret":    true,
-	"db.path":                true,
-	"db.wal_mode":            true,
+	"gateway.addr":                 true,
+	"gateway.broadcast_queue_size": true,
+	"gateway.read_buffer_size":     true,
+	"gateway.write_buffer_size":    true,
+	"log.format":                   true,
+	"security.tls_enabled":         true,
+	"security.tls_cert_file":       true,
+	"security.tls_key_file":        true,
+	"security.jwt_secret":          true,
+	"db.path":                      true,
+	"db.wal_mode":                  true,
 }
 
 // ConfigChange represents a single configuration change for audit logging.
@@ -63,6 +65,7 @@ type Watcher struct {
 	debounce time.Duration
 	onChange func(*Config) // called with the new config after hot reload
 	onStatic func(string)  // called when a static field changes
+	store    *ConfigStore  // central atomic config holder; nil = legacy mode
 
 	mu     sync.Mutex
 	closed bool
@@ -85,11 +88,12 @@ type Watcher struct {
 // NewWatcher creates a file-system watcher for hot config reloading.
 // path: absolute path to the config file.
 // sp: SecretsProvider used on reload to supply sensitive values. If nil, falls back to env vars.
+// store: central ConfigStore for atomic config propagation. If nil, falls back to onChange callback only.
 // onChange: called (in a goroutine) when hot-reloadable fields change.
 // onStatic: called (in a goroutine) when static fields change.
 // The watcher does not start until Start() is called.
 // The caller should pass the initially loaded config via SetInitial after calling NewWatcher.
-func NewWatcher(log *slog.Logger, path string, sp SecretsProvider, onChange func(*Config), onStatic func(string)) *Watcher {
+func NewWatcher(log *slog.Logger, path string, sp SecretsProvider, store *ConfigStore, onChange func(*Config), onStatic func(string)) *Watcher {
 	if log == nil {
 		log = slog.Default()
 	}
@@ -100,6 +104,7 @@ func NewWatcher(log *slog.Logger, path string, sp SecretsProvider, onChange func
 		log:           log,
 		path:          path,
 		sp:            sp,
+		store:         store,
 		debounce:      500 * time.Millisecond,
 		onChange:      onChange,
 		onStatic:      onStatic,
@@ -189,9 +194,21 @@ func (w *Watcher) reload() {
 		return
 	}
 
+	// Validate before applying.
+	if errs := newCfg.Validate(); len(errs) > 0 {
+		w.log.Warn("config: reload validation failed, keeping old config", "errors", errs)
+		return
+	}
+
 	// Audit and apply changes.
 	changes := diffConfigs(prev, newCfg)
+	if len(changes) == 0 {
+		w.log.Debug("config: file changed but no config diff detected")
+		return
+	}
 
+	hasHot := false
+	hasStatic := false
 	w.muAudit.Lock()
 	for _, c := range changes {
 		w.audit = append(w.audit, c)
@@ -201,6 +218,11 @@ func (w *Watcher) reload() {
 			"new", c.NewValue,
 			"hot", c.Hot,
 		)
+		if c.Hot {
+			hasHot = true
+		} else {
+			hasStatic = true
+		}
 	}
 	w.muAudit.Unlock()
 
@@ -217,62 +239,97 @@ func (w *Watcher) reload() {
 	w.latestIdx = len(w.history) - 1
 	w.muHistory.Unlock()
 
-	// Notify listeners.
+	// Propagate via ConfigStore (atomic swap + observer notification).
+	if w.store != nil {
+		w.store.Swap(newCfg)
+	}
+
+	// Legacy callback notifications.
+	if hasHot && w.onChange != nil {
+		go w.onChange(newCfg)
+	}
 	for _, c := range changes {
-		if c.Hot {
-			if w.onChange != nil {
-				go w.onChange(newCfg)
-			}
-		} else {
-			if w.onStatic != nil {
-				go w.onStatic(c.Field)
-			}
+		if !c.Hot && hasStatic && w.onStatic != nil {
+			go w.onStatic(c.Field)
 		}
 	}
 }
 
-// diffConfigs compares two configs and returns the list of changes.
+// diffConfigs compares two configs field-by-field against HotReloadableFields
+// and StaticFields, returning precise per-field change records.
 func diffConfigs(prev, next *Config) []ConfigChange {
 	if prev == nil || next == nil {
 		return nil
 	}
 	var changes []ConfigChange
+	now := time.Now().UTC()
 
-	// We compare all known hot-reloadable fields by name.
-	// For simplicity we do a string comparison of the whole struct for changed fields.
-	// A more precise implementation would use reflection, but this is sufficient
-	// for audit logging purposes.
-	prevStr, nextStr := configSummary(prev), configSummary(next)
-	if prevStr != nextStr {
-		// At least one field changed — report the whole config as changed
-		// and let the onChange callback decide how to apply it.
-		// For a production implementation, use reflect.DeepEqual per field.
-		changes = append(changes, ConfigChange{
-			Timestamp: time.Now().UTC(),
-			Field:     "config",
-			OldValue:  prevStr,
-			NewValue:  nextStr,
-			Hot:       true,
-		})
+	// Check all known hot-reloadable fields.
+	for field := range HotReloadableFields {
+		oldVal := resolveField(prev, field)
+		newVal := resolveField(next, field)
+		if oldVal != newVal {
+			changes = append(changes, ConfigChange{
+				Timestamp: now,
+				Field:     field,
+				OldValue:  oldVal,
+				NewValue:  newVal,
+				Hot:       true,
+			})
+		}
 	}
+
+	// Check all known static fields.
+	for field := range StaticFields {
+		oldVal := resolveField(prev, field)
+		newVal := resolveField(next, field)
+		if oldVal != newVal {
+			changes = append(changes, ConfigChange{
+				Timestamp: now,
+				Field:     field,
+				OldValue:  oldVal,
+				NewValue:  newVal,
+				Hot:       false,
+			})
+		}
+	}
+
 	return changes
 }
 
-// configSummary returns a compact string representation of the config
-// for change detection (used in audit log).
-func configSummary(c *Config) string {
-	if c == nil {
-		return ""
+// resolveField extracts a config field value by its dot-separated path
+// (e.g. "gateway.addr" → Config.Gateway.Addr) using reflection.
+// Returns the value as a string for comparison and audit logging.
+func resolveField(cfg *Config, path string) string {
+	parts := strings.Split(path, ".")
+	v := reflect.ValueOf(cfg).Elem()
+
+	for _, part := range parts {
+		if v.Kind() == reflect.Ptr {
+			if v.IsNil() {
+				return "<nil>"
+			}
+			v = v.Elem()
+		}
+		if v.Kind() != reflect.Struct {
+			return "<invalid>"
+		}
+		// Find field by mapstructure tag.
+		found := false
+		for i := 0; i < v.NumField(); i++ {
+			tag := v.Type().Field(i).Tag.Get("mapstructure")
+			if tag == part {
+				v = v.Field(i)
+				found = true
+				break
+			}
+		}
+		if !found {
+			return "<unknown>"
+		}
 	}
-	return strings.Join([]string{
-		c.Gateway.Addr,
-		strconv.Itoa(c.Gateway.BroadcastQueueSize),
-		c.Session.GCScanInterval.String(),
-		strconv.Itoa(c.Pool.MaxSize),
-		c.Worker.MaxLifetime.String(),
-		c.Worker.IdleTimeout.String(),
-		strconv.Itoa(c.Admin.RequestsPerSec),
-	}, "|")
+
+	return fmt.Sprintf("%v", v.Interface())
 }
 
 // AuditLog returns a copy of the change audit log.
@@ -310,6 +367,11 @@ func (w *Watcher) Rollback(version int) (*Config, int, error) {
 	idx := len(w.history) - 1 - version
 	cfg := w.history[idx]
 	w.latestIdx = idx
+
+	// Propagate rolled-back config via ConfigStore so observers are notified.
+	if w.store != nil {
+		w.store.Swap(cfg)
+	}
 
 	return cfg, idx, nil
 }

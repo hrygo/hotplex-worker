@@ -51,6 +51,97 @@ func ParseControlCommand(text string) *ControlCommandResult {
 	return nil
 }
 
+func parseWorkerSlashCommands(text string) (base, args string) {
+	parts := strings.SplitN(text, " ", 2)
+	base = parts[0]
+	if len(parts) > 1 {
+		args = strings.TrimSpace(parts[1])
+	}
+	return base, args
+}
+
+// workerSlashCommandsWithArgs lists slash commands that accept arguments.
+var workerSlashCommandsWithArgs = map[string]bool{
+	"/model":  true,
+	"/perm":   true,
+	"/effort": true,
+}
+
+// workerSlashMap maps slash-form strings to worker stdio commands.
+var workerSlashMap = map[string]events.WorkerStdioCommand{
+	"/context": events.StdioContextUsage,
+	"/mcp":     events.StdioMCPStatus,
+	"/model":   events.StdioSetModel,
+	"/perm":    events.StdioSetPermMode,
+	"/compact": events.StdioCompact,
+	"/clear":   events.StdioClear,
+	"/effort":  events.StdioEffort,
+	"/rewind":  events.StdioRewind,
+	"/commit":  events.StdioCommit,
+}
+
+// workerNLMap maps natural language triggers to worker stdio commands.
+// All keys require $ prefix to avoid accidental matches in normal conversation.
+var workerNLMap = map[string]events.WorkerStdioCommand{
+	"$context": events.StdioContextUsage,
+	"$上下文":     events.StdioContextUsage,
+	"$mcp":     events.StdioMCPStatus,
+	"$model":   events.StdioSetModel,
+	"$切换模型":    events.StdioSetModel,
+	"$perm":    events.StdioSetPermMode,
+	"$权限模式":    events.StdioSetPermMode,
+	"$compact": events.StdioCompact,
+	"$压缩":      events.StdioCompact,
+	"$clear":   events.StdioClear,
+	"$清空":      events.StdioClear,
+	"$effort":  events.StdioEffort,
+	"$rewind":  events.StdioRewind,
+	"$回退":      events.StdioRewind,
+	"$commit":  events.StdioCommit,
+	"$提交":      events.StdioCommit,
+}
+
+// WorkerCommandResult holds the parsed worker stdio command and its arguments.
+type WorkerCommandResult struct {
+	Command events.WorkerStdioCommand
+	Label   string
+	Args    string
+	Extra   map[string]any
+}
+
+// ParseWorkerCommand checks whether text is a worker stdio command.
+// Returns nil if the text is not a worker command.
+//
+// Supported formats:
+//   - Slash commands: /context, /mcp, /model sonnet-4, /perm bypassPermissions, /effort high
+//   - Natural language: $上下文, $MCP状态, $切换模型, etc. (require $ prefix)
+func ParseWorkerCommand(text string) *WorkerCommandResult {
+	t := strings.TrimSpace(strings.ToLower(text))
+	t = trimTrailingPunct(t)
+
+	base, args := parseWorkerSlashCommands(t)
+	if cmd, ok := workerSlashMap[base]; ok {
+		label := base
+		if !workerSlashCommandsWithArgs[base] {
+			args = ""
+		}
+		return &WorkerCommandResult{
+			Command: cmd,
+			Label:   label,
+			Args:    args,
+		}
+	}
+
+	if cmd, ok := workerNLMap[t]; ok {
+		return &WorkerCommandResult{
+			Command: cmd,
+			Label:   t,
+		}
+	}
+
+	return nil
+}
+
 // trimTrailingPunct strips trailing punctuation (same character set as slack/abort.go).
 func trimTrailingPunct(s string) string {
 	return strings.TrimRightFunc(s, func(r rune) bool {

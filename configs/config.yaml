@@ -1,208 +1,119 @@
-# HotPlex Worker Gateway - Default Configuration
+# HotPlex Worker Gateway - Base Configuration
 #
-# This file contains all configurable options with production-ready defaults.
-# Sensitive values (JWT secret, admin tokens) should be set via environment variables.
+# Sensible defaults for both dev and prod. Override via:
+#   1. Inheritance: config-dev.yaml / config-prod.yaml (inherits this file)
+#   2. Environment variables: HOTPLEX_* (highest priority)
+#   3. Secrets provider: JWT secret, admin tokens (never in config files)
 #
-# Configuration hierarchy (lowest to highest priority):
-#   1. Code defaults (internal/config/config.go:Default())
-#   2. This file (configs/config.yaml)
-#   3. Environment variables (HOTPLEX_*)
-#   4. Secrets provider (if configured)
+# Code defaults live in internal/config/config.go:Default().
 
 # ─────────────────────────────────────────────────────────────────────────────
-# CORE NETWORK CONFIGURATION
+# CORE NETWORK
 # ─────────────────────────────────────────────────────────────────────────────
 
-# WebSocket gateway address (clients connect here)
-# Production: use TLS (wss://) and proper hostname
-# Development: :8888 (localhost only)
 gateway:
   addr: ":8888"
+  ping_interval: 54s
+  pong_timeout: 60s
+  write_timeout: 10s
+  idle_timeout: 5m
+  max_frame_size: 32768
+  broadcast_queue_size: 256
 
-  # WebSocket performance tuning
-  read_buffer_size: 4096      # 4KB read buffer per connection
-  write_buffer_size: 4096     # 4KB write buffer per connection
-  ping_interval: 54s          # Send WebSocket ping every 54s
-  pong_timeout: 60s           # Expect pong within 60s (disconnect if missed)
-  write_timeout: 10s          # Maximum time to write a message
-  idle_timeout: 5m            # Disconnect idle clients after 5 minutes
-  max_frame_size: 32768       # 32KB max message size (prevents memory exhaustion)
-  broadcast_queue_size: 256   # Buffer for broadcasting events to connections
-
-# Admin API address (monitoring, session management)
-# Should be firewalled from public access in production
 admin:
   enabled: true
   addr: ":9999"
-
-  # Authentication tokens (set via environment for security)
-  # Environment: HOTPLEX_ADMIN_TOKEN_1, HOTPLEX_ADMIN_TOKEN_2
-  tokens: []
-
-  # Token scopes (map token to allowed operations)
-  # Example: token_1: ["session:read", "session:write", "stats:read"]
-  token_scopes: {}
-
-  # Default scopes for tokens without explicit scopes
-  default_scopes:
-    - "session:read"
-    - "stats:read"
-    - "health:read"
-
-  # IP whitelist (disable for Docker/Kubernetes, use network policies instead)
-  ip_whitelist_enabled: false
-  allowed_cidrs:
-    - "127.0.0.0/8"    # Localhost
-    - "10.0.0.0/8"      # Private network (Docker, Kubernetes)
-
-  # Rate limiting (prevent abuse)
   rate_limit_enabled: true
-  requests_per_sec: 10   # 10 requests/second per IP
-  burst: 20              # Allow short bursts up to 20 requests
+  requests_per_sec: 10
+  burst: 20
 
 # ─────────────────────────────────────────────────────────────────────────────
-# DATA PERSISTENCE
+# DATA
 # ─────────────────────────────────────────────────────────────────────────────
 
 db:
-  path: "data/hotplex-worker.db"          # SQLite database file path
-  wal_mode: true              # Write-Ahead Logging (better concurrency)
-  busy_timeout: 500ms         # SQLite lock timeout
-  max_open_conns: 1           # Single writer (SQLite limitation)
+  path: "data/hotplex-worker.db"
+  wal_mode: true
+  busy_timeout: 500ms
 
 # ─────────────────────────────────────────────────────────────────────────────
-# SECURITY CONFIGURATION
+# SECURITY
 # ─────────────────────────────────────────────────────────────────────────────
 
 security:
-  # API key validation (for client authentication)
-  api_key_header: "X-API-Key"   # HTTP header name for API keys
-  api_keys: []                  # Set via environment: HOTPLEX_API_KEYS
-
-  # TLS configuration (ENABLE IN PRODUCTION!)
-  tls_enabled: false            # Set to true for production
+  api_key_header: "X-API-Key"
+  tls_enabled: false
   tls_cert_file: "/etc/hotplex/tls/server.crt"
   tls_key_file: "/etc/hotplex/tls/server.key"
-
-  # CORS (Cross-Origin Resource Sharing)
   allowed_origins:
-    - "*"                      # Development: allow all origins
-    # Production: restrict to your domains
-    # - "https://app.example.com"
-    # - "https://admin.example.com"
-
-  # JWT validation (for session tokens)
-  # Secret MUST be set via environment: HOTPLEX_JWT_SECRET
-  jwt_audience: "hotplex-worker-gateway"  # Expected audience claim
+    - "*"
+  jwt_audience: "hotplex-worker-gateway"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# SESSION LIFECYCLE
+# SESSION
 # ─────────────────────────────────────────────────────────────────────────────
 
 session:
-  retention_period: 168h      # 7 days - keep session metadata
-  gc_scan_interval: 1m        # Scan for expired sessions every minute
-  max_concurrent: 1000        # Maximum concurrent sessions across all users
-
-  # Event persistence (message delta, raw I/O, state changes)
-  event_store_enabled: true   # Enable to support replay/debugging
-  event_store_type: "sqlite"  # Storage backend (sqlite, custom)
+  retention_period: 168h
+  gc_scan_interval: 1m
+  max_concurrent: 1000
+  event_store_enabled: true
+  event_store_type: "sqlite"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# SESSION POOL MANAGEMENT
+# POOL
 # ─────────────────────────────────────────────────────────────────────────────
 
 pool:
-  min_size: 0                 # Minimum pre-warmed sessions (0 = on-demand)
-  max_size: 100               # Maximum total sessions (adjust based on memory)
-  max_idle_per_user: 10       # Max idle sessions per bot_id
-  max_memory_per_user: 8589934592  # 8GB memory limit per bot_id (0 = unlimited)
+  min_size: 0
+  max_size: 100
+  max_idle_per_user: 10
+  max_memory_per_user: 8589934592  # 8GB
 
 # ─────────────────────────────────────────────────────────────────────────────
-# WORKER PROCESS CONFIGURATION
+# WORKER
 # ─────────────────────────────────────────────────────────────────────────────
 
 worker:
-  max_lifetime: 24h           # Kill worker processes after 24h (prevent leaks)
-  idle_timeout: 60m           # Terminate idle workers after 60 minutes
-  execution_timeout: 30m      # Zombie IO timeout — terminate worker with no output
-  # pid_dir: ""               # PID file directory for orphan cleanup. Default: ~/.hotplex/.pids/
+  max_lifetime: 24h
+  idle_timeout: 60m
+  execution_timeout: 30m
 
-  # LLM Provider Error Auto-Retry
-  # When Claude Code encounters 429/529/400/network errors, automatically detect
-  # → exponential backoff → send "继续" to retry. Default: disabled.
   auto_retry:
     enabled: true
-    max_retries: 3               # Maximum retry attempts (default: 3)
-    base_delay: 5s               # Initial delay between retries (default: 5s)
-    max_delay: 120s              # Maximum delay cap (default: 120s)
-    retry_input: "继续"           # Text sent to worker on retry
-    notify_user: true             # true: notify user during retry, false: silent
-    patterns: []                  # Custom regex patterns (empty = use built-in defaults)
-
-  # Environment variable control
-  # Workers inherit a whitelist of safe environment variables
-  allowed_envs: []            # Additional envs to pass through
-  env_whitelist:              # Always-allowed safe envs
-    - "PATH"
-    - "HOME"
-    - "USER"
-    - "LANG"
-    - "LC_ALL"
-    - "TERM"
-    - "TMPDIR"
-    - "TEMP"
-    - "TMP"
+    max_retries: 9
+    base_delay: 5s
+    max_delay: 120s
+    retry_input: "继续"
+    notify_user: true
 
 # ─────────────────────────────────────────────────────────────────────────────
-# LOGGING CONFIGURATION
+# LOGGING
 # ─────────────────────────────────────────────────────────────────────────────
 
 log:
-  level: "debug"              # Options: debug, info, warn, error
-  format: "text"              # Options: json (production), text (development)
+  level: "info"
+  format: "json"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# INHERITANCE (Advanced)
-# ─────────────────────────────────────────────────────────────────────────────
-
-# Inherit from another config file (useful for environment-specific overrides)
-# Example: production.yaml inherits from base.yaml, then overrides specific fields
-# inherits: "base.yaml"  # Uncomment to enable
-
-# ─────────────────────────────────────────────────────────────────────────────
-# MESSAGING PLATFORM CONFIGURATION
+# MESSAGING
 # ─────────────────────────────────────────────────────────────────────────────
 
 messaging:
-  # Slack Socket Mode
   slack:
     enabled: false
-    bot_token: ""
-    app_token: ""
+    socket_mode: true
     worker_type: "claude_code"
-    work_dir: ""        # Working directory for worker processes
-    
-    # Access Control Policies: open (allow all), allowlist (restrict), disabled (block)
-    dm_policy: "allowlist"    # Policy for direct messages (options: open, allowlist, disabled)
-    group_policy: "allowlist"  # Policy for channels and group DMs (options: open, allowlist, disabled)
-    require_mention: true     # In channels, bot must be @mentioned (default: true)
-    allow_from: []            # Global whitelist - authorized for BOTH DM and groups
-    allow_dm_from: []         # Whitelist for direct messages only
-    allow_group_from: []      # Whitelist for channels/groups only
+    dm_policy: "allowlist"
+    group_policy: "allowlist"
+    require_mention: true
 
-  # Feishu/Lark WebSocket
   feishu:
     enabled: false
-    app_id: ""
-    app_secret: ""
     worker_type: "claude_code"
-    work_dir: ""
-    
-    # Access Control Policies: open (allow all), allowlist (restrict), disabled (block)
-    dm_policy: "allowlist"   # Policy for 1-on-1 chats (options: open, allowlist, disabled)
-    group_policy: "allowlist" # Policy for groups and topic groups (options: open, allowlist, disabled)
-    require_mention: true     # In groups, bot must be @mentioned (default: true)
-    allow_from: []            # Global whitelist - authorized for BOTH DM and groups
-    allow_dm_from: []         # Whitelist for direct messages only
-    allow_group_from: []      # Whitelist for groups/topic groups only
+    dm_policy: "allowlist"
+    group_policy: "allowlist"
+    require_mention: true
+    stt_provider: "feishu+local"
+    stt_local_mode: "ephemeral"
+    stt_local_idle_ttl: 1h

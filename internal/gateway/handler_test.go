@@ -240,6 +240,296 @@ func (m *mockWorkerForHandler) ResetContext(ctx context.Context) error {
 
 // ─── handleReset tests ──────────────────────────────────────────────────────
 
+// mockControlWorker implements both worker.Worker and ControlRequester.
+type mockControlWorker struct {
+	mockWorkerForHandler
+	controlResp    map[string]any
+	controlErr     error
+	controlCalled  bool
+	controlSubtype string
+}
+
+func (m *mockControlWorker) SendControlRequest(_ context.Context, subtype string, _ map[string]any) (map[string]any, error) {
+	m.controlCalled = true
+	m.controlSubtype = subtype
+	return m.controlResp, m.controlErr
+}
+
+func (m *mockControlWorker) Terminate(_ context.Context) error {
+	return nil
+}
+
+// mockCommanderWorker implements worker.Worker and WorkerCommander.
+type mockCommanderWorker struct {
+	mockWorkerForHandler
+	compactCalled bool
+	clearCalled   bool
+	rewindCalled  bool
+}
+
+func (m *mockCommanderWorker) Compact(_ context.Context, _ map[string]any) error {
+	m.compactCalled = true
+	return nil
+}
+
+func (m *mockCommanderWorker) Clear(_ context.Context) error {
+	m.clearCalled = true
+	return nil
+}
+
+func (m *mockCommanderWorker) Rewind(_ context.Context, _ string) error {
+	m.rewindCalled = true
+	return nil
+}
+
+func (m *mockCommanderWorker) Terminate(_ context.Context) error {
+	return nil
+}
+func (m *mockCommanderWorker) SendControlRequest(_ context.Context, _ string, _ map[string]any) (map[string]any, error) {
+	return nil, nil
+}
+
+// ─── handleWorkerCommand tests ──────────────────────────────────────────────
+
+type workerCommandTestCtx struct {
+	w            worker.Worker
+	controlWkr   *mockControlWorker
+	commanderWkr *mockCommanderWorker
+	mockWkr      *mockWorkerForHandler
+}
+
+type workerCommandTestCase struct {
+	name       string
+	setup      func(tc *workerCommandTestCtx)
+	command    events.WorkerStdioCommand
+	rawData    map[string]any
+	state      events.SessionState
+	wantErr    bool
+	errContain string
+	verify     func(t *testing.T, tc *workerCommandTestCtx)
+}
+
+func (tc workerCommandTestCase) run(t *testing.T) {
+	t.Helper()
+
+	handler, mgr, _, _ := newHandlerWithRealStore(t)
+	ctx := context.Background()
+	const sid = "sess_wc"
+
+	testCtx := &workerCommandTestCtx{}
+	tc.setup(testCtx)
+
+	_, err := mgr.Create(ctx, sid, "user1", worker.TypeClaudeCode, nil)
+	require.NoError(t, err)
+
+	targetState := tc.state
+	if targetState == "" {
+		targetState = events.StateRunning
+	}
+	require.NoError(t, mgr.Transition(ctx, sid, targetState))
+
+	if testCtx.w != nil && targetState == events.StateRunning {
+		require.NoError(t, mgr.AttachWorker(sid, testCtx.w))
+	}
+
+	var data any = events.WorkerCommandData{Command: tc.command}
+	if tc.rawData != nil {
+		data = tc.rawData
+	}
+
+	env := &events.Envelope{
+		SessionID: sid,
+		OwnerID:   "user1",
+		Event: events.Event{
+			Type: events.WorkerCmd,
+			Data: data,
+		},
+	}
+
+	err = handler.handleWorkerCommand(ctx, env)
+	if tc.wantErr {
+		require.Error(t, err)
+		require.Contains(t, err.Error(), tc.errContain)
+	} else {
+		require.NoError(t, err)
+	}
+	if tc.verify != nil {
+		tc.verify(t, testCtx)
+	}
+}
+
+func TestHandleWorkerCommand(t *testing.T) {
+	t.Parallel()
+
+	tests := []workerCommandTestCase{
+		{
+			name:    "passthrough_compact",
+			command: events.StdioCompact,
+			setup: func(tc *workerCommandTestCtx) {
+				w := &mockCommanderWorker{}
+				tc.w = w
+				tc.commanderWkr = w
+			},
+			verify: func(t *testing.T, tc *workerCommandTestCtx) {
+				t.Helper()
+				require.True(t, tc.commanderWkr.compactCalled, "compact should be called")
+			},
+		},
+		{
+			name:    "passthrough_clear",
+			command: events.StdioClear,
+			setup: func(tc *workerCommandTestCtx) {
+				w := &mockCommanderWorker{}
+				tc.w = w
+				tc.commanderWkr = w
+			},
+			verify: func(t *testing.T, tc *workerCommandTestCtx) {
+				t.Helper()
+				require.True(t, tc.commanderWkr.clearCalled, "clear should be called")
+			},
+		},
+		{
+			name:    "passthrough_rewind",
+			command: events.StdioRewind,
+			setup: func(tc *workerCommandTestCtx) {
+				w := &mockCommanderWorker{}
+				tc.w = w
+				tc.commanderWkr = w
+			},
+			verify: func(t *testing.T, tc *workerCommandTestCtx) {
+				t.Helper()
+				require.True(t, tc.commanderWkr.rewindCalled, "rewind should be called")
+			},
+		},
+		{
+			name:    "control_context_usage",
+			command: events.StdioContextUsage,
+			setup: func(tc *workerCommandTestCtx) {
+				w := &mockControlWorker{
+					controlResp: map[string]any{
+						"totalTokens": float64(50000),
+						"maxTokens":   float64(200000),
+						"percentage":  float64(25),
+						"model":       "claude-sonnet-4",
+						"categories":  []any{},
+					},
+				}
+				tc.w = w
+				tc.controlWkr = w
+			},
+			verify: func(t *testing.T, tc *workerCommandTestCtx) {
+				t.Helper()
+				require.True(t, tc.controlWkr.controlCalled, "SendControlRequest should be called")
+				require.Equal(t, "get_context_usage", tc.controlWkr.controlSubtype)
+			},
+		},
+		{
+			name:    "control_mcp_status",
+			command: events.StdioMCPStatus,
+			setup: func(tc *workerCommandTestCtx) {
+				w := &mockControlWorker{
+					controlResp: map[string]any{
+						"servers": []any{
+							map[string]any{"name": "context7", "status": "connected"},
+						},
+					},
+				}
+				tc.w = w
+				tc.controlWkr = w
+			},
+			verify: func(t *testing.T, tc *workerCommandTestCtx) {
+				t.Helper()
+				require.Equal(t, "mcp_status", tc.controlWkr.controlSubtype)
+			},
+		},
+		{
+			name:    "fallback_to_input",
+			command: events.StdioCommit,
+			setup: func(tc *workerCommandTestCtx) {
+				w := new(mockWorkerForHandler)
+				w.On("Input", mock.Anything, "/commit", mock.Anything).Return(nil)
+				w.On("Terminate", mock.Anything).Return(nil)
+				tc.w = w
+				tc.mockWkr = w
+			},
+			verify: func(t *testing.T, tc *workerCommandTestCtx) {
+				t.Helper()
+				tc.mockWkr.AssertCalled(t, "Input", mock.Anything, "/commit", mock.Anything)
+			},
+		},
+		{
+			name:    "map_data_context_usage",
+			command: "",
+			rawData: map[string]any{"command": "context_usage"},
+			setup: func(tc *workerCommandTestCtx) {
+				w := &mockControlWorker{
+					controlResp: map[string]any{
+						"totalTokens": float64(50000),
+						"maxTokens":   float64(200000),
+						"categories":  []any{},
+					},
+				}
+				tc.w = w
+				tc.controlWkr = w
+			},
+			verify: func(t *testing.T, tc *workerCommandTestCtx) {
+				t.Helper()
+				require.True(t, tc.controlWkr.controlCalled)
+			},
+		},
+		{
+			name:       "terminated_session",
+			command:    events.StdioCompact,
+			state:      events.StateTerminated,
+			wantErr:    true,
+			errContain: "SESSION_BUSY",
+			setup: func(tc *workerCommandTestCtx) {
+				w := new(mockWorkerForHandler)
+				tc.w = w
+			},
+		},
+		{
+			name:       "no_worker_attached",
+			command:    events.StdioCompact,
+			wantErr:    true,
+			errContain: "no worker attached",
+			setup: func(tc *workerCommandTestCtx) {
+				tc.w = nil
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			tt.run(t)
+		})
+	}
+}
+
+func TestHandleWorkerCommandSessionNotFound(t *testing.T) {
+	t.Parallel()
+
+	handler, _, _, _ := newHandlerWithRealStore(t)
+
+	env := &events.Envelope{
+		SessionID: "sess-missing",
+		OwnerID:   "user1",
+		Event: events.Event{
+			Type: events.WorkerCmd,
+			Data: events.WorkerCommandData{
+				Command: events.StdioCompact,
+			},
+		},
+	}
+
+	err := handler.handleWorkerCommand(context.Background(), env)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "SESSION_NOT_FOUND")
+}
+
+// ─── handleReset tests ──────────────────────────────────────────────────────
+
 func TestHandler_HandleReset_Unauthorized(t *testing.T) {
 	t.Parallel()
 

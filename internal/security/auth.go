@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/golang-jwt/jwt/v5"
 
@@ -19,6 +20,7 @@ const apiKeyQueryParam = "api_key"
 
 // Authenticator validates API keys and user credentials.
 type Authenticator struct {
+	mu           sync.RWMutex
 	cfg          *config.SecurityConfig
 	validKey     map[string]bool // set of valid API keys (hashed in production)
 	jwtValidator *JWTValidator   // optional; set when JWT botID extraction is needed at HTTP level
@@ -59,6 +61,9 @@ func (a *Authenticator) AuthenticateRequest(r *http.Request) (string, string, er
 	}
 
 	// Constant-time comparison to prevent timing attacks.
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
 	if len(a.validKey) == 0 {
 		// No keys configured — allow all (dev mode).
 		return "anonymous", a.botIDFromRequest(r), nil
@@ -69,6 +74,18 @@ func (a *Authenticator) AuthenticateRequest(r *http.Request) (string, string, er
 	}
 
 	return "api_user", a.botIDFromRequest(r), nil
+}
+
+// ReloadKeys dynamically replaces the set of valid API keys.
+func (a *Authenticator) ReloadKeys(cfg *config.SecurityConfig) {
+	validKey := make(map[string]bool)
+	for _, k := range cfg.APIKeys {
+		validKey[k] = true
+	}
+	a.mu.Lock()
+	a.cfg = cfg
+	a.validKey = validKey
+	a.mu.Unlock()
 }
 
 // botIDFromRequest extracts the BotID claim from a JWT Bearer token in the Authorization header.

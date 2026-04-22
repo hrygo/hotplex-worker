@@ -63,6 +63,108 @@ func TestParseControlCommand_NaturalLanguage(t *testing.T) {
 	}
 }
 
+func TestParseWorkerCommand_SlashCommands(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		input    string
+		wantCmd  events.WorkerStdioCommand
+		wantArgs string
+	}{
+		{"/context", "/context", events.StdioContextUsage, ""},
+		{"/mcp", "/mcp", events.StdioMCPStatus, ""},
+		{"/compact", "/compact", events.StdioCompact, ""},
+		{"/clear", "/clear", events.StdioClear, ""},
+		{"/rewind", "/rewind", events.StdioRewind, ""},
+		{"/commit", "/commit", events.StdioCommit, ""},
+		{"/model sonnet-4", "/model sonnet-4", events.StdioSetModel, "sonnet-4"},
+		{"/perm bypassPermissions", "/perm bypassPermissions", events.StdioSetPermMode, "bypasspermissions"},
+		{"/effort high", "/effort high", events.StdioEffort, "high"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := ParseWorkerCommand(tt.input)
+			require.NotNil(t, result)
+			require.Equal(t, tt.wantCmd, result.Command)
+			require.Equal(t, tt.wantArgs, result.Args)
+		})
+	}
+}
+
+func TestParseWorkerCommand_NaturalLanguage(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		input string
+		want  events.WorkerStdioCommand
+	}{
+		{"上下文", "$上下文", events.StdioContextUsage},
+		{"context", "$context", events.StdioContextUsage},
+		{"mcp", "$mcp", events.StdioMCPStatus},
+		{"切换模型", "$切换模型", events.StdioSetModel},
+		{"model", "$model", events.StdioSetModel},
+		{"权限模式", "$权限模式", events.StdioSetPermMode},
+		{"perm", "$perm", events.StdioSetPermMode},
+		{"压缩", "$压缩", events.StdioCompact},
+		{"compact", "$compact", events.StdioCompact},
+		{"清空", "$清空", events.StdioClear},
+		{"clear", "$clear", events.StdioClear},
+		{"effort", "$effort", events.StdioEffort},
+		{"回退", "$回退", events.StdioRewind},
+		{"rewind", "$rewind", events.StdioRewind},
+		{"提交", "$提交", events.StdioCommit},
+		{"commit", "$commit", events.StdioCommit},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := ParseWorkerCommand(tt.input)
+			require.NotNil(t, result)
+			require.Equal(t, tt.want, result.Command)
+		})
+	}
+}
+
+func TestParseWorkerCommand_PriorityControlCommandFirst(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{"/reset is control command", "/reset"},
+		{"/gc is control command", "/gc"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// ParseControlCommand takes precedence over ParseWorkerCommand.
+			ctrl := ParseControlCommand(tt.input)
+			require.NotNil(t, ctrl, "ParseControlCommand should handle %s", tt.input)
+			worker := ParseWorkerCommand(tt.input)
+			require.Nil(t, worker, "ParseWorkerCommand should not handle %s (it's a control command)", tt.input)
+		})
+	}
+}
+
+func TestParseWorkerCommand_NotACommand(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{"normal text", "hello"},
+		{"unknown slash", "/unknown"},
+		{"bare 上下文 without $", "上下文"},
+		{"bare context without $", "context"},
+		{"empty", ""},
+		{"whitespace", "   "},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := ParseWorkerCommand(tt.input)
+			require.Nil(t, result)
+		})
+	}
+}
+
 func TestParseControlCommand_NotACommand(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

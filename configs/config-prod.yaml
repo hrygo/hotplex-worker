@@ -1,68 +1,34 @@
 # HotPlex Worker Gateway - Production Configuration
 #
-# Inherits from base config and enforces production security settings.
+# Inherits: config.yaml (base)
 # Usage: ./hotplex-worker -config configs/config-prod.yaml
 #
-# IMPORTANT: Set these environment variables before running:
-#   - HOTPLEX_JWT_SECRET (required)
-#   - HOTPLEX_ADMIN_TOKEN_1 (required)
-#   - HOTPLEX_ADMIN_TOKEN_2 (optional, for rotation)
+# Required env vars:
+#   HOTPLEX_JWT_SECRET       — JWT signing key (ES256)
+#   HOTPLEX_ADMIN_TOKEN_1    — Admin API token
+#
+# Only fields that differ from base are listed below.
 
 inherits: config.yaml
 
 gateway:
-  addr: ":8888"              # Production gateway port
-  idle_timeout: 10m          # Longer idle timeout for production
-
-admin:
-  addr: ":9999"              # Production admin port
-  ip_whitelist_enabled: false  # Use Kubernetes network policies instead
-  rate_limit_enabled: true   # Enable rate limiting
-  requests_per_sec: 10       # 10 req/s per IP
-  burst: 20                  # Allow bursts up to 20
+  idle_timeout: 10m
 
 security:
-  tls_enabled: true          # MANDATORY in production
-  tls_cert_file: "/etc/hotplex/tls/server.crt"
-  tls_key_file: "/etc/hotplex/tls/server.key"
+  tls_enabled: true
   allowed_origins:
     - "https://app.yourdomain.com"
     - "https://admin.yourdomain.com"
 
-session:
-  retention_period: 168h    # 7 days retention
-  max_concurrent: 1000      # Support 1000 concurrent sessions
-
 pool:
-  min_size: 10              # Pre-warm 10 sessions
-  max_size: 500             # Support up to 500 sessions
-  max_memory_per_user: 2147483648  # 2GB per bot_id
+  min_size: 10
+  max_size: 500
+  max_memory_per_user: 2147483648  # 2GB
 
 worker:
-  max_lifetime: 24h          # Restart workers daily
-  idle_timeout: 30m          # Cleanup idle workers after 30m
-  execution_timeout: 30m     # Zombie IO timeout — terminate worker with no output
-
-# ─────────────────────────────────────────────────────────────────────────────
-# MESSAGING PLATFORM CONFIGURATION
-# ─────────────────────────────────────────────────────────────────────────────
+  idle_timeout: 30m
 
 messaging:
-  slack:
-    enabled: false
-    bot_token: ""
-    app_token: ""
-    socket_mode: true
-    worker_type: "claude_code"
-    work_dir: ""
-
   feishu:
-    enabled: false
-    app_id: ""
-    app_secret: ""
-    worker_type: "claude_code"
-    work_dir: ""
     dm_policy: "open"
     group_policy: "open"
-    require_mention: true
-    allow_from: []

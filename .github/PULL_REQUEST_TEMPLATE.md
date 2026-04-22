@@ -24,7 +24,7 @@ Refs # (issue)
 
 ## Checklist
 
-- [ ] 代码符合 [CONTRIBUTING.md](file:///Users/huangzhonghui/hotplex-worker/CONTRIBUTING.md) 规范
+- [ ] 代码符合 [CONTRIBUTING.md](../CONTRIBUTING.md) 规范
 - [ ] `make lint` 通过
 - [ ] 新增测试覆盖此次改动（或确认无需测试）
 - [ ] `make test` 本地通过

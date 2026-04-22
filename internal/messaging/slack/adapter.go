@@ -3,6 +3,7 @@ package slack
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -607,6 +608,10 @@ func (c *SlackConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		return c.sendQuestionRequest(ctx, env)
 	case events.ElicitationRequest:
 		return c.sendElicitationRequest(ctx, env)
+	case events.ContextUsage:
+		return c.sendContextUsage(ctx, env)
+	case events.MCPStatus:
+		return c.sendMCPStatus(ctx, env)
 	}
 
 	text, ok := extractResponseText(env)
@@ -787,6 +792,124 @@ func (a *Adapter) cleanupMediaInDir(dir string) {
 		}
 		return nil
 	})
+}
+
+func (c *SlackConn) sendContextUsage(ctx context.Context, env *events.Envelope) error {
+	if c.adapter == nil || c.adapter.client == nil {
+		return fmt.Errorf("slack: client not initialized")
+	}
+
+	var d events.ContextUsageData
+	switch v := env.Event.Data.(type) {
+	case events.ContextUsageData:
+		d = v
+	case map[string]any:
+		raw, _ := json.Marshal(v)
+		_ = json.Unmarshal(raw, &d)
+	default:
+		return nil
+	}
+
+	text := fmt.Sprintf("📊 *Context Usage* — %d%% (%d / %d)", d.Percentage, d.TotalTokens, d.MaxTokens)
+	if d.Model != "" {
+		text += fmt.Sprintf("\n🤖 Model: %s", d.Model)
+	}
+
+	var blocks []slack.Block
+	blocks = append(blocks, slack.NewHeaderBlock(
+		slack.NewTextBlockObject("plain_text", fmt.Sprintf("📊 Context Usage — %d%%", d.Percentage), false, false),
+	))
+
+	fields := make([]*slack.TextBlockObject, 0, len(d.Categories)*2)
+	for _, cat := range d.Categories {
+		fields = append(fields,
+			slack.NewTextBlockObject("mrkdwn", fmt.Sprintf("*%s*", cat.Name), false, false),
+			slack.NewTextBlockObject("mrkdwn", fmt.Sprintf("%d tokens", cat.Tokens), false, false),
+		)
+	}
+	if len(fields) > 0 {
+		blocks = append(blocks, slack.NewSectionBlock(nil, fields, nil))
+	}
+
+	var contextFields []string
+	if d.Model != "" {
+		contextFields = append(contextFields, fmt.Sprintf("🤖 *Model:* %s", d.Model))
+	}
+	if d.MemoryFiles > 0 {
+		contextFields = append(contextFields, fmt.Sprintf("📁 *Memory Files:* %d", d.MemoryFiles))
+	}
+	if d.MCPTools > 0 {
+		contextFields = append(contextFields, fmt.Sprintf("🔧 *MCP Tools:* %d", d.MCPTools))
+	}
+	if d.Agents > 0 {
+		contextFields = append(contextFields, fmt.Sprintf("🤖 *Agents:* %d", d.Agents))
+	}
+	if d.Skills.Total > 0 {
+		contextFields = append(contextFields, fmt.Sprintf("⚡ *Skills:* %d (%d included, %d tokens)", d.Skills.Total, d.Skills.Included, d.Skills.Tokens))
+	}
+	if len(contextFields) > 0 {
+		contextElems := make([]slack.MixedElement, len(contextFields))
+		for i, f := range contextFields {
+			contextElems[i] = slack.NewTextBlockObject("mrkdwn", f, false, false)
+		}
+		blocks = append(blocks, slack.NewContextBlock("", contextElems...))
+	}
+
+	opts := []slack.MsgOption{
+		slack.MsgOptionBlocks(blocks...),
+		slack.MsgOptionText(text, false),
+	}
+	if c.threadTS != "" {
+		opts = append(opts, slack.MsgOptionTS(c.threadTS))
+	}
+	_, _, err := c.adapter.client.PostMessageContext(ctx, c.channelID, opts...)
+	return err
+}
+
+func (c *SlackConn) sendMCPStatus(ctx context.Context, env *events.Envelope) error {
+	if c.adapter == nil || c.adapter.client == nil {
+		return fmt.Errorf("slack: client not initialized")
+	}
+
+	var d events.MCPStatusData
+	switch v := env.Event.Data.(type) {
+	case events.MCPStatusData:
+		d = v
+	case map[string]any:
+		raw, _ := json.Marshal(v)
+		_ = json.Unmarshal(raw, &d)
+	default:
+		return nil
+	}
+
+	var blocks []slack.Block
+	blocks = append(blocks, slack.NewHeaderBlock(
+		slack.NewTextBlockObject("plain_text", "🔌 MCP Server Status", false, false),
+	))
+
+	var sb strings.Builder
+	for _, s := range d.Servers {
+		icon := "✅"
+		if s.Status != "connected" && s.Status != "ok" {
+			icon = "❌"
+		}
+		fmt.Fprintf(&sb, "%s *%s* — %s\n", icon, s.Name, s.Status)
+	}
+	if sb.Len() > 0 {
+		blocks = append(blocks, slack.NewSectionBlock(
+			slack.NewTextBlockObject("mrkdwn", sb.String(), false, false), nil, nil,
+		))
+	}
+
+	opts := []slack.MsgOption{
+		slack.MsgOptionBlocks(blocks...),
+		slack.MsgOptionText(sb.String(), false),
+	}
+	if c.threadTS != "" {
+		opts = append(opts, slack.MsgOptionTS(c.threadTS))
+	}
+	_, _, err := c.adapter.client.PostMessageContext(ctx, c.channelID, opts...)
+	return err
 }
 
 var _ messaging.PlatformConn = (*SlackConn)(nil)

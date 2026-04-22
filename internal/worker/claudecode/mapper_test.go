@@ -133,6 +133,74 @@ func TestMapper_Map_ToolResult(t *testing.T) {
 	require.Equal(t, "file content...", data.Output)
 }
 
+func TestMapContextUsageResponse(t *testing.T) {
+	raw := map[string]any{
+		"totalTokens": float64(76284),
+		"maxTokens":   float64(200000),
+		"percentage":  float64(38),
+		"model":       "claude-sonnet-4",
+		"memoryFiles": float64(5),
+		"mcpTools":    float64(124),
+		"agents":      float64(157),
+		"categories": []any{
+			map[string]any{"name": "System Prompt", "tokens": float64(603)},
+			map[string]any{"name": "Messages", "tokens": float64(55228)},
+		},
+		"skills": map[string]any{
+			"totalSkills":    float64(147),
+			"includedSkills": float64(147),
+			"tokens":         float64(9073),
+		},
+	}
+	result := mapContextUsageResponse(raw)
+	require.NotNil(t, result)
+	require.Equal(t, 76284, result.TotalTokens)
+	require.Equal(t, 200000, result.MaxTokens)
+	require.Equal(t, 38, result.Percentage)
+	require.Equal(t, "claude-sonnet-4", result.Model)
+	require.Equal(t, 5, result.MemoryFiles)
+	require.Equal(t, 124, result.MCPTools)
+	require.Equal(t, 157, result.Agents)
+	require.Len(t, result.Categories, 2)
+	require.Equal(t, "System Prompt", result.Categories[0].Name)
+	require.Equal(t, 603, result.Categories[0].Tokens)
+	require.Equal(t, "Messages", result.Categories[1].Name)
+	require.Equal(t, 55228, result.Categories[1].Tokens)
+	require.Equal(t, 147, result.Skills.Total)
+	require.Equal(t, 147, result.Skills.Included)
+	require.Equal(t, 9073, result.Skills.Tokens)
+}
+
+func TestMapContextUsageResponseNil(t *testing.T) {
+	result := mapContextUsageResponse(nil)
+	require.NotNil(t, result)
+	require.Equal(t, 0, result.TotalTokens)
+	require.Empty(t, result.Categories)
+}
+
+func TestMapMCPStatusResponse(t *testing.T) {
+	raw := map[string]any{
+		"servers": []any{
+			map[string]any{"name": "context7", "status": "connected"},
+			map[string]any{"name": "playwright", "status": "connected"},
+			map[string]any{"name": "slack", "status": "disconnected"},
+		},
+	}
+	result := mapMCPStatusResponse(raw)
+	require.Len(t, result.Servers, 3)
+	require.Equal(t, "context7", result.Servers[0].Name)
+	require.Equal(t, "connected", result.Servers[0].Status)
+	require.Equal(t, "playwright", result.Servers[1].Name)
+	require.Equal(t, "slack", result.Servers[2].Name)
+	require.Equal(t, "disconnected", result.Servers[2].Status)
+}
+
+func TestMapMCPStatusResponseNil(t *testing.T) {
+	result := mapMCPStatusResponse(nil)
+	require.NotNil(t, result)
+	require.Empty(t, result.Servers)
+}
+
 func TestMapper_Map_Result(t *testing.T) {
 	log := newTestLogger()
 	seqGen := func() int64 { return 1 }

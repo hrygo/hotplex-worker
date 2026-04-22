@@ -249,7 +249,7 @@ func (c *Conn) performInit(handler *Handler) error {
 	// Resolve work dir: use client-provided value or default from config.
 	workDir := initData.Config.WorkDir
 	if workDir == "" {
-		workDir = handler.cfg.Worker.DefaultWorkDir
+		workDir = c.hub.cfgStore.Load().Worker.DefaultWorkDir
 	}
 	if err := security.ValidateWorkDir(workDir); err != nil {
 		c.sendInitError(events.ErrCodeInvalidMessage, err.Error())

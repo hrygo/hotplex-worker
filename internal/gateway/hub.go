@@ -34,6 +34,11 @@ func isReadTimeout(err error) bool {
 	return errors.Is(err, os.ErrDeadlineExceeded)
 }
 
+// isDroppable reports whether an event kind can be dropped under backpressure.
+func isDroppable(kind events.Kind) bool {
+	return kind == events.MessageDelta || kind == events.Raw
+}
+
 // broadcastQueueSize returns the broadcast channel buffer size from config.
 // A value of 0 means unbounded (not recommended for production).
 func broadcastQueueSize(cfg *config.Config) int {
@@ -41,11 +46,6 @@ func broadcastQueueSize(cfg *config.Config) int {
 		return 256 // default
 	}
 	return cfg.Gateway.BroadcastQueueSize
-}
-
-// isDroppable reports whether an event kind can be dropped under backpressure.
-func isDroppable(kind events.Kind) bool {
-	return kind == events.MessageDelta || kind == events.Raw
 }
 
 const (
@@ -66,8 +66,8 @@ type SessionWriter interface {
 // Hub is the central message router and connection registry.
 // All WebSocket connections and session→connection mappings are managed here.
 type Hub struct {
-	log *slog.Logger
-	cfg *config.Config
+	log      *slog.Logger
+	cfgStore *config.ConfigStore
 
 	upgrader websocket.Upgrader
 
@@ -103,27 +103,18 @@ type EnvelopeWithConn struct {
 }
 
 // NewHub creates a new Hub.
-func NewHub(log *slog.Logger, cfg *config.Config) *Hub {
+func NewHub(log *slog.Logger, cfgStore *config.ConfigStore) *Hub {
 	if log == nil {
 		log = slog.Default()
 	}
+	if cfgStore == nil {
+		panic("gateway: Hub requires ConfigStore")
+	}
+	cfg := cfgStore.Load()
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Hub{
-		log: log.With("component", "hub"),
-		cfg: cfg,
-		upgrader: websocket.Upgrader{
-			ReadBufferSize:  cfg.Gateway.ReadBufferSize,
-			WriteBufferSize: cfg.Gateway.WriteBufferSize,
-			CheckOrigin: func(r *http.Request) bool {
-				origin := r.Header.Get("Origin")
-				for _, allowed := range cfg.Security.AllowedOrigins {
-					if allowed == "*" || allowed == origin {
-						return true
-					}
-				}
-				return false
-			},
-		},
+	h := &Hub{
+		log:            log.With("service.name", "hotplex-gateway"),
+		cfgStore:       cfgStore,
 		conns:          make(map[*Conn]struct{}),
 		sessions:       make(map[string]map[SessionWriter]bool),
 		seqGen:         NewSeqGen(),
@@ -132,6 +123,22 @@ func NewHub(log *slog.Logger, cfg *config.Config) *Hub {
 		ctx:            ctx,
 		cancel:         cancel,
 	}
+
+	h.upgrader = websocket.Upgrader{
+		ReadBufferSize:  cfg.Gateway.ReadBufferSize,
+		WriteBufferSize: cfg.Gateway.WriteBufferSize,
+		CheckOrigin: func(r *http.Request) bool {
+			origin := r.Header.Get("Origin")
+			for _, allowed := range h.cfgStore.Load().Security.AllowedOrigins {
+				if allowed == "*" || allowed == origin {
+					return true
+				}
+			}
+			return false
+		},
+	}
+	go h.Run()
+	return h
 }
 
 // RegisterConn registers a new WebSocket connection.
@@ -229,7 +236,7 @@ func (h *Hub) JoinPlatformSession(sessionID string, pc messaging.PlatformConn) {
 		}
 	}
 
-	h.sessions[sessionID][newPCEntry(pc, defaultPCEntryConfig(h.cfg))] = true
+	h.sessions[sessionID][newPCEntry(pc, defaultPCEntryConfig(h.cfgStore.Load()))] = true
 }
 
 // sendBroadcast sends to the broadcast channel. Returns false if the hub is
@@ -415,9 +422,10 @@ func (h *Hub) routeMessage(msg *EnvelopeWithConn) {
 
 	if h.LogHandler != nil {
 		level := "INFO"
-		if msg.Env.Event.Type == events.Error {
+		switch msg.Env.Event.Type {
+		case events.Error:
 			level = "ERROR"
-		} else if msg.Env.Event.Type == events.State {
+		case events.State:
 			level = "WARN"
 		}
 		h.LogHandler(level, fmt.Sprintf("event %s seq=%d", msg.Env.Event.Type, msg.Env.Seq), msg.Env.SessionID)
@@ -604,10 +612,11 @@ func (g *SeqGen) Remove(sessionID string) {
 // underlying PlatformConn. This decouples Hub.Run() from blocking platform
 // HTTP API calls.
 type pcEntry struct {
-	pc   messaging.PlatformConn
-	ch   chan *events.Envelope
-	done chan struct{}
-	cfg  pcEntryConfig
+	pc      messaging.PlatformConn
+	cfg     pcEntryConfig
+	ch      chan *events.Envelope
+	done    chan struct{}
+	closeMu sync.Once
 }
 
 type pcEntryConfig struct {
@@ -650,24 +659,19 @@ func newPCEntry(pc messaging.PlatformConn, cfg pcEntryConfig) *pcEntry {
 	return e
 }
 
-// WriteCtx delivers an envelope to the async writeLoop channel.
-// Droppable events are silently dropped when the buffer exceeds the drop
-// threshold or is full. Guaranteed events block up to 5s waiting for space.
 func (e *pcEntry) WriteCtx(_ context.Context, env *events.Envelope) error {
-	if isDroppable(env.Event.Type) && len(e.ch) >= e.cfg.DropThreshold {
-		metrics.GatewayPlatformDroppedTotal.WithLabelValues(string(env.Event.Type)).Inc()
-		return nil
-	}
-
-	select {
-	case e.ch <- env:
-		return nil
-	default:
-	}
-
 	if isDroppable(env.Event.Type) {
-		metrics.GatewayPlatformDroppedTotal.WithLabelValues(string(env.Event.Type)).Inc()
-		return nil
+		if len(e.ch) >= e.cfg.DropThreshold {
+			metrics.GatewayPlatformDroppedTotal.WithLabelValues(string(env.Event.Type)).Inc()
+			return nil
+		}
+		select {
+		case e.ch <- env:
+			return nil
+		default:
+			metrics.GatewayPlatformDroppedTotal.WithLabelValues(string(env.Event.Type)).Inc()
+			return nil
+		}
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -677,15 +681,21 @@ func (e *pcEntry) WriteCtx(_ context.Context, env *events.Envelope) error {
 		return nil
 	case <-ctx.Done():
 		return fmt.Errorf("platform conn write timeout: buffer full")
+	case <-e.done:
+		return errors.New("platform conn closed")
 	}
 }
 
 // Close signals writeLoop to drain pending deltas and exit, waits for
 // completion, then closes the underlying PlatformConn.
 func (e *pcEntry) Close() error {
-	close(e.ch)
-	<-e.done
-	return e.pc.Close()
+	var err error
+	e.closeMu.Do(func() {
+		close(e.ch)
+		<-e.done
+		err = e.pc.Close()
+	})
+	return err
 }
 
 // writeLoop reads envelopes from the channel, coalesces consecutive droppable

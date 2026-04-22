@@ -16,6 +16,12 @@ status: active
 
 | 文档 | 角色 | 回答的问题 |
 |------|------|-----------|
+| **[核心资产]** | | |
+| [[Architecture-Design]] | **架构设计** (Architecture) | 整体分层、核心概念、安全体系与部署模型 |
+| [[Module-Detailed-Design]] | **详细设计** (Detailed Design) | 各模块交互逻辑、状态机、隔离治理与适配策略 |
+| [[Protocol-Core-Asset]] | **协议资产** (Protocol) | AEP v1 协议视图、事件分类法与时序逻辑 |
+| [[Security-Governance]] | **安全治理** (Security) | 威胁模型、分层防御、隔离策略与审计合规 |
+| **[设计规格 (Specs)]** | | |
 | [[architecture/Worker-Gateway-Design]] | 系统设计（WHY & WHAT） | 做什么？为什么？架构怎么分？ |
 | [[architecture/AEP-v1-Protocol]] | 协议规范（HOW — wire format） | 消息长什么样？事件有哪些？怎么扩展？ |
 | [[architecture/AEP-v1-Appendix]] | 可视化补充（DIAGRAM） | 时序怎么走？状态怎么转？竞态怎么防？ |
@@ -30,6 +36,18 @@ status: active
 | [[security/Env-Whitelist-Strategy]] | 环境变量白名单 | 敏感变量过滤、安全注入 |
 | [[security/AI-Tool-Policy]] | AI 工具权限控制 | AllowedTools、Bash 命令拦截 |
 | [[security/SSRF-Protection]] | SSRF 防护 | URL 验证、IP 阻断、DNS 重绑定防护 |
+| **[操作手册 (Manuals)]** | | |
+| [[STT-SETUP]] | STT 安装手册 | 飞书 STT 云端配置、本地模型安装、ONNX 修补 |
+| [[User-Manual]] | 用户手册 | 快速开始、安装构建、CLI 参数与操作指南 |
+| [[management/Config-Reference]] | 配置参考手册 | 完整 YAML 字段说明与环境变量映射表 |
+| [[Disaster-Recovery]] | 灾难恢复手册 | 故障切换、备份恢复与容灾预案 |
+| **[组件规格 (Specs)]** | | |
+| [[architecture/WebSocket-Full-Duplex-Flow]] | 全双工流时序 | 客户端/网关/Worker 间的数据流向与状态同步 |
+| [[specs/Worker-ClaudeCode-Spec]] | Worker 规格 (Claude) | Claude Code CLI 进程生命周期与 I/O 协议 |
+| [[specs/Worker-OpenCode-Server-Spec]] | Worker 规格 (OpenCode) | OpenCode Server (HTTP/SSE)适配规格 |
+| [[specs/Slack-Adapter-Improvement-Spec]] | 平台适配 (Slack) | 消息分片、增量更新与 Socket Mode 优化 |
+| [[specs/Feishu-Adapter-Improvement-Spec]] | 平台适配 (飞书) | CardKit 流式卡片更新与 4 层异常防护 |
+| [[Product-Whitepaper]] | 产品白皮书 | 背景、核心价值、业务流程与愿景 |
 
 ---
 

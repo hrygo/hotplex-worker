@@ -1,11 +1,15 @@
 package claudecode
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"sync"
+
+	"github.com/hotplex/hotplex-worker/pkg/aep"
 )
 
 // ControlResponse represents a response to Claude Code.
@@ -24,16 +28,18 @@ type ResponsePayload struct {
 
 // ControlHandler handles bidirectional control protocol.
 type ControlHandler struct {
-	mu    sync.Mutex
-	log   *slog.Logger
-	stdin io.Writer // CLI stdin
+	mu              sync.Mutex
+	log             *slog.Logger
+	stdin           io.Writer // CLI stdin
+	pendingRequests map[string]chan map[string]any
 }
 
 // NewControlHandler creates a new ControlHandler instance.
 func NewControlHandler(log *slog.Logger, stdin io.Writer) *ControlHandler {
 	return &ControlHandler{
-		log:   log,
-		stdin: stdin,
+		log:             log,
+		stdin:           stdin,
+		pendingRequests: make(map[string]chan map[string]any),
 	}
 }
 
@@ -120,4 +126,82 @@ func (h *ControlHandler) SendElicitationResponse(reqID, action string, content m
 		"action":  action,
 		"content": content,
 	})
+}
+
+// SendControlRequest sends a control_request to Claude Code via stdin and waits for the response.
+func (h *ControlHandler) SendControlRequest(ctx context.Context, subtype string, body map[string]any) (map[string]any, error) {
+	reqID := "ctx_" + aep.NewID()
+
+	req := map[string]any{
+		"type":       "control_request",
+		"request_id": reqID,
+		"request":    buildRequestBody(subtype, body),
+	}
+	data, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("control: marshal request: %w", err)
+	}
+	data = append(data, '\n')
+
+	ch := make(chan map[string]any, 1)
+	h.mu.Lock()
+	h.pendingRequests[reqID] = ch
+	h.mu.Unlock()
+
+	defer func() {
+		h.mu.Lock()
+		delete(h.pendingRequests, reqID)
+		h.mu.Unlock()
+		select {
+		case <-ch:
+		default:
+		}
+	}()
+
+	h.mu.Lock()
+	_, err = h.stdin.Write(data)
+	h.mu.Unlock()
+	if err != nil {
+		return nil, fmt.Errorf("control: write request: %w", err)
+	}
+
+	h.log.Debug("control: sent request", "request_id", reqID, "subtype", subtype)
+
+	select {
+	case resp, ok := <-ch:
+		if !ok {
+			return nil, fmt.Errorf("control: response channel closed")
+		}
+		if errMsg, hasErr := resp["error"].(string); hasErr && errMsg != "" {
+			return nil, fmt.Errorf("control: request failed: %s", errMsg)
+		}
+		return resp, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func buildRequestBody(subtype string, body map[string]any) map[string]any {
+	req := make(map[string]any, len(body)+1)
+	req["subtype"] = subtype
+	maps.Copy(req, body)
+	return req
+}
+
+// DeliverResponse routes a control_response back to the pending SendControlRequest caller.
+func (h *ControlHandler) DeliverResponse(reqID string, resp map[string]any) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	ch, ok := h.pendingRequests[reqID]
+	if !ok {
+		h.log.Debug("control: no pending request for response", "request_id", reqID)
+		return
+	}
+
+	select {
+	case ch <- resp:
+	default:
+		h.log.Warn("control: pending response channel full, dropping", "request_id", reqID)
+	}
 }

@@ -110,6 +110,21 @@ func (p *PoolManager) Stats() (total, maxSize, uniqueUsers int) {
 	return p.totalCount, p.maxSize, len(p.userCount)
 }
 
+// UpdateLimits dynamically adjusts the pool limits.
+// If maxSize is reduced below the current total, existing sessions are NOT evicted —
+// new Acquire calls will be rejected until sessions are naturally released.
+func (p *PoolManager) UpdateLimits(maxSize, maxIdlePerUser int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	old := p.maxSize
+	p.maxSize = maxSize
+	p.maxIdlePerUser = maxIdlePerUser
+	if p.maxSize > 0 {
+		metrics.PoolUtilization.Set(float64(p.totalCount) / float64(p.maxSize))
+	}
+	p.log.Info("pool: limits updated", "old_max", old, "new_max", maxSize, "max_per_user", maxIdlePerUser)
+}
+
 // AcquireMemory reserves memory quota for a user.
 // It uses workerMemoryEstimate as the per-worker allocation.
 // Returns nil on success, or ErrUserMemoryExceeded if the per-user limit is exceeded.

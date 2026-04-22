@@ -586,7 +586,7 @@ func TestBotIDIsolation_CreateMismatch(t *testing.T) {
 
 	cfg := config.Default()
 	h1 := newTestHub(t)
-	mgr1, err := session.NewManager(context.Background(), slog.Default(), cfg, store1, nil)
+	mgr1, err := session.NewManager(context.Background(), slog.Default(), cfg, nil, store1, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { mgr1.Close() })
 
@@ -601,7 +601,7 @@ func TestBotIDIsolation_CreateMismatch(t *testing.T) {
 		mu1.Unlock()
 		go func() {
 			c := newBotIDTestConn(h1, conn, derivedSID, "alice", botAlice)
-			h := NewHandler(slog.Default(), cfg, h1, mgr1, jwtVal)
+			h := NewHandler(slog.Default(), h1, mgr1, jwtVal)
 			c.ReadPump(h)
 		}()
 	}))
@@ -647,7 +647,7 @@ func TestBotIDIsolation_CreateMismatch(t *testing.T) {
 
 	cfg2 := config.Default()
 	h2 := newTestHub(t)
-	mgr2, err := session.NewManager(context.Background(), slog.Default(), cfg2, store2, nil)
+	mgr2, err := session.NewManager(context.Background(), slog.Default(), cfg2, nil, store2, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { mgr2.Close() })
 
@@ -662,7 +662,7 @@ func TestBotIDIsolation_CreateMismatch(t *testing.T) {
 		mu2.Unlock()
 		go func() {
 			c := newBotIDTestConn(h2, conn, derivedSID, "alice", botBob)
-			h := NewHandler(slog.Default(), cfg2, h2, mgr2, jwtVal)
+			h := NewHandler(slog.Default(), h2, mgr2, jwtVal)
 			c.ReadPump(h)
 		}()
 	}))
@@ -718,7 +718,7 @@ func TestBotIDIsolation_MatchAllowed(t *testing.T) {
 
 	cfg := config.Default()
 	hubForTest := newTestHub(t)
-	mgr, err := session.NewManager(context.Background(), slog.Default(), cfg, store, nil)
+	mgr, err := session.NewManager(context.Background(), slog.Default(), cfg, nil, store, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { mgr.Close() })
 
@@ -733,7 +733,7 @@ func TestBotIDIsolation_MatchAllowed(t *testing.T) {
 		mu.Unlock()
 		go func() {
 			c := newBotIDTestConn(hubForTest, conn, derivedSID, "user1", botID)
-			handler := NewHandler(slog.Default(), cfg, hubForTest, mgr, jwtVal)
+			handler := NewHandler(slog.Default(), hubForTest, mgr, jwtVal)
 			c.ReadPump(handler)
 		}()
 	}))
@@ -777,7 +777,7 @@ func TestBotIDIsolation_EmptyBotIDAllowed(t *testing.T) {
 
 	cfg := config.Default()
 	h := newTestHub(t)
-	mgr, err := session.NewManager(context.Background(), slog.Default(), cfg, store, nil)
+	mgr, err := session.NewManager(context.Background(), slog.Default(), cfg, nil, store, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { mgr.Close() })
 
@@ -792,7 +792,7 @@ func TestBotIDIsolation_EmptyBotIDAllowed(t *testing.T) {
 		mu.Unlock()
 		go func() {
 			c := newBotIDTestConn(h, conn, derivedSID, "anon", "")
-			handler := NewHandler(slog.Default(), cfg, h, mgr, nil)
+			handler := NewHandler(slog.Default(), h, mgr, nil)
 			c.ReadPump(handler)
 		}()
 	}))
@@ -848,7 +848,7 @@ func TestBotIDIsolation_NewSessionStoresBotID(t *testing.T) {
 
 	cfg := config.Default()
 	h := newTestHub(t)
-	mgr, err := session.NewManager(context.Background(), slog.Default(), cfg, store, nil)
+	mgr, err := session.NewManager(context.Background(), slog.Default(), cfg, nil, store, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { mgr.Close() })
 
@@ -863,7 +863,7 @@ func TestBotIDIsolation_NewSessionStoresBotID(t *testing.T) {
 		mu.Unlock()
 		go func() {
 			c := newBotIDTestConn(h, conn, derivedSID, "user1", botID)
-			handler := NewHandler(slog.Default(), cfg, h, mgr, jwtVal)
+			handler := NewHandler(slog.Default(), h, mgr, jwtVal)
 			c.ReadPump(handler)
 		}()
 	}))
@@ -1033,7 +1033,6 @@ func TestBridge_ForwardEvents_NormalEvent(t *testing.T) {
 
 	_, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	go h.Run()
 
 	// Call forwardEvents directly (no goroutine).
 	b := NewBridge(slog.Default(), h, nil, nil)
@@ -1082,7 +1081,6 @@ func TestBridge_ForwardEvents_DoneWithDroppedFlag(t *testing.T) {
 
 	_, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	go h.Run()
 
 	b := NewBridge(slog.Default(), h, nil, nil)
 	done := make(chan struct{})
@@ -1121,7 +1119,6 @@ func TestBridge_ForwardEvents_CrashExitCode(t *testing.T) {
 
 	_, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	go h.Run()
 
 	b := NewBridge(slog.Default(), h, nil, nil)
 	done := make(chan struct{})
@@ -1168,7 +1165,6 @@ func TestBridge_ForwardEvents_MessageStoreAppend(t *testing.T) {
 
 	_, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	go h.Run()
 
 	b := NewBridge(slog.Default(), h, nil, ms)
 	done := make(chan struct{})
@@ -1209,7 +1205,6 @@ func TestBridge_ForwardEvents_NilMsgStore(t *testing.T) {
 
 	_, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	go h.Run()
 
 	// Bridge with nil msgStore — must not panic.
 	b := NewBridge(slog.Default(), h, nil, nil)
@@ -1255,7 +1250,6 @@ func TestBridge_StartSession_Success(t *testing.T) {
 	h := newTestHub(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	go h.Run()
 
 	b := NewBridge(slog.Default(), h, sm, nil)
 	// Inject the worker factory via a test helper - since wf is a field,
@@ -1333,7 +1327,6 @@ func TestBridge_ResumeSession_Success(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	go h.Run()
 
 	b := NewBridge(slog.Default(), h, sm, nil)
 	b.wf = wf
@@ -1413,7 +1406,6 @@ func TestBridge_ResumeSession_NoopWorker(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	go h.Run()
 
 	b := NewBridge(slog.Default(), h, sm, nil)
 	// Use the default factory (defaultWorkerFactory) so real noop workers are created.

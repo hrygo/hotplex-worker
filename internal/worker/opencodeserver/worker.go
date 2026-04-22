@@ -55,6 +55,8 @@ var (
 	_ worker.Worker         = (*Worker)(nil)
 	_ worker.SessionConn    = (*conn)(nil)
 	_ worker.InPlaceReseter = (*Worker)(nil)
+	_ ControlRequester      = (*Worker)(nil)
+	_ WorkerCommander       = (*Worker)(nil)
 )
 
 // Environment variable whitelist for OpenCode Server worker.
@@ -129,6 +131,7 @@ type Worker struct {
 	port     int
 	httpAddr string
 	client   *http.Client
+	cmd      *ServerCommander
 
 	// workerSessionID atomically stores the worker-internal session ID.
 	// This serves as a fallback when httpConn is not yet initialized,
@@ -259,6 +262,12 @@ func (w *Worker) Start(ctx context.Context, session worker.SessionInfo) error {
 	// Initialize HTTP connection with buffered channel for backpressure
 	w.initHTTPConn(session.UserID, sessionID)
 
+	w.cmd = &ServerCommander{
+		client:    w.client,
+		baseURL:   w.httpAddr,
+		sessionID: sessionID,
+	}
+
 	// Record startup time
 	w.Mu.Lock()
 	w.StartTime = time.Now()
@@ -370,6 +379,12 @@ func (w *Worker) Resume(ctx context.Context, session worker.SessionInfo) error {
 	// Reuse existing session ID (session.SessionID provided by caller)
 	w.initHTTPConn(session.UserID, session.SessionID)
 
+	w.cmd = &ServerCommander{
+		client:    w.client,
+		baseURL:   w.httpAddr,
+		sessionID: session.SessionID,
+	}
+
 	// Record resume time
 	w.Mu.Lock()
 	w.StartTime = time.Now()
@@ -471,6 +486,34 @@ func (w *Worker) ResetContext(ctx context.Context) error {
 // InPlaceReset indicates that OpenCode Server resets context in-place via HTTP
 // without replacing the Conn or restarting the process.
 func (w *Worker) InPlaceReset() bool { return true }
+
+func (w *Worker) SendControlRequest(ctx context.Context, subtype string, body map[string]any) (map[string]any, error) {
+	if w.cmd == nil {
+		return nil, fmt.Errorf("opencode server: commander not initialized")
+	}
+	return w.cmd.SendControlRequest(ctx, subtype, body)
+}
+
+func (w *Worker) Compact(ctx context.Context, args map[string]any) error {
+	if w.cmd == nil {
+		return fmt.Errorf("opencode server: commander not initialized")
+	}
+	return w.cmd.Compact(ctx, args)
+}
+
+func (w *Worker) Clear(ctx context.Context) error {
+	if w.cmd == nil {
+		return fmt.Errorf("opencode server: commander not initialized")
+	}
+	return w.cmd.Clear(ctx)
+}
+
+func (w *Worker) Rewind(ctx context.Context, targetID string) error {
+	if w.cmd == nil {
+		return fmt.Errorf("opencode server: commander not initialized")
+	}
+	return w.cmd.Rewind(ctx, targetID)
+}
 
 // ─── Internal Methods ─────────────────────────────────────────────────────────
 

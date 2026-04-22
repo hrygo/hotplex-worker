@@ -136,3 +136,33 @@ func (c *LLMRetryController) NotifyMessage(attempt int) string {
 func (c *LLMRetryController) ExhaustedMessage() string {
 	return fmt.Sprintf("⚠️ 自动重试已耗尽 (%d次)，请手动发送「继续」或重新提问。", c.config.MaxRetries)
 }
+
+// UpdateConfig dynamically replaces the retry configuration.
+// Existing per-session attempt counters are preserved.
+func (c *LLMRetryController) UpdateConfig(cfg config.AutoRetryConfig) {
+	cfg = cfg.Defaults()
+	patterns := defaultPatterns
+	if len(cfg.Patterns) > 0 {
+		patterns = cfg.Patterns
+	}
+	compiled := make([]*regexp.Regexp, 0, len(patterns))
+	for _, p := range patterns {
+		re, err := regexp.Compile(p)
+		if err != nil {
+			c.log.Warn("llm_retry: invalid pattern on reload, skipping", "pattern", p, "err", err)
+			continue
+		}
+		compiled = append(compiled, re)
+	}
+
+	c.mu.Lock()
+	c.config = cfg
+	c.patterns = compiled
+	c.mu.Unlock()
+
+	c.log.Info("llm_retry: config updated",
+		"enabled", cfg.Enabled,
+		"max_retries", cfg.MaxRetries,
+		"base_delay", cfg.BaseDelay,
+		"max_delay", cfg.MaxDelay)
+}

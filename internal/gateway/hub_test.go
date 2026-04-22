@@ -62,7 +62,9 @@ func newTestHub(t *testing.T) *Hub {
 	t.Helper()
 	cfg := config.Default()
 	cfg.Gateway.BroadcastQueueSize = 16
-	return NewHub(slog.Default(), cfg)
+	h := NewHub(slog.Default(), config.NewConfigStore(cfg, nil))
+	t.Cleanup(func() { h.Shutdown(context.Background()) })
+	return h
 }
 
 // ─── Hub tests ────────────────────────────────────────────────────────────────
@@ -79,7 +81,7 @@ func TestHub_NewHub_NilLogger(t *testing.T) {
 	t.Parallel()
 	cfg := config.Default()
 	cfg.Gateway.BroadcastQueueSize = 1
-	h := NewHub(nil, cfg)
+	h := NewHub(nil, config.NewConfigStore(cfg, nil))
 	require.NotNil(t, h)
 }
 
@@ -244,10 +246,10 @@ func TestHub_SendToSession_ControlPriority(t *testing.T) {
 
 func TestHub_SendToSession_DeltaDropSilently(t *testing.T) {
 	t.Parallel()
-	h := newTestHub(t)
-	h.mu.Lock()
-	h.broadcast = make(chan *EnvelopeWithConn, 1)
-	h.mu.Unlock()
+	cfg := config.Default()
+	cfg.Gateway.BroadcastQueueSize = 1
+	h := NewHub(slog.Default(), config.NewConfigStore(cfg, nil))
+	t.Cleanup(func() { h.Shutdown(context.Background()) })
 
 	conn, server := newTestWSConnPair(t)
 	defer conn.Close()
@@ -262,10 +264,10 @@ func TestHub_SendToSession_DeltaDropSilently(t *testing.T) {
 }
 
 func TestHub_SendToSession_GuaranteedQueueFull(t *testing.T) {
-	h := newTestHub(t)
-	h.mu.Lock()
-	h.broadcast = make(chan *EnvelopeWithConn, 1)
-	h.mu.Unlock()
+	cfg := config.Default()
+	cfg.Gateway.BroadcastQueueSize = 1
+	h := NewHub(slog.Default(), config.NewConfigStore(cfg, nil))
+	t.Cleanup(func() { h.Shutdown(context.Background()) })
 
 	conn, server := newTestWSConnPair(t)
 	defer conn.Close()
@@ -277,9 +279,8 @@ func TestHub_SendToSession_GuaranteedQueueFull(t *testing.T) {
 	t.Cleanup(cancel)
 
 	// ── Path 1: "queue full" error ──────────────────────────────────────────
-	// h.Run is NOT started yet, so the queue stays full once the first send
-	// occupies the single slot. Subsequent sends must fail immediately.
-	go h.Run() // start hub so it processes items
+	// h.Run is now auto-started. The queue size is 1, so if we send fast,
+	// we might still hit the queue-full window if h.Run is busy.
 
 	// Send one item: succeeds (queue was empty, h.Run draining).
 	first := events.NewEnvelope(aep.NewID(), "sess_full", 0, events.Done, events.DoneData{Success: true})
@@ -335,7 +336,6 @@ func TestHub_SendToSession_SeqAssignment(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	go h.Run()
 
 	env := events.NewEnvelope(aep.NewID(), "sess_seq", 0, events.State, events.StateData{State: events.StateIdle})
 	err := h.SendToSession(ctx, env)
@@ -360,18 +360,6 @@ func TestHub_Shutdown(t *testing.T) {
 	defer cancel()
 	err := h.Shutdown(ctx)
 	require.NoError(t, err)
-}
-
-func TestHub_Run_DrainsOnCancel(t *testing.T) {
-	t.Parallel()
-	h := newTestHub(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-	defer cancel()
-
-	go h.Run()
-	cancel()
-	_ = ctx.Err() // assert context was cancelled
-	// Run should return after ctx cancel without blocking.
 }
 
 func TestHub_RouteMessage_LogHandler(t *testing.T) {
@@ -899,7 +887,6 @@ func TestPCEntry_RouteMessage_LazyEncode(t *testing.T) {
 	pc := &mockPlatformConn{}
 	h.JoinPlatformSession("s_lazy", pc)
 
-	go h.Run()
 	defer h.Shutdown(context.Background())
 
 	env := events.NewEnvelope(aep.NewID(), "s_lazy", 0, events.Done, events.DoneData{Success: true})
@@ -1000,7 +987,7 @@ func TestHub_HandleHTTP_Success(t *testing.T) {
 
 	auth := security.NewAuthenticator(&cfg.Security, nil)
 	h := newTestHub(t)
-	handler := NewHandler(slog.Default(), cfg, h, nil, nil)
+	handler := NewHandler(slog.Default(), h, nil, nil)
 	bridge := NewBridge(slog.Default(), h, nil, nil)
 
 	serveHandler := h.HandleHTTP(auth, nil, handler, bridge)
@@ -1029,7 +1016,7 @@ func TestHub_HandleHTTP_Unauthorized(t *testing.T) {
 
 	auth := security.NewAuthenticator(&cfg.Security, nil)
 	h := newTestHub(t)
-	handler := NewHandler(slog.Default(), cfg, h, nil, nil)
+	handler := NewHandler(slog.Default(), h, nil, nil)
 	bridge := NewBridge(slog.Default(), h, nil, nil)
 
 	serveHandler := h.HandleHTTP(auth, nil, handler, bridge)
@@ -1052,7 +1039,7 @@ func TestHub_HandleHTTP_WithSessionID(t *testing.T) {
 
 	auth := security.NewAuthenticator(&cfg.Security, nil)
 	h := newTestHub(t)
-	handler := NewHandler(slog.Default(), cfg, h, nil, nil)
+	handler := NewHandler(slog.Default(), h, nil, nil)
 	bridge := NewBridge(slog.Default(), h, nil, nil)
 
 	serveHandler := h.HandleHTTP(auth, nil, handler, bridge)
@@ -1084,7 +1071,7 @@ func TestHub_HandleHTTP_GeneratesSessionID(t *testing.T) {
 
 	auth := security.NewAuthenticator(&cfg.Security, nil)
 	h := newTestHub(t)
-	handler := NewHandler(slog.Default(), cfg, h, nil, nil)
+	handler := NewHandler(slog.Default(), h, nil, nil)
 	bridge := NewBridge(slog.Default(), h, nil, nil)
 
 	serveHandler := h.HandleHTTP(auth, nil, handler, bridge)
@@ -1117,7 +1104,7 @@ func TestHub_HandleHTTP_RejectsInvalidAPIKey(t *testing.T) {
 
 	auth := security.NewAuthenticator(&cfg.Security, nil)
 	h := newTestHub(t)
-	handler := NewHandler(slog.Default(), cfg, h, nil, nil)
+	handler := NewHandler(slog.Default(), h, nil, nil)
 	bridge := NewBridge(slog.Default(), h, nil, nil)
 
 	serveHandler := h.HandleHTTP(auth, nil, handler, bridge)

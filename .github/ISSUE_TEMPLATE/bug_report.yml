@@ -1,0 +1,100 @@
+name: Bug Report
+description: 报告 Bug 或异常行为
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Bug Report
+
+        请填写以下信息，描述越详细，定位越快。
+
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题描述
+      description: 发生了什么？你期望发生什么？
+      placeholder: "清晰描述 Bug 的表现。"
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 如何复现这个问题？
+      placeholder: |
+        1. make dev 启动网关
+        2. 通过 Slack/飞书发送消息
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望行为
+      description: 应该发生什么？
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志 / 错误输出
+      description: 粘贴相关日志或错误信息，注意脱敏。
+      render: shell
+
+  - type: input
+    id: version
+    attributes:
+      label: 版本
+      description: 网关版本号或 commit hash
+      placeholder: "如 v0.3.0 或 abc1234"
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: 组件
+      description: 哪个模块受影响？
+      options:
+        - "-- 请选择 --"
+        - Gateway (WebSocket)
+        - Worker (Claude Code / OpenCode Server)
+        - Messaging (Slack)
+        - Messaging (Feishu)
+        - Session Management
+        - Admin API
+        - Configuration
+        - STT (Speech-to-Text)
+        - Client SDK
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: regression
+    attributes:
+      label: 是否回归？
+      description: 之前版本是否正常工作？
+      options:
+        - "-- 不确定 --"
+        - 是，之前版本正常
+        - 否，一直存在问题
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: 运行环境
+      description: OS、Go 版本、部署方式
+      placeholder: |
+        - OS: macOS 15 / Ubuntu 22.04
+        - Go: 1.26
+        - Deploy: make dev / Docker / systemd
+      render: shell
+
+  - type: textarea
+    id: context
+    attributes:
+      label: 补充信息
+      description: 截图、配置、或其他有助于定位的上下文。

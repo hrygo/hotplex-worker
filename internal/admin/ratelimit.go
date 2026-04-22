@@ -34,3 +34,14 @@ func (r *simpleRateLimiter) Allow() bool {
 	}
 	return false
 }
+
+// UpdateRate dynamically adjusts the refill rate and burst capacity.
+func (r *simpleRateLimiter) UpdateRate(reqPerSec, burst int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.refillRate = float64(reqPerSec)
+	r.maxTokens = float64(burst)
+	if r.tokens > r.maxTokens {
+		r.tokens = r.maxTokens
+	}
+}

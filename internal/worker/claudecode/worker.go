@@ -331,6 +331,14 @@ func (w *Worker) Health() worker.WorkerHealth {
 	return w.BaseWorker.Health(worker.TypeClaudeCode)
 }
 
+// SendControlRequest sends a control request to Claude Code and waits for the response.
+func (w *Worker) SendControlRequest(ctx context.Context, subtype string, body map[string]any) (map[string]any, error) {
+	if w.control == nil {
+		return nil, fmt.Errorf("claudecode: control handler not initialized")
+	}
+	return w.control.SendControlRequest(ctx, subtype, body)
+}
+
 func (w *Worker) LastIO() time.Time {
 	return w.BaseWorker.LastIO()
 }
@@ -463,6 +471,24 @@ func (w *Worker) readOutput(ctx context.Context) {
 
 		if line == "" {
 			continue
+		}
+
+		// Handle control_response before parser — it's an internal protocol response,
+		// not a standard SDK event type, so parser ignores it (returns nil).
+		var rawType struct {
+			Type string `json:"type"`
+		}
+		if json.Unmarshal([]byte(line), &rawType) == nil && rawType.Type == "control_response" {
+			var respWrap struct {
+				Response map[string]any `json:"response"`
+			}
+			if json.Unmarshal([]byte(line), &respWrap) == nil && respWrap.Response != nil && w.control != nil {
+				reqID, _ := respWrap.Response["request_id"].(string)
+				if reqID != "" {
+					w.control.DeliverResponse(reqID, respWrap.Response)
+					continue
+				}
+			}
 		}
 
 		workerEvents, err := w.parser.ParseLine(line)

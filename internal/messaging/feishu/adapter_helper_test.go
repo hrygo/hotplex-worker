@@ -434,3 +434,194 @@ func le16(b []byte, v uint16) {
 	b[0] = byte(v)
 	b[1] = byte(v >> 8)
 }
+
+// ─── test helpers ─────────────────────────────────────────────────────────────
+
+func newTestAdapter(t *testing.T) *Adapter {
+	t.Helper()
+	return &Adapter{
+		log:         slog.New(slog.NewTextHandler(io.Discard, nil)),
+		dedup:       NewDedup(100, time.Hour),
+		activeConns: make(map[string]*FeishuConn),
+		dedupDone:   make(chan struct{}),
+	}
+}
+
+func newTestConn(adapter *Adapter, replyToMsgID string) *FeishuConn {
+	conn := NewFeishuConn(adapter, "chat123", "")
+	conn.replyToMsgID = replyToMsgID
+	return conn
+}
+
+// ─── FeishuConn sendContextUsage ───────────────────────────────────────────────
+
+func TestFeishuConn_SendContextUsage(t *testing.T) {
+	t.Parallel()
+	adapter := newTestAdapter(t)
+
+	tests := []struct {
+		name      string
+		replyTo   string
+		data      interface{}
+		wantErr   bool
+		wantInErr string
+	}{
+		{
+			name:    "typed struct with replyToMsgID → replyMessage",
+			replyTo: "msg_123",
+			data: events.ContextUsageData{
+				TotalTokens: 1500, MaxTokens: 2000, Percentage: 75, Model: "claude-3.5-sonnet",
+				Categories: []events.ContextCategory{
+					{Name: "System", Tokens: 200}, {Name: "User", Tokens: 800}, {Name: "Assistant", Tokens: 500},
+				},
+				MemoryFiles: 5, MCPTools: 12, Agents: 3,
+				Skills: events.ContextSkillInfo{Total: 50, Included: 15, Tokens: 300},
+			},
+			wantErr:   true,
+			wantInErr: "lark client not initialized",
+		},
+		{
+			name:    "typed struct without replyToMsgID → sendTextMessage",
+			replyTo: "",
+			data:    events.ContextUsageData{TotalTokens: 800, MaxTokens: 1000, Percentage: 80, Model: "gpt-4"},
+			wantErr: true, wantInErr: "lark client not initialized",
+		},
+		{
+			name:    "map data with replyToMsgID",
+			replyTo: "msg_456",
+			data: map[string]interface{}{
+				"total_tokens": 1200, "max_tokens": 1500, "percentage": 80, "model": "claude-3-opus",
+				"categories": []map[string]interface{}{
+					{"name": "System", "tokens": 150}, {"name": "User", "tokens": 750}, {"name": "Assistant", "tokens": 300},
+				},
+			},
+			wantErr: true, wantInErr: "lark client not initialized",
+		},
+		{
+			name:    "map data without replyToMsgID",
+			replyTo: "",
+			data: map[string]interface{}{
+				"total_tokens": 500, "max_tokens": 1000, "percentage": 50,
+			},
+			wantErr: true, wantInErr: "lark client not initialized",
+		},
+		{
+			name: "unsupported data type → returns nil",
+			data: "invalid data type", wantErr: false,
+		},
+		{
+			name:    "minimal data — no optional fields",
+			replyTo: "msg_789",
+			data:    events.ContextUsageData{TotalTokens: 1000, MaxTokens: 1000, Percentage: 100},
+			wantErr: true, wantInErr: "lark client not initialized",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			conn := newTestConn(adapter, tt.replyTo)
+			env := &events.Envelope{Event: events.Event{Type: events.ContextUsage, Data: tt.data}}
+
+			err := conn.sendContextUsage(context.Background(), env)
+
+			if tt.wantErr {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tt.wantInErr)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+// ─── FeishuConn sendMCPStatus ──────────────────────────────────────────────────
+
+func TestFeishuConn_SendMCPStatus(t *testing.T) {
+	t.Parallel()
+	adapter := newTestAdapter(t)
+
+	tests := []struct {
+		name      string
+		replyTo   string
+		data      interface{}
+		wantErr   bool
+		wantInErr string
+	}{
+		{
+			name:    "typed struct with replyToMsgID → replyMessage",
+			replyTo: "msg_123",
+			data: events.MCPStatusData{Servers: []events.MCPServerInfo{
+				{Name: "filesystem", Status: "connected"}, {Name: "github", Status: "ok"},
+				{Name: "sqlite", Status: "disconnected"}, {Name: "postgres", Status: "error"},
+			}},
+			wantErr:   true,
+			wantInErr: "lark client not initialized",
+		},
+		{
+			name:    "typed struct without replyToMsgID → sendTextMessage",
+			replyTo: "",
+			data: events.MCPStatusData{Servers: []events.MCPServerInfo{
+				{Name: "single-server", Status: "connected"},
+			}},
+			wantErr: true, wantInErr: "lark client not initialized",
+		},
+		{
+			name:    "map data with replyToMsgID",
+			replyTo: "msg_456",
+			data: map[string]interface{}{
+				"servers": []map[string]interface{}{
+					{"name": "filesystem", "status": "connected"}, {"name": "github", "status": "ok"},
+				},
+			},
+			wantErr: true, wantInErr: "lark client not initialized",
+		},
+		{
+			name:    "map data without replyToMsgID",
+			replyTo: "",
+			data: map[string]interface{}{
+				"servers": []map[string]interface{}{
+					{"name": "empty-server", "status": "disconnected"},
+				},
+			},
+			wantErr: true, wantInErr: "lark client not initialized",
+		},
+		{
+			name: "unsupported data type → returns nil",
+			data: 12345, wantErr: false,
+		},
+		{
+			name:    "empty servers list",
+			replyTo: "msg_789",
+			data:    events.MCPStatusData{Servers: []events.MCPServerInfo{}},
+			wantErr: true, wantInErr: "lark client not initialized",
+		},
+		{
+			name:    "mixed status icons — connected/ok get ✅, others get ❌",
+			replyTo: "",
+			data: events.MCPStatusData{Servers: []events.MCPServerInfo{
+				{Name: "connected-server", Status: "connected"}, {Name: "ok-server", Status: "ok"},
+				{Name: "disconnected-server", Status: "disconnected"}, {Name: "error-server", Status: "error"},
+				{Name: "failed-server", Status: "failed"}, {Name: "unknown-server", Status: "unknown"},
+			}},
+			wantErr: true, wantInErr: "lark client not initialized",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			conn := newTestConn(adapter, tt.replyTo)
+			env := &events.Envelope{Event: events.Event{Type: events.MCPStatus, Data: tt.data}}
+
+			err := conn.sendMCPStatus(context.Background(), env)
+
+			if tt.wantErr {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tt.wantInErr)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
