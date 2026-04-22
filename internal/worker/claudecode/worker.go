@@ -570,6 +570,7 @@ func (w *Worker) readOutput(ctx context.Context) {
 								ToolName:    cr.ToolName,
 								Description: cr.ToolName,
 								Args:        args,
+								InputRaw:    cr.Input,
 							},
 						)
 						w.trySend(env)

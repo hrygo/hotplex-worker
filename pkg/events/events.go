@@ -212,10 +212,11 @@ type StepData struct {
 
 // PermissionRequestData is the payload for PermissionRequest events (S→C — ask user for permission).
 type PermissionRequestData struct {
-	ID          string   `json:"id"`
-	ToolName    string   `json:"tool_name"`
-	Description string   `json:"description,omitempty"`
-	Args        []string `json:"args,omitempty"`
+	ID          string          `json:"id"`
+	ToolName    string          `json:"tool_name"`
+	Description string          `json:"description,omitempty"`
+	Args        []string        `json:"args,omitempty"`
+	InputRaw    json.RawMessage `json:"input_raw,omitempty"`
 }
 
 // PermissionResponseData is the payload for PermissionResponse events (C→S — user grants/denies).

@@ -793,6 +793,7 @@ func (w *Worker) handlePermissionAsked(sessionID string, props json.RawMessage) 
 			ToolName:    toolName,
 			Description: toolName,
 			Args:        []string{string(args)},
+			InputRaw:    json.RawMessage(args),
 		},
 	)
 	w.trySend(env)

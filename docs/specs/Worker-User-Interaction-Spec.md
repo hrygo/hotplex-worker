@@ -2,12 +2,12 @@
 type: spec
 tags: [project/HotPlex, worker/claudecode, worker/opencode-server, messaging, gateway]
 date: 2026-04-19
-status: draft
-progress: 10
+status: implemented
+progress: 95
 priority: high
 estimated_hours: 24
 audited: true  # 三源码交叉审查通过 2026-04-19
-last_updated: 2026-04-21
+last_updated: 2026-04-23
 note: "有关 Session Stats 的详细设计请参考实际 Session Store 实现；有关 Worker Session Control 的最新状态请参考 Worker-Session-Control-Spec.md（status: in-progress）"
 ---
 
@@ -359,16 +359,17 @@ type ResponsePayload struct {
 | 组件 | 状态 | 文件 | 说明 |
 |------|------|------|------|
 | stdout `control_request` 解析 | ✅ 已实现 | `claudecode/parser.go:299-326` | 统一解析为 `ControlRequestPayload` |
-| `can_use_tool` → AEP `PermissionRequest` | ✅ 已实现 | `claudecode/worker.go:403-427` | 含 AskUserQuestion（未区分） |
+| `can_use_tool` → AEP `PermissionRequest` | ✅ 已实现 | `claudecode/worker.go:528-576` | AskUserQuestion 区分为 `QuestionRequest`，其余走 `PermissionRequest` |
 | 自动审批 (`set_*`, `mcp_*`) | ✅ 已实现 | `claudecode/control.go:44-60` | `sendAutoSuccess` |
-| AEP `PermissionResponse` → stdin | ✅ 已实现 | `claudecode/control.go:99-104` | `SendPermissionResponse` |
-| Gateway 路由 `PermissionRequest` | ✅ 已实现 | `gateway/handler.go:44-57` | `passthroughToSession` |
-| Gateway 路由 `PermissionResponse` | ✅ 已实现 | `gateway/handler.go:52-53` | `passthroughToSession` |
-| Worker.Input 权限响应分发 | ✅ 已实现 | `claudecode/worker.go:236-251` | 通过 `metadata["permission_response"]` |
-| Messaging 层展示/收集 | ❌ 未实现 | — | Slack/Feishu 无权限 UI |
-| `AskUserQuestion` 问题区分转发 | ❌ 未实现 | — | 需新增 `QuestionRequest` Kind |
-| 问题响应回传 | ❌ 未实现 | — | 需新增 `SendQuestionResponse` |
-| MCP Elicitation 处理 | ❌ 未实现 | — | 被 `control.go:56` 的 default 丢弃 |
+| AEP `PermissionResponse` → stdin | ✅ 已实现 | `claudecode/control.go:106-111` | `SendPermissionResponse` |
+| Gateway 路由全部交互事件 | ✅ 已实现 | `gateway/handler.go:62-66` | `passthroughToSession` 含全部 6 种事件 |
+| Worker.Input 交互响应分发 | ✅ 已实现 | `claudecode/worker.go:248-284` | permission/question/elicitation 三种响应 |
+| Messaging 层展示/收集 | ✅ 已实现 | `messaging/{slack,feishu}/interaction.go` | Slack Interactive Message + Feishu Interactive Card |
+| `AskUserQuestion` 问题区分转发 | ✅ 已实现 | `claudecode/worker.go:529-550` | 区分为 `QuestionRequest` 事件 |
+| 问题响应回传 | ✅ 已实现 | `claudecode/control.go:114-121` | `SendQuestionResponse` |
+| MCP Elicitation 处理 | ✅ 已实现 | `claudecode/worker.go:577-610` | 解析 elicitation 字段，转发为 `ElicitationRequest` |
+| Elicitation 响应回传 | ✅ 已实现 | `claudecode/control.go:124-129` | `SendElicitationResponse` |
+| PermissionRequestData.InputRaw | ✅ 已实现 | `events/events.go:214-219` | 原始工具输入（结构化） |
 
 ### 1.6 关键代码路径（已验证）
 
@@ -587,13 +588,13 @@ OpenCode 在收到回复后广播确认事件到 SSE：
 | 组件 | 状态 | 文件 | 说明 |
 |------|------|------|------|
 | SSE 监听基础 | ✅ 已实现 | `opencodeserver/worker.go:594` | `readSSE()` |
-| SSE AEP 解码 | ✅ 已实现 | `opencodeserver/worker.go:642-655` | `aep.DecodeLine()` |
-| 非 AEP 事件处理 | ❌ 未实现 | — | OpenCode bus 事件被 warn 丢弃 |
-| `permission.asked` 解析 | ❌ 未实现 | — | 需在 AEP 解码失败后尝试 bus 事件解析 |
-| `question.asked` 解析 | ❌ 未实现 | — | 同上 |
-| HTTP POST 权限回复 | ❌ 未实现 | — | 需调用 `POST /permission/{id}/reply` |
-| HTTP POST 问题回复 | ❌ 未实现 | — | 需调用 `POST /question/{id}/reply` |
-| Worker.Input 交互响应 | ❌ 未实现 | — | `Input(ctx, content, metadata)` 需扩展 |
+| SSE AEP 解码 | ✅ 已实现 | `opencodeserver/worker.go:717-718` | `aep.DecodeLine()` |
+| SSE 双路径解析（AEP + bus 事件） | ✅ 已实现 | `opencodeserver/worker.go:720-735` | AEP 失败后尝试 bus 事件解析 |
+| `permission.asked` 解析 | ✅ 已实现 | `opencodeserver/worker.go:776-799` | `handlePermissionAsked`，含 `InputRaw` |
+| `question.asked` 解析 | ✅ 已实现 | `opencodeserver/worker.go:803-822` | `handleQuestionAsked` |
+| HTTP POST 权限回复 | ✅ 已实现 | `opencodeserver/worker.go:303-312` | `POST /permission/{id}/reply` |
+| HTTP POST 问题回复 | ✅ 已实现 | `opencodeserver/worker.go:313-318` | `POST /question/{id}/reply`，含 `answersToArrays` |
+| Worker.Input 交互响应 | ✅ 已实现 | `opencodeserver/worker.go:302-319` | permission_response + question_response |
 
 ---
 
