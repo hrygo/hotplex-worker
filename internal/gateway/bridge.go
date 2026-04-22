@@ -39,6 +39,9 @@ type Bridge struct {
 	closed        atomic.Bool    // set during shutdown to skip crash detection
 	retryCancelMu sync.Mutex
 	retryCancel   map[string]chan struct{} // sessionID → cancel channel
+
+	accum   map[string]*sessionAccumulator // per-session stats accumulator
+	accumMu sync.Mutex
 }
 
 // NewBridge creates a new bridge. msgStore may be nil (event persistence disabled).
@@ -50,6 +53,7 @@ func NewBridge(log *slog.Logger, hub *Hub, sm SessionManager, msgStore session.M
 		msgStore:    msgStore,
 		wf:          defaultWorkerFactory{},
 		retryCancel: make(map[string]chan struct{}),
+		accum:       make(map[string]*sessionAccumulator),
 	}
 }
 
@@ -297,6 +301,20 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 			if content := extractMessageContent(env); content != "" {
 				turnText.WriteString(content)
 			}
+		}
+
+		// Stats accumulation: track tool calls and merge per-turn stats on done.
+		switch env.Event.Type {
+		case events.ToolCall:
+			acc := b.getOrInitAccum(sessionID)
+			acc.ToolCallCount++
+		case events.Done:
+			acc := b.getOrInitAccum(sessionID)
+			if dd, ok := env.Event.Data.(events.DoneData); ok {
+				acc.mergePerTurnStats(dd)
+			}
+			acc.TurnCount++
+			b.injectSessionStats(env, acc)
 		}
 
 		// UI Reconciliation (Fallback full message if silent dropped)
@@ -577,6 +595,7 @@ func (b *Bridge) attemptResumeFallback(p fallbackParams) bool {
 // cleanupCrashedWorker detaches the dead worker and transitions the session to TERMINATED
 // so the next message triggers orphan resume instead of silently dropping input.
 func (b *Bridge) cleanupCrashedWorker(sessionID string) {
+	b.deleteAccum(sessionID)
 	if b.sm == nil {
 		return
 	}
@@ -763,4 +782,36 @@ func extractMessageContent(env *events.Envelope) string {
 // buildNotifyEnvelope creates a synthetic Message event for user notifications.
 func buildNotifyEnvelope(sessionID, msg string, seq int64) *events.Envelope {
 	return events.NewEnvelope(aep.NewID(), sessionID, seq, events.Message, map[string]any{"content": msg})
+}
+
+// getOrInitAccum returns the session accumulator, creating one if needed.
+func (b *Bridge) getOrInitAccum(sessionID string) *sessionAccumulator {
+	b.accumMu.Lock()
+	defer b.accumMu.Unlock()
+	if acc, ok := b.accum[sessionID]; ok {
+		return acc
+	}
+	acc := &sessionAccumulator{StartedAt: time.Now()}
+	b.accum[sessionID] = acc
+	return acc
+}
+
+// deleteAccum removes the accumulator for a session (called on cleanup).
+func (b *Bridge) deleteAccum(sessionID string) {
+	b.accumMu.Lock()
+	delete(b.accum, sessionID)
+	b.accumMu.Unlock()
+}
+
+// injectSessionStats merges the accumulator snapshot into DoneData.Stats["_session"].
+func (b *Bridge) injectSessionStats(env *events.Envelope, acc *sessionAccumulator) {
+	dd, ok := env.Event.Data.(events.DoneData)
+	if !ok {
+		return
+	}
+	if dd.Stats == nil {
+		dd.Stats = make(map[string]any)
+	}
+	dd.Stats["_session"] = acc.snapshot()
+	env.Event.Data = dd
 }

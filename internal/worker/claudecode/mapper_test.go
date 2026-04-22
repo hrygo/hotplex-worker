@@ -229,6 +229,72 @@ func TestMapper_Map_Result(t *testing.T) {
 		require.True(t, data.Success)
 	})
 
+	t.Run("success merges usage and model_usage into stats", func(t *testing.T) {
+		event := &WorkerEvent{
+			Type: EventResult,
+			Payload: &ResultPayload{
+				Success: true,
+				Stats: map[string]any{
+					"duration_ms":    12450,
+					"total_cost_usd": 0.042,
+				},
+				Usage: map[string]any{
+					"input_tokens":  float64(15234),
+					"output_tokens": float64(3821),
+				},
+				ModelUsage: map[string]any{
+					"claude-sonnet-4-6": map[string]any{
+						"inputTokens":   float64(15234),
+						"outputTokens":  float64(3821),
+						"contextWindow": float64(200000),
+					},
+				},
+			},
+		}
+
+		envs, err := mapper.Map(event)
+		require.NoError(t, err)
+		require.Len(t, envs, 1)
+
+		data, ok := envs[0].Event.Data.(events.DoneData)
+		require.True(t, ok)
+		require.True(t, data.Success)
+		require.Equal(t, 12450, data.Stats["duration_ms"])
+		require.Equal(t, 0.042, data.Stats["total_cost_usd"])
+
+		// Usage merged
+		usage, ok := data.Stats["usage"].(map[string]any)
+		require.True(t, ok)
+		require.Equal(t, float64(15234), usage["input_tokens"])
+
+		// ModelUsage merged
+		mu, ok := data.Stats["model_usage"].(map[string]any)
+		require.True(t, ok)
+		modelEntry, ok := mu["claude-sonnet-4-6"].(map[string]any)
+		require.True(t, ok)
+		require.Equal(t, float64(200000), modelEntry["contextWindow"])
+	})
+
+	t.Run("nil usage and model_usage are not added", func(t *testing.T) {
+		event := &WorkerEvent{
+			Type: EventResult,
+			Payload: &ResultPayload{
+				Success: true,
+				Stats:   map[string]any{"duration_ms": 1000},
+			},
+		}
+
+		envs, err := mapper.Map(event)
+		require.NoError(t, err)
+		require.Len(t, envs, 1)
+
+		data := envs[0].Event.Data.(events.DoneData)
+		_, hasUsage := data.Stats["usage"]
+		_, hasModelUsage := data.Stats["model_usage"]
+		require.False(t, hasUsage)
+		require.False(t, hasModelUsage)
+	})
+
 	t.Run("error sends both error and done", func(t *testing.T) {
 		event := &WorkerEvent{
 			Type: EventResult,

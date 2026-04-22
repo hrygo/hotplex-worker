@@ -3,6 +3,7 @@ package claudecode
 import (
 	"fmt"
 	"log/slog"
+	"maps"
 
 	"github.com/hotplex/hotplex-worker/pkg/aep"
 	"github.com/hotplex/hotplex-worker/pkg/events"
@@ -183,9 +184,19 @@ func (m *Mapper) mapToolProgress(p *ToolResultPayload) (*events.Envelope, error)
 }
 
 // mapResult converts result to done (+ optional error).
+// Merges Usage and ModelUsage into DoneData.Stats so downstream consumers
+// (Bridge accumulator, platform adapters) can extract token/cost/context data.
 func (m *Mapper) mapResult(p *ResultPayload) ([]*events.Envelope, error) {
+	stats := make(map[string]any, len(p.Stats)+2)
+	maps.Copy(stats, p.Stats)
+	if p.Usage != nil {
+		stats["usage"] = p.Usage
+	}
+	if p.ModelUsage != nil {
+		stats["model_usage"] = p.ModelUsage
+	}
+
 	if !p.Success {
-		// Emit both error and done { success: false } per AEP spec
 		return []*events.Envelope{
 			{
 				ID:        aep.NewID(),
@@ -207,14 +218,13 @@ func (m *Mapper) mapResult(p *ResultPayload) ([]*events.Envelope, error) {
 					Type: events.Done,
 					Data: events.DoneData{
 						Success: false,
-						Stats:   p.Stats,
+						Stats:   stats,
 					},
 				},
 			},
 		}, nil
 	}
 
-	// Emit done event with stats
 	return []*events.Envelope{{
 		ID:        aep.NewID(),
 		SessionID: m.sessionID,
@@ -223,7 +233,7 @@ func (m *Mapper) mapResult(p *ResultPayload) ([]*events.Envelope, error) {
 			Type: events.Done,
 			Data: events.DoneData{
 				Success: true,
-				Stats:   p.Stats,
+				Stats:   stats,
 			},
 		},
 	}}, nil
