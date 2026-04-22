@@ -1,7 +1,9 @@
 package messaging
 
 import (
+	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/hotplex/hotplex-worker/pkg/events"
 )
@@ -140,6 +142,112 @@ func ParseWorkerCommand(text string) *WorkerCommandResult {
 	}
 
 	return nil
+}
+
+// IsHelpCommand checks whether the text is a help request.
+// Recognizes: /help, $help, ?, ？
+func IsHelpCommand(text string) bool {
+	t := strings.TrimSpace(text)
+	tl := strings.ToLower(t)
+	return tl == "/help" || tl == "$help" || t == "?" || t == "？"
+}
+
+// helpSection groups related commands for display.
+type helpSection struct {
+	Title   string
+	Emoji   string
+	Entries []helpEntry
+}
+
+// helpEntry describes a single command line.
+type helpEntry struct {
+	Commands []string
+	Args     string
+	Desc     string
+}
+
+var (
+	helpText     string
+	helpTextOnce sync.Once
+)
+
+// HelpText returns the cached help message (generated once).
+func HelpText() string {
+	helpTextOnce.Do(func() {
+		sections := []helpSection{
+			{
+				Title: "会话控制", Emoji: "🔧",
+				Entries: []helpEntry{
+					{Commands: []string{"/gc", "/park"}, Desc: "休眠会话（停止 Worker，保留会话）"},
+					{Commands: []string{"/reset", "/restart", "/new"}, Desc: "重置上下文（全新开始）"},
+				},
+			},
+			{
+				Title: "信息与状态", Emoji: "📊",
+				Entries: []helpEntry{
+					{Commands: []string{"/context"}, Desc: "查看上下文窗口使用量"},
+					{Commands: []string{"/mcp"}, Desc: "查看 MCP 服务器状态"},
+				},
+			},
+			{
+				Title: "配置", Emoji: "⚙️",
+				Entries: []helpEntry{
+					{Commands: []string{"/model"}, Args: "<名称>", Desc: "切换 AI 模型"},
+					{Commands: []string{"/perm"}, Args: "<模式>", Desc: "设置权限模式"},
+					{Commands: []string{"/effort"}, Args: "<级别>", Desc: "设置推理力度"},
+				},
+			},
+			{
+				Title: "对话", Emoji: "💬",
+				Entries: []helpEntry{
+					{Commands: []string{"/compact"}, Desc: "压缩对话历史"},
+					{Commands: []string{"/clear"}, Desc: "清空对话"},
+					{Commands: []string{"/rewind"}, Desc: "撤销上一轮对话"},
+					{Commands: []string{"/commit"}, Desc: "创建 Git 提交"},
+				},
+			},
+			{
+				Title: "提示", Emoji: "💡",
+				Entries: []helpEntry{
+					{Commands: []string{"?"}, Desc: "显示此帮助"},
+					{Commands: []string{"$"}, Args: "前缀", Desc: "自然语言触发（如 $上下文、$休眠）"},
+				},
+			},
+		}
+		helpText = formatHelpSections(sections)
+	})
+	return helpText
+}
+
+func formatHelpSections(sections []helpSection) string {
+	var b strings.Builder
+	b.WriteString("📖 *命令帮助*\n\n")
+	for _, s := range sections {
+		fmt.Fprintf(&b, "*%s %s*\n", s.Emoji, s.Title)
+		for _, e := range s.Entries {
+			b.WriteString("• ")
+			b.WriteString(formatCommands(e))
+			if e.Desc != "" {
+				b.WriteString(" — ")
+				b.WriteString(e.Desc)
+			}
+			b.WriteByte('\n')
+		}
+		b.WriteByte('\n')
+	}
+	return b.String()
+}
+
+func formatCommands(e helpEntry) string {
+	parts := make([]string, len(e.Commands))
+	for i, c := range e.Commands {
+		parts[i] = "`" + c + "`"
+	}
+	s := strings.Join(parts, " ")
+	if e.Args != "" {
+		s += " `" + e.Args + "`"
+	}
+	return s
 }
 
 // trimTrailingPunct strips trailing punctuation (same character set as slack/abort.go).

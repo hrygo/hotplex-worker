@@ -355,6 +355,20 @@ func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsA
 		return
 	}
 
+	// Help command - reply directly without involving the worker.
+	if messaging.IsHelpCommand(text) {
+		_ = a.SetStatus(ctx, channelID, threadTS, StatusThinking, "Loading help...")
+		opts := []slack.MsgOption{
+			slack.MsgOptionText(messaging.HelpText(), false),
+		}
+		if threadTS != "" {
+			opts = append(opts, slack.MsgOptionTS(threadTS))
+		}
+		_, _, _ = a.client.PostMessageContext(ctx, channelID, opts...)
+		_ = a.ClearStatus(ctx, channelID, threadTS)
+		return
+	}
+
 	// Control command detection (natural language + /command in text).
 	if result := messaging.ParseControlCommand(text); result != nil {
 		conn := a.GetOrCreateConn(channelID, threadTS)
@@ -363,6 +377,26 @@ func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsA
 			defer conn.handlerMu.Unlock()
 		}
 		a.handleTextControlCommand(ctx, teamID, channelID, threadTS, userID, result)
+		return
+	}
+
+	// Worker command detection (slash + $ natural language).
+	// Only intercept structured commands (context, mcp, model, perm).
+	// Passthrough commands (compact, clear, rewind, effort, commit)
+	// fall through to normal input — they aren't supported in stream-json mode.
+	if cmdResult := messaging.ParseWorkerCommand(text); cmdResult != nil && !cmdResult.Command.IsPassthrough() {
+		conn := a.GetOrCreateConn(channelID, threadTS)
+		if conn != nil {
+			conn.messageTS = msgEvent.TimeStamp
+			conn.handlerMu.Lock()
+			defer conn.handlerMu.Unlock()
+		}
+		// Start status indicators for worker commands (typing emoji + assistant status)
+		a.activeIndicators.Start(ctx, a, channelID, threadTS, msgEvent.TimeStamp, a.typingStages)
+		if a.isAssistantCapable.Load() && threadTS != "" {
+			_ = a.SetAssistantStatus(ctx, channelID, threadTS, "Processing "+cmdResult.Label+"...")
+		}
+		a.handleTextWorkerCommand(ctx, teamID, channelID, threadTS, userID, cmdResult)
 		return
 	}
 
@@ -532,7 +566,7 @@ func (a *Adapter) handleTextControlCommand(ctx context.Context, teamID, channelI
 	}
 	if err := a.bridge.Handle(ctx, ctrlEnv, conn); err != nil {
 		a.log.Error("slack: text control command failed", "action", result.Label, "err", err)
-		a.sendEphemeralOrPost(ctx, channelID, userID, fmt.Sprintf("❌ Failed to execute %s.", result.Label))
+		a.sendEphemeralOrPost(ctx, channelID, threadTS, userID, fmt.Sprintf("❌ Failed to execute %s.", result.Label))
 		return
 	}
 
@@ -545,7 +579,45 @@ func (a *Adapter) handleTextControlCommand(ctx context.Context, teamID, channelI
 		a.interactions.CancelAll(env.SessionID)
 	}
 
-	a.sendEphemeralOrPost(ctx, channelID, userID, controlFeedbackMessage(result.Action))
+	a.sendEphemeralOrPost(ctx, channelID, threadTS, userID, controlFeedbackMessage(result.Action))
+}
+
+func (a *Adapter) handleTextWorkerCommand(ctx context.Context, teamID, channelID, threadTS, userID string, result *messaging.WorkerCommandResult) {
+	envelope := a.bridge.MakeSlackEnvelope(teamID, channelID, threadTS, userID, "")
+	if envelope == nil {
+		a.log.Error("slack: worker command failed to derive session", "command", result.Label)
+		return
+	}
+
+	cmdEnv := &events.Envelope{
+		Version:   events.Version,
+		ID:        aep.NewID(),
+		SessionID: envelope.SessionID,
+		Event: events.Event{
+			Type: events.WorkerCmd,
+			Data: events.WorkerCommandData{
+				Command: result.Command,
+				Args:    result.Args,
+				Extra:   result.Extra,
+			},
+		},
+		OwnerID: userID,
+	}
+
+	conn := a.GetOrCreateConn(channelID, threadTS)
+	if conn == nil {
+		a.log.Warn("slack: adapter closed, dropping worker command", "command", result.Label)
+		return
+	}
+
+	if err := a.bridge.Handle(ctx, cmdEnv, conn); err != nil {
+		a.log.Error("slack: worker command failed", "command", result.Label, "err", err)
+		a.activeIndicators.Stop(ctx, channelID, conn.messageTS)
+		a.sendEphemeralOrPost(ctx, channelID, threadTS, userID, fmt.Sprintf("❌ Failed to execute %s.", result.Label))
+		return
+	}
+
+	a.log.Info("slack: worker command sent", "command", result.Label, "user", userID, "session_id", envelope.SessionID)
 }
 
 func controlFeedbackMessage(action events.ControlAction) string {
@@ -577,6 +649,20 @@ func NewSlackConn(adapter *Adapter, channelID, threadTS string) *SlackConn {
 	return &SlackConn{adapter: adapter, channelID: channelID, threadTS: threadTS}
 }
 
+// notifyStatus sets processing status (nil-safe for tests).
+func (c *SlackConn) notifyStatus(ctx context.Context, text string) {
+	if c.adapter != nil && c.adapter.statusMgr != nil {
+		_ = c.adapter.statusMgr.Notify(ctx, c.channelID, c.threadTS, StatusThinking, text)
+	}
+}
+
+// clearStatus clears processing status (nil-safe for tests).
+func (c *SlackConn) clearStatus(ctx context.Context) {
+	if c.adapter != nil && c.adapter.statusMgr != nil {
+		c.adapter.statusMgr.Clear(ctx, c.channelID, c.threadTS)
+	}
+}
+
 // WriteCtx sends an AEP envelope to the bound Slack channel/thread.
 func (c *SlackConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 	if env == nil {
@@ -591,7 +677,7 @@ func (c *SlackConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 	// Clear status indicator on done/error
 	switch env.Event.Type {
 	case events.Done, events.Error:
-		c.adapter.statusMgr.Clear(ctx, c.channelID, c.threadTS)
+		c.clearStatus(ctx)
 		c.adapter.activeIndicators.Stop(ctx, c.channelID, c.messageTS)
 		c.adapter.interactions.CancelAll(env.SessionID)
 		c.closeStreamWriter()
@@ -603,15 +689,36 @@ func (c *SlackConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		}
 		return nil
 	case events.PermissionRequest:
-		return c.sendPermissionRequest(ctx, env)
+		c.notifyStatus(ctx, "Permission request...")
+		err := c.sendPermissionRequest(ctx, env)
+		c.clearStatus(ctx)
+		return err
 	case events.QuestionRequest:
-		return c.sendQuestionRequest(ctx, env)
+		c.notifyStatus(ctx, "Awaiting response...")
+		qErr := c.sendQuestionRequest(ctx, env)
+		c.clearStatus(ctx)
+		return qErr
 	case events.ElicitationRequest:
-		return c.sendElicitationRequest(ctx, env)
+		c.notifyStatus(ctx, "Gathering input...")
+		eErr := c.sendElicitationRequest(ctx, env)
+		c.clearStatus(ctx)
+		return eErr
 	case events.ContextUsage:
-		return c.sendContextUsage(ctx, env)
+		c.notifyStatus(ctx, "Loading context usage...")
+		cErr := c.sendContextUsage(ctx, env)
+		c.clearStatus(ctx)
+		if c.adapter.activeIndicators != nil {
+			c.adapter.activeIndicators.Stop(ctx, c.channelID, c.messageTS)
+		}
+		return cErr
 	case events.MCPStatus:
-		return c.sendMCPStatus(ctx, env)
+		c.notifyStatus(ctx, "Loading MCP status...")
+		mErr := c.sendMCPStatus(ctx, env)
+		c.clearStatus(ctx)
+		if c.adapter.activeIndicators != nil {
+			c.adapter.activeIndicators.Stop(ctx, c.channelID, c.messageTS)
+		}
+		return mErr
 	}
 
 	text, ok := extractResponseText(env)
@@ -712,7 +819,7 @@ func (c *SlackConn) Close() error {
 	// Clean up typing indicator + status emoji (same as done/error path in WriteCtx).
 	ctx := context.Background()
 	c.adapter.activeIndicators.Stop(ctx, c.channelID, c.messageTS)
-	c.adapter.statusMgr.Clear(ctx, c.channelID, c.threadTS)
+	c.clearStatus(ctx)
 
 	return nil
 }
@@ -810,60 +917,107 @@ func (c *SlackConn) sendContextUsage(ctx context.Context, env *events.Envelope) 
 		return nil
 	}
 
-	text := fmt.Sprintf("📊 *Context Usage* — %d%% (%d / %d)", d.Percentage, d.TotalTokens, d.MaxTokens)
+	plainText := fmt.Sprintf("📊 Context Usage — %d%% (%d / %d)", d.Percentage, d.TotalTokens, d.MaxTokens)
 	if d.Model != "" {
-		text += fmt.Sprintf("\n🤖 Model: %s", d.Model)
+		plainText += fmt.Sprintf("\n🤖 Model: %s", d.Model)
 	}
-
-	var blocks []slack.Block
-	blocks = append(blocks, slack.NewHeaderBlock(
-		slack.NewTextBlockObject("plain_text", fmt.Sprintf("📊 Context Usage — %d%%", d.Percentage), false, false),
-	))
-
-	fields := make([]*slack.TextBlockObject, 0, len(d.Categories)*2)
+	var catParts []string
 	for _, cat := range d.Categories {
-		fields = append(fields,
-			slack.NewTextBlockObject("mrkdwn", fmt.Sprintf("*%s*", cat.Name), false, false),
-			slack.NewTextBlockObject("mrkdwn", fmt.Sprintf("%d tokens", cat.Tokens), false, false),
-		)
+		catParts = append(catParts, fmt.Sprintf("%s: %d", cat.Name, cat.Tokens))
 	}
-	if len(fields) > 0 {
-		blocks = append(blocks, slack.NewSectionBlock(nil, fields, nil))
+	if len(catParts) > 0 {
+		plainText += "\n📂 " + strings.Join(catParts, " · ")
 	}
 
-	var contextFields []string
-	if d.Model != "" {
-		contextFields = append(contextFields, fmt.Sprintf("🤖 *Model:* %s", d.Model))
-	}
-	if d.MemoryFiles > 0 {
-		contextFields = append(contextFields, fmt.Sprintf("📁 *Memory Files:* %d", d.MemoryFiles))
-	}
-	if d.MCPTools > 0 {
-		contextFields = append(contextFields, fmt.Sprintf("🔧 *MCP Tools:* %d", d.MCPTools))
-	}
-	if d.Agents > 0 {
-		contextFields = append(contextFields, fmt.Sprintf("🤖 *Agents:* %d", d.Agents))
-	}
-	if d.Skills.Total > 0 {
-		contextFields = append(contextFields, fmt.Sprintf("⚡ *Skills:* %d (%d included, %d tokens)", d.Skills.Total, d.Skills.Included, d.Skills.Tokens))
-	}
-	if len(contextFields) > 0 {
-		contextElems := make([]slack.MixedElement, len(contextFields))
-		for i, f := range contextFields {
-			contextElems[i] = slack.NewTextBlockObject("mrkdwn", f, false, false)
-		}
-		blocks = append(blocks, slack.NewContextBlock("", contextElems...))
-	}
-
+	// Primary: TableBlock (may be rejected by workspaces without the beta feature)
+	blocks := c.buildContextUsageTable(d)
 	opts := []slack.MsgOption{
 		slack.MsgOptionBlocks(blocks...),
-		slack.MsgOptionText(text, false),
+		slack.MsgOptionText(plainText, false),
 	}
 	if c.threadTS != "" {
 		opts = append(opts, slack.MsgOptionTS(c.threadTS))
 	}
 	_, _, err := c.adapter.client.PostMessageContext(ctx, c.channelID, opts...)
-	return err
+	if err == nil {
+		return nil
+	}
+	if !strings.Contains(err.Error(), "invalid_blocks") {
+		return err
+	}
+
+	// Fallback: ContextBlock (universally supported)
+	c.adapter.log.Warn("slack: context usage TableBlock rejected, falling back to ContextBlock", "err", err)
+	fbBlocks := c.buildContextUsageFallback(d)
+	fbOpts := []slack.MsgOption{
+		slack.MsgOptionBlocks(fbBlocks...),
+		slack.MsgOptionText(plainText, false),
+	}
+	if c.threadTS != "" {
+		fbOpts = append(fbOpts, slack.MsgOptionTS(c.threadTS))
+	}
+	_, _, fbErr := c.adapter.client.PostMessageContext(ctx, c.channelID, fbOpts...)
+	return fbErr
+}
+
+// buildContextUsageTable builds a TableBlock for context usage (primary format).
+func (c *SlackConn) buildContextUsageTable(d events.ContextUsageData) []slack.Block {
+	table := slack.NewTableBlock("context_usage")
+	table = table.WithColumnSettings(
+		slack.ColumnSetting{Align: slack.ColumnAlignmentLeft, IsWrapped: false},
+		slack.ColumnSetting{Align: slack.ColumnAlignmentLeft, IsWrapped: true},
+	)
+
+	table.AddRow(richTextCell("📊 Usage"), richTextCell(fmt.Sprintf("%d%% (%d / %d)", d.Percentage, d.TotalTokens, d.MaxTokens)))
+	if d.Model != "" {
+		table.AddRow(richTextCell("🤖 Model"), richTextCell(d.Model))
+	}
+	// Merge categories into one row
+	var catParts []string
+	for _, cat := range d.Categories {
+		catParts = append(catParts, fmt.Sprintf("%s: %d", cat.Name, cat.Tokens))
+	}
+	if len(catParts) > 0 {
+		table.AddRow(richTextCell("📂 Context"), richTextCell(strings.Join(catParts, " · ")))
+	}
+	if d.MemoryFiles > 0 {
+		table.AddRow(richTextCell("📁 Memory"), richTextCell(fmt.Sprintf("%d files", d.MemoryFiles)))
+	}
+	if d.MCPTools > 0 {
+		table.AddRow(richTextCell("🔧 MCP"), richTextCell(fmt.Sprintf("%d tools", d.MCPTools)))
+	}
+	if d.Agents > 0 {
+		table.AddRow(richTextCell("🤖 Agents"), richTextCell(fmt.Sprintf("%d", d.Agents)))
+	}
+	if d.Skills.Total > 0 {
+		table.AddRow(richTextCell("⚡ Skills"), richTextCell(fmt.Sprintf("%d (%d included, %d tokens)", d.Skills.Total, d.Skills.Included, d.Skills.Tokens)))
+	}
+	return []slack.Block{table}
+}
+
+// buildContextUsageFallback builds ContextBlock fallback when TableBlock is rejected.
+func (c *SlackConn) buildContextUsageFallback(d events.ContextUsageData) []slack.Block {
+	parts := []string{fmt.Sprintf("📊 *Context Usage* — %d%% (%d / %d)", d.Percentage, d.TotalTokens, d.MaxTokens)}
+	if d.Model != "" {
+		parts = append(parts, fmt.Sprintf("🤖 Model: %s", d.Model))
+	}
+	var catParts []string
+	for _, cat := range d.Categories {
+		catParts = append(catParts, fmt.Sprintf("%s: %d", cat.Name, cat.Tokens))
+	}
+	if len(catParts) > 0 {
+		parts = append(parts, "📂 "+strings.Join(catParts, " · "))
+	}
+	text := slack.NewTextBlockObject("mrkdwn", strings.Join(parts, "\n"), false, false)
+	return []slack.Block{slack.NewContextBlock("", text)}
+}
+
+// richTextCell creates a RichTextBlock cell for use in TableBlock rows.
+func richTextCell(text string) *slack.RichTextBlock {
+	section := slack.NewRichTextSection(
+		slack.NewRichTextSectionTextElement(text, nil),
+	)
+	return slack.NewRichTextBlock("", section)
 }
 
 func (c *SlackConn) sendMCPStatus(ctx context.Context, env *events.Envelope) error {
@@ -882,33 +1036,51 @@ func (c *SlackConn) sendMCPStatus(ctx context.Context, env *events.Envelope) err
 		return nil
 	}
 
-	var blocks []slack.Block
-	blocks = append(blocks, slack.NewHeaderBlock(
-		slack.NewTextBlockObject("plain_text", "🔌 MCP Server Status", false, false),
-	))
-
 	var sb strings.Builder
+	sb.WriteString("🔌 MCP Server Status\n")
 	for _, s := range d.Servers {
 		icon := "✅"
 		if s.Status != "connected" && s.Status != "ok" {
 			icon = "❌"
 		}
-		fmt.Fprintf(&sb, "%s *%s* — %s\n", icon, s.Name, s.Status)
+		fmt.Fprintf(&sb, "%s %s — %s\n", icon, s.Name, s.Status)
 	}
-	if sb.Len() > 0 {
-		blocks = append(blocks, slack.NewSectionBlock(
-			slack.NewTextBlockObject("mrkdwn", sb.String(), false, false), nil, nil,
-		))
+	plainText := sb.String()
+
+	table := slack.NewTableBlock("mcp_status")
+	table = table.WithColumnSettings(
+		slack.ColumnSetting{Align: slack.ColumnAlignmentLeft, IsWrapped: false},
+		slack.ColumnSetting{Align: slack.ColumnAlignmentLeft, IsWrapped: true},
+	)
+	table.AddRow(richTextCell("🔌 MCP Status"), richTextCell(fmt.Sprintf("%d servers", len(d.Servers))))
+	for _, s := range d.Servers {
+		icon := "✅"
+		if s.Status != "connected" && s.Status != "ok" {
+			icon = "❌"
+		}
+		table.AddRow(richTextCell(icon+" "+s.Name), richTextCell(s.Status))
 	}
 
+	blocks := []slack.Block{table}
 	opts := []slack.MsgOption{
 		slack.MsgOptionBlocks(blocks...),
-		slack.MsgOptionText(sb.String(), false),
+		slack.MsgOptionText(plainText, false),
 	}
 	if c.threadTS != "" {
 		opts = append(opts, slack.MsgOptionTS(c.threadTS))
 	}
 	_, _, err := c.adapter.client.PostMessageContext(ctx, c.channelID, opts...)
+	if err != nil {
+		if strings.Contains(err.Error(), "invalid_blocks") {
+			c.adapter.log.Warn("slack: MCP status TableBlock rejected, falling back to plain text", "err", err)
+			fbOpts := []slack.MsgOption{slack.MsgOptionText(plainText, false)}
+			if c.threadTS != "" {
+				fbOpts = append(fbOpts, slack.MsgOptionTS(c.threadTS))
+			}
+			_, _, fbErr := c.adapter.client.PostMessageContext(ctx, c.channelID, fbOpts...)
+			return fbErr
+		}
+	}
 	return err
 }
 
