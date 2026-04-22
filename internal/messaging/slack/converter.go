@@ -1,6 +1,7 @@
 package slack
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -56,9 +57,12 @@ func (a *Adapter) ConvertMessage(msgEvent slackevents.MessageEvent) (text string
 	if text == "" && len(media) > 0 {
 		var parts []string
 		for _, m := range media {
-			if m.Type == "image" {
+			switch m.Type {
+			case "image":
 				parts = append(parts, fmt.Sprintf("[user shared an image: %s]", m.Name))
-			} else {
+			case "audio":
+				parts = append(parts, fmt.Sprintf("[user sent a voice message: %s]", m.Name))
+			default:
 				parts = append(parts, fmt.Sprintf("[user shared a file: %s]", m.Name))
 			}
 		}
@@ -70,6 +74,15 @@ func (a *Adapter) ConvertMessage(msgEvent slackevents.MessageEvent) (text string
 
 // fileCategory classifies a Slack file by its filetype.
 func fileCategory(f slack.File) string {
+	// Slack voice messages are MP4 containers but should be classified as audio.
+	if f.Mode == "voice" {
+		return "audio"
+	}
+	// Heuristic: small MP4 with no video dimensions is likely a voice message.
+	if f.Filetype == "mp4" && f.Size > 0 && f.Size < 5*1024*1024 &&
+		f.OriginalW == 0 && f.OriginalH == 0 {
+		return "audio"
+	}
 	switch f.Filetype {
 	case "png", "jpg", "jpeg", "gif", "webp", "bmp", "svg":
 		return "image"
@@ -117,6 +130,39 @@ func (a *Adapter) downloadMedia(ctx context.Context, m *MediaInfo) (string, erro
 		return "", fmt.Errorf("get file: %w", err)
 	}
 
+	return path, nil
+}
+
+func (a *Adapter) downloadMediaBytes(ctx context.Context, m *MediaInfo) ([]byte, error) {
+	if m.Size > mediaMaxSize {
+		return nil, fmt.Errorf("file too large: %d bytes", m.Size)
+	}
+
+	downloadCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	var buf bytes.Buffer
+	if err := a.client.GetFileContext(downloadCtx, m.DownloadURL, &buf); err != nil {
+		return nil, fmt.Errorf("get file bytes: %w", err)
+	}
+	return buf.Bytes(), nil
+}
+
+func (a *Adapter) saveMediaBytes(m *MediaInfo, data []byte) (string, error) {
+	ext := mimeExt(m.MimeType)
+	if ext == "" {
+		ext = "." + m.FileID
+	}
+	filename := fmt.Sprintf("%s_%s%s", m.Type, m.FileID, ext)
+
+	dir := filepath.Join(mediaPathPrefix, m.Type+"s")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	path := filepath.Join(dir, filename)
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return "", err
+	}
 	return path, nil
 }
 

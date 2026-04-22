@@ -2,9 +2,11 @@ package slack
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/slack-go/slack"
 
@@ -44,7 +46,15 @@ var StatusTextMap = map[StatusType]string{
 	StatusStepFinish:   "Step complete",
 }
 
-// StatusManager manages AI status notifications with dedup + thread safety.
+const statusMinInterval = 3 * time.Second
+
+// threadState tracks per-thread status for dedup and rate limiting.
+type threadState struct {
+	lastText string
+	lastTime time.Time
+}
+
+// StatusManager manages AI status notifications with dedup + rate limiting + thread safety.
 // When using emoji fallback (non-Assistant API workspaces), it tracks the last
 // emoji added per thread so Clear() can remove it.
 type StatusManager struct {
@@ -54,18 +64,23 @@ type StatusManager struct {
 	// per-thread tracking for emoji fallback cleanup.
 	// Key: "channelID:threadTS" → last emoji added via setStatusWithEmojiFallback.
 	emojiState map[string]string
+	// per-thread dedup + rate limiting.
+	// Key: "channelID:threadTS" → last text and timestamp.
+	threadState map[string]*threadState
 }
 
 // NewStatusManager creates a new status manager.
 func NewStatusManager(adapter *Adapter, logger *slog.Logger) *StatusManager {
 	return &StatusManager{
-		adapter:    adapter,
-		logger:     logger,
-		emojiState: make(map[string]string),
+		adapter:     adapter,
+		logger:      logger,
+		emojiState:  make(map[string]string),
+		threadState: make(map[string]*threadState),
 	}
 }
 
-// Notify sends a status update; skips if status unchanged for the same thread.
+// Notify sends a status update. Skips if text is identical to the last sent
+// value, or if less than statusMinInterval has elapsed since the last update.
 func (m *StatusManager) Notify(ctx context.Context, channelID, threadTS string, status StatusType, text string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -74,14 +89,32 @@ func (m *StatusManager) Notify(ctx context.Context, channelID, threadTS string, 
 		m.clearEmojiLocked(ctx, channelID, threadTS)
 		return nil
 	}
+
+	key := channelID + ":" + threadTS
+	if ts := m.threadState[key]; ts != nil {
+		if ts.lastText == text {
+			return nil
+		}
+		if time.Since(ts.lastTime) < statusMinInterval {
+			return nil
+		}
+	}
+
+	if m.threadState[key] == nil {
+		m.threadState[key] = &threadState{}
+	}
+	m.threadState[key].lastText = text
+	m.threadState[key].lastTime = time.Now()
+
 	return m.adapter.SetStatus(ctx, channelID, threadTS, status, text)
 }
 
-// Clear removes any tracked status emoji for the thread.
+// Clear removes any tracked status emoji and state for the thread.
 func (m *StatusManager) Clear(ctx context.Context, channelID, threadTS string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.clearEmojiLocked(ctx, channelID, threadTS)
+	delete(m.threadState, channelID+":"+threadTS)
 }
 
 // clearEmojiLocked removes the tracked emoji reaction. Caller must hold m.mu.
@@ -111,10 +144,9 @@ func (m *StatusManager) trackEmoji(channelID, threadTS, emoji string) {
 func aepEventToStatus(env *events.Envelope) (StatusType, string) {
 	switch env.Event.Type {
 	case events.ToolCall:
-		toolName := extractToolName(env)
-		return StatusToolUse, "Using " + toolName + "..."
+		return StatusToolUse, extractToolCallStatus(env)
 	case events.ToolResult:
-		return StatusToolResult, "Tool completed"
+		return StatusToolResult, extractToolResultStatus(env)
 	case events.MessageDelta:
 		return StatusAnswering, "Composing response..."
 	default:
@@ -122,20 +154,93 @@ func aepEventToStatus(env *events.Envelope) (StatusType, string) {
 	}
 }
 
-// extractToolName extracts the tool name from an AEP ToolCall envelope.
-func extractToolName(env *events.Envelope) string {
+// extractToolCallStatus formats "ToolName(key=val, key=val)" truncated to 50 chars.
+func extractToolCallStatus(env *events.Envelope) string {
+	name := "tool"
+	var input map[string]any
+
 	if env.Event.Data == nil {
-		return "tool"
+		return name
 	}
-	if data, ok := env.Event.Data.(*events.ToolCallData); ok && data.Name != "" {
-		return data.Name
-	}
-	if m, ok := env.Event.Data.(map[string]any); ok {
-		if name, ok := m["name"].(string); ok {
-			return name
+	if data, ok := env.Event.Data.(*events.ToolCallData); ok {
+		if data.Name != "" {
+			name = data.Name
+		}
+		input = data.Input
+	} else if m, ok := env.Event.Data.(map[string]any); ok {
+		if n, ok := m["name"].(string); ok && n != "" {
+			name = n
+		}
+		if inp, ok := m["input"].(map[string]any); ok {
+			input = inp
 		}
 	}
-	return "tool"
+
+	if len(input) == 0 {
+		return truncateStatus(name, 50)
+	}
+
+	parts := make([]string, 0, len(input))
+	for k, v := range input {
+		parts = append(parts, k+"="+truncateValue(fmt.Sprintf("%v", v), 20))
+	}
+	body := strings.Join(parts, ", ")
+	return truncateStatus(name+"("+body+")", 50)
+}
+
+// extractToolResultStatus formats tool result preview truncated to 50 chars.
+func extractToolResultStatus(env *events.Envelope) string {
+	if env.Event.Data == nil {
+		return "Tool completed"
+	}
+
+	if data, ok := env.Event.Data.(*events.ToolResultData); ok {
+		if data.Error != "" {
+			return truncateStatus("Error: "+data.Error, 50)
+		}
+		if data.Output != nil {
+			return truncateStatus(fmt.Sprintf("%v", data.Output), 50)
+		}
+		return "Tool completed"
+	}
+
+	if m, ok := env.Event.Data.(map[string]any); ok {
+		if errStr, ok := m["error"].(string); ok && errStr != "" {
+			return truncateStatus("Error: "+errStr, 50)
+		}
+		if output, ok := m["output"]; ok && output != nil {
+			return truncateStatus(fmt.Sprintf("%v", output), 50)
+		}
+	}
+
+	return "Tool completed"
+}
+
+// truncateStatus truncates s to at most max bytes, appending "..." if truncated.
+func truncateStatus(s string, max int) string {
+	if max <= 3 {
+		return s
+	}
+	if len(s) <= max {
+		return s
+	}
+	// Find the last rune boundary that fits within max-3 bytes.
+	cut := max - 3
+	for cut > 0 && !isRuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + "..."
+}
+
+// truncateValue truncates a single parameter value for display.
+func truncateValue(s string, max int) string {
+	return truncateStatus(s, max)
+}
+
+func isRuneStart(b byte) bool {
+	// UTF-8 continuation bytes start with 10xxxxxx (0x80-0xBF).
+	// A rune start byte is anything that is NOT a continuation byte.
+	return b&0xC0 != 0x80
 }
 
 // SetAssistantStatus sets the native assistant status text via Slack API.

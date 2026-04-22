@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/hotplex/hotplex-worker/internal/messaging"
+	"github.com/hotplex/hotplex-worker/internal/messaging/stt"
 	"github.com/hotplex/hotplex-worker/pkg/aep"
 	"github.com/hotplex/hotplex-worker/pkg/events"
 
@@ -69,6 +70,7 @@ type Adapter struct {
 	isAssistantCapable atomic.Bool
 	assistantEnabled   *bool
 	gate               *Gate
+	transcriber        stt.Transcriber
 	started            atomic.Bool
 	backoffBaseDelay   time.Duration
 	backoffMaxDelay    time.Duration
@@ -110,6 +112,11 @@ func (a *Adapter) SetAssistantEnabled(enabled *bool) {
 func (a *Adapter) SetReconnectDelays(baseDelay, maxDelay time.Duration) {
 	a.backoffBaseDelay = baseDelay
 	a.backoffMaxDelay = maxDelay
+}
+
+// SetTranscriber sets the speech-to-text transcriber for voice messages.
+func (a *Adapter) SetTranscriber(t stt.Transcriber) {
+	a.transcriber = t
 }
 
 func (a *Adapter) Start(ctx context.Context) error {
@@ -332,6 +339,33 @@ func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsA
 			if m.DownloadURL == "" {
 				continue
 			}
+			// Audio + STT: transcribe voice messages to text.
+			if m.Type == "audio" && a.transcriber != nil {
+				audioData, err := a.downloadMediaBytes(ctx, m)
+				if err != nil {
+					a.log.Warn("slack: download audio failed", "file", m.Name, "err", err)
+					text += fmt.Sprintf("\n[audio: %s]", m.Name)
+					continue
+				}
+				transcript, err := a.transcriber.Transcribe(ctx, audioData)
+				if err != nil {
+					a.log.Warn("slack: stt failed", "file", m.Name, "err", err)
+					text += fmt.Sprintf("\n[audio: %s]", m.Name)
+					continue
+				}
+				if transcript != "" {
+					text += fmt.Sprintf("\n[voice message transcription]: %s", transcript)
+				} else {
+					text += fmt.Sprintf("\n[voice message: %s (empty transcription)]", m.Name)
+				}
+				// If transcriber needs disk, write file for downstream use.
+				if a.transcriber.RequiresDisk() {
+					if path, err := a.saveMediaBytes(m, audioData); err == nil {
+						text += "\n" + path
+					}
+				}
+				continue
+			}
 			path, err := a.downloadMedia(ctx, m)
 			if err == nil {
 				text += "\n" + path
@@ -534,6 +568,12 @@ func (a *Adapter) Close(ctx context.Context) error {
 	}
 	if a.userCache != nil {
 		a.userCache.Close()
+	}
+
+	if a.transcriber != nil {
+		if closer, ok := a.transcriber.(interface{ Close(context.Context) error }); ok {
+			_ = closer.Close(ctx)
+		}
 	}
 
 	return nil

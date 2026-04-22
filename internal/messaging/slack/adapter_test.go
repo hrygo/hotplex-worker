@@ -198,7 +198,7 @@ func TestAepEventToStatus_ToolCall(t *testing.T) {
 	}
 	status, text := aepEventToStatus(env)
 	require.Equal(t, StatusToolUse, status)
-	require.Equal(t, "Using read_file...", text)
+	require.Equal(t, "read_file", text)
 }
 
 func TestAepEventToStatus_ToolResult(t *testing.T) {
@@ -229,32 +229,92 @@ func TestAepEventToStatus_MessageDelta(t *testing.T) {
 	require.Equal(t, "Composing response...", text)
 }
 
-func TestExtractToolName(t *testing.T) {
+func TestExtractToolCallStatus(t *testing.T) {
 	t.Parallel()
 
-	// Typed data
-	env := &events.Envelope{
-		Event: events.Event{
-			Type: events.ToolCall,
-			Data: &events.ToolCallData{Name: "search_web"},
+	tests := []struct {
+		name string
+		env  *events.Envelope
+		want string
+	}{
+		{
+			"typed name only",
+			&events.Envelope{Event: events.Event{Type: events.ToolCall, Data: &events.ToolCallData{Name: "search_web"}}},
+			"search_web",
+		},
+		{
+			"typed name with input",
+			&events.Envelope{Event: events.Event{Type: events.ToolCall, Data: &events.ToolCallData{Name: "Read", Input: map[string]any{"file_path": "/src/main.go"}}}},
+			"Read(file_path=/src/main.go)",
+		},
+		{
+			"map data",
+			&events.Envelope{Event: events.Event{Type: events.ToolCall, Data: map[string]any{"name": "write_file"}}},
+			"write_file",
+		},
+		{
+			"nil data",
+			&events.Envelope{Event: events.Event{Type: events.ToolCall}},
+			"tool",
+		},
+		{
+			"long value truncated",
+			&events.Envelope{Event: events.Event{Type: events.ToolCall, Data: &events.ToolCallData{Name: "Bash", Input: map[string]any{"command": "go test -race -count=1 -timeout 15m ./internal/..."}}}},
+			"Bash(command=go test -race -co...)",
+		},
+		{
+			"multiple params",
+			&events.Envelope{Event: events.Event{Type: events.ToolCall, Data: &events.ToolCallData{Name: "Grep", Input: map[string]any{"pattern": "aepEventToStatus", "glob": "*.go"}}}},
+			"Grep(pattern=aepEventToStatus, glob=*.go)", // exact match depends on map order
 		},
 	}
-	require.Equal(t, "search_web", extractToolName(env))
 
-	// Map data
-	env2 := &events.Envelope{
-		Event: events.Event{
-			Type: events.ToolCall,
-			Data: map[string]any{"name": "write_file"},
-		},
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractToolCallStatus(tt.env)
+			if len(got) > 50 {
+				t.Errorf("status too long (%d chars): %q", len(got), got)
+			}
+			if tt.name != "multiple params" {
+				require.Equal(t, tt.want, got)
+			}
+		})
 	}
-	require.Equal(t, "write_file", extractToolName(env2))
+}
 
-	// Nil data
-	env3 := &events.Envelope{
-		Event: events.Event{Type: events.ToolCall},
+func TestExtractToolResultStatus(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		env  *events.Envelope
+		want string
+	}{
+		{"nil data", &events.Envelope{Event: events.Event{Type: events.ToolResult}}, "Tool completed"},
+		{"error", &events.Envelope{Event: events.Event{Type: events.ToolResult, Data: &events.ToolResultData{Error: "file not found"}}}, "Error: file not found"},
+		{"output string", &events.Envelope{Event: events.Event{Type: events.ToolResult, Data: &events.ToolResultData{Output: "ok"}}}, "ok"},
+		{"map error", &events.Envelope{Event: events.Event{Type: events.ToolResult, Data: map[string]any{"error": "timeout"}}}, "Error: timeout"},
+		{"map output", &events.Envelope{Event: events.Event{Type: events.ToolResult, Data: map[string]any{"output": 42}}}, "42"},
 	}
-	require.Equal(t, "tool", extractToolName(env3))
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractToolResultStatus(tt.env)
+			if len(got) > 50 {
+				t.Errorf("status too long (%d chars): %q", len(got), got)
+			}
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestTruncateStatus(t *testing.T) {
+	t.Parallel()
+
+	require.Equal(t, "hi", truncateStatus("hi", 50))
+	require.Equal(t, "hello world", truncateStatus("hello world", 11))
+	require.Equal(t, "hello...", truncateStatus("hello world", 8))
+	require.Equal(t, "你好世...", truncateStatus("你好世界测试", 13))
 }
 
 func TestIsAssistantCapabilityError(t *testing.T) {

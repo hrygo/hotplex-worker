@@ -27,6 +27,7 @@ import (
 	"github.com/hotplex/hotplex-worker/internal/messaging"
 	"github.com/hotplex/hotplex-worker/internal/messaging/feishu"
 	"github.com/hotplex/hotplex-worker/internal/messaging/slack"
+	"github.com/hotplex/hotplex-worker/internal/messaging/stt"
 	"github.com/hotplex/hotplex-worker/internal/security"
 	"github.com/hotplex/hotplex-worker/internal/session"
 	"github.com/hotplex/hotplex-worker/internal/tracing"
@@ -612,6 +613,9 @@ func startMessagingAdapters(ctx context.Context, log *slog.Logger, cfg *config.C
 					}
 					sa.SetTypingStages(ts)
 				}
+				if t := buildSlackTranscriber(cfg.Messaging.Slack, log); t != nil {
+					sa.SetTranscriber(t)
+				}
 			}
 		case messaging.PlatformFeishu:
 			if fa, ok := adapter.(*feishu.Adapter); ok {
@@ -655,7 +659,7 @@ func startMessagingAdapters(ctx context.Context, log *slog.Logger, cfg *config.C
 
 // buildTranscriber creates a speech-to-text transcriber from Feishu config.
 // Returns nil if STT is disabled.
-func buildTranscriber(cfg config.FeishuConfig, log *slog.Logger) feishu.Transcriber {
+func buildTranscriber(cfg config.FeishuConfig, log *slog.Logger) stt.Transcriber {
 	switch cfg.STTProvider {
 	case "feishu":
 		client := lark.NewClient(cfg.AppID, cfg.AppSecret)
@@ -665,10 +669,7 @@ func buildTranscriber(cfg config.FeishuConfig, log *slog.Logger) feishu.Transcri
 			log.Warn("feishu: stt_provider=local but stt_local_cmd is empty, STT disabled")
 			return nil
 		}
-		if cfg.STTLocalMode == "persistent" {
-			return feishu.NewPersistentSTT(cfg.STTLocalCmd, cfg.STTLocalIdleTTL, log)
-		}
-		return feishu.NewLocalSTT(cfg.STTLocalCmd, log)
+		return buildLocalSTT(cfg.STTLocalCmd, cfg.STTLocalMode, cfg.STTLocalIdleTTL, log)
 	case "feishu+local":
 		if cfg.STTLocalCmd == "" {
 			log.Warn("feishu: stt_provider=feishu+local but stt_local_cmd is empty, using feishu only")
@@ -676,20 +677,35 @@ func buildTranscriber(cfg config.FeishuConfig, log *slog.Logger) feishu.Transcri
 			return feishu.NewFeishuSTT(client, log)
 		}
 		client := lark.NewClient(cfg.AppID, cfg.AppSecret)
-		var local feishu.Transcriber
-		if cfg.STTLocalMode == "persistent" {
-			local = feishu.NewPersistentSTT(cfg.STTLocalCmd, cfg.STTLocalIdleTTL, log)
-		} else {
-			local = feishu.NewLocalSTT(cfg.STTLocalCmd, log)
-		}
-		return feishu.NewFallbackSTT(
+		return stt.NewFallbackSTT(
 			feishu.NewFeishuSTT(client, log),
-			local,
+			buildLocalSTT(cfg.STTLocalCmd, cfg.STTLocalMode, cfg.STTLocalIdleTTL, log),
 			log,
 		)
 	default:
 		return nil
 	}
+}
+
+// buildSlackTranscriber creates a speech-to-text transcriber from Slack config.
+// Returns nil if STT is disabled. Only "local" mode is supported.
+func buildSlackTranscriber(cfg config.SlackConfig, log *slog.Logger) stt.Transcriber {
+	if cfg.STTProvider != "local" {
+		return nil
+	}
+	if cfg.STTLocalCmd == "" {
+		log.Warn("slack: stt_provider=local but stt_local_cmd is empty, STT disabled")
+		return nil
+	}
+	return buildLocalSTT(cfg.STTLocalCmd, cfg.STTLocalMode, cfg.STTLocalIdleTTL, log)
+}
+
+// buildLocalSTT creates a local STT transcriber (shared by Feishu and Slack).
+func buildLocalSTT(cmd, mode string, idleTTL time.Duration, log *slog.Logger) stt.Transcriber {
+	if mode == "persistent" {
+		return stt.NewPersistentSTT(cmd, idleTTL, log)
+	}
+	return stt.NewLocalSTT(cmd, log)
 }
 
 func waitForSignal() os.Signal {

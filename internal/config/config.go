@@ -161,6 +161,15 @@ type SlackConfig struct {
 	// ReconnectMaxDelay is the maximum delay between reconnection attempts.
 	// Default: 60s. The delay will not exceed this value.
 	ReconnectMaxDelay time.Duration `mapstructure:"reconnect_max_delay"`
+
+	// STTProvider enables speech-to-text for voice messages. "local" or "" (disabled).
+	STTProvider string `mapstructure:"stt_provider"`
+	// STTLocalCmd is the command template for local transcription ({file} placeholder).
+	STTLocalCmd string `mapstructure:"stt_local_cmd"`
+	// STTLocalMode is "ephemeral" (default) or "persistent" (long-lived subprocess).
+	STTLocalMode string `mapstructure:"stt_local_mode"`
+	// STTLocalIdleTTL controls auto-shutdown of persistent subprocess (0 = disabled).
+	STTLocalIdleTTL time.Duration `mapstructure:"stt_local_idle_ttl"`
 }
 
 // TypingStageConfig defines a single emoji reaction stage for YAML/Viper deserialization.

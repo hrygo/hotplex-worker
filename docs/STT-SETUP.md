@@ -1,6 +1,8 @@
 # STT 语音转文字 — 安装配置手册
 
-HotPlex Worker 支持将飞书语音消息自动转写为文字，发送给 AI Worker 处理。
+HotPlex Worker 支持将飞书和 Slack 的语音消息自动转写为文字，发送给 AI Worker 处理。
+
+STT 引擎已提取为共享包 `internal/messaging/stt/`，飞书和 Slack 均可使用。
 
 本手册从零开始，涵盖所有安装和配置步骤。
 
@@ -9,16 +11,12 @@ HotPlex Worker 支持将飞书语音消息自动转写为文字，发送给 AI W
 ## 目录
 
 1. [工作原理](#1-工作原理)
-2. [模式对比](#2-模式对比)
-3. [快速开始：云端模式（零安装）](#3-快速开始云端模式零安装)
-4. [本地 STT 安装](#4-本地-stt-安装)
-   - [4.1 系统要求](#41-系统要求)
-   - [4.2 安装 Python 依赖](#42-安装-python-依赖)
-   - [4.3 下载模型（自动）](#43-下载模型自动)
-   - [4.4 修补 ONNX 模型（自动）](#44-修补-onnx-模型自动)
-5. [配置 Ephemeral 模式](#5-配置-ephemeral-模式)
-6. [配置 Persistent 模式](#6-配置-persistent-模式)
-7. [配置云端优先 + 本地降级](#7-配置云端优先--本地降级)
+2. [平台支持](#2-平台支持)
+3. [模式对比](#3-模式对比)
+4. [快速开始：飞书云端模式（零安装）](#4-快速开始飞书云端模式零安装)
+5. [本地 STT 安装](#5-本地-stt-安装)
+6. [飞书配置](#6-飞书配置)
+7. [Slack 配置](#7-slack-配置)
 8. [验证安装](#8-验证安装)
 9. [Docker 部署](#9-docker-部署)
 10. [故障排查](#10-故障排查)
@@ -28,10 +26,11 @@ HotPlex Worker 支持将飞书语音消息自动转写为文字，发送给 AI W
 ## 1. 工作原理
 
 ```
-飞书用户发送语音消息
+用户发送语音消息
         │
         ▼
-  Feishu Adapter 收到音频
+  平台 Adapter 收到音频
+  (飞书: Opus / Slack: MP4)
         │
         ▼
   ┌─ stt_provider 判断 ─┐
@@ -48,14 +47,32 @@ HotPlex Worker 支持将飞书语音消息自动转写为文字，发送给 AI W
 
 **处理流程**：
 
-1. 飞书用户发送语音消息，Adapter 收到音频二进制数据
+1. 用户发送语音消息，Adapter 收到音频二进制数据
 2. 根据 `stt_provider` 配置，选择转写引擎
 3. 转写成功后，文本拼接到用户消息中，发送给 AI Worker
 4. 如果配置了 `feishu+local`，云端失败时自动降级到本地引擎
 
+**共享架构**：
+
+- `internal/messaging/stt/` — 平台无关的 STT 引擎（Transcriber 接口、LocalSTT、PersistentSTT、FallbackSTT）
+- `internal/messaging/feishu/stt.go` — 飞书云端 STT（FeishuSTT，依赖 lark.Client）
+- `internal/messaging/slack/adapter.go` — Slack 通过 `SetTranscriber()` 注入 STT 引擎
+
 ---
 
-## 2. 模式对比
+## 2. 平台支持
+
+| 功能 | 飞书 | Slack |
+|------|------|-------|
+| 云端 STT | ✅ (飞书 speech_to_text API) | ❌ |
+| 本地 STT (ephemeral) | ✅ | ✅ |
+| 本地 STT (persistent) | ✅ | ✅ |
+| 云端+本地降级 | ✅ | ❌ |
+| 语音消息识别 | 飞书原生音频事件 | MP4 `Mode=voice` 检测 |
+
+---
+
+## 3. 模式对比
 
 | | 云端 (feishu) | 本地 Ephemeral | 本地 Persistent |
 |---|---|---|---|
@@ -67,12 +84,11 @@ HotPlex Worker 支持将飞书语音消息自动转写为文字，发送给 AI W
 | **适用场景** | 已开通飞书权限 | 低频使用 | 高频使用 |
 | **离线可用** | 否 | 是 | 是 |
 | **支持语言** | 自动识别 | 中英日韩粤 | 中英日韩粤 |
-
-**推荐配置**：`feishu+local`（默认值）—— 云端优先，失败时自动降级本地，兼顾速度和可靠性。
+| **支持平台** | 仅飞书 | 飞书 + Slack | 飞书 + Slack |
 
 ---
 
-## 3. 快速开始：云端模式（零安装）
+## 4. 快速开始：飞书云端模式（零安装）
 
 如果你已经在飞书开放平台开通了「语音转文字」权限，无需任何安装。
 
@@ -89,11 +105,11 @@ feishu:
 
 ---
 
-## 4. 本地 STT 安装
+## 5. 本地 STT 安装
 
 本地 STT 使用阿里达摩院开源的 **SenseVoice-Small** 模型，通过 `funasr-onnx` 运行 ONNX 推理。
 
-### 4.1 系统要求
+### 5.1 系统要求
 
 | 项目 | 要求 |
 |------|------|
@@ -109,7 +125,7 @@ python3 --version
 # Python 3.9.x 或更高
 ```
 
-### 4.2 安装 Python 依赖
+### 5.2 安装 Python 依赖
 
 ```bash
 pip3 install funasr-onnx modelscope onnx
@@ -128,7 +144,7 @@ python3 -c "from funasr_onnx import SenseVoiceSmall; print('OK')"
 # 输出: OK
 ```
 
-### 4.3 下载模型（自动）
+### 5.3 下载模型（自动）
 
 首次运行时，模型会自动从 ModelScope Hub 下载（~3 GB）。下载后缓存在本地，后续无需重复下载。
 
@@ -144,7 +160,7 @@ print(f'Model cached at: {path}')
 "
 ```
 
-### 4.4 修补 ONNX 模型（自动）
+### 5.4 修补 ONNX 模型（自动）
 
 ModelScope 预导出的 ONNX 模型存在一个已知 bug：`Less` 算子接收了 float 和 int64 混合输入，违反 ONNX 规范。ONNX Runtime 1.19+ 会拒绝加载。
 
@@ -165,16 +181,13 @@ model_quant.onnx: already correct
 
 ---
 
-## 5. 配置 Ephemeral 模式
+## 6. 飞书配置
+
+飞书支持 4 种 STT 模式：云端、本地 ephemeral、本地 persistent、云端+本地降级。
+
+### 6.1 Ephemeral 模式
 
 每次语音消息启动一个新的 Python 进程进行转写，处理完毕后进程退出。
-
-**优点**：简单、无状态、不常驻内存
-**缺点**：每次冷启动 3-5 秒（加载模型），适合低频使用
-
-### 5.1 配置
-
-项目自带 `scripts/stt_once.py` 单次转写脚本，无需手动创建。
 
 ```yaml
 # config.yaml
@@ -185,26 +198,9 @@ feishu:
   stt_local_mode: "ephemeral"
 ```
 
-`{file}` 会被替换为临时音频文件路径。脚本的标准输出作为转写结果。
-
-### 5.2 验证
-
-```bash
-# 准备一个测试音频文件，然后运行：
-python3 scripts/stt_once.py /path/to/test.opus
-# 应输出转写文字
-```
-
----
-
-## 6. 配置 Persistent 模式
+### 6.2 Persistent 模式
 
 启动一个常驻子进程，模型常驻内存，零冷启动。
-
-**优点**：零冷启动、高频使用性能最佳
-**缺点**：常驻 ~900 MB 内存
-
-### 6.1 配置
 
 ```yaml
 # config.yaml
@@ -224,39 +220,7 @@ feishu:
 | `--backend funasr` | 使用 SenseVoice（默认，推荐） |
 | `--backend whisper` | 使用 faster-whisper（需额外安装 `faster-whisper`） |
 
-### 6.2 进程生命周期
-
-```
-Gateway 启动
-    │
-    ▼
-收到第一条语音消息
-    │
-    ▼
-PersistentSTT 懒启动子进程（加载模型 ~3-5s）
-    │
-    ▼
-后续语音消息直接转写（<1s）
-    │
-    ▼
-stt_local_idle_ttl 时间内无转写请求
-    │
-    ▼
-子进程自动关闭，释放内存
-    │
-    ▼
-下次语音消息到来时重新启动
-```
-
-- 子进程使用 PGID 隔离，Gateway 崩溃时自动终止
-- Gateway 正常关闭时优雅终止子进程（SIGTERM → 5s → SIGKILL）
-- `stt_local_idle_ttl: 0` 表示永不自动关闭
-
----
-
-## 7. 配置云端优先 + 本地降级
-
-这是默认推荐配置。云端 STT 速度快、不占本地资源，失败时自动降级到本地引擎。
+### 6.3 云端优先 + 本地降级（推荐）
 
 ```yaml
 # config.yaml
@@ -276,6 +240,62 @@ feishu:
 4. 本地也失败 → 保存音频文件到磁盘，由 Worker 直接处理
 
 > 如果 `stt_local_cmd` 为空，`feishu+local` 会自动退化为纯云端模式，只记录一条警告日志。
+
+---
+
+## 7. Slack 配置
+
+Slack 支持本地 STT 模式（ephemeral 或 persistent）。Slack 没有云端 STT 选项。
+
+### 语音消息检测
+
+Slack 语音消息以 `.mp4` 容器发送（`video/mp4` MIME），通过以下规则自动识别为音频：
+
+1. `slack.File.Mode == "voice"` — 主信号
+2. 小于 5MB 且无视频尺寸（`OriginalW == 0 && OriginalH == 0`）的 MP4 文件 — 兜底启发式
+
+### 7.1 Ephemeral 模式
+
+```yaml
+# config.yaml
+slack:
+  enabled: true
+  stt_provider: "local"
+  stt_local_cmd: "python3 scripts/stt_once.py {file}"
+  stt_local_mode: "ephemeral"
+```
+
+### 7.2 Persistent 模式
+
+```yaml
+# config.yaml
+slack:
+  enabled: true
+  stt_provider: "local"
+  stt_local_cmd: "python3 scripts/stt_server.py --model iic/SenseVoiceSmall"
+  stt_local_mode: "persistent"
+  stt_local_idle_ttl: 1h
+```
+
+### 7.3 处理流程
+
+```
+Slack 语音消息
+        │
+        ▼
+  downloadMediaBytes (HTTP → 内存)
+        │
+        ▼
+  Transcriber.Transcribe (内存音频 → 文字)
+        │
+        ▼
+  转写成功 → "[voice message transcription]: 转写文字"
+        │
+        ▼
+  RequiresDisk()? → saveMediaBytes (内存 → 磁盘)
+```
+
+如果转写失败，会降级为 `[audio: filename]` 占位符，仍由 Worker 处理。
 
 ---
 
@@ -310,13 +330,19 @@ echo '{"audio_path": "/path/to/test.opus"}' | python3 scripts/stt_server.py --mo
 make dev
 ```
 
-在飞书中发送一条语音消息给机器人，观察日志：
-
+**飞书**：发送一条语音消息，日志应出现：
 ```
 feishu stt: transcribed text="你好世界" text_len=4
 # 或 (persistent 模式首次):
 persistent stt: started pid=12345 idle_ttl=1h0m0s
 persistent stt: transcribed text="你好世界" text_len=4
+```
+
+**Slack**：发送一条语音消息，日志应出现：
+```
+slack: stt failed ... (如果未配置 STT)
+# 或 (配置后):
+persistent stt: transcribed text="hello world" text_len=11
 ```
 
 ---
@@ -334,6 +360,7 @@ RUN pip install --no-cache-dir funasr-onnx modelscope onnx
 # Copy STT scripts
 COPY scripts/stt_server.py /opt/hotplex/scripts/
 COPY scripts/fix_onnx_model.py /opt/hotplex/scripts/
+COPY scripts/stt_once.py /opt/hotplex/scripts/
 ```
 
 ### Volume 挂载模型缓存
@@ -352,15 +379,24 @@ volumes:
   stt-models:
 ```
 
-### 配置
+### 飞书配置（Docker 环境）
 
 ```yaml
-# config.yaml (Docker 环境)
 feishu:
   stt_provider: "feishu+local"
   stt_local_cmd: "python3 /opt/hotplex/scripts/stt_server.py --model iic/SenseVoiceSmall"
   stt_local_mode: "persistent"
   stt_local_idle_ttl: 30m    # 容器环境建议缩短空闲超时
+```
+
+### Slack 配置（Docker 环境）
+
+```yaml
+slack:
+  stt_provider: "local"
+  stt_local_cmd: "python3 /opt/hotplex/scripts/stt_server.py --model iic/SenseVoiceSmall"
+  stt_local_mode: "persistent"
+  stt_local_idle_ttl: 30m
 ```
 
 ---
@@ -411,8 +447,20 @@ feishu stt: transcribed text="" text_len=0
 **可能原因**：
 
 1. **飞书权限未开通**：在飞书开放平台 → 应用 → 权限管理，添加 `speech_to_text`
-2. **音频格式不支持**：飞书 API 支持 PCM/WAV/OGG Opus，通过 `audioToPCM()` 自动转换
+2. **音频格式不支持**：飞书 API 支持 PCM/WAV/OGG Opus，通过 `AudioToPCM()` 自动转换
 3. **音频太短**：极短的语音（<1s）可能无法识别
+
+---
+
+### Slack 语音消息未被识别
+
+语音消息显示为 `[user shared a file: ...]` 而非 `[voice message transcription]: ...`
+
+**可能原因**：
+
+1. **未配置 STT**：确保 `slack.stt_provider` 设置为 `"local"` 且 `stt_local_cmd` 非空
+2. **MP4 被误分类为 video**：检查 Slack 文件的 `Mode` 字段是否为 `"voice"`，如果为空则回退到启发式检测
+3. **转写失败**：检查日志中 `slack: stt failed` 错误信息
 
 ---
 
@@ -467,6 +515,8 @@ mkdir -p ~/.cache/modelscope/hub/models/iic/SenseVoiceSmall
 
 ## 配置速查
 
+### 飞书
+
 | 场景 | stt_provider | stt_local_cmd | stt_local_mode | stt_local_idle_ttl |
 |------|-------------|---------------|----------------|-------------------|
 | 仅云端 | `feishu` | — | — | — |
@@ -474,3 +524,11 @@ mkdir -p ~/.cache/modelscope/hub/models/iic/SenseVoiceSmall
 | 仅本地（高频） | `local` | `python3 scripts/stt_server.py --model iic/SenseVoiceSmall` | `persistent` | `1h` |
 | 云端 + 本地降级（推荐） | `feishu+local` | `python3 scripts/stt_server.py --model iic/SenseVoiceSmall` | `persistent` | `1h` |
 | 禁用 STT | `""` (空) | — | — | — |
+
+### Slack
+
+| 场景 | stt_provider | stt_local_cmd | stt_local_mode | stt_local_idle_ttl |
+|------|-------------|---------------|----------------|-------------------|
+| 仅本地（低频） | `local` | `python3 scripts/stt_once.py {file}` | `ephemeral` | — |
+| 仅本地（高频） | `local` | `python3 scripts/stt_server.py --model iic/SenseVoiceSmall` | `persistent` | `1h` |
+| 禁用 STT（默认） | `""` (空) | — | — | — |

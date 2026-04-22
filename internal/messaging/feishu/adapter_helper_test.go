@@ -14,6 +14,7 @@ import (
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	"github.com/stretchr/testify/require"
 
+	"github.com/hotplex/hotplex-worker/internal/messaging/stt"
 	"github.com/hotplex/hotplex-worker/pkg/events"
 )
 
@@ -395,7 +396,7 @@ func TestAudioToPCM_Success(t *testing.T) {
 	// Generate minimal valid WAV: RIFF header + fmt chunk + data chunk.
 	// ffmpeg can convert even a minimal WAV to PCM.
 	wav := makeWAV(8000, 1)
-	pcm, err := audioToPCM(context.Background(), wav)
+	pcm, err := stt.AudioToPCM(context.Background(), wav)
 	require.NoError(t, err)
 	require.NotEmpty(t, pcm)
 }
