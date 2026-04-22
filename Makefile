@@ -99,7 +99,7 @@ build:
 
 run: build
 	@./$(BUILD_DIR)/$(BINARY_NAME)-$(GOOS)-$(GOARCH) \
-		-config $(CONFIG_DIR)/config.yaml
+		-config $(CONFIG_DIR)/config-dev.yaml
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Test
@@ -203,7 +203,7 @@ worker-start: build
 	echo "$(CYAN)Starting gateway...$(RESET)"; \
 	if [ -f .env ]; then set -a; . .env; set +a; fi; \
 	./$(BUILD_DIR)/$(BINARY_NAME)-$(GOOS)-$(GOARCH) \
-		-config $(CONFIG_DIR)/config.yaml \
+		-config $(CONFIG_DIR)/config-dev.yaml \
 		> $(WORKER_LOG) 2>&1 & \
 	echo $$! > $(WORKER_PID); \
 	sleep 1; \

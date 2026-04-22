@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 提问或讨论
+    url: https://github.com/hrygo/hotplex-worker/discussions
+    about: 在 Discussions 中提问、分享想法或展开讨论。

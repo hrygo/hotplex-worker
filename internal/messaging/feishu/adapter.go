@@ -590,6 +590,10 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		return c.sendQuestionRequest(ctx, env)
 	case events.ElicitationRequest:
 		return c.sendElicitationRequest(ctx, env)
+	case events.ContextUsage:
+		return c.sendContextUsage(ctx, env)
+	case events.MCPStatus:
+		return c.sendMCPStatus(ctx, env)
 	}
 
 	// Cancel pending interactions on done/error.
@@ -672,6 +676,90 @@ func (c *FeishuConn) Close() error {
 	delete(c.adapter.activeConns, c.chatID+"#"+c.threadKey)
 	c.adapter.mu.Unlock()
 	return nil
+}
+
+func (c *FeishuConn) sendContextUsage(ctx context.Context, env *events.Envelope) error {
+	var d events.ContextUsageData
+	switch v := env.Event.Data.(type) {
+	case events.ContextUsageData:
+		d = v
+	case map[string]any:
+		raw, _ := json.Marshal(v)
+		_ = json.Unmarshal(raw, &d)
+	default:
+		return nil
+	}
+
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "📊 Context Usage — %d%% (%d / %d)", d.Percentage, d.TotalTokens, d.MaxTokens)
+	if d.Model != "" {
+		fmt.Fprintf(&sb, "\n🤖 Model: %s", d.Model)
+	}
+	if len(d.Categories) > 0 {
+		sb.WriteString("\n📋 Categories:")
+		for _, cat := range d.Categories {
+			fmt.Fprintf(&sb, "\n  • %s: %d tokens", cat.Name, cat.Tokens)
+		}
+	}
+	var extras []string
+	if d.MemoryFiles > 0 {
+		extras = append(extras, fmt.Sprintf("%d memory files", d.MemoryFiles))
+	}
+	if d.MCPTools > 0 {
+		extras = append(extras, fmt.Sprintf("%d MCP tools", d.MCPTools))
+	}
+	if d.Agents > 0 {
+		extras = append(extras, fmt.Sprintf("%d agents", d.Agents))
+	}
+	if d.Skills.Total > 0 {
+		extras = append(extras, fmt.Sprintf("%d skills (%d included, %d tokens)", d.Skills.Total, d.Skills.Included, d.Skills.Tokens))
+	}
+	if len(extras) > 0 {
+		sb.WriteString("\n📎 " + strings.Join(extras, " · "))
+	}
+
+	c.mu.RLock()
+	chatID := c.chatID
+	replyToMsgID := c.replyToMsgID
+	c.mu.RUnlock()
+
+	if replyToMsgID != "" {
+		return c.adapter.replyMessage(ctx, replyToMsgID, sb.String(), false)
+	}
+	return c.adapter.sendTextMessage(ctx, chatID, sb.String())
+}
+
+func (c *FeishuConn) sendMCPStatus(ctx context.Context, env *events.Envelope) error {
+	var d events.MCPStatusData
+	switch v := env.Event.Data.(type) {
+	case events.MCPStatusData:
+		d = v
+	case map[string]any:
+		raw, _ := json.Marshal(v)
+		_ = json.Unmarshal(raw, &d)
+	default:
+		return nil
+	}
+
+	var sb strings.Builder
+	sb.WriteString("🔌 MCP Server Status")
+	for _, s := range d.Servers {
+		icon := "✅"
+		if s.Status != "connected" && s.Status != "ok" {
+			icon = "❌"
+		}
+		fmt.Fprintf(&sb, "\n%s %s — %s", icon, s.Name, s.Status)
+	}
+
+	c.mu.RLock()
+	chatID := c.chatID
+	replyToMsgID := c.replyToMsgID
+	c.mu.RUnlock()
+
+	if replyToMsgID != "" {
+		return c.adapter.replyMessage(ctx, replyToMsgID, sb.String(), false)
+	}
+	return c.adapter.sendTextMessage(ctx, chatID, sb.String())
 }
 
 var _ messaging.PlatformConn = (*FeishuConn)(nil)
@@ -766,6 +854,7 @@ func (a *Adapter) sendTextMessage(ctx context.Context, chatID, text string) erro
 	return nil
 }
 
+//nolint:unparam // replyInThread reserved for future thread reply support
 func (a *Adapter) replyMessage(ctx context.Context, messageID, content string, replyInThread bool) error {
 	if a.larkClient == nil {
 		return fmt.Errorf("feishu: lark client not initialized")

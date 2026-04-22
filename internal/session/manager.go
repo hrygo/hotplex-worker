@@ -36,13 +36,15 @@ type Manager struct {
 	store    Store
 	msgStore MessageStore // EVT-004: optional event persistence; nil is safe
 	cfg      *config.Config
+	cfgStore *config.ConfigStore // hot-reloadable config; nil = use static cfg
 	pool     *PoolManager
 
 	mu       sync.RWMutex
 	sessions map[string]*managedSession
 
-	gcStop context.CancelFunc
-	gcDone chan struct{}
+	gcStop  context.CancelFunc
+	gcDone  chan struct{}
+	gcReset chan time.Duration // signals GC ticker reset
 
 	OnTerminate   func(sessionID string)
 	StateNotifier func(ctx context.Context, sessionID string, state events.SessionState, message string)
@@ -89,7 +91,8 @@ type SessionInfo struct {
 }
 
 // NewManager creates a new session manager using the provided Store and optional MessageStore.
-func NewManager(ctx context.Context, log *slog.Logger, cfg *config.Config, store Store, msgStore MessageStore) (*Manager, error) {
+// cfgStore is optional; when non-nil, GC and state transitions read the latest config dynamically.
+func NewManager(ctx context.Context, log *slog.Logger, cfg *config.Config, cfgStore *config.ConfigStore, store Store, msgStore MessageStore) (*Manager, error) {
 	if log == nil {
 		log = slog.Default()
 	}
@@ -99,8 +102,10 @@ func NewManager(ctx context.Context, log *slog.Logger, cfg *config.Config, store
 		store:    store,
 		msgStore: msgStore,
 		cfg:      cfg,
+		cfgStore: cfgStore,
 		pool:     NewPoolManager(log, cfg.Pool.MaxSize, cfg.Pool.MaxIdlePerUser, cfg.Pool.MaxMemoryPerUser),
 		sessions: make(map[string]*managedSession),
+		gcReset:  make(chan time.Duration, 1),
 	}
 
 	// Start background GC.
@@ -661,10 +666,32 @@ func (m *Manager) runGC(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
+		case newInterval := <-m.gcReset:
+			ticker.Reset(newInterval)
+			m.log.Info("session: GC ticker reset", "interval", newInterval)
 		case <-ticker.C:
 			m.gc(ctx)
 		}
 	}
+}
+
+// ResetGCInterval dynamically adjusts the GC scan interval.
+// Safe to call from any goroutine (e.g. a config observer callback).
+func (m *Manager) ResetGCInterval(interval time.Duration) {
+	if interval <= 0 {
+		return
+	}
+	// Non-blocking send: if a reset is already pending, the GC loop
+	// will pick it up on the next iteration.
+	select {
+	case m.gcReset <- interval:
+	default:
+	}
+}
+
+// Pool returns the PoolManager for external hot-reload updates.
+func (m *Manager) Pool() *PoolManager {
+	return m.pool
 }
 
 func (m *Manager) gc(ctx context.Context) {

@@ -264,3 +264,11 @@ func (m *Mapper) mapSessionState(stateStr string) (*events.Envelope, error) { //
 		},
 	), nil
 }
+
+func mapContextUsageResponse(raw map[string]any) *events.ContextUsageData {
+	return events.MapContextUsageResponse(raw)
+}
+
+func mapMCPStatusResponse(raw map[string]any) *events.MCPStatusData {
+	return events.MapMCPStatusResponse(raw)
+}

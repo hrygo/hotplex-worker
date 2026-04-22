@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"runtime/debug"
 
-	"github.com/hotplex/hotplex-worker/internal/config"
 	"github.com/hotplex/hotplex-worker/internal/metrics"
 	"github.com/hotplex/hotplex-worker/internal/security"
 	"github.com/hotplex/hotplex-worker/internal/session"
@@ -22,7 +21,6 @@ import (
 // It coordinates between the hub, session manager, and pool.
 type Handler struct {
 	log          *slog.Logger
-	cfg          *config.Config
 	hub          *Hub
 	sm           *session.Manager
 	jwtValidator *security.JWTValidator
@@ -30,10 +28,9 @@ type Handler struct {
 }
 
 // NewHandler creates a new message handler.
-func NewHandler(log *slog.Logger, cfg *config.Config, hub *Hub, sm *session.Manager, jwtValidator *security.JWTValidator) *Handler {
+func NewHandler(log *slog.Logger, hub *Hub, sm *session.Manager, jwtValidator *security.JWTValidator) *Handler {
 	return &Handler{
 		log:          log.With("component", "handler"),
-		cfg:          cfg,
 		hub:          hub,
 		sm:           sm,
 		jwtValidator: jwtValidator,
@@ -59,6 +56,8 @@ func (h *Handler) Handle(ctx context.Context, env *events.Envelope) (err error) 
 		return h.handlePing(ctx, env)
 	case events.Control:
 		return h.handleControl(ctx, env)
+	case events.WorkerCmd:
+		return h.handleWorkerCommand(ctx, env)
 	// AEP-011 / AEP-012: pass-through events from worker to all session clients.
 	case events.Reasoning, events.Step, events.PermissionRequest, events.PermissionResponse,
 		events.QuestionRequest, events.QuestionResponse,
@@ -374,6 +373,157 @@ func (h *Handler) handleGC(ctx context.Context, env *events.Envelope) error {
 	_ = h.hub.SendToSession(ctx, stateEvt)
 
 	h.log.Info("gateway: session gc'd", "session_id", env.SessionID)
+	return nil
+}
+
+// ControlRequester is implemented by workers that support structured control queries.
+type ControlRequester interface {
+	SendControlRequest(ctx context.Context, subtype string, body map[string]any) (map[string]any, error)
+}
+
+// WorkerCommander is implemented by workers that support worker-level commands
+// beyond the basic Input() passthrough.
+type WorkerCommander interface {
+	Compact(ctx context.Context, args map[string]any) error
+	Clear(ctx context.Context) error
+	Rewind(ctx context.Context, targetID string) error
+}
+
+func (h *Handler) handleWorkerCommand(ctx context.Context, env *events.Envelope) error {
+	var cmd events.WorkerStdioCommand
+	var args string
+	var extra map[string]any
+
+	switch d := env.Event.Data.(type) {
+	case events.WorkerCommandData:
+		cmd = d.Command
+		args = d.Args
+		extra = d.Extra
+	case map[string]any:
+		c, _ := d["command"].(string)
+		cmd = events.WorkerStdioCommand(c)
+		args, _ = d["args"].(string)
+		if e, ok := d["extra"].(map[string]any); ok {
+			extra = e
+		}
+	default:
+		return h.sendErrorf(ctx, env, events.ErrCodeInvalidMessage, "worker_command: invalid data")
+	}
+
+	si, err := h.validateOwner(ctx, env)
+	if err != nil {
+		if errors.Is(err, session.ErrSessionNotFound) {
+			return h.sendErrorf(ctx, env, events.ErrCodeSessionNotFound, "session not found")
+		}
+		return h.sendErrorf(ctx, env, events.ErrCodeUnauthorized, "ownership required")
+	}
+	if !si.State.IsActive() {
+		return h.sendErrorf(ctx, env, events.ErrCodeSessionBusy, "worker command requires active session, current: %s", si.State)
+	}
+
+	w := h.sm.GetWorker(env.SessionID)
+	if w == nil {
+		return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "no worker attached")
+	}
+
+	if cmd.IsPassthrough() {
+		return h.handlePassthroughCommand(ctx, env, w, cmd, args)
+	}
+
+	cr, ok := w.(ControlRequester)
+	if !ok {
+		return h.sendErrorf(ctx, env, events.ErrCodeNotSupported, "worker type does not support control requests")
+	}
+
+	switch cmd {
+	case events.StdioContextUsage:
+		resp, err := cr.SendControlRequest(ctx, "get_context_usage", nil)
+		if err != nil {
+			return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "context query: %v", err)
+		}
+		data := events.MapContextUsageResponse(resp)
+		respEnv := events.NewEnvelope(
+			aep.NewID(), env.SessionID,
+			h.hub.NextSeq(env.SessionID),
+			events.ContextUsage, data,
+		)
+		return h.hub.SendToSession(ctx, respEnv)
+
+	case events.StdioMCPStatus:
+		resp, err := cr.SendControlRequest(ctx, "mcp_status", nil)
+		if err != nil {
+			return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "mcp status: %v", err)
+		}
+		data := events.MapMCPStatusResponse(resp)
+		respEnv := events.NewEnvelope(
+			aep.NewID(), env.SessionID,
+			h.hub.NextSeq(env.SessionID),
+			events.MCPStatus, data,
+		)
+		return h.hub.SendToSession(ctx, respEnv)
+
+	case events.StdioSetModel:
+		modelName := args
+		if modelName == "" {
+			modelName, _ = extra["model"].(string)
+		}
+		if modelName == "" {
+			return h.sendErrorf(ctx, env, events.ErrCodeInvalidMessage, "model name required")
+		}
+		_, err := cr.SendControlRequest(ctx, "set_model", map[string]any{"model": modelName})
+		if err != nil {
+			return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "set model: %v", err)
+		}
+
+	case events.StdioSetPermMode:
+		mode := args
+		if mode == "" {
+			mode, _ = extra["mode"].(string)
+		}
+		if mode == "" {
+			return h.sendErrorf(ctx, env, events.ErrCodeInvalidMessage, "permission mode required")
+		}
+		_, err := cr.SendControlRequest(ctx, "set_permission_mode", map[string]any{"mode": mode})
+		if err != nil {
+			return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "set permission: %v", err)
+		}
+
+	default:
+		return h.sendErrorf(ctx, env, events.ErrCodeProtocolViolation, "unknown worker command: %s", cmd)
+	}
+	return nil
+}
+
+func (h *Handler) handlePassthroughCommand(ctx context.Context, env *events.Envelope, w worker.Worker, cmd events.WorkerStdioCommand, args string) error {
+	if commander, ok := w.(WorkerCommander); ok {
+		switch cmd {
+		case events.StdioCompact:
+			if err := commander.Compact(ctx, nil); err != nil {
+				return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "compact: %v", err)
+			}
+			return nil
+		case events.StdioClear:
+			if err := commander.Clear(ctx); err != nil {
+				return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "clear: %v", err)
+			}
+			return nil
+		case events.StdioRewind:
+			if err := commander.Rewind(ctx, ""); err != nil {
+				return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "rewind: %v", err)
+			}
+			return nil
+		case events.StdioEffort:
+			return h.sendErrorf(ctx, env, events.ErrCodeNotSupported, "effort not supported by this worker type")
+		}
+	}
+
+	content := "/" + string(cmd)
+	if args != "" {
+		content += " " + args
+	}
+	if err := w.Input(ctx, content, nil); err != nil {
+		return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "%s: %v", cmd, err)
+	}
 	return nil
 }
 

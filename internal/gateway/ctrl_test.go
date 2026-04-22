@@ -70,7 +70,7 @@ func (m *mockStore) Close() error {
 
 func newCtrlHub(t *testing.T) *Hub {
 	t.Helper()
-	return NewHub(slog.Default(), &config.Config{})
+	return NewHub(slog.Default(), config.NewConfigStore(&config.Config{}, nil))
 }
 
 // ─── Real-store Handler Factory (for session-state-dependent tests) ──────────
@@ -89,14 +89,14 @@ func newHandlerWithRealStore(t *testing.T) (*Handler, *session.Manager, *Hub, fu
 	cfg.DB.Path = tmpPath
 	store, err := session.NewSQLiteStore(context.Background(), cfg)
 	require.NoError(t, err)
-	mgr, err := session.NewManager(context.Background(), slog.Default(), cfg, store, nil)
+	mgr, err := session.NewManager(context.Background(), slog.Default(), cfg, nil, store, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		mgr.Close()
 		store.Close()
 		cleanup()
 	})
-	return NewHandler(slog.Default(), cfg, h, mgr, nil), mgr, h, cleanup
+	return NewHandler(slog.Default(), h, mgr, nil), mgr, h, cleanup
 }
 
 // ─── Mock-store Handler Factory (for tests that stub store methods) ───────────
@@ -106,10 +106,10 @@ func newHandlerWithMockStore(t *testing.T, store *mockStore) (*Handler, *Hub) {
 	h := newCtrlHub(t)
 	cfg := config.Default()
 	store.On("Close").Return(nil)
-	mgr, err := session.NewManager(context.Background(), slog.Default(), cfg, store, nil)
+	mgr, err := session.NewManager(context.Background(), slog.Default(), cfg, nil, store, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { mgr.Close() })
-	return NewHandler(slog.Default(), cfg, h, mgr, nil), h
+	return NewHandler(slog.Default(), h, mgr, nil), h
 }
 
 // ─── Envelope Helpers ─────────────────────────────────────────────────────────

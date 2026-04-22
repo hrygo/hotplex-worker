@@ -1,65 +1,37 @@
 # HotPlex Worker Gateway - Development Configuration
 #
-# Inherits from base config, yml, and overrides for local development.
+# Inherits: config.yaml (base)
 # Usage: ./hotplex-worker -config configs/config-dev.yaml
+#
+# Only fields that differ from base are listed below.
 
 inherits: config.yaml
 
-gateway:
-  addr: ":8888"              # Local development port
-
 admin:
-  addr: ":9999"              # Local admin port
-  rate_limit_enabled: false  # Disable rate limiting for development
+  addr: "127.0.0.1:9999"
+  rate_limit_enabled: false
 
-security:
-  tls_enabled: false         # No TLS in development
-  allowed_origins:
-    - "*"                    # Allow all origins for local testing
+gateway:
+  addr: "127.0.0.1:8888"
 
 session:
-  retention_period: 24h      # Shorter retention for development
-  max_concurrent: 100        # Lower limit for local dev
+  retention_period: 24h
+  max_concurrent: 100
 
 pool:
-  max_size: 50               # Smaller pool for development
-  max_memory_per_user: 4294967296  # 4GB limit for dev (supports up to 8 concurrent workers)
+  max_size: 50
+  max_memory_per_user: 4294967296  # 4GB (~8 concurrent workers)
 
 worker:
-  idle_timeout: 5m           # Shorter idle timeout for faster cleanup
-  execution_timeout: 5m      # Shorter zombie IO timeout for dev
-  # pid_dir: ""               # Default: ~/.hotplex/.pids/
+  idle_timeout: 5m
+  execution_timeout: 5m
 
-# ─────────────────────────────────────────────────────────────────────────────
-# MESSAGING PLATFORM ADAPTERS (Development)
-# ─────────────────────────────────────────────────────────────────────────────
+log:
+  level: "info"
+  format: "text"
 
 messaging:
   slack:
     enabled: true
-    bot_token: ""
-    app_token: ""
-    socket_mode: true
-    worker_type: "claude_code"
-    work_dir: ""
-    # Access Control Policies: open, allowlist, disabled
-    dm_policy: "allowlist"
-    group_policy: "allowlist"
-    require_mention: true
-    allow_from: []
-    allow_dm_from: []
-    allow_group_from: []
-
   feishu:
     enabled: true
-    app_id: ""
-    app_secret: ""
-    worker_type: "claude_code"
-    work_dir: ""
-    # Access Control Policies: open, allowlist, disabled
-    dm_policy: "allowlist"
-    group_policy: "allowlist"
-    require_mention: true
-    allow_from: []
-    allow_dm_from: []
-    allow_group_from: []

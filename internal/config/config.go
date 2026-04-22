@@ -285,7 +285,7 @@ type AutoRetryConfig struct {
 // Defaults applies sensible defaults to AutoRetryConfig and returns the updated struct.
 func (c AutoRetryConfig) Defaults() AutoRetryConfig {
 	if c.MaxRetries <= 0 {
-		c.MaxRetries = 3
+		c.MaxRetries = 9
 	}
 	if c.BaseDelay <= 0 {
 		c.BaseDelay = 5 * time.Second
@@ -365,7 +365,7 @@ func Default() *Config {
 			EnvWhitelist:     nil,
 			DefaultWorkDir:   "/tmp/hotplex/workspace",
 			PIDDir:           "",
-			AutoRetry:        AutoRetryConfig{Enabled: true, MaxRetries: 3, BaseDelay: 5 * time.Second, MaxDelay: 120 * time.Second, RetryInput: "继续", NotifyUser: true},
+			AutoRetry:        AutoRetryConfig{Enabled: true, MaxRetries: 9, BaseDelay: 5 * time.Second, MaxDelay: 120 * time.Second, RetryInput: "继续", NotifyUser: true},
 		},
 		Security: SecurityConfig{
 			APIKeyHeader:   "X-API-Key",
@@ -403,9 +403,13 @@ func Default() *Config {
 		},
 		Messaging: MessagingConfig{
 			Feishu: FeishuConfig{
-				RequireMention: true,
-				DMPolicy:       "allowlist",
-				GroupPolicy:    "allowlist",
+				RequireMention:  true,
+				DMPolicy:        "allowlist",
+				GroupPolicy:     "allowlist",
+				STTProvider:     "feishu+local",
+				STTLocalCmd:     "python3 scripts/stt_once.py {file}",
+				STTLocalMode:    "ephemeral",
+				STTLocalIdleTTL: time.Hour,
 			},
 			Slack: SlackConfig{
 				RequireMention: true,

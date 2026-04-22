@@ -321,10 +321,10 @@ func setupTestGateway(t *testing.T) *testGateway {
 	// Return not-found for all store lookups (Manager holds sessions in memory after Create).
 	store.On("Get", mock.Anything, mock.AnythingOfType("string")).Return(nil, session.ErrSessionNotFound)
 
-	sm, err := session.NewManager(ctx, log, cfg, store, nil)
+	sm, err := session.NewManager(ctx, log, cfg, nil, store, nil)
 	require.NoError(t, err)
 
-	hub := gateway.NewHub(log, cfg)
+	hub := gateway.NewHub(log, config.NewConfigStore(cfg, nil))
 
 	sm.StateNotifier = func(ctx context.Context, sessionID string, state events.SessionState, message string) {
 		env := events.NewEnvelope(aep.NewID(), sessionID, hub.NextSeq(sessionID), events.State, events.StateData{
@@ -334,13 +334,11 @@ func setupTestGateway(t *testing.T) *testGateway {
 		_ = hub.SendToSession(ctx, env)
 	}
 
-	handler := gateway.NewHandler(log, cfg, hub, sm, jwtValidator)
+	handler := gateway.NewHandler(log, hub, sm, jwtValidator)
 	bridge := gateway.NewBridge(log, hub, sm, nil)
 	bridge.SetWorkerFactory(testWorkerFactory{})
 
 	auth := security.NewAuthenticator(&cfg.Security, jwtValidator)
-
-	go hub.Run()
 
 	mux := http.NewServeMux()
 	mux.Handle("/ws", hub.HandleHTTP(auth, sm, handler, bridge))

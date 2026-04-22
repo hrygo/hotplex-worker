@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"syscall"
 	"time"
@@ -70,15 +71,18 @@ func run() error {
 
 	cfg := loadConfig()
 
-	// Initialize logger based on config.
+	// Central config store — the single source of truth for all components.
+	cfgStore := config.NewConfigStore(cfg, slog.Default())
+
+	// Initialize logger with dynamic level support for hot-reload.
 	var logHandler slog.Handler
-	var level slog.Level
-	if err := level.UnmarshalText([]byte(cfg.Log.Level)); err != nil {
-		level = slog.LevelInfo
+	levelVar := &slog.LevelVar{}
+	if err := levelVar.UnmarshalText([]byte(cfg.Log.Level)); err != nil {
+		levelVar.Set(slog.LevelInfo)
 	}
 
 	opts := &slog.HandlerOptions{
-		Level: level,
+		Level: levelVar,
 		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
 			if len(groups) == 0 && a.Key == slog.TimeKey {
 				return slog.String(slog.TimeKey, a.Value.Time().Format("2006-01-02T15:04:05.0000"))
@@ -155,7 +159,7 @@ func run() error {
 		}
 	}
 
-	sm, err := session.NewManager(ctx, log, cfg, store, msgStore)
+	sm, err := session.NewManager(ctx, log, cfg, cfgStore, store, msgStore)
 	if err != nil {
 		return err
 	}
@@ -164,7 +168,7 @@ func run() error {
 		log.Info("gateway: session terminated", "session_id", sessionID)
 	}
 
-	hub := gateway.NewHub(log, cfg)
+	hub := gateway.NewHub(log, cfgStore)
 
 	hub.LogHandler = func(level, msg, sessionID string) {
 		admin.AddLog(level, msg, sessionID)
@@ -172,14 +176,13 @@ func run() error {
 
 	var configWatcher *config.Watcher
 	if *flagConfig != "" {
-		configWatcher = config.NewWatcher(log, *flagConfig, nil,
+		configWatcher = config.NewWatcher(log, *flagConfig, nil, cfgStore,
 			func(newCfg *config.Config) {
 				log.Info("config: hot reload applied",
 					"gateway.addr", newCfg.Gateway.Addr,
 					"pool.max_size", newCfg.Pool.MaxSize,
 					"gc_scan_interval", newCfg.Session.GCScanInterval,
 				)
-				cfg = newCfg
 			},
 			func(field string) {
 				log.Warn("config: static field changed, restart required to apply",
@@ -188,11 +191,34 @@ func run() error {
 			},
 		)
 		configWatcher.SetInitial(cfg)
-		if err := configWatcher.Start(ctx); err != nil {
-			log.Warn("config: watcher start failed, hot reload disabled", "error", err)
-			configWatcher = nil
-		}
 	}
+
+	// ── Register config observers for hot-reload ──────────────────────────
+
+	// Observer: log level
+	cfgStore.RegisterFunc(func(prev, next *config.Config) {
+		if prev.Log.Level != next.Log.Level {
+			var newLevel slog.Level
+			if err := newLevel.UnmarshalText([]byte(next.Log.Level)); err == nil {
+				levelVar.Set(newLevel)
+				log.Info("config: log level updated", "old", prev.Log.Level, "new", next.Log.Level)
+			}
+		}
+	})
+
+	// Observer: pool limits
+	cfgStore.RegisterFunc(func(prev, next *config.Config) {
+		if prev.Pool.MaxSize != next.Pool.MaxSize || prev.Pool.MaxIdlePerUser != next.Pool.MaxIdlePerUser {
+			sm.Pool().UpdateLimits(next.Pool.MaxSize, next.Pool.MaxIdlePerUser)
+		}
+	})
+
+	// Observer: GC scan interval
+	cfgStore.RegisterFunc(func(prev, next *config.Config) {
+		if prev.Session.GCScanInterval != next.Session.GCScanInterval {
+			sm.ResetGCInterval(next.Session.GCScanInterval)
+		}
+	})
 
 	sm.StateNotifier = func(ctx context.Context, sessionID string, state events.SessionState, message string) {
 		env := events.NewEnvelope(aep.NewID(), sessionID, hub.NextSeq(sessionID), events.State, events.StateData{
@@ -209,21 +235,36 @@ func run() error {
 
 	auth := security.NewAuthenticator(&cfg.Security, jwtValidator)
 
-	handler := gateway.NewHandler(log, cfg, hub, sm, jwtValidator)
+	handler := gateway.NewHandler(log, hub, sm, jwtValidator)
 	bridge := gateway.NewBridge(log, hub, sm, msgStore)
 	handler.SetBridge(bridge)
 
-	// Wire LLM auto-retry if enabled.
+	// Wire LLM auto-retry.
+	retryCtrl := gateway.NewLLMRetryController(cfg.Worker.AutoRetry, log)
+	bridge.SetRetryController(retryCtrl)
 	if cfg.Worker.AutoRetry.Enabled {
-		retryCtrl := gateway.NewLLMRetryController(cfg.Worker.AutoRetry, log)
-		bridge.SetRetryController(retryCtrl)
 		log.Info("gateway: LLM auto-retry enabled", "max_retries", cfg.Worker.AutoRetry.MaxRetries, "base_delay", cfg.Worker.AutoRetry.BaseDelay)
 	}
+
+	// Observer: auto-retry config
+	cfgStore.RegisterFunc(func(prev, next *config.Config) {
+		if !reflect.DeepEqual(prev.Worker.AutoRetry, next.Worker.AutoRetry) {
+			retryCtrl.UpdateConfig(next.Worker.AutoRetry)
+		}
+	})
+
+	// Observer: API Keys
+	cfgStore.RegisterFunc(func(prev, next *config.Config) {
+		if !reflect.DeepEqual(prev.Security.APIKeys, next.Security.APIKeys) {
+			auth.ReloadKeys(&next.Security)
+		}
+	})
 
 	mux := http.NewServeMux()
 	deps := &GatewayDeps{
 		Log:           log,
 		Config:        cfg,
+		ConfigStore:   cfgStore,
 		Hub:           hub,
 		SessionMgr:    sm,
 		Auth:          auth,
@@ -244,7 +285,11 @@ func run() error {
 		WriteTimeout: cfg.Gateway.WriteTimeout,
 	}
 
-	go hub.Run()
+	if configWatcher != nil {
+		if err := configWatcher.Start(ctx); err != nil {
+			log.Warn("config: watcher start failed", "err", err)
+		}
+	}
 
 	serverErr := make(chan error, 1)
 	go func() {
@@ -299,9 +344,16 @@ func run() error {
 }
 
 func loadConfig() *config.Config {
-	cfg, err := config.Load(*flagConfig, config.LoadOptions{})
+	absPath, err := filepath.Abs(*flagConfig)
 	if err != nil {
-		slog.Error("config: load failed", "path", *flagConfig, "err", err)
+		slog.Error("config: resolve path", "path", *flagConfig, "err", err)
+		os.Exit(1)
+	}
+	*flagConfig = absPath
+
+	cfg, err := config.Load(absPath, config.LoadOptions{})
+	if err != nil {
+		slog.Error("config: load failed", "path", absPath, "err", err)
 		os.Exit(1)
 	}
 	if *flagDev {
@@ -314,6 +366,7 @@ func loadConfig() *config.Config {
 type GatewayDeps struct {
 	Log           *slog.Logger
 	Config        *config.Config
+	ConfigStore   *config.ConfigStore
 	Hub           *gateway.Hub
 	SessionMgr    *session.Manager
 	Auth          *security.Authenticator
@@ -370,7 +423,7 @@ func setupRoutes(
 	sessionAdapter := &sessionManagerAdapter{sm: sm}
 	hubAdapter := &hubAdapter{hub: hub}
 	bridgeAdapter := &bridgeAdapter{bridge: bridge}
-	configAdapter := &configAdapter{cfg: cfg}
+	configAdapter := &configAdapter{cfgStore: deps.ConfigStore}
 	configWatcherAdapter := &configWatcherAdapter{watcher: configWatcher}
 
 	adminAPI := admin.New(admin.Deps{
@@ -385,7 +438,15 @@ func setupRoutes(
 	})
 
 	if cfg.Admin.RateLimitEnabled {
-		adminAPI.SetRateLimiter(admin.NewRateLimiter(cfg.Admin.RequestsPerSec, cfg.Admin.Burst))
+		limiter := admin.NewRateLimiter(cfg.Admin.RequestsPerSec, cfg.Admin.Burst)
+		adminAPI.SetRateLimiter(limiter)
+
+		// Register observer for admin rate limit
+		deps.ConfigStore.RegisterFunc(func(prev, next *config.Config) {
+			if prev.Admin.RequestsPerSec != next.Admin.RequestsPerSec || prev.Admin.Burst != next.Admin.Burst {
+				limiter.UpdateRate(next.Admin.RequestsPerSec, next.Admin.Burst)
+			}
+		})
 	}
 	if cfg.Admin.IPWhitelistEnabled {
 		adminAPI.SetAllowedCIDRs(cfg.Admin.AllowedCIDRs)
@@ -479,11 +540,11 @@ func (a *bridgeAdapter) StartSession(ctx context.Context, id, userID, botID stri
 }
 
 type configAdapter struct {
-	cfg *config.Config
+	cfgStore *config.ConfigStore
 }
 
 func (a *configAdapter) Get() *config.Config {
-	return a.cfg
+	return a.cfgStore.Load()
 }
 
 type configWatcherAdapter struct {

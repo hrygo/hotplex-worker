@@ -1348,3 +1348,309 @@ func TestClearStatus_CleansEmojiEvenWhenAssistantCapable(t *testing.T) {
 	require.Equal(t, "", sm.emojiState[key],
 		"Clear must remove tracked emoji regardless of Assistant API state")
 }
+
+// ---------------------------------------------------------------------------
+// ContextUsage event tests
+// ---------------------------------------------------------------------------
+
+// testAdapter creates an Adapter with a non-nil slack.Client (dummy token)
+// so that the "client not initialized" guard is bypassed and the method
+// exercises its full code path. PostMessageContext will fail with invalid_auth.
+func testAdapter() *Adapter {
+	return &Adapter{
+		log:           slog.New(slog.NewTextHandler(io.Discard, nil)),
+		client:        slack.New("x-test-token"),
+		activeStreams: make(map[string]*NativeStreamingWriter),
+		activeConns:   make(map[string]*SlackConn),
+	}
+}
+
+func TestSlackConn_SendContextUsage(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	tests := []struct {
+		name        string
+		conn        *SlackConn
+		env         *events.Envelope
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name: "typed data",
+			conn: &SlackConn{adapter: testAdapter(), channelID: "C123", threadTS: "123.456"},
+			env: &events.Envelope{Event: events.Event{
+				Type: events.ContextUsage,
+				Data: events.ContextUsageData{
+					TotalTokens: 1500, MaxTokens: 2000, Percentage: 75,
+					Model: "claude-3-5-sonnet-20241022",
+					Categories: []events.ContextCategory{
+						{Name: "System", Tokens: 100},
+						{Name: "User", Tokens: 500},
+						{Name: "Conversation", Tokens: 900},
+					},
+					MemoryFiles: 3, MCPTools: 5, Agents: 2,
+					Skills: events.ContextSkillInfo{Total: 10, Included: 5, Tokens: 300},
+				},
+			}},
+			wantErr: true,
+		},
+		{
+			name: "map data",
+			conn: &SlackConn{adapter: testAdapter(), channelID: "C123", threadTS: "123.456"},
+			env: &events.Envelope{Event: events.Event{
+				Type: events.ContextUsage,
+				Data: map[string]any{
+					"total_tokens": float64(800), "max_tokens": float64(1000),
+					"percentage": float64(80), "model": "gpt-4",
+					"categories": []any{
+						map[string]any{"name": "System", "tokens": float64(50)},
+						map[string]any{"name": "User", "tokens": float64(750)},
+					},
+					"memory_files": float64(2), "mcp_tools": float64(3), "agents": float64(1),
+					"skills": map[string]any{"total": float64(8), "included": float64(4), "tokens": float64(200)},
+				},
+			}},
+			wantErr: true,
+		},
+		{
+			name:    "unsupported data",
+			conn:    &SlackConn{adapter: testAdapter(), channelID: "C123", threadTS: "123.456"},
+			env:     &events.Envelope{Event: events.Event{Type: events.ContextUsage, Data: "not a valid data type"}},
+			wantErr: false,
+		},
+		{
+			name: "no categories",
+			conn: &SlackConn{adapter: testAdapter(), channelID: "C123", threadTS: "123.456"},
+			env: &events.Envelope{Event: events.Event{
+				Type: events.ContextUsage,
+				Data: events.ContextUsageData{TotalTokens: 500, MaxTokens: 1000, Percentage: 50},
+			}},
+			wantErr: true,
+		},
+		{
+			name:    "nil data",
+			conn:    &SlackConn{adapter: testAdapter(), channelID: "C123", threadTS: "123.456"},
+			env:     &events.Envelope{Event: events.Event{Type: events.ContextUsage}},
+			wantErr: false,
+		},
+		{
+			name:    "nil adapter",
+			conn:    &SlackConn{adapter: nil, channelID: "C123", threadTS: "123.456"},
+			env:     &events.Envelope{Event: events.Event{Type: events.ContextUsage, Data: events.ContextUsageData{TotalTokens: 100, MaxTokens: 200, Percentage: 50}}},
+			wantErr: true, errContains: "client not initialized",
+		},
+		{
+			name: "nil client",
+			conn: &SlackConn{
+				adapter:   &Adapter{log: slog.New(slog.NewTextHandler(io.Discard, nil)), client: nil, activeStreams: make(map[string]*NativeStreamingWriter), activeConns: make(map[string]*SlackConn)},
+				channelID: "C123", threadTS: "123.456",
+			},
+			env:     &events.Envelope{Event: events.Event{Type: events.ContextUsage, Data: events.ContextUsageData{TotalTokens: 100, MaxTokens: 200, Percentage: 50}}},
+			wantErr: true, errContains: "client not initialized",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			err := tt.conn.sendContextUsage(ctx, tt.env)
+			if tt.wantErr {
+				require.Error(t, err)
+				if tt.errContains != "" {
+					require.Contains(t, err.Error(), tt.errContains)
+				}
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestSlackConn_SendMCPStatus(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	tests := []struct {
+		name        string
+		conn        *SlackConn
+		env         *events.Envelope
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name: "typed data",
+			conn: &SlackConn{adapter: testAdapter(), channelID: "C123", threadTS: "123.456"},
+			env: &events.Envelope{Event: events.Event{
+				Type: events.MCPStatus,
+				Data: events.MCPStatusData{Servers: []events.MCPServerInfo{
+					{Name: "filesystem", Status: "connected"},
+					{Name: "github", Status: "connected"},
+					{Name: "sqlite", Status: "disconnected"},
+					{Name: "notion", Status: "ok"},
+				}},
+			}},
+			wantErr: true,
+		},
+		{
+			name: "map data",
+			conn: &SlackConn{adapter: testAdapter(), channelID: "C123", threadTS: "123.456"},
+			env: &events.Envelope{Event: events.Event{
+				Type: events.MCPStatus,
+				Data: map[string]any{
+					"servers": []any{
+						map[string]any{"name": "postgres", "status": "connected"},
+						map[string]any{"name": "redis", "status": "connecting"},
+						map[string]any{"name": "aws", "status": "error"},
+					},
+				},
+			}},
+			wantErr: true,
+		},
+		{
+			name:    "unsupported data",
+			conn:    &SlackConn{adapter: testAdapter(), channelID: "C123", threadTS: "123.456"},
+			env:     &events.Envelope{Event: events.Event{Type: events.MCPStatus, Data: 12345}},
+			wantErr: false,
+		},
+		{
+			name: "empty server list",
+			conn: &SlackConn{adapter: testAdapter(), channelID: "C123", threadTS: "123.456"},
+			env: &events.Envelope{Event: events.Event{
+				Type: events.MCPStatus,
+				Data: events.MCPStatusData{Servers: []events.MCPServerInfo{}},
+			}},
+			wantErr: true,
+		},
+		{
+			name:    "nil data",
+			conn:    &SlackConn{adapter: testAdapter(), channelID: "C123", threadTS: "123.456"},
+			env:     &events.Envelope{Event: events.Event{Type: events.MCPStatus}},
+			wantErr: false,
+		},
+		{
+			name:    "nil adapter",
+			conn:    &SlackConn{adapter: nil, channelID: "C123", threadTS: "123.456"},
+			env:     &events.Envelope{Event: events.Event{Type: events.MCPStatus, Data: events.MCPStatusData{Servers: []events.MCPServerInfo{{Name: "fs", Status: "connected"}}}}},
+			wantErr: true, errContains: "client not initialized",
+		},
+		{
+			name: "nil client",
+			conn: &SlackConn{
+				adapter:   &Adapter{log: slog.New(slog.NewTextHandler(io.Discard, nil)), client: nil, activeStreams: make(map[string]*NativeStreamingWriter), activeConns: make(map[string]*SlackConn)},
+				channelID: "C123", threadTS: "123.456",
+			},
+			env:     &events.Envelope{Event: events.Event{Type: events.MCPStatus, Data: events.MCPStatusData{Servers: []events.MCPServerInfo{{Name: "fs", Status: "connected"}}}}},
+			wantErr: true, errContains: "client not initialized",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			err := tt.conn.sendMCPStatus(ctx, tt.env)
+			if tt.wantErr {
+				require.Error(t, err)
+				if tt.errContains != "" {
+					require.Contains(t, err.Error(), tt.errContains)
+				}
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// WriteCtx integration tests for ContextUsage and MCPStatus
+// ---------------------------------------------------------------------------
+
+func TestSlackConn_WriteCtx_ContextUsage(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	conn := &SlackConn{
+		adapter:   testAdapter(),
+		channelID: "C123",
+		threadTS:  "123.456",
+	}
+
+	env := &events.Envelope{
+		Event: events.Event{
+			Type: events.ContextUsage,
+			Data: events.ContextUsageData{
+				TotalTokens: 1000,
+				MaxTokens:   2000,
+				Percentage:  50,
+			},
+		},
+	}
+
+	err := conn.WriteCtx(ctx, env)
+	require.Error(t, err)
+}
+
+func TestSlackConn_WriteCtx_MCPStatus(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	conn := &SlackConn{
+		adapter:   testAdapter(),
+		channelID: "C123",
+		threadTS:  "123.456",
+	}
+
+	env := &events.Envelope{
+		Event: events.Event{
+			Type: events.MCPStatus,
+			Data: events.MCPStatusData{
+				Servers: []events.MCPServerInfo{
+					{Name: "test-server", Status: "connected"},
+				},
+			},
+		},
+	}
+
+	err := conn.WriteCtx(ctx, env)
+	require.Error(t, err)
+}
+
+func TestSlackConn_WriteCtx_ContextUsageWithAllOptionalFields(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	conn := &SlackConn{
+		adapter:   testAdapter(),
+		channelID: "C123",
+		threadTS:  "123.456",
+	}
+
+	env := &events.Envelope{
+		Event: events.Event{
+			Type: events.ContextUsage,
+			Data: events.ContextUsageData{
+				TotalTokens: 1800,
+				MaxTokens:   2000,
+				Percentage:  90,
+				Model:       "claude-3-5-haiku-20241022",
+				Categories: []events.ContextCategory{
+					{Name: "System", Tokens: 200},
+					{Name: "Instructions", Tokens: 300},
+					{Name: "Conversation", Tokens: 800},
+					{Name: "Tools", Tokens: 500},
+				},
+				MemoryFiles: 5,
+				MCPTools:    8,
+				Agents:      3,
+				Skills: events.ContextSkillInfo{
+					Total:    15,
+					Included: 10,
+					Tokens:   450,
+				},
+			},
+		},
+	}
+
+	err := conn.WriteCtx(ctx, env)
+	require.Error(t, err)
+}

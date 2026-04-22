@@ -36,6 +36,9 @@ const (
 	Ping                Kind = "ping"
 	Pong                Kind = "pong"
 	Control             Kind = "control"
+	ContextUsage        Kind = "context_usage"  // Worker context usage report (S→C)
+	MCPStatus           Kind = "mcp_status"     // Worker MCP server status (S→C)
+	WorkerCmd           Kind = "worker_command" // Gateway → Worker stdio command trigger (C→S)
 )
 
 // Priority levels for message delivery.
@@ -73,6 +76,7 @@ const (
 	ErrCodeReconnectRequired  ErrorCode = "RECONNECT_REQUIRED"
 	ErrCodeWorkerOutputLimit  ErrorCode = "WORKER_OUTPUT_LIMIT"
 	ErrCodeResumeRetry        ErrorCode = "RESUME_RETRY"
+	ErrCodeNotSupported       ErrorCode = "NOT_SUPPORTED"
 )
 
 // Envelope is the unified AEP v1 message envelope, shared by both client→gateway and gateway→client.
@@ -288,6 +292,81 @@ type ControlData struct {
 	Recoverable bool           `json:"recoverable,omitempty"`
 	Suggestion  map[string]any `json:"suggestion,omitempty"`
 	Details     map[string]any `json:"details,omitempty"`
+}
+
+// WorkerStdioCommand identifies a stdio-level command sent directly
+// to the worker subprocess. Unlike ControlAction, these do NOT change
+// session state — they are in-place operations on a running worker.
+type WorkerStdioCommand string
+
+const (
+	// Control Requests (structured request/response via SendControlRequest).
+	StdioContextUsage WorkerStdioCommand = "context_usage"
+	StdioMCPStatus    WorkerStdioCommand = "mcp_status"
+	StdioSetModel     WorkerStdioCommand = "set_model"
+	StdioSetPermMode  WorkerStdioCommand = "set_permission"
+
+	// User Message Passthrough (slash command forwarded as user message via Input).
+	StdioCompact WorkerStdioCommand = "compact"
+	StdioClear   WorkerStdioCommand = "clear"
+	StdioModel   WorkerStdioCommand = "model"
+	StdioEffort  WorkerStdioCommand = "effort"
+	StdioRewind  WorkerStdioCommand = "rewind"
+	StdioCommit  WorkerStdioCommand = "commit"
+)
+
+// IsPassthrough returns true if the command is sent as a user message via Input.
+func (c WorkerStdioCommand) IsPassthrough() bool {
+	switch c {
+	case StdioCompact, StdioClear, StdioModel, StdioEffort, StdioRewind, StdioCommit:
+		return true
+	default:
+		return false
+	}
+}
+
+// WorkerCommandData is the payload for worker stdio command events.
+type WorkerCommandData struct {
+	Command WorkerStdioCommand `json:"command"`
+	Args    string             `json:"args,omitempty"`
+	Extra   map[string]any     `json:"extra,omitempty"`
+}
+
+// ContextUsageData carries context window usage breakdown from a worker.
+type ContextUsageData struct {
+	TotalTokens int               `json:"total_tokens"`
+	MaxTokens   int               `json:"max_tokens"`
+	Percentage  int               `json:"percentage"`
+	Model       string            `json:"model,omitempty"`
+	Categories  []ContextCategory `json:"categories,omitempty"`
+	MemoryFiles int               `json:"memory_files,omitempty"`
+	MCPTools    int               `json:"mcp_tools,omitempty"`
+	Agents      int               `json:"agents,omitempty"`
+	Skills      ContextSkillInfo  `json:"skills,omitempty"`
+}
+
+// ContextCategory represents a named token usage bucket.
+type ContextCategory struct {
+	Name   string `json:"name"`
+	Tokens int    `json:"tokens"`
+}
+
+// ContextSkillInfo carries skill-related context usage.
+type ContextSkillInfo struct {
+	Total    int `json:"total"`
+	Included int `json:"included"`
+	Tokens   int `json:"tokens"`
+}
+
+// MCPStatusData carries MCP server connection status from a worker.
+type MCPStatusData struct {
+	Servers []MCPServerInfo `json:"servers"`
+}
+
+// MCPServerInfo describes a single MCP server's connection state.
+type MCPServerInfo struct {
+	Name   string `json:"name"`
+	Status string `json:"status"`
 }
 
 // SessionState represents the state of a session.
