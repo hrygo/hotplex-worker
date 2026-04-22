@@ -31,6 +31,11 @@ type Transcriber interface {
 	RequiresDisk() bool
 }
 
+// Closer is an optional interface for transcribers that manage long-lived resources.
+type Closer interface {
+	Close(ctx context.Context) error
+}
+
 // ---------------------------------------------------------------------------
 // LocalSTT — local transcription via external command
 // ---------------------------------------------------------------------------

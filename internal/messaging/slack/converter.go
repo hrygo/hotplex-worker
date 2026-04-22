@@ -15,6 +15,16 @@ import (
 
 const mediaMaxSize = 20 * 1024 * 1024 // 20 MB
 
+const (
+	mediaTypeImage    = "image"
+	mediaTypeAudio    = "audio"
+	mediaTypeVideo    = "video"
+	mediaTypeDocument = "document"
+	mediaTypeFile     = "file"
+
+	audioMaxSizeBytes = 5 * 1024 * 1024 // 5 MB heuristic threshold for voice detection
+)
+
 // MediaInfo holds metadata about an attached file.
 type MediaInfo struct {
 	Type        string // "image", "video", "audio", "document", "file"
@@ -58,9 +68,9 @@ func (a *Adapter) ConvertMessage(msgEvent slackevents.MessageEvent) (text string
 		var parts []string
 		for _, m := range media {
 			switch m.Type {
-			case "image":
+			case mediaTypeImage:
 				parts = append(parts, fmt.Sprintf("[user shared an image: %s]", m.Name))
-			case "audio":
+			case mediaTypeAudio:
 				parts = append(parts, fmt.Sprintf("[user sent a voice message: %s]", m.Name))
 			default:
 				parts = append(parts, fmt.Sprintf("[user shared a file: %s]", m.Name))
@@ -74,26 +84,24 @@ func (a *Adapter) ConvertMessage(msgEvent slackevents.MessageEvent) (text string
 
 // fileCategory classifies a Slack file by its filetype.
 func fileCategory(f slack.File) string {
-	// Slack voice messages are MP4 containers but should be classified as audio.
 	if f.Mode == "voice" {
-		return "audio"
+		return mediaTypeAudio
 	}
-	// Heuristic: small MP4 with no video dimensions is likely a voice message.
-	if f.Filetype == "mp4" && f.Size > 0 && f.Size < 5*1024*1024 &&
+	if f.Filetype == "mp4" && f.Size > 0 && f.Size < audioMaxSizeBytes &&
 		f.OriginalW == 0 && f.OriginalH == 0 {
-		return "audio"
+		return mediaTypeAudio
 	}
 	switch f.Filetype {
 	case "png", "jpg", "jpeg", "gif", "webp", "bmp", "svg":
-		return "image"
+		return mediaTypeImage
 	case "mp4", "mov", "avi", "webm", "flv":
-		return "video"
+		return mediaTypeVideo
 	case "mp3", "wav", "ogg", "opus", "m4a":
-		return "audio"
+		return mediaTypeAudio
 	case "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "csv", "md":
-		return "document"
+		return mediaTypeDocument
 	default:
-		return "file"
+		return mediaTypeFile
 	}
 }
 
@@ -103,17 +111,10 @@ func (a *Adapter) downloadMedia(ctx context.Context, m *MediaInfo) (string, erro
 		return "", fmt.Errorf("file too large: %d bytes", m.Size)
 	}
 
-	ext := mimeExt(m.MimeType)
-	if ext == "" {
-		ext = "." + m.FileID
-	}
-	filename := fmt.Sprintf("%s_%s%s", m.Type, m.FileID, ext)
-
-	dir := filepath.Join(mediaPathPrefix, m.Type+"s")
+	dir, path := mediaFilePath(m)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
-	path := filepath.Join(dir, filename)
 
 	f, err := os.Create(path)
 	if err != nil {
@@ -121,7 +122,6 @@ func (a *Adapter) downloadMedia(ctx context.Context, m *MediaInfo) (string, erro
 	}
 	defer func() { _ = f.Close() }()
 
-	// Add a 30-second timeout for the network download.
 	downloadCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
@@ -149,21 +149,25 @@ func (a *Adapter) downloadMediaBytes(ctx context.Context, m *MediaInfo) ([]byte,
 }
 
 func (a *Adapter) saveMediaBytes(m *MediaInfo, data []byte) (string, error) {
-	ext := mimeExt(m.MimeType)
-	if ext == "" {
-		ext = "." + m.FileID
-	}
-	filename := fmt.Sprintf("%s_%s%s", m.Type, m.FileID, ext)
-
-	dir := filepath.Join(mediaPathPrefix, m.Type+"s")
+	dir, path := mediaFilePath(m)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
-	path := filepath.Join(dir, filename)
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		return "", err
 	}
 	return path, nil
+}
+
+// mediaFilePath returns (dir, fullPath) for a media file on local storage.
+func mediaFilePath(m *MediaInfo) (string, string) {
+	ext := mimeExt(m.MimeType)
+	if ext == "" {
+		ext = "." + m.FileID
+	}
+	dir := filepath.Join(mediaPathPrefix, m.Type+"s")
+	path := filepath.Join(dir, fmt.Sprintf("%s_%s%s", m.Type, m.FileID, ext))
+	return dir, path
 }
 
 func mimeExt(mime string) string {

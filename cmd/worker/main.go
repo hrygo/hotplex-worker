@@ -660,18 +660,14 @@ func startMessagingAdapters(ctx context.Context, log *slog.Logger, cfg *config.C
 // buildTranscriber creates a speech-to-text transcriber from Feishu config.
 // Returns nil if STT is disabled.
 func buildTranscriber(cfg config.FeishuConfig, log *slog.Logger) stt.Transcriber {
-	switch cfg.STTProvider {
-	case "feishu":
+	switch cfg.Provider {
+	case config.STTProviderFeishu:
 		client := lark.NewClient(cfg.AppID, cfg.AppSecret)
 		return feishu.NewFeishuSTT(client, log)
-	case "local":
-		if cfg.STTLocalCmd == "" {
-			log.Warn("feishu: stt_provider=local but stt_local_cmd is empty, STT disabled")
-			return nil
-		}
-		return buildLocalSTT(cfg.STTLocalCmd, cfg.STTLocalMode, cfg.STTLocalIdleTTL, log)
-	case "feishu+local":
-		if cfg.STTLocalCmd == "" {
+	case config.STTProviderLocal:
+		return buildLocalSTT("feishu", cfg.STTConfig, log)
+	case config.STTProviderFeishuLocal:
+		if cfg.LocalCmd == "" {
 			log.Warn("feishu: stt_provider=feishu+local but stt_local_cmd is empty, using feishu only")
 			client := lark.NewClient(cfg.AppID, cfg.AppSecret)
 			return feishu.NewFeishuSTT(client, log)
@@ -679,7 +675,7 @@ func buildTranscriber(cfg config.FeishuConfig, log *slog.Logger) stt.Transcriber
 		client := lark.NewClient(cfg.AppID, cfg.AppSecret)
 		return stt.NewFallbackSTT(
 			feishu.NewFeishuSTT(client, log),
-			buildLocalSTT(cfg.STTLocalCmd, cfg.STTLocalMode, cfg.STTLocalIdleTTL, log),
+			buildLocalSTT("feishu", cfg.STTConfig, log),
 			log,
 		)
 	default:
@@ -690,22 +686,22 @@ func buildTranscriber(cfg config.FeishuConfig, log *slog.Logger) stt.Transcriber
 // buildSlackTranscriber creates a speech-to-text transcriber from Slack config.
 // Returns nil if STT is disabled. Only "local" mode is supported.
 func buildSlackTranscriber(cfg config.SlackConfig, log *slog.Logger) stt.Transcriber {
-	if cfg.STTProvider != "local" {
+	if cfg.Provider != config.STTProviderLocal {
 		return nil
 	}
-	if cfg.STTLocalCmd == "" {
-		log.Warn("slack: stt_provider=local but stt_local_cmd is empty, STT disabled")
-		return nil
-	}
-	return buildLocalSTT(cfg.STTLocalCmd, cfg.STTLocalMode, cfg.STTLocalIdleTTL, log)
+	return buildLocalSTT("slack", cfg.STTConfig, log)
 }
 
-// buildLocalSTT creates a local STT transcriber (shared by Feishu and Slack).
-func buildLocalSTT(cmd, mode string, idleTTL time.Duration, log *slog.Logger) stt.Transcriber {
-	if mode == "persistent" {
-		return stt.NewPersistentSTT(cmd, idleTTL, log)
+// buildLocalSTT creates a local STT transcriber from shared config.
+func buildLocalSTT(platform string, cfg config.STTConfig, log *slog.Logger) stt.Transcriber {
+	if cfg.LocalCmd == "" {
+		log.Warn(platform + ": stt_provider=local but stt_local_cmd is empty, STT disabled")
+		return nil
 	}
-	return stt.NewLocalSTT(cmd, log)
+	if cfg.LocalMode == config.STTModePersistent {
+		return stt.NewPersistentSTT(cfg.LocalCmd, cfg.LocalIdleTTL, log)
+	}
+	return stt.NewLocalSTT(cfg.LocalCmd, log)
 }
 
 func waitForSignal() os.Signal {

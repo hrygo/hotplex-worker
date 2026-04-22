@@ -179,14 +179,11 @@ dev-start: worker-start
 dev-stop: webchat-stop worker-stop
 	@echo "  $(GREEN)✓ Dev environment stopped$(RESET)"
 
-dev-status: worker-status
-	@echo -n "  "; \
-	if [ -f $(WEB_CHAT_PID) ] && kill -0 $$(cat $(WEB_CHAT_PID)) 2>/dev/null; then \
-		echo "$(GREEN)✓$(RESET) Webchat  (PID: $$(cat $(WEB_CHAT_PID)))"; \
-	else \
-		echo "$(DIM)○$(RESET) Webchat not running"; fi
+dev-status:
+	@./scripts/dev.sh status all
 
-dev-logs: worker-logs
+dev-logs:
+	@./scripts/dev.sh logs all
 
 dev-reset: dev-stop dev-start
 
@@ -195,124 +192,26 @@ dev-reset: dev-stop dev-start
 # ─────────────────────────────────────────────────────────────────────────────
 
 worker-start: build
-	@mkdir -p $(HOME)/.hotplex/.pids $(LOG_DIR)
-	@if [ -f $(WORKER_PID) ] && kill -0 $$(cat $(WORKER_PID)) 2>/dev/null; then \
-		echo "$(YELLOW)Gateway already running (PID: $$(cat $(WORKER_PID)))$(RESET)"; \
-		exit 0; \
-	fi; \
-	echo "$(CYAN)Starting gateway...$(RESET)"; \
-	if [ -f .env ]; then set -a; . .env; set +a; fi; \
-	./$(BUILD_DIR)/$(BINARY_NAME)-$(GOOS)-$(GOARCH) \
-		-config $(CONFIG_DIR)/config-dev.yaml \
-		> $(WORKER_LOG) 2>&1 & \
-	echo $$! > $(WORKER_PID); \
-	sleep 1; \
-	if kill -0 $$(cat $(WORKER_PID)) 2>/dev/null; then \
-		echo "  $(GREEN)✓$(RESET) Gateway started (PID: $$(cat $(WORKER_PID)))"; \
-	else \
-		echo "  $(RED)✗$(RESET) Gateway failed to start"; \
-		cat $(WORKER_LOG); exit 1; fi
+	@./scripts/dev.sh start gateway
 
 worker-stop:
-	@if [ -f $(WORKER_PID) ]; then \
-		PID=$$(cat $(WORKER_PID)); \
-		if kill -0 $$PID 2>/dev/null; then \
-			echo "$(CYAN)Stopping gateway (PID: $$PID)...$(RESET)"; \
-			kill -TERM $$PID; \
-			for i in $$(seq 1 $(GRACE_PERIOD)); do \
-				sleep 1; \
-				if ! kill -0 $$PID 2>/dev/null; then \
-					echo "  $(GREEN)✓$(RESET) Gateway stopped"; \
-					rm -f $(WORKER_PID); exit 0; fi; \
-			done; \
-			kill -9 $$PID 2>/dev/null; \
-			rm -f $(WORKER_PID); \
-			echo "  $(YELLOW)⚠$(RESET) Gateway force killed"; \
-		else \
-			echo "  $(YELLOW)⚠$(RESET) Gateway not running (stale PID)"; \
-			rm -f $(WORKER_PID); fi; \
-	else \
-		echo "$(DIM)Gateway not running$(RESET)"; fi
+	@./scripts/dev.sh stop gateway
 
 worker-status:
-	@if [ -f $(WORKER_PID) ]; then \
-		PID=$$(cat $(WORKER_PID)); \
-		if kill -0 $$PID 2>/dev/null; then \
-			echo "  $(GREEN)✓$(RESET) Gateway  (PID: $$PID)"; \
-		else \
-			echo "  $(YELLOW)⚠$(RESET) Gateway  (stale PID)"; \
-			rm -f $(WORKER_PID); fi; \
-	else \
-		echo "  $(DIM)○ Gateway not running$(RESET)"; fi
+	@./scripts/dev.sh status gateway
 
 worker-logs:
-	@if [ -f $(WORKER_LOG) ]; then cat $(WORKER_LOG); \
-	else echo "$(DIM)No log file: $(WORKER_LOG)$(RESET)"; fi
+	@./scripts/dev.sh logs gateway
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Webchat
 # ─────────────────────────────────────────────────────────────────────────────
 
 webchat-dev:
-	@mkdir -p $(HOME)/.hotplex/.pids $(LOG_DIR)
-	@if [ -f $(WEB_CHAT_PID) ] && kill -0 $$(cat $(WEB_CHAT_PID)) 2>/dev/null; then \
-		echo "$(YELLOW)Webchat already running (PID: $$(cat $(WEB_CHAT_PID)))$(RESET)"; \
-		exit 0; \
-	fi; \
-	STALE_PID=$$(lsof -ti:$(WEB_CHAT_PORT) 2>/dev/null); \
-	if [ -n "$$STALE_PID" ]; then \
-		echo "$(YELLOW)Port $(WEB_CHAT_PORT) occupied (PID: $$STALE_PID), killing...$(RESET)"; \
-		echo "$$STALE_PID" | xargs kill -9 2>/dev/null || true; \
-		sleep 1; \
-		STALE_PID=$$(lsof -ti:$(WEB_CHAT_PORT) 2>/dev/null); \
-		if [ -n "$$STALE_PID" ]; then \
-			echo "$(RED)✗$(RESET) Port $(WEB_CHAT_PORT) still occupied after kill, aborting"; \
-			exit 1; \
-		fi; \
-		rm -f $(WEB_CHAT_PID); \
-	fi; \
-	if [ ! -d $(WEB_CHAT_DIR)/node_modules ]; then \
-		echo "$(CYAN)Installing webchat dependencies...$(RESET)"; \
-		cd $(WEB_CHAT_DIR) && pnpm install --frozen-lockfile 2>/dev/null || pnpm install; \
-	fi; \
-	echo "$(CYAN)Starting webchat on port $(WEB_CHAT_PORT)...$(RESET)"; \
-	cd $(WEB_CHAT_DIR) && PORT=$(WEB_CHAT_PORT) pnpm dev --port $(WEB_CHAT_PORT) > $(WEB_CHAT_LOG) 2>&1 & \
-	echo $$! > $(WEB_CHAT_PID); \
-	sleep 3; \
-	if kill -0 $$(cat $(WEB_CHAT_PID)) 2>/dev/null; then \
-		if lsof -ti:$(WEB_CHAT_PORT) >/dev/null 2>&1; then \
-			echo "  $(GREEN)✓$(RESET) Webchat started (PID: $$(cat $(WEB_CHAT_PID)), port $(WEB_CHAT_PORT))"; \
-		else \
-			echo "  $(YELLOW)⚠$(RESET) Process running but port $(WEB_CHAT_PORT) not bound (may have picked another port)"; \
-		fi; \
-	else \
-		echo "  $(RED)✗$(RESET) Webchat failed to start"; \
-		cat $(WEB_CHAT_LOG); exit 1; fi
+	@./scripts/dev.sh start webchat
 
 webchat-stop:
-	@PID=""; \
-	if [ -f $(WEB_CHAT_PID) ] && kill -0 $$(cat $(WEB_CHAT_PID)) 2>/dev/null; then \
-		PID=$$(cat $(WEB_CHAT_PID)); \
-		echo "$(CYAN)Stopping webchat (PID: $$PID)...$(RESET)"; \
-		kill -TERM $$PID 2>/dev/null; \
-		sleep 1; \
-	fi; \
-	REMAINING=$$(lsof -ti:$(WEB_CHAT_PORT) 2>/dev/null); \
-	if [ -n "$$REMAINING" ]; then \
-		if [ -z "$$PID" ]; then echo "$(YELLOW)No PID file, killing by port...$(RESET)"; fi; \
-		echo "$(YELLOW)Force-killing processes on port $(WEB_CHAT_PORT) (PID: $$REMAINING)...$(RESET)"; \
-		echo "$$REMAINING" | xargs kill -9 2>/dev/null || true; \
-		sleep 1; \
-		REMAINING=$$(lsof -ti:$(WEB_CHAT_PORT) 2>/dev/null); \
-		if [ -n "$$REMAINING" ]; then \
-			echo "$(RED)✗$(RESET) Port $(WEB_CHAT_PORT) still occupied after kill"; \
-			exit 1; \
-		fi; \
-	elif [ -z "$$PID" ]; then \
-		echo "$(DIM)Webchat not running$(RESET)"; exit 0; \
-	fi; \
-	rm -f $(WEB_CHAT_PID); \
-	echo "  $(GREEN)✓$(RESET) Webchat stopped"
+	@./scripts/dev.sh stop webchat
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Clean

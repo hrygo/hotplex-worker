@@ -47,6 +47,9 @@ func NewBridge(log *slog.Logger, platform PlatformType, hub HubInterface,
 	}
 }
 
+// WorkDir returns the configured worker working directory.
+func (b *Bridge) WorkDir() string { return b.workDir }
+
 // Handle routes a platform message through the AEP handler.
 // pc is the already-created PlatformConn for the platform session.
 // It is registered with the hub so worker output is routed back to the platform.

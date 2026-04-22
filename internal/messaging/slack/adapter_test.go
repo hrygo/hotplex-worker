@@ -265,7 +265,7 @@ func TestExtractToolCallStatus(t *testing.T) {
 		{
 			"multiple params",
 			&events.Envelope{Event: events.Event{Type: events.ToolCall, Data: &events.ToolCallData{Name: "Grep", Input: map[string]any{"pattern": "aepEventToStatus", "glob": "*.go"}}}},
-			"Grep(pattern=aepEventToStatus, glob=*.go)", // exact match depends on map order
+			"Grep(glob=*.go, pattern=aepEventToStatus)",
 		},
 	}
 
@@ -275,9 +275,7 @@ func TestExtractToolCallStatus(t *testing.T) {
 			if len(got) > 50 {
 				t.Errorf("status too long (%d chars): %q", len(got), got)
 			}
-			if tt.name != "multiple params" {
-				require.Equal(t, tt.want, got)
-			}
+			require.Equal(t, tt.want, got)
 		})
 	}
 }
@@ -311,10 +309,10 @@ func TestExtractToolResultStatus(t *testing.T) {
 func TestTruncateStatus(t *testing.T) {
 	t.Parallel()
 
-	require.Equal(t, "hi", truncateStatus("hi", 50))
-	require.Equal(t, "hello world", truncateStatus("hello world", 11))
-	require.Equal(t, "hello...", truncateStatus("hello world", 8))
-	require.Equal(t, "你好世...", truncateStatus("你好世界测试", 13))
+	require.Equal(t, "hi", truncateWithSuffix("hi", 50))
+	require.Equal(t, "hello world", truncateWithSuffix("hello world", 11))
+	require.Equal(t, "hello...", truncateWithSuffix("hello world", 8))
+	require.Equal(t, "你好世...", truncateWithSuffix("你好世界测试", 13))
 }
 
 func TestIsAssistantCapabilityError(t *testing.T) {
@@ -1814,4 +1812,120 @@ func TestTryImageBlocks_NoImages(t *testing.T) {
 	conn := &SlackConn{adapter: &Adapter{}, channelID: "C_TEST", threadTS: "1234.5678"}
 	err := conn.tryImageBlocks(context.Background(), "plain text only")
 	require.Error(t, err, "should fail when no images found")
+}
+
+// ---------------------------------------------------------------------------
+// StatusManager Notify — dedup + rate limiting
+// ---------------------------------------------------------------------------
+
+func TestNotify_Dedup_SameText(t *testing.T) {
+	t.Parallel()
+
+	sm := NewStatusManager(nil, slog.Default())
+	ctx := context.Background()
+
+	// First call sets state.
+	require.NoError(t, sm.Notify(ctx, "C1", "T1", StatusToolUse, "Read(/src/main.go)"))
+	require.Equal(t, "Read(/src/main.go)", sm.threadState["C1:T1"].lastText)
+
+	// Duplicate text — should not update timestamp.
+	prevTime := sm.threadState["C1:T1"].lastTime
+	require.NoError(t, sm.Notify(ctx, "C1", "T1", StatusToolUse, "Read(/src/main.go)"))
+	require.Equal(t, prevTime, sm.threadState["C1:T1"].lastTime, "timestamp should not change for same text")
+}
+
+func TestNotify_RateLimit_DifferentText(t *testing.T) {
+	t.Parallel()
+
+	sm := NewStatusManager(nil, slog.Default())
+	ctx := context.Background()
+
+	require.NoError(t, sm.Notify(ctx, "C1", "T1", StatusToolUse, "Read(/a.go)"))
+	require.Equal(t, "Read(/a.go)", sm.threadState["C1:T1"].lastText)
+
+	// Different text within 3s — should be skipped, lastText unchanged.
+	require.NoError(t, sm.Notify(ctx, "C1", "T1", StatusToolResult, "ok"))
+	require.Equal(t, "Read(/a.go)", sm.threadState["C1:T1"].lastText, "rate-limited call should not update state")
+}
+
+func TestNotify_PassesAfterInterval(t *testing.T) {
+	t.Parallel()
+
+	sm := NewStatusManager(nil, slog.Default())
+	ctx := context.Background()
+
+	require.NoError(t, sm.Notify(ctx, "C1", "T1", StatusToolUse, "Read(/a.go)"))
+
+	// Backdate lastTime to simulate 4s elapsed.
+	sm.mu.Lock()
+	sm.threadState["C1:T1"].lastTime = time.Now().Add(-4 * time.Second)
+	sm.mu.Unlock()
+
+	require.NoError(t, sm.Notify(ctx, "C1", "T1", StatusToolResult, "ok"))
+	require.Equal(t, "ok", sm.threadState["C1:T1"].lastText, "call after 3s should update state")
+}
+
+func TestNotify_IndependentThreads(t *testing.T) {
+	t.Parallel()
+
+	sm := NewStatusManager(nil, slog.Default())
+	ctx := context.Background()
+
+	require.NoError(t, sm.Notify(ctx, "C1", "T1", StatusToolUse, "Read(/a.go)"))
+	require.NoError(t, sm.Notify(ctx, "C1", "T2", StatusToolUse, "Bash(ls)"))
+
+	require.Equal(t, "Read(/a.go)", sm.threadState["C1:T1"].lastText)
+	require.Equal(t, "Bash(ls)", sm.threadState["C1:T2"].lastText)
+}
+
+func TestNotify_ClearResetsState(t *testing.T) {
+	t.Parallel()
+
+	sm := NewStatusManager(nil, slog.Default())
+	ctx := context.Background()
+
+	require.NoError(t, sm.Notify(ctx, "C1", "T1", StatusToolUse, "Read(/a.go)"))
+	sm.Clear(ctx, "C1", "T1")
+	require.Nil(t, sm.threadState["C1:T1"], "Clear should remove threadState")
+
+	// Same text after Clear should create fresh state.
+	require.NoError(t, sm.Notify(ctx, "C1", "T1", StatusToolUse, "Read(/a.go)"))
+	require.Equal(t, "Read(/a.go)", sm.threadState["C1:T1"].lastText)
+}
+
+func TestNotify_EmptyText_ClearsState(t *testing.T) {
+	t.Parallel()
+
+	sm := NewStatusManager(nil, slog.Default())
+	ctx := context.Background()
+
+	require.NoError(t, sm.Notify(ctx, "C1", "T1", StatusToolUse, "Read(/a.go)"))
+	require.NoError(t, sm.Notify(ctx, "C1", "T1", StatusToolUse, ""))
+	require.Nil(t, sm.threadState["C1:T1"], "empty text should clear threadState via Clear")
+
+	// After clear, same text should pass.
+	require.NoError(t, sm.Notify(ctx, "C1", "T1", StatusToolUse, "Read(/a.go)"))
+	require.Equal(t, "Read(/a.go)", sm.threadState["C1:T1"].lastText)
+}
+
+func TestShortenPaths(t *testing.T) {
+	t.Parallel()
+
+	// Home dir substitution
+	require.Equal(t, "~/src/main.go", shortenPaths(homeDir+"/src/main.go"))
+	require.Equal(t, "/usr/local/bin", shortenPaths("/usr/local/bin"))
+	require.Equal(t, "no path here", shortenPaths("no path here"))
+
+	// WorkDir substitution takes priority
+	origWorkDir := workDir
+	workDir = "/tmp/hotplex/workspace"
+	t.Cleanup(func() { workDir = origWorkDir })
+
+	require.Equal(t, "$WK/main.go", shortenPaths("/tmp/hotplex/workspace/main.go"))
+	require.Equal(t, "$WK/sub/file.txt", shortenPaths("/tmp/hotplex/workspace/sub/file.txt"))
+
+	// Both: workDir first, then homeDir on remaining
+	workDir = homeDir + "/projects/myapp"
+	require.Equal(t, "$WK/main.go", shortenPaths(homeDir+"/projects/myapp/main.go"))
+	require.Equal(t, "~/other/file.go", shortenPaths(homeDir+"/other/file.go"))
 }

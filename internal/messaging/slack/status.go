@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -46,7 +48,10 @@ var StatusTextMap = map[StatusType]string{
 	StatusStepFinish:   "Step complete",
 }
 
-const statusMinInterval = 3 * time.Second
+const (
+	statusMinInterval = 3 * time.Second
+	threadStateTTL    = 1 * time.Hour
+)
 
 // threadState tracks per-thread status for dedup and rate limiting.
 type threadState struct {
@@ -85,12 +90,15 @@ func (m *StatusManager) Notify(ctx context.Context, channelID, threadTS string, 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	key := channelID + ":" + threadTS
+
+	m.evictStaleStates()
+
 	if text == "" {
 		m.clearEmojiLocked(ctx, channelID, threadTS)
+		delete(m.threadState, key)
 		return nil
 	}
-
-	key := channelID + ":" + threadTS
 	if ts := m.threadState[key]; ts != nil {
 		if ts.lastText == text {
 			return nil
@@ -106,7 +114,10 @@ func (m *StatusManager) Notify(ctx context.Context, channelID, threadTS string, 
 	m.threadState[key].lastText = text
 	m.threadState[key].lastTime = time.Now()
 
-	return m.adapter.SetStatus(ctx, channelID, threadTS, status, text)
+	if m.adapter != nil {
+		return m.adapter.SetStatus(ctx, channelID, threadTS, status, text)
+	}
+	return nil
 }
 
 // Clear removes any tracked status emoji and state for the thread.
@@ -115,6 +126,20 @@ func (m *StatusManager) Clear(ctx context.Context, channelID, threadTS string) {
 	defer m.mu.Unlock()
 	m.clearEmojiLocked(ctx, channelID, threadTS)
 	delete(m.threadState, channelID+":"+threadTS)
+}
+
+// evictStaleStates removes threadState entries older than threadStateTTL.
+// Caller must hold m.mu.
+func (m *StatusManager) evictStaleStates() {
+	if len(m.threadState) < 10 {
+		return
+	}
+	now := time.Now()
+	for k, ts := range m.threadState {
+		if now.Sub(ts.lastTime) > threadStateTTL {
+			delete(m.threadState, k)
+		}
+	}
 }
 
 // clearEmojiLocked removes the tracked emoji reaction. Caller must hold m.mu.
@@ -177,15 +202,20 @@ func extractToolCallStatus(env *events.Envelope) string {
 	}
 
 	if len(input) == 0 {
-		return truncateStatus(name, 50)
+		return truncateWithSuffix(name, 50)
 	}
 
 	parts := make([]string, 0, len(input))
-	for k, v := range input {
-		parts = append(parts, k+"="+truncateValue(fmt.Sprintf("%v", v), 20))
+	keys := make([]string, 0, len(input))
+	for k := range input {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		parts = append(parts, k+"="+truncateWithSuffix(shortenPaths(fmt.Sprintf("%v", input[k])), 20))
 	}
 	body := strings.Join(parts, ", ")
-	return truncateStatus(name+"("+body+")", 50)
+	return truncateWithSuffix(name+"("+body+")", 50)
 }
 
 // extractToolResultStatus formats tool result preview truncated to 50 chars.
@@ -196,51 +226,67 @@ func extractToolResultStatus(env *events.Envelope) string {
 
 	if data, ok := env.Event.Data.(*events.ToolResultData); ok {
 		if data.Error != "" {
-			return truncateStatus("Error: "+data.Error, 50)
+			return truncateWithSuffix(shortenPaths("Error: "+data.Error), 50)
 		}
 		if data.Output != nil {
-			return truncateStatus(fmt.Sprintf("%v", data.Output), 50)
+			return truncateWithSuffix(shortenPaths(limitedSprintf(data.Output, 200)), 50)
 		}
 		return "Tool completed"
 	}
 
 	if m, ok := env.Event.Data.(map[string]any); ok {
 		if errStr, ok := m["error"].(string); ok && errStr != "" {
-			return truncateStatus("Error: "+errStr, 50)
+			return truncateWithSuffix(shortenPaths("Error: "+errStr), 50)
 		}
 		if output, ok := m["output"]; ok && output != nil {
-			return truncateStatus(fmt.Sprintf("%v", output), 50)
+			return truncateWithSuffix(shortenPaths(limitedSprintf(output, 200)), 50)
 		}
 	}
 
 	return "Tool completed"
 }
 
-// truncateStatus truncates s to at most max bytes, appending "..." if truncated.
-func truncateStatus(s string, max int) string {
-	if max <= 3 {
+// limitedSprintf converts v to string, capping output to maxBytes to avoid
+// allocating arbitrarily large strings from tool output before truncation.
+func limitedSprintf(v any, maxBytes int) string {
+	if s, ok := v.(string); ok {
+		if len(s) > maxBytes {
+			return s[:maxBytes]
+		}
 		return s
 	}
-	if len(s) <= max {
-		return s
+	s := fmt.Sprintf("%v", v)
+	if len(s) > maxBytes {
+		return s[:maxBytes]
 	}
-	// Find the last rune boundary that fits within max-3 bytes.
-	cut := max - 3
-	for cut > 0 && !isRuneStart(s[cut]) {
-		cut--
-	}
-	return s[:cut] + "..."
+	return s
 }
 
-// truncateValue truncates a single parameter value for display.
-func truncateValue(s string, max int) string {
-	return truncateStatus(s, max)
+// shortenPaths replaces workDir with "$WK" then homeDir with "~" in s.
+var (
+	homeDir string
+	workDir string
+)
+
+func init() {
+	if dir, err := os.UserHomeDir(); err == nil {
+		homeDir = dir
+	}
 }
 
-func isRuneStart(b byte) bool {
-	// UTF-8 continuation bytes start with 10xxxxxx (0x80-0xBF).
-	// A rune start byte is anything that is NOT a continuation byte.
-	return b&0xC0 != 0x80
+// SetWorkDir sets the workdir used for $WK substitution in status text.
+func SetWorkDir(dir string) {
+	workDir = dir
+}
+
+func shortenPaths(s string) string {
+	if workDir != "" {
+		s = strings.ReplaceAll(s, workDir, "$WK")
+	}
+	if homeDir != "" {
+		s = strings.ReplaceAll(s, homeDir, "~")
+	}
+	return s
 }
 
 // SetAssistantStatus sets the native assistant status text via Slack API.

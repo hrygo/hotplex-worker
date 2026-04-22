@@ -91,11 +91,13 @@ func (a *Adapter) Configure(botToken, appToken string, bridge *messaging.Bridge)
 	a.botToken = botToken
 	a.appToken = appToken
 	a.bridge = bridge
+	SetWorkDir(bridge.WorkDir())
 }
 
 // SetBridge stores the bridge for later use.
 func (a *Adapter) SetBridge(b *messaging.Bridge) {
 	a.bridge = b
+	SetWorkDir(b.WorkDir())
 }
 
 // SetGate sets the access control gate.
@@ -340,29 +342,11 @@ func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsA
 				continue
 			}
 			// Audio + STT: transcribe voice messages to text.
-			if m.Type == "audio" && a.transcriber != nil {
-				audioData, err := a.downloadMediaBytes(ctx, m)
-				if err != nil {
-					a.log.Warn("slack: download audio failed", "file", m.Name, "err", err)
+			if m.Type == mediaTypeAudio && a.transcriber != nil {
+				if audioText, audioErr := a.handleAudioMessage(ctx, m); audioErr != nil {
 					text += fmt.Sprintf("\n[audio: %s]", m.Name)
-					continue
-				}
-				transcript, err := a.transcriber.Transcribe(ctx, audioData)
-				if err != nil {
-					a.log.Warn("slack: stt failed", "file", m.Name, "err", err)
-					text += fmt.Sprintf("\n[audio: %s]", m.Name)
-					continue
-				}
-				if transcript != "" {
-					text += fmt.Sprintf("\n[voice message transcription]: %s", transcript)
 				} else {
-					text += fmt.Sprintf("\n[voice message: %s (empty transcription)]", m.Name)
-				}
-				// If transcriber needs disk, write file for downstream use.
-				if a.transcriber.RequiresDisk() {
-					if path, err := a.saveMediaBytes(m, audioData); err == nil {
-						text += "\n" + path
-					}
+					text += audioText
 				}
 				continue
 			}
@@ -571,12 +555,41 @@ func (a *Adapter) Close(ctx context.Context) error {
 	}
 
 	if a.transcriber != nil {
-		if closer, ok := a.transcriber.(interface{ Close(context.Context) error }); ok {
+		if closer, ok := a.transcriber.(stt.Closer); ok {
 			_ = closer.Close(ctx)
 		}
 	}
 
 	return nil
+}
+
+// handleAudioMessage downloads and transcribes a voice message, returning formatted text.
+func (a *Adapter) handleAudioMessage(ctx context.Context, m *MediaInfo) (string, error) {
+	audioData, err := a.downloadMediaBytes(ctx, m)
+	if err != nil {
+		a.log.Warn("slack: download audio failed", "file", m.Name, "err", err)
+		return "", err
+	}
+
+	transcript, err := a.transcriber.Transcribe(ctx, audioData)
+	if err != nil {
+		a.log.Warn("slack: stt failed", "file", m.Name, "err", err)
+		return "", err
+	}
+
+	var text string
+	if transcript != "" {
+		text = fmt.Sprintf("\n[voice message transcription]: %s", transcript)
+	} else {
+		text = fmt.Sprintf("\n[voice message: %s (empty transcription)]", m.Name)
+	}
+
+	if a.transcriber.RequiresDisk() {
+		if path, err := a.saveMediaBytes(m, audioData); err == nil {
+			text += "\n" + path
+		}
+	}
+	return text, nil
 }
 
 // handleTextControlCommand sends a control event derived from a text message

@@ -23,6 +23,7 @@ import (
 	"github.com/larksuite/oapi-sdk-go/v3/ws"
 
 	"github.com/hotplex/hotplex-worker/internal/messaging"
+	"github.com/hotplex/hotplex-worker/internal/messaging/stt"
 	"github.com/hotplex/hotplex-worker/pkg/aep"
 	"github.com/hotplex/hotplex-worker/pkg/events"
 )
@@ -437,9 +438,7 @@ func (a *Adapter) Close(ctx context.Context) error {
 	}
 
 	// Shut down persistent STT subprocess if present.
-	if closer, ok := a.transcriber.(interface {
-		Close(ctx context.Context) error
-	}); ok {
+	if closer, ok := a.transcriber.(stt.Closer); ok {
 		if err := closer.Close(ctx); err != nil {
 			a.log.Warn("feishu: transcriber close", "err", err)
 		}

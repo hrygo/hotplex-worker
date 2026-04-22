@@ -25,13 +25,14 @@ readonly ROOT_DIR="${SCRIPT_DIR}/.."
 readonly BIN_NAME="hotplex-worker"
 readonly BUILD_DIR="${BUILD_DIR:-${ROOT_DIR}/bin}"
 readonly LOG_DIR="${LOG_DIR:-${ROOT_DIR}/logs}"
-readonly CONFIG="${CONFIG:-${ROOT_DIR}/configs/config.yaml}"
+readonly CONFIG="${CONFIG:-${ROOT_DIR}/configs/config-dev.yaml}"
 
-readonly GATEWAY_PID="${HOME}/.hotplex/.pid/hotplex-worker.pid"
+readonly GATEWAY_PID="${HOME}/.hotplex/.pids/hotplex-worker.pid"
 readonly GATEWAY_LOG="${LOG_DIR}/hotplex-worker.log"
+readonly GRACE_PERIOD="${GRACE_PERIOD:-7}"
 
 readonly WEBCHAT_DIR="${ROOT_DIR}/webchat"
-readonly WEBCHAT_PID="${HOME}/.hotplex/.pid/hotplex-webchat.pid"
+readonly WEBCHAT_PID="${HOME}/.hotplex/.pids/hotplex-webchat.pid"
 readonly WEBCHAT_PORT="${WEBCHAT_PORT:-3000}"
 readonly WEBCHAT_LOG="${LOG_DIR}/webchat.log"
 
@@ -56,7 +57,7 @@ kill_pidfile() {
     if kill -0 "$pid" 2>/dev/null; then
         info "Stopping $name (PID $pid)..."
         kill -TERM "$pid" 2>/dev/null || true
-        for i in $(seq 1 5); do
+        for i in $(seq 1 "${GRACE_PERIOD:-7}"); do
             sleep 1
             kill -0 "$pid" 2>/dev/null || { rm -f "$pidfile"; ok "$name stopped"; return 0; }
         done
@@ -166,8 +167,27 @@ start_webchat() {
         return 0
     fi
 
+    # Clean stale processes on the port.
+    local stale; stale=$(lsof -ti:"$WEBCHAT_PORT" 2>/dev/null || true)
+    if [[ -n "$stale" ]]; then
+        warn "Port $WEBCHAT_PORT occupied (PID $stale), killing..."
+        echo "$stale" | xargs kill -9 2>/dev/null || true
+        sleep 1
+        stale=$(lsof -ti:"$WEBCHAT_PORT" 2>/dev/null || true)
+        if [[ -n "$stale" ]]; then
+            die "Port $WEBCHAT_PORT still occupied after kill"
+        fi
+        rm -f "$WEBCHAT_PID"
+    fi
+
+    # Install dependencies if needed.
+    if [[ ! -d "$WEBCHAT_DIR/node_modules" ]]; then
+        info "Installing webchat dependencies..."
+        (cd "$WEBCHAT_DIR" && pnpm install --frozen-lockfile 2>/dev/null || pnpm install)
+    fi
+
     info "Starting webchat dev server (port $WEBCHAT_PORT)..."
-    (cd "$WEBCHAT_DIR" && pnpm dev >> "$WEBCHAT_LOG" 2>&1) &
+    (cd "$WEBCHAT_DIR" && PORT="$WEBCHAT_PORT" pnpm dev --port "$WEBCHAT_PORT" >> "$WEBCHAT_LOG" 2>&1) &
     echo $! > "$WEBCHAT_PID"
     sleep 3
 
@@ -175,7 +195,7 @@ start_webchat() {
         ok "Web-chat started (PID $(cat "$WEBCHAT_PID")) → http://localhost:$WEBCHAT_PORT"
     else
         err "Web-chat failed to start"
-        cat "$WEBCHAT_LOG" | tail -20
+        tail -20 "$WEBCHAT_LOG"
         rm -f "$WEBCHAT_PID"
         exit 1
     fi
@@ -204,6 +224,12 @@ status_all() {
     status_gateway || true
     echo ""
     status_webchat || true
+}
+
+logs_all() {
+    logs_gateway || true
+    echo ""
+    logs_webchat || true
 }
 
 logs_webchat() {
