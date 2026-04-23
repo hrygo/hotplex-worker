@@ -161,6 +161,20 @@ messages[] (对话)
 B 通道机制: `--append-system-prompt` → 注入 S3 尾部，无削弱声明
 C 通道机制: `.claude/rules/*.md` → 自动发现注入 M0，带 hedging 声明
 
+#### 2.2.1 Claude Code 槽位特性表
+
+| 槽位 | 说明 | 可控 | 削弱 | HotPlex 注入 |
+|------|------|:----:|------|-------------|
+| **S0** | 归属声明 (~50 tok) | ❌ | 无 | — |
+| **S1** | CLI 身份声明；`--append-system-prompt` 时自动切换为 SDK 模式 (~100 tok) | ❌ | 无 | — |
+| **S2** | 硬编码行为规范：安全/工具/输出格式/Git 操作 (~15K tok, global cache) | ❌ | 无 | — |
+| **S3** | 动态内容：session guidance / env / language / MCP 指令 (~1-3K tok, ephemeral cache) | ⚠️ | 无 | **B 通道** — `--append-system-prompt` 追加尾部 |
+| **S4** | 运行时状态：git status / cache breaker (~200 tok, 无缓存) | ❌ | 无 | — |
+| **M0** | 用户上下文：CLAUDE.md + `.claude/rules/*.md`，以 `<system-reminder>` 包裹 | ✅ | **hedged** — "may or may not be relevant" | **C 通道** — `.claude/rules/hotplex-*.md` |
+| **M1+** | 对话轮次 + 工具调用结果 (随对话增长) | ✅ | 无 | — |
+
+> **要点**: system[] 优先级高于 messages[]；B 通道 (S3) 无削弱，C 通道 (M0) 被 hedging 削弱；B 通道触发时 S1 自动从 "official CLI" 切换为 "Agent SDK"，模型更易接受外部规则。S2 虽不可控但包含安全基线兜底。
+
 ### 2.3 OpenCode Server Context 槽位
 
 OpenCode Server 使用 Vercel AI SDK `streamText()` 调用 LLM，system prompt 被打包为
@@ -197,10 +211,34 @@ messages[role: "user"/"assistant"] (对话)
 B 通道注入点: `POST /session/:id/message { system: "..." }` → 进入 S2 (Call-level System)
 C 通道注入点: 同 B 合并; 文件方式写入 workdir AGENTS.md → 自动发现到 S6
 
-**关键差异: OpenCode S2 (Call-level System) 无削弱声明** — S2 中所有内容以同等权重送达模型，
-没有 "may or may not be relevant" 的 hedging。但注意：第 2 轮起，用户文本消息会被包装在
-`<system-reminder>` 标签中 (与 Claude Code M0 类似)，这不影响 HotPlex 的 B/C 通道注入
-(因为 B/C 通过 `system` 字段注入，不经过用户消息)。
+#### 2.3.1 OpenCode Server 槽位特性表
+
+**第一层 — `system[0]`** (llm.ts:99-111, S0+S2+S3 拼接为单个字符串块):
+
+| 槽位 | 说明 | 可控 | 削弱 | HotPlex 注入 |
+|------|------|:----:|------|-------------|
+| **S0** | Provider 模板：由模型 ID 自动选择 (anthropic.txt / gpt.txt 等, ~3-5K tok) | ❌ | 无 | — |
+| **S1** | Agent 专用 prompt：内置 Agent (explore/compaction) 定义，存在时覆盖 S0 (~500-2K tok) | ⚠️ | 无 | — |
+| **S2** | Call-level System：每次 API 调用传入的 `system` 字段，与 S0/S3 拼接为 `system[0]` | ✅ | 无 | **B + C 通道** — `system` field 合并注入 |
+| **S3** | Sticky User System：从最后用户消息的 system 字段自动提取并持久化到 SQLite | 自动 | 无 | S2 注入后自动 sticky |
+
+**第二层 — `system[1..]`** (prompt.ts:1473-1479, 追加到 system 数组):
+
+| 槽位 | 说明 | 可控 | 削弱 | HotPlex 注入 |
+|------|------|:----:|------|-------------|
+| **S4** | 环境信息：工作目录/平台/日期 (~150 tok, 每次生成) | ❌ | 无 | — |
+| **S5** | Skills 目录：当前 Agent 可用技能 (由 Agent 权限过滤, ~500-3K tok) | ⚠️ | 无 | — |
+| **S6** | Instruction Files：从 workdir 向上查找 AGENTS.md 自动发现 | ✅ | 无 | **C 通道备选** — workdir AGENTS.md |
+| **S7** | 条件注入：Plan Mode / JSON Schema / Plugin Hooks (~100-1K tok) | ❌ | 无 | — |
+
+**对话层 — `messages[role: "user"/"assistant"]`**:
+
+| 槽位 | 说明 | 可控 | 削弱 | HotPlex 注入 |
+|------|------|:----:|------|-------------|
+| **M1** | 用户消息；第 2 轮起被 `<system-reminder>` 标签包裹 | ✅ | 第 2 轮起 hedged | — |
+| **M2+** | 对话历史 + 工具结果，支持 Compaction (摘要+截断双策略) | ✅ | 无 | — |
+
+> **要点**: 两层组装 — 第一层 (S0+S2+S3) 拼接为 `system[0]`，第二层 (S4+S5+S6+S7) 追加为 `system[1..]`。S2 具有 sticky 特性：注入一次自动持久化到 S3，后续轮次继承 (Compaction 可能导致丢失)。S2 全部内容无 hedging。S6 (项目 AGENTS.md) 与 S2 (HotPlex 注入) 分处不同 system 元素，天然隔离。
 
 ### 2.4 架构差异对照
 
