@@ -267,11 +267,11 @@ Run 'hotplex doctor --fix' to auto-fix 1 issue(s)
 ### serve cmd 的 flag 兼容
 
 ```go
-func newServeCmd() *cobra.Command {
+func newGatewayCmd() *cobra.Command {
     cmd := &cobra.Command{
-        Use:   "serve",
+        Use:   "gateway",
         Short: "Start the gateway server",
-        RunE:  runServe,
+        RunE:  runGateway,
     }
     cmd.Flags().StringP("config", "c", "configs/config.yaml", "config file path")
     cmd.Flags().Bool("dev", false, "development mode")

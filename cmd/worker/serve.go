@@ -38,15 +38,15 @@ import (
 	"github.com/hotplex/hotplex-worker/pkg/events"
 )
 
-func newServeCmd() *cobra.Command {
+func newGatewayCmd() *cobra.Command {
 	var configPath string
 	var devMode bool
 
 	cmd := &cobra.Command{
-		Use:   "serve",
+		Use:   "gateway",
 		Short: "Start the gateway server",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runServe(configPath, devMode)
+			return runGateway(configPath, devMode)
 		},
 	}
 	cmd.Flags().StringVarP(&configPath, "config", "c", "~/.hotplex/config.yaml", "config file path")
@@ -54,7 +54,7 @@ func newServeCmd() *cobra.Command {
 	return cmd
 }
 
-func runServe(configPath string, devMode bool) error {
+func runGateway(configPath string, devMode bool) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

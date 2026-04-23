@@ -21,7 +21,7 @@ func main() {
 		SilenceErrors: true,
 	}
 	rootCmd.AddCommand(
-		newServeCmd(),
+		newGatewayCmd(),
 		newDoctorCmd(),
 		newSecurityCmd(),
 		newOnboardCmd(),

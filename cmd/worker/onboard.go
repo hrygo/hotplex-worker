@@ -61,7 +61,7 @@ func newOnboardCmd() *cobra.Command {
 				os.Exit(1)
 			}
 
-			fmt.Fprintln(os.Stderr, "  Configuration complete. Run 'hotplex serve' to start.")
+			fmt.Fprintln(os.Stderr, "  Configuration complete. Run 'hotplex gateway' to start.")
 			return nil
 		},
 	}
