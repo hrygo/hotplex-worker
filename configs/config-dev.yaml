@@ -14,6 +14,9 @@ admin:
 gateway:
   addr: "127.0.0.1:8888"
 
+webchat:
+  addr: "127.0.0.1:3000"
+
 session:
   retention_period: 24h
   max_concurrent: 100

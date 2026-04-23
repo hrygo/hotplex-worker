@@ -275,7 +275,7 @@ func run() error {
 	}
 
 	// Initialize messaging platform adapters.
-	msgAdapters := startMessagingAdapters(ctx, log, cfg, hub, sm, handler, bridge)
+	msgAdapters, adapterStatuses := startMessagingAdapters(ctx, log, cfg, hub, sm, handler, bridge)
 
 	setupRoutes(mux, deps)
 
@@ -294,9 +294,26 @@ func run() error {
 
 	serverErr := make(chan error, 1)
 	go func() {
-		log.Info("gateway: listening", "addr", cfg.Gateway.Addr)
 		serverErr <- server.ListenAndServe()
 	}()
+
+	// Print unified startup banner as the "ready" message.
+	adminAddr := cfg.Admin.Addr
+	if !cfg.Admin.Enabled {
+		adminAddr = ""
+	}
+	printStartupBanner(os.Stdout, newBuildInfo(), RuntimeStatus{
+		GatewayAddr:  cfg.Gateway.Addr,
+		AdminAddr:    adminAddr,
+		WebChatAddr:  cfg.WebChat.Addr,
+		DBPath:       cfg.DB.Path,
+		PoolMax:      cfg.Pool.MaxSize,
+		PoolIdle:     cfg.Pool.MaxIdlePerUser,
+		Adapters:     adapterStatuses,
+		RetryEnabled: cfg.Worker.AutoRetry.Enabled,
+		RetryMax:     cfg.Worker.AutoRetry.MaxRetries,
+		RetryDelay:   cfg.Worker.AutoRetry.BaseDelay.String(),
+	}, *flagConfig)
 
 	sig := waitForSignal()
 	log.Info("gateway: shutdown", "signal", sig)
@@ -562,20 +579,23 @@ func (a *configWatcherAdapter) Rollback(version int) (*config.Config, int, error
 // startMessagingAdapters initializes and starts all enabled messaging platform adapters.
 func startMessagingAdapters(ctx context.Context, log *slog.Logger, cfg *config.Config,
 	hub *gateway.Hub, sm *session.Manager, handler *gateway.Handler, gwBridge *gateway.Bridge,
-) []messaging.PlatformAdapterInterface {
+) ([]messaging.PlatformAdapterInterface, []AdapterStatus) {
 	var adapters []messaging.PlatformAdapterInterface
+	var statuses []AdapterStatus
 	for _, pt := range messaging.RegisteredTypes() {
 		// Check if platform is enabled and resolve per-platform config.
 		var workerType, workDir string
 		switch pt {
 		case messaging.PlatformSlack:
 			if !cfg.Messaging.Slack.Enabled {
+				statuses = append(statuses, AdapterStatus{Name: "Slack", Started: false})
 				continue
 			}
 			workerType = cfg.Messaging.Slack.WorkerType
 			workDir = cfg.Messaging.Slack.WorkDir
 		case messaging.PlatformFeishu:
 			if !cfg.Messaging.Feishu.Enabled {
+				statuses = append(statuses, AdapterStatus{Name: "Feishu", Started: false})
 				continue
 			}
 			workerType = cfg.Messaging.Feishu.WorkerType
@@ -649,12 +669,14 @@ func startMessagingAdapters(ctx context.Context, log *slog.Logger, cfg *config.C
 
 		if err := adapter.Start(ctx); err != nil {
 			log.Warn("messaging: start failed", "platform", pt, "err", err)
+			statuses = append(statuses, AdapterStatus{Name: string(pt), Started: false})
 			continue
 		}
 		adapters = append(adapters, adapter)
+		statuses = append(statuses, AdapterStatus{Name: string(pt), Started: true})
 		log.Info("messaging: adapter started", "platform", pt)
 	}
-	return adapters
+	return adapters, statuses
 }
 
 // buildTranscriber creates a speech-to-text transcriber from Feishu config.
@@ -714,6 +736,9 @@ const defaultVersion = "v1.0.0"
 
 // version is injected by ldflags: -X main.version=$(GIT_SHA)
 var version = defaultVersion
+
+// buildTime is injected by ldflags: -X main.buildTime=$(BUILD_TIME)
+var buildTime = "unknown"
 
 func versionString() string { return version }
 

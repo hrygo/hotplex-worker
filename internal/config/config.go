@@ -125,6 +125,7 @@ type Config struct {
 	Pool      PoolConfig      `mapstructure:"pool"`
 	Log       LogConfig       `mapstructure:"log"`
 	Admin     AdminConfig     `mapstructure:"admin"`
+	WebChat   WebChatConfig   `mapstructure:"webchat"`
 	Messaging MessagingConfig `mapstructure:"messaging"`
 	Inherits  string          `mapstructure:"inherits"` // path to parent config file; "" = no inheritance
 }
@@ -223,6 +224,11 @@ type AdminConfig struct {
 type LogConfig struct {
 	Level  string `mapstructure:"level"`
 	Format string `mapstructure:"format"` // "json" or "text"
+}
+
+// WebChatConfig holds webchat UI address (informational only, gateway does not manage webchat).
+type WebChatConfig struct {
+	Addr string `mapstructure:"addr"`
 }
 
 // GatewayConfig holds WebSocket gateway settings.
