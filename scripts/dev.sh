@@ -109,19 +109,28 @@ start_gateway() {
         fi
     fi
 
+    : > "$GATEWAY_LOG"
     "$binary" -config "$CONFIG" >> "$GATEWAY_LOG" 2>&1 &
     echo $! > "$GATEWAY_PID"
-    sleep 1
+
+    # Wait for gateway to initialize (up to 10s), then display banner.
+    for ((i=0; i<20; i++)); do
+        if ! kill -0 "$(cat "$GATEWAY_PID")" 2>/dev/null; then
+            err "Gateway failed to start"
+            tail -20 "$GATEWAY_LOG"
+            rm -f "$GATEWAY_PID"
+            exit 1
+        fi
+        if grep -qv '^time=' "$GATEWAY_LOG" 2>/dev/null; then
+            sleep 0.5  # give banner a moment to flush fully
+            break
+        fi
+        sleep 0.5
+    done
 
     if kill -0 "$(cat "$GATEWAY_PID")" 2>/dev/null; then
         ok "Gateway started (PID $(cat "$GATEWAY_PID"))"
-        # Display startup banner from log.
-        grep -v '^time=' "$GATEWAY_LOG" | grep -v '^$' | tail -15 | sed 's/^/  /'
-    else
-        err "Gateway failed to start"
-        cat "$GATEWAY_LOG" | tail -20
-        rm -f "$GATEWAY_PID"
-        exit 1
+        grep -v '^time=' "$GATEWAY_LOG" | sed '/^$/d' | sed 's/^/  /' || true
     fi
 }
 

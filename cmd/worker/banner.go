@@ -120,11 +120,7 @@ func printStartupBanner(out *os.File, info BuildInfo, s RuntimeStatus, configPat
 
 	var lines []string
 
-	if tty {
-		lines = append(lines, "", bannerArt, "")
-	} else {
-		lines = append(lines, "", "HotPlex Worker Gateway", "")
-	}
+	lines = append(lines, "", cyan(bannerArt), "")
 
 	// Build info
 	lines = append(lines,
