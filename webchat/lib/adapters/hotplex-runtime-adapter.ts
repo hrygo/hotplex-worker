@@ -175,8 +175,17 @@ export function useHotPlexRuntime({
           }
           return [...prev.slice(0, -1), { ...lastMessage, parts }];
         }
-        // No streaming message — this shouldn't happen with valid gateway
-        return prev;
+        // No streaming message — create one (message.start may not have been sent)
+        return [
+          ...prev,
+          {
+            id: `assistant-${Date.now()}`,
+            role: 'assistant' as const,
+            parts: [{ type: 'text', text: content }],
+            createdAt: new Date(),
+            status: 'streaming' as const,
+          },
+        ];
       });
     };
 
@@ -295,15 +304,15 @@ export function useHotPlexRuntime({
 
       const errorMessage = data?.message || 'An unexpected error occurred in the HotPlex gateway.';
 
-      // Add error message to thread
+      // Add error message to thread (use assistant role for assistant-ui compatibility)
       setMessages((prev) => [
         ...prev,
         {
           id: `error-${Date.now()}`,
-          role: 'system',
+          role: 'assistant',
           parts: [{ type: 'text', text: `⚠️ Error: ${errorMessage}` }],
           createdAt: new Date(),
-          status: 'error',
+          status: 'complete',
         },
       ]);
     };

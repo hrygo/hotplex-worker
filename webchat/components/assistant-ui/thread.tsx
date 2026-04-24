@@ -150,10 +150,11 @@ function AssistantMessage() {
       <div className="msg-assistant-body">
         <MessagePrimitive.Parts>
           {({ part }) => {
-            const m = message as any;
             const p = part as any;
-            const isLatest = m.status.type === "running";
-            
+            if (!p) return null;
+            const m = message as any;
+            const isLatest = m.status?.type === "running";
+
             if (p.type === "reasoning") {
               return <ReasoningBlock text={p.text} />;
             }
@@ -161,15 +162,15 @@ function AssistantMessage() {
               return <MarkdownText text={p.text} />;
             }
             if (p.type === "tool-call") {
-              return <ToolCallBlock 
-                key={p.toolCallId} 
-                toolName={p.toolName} 
-                args={p.args} 
-                active={isLatest && !m.content.some((other: any) => other.toolCallId === p.toolCallId && other.type === 'tool-result')} 
+              if (p.result !== undefined) {
+                return <ToolResultBlock key={p.toolCallId} toolName={p.toolName} result={p.result} />;
+              }
+              return <ToolCallBlock
+                key={p.toolCallId}
+                toolName={p.toolName}
+                args={p.args}
+                active={isLatest}
               />;
-            }
-            if (p.type === "tool-result") {
-              return <ToolResultBlock key={p.toolCallId} toolName={p.toolName} result={p.result} />;
             }
             return null;
           }}
