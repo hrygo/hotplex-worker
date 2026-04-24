@@ -1,5 +1,8 @@
 ---
 type: design
+status: implemented
+implemented_at: 2026-04-25
+implementation_branch: feat/25-agent-config-implementation
 tags:
   - design/agent-config
   - architecture/context-injection
@@ -12,6 +15,11 @@ related:
 ---
 
 # HotPlex Agent Context 设定文件方案 (Dual-Worker)
+
+> **实施状态**: ✅ Phase 1-4 已实现 (feat/25-agent-config-implementation)
+> 实现包: `internal/agentconfig/` — 实际配置结构比设计简化：`AgentConfig{Enabled, ConfigDir}`，
+> 大小限制调整为 12K/文件、60K/总计，平台变体采用追加模式（非替换）。
+> Phase 5（动态能力）待后续版本实现。
 
 > 基于 [[Claude-Code-Context-Analysis]] + [[OpenCode-Server-Context-Analysis]] 双研究报告 + OpenClaw SOUL.md/AGENTS.md/USER.md 体系分析，
 > 设计 HotPlex 如何通过统一设定文件同时控制 Claude Code 和 OpenCode Server 的行为框架。

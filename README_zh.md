@@ -40,6 +40,10 @@ Hotplex 是一个高性能的 Go 语言编写的网关，它提供**统一的 We
 - 🔹 **多渠道桥接**: 双向支持 **Slack** (Socket Mode) 和 **飞书** (WebSocket)，具备完整的交互能力。
 - 🔹 **Worker 适配器**: 开箱即用支持 Claude Code、OpenCode Server 和 Pi-mono。
 
+### 🤖 Agent 智能
+- 🔹 **Agent 配置系统**: 定义 Agent 人格（SOUL.md）、工作规则（AGENTS.md）、工具指南（SKILLS.md）、用户画像（USER.md）和持久记忆（MEMORY.md）— 通过 B/C 双通道自动注入每个 Worker 会话。
+- 🔹 **平台变体**: 按平台自动加载配置覆盖（如 `SOUL.slack.md`、`SOUL.feishu.md`），实现渠道专属行为。
+
 ### 🛡️ 可靠与安全
 - 🔹 **健壮的会话管理**: 5 状态生命周期状态机，支持崩溃恢复和断线重连。
 - 🔹 **安全至上**: JWT ES256 认证、SSRF 防护以及命令白名单机制。
@@ -125,6 +129,8 @@ Hotplex 使用 Viper 进行配置管理，并支持环境变量覆盖。
 
 | 配置项 | 默认值 | 说明 |
 |:---|:---|:---|
+| `agent_config.enabled` | `true` | 启用 Agent 人格/上下文注入 |
+| `agent_config.config_dir` | `~/.hotplex/agent-configs/` | Agent 配置文件目录 (SOUL.md 等) |
 | `gateway.addr` | `:8888` | WebSocket 网关地址 |
 | `admin.addr` | `:9999` | Admin API 地址 |
 | `db.path` | `data/hotplex.db` | SQLite 数据库路径 |
@@ -139,7 +145,7 @@ Hotplex 使用 Viper 进行配置管理，并支持环境变量覆盖。
 |:---|:---|
 | **入门指南** | [快速上手](docs/User-Manual.md) · [技术参考手册](docs/Reference-Manual.md) · [产品白皮书](docs/Product-Whitepaper.md) |
 | **协议规范** | [AEP v1 协议详解](docs/architecture/AEP-v1-Protocol.md) |
-| **内部设计** | [网关架构设计](docs/architecture/Worker-Gateway-Design.md) · [安全认证](docs/security/Security-Authentication.md) |
+| **内部设计** | [网关架构设计](docs/architecture/Worker-Gateway-Design.md) · [Agent 配置设计](docs/architecture/Agent-Config-Design.md) · [安全认证](docs/security/Security-Authentication.md) |
 | **运维管理** | [Admin API 手册](docs/management/Admin-API-Design.md) · [测试策略](docs/testing/Testing-Strategy.md) |
 
 ## 👥 参与贡献

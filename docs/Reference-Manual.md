@@ -15,15 +15,16 @@
 2. [Quick Start](#2-quick-start)
 3. [Installation & Build](#3-installation--build)
 4. [Configuration](#4-configuration)
-5. [CLI Flags](#5-cli-flags)
-6. [AEP WebSocket Protocol](#6-aep-websocket-protocol)
-7. [Admin API Reference](#7-admin-api-reference)
-8. [Session Lifecycle](#8-session-lifecycle)
-   - [8.4 LLM Error Auto-Retry](#84-llm-error-auto-retry)
-9. [Security](#9-security)
-10. [Observability](#10-observability)
-11. [Hot Reload](#11-hot-reload)
-12. [Troubleshooting](#12-troubleshooting)
+5. [Agent Config](#5-agent-config)
+6. [CLI Flags](#6-cli-flags)
+7. [AEP WebSocket Protocol](#7-aep-websocket-protocol)
+8. [Admin API Reference](#8-admin-api-reference)
+9. [Session Lifecycle](#9-session-lifecycle)
+   - [9.5 LLM Error Auto-Retry](#95-llm-error-auto-retry)
+10. [Security](#10-security)
+11. [Observability](#11-observability)
+12. [Hot Reload](#12-hot-reload)
+13. [Troubleshooting](#13-troubleshooting)
 
 ---
 
@@ -185,6 +186,10 @@ pool:
   max_idle_per_user: 3
   max_memory_per_user: 2147483648   # 2 GB
 
+agent_config:
+  enabled: true                              # Enable agent personality/context injection
+  config_dir: "~/.hotplex/agent-configs"     # Directory: SOUL.md, AGENTS.md, SKILLS.md, USER.md, MEMORY.md
+
 admin:
   enabled: true
   addr: ":9999"
@@ -277,6 +282,8 @@ All non-sensitive fields have production defaults. Binary runs with zero config.
 | `admin.addr` | `:9999` | |
 | `admin.rate_limit_enabled` | `true` | |
 | `admin.requests_per_sec` | `10` | |
+| `agent_config.enabled` | `true` | Enable agent personality/context injection |
+| `agent_config.config_dir` | `~/.hotplex/agent-configs/` | Config files directory |
 | `messaging.*.dm_policy` | `allowlist` | `open`, `allowlist`, `disabled` |
 | `messaging.*.group_policy` | `allowlist` | `open`, `allowlist`, `disabled` |
 | `messaging.*.require_mention` | `true` | |
@@ -315,7 +322,61 @@ pool:
 
 ---
 
-## 5. CLI Flags
+## 5. Agent Config
+
+### 5.1 Overview
+
+HotPlex can inject agent personality, rules, and context into worker sessions through a dual-channel system:
+
+- **B-channel** (system-level): SOUL.md (persona), AGENTS.md (rules), SKILLS.md (tool guides) — injected as system prompt, no hedging
+- **C-channel** (context-level): USER.md (user profile), MEMORY.md (persistent memory) — injected as context files or merged into system prompt
+
+### 5.2 Configuration
+
+```yaml
+agent_config:
+  enabled: true                              # Enable agent config loading (default: true)
+  config_dir: "~/.hotplex/agent-configs"     # Config files directory
+```
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `agent_config.enabled` | `true` | Enable agent personality/context injection |
+| `agent_config.config_dir` | `~/.hotplex/agent-configs/` | Directory containing SOUL.md, AGENTS.md, etc. |
+
+### 5.3 Config Files
+
+Place these files in `config_dir` (missing files are silently skipped):
+
+| File | Channel | Purpose |
+|------|---------|---------|
+| `SOUL.md` | B | Agent persona, tone, values |
+| `AGENTS.md` | B | Workspace rules, behavioral constraints |
+| `SKILLS.md` | B | Tool usage guides |
+| `USER.md` | C | User profile, preferences |
+| `MEMORY.md` | C | Persistent cross-session memory |
+
+Platform variants (e.g. `SOUL.slack.md`) are automatically appended to the base file.
+
+### 5.4 Size Limits
+
+- Per file: 12,000 chars
+- Total across all files: 60,000 chars
+- YAML frontmatter is automatically stripped
+
+### 5.5 Worker Injection
+
+| Worker | B-channel | C-channel |
+|--------|-----------|-----------|
+| Claude Code | `--append-system-prompt` (S3, no hedging) | `.claude/rules/hotplex-*.md` (M0, hedged) |
+| OpenCode Server | `system` field per message (S2, no hedging) | Merged into `system` field (no hedging) |
+
+> [!TIP]
+> For detailed architecture and slot analysis, see [Agent Config Design](architecture/Agent-Config-Design.md).
+
+---
+
+## 6. CLI Flags
 
 ```bash
 ./hotplex [flags]
@@ -330,15 +391,15 @@ No `-version` or `-help` flag is defined (falls through to standard `flag` packa
 
 ---
 
-## 6. AEP WebSocket Protocol
+## 7. AEP WebSocket Protocol
 
-### 6.1 Connection
+### 7.1 Connection
 
 ```javascript
 const ws = new WebSocket("ws://localhost:8888");
 ```
 
-### 6.2 Authentication
+### 7.2 Authentication
 
 Send API key via configured header (`X-API-Key` by default):
 
@@ -351,7 +412,7 @@ ws.addEventListener("open", () => {
 });
 ```
 
-### 6.3 Session Init
+### 7.3 Session Init
 
 ```javascript
 // Client → Gateway
@@ -374,7 +435,7 @@ ws.send(JSON.stringify({
 }));
 ```
 
-### 6.4 Input Events
+### 7.4 Input Events
 
 ```javascript
 // Send user input to worker
@@ -385,7 +446,7 @@ ws.send(JSON.stringify({
 }));
 ```
 
-### 6.5 Output Events (Gateway → Client)
+### 7.5 Output Events (Gateway → Client)
 
 | `type` | Description |
 |--------|-------------|
@@ -397,14 +458,14 @@ ws.send(JSON.stringify({
 | `ping` / `pong` | Keepalive |
 | `control` | Control signal (interrupt, resume, etc.) |
 
-### 6.6 Session State Machine
+### 7.6 Session State Machine
 
 ```
 created → running → idle ↔ running → terminated → deleted
                       └──────────────→ terminated
 ```
 
-### 6.7 Control Signals
+### 7.7 Control Signals
 
 ```javascript
 // Interrupt worker
@@ -429,7 +490,7 @@ ws.send(JSON.stringify({
 }));
 ```
 
-### 6.8 Envelope Format
+### 7.8 Envelope Format
 
 All AEP v1 messages use NDJSON over WebSocket. Each line is a JSON object:
 
@@ -441,11 +502,11 @@ Full protocol specification: `docs/architecture/AEP-v1-Protocol.md`
 
 ---
 
-## 7. Admin API Reference
+## 8. Admin API Reference
 
 Admin API runs on `:9999` (configurable). All endpoints require Bearer token authentication unless IP whitelist bypass is configured.
 
-### 7.1 Authentication
+### 8.1 Authentication
 
 ```http
 Authorization: Bearer <admin_token>
@@ -453,7 +514,7 @@ Authorization: Bearer <admin_token>
 
 Tokens and scopes are configured in `admin.tokens` and `admin.token_scopes`.
 
-### 7.2 Endpoints
+### 8.2 Endpoints
 
 #### `GET /admin/health`
 
@@ -637,7 +698,7 @@ curl -H "Authorization: Bearer admin-token-1" \
   "http://localhost:9999/admin/logs?limit=50"
 ```
 
-### 7.3 Scope Matrix
+### 8.3 Scope Matrix
 
 | Scope | Endpoints |
 |-------|-----------|
@@ -652,9 +713,9 @@ curl -H "Authorization: Bearer admin-token-1" \
 
 ---
 
-## 8. Session Lifecycle
+## 9. Session Lifecycle
 
-### 8.1 Session States
+### 9.1 Session States
 
 | State | Description |
 |-------|-------------|
@@ -664,7 +725,7 @@ curl -H "Authorization: Bearer admin-token-1" \
 | `terminated` | Worker exited (normal or forced) |
 | `deleted` | Session cleaned up by GC |
 
-### 8.2 State Transitions
+### 9.2 State Transitions
 
 ```
 session.init     → created
@@ -675,13 +736,13 @@ control.terminate→ terminated
 GC (after 7d)   → deleted
 ```
 
-### 8.3 Session Garbage Collection
+### 9.3 Session Garbage Collection
 
 - Idle sessions (no activity) are cleaned up after `session.retention_period` (default 7 days)
 - GC scan runs every `session.gc_scan_interval` (default 1 minute)
 - Terminated sessions are immediately eligible for GC
 
-### 8.4 LLM Error Auto-Retry
+### 9.5 LLM Error Auto-Retry
 
 When the AI provider returns temporary errors (429 rate limit, 529 overload, network issues, 5xx errors), the gateway automatically retries with exponential backoff — no manual "继续" needed.
 
@@ -695,9 +756,9 @@ See [[management/Config-Reference]] for full configuration options.
 
 ---
 
-## 9. Security
+## 10. Security
 
-### 9.1 Authentication
+### 10.1 Authentication
 
 **API Key**: Clients send API key via `X-API-Key` header (configurable). Keys are in `security.api_keys`.
 
@@ -705,7 +766,7 @@ See [[management/Config-Reference]] for full configuration options.
 
 **Dev Mode**: `-dev` flag accepts any API key header value.
 
-### 9.2 Command Whitelist
+### 10.2 Command Whitelist
 
 Only two binaries are allowed to run as workers:
 
@@ -716,13 +777,13 @@ var AllowedCommands = map[string]bool{
 }
 ```
 
-### 9.3 Environment Variable Isolation
+### 10.3 Environment Variable Isolation
 
 - **Protected vars** (cannot be set by Worker): `HOME`, `PATH`, `GOPATH`, `GOROOT`, `CLAUDECODE`, `GATEWAY_ADDR`, `GATEWAY_TOKEN`
 - **Sensitive prefixes** (auto-redacted in logs): `AWS_`, `AZURE_`, `GITHUB_`, `ANTHROPIC_`, `OPENAI_`, `SECRET`, `PASSWORD`
 - **Nested agent prevention**: `CLAUDECODE=` env var is stripped from worker env to prevent nested sessions
 
-### 9.4 SSRF Protection
+### 10.4 SSRF Protection
 
 Only `http://` and `https://` URLs are allowed. Blocked:
 
@@ -731,14 +792,14 @@ Only `http://` and `https://` URLs are allowed. Blocked:
 - IPv6: `::1`, `fc00::/7`, `fe80::/10`
 - Blocked hostnames: `localhost`, `metadata.google.internal`
 
-### 9.5 Input Validation
+### 10.5 Input Validation
 
 - Null bytes (`\x00`) rejected
 - Max envelope size: 1MB
 - Max input field length: 1MB
 - Path traversal: `SafePathJoin` validates resolved paths stay within base directory
 
-### 9.6 TLS
+### 10.6 TLS
 
 ```yaml
 security:
@@ -751,9 +812,9 @@ Warning is issued if TLS is disabled on a non-local address.
 
 ---
 
-## 10. Observability
+## 11. Observability
 
-### 10.1 Structured Logging
+### 11.1 Structured Logging
 
 HotPlex uses `log/slog` with JSON output to stdout:
 
@@ -770,13 +831,13 @@ Key log fields:
 | `user_id` | Authenticated user |
 | `bot_id` | Bot ID from JWT (if present) |
 
-### 10.2 Prometheus Metrics
+### 11.2 Prometheus Metrics
 
 Metrics endpoint: `GET /metrics` on the admin port (`:9999`).
 
 Enabled by importing `github.com/prometheus/client_golang/prometheus/promhttp`.
 
-### 10.3 OpenTelemetry Tracing
+### 11.3 OpenTelemetry Tracing
 
 Tracing is disabled by default. Enable via OTEL environment variables:
 
@@ -785,16 +846,16 @@ export OTEL_EXPORTER_OTLP_ENDPOINT="http://collector:4317"
 ./hotplex
 ```
 
-### 10.4 Health Checks
+### 11.4 Health Checks
 
 - `GET /admin/health` — overall gateway + DB + workers health
 - `GET /admin/health/workers` — per-worker-type health with test results
 
 ---
 
-## 11. Hot Reload
+## 12. Hot Reload
 
-### 11.1 How It Works
+### 12.1 How It Works
 
 HotPlex watches the config file's directory using `fsnotify`. On file change:
 
@@ -806,11 +867,11 @@ HotPlex watches the config file's directory using `fsnotify`. On file change:
 6. Static fields: log warning, require restart
 7. Audit: record change in audit log
 
-### 11.2 Config History
+### 12.2 Config History
 
 Last 64 config versions are retained in memory. View via `GET /admin/config/history`.
 
-### 11.3 Rollback
+### 12.3 Rollback
 
 ```bash
 curl -X POST \
@@ -820,15 +881,15 @@ curl -X POST \
 
 Rollback to version `N` steps back from current (not absolute version number).
 
-### 11.4 Static Field Changes
+### 12.4 Static Field Changes
 
 Changes to static fields (`gateway.addr`, `db.path`, etc.) require a restart. The binary logs a warning but continues running with the old config.
 
 ---
 
-## 12. Troubleshooting
+## 13. Troubleshooting
 
-### 12.1 Binary Won't Start
+### 13.1 Binary Won't Start
 
 **Error: `config: missing required secrets: security.jwt_secret`**
 
@@ -861,7 +922,7 @@ security:
   tls_key_file: "/etc/hotplex/tls.key"
 ```
 
-### 12.2 WebSocket Connection Refused
+### 13.2 WebSocket Connection Refused
 
 Ensure the gateway is listening on the expected address:
 
@@ -873,7 +934,7 @@ Ensure the gateway is listening on the expected address:
 curl -v http://localhost:8888   # should get "400 Bad Request" (not WS upgrade)
 ```
 
-### 12.3 Authentication Failures
+### 13.3 Authentication Failures
 
 **401 Unauthorized**: Verify API key matches one in `security.api_keys`:
 
@@ -889,7 +950,7 @@ security:
 export HOTPLEX_JWT_SECRET="$(echo -n 'your-secret' | base64)"
 ```
 
-### 12.4 Worker Not Starting
+### 13.4 Worker Not Starting
 
 Check worker binary is in `PATH`:
 
@@ -903,19 +964,19 @@ Worker logs go to stderr (not captured by HotPlex). Run worker manually to diagn
 claude --dir /tmp/session --json-stream
 ```
 
-### 12.5 High Memory Usage
+### 13.5 High Memory Usage
 
 - Check pool config: `pool.max_size`, `pool.max_memory_per_user`
 - Session GC may be backlogged: verify `session.gc_scan_interval` and `session.retention_period`
 - Worker processes may not be cleaning up: check process tree
 
-### 12.6 Config Hot Reload Not Working
+### 13.6 Config Hot Reload Not Working
 
 - Verify file watcher has permissions on config directory
 - Check log for reload events: `config reloaded successfully` or `failed to reload`
 - Static field changes don't trigger reload — must restart
 
-### 12.7 Race Detection Failures
+### 13.7 Race Detection Failures
 
 Run tests with race detector:
 
@@ -924,7 +985,7 @@ make test        # full race test (up to 15m)
 make test-short  # quick race test (up to 5m)
 ```
 
-### 12.8 Build Issues
+### 13.8 Build Issues
 
 **`command not found: golangci-lint`**
 

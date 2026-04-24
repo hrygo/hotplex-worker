@@ -96,6 +96,10 @@ security:
   api_keys:             # 允许接入的 API Key 列表
     - "sk-my-secret-key"
 
+agent_config:
+  enabled: true         # 启用 Agent 人格/上下文注入
+  config_dir: "~/.hotplex/agent-configs"  # SOUL.md, AGENTS.md, USER.md 等
+
 admin:
   addr: ":9999"         # 管理端口
   tokens: ["admin-it"] # 管理员访问 Token

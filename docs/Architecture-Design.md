@@ -86,6 +86,7 @@ graph TD
 2.  **资源配额治理**：全局与单用户维度的并发会话数限制及内存预测追踪 (Memory-aware Pool)。
 3.  **LLM 自动重试**：内置 429/5xx 等典型 LLM 错误的正则识别与指数退避自动重试机制。
 4.  **配置热重载**：支持不中断服务的情况下更新关键运行参数，并具备版本回滚能力。
+5.  **Agent 配置注入**：通过 B/C 双通道机制，将人格 (SOUL.md)、规则 (AGENTS.md)、工具指南 (SKILLS.md)、用户画像 (USER.md) 和持久记忆 (MEMORY.md) 自动注入到 Worker 会话。支持平台变体（如 SOUL.slack.md）和大小限制（12K/文件，60K 总计）。详见 [Agent Config 设计文档](architecture/Agent-Config-Design.md)。
 
 ---
 

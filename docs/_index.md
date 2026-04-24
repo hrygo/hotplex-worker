@@ -43,6 +43,7 @@ status: active
 | [[Disaster-Recovery]] | 灾难恢复手册 | 故障切换、备份恢复与容灾预案 |
 | **[组件规格 (Specs)]** | | |
 | [[architecture/WebSocket-Full-Duplex-Flow]] | 全双工流时序 | 客户端/网关/Worker 间的数据流向与状态同步 |
+| [[architecture/Agent-Config-Design]] | Agent 配置注入设计 | B/C 通道映射、Worker Context 槽位分析、双 Worker 注入方案 |
 | [[specs/Worker-ClaudeCode-Spec]] | Worker 规格 (Claude) | Claude Code CLI 进程生命周期与 I/O 协议 |
 | [[specs/Worker-OpenCode-Server-Spec]] | Worker 规格 (OpenCode) | OpenCode Server (HTTP/SSE)适配规格 |
 | [[specs/Slack-Adapter-Improvement-Spec]] | 平台适配 (Slack) | 消息分片、增量更新与 Socket Mode 优化 |

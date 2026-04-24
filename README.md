@@ -40,6 +40,10 @@ Hotplex is a high-performance Go gateway that provides a **single WebSocket inte
 - 🔹 **Multi-Channel Bridge**: Bidirectional support for **Slack** (Socket Mode) and **Feishu** (WebSocket).
 - 🔹 **Worker Adapters**: Out-of-the-box support for Claude Code, OpenCode Server, and Pi-mono.
 
+### 🤖 Agent Intelligence
+- 🔹 **Agent Config System**: Define agent personality (SOUL.md), workspace rules (AGENTS.md), tool guides (SKILLS.md), user profile (USER.md), and persistent memory (MEMORY.md) — automatically injected into every worker session via B/C dual channels.
+- 🔹 **Platform Variants**: Per-platform config overrides (e.g. `SOUL.slack.md`, `SOUL.feishu.md`) appended automatically for channel-specific behavior.
+
 ### 🛡️ Reliability & Security
 - 🔹 **Robust Session Management**: 5-state lifecycle machine with crash recovery and auto-reconnection.
 - 🔹 **Security First**: JWT ES256 authentication, SSRF protection, and command whitelisting.
@@ -125,6 +129,8 @@ Hotplex uses Viper for configuration with support for environment variable overr
 
 | Key | Default | Description |
 |:---|:---|:---|
+| `agent_config.enabled` | `true` | Enable agent personality/context injection |
+| `agent_config.config_dir` | `~/.hotplex/agent-configs/` | Directory for SOUL.md, AGENTS.md, etc. |
 | `gateway.addr` | `:8888` | WebSocket gateway endpoint |
 | `admin.addr` | `:9999` | Admin API endpoint |
 | `db.path` | `data/hotplex.db` | SQLite database location |
@@ -139,7 +145,7 @@ Hotplex uses Viper for configuration with support for environment variable overr
 |:---|:---|
 | **Getting Started** | [Quick Start](docs/User-Manual.md) · [Reference Manual](docs/Reference-Manual.md) · [Whitepaper](docs/Product-Whitepaper.md) |
 | **Protocol** | [AEP v1 Specification](docs/architecture/AEP-v1-Protocol.md) |
-| **Internals** | [Gateway Design](docs/architecture/Worker-Gateway-Design.md) · [Security](docs/security/Security-Authentication.md) |
+| **Internals** | [Gateway Design](docs/architecture/Worker-Gateway-Design.md) · [Agent Config Design](docs/architecture/Agent-Config-Design.md) · [Security](docs/security/Security-Authentication.md) |
 | **Management** | [Admin API](docs/management/Admin-API-Design.md) · [Testing](docs/testing/Testing-Strategy.md) |
 
 ## 👥 Contributing
