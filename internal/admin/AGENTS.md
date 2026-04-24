@@ -29,7 +29,7 @@ response.go      # JSON response helpers
 
 **Provider interfaces (anti-circular-import)**
 - admin.go defines Provider interfaces (SessionManagerProvider, HubProvider, etc.)
-- cmd/worker/main.go has adapter structs (sessionManagerAdapter, hubAdapter, bridgeAdapter) that bridge concrete types
+- cmd/hotplex/main.go has adapter structs (sessionManagerAdapter, hubAdapter, bridgeAdapter) that bridge concrete types
 - AdminAPI never imports gateway/session packages directly
 
 **Scope-based access control**

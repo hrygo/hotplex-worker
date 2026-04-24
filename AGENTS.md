@@ -27,7 +27,7 @@ cp configs/env.example .env
 
 ### Entry
 ```
-cmd/worker/main.go    (~656 lines) flags, DI, signal, messaging init, LLM retry init
+cmd/hotplex/main.go    (~656 lines) flags, DI, signal, messaging init, LLM retry init
 ```
 
 ### internal/
@@ -115,7 +115,7 @@ configs/  config.yaml, config-dev.yaml, env.example
 - Gateway HTTP API → `internal/gateway/api.go` — session list/get/terminate over HTTP
 - Config structure → `internal/config/config.go` — structs + Default() + Validate()
 - STT config → `internal/config/config.go` — FeishuConfig.STTProvider/STTLocalCmd/STTLocalMode/STTLocalIdleTTL + SlackConfig.STTProvider/STTLocalCmd/STTLocalMode/STTLocalIdleTTL
-- Wire messaging adapter → `cmd/worker/main.go` — `startMessagingAdapters()`: config → New → Configure → SetConnFactory → Start
+- Wire messaging adapter → `cmd/hotplex/main.go` — `startMessagingAdapters()`: config → New → Configure → SetConnFactory → Start
 
 **Security**
 - Add validation → `internal/security/` — one file per concern (jwt, ssrf, path, env, tool, command)
@@ -127,7 +127,7 @@ configs/  config.yaml, config-dev.yaml, env.example
 ## CODE MAP
 
 **Entry**
-- `main` / `GatewayDeps` → `cmd/worker/main.go` — entry point, DI container, LLM retry init
+- `main` / `GatewayDeps` → `cmd/hotplex/main.go` — entry point, DI container, LLM retry init
 
 **Gateway** (`internal/gateway/`)
 - `Hub` → `hub.go:57` — WS broadcast hub, conn registry, session routing, seq gen

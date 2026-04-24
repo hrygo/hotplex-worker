@@ -137,6 +137,22 @@ body {
   100% { background-position: 200% 0; }
 }
 
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+@keyframes skeletonPulse {
+  0% { background-color: var(--bg-elevated); }
+  50% { background-color: var(--bg-surface); }
+  100% { background-color: var(--bg-elevated); }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
 .animate-fade-in-up { 
   animation: fadeInUp 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both; 
 }
@@ -145,6 +161,14 @@ body {
   background: linear-gradient(90deg, transparent, rgba(255,255,255,0.03), transparent);
   background-size: 200% 100%;
   animation: shimmer 2.5s infinite;
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+.animate-pulse-subtle {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
 /* ============================================================
@@ -189,7 +213,37 @@ body {
 .thread-content {
   max-width: 48rem;
   margin: 0 auto;
-  padding: 0 1.5rem;
+  padding: 0 1.25rem;
+}
+
+/* Scroll to bottom button */
+.scroll-bottom-btn {
+  position: absolute;
+  bottom: 7rem;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 0.5rem 1rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-bright);
+  border-radius: 9999px;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  cursor: pointer;
+  z-index: 60;
+  transition: all 0.2s ease;
+  backdrop-filter: blur(8px);
+}
+
+.scroll-bottom-btn:hover {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  transform: translateX(-50%) translateY(-2px);
+  border-color: var(--border-gold);
 }
 
 /* ============================================================
@@ -476,6 +530,7 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.04);
 }
 
+.panel-icon-btn {
   transition: all 0.12s ease;
 }
 .panel-icon-btn:hover {
@@ -561,8 +616,22 @@ body {
   animation: skeletonPulse 1.8s ease-in-out infinite;
 }
 
-/* Session row selected — close panel on click */
-.session-row:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--bg-base), 0 0 0 4px var(--accent-amber);
+/* Mobile responsiveness */
+@media (max-width: 768px) {
+  .header-inner { padding: 0 1rem; }
+  .thread-viewport { padding-top: 1rem; }
+  .thread-content { max-width: 100%; padding: 0 1rem; }
+  .composer-wrapper { padding: 1rem; }
+  .composer-root { border-radius: var(--radius-md); }
+  .side-panel { width: 100%; }
+  
+  .msg-assistant { gap: 0.75rem; margin-bottom: 2rem; }
+  .msg-assistant-body { font-size: 0.875rem; }
+  .msg-user-bubble { max-width: 90%; font-size: 0.875rem; }
+}
+
+@media (max-width: 640px) {
+  .app-header h1 { font-size: 0.75rem; }
+  .welcome-title { font-size: 1.5rem; }
+  .suggestion-card { padding: 0.625rem; font-size: 0.75rem; }
 }

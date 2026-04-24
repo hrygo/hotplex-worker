@@ -1192,7 +1192,7 @@ func isMessageExpired(msg *larkim.EventMessage) bool {
 | `internal/config/config.go` | 修改 | FeishuConfig 扩展 |
 | `configs/config-dev.yaml` | 修改 | 新增 gate 配置项 |
 | `configs/env.example` | 修改 | 新增环境变量 |
-| `cmd/worker/main.go` | 修改 | 传递新配置到 adapter |
+| `cmd/hotplex/main.go` | 修改 | 传递新配置到 adapter |
 
 ---
 

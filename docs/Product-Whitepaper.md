@@ -448,7 +448,7 @@ type Worker interface {
 
 1. 中央集控：`internal/worker/` 维护线程安全的 Registry 字典
 2. 包级自组装：各 Worker 子包通过 `init()` 回调注册自身
-3. 空导入编排：`cmd/worker/main.go` 通过 `import _ "..."` 唤醒所有合法挂载项
+3. 空导入编排：`cmd/hotplex/main.go` 通过 `import _ "..."` 唤醒所有合法挂载项
 4. Fail Fast：请求未注册的 Worker 类型，Gateway 在 Session 初期强阻断
 
 ### 6.3 进程隔离

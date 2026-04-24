@@ -86,7 +86,7 @@
 ## 2. 文件结构
 
 ```
-cmd/worker/main.go        ← ~30行新增: messaging 包初始化 + goroutine 启动
+cmd/hotplex/main.go        ← ~30行新增: messaging 包初始化 + goroutine 启动
 
 internal/
   gateway/
@@ -370,7 +370,7 @@ PlatformConn 接口 (messaging/platform_conn.go)
   feishu/adapter.go → github.com/larksuite/oapi-sdk-go/v2
 
 现有包 ──零依赖──▶ messaging/ 包
-cmd/worker/main.go   → messaging (初始化, 唯一反向引用)
+cmd/hotplex/main.go   → messaging (初始化, 唯一反向引用)
 其他所有文件对 messaging/ 完全无感知
 ```
 

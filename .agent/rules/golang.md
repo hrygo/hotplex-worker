@@ -120,7 +120,7 @@ type SessionManager interface {
 ```
 
 ```go
-// cmd/worker/main.go — 适配器桥接具体类型
+// cmd/hotplex/main.go — 适配器桥接具体类型
 type adminDeps struct {
     sm        *session.Manager        // 具体类型，非接口
     hub       *gateway.Hub

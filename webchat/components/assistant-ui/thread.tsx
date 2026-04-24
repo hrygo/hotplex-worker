@@ -6,6 +6,7 @@ import {
   ComposerPrimitive,
   MessagePrimitive,
   ActionBarPrimitive,
+  useMessage,
 } from "@assistant-ui/react";
 import { MarkdownText } from "./MarkdownText";
 import { BrandIcon } from "@/components/icons";
@@ -35,12 +36,27 @@ export function Thread() {
             }
           </ThreadPrimitive.Messages>
         </div>
+
+        {/* Scroll to bottom button — only shown when needed */}
+        <ThreadPrimitive.ScrollToBottom asChild>
+          <button className="scroll-bottom-btn">
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 14l-7 7-7-7" />
+            </svg>
+            <span>New Messages</span>
+          </button>
+        </ThreadPrimitive.ScrollToBottom>
       </ThreadPrimitive.Viewport>
 
       {/* Composer wrapper (floating footer) */}
       <div className="composer-wrapper">
         <div className="composer-container">
           <Composer />
+          <div className="mt-2 text-center">
+            <p className="text-[10px] text-[var(--text-faint)] font-mono uppercase tracking-widest">
+              Shift + Enter for new line · Cmd + Enter to send
+            </p>
+          </div>
         </div>
       </div>
     </ThreadPrimitive.Root>
@@ -107,6 +123,8 @@ function WelcomeScreen() {
    Assistant Message
    ============================================================ */
 function AssistantMessage() {
+  const message = useMessage();
+  
   return (
     <MessagePrimitive.Root className="group msg-assistant animate-fade-in-up">
       <div className="flex-shrink-0 mt-1">
@@ -119,6 +137,8 @@ function AssistantMessage() {
         <MessagePrimitive.Parts>
           {({ part }) => {
             const p = part as any;
+            const isLatest = message.status === "in-progress";
+            
             if (p.type === "reasoning") {
               return <ReasoningBlock text={p.text} />;
             }
@@ -126,7 +146,12 @@ function AssistantMessage() {
               return <MarkdownText text={p.text} />;
             }
             if (p.type === "tool-call") {
-              return <ToolCallBlock key={p.toolCallId} toolName={p.toolName} args={p.args} />;
+              return <ToolCallBlock 
+                key={p.toolCallId} 
+                toolName={p.toolName} 
+                args={p.args} 
+                active={isLatest && !message.parts.some((other: any) => other.toolCallId === p.toolCallId && other.type === 'tool-result')} 
+              />;
             }
             if (p.type === "tool-result") {
               return <ToolResultBlock key={p.toolCallId} toolName={p.toolName} result={p.result} />;
@@ -200,14 +225,16 @@ function ReasoningBlock({ text }: { text: string }) {
 /* ============================================================
    Tool Call Block
    ============================================================ */
-function ToolCallBlock({ toolName, args }: { toolName: string; args: any }) {
+function ToolCallBlock({ toolName, args, active }: { toolName: string; args: any, active?: boolean }) {
   return (
-    <div className="tool-call-block">
+    <div className={`tool-call-block ${active ? 'animate-pulse-subtle border-[var(--accent-emerald)]' : ''}`}>
       <div className="tool-header">
-        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg className={`w-3.5 h-3.5 ${active ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
         </svg>
-        <span>EXECUTING: {toolName.toUpperCase()}</span>
+        <span className={active ? 'font-bold' : ''}>
+          {active ? 'EXECUTING' : 'CALLED'}: {toolName.toUpperCase()}
+        </span>
       </div>
       <div className="p-3 pt-0 font-mono text-[11px] text-[var(--text-muted)] opacity-80">
         {JSON.stringify(args, null, 2)}

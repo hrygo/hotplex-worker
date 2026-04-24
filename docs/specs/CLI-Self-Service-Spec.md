@@ -121,7 +121,7 @@ func init() {
 doctor 命令执行时通过 blank import 触发注册：
 
 ```go
-// cmd/worker/doctor.go
+// cmd/hotplex/doctor.go
 
 import _ "github.com/hotplex/hotplex-worker/internal/cli/checkers"
 ```
@@ -258,7 +258,7 @@ Run 'hotplex doctor --fix' to auto-fix 1 issue(s)
 
 ### 重构目标
 
-将现有 `cmd/worker/main.go` (~656行) 拆分：
+将现有 `cmd/hotplex/main.go` (~656行) 拆分：
 
 - `main.go`: Cobra root cmd + 子命令注册（~50 行）
 - `serve.go`: 原有启动逻辑（~600 行，几乎原封不动）

@@ -22,13 +22,13 @@ fi
 
 readonly SCRIPT_DIR="$(cd "${BASH_SOURCE[0]%/*}" && pwd)"
 readonly ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-readonly BIN_NAME="hotplex-worker"
+readonly BIN_NAME="hotplex"
 readonly BUILD_DIR="${BUILD_DIR:-${ROOT_DIR}/bin}"
 readonly LOG_DIR="${LOG_DIR:-${ROOT_DIR}/logs}"
 readonly CONFIG="${CONFIG:-${ROOT_DIR}/configs/config-dev.yaml}"
 
-readonly GATEWAY_PID="${HOME}/.hotplex/.pids/hotplex-worker.pid"
-readonly GATEWAY_LOG="${LOG_DIR}/hotplex-worker.log"
+readonly GATEWAY_PID="${HOME}/.hotplex/.pids/gateway.pid"
+readonly GATEWAY_LOG="${LOG_DIR}/hotplex.log"
 readonly GRACE_PERIOD="${GRACE_PERIOD:-7}"
 
 readonly WEBCHAT_DIR="${ROOT_DIR}/webchat"
@@ -110,7 +110,7 @@ start_gateway() {
     fi
 
     : > "$GATEWAY_LOG"
-    "$binary" -config "$CONFIG" >> "$GATEWAY_LOG" 2>&1 &
+    "$binary" gateway start -c "$CONFIG" >> "$GATEWAY_LOG" 2>&1 &
     echo $! > "$GATEWAY_PID"
 
     # Wait for gateway to initialize (up to 10s), then display banner.

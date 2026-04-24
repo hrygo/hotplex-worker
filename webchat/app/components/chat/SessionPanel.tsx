@@ -131,6 +131,7 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
 }
 
 export function SessionPanel({ onSessionSelect, initialSessionId }: SessionPanelProps) {
+  const [searchQuery, setSearchQuery] = useState('');
   const {
     sessions,
     activeSession,
@@ -177,7 +178,7 @@ export function SessionPanel({ onSessionSelect, initialSessionId }: SessionPanel
       <div className="side-panel" role="dialog" aria-label="Sessions">
         {/* Header */}
         <div className="px-6 py-6 border-b border-[var(--border-subtle)] bg-[var(--bg-base)]">
-          <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center justify-between mb-6">
             <h2 className="text-lg font-display font-bold tracking-tight text-gradient-gold">Conversations</h2>
             <button 
               onClick={closePanel}
@@ -188,8 +189,23 @@ export function SessionPanel({ onSessionSelect, initialSessionId }: SessionPanel
               </svg>
             </button>
           </div>
-          <p className="text-[10px] text-[var(--text-faint)] font-mono uppercase tracking-widest">
-            {sessions.length} ACTIVE SESSIONS
+          
+          {/* Search */}
+          <div className="relative mb-2">
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-faint)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <input 
+              type="text"
+              placeholder="Search history..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-xl pl-10 pr-4 py-2.5 text-xs text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent-gold)] focus:ring-1 focus:ring-[var(--accent-gold)] transition-all placeholder:text-[var(--text-faint)]"
+            />
+          </div>
+
+          <p className="text-[10px] text-[var(--text-faint)] font-mono uppercase tracking-widest pl-1 mt-4">
+            {sessions.filter(s => s.id.toLowerCase().includes(searchQuery.toLowerCase())).length} SESSIONS
           </p>
         </div>
 
@@ -215,12 +231,14 @@ export function SessionPanel({ onSessionSelect, initialSessionId }: SessionPanel
             <EmptyState onCreate={() => createNewSession()} />
           ) : (
             <div className="px-3 space-y-1">
-              {sessions.map((session) => (
+              {sessions
+                .filter(s => s.id.toLowerCase().includes(searchQuery.toLowerCase()))
+                .map((session) => (
                 <SessionRow
                   key={session.id}
                   session={session}
                   isActive={activeSession?.id === session.id}
-                  onSelect={() => selectSession(session)}
+                  onSelect={() => { selectSession(session); closePanel(); }}
                   onDelete={() => removeSession(session.id)}
                 />
               ))}

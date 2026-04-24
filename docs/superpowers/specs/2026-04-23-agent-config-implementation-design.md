@@ -265,7 +265,7 @@ B+C 合并组装 (OCS 无 hedging，所有内容同等权重):
 | 新增 | `internal/agentconfig/cc_rules.go` | InjectCRules() |
 | 修改 | `internal/config/config.go` | 新增 AgentConfig section |
 | 修改 | `internal/gateway/bridge.go` | StartSession() 加载 configs + 路由 |
-| 修改 | `cmd/worker/main.go` | 初始化传递 configDir |
+| 修改 | `cmd/hotplex/main.go` | 初始化传递 configDir |
 
 **交付标准**: CC Worker 加载设定文件，B 通道注入 S3，C 通道写入 rules。
 

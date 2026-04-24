@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -39,19 +41,120 @@ import (
 )
 
 func newGatewayCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "gateway",
+		Short: "Manage the gateway server",
+	}
+	cmd.AddCommand(
+		newGatewayStartCmd(),
+		newGatewayStopCmd(),
+		newGatewayRestartCmd(),
+	)
+	return cmd
+}
+
+func newGatewayStartCmd() *cobra.Command {
 	var configPath string
 	var devMode bool
 
 	cmd := &cobra.Command{
-		Use:   "gateway",
+		Use:   "start",
 		Short: "Start the gateway server",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := writeGatewayPID(); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: could not write PID file: %s\n", err)
+			}
 			return runGateway(configPath, devMode)
 		},
 	}
 	cmd.Flags().StringVarP(&configPath, "config", "c", "~/.hotplex/config.yaml", "config file path")
 	cmd.Flags().BoolVar(&devMode, "dev", false, "development mode")
 	return cmd
+}
+
+func newGatewayStopCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "stop",
+		Short: "Stop the running gateway server",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			pid, err := readGatewayPID()
+			if err != nil {
+				return err
+			}
+			if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
+				return fmt.Errorf("stop PID %d: %w", pid, err)
+			}
+			fmt.Fprintf(os.Stderr, "gateway: sent SIGTERM to PID %d\n", pid)
+			removeGatewayPID()
+			return nil
+		},
+	}
+}
+
+func newGatewayRestartCmd() *cobra.Command {
+	var configPath string
+	var devMode bool
+
+	cmd := &cobra.Command{
+		Use:   "restart",
+		Short: "Restart the gateway server",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			pid, err := readGatewayPID()
+			if err != nil {
+				return err
+			}
+			if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
+				return fmt.Errorf("stop PID %d: %w", pid, err)
+			}
+			fmt.Fprintf(os.Stderr, "gateway: stopped PID %d\n", pid)
+			removeGatewayPID()
+
+			time.Sleep(500 * time.Millisecond)
+
+			if err := writeGatewayPID(); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: could not write PID file: %s\n", err)
+			}
+			return runGateway(configPath, devMode)
+		},
+	}
+	cmd.Flags().StringVarP(&configPath, "config", "c", "~/.hotplex/config.yaml", "config file path")
+	cmd.Flags().BoolVar(&devMode, "dev", false, "development mode")
+	return cmd
+}
+
+func gatewayPIDPath() string {
+	return filepath.Join(os.Getenv("HOME"), ".hotplex", ".pids", "gateway.pid")
+}
+
+func writeGatewayPID() error {
+	pidPath := gatewayPIDPath()
+	if err := os.MkdirAll(filepath.Dir(pidPath), 0755); err != nil {
+		return err
+	}
+	return os.WriteFile(pidPath, []byte(fmt.Sprintf("%d", os.Getpid())), 0644)
+}
+
+func readGatewayPID() (int, error) {
+	data, err := os.ReadFile(gatewayPIDPath())
+	if err != nil {
+		return 0, fmt.Errorf("gateway not running (no PID file)")
+	}
+	
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		return 0, fmt.Errorf("invalid PID file content")
+	}
+	
+	if syscall.Kill(pid, 0) != nil {
+		removeGatewayPID()
+		return 0, fmt.Errorf("gateway not running (PID %d stale)", pid)
+	}
+	
+	return pid, nil
+}
+
+func removeGatewayPID() {
+	_ = os.Remove(gatewayPIDPath())
 }
 
 func runGateway(configPath string, devMode bool) error {
