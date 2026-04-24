@@ -216,7 +216,7 @@ func TestParseInitAck(t *testing.T) {
 		}
 		ack := parseInitAck(env)
 		require.Equal(t, "sess_abc", ack.SessionID)
-		require.Equal(t, SessionState(""), ack.State)
+		require.Equal(t, StateCreated, ack.State) // defaults to created
 	})
 
 	t.Run("nil data", func(t *testing.T) {
