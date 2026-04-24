@@ -2,8 +2,6 @@ package checkers
 
 import (
 	"context"
-	"fmt"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -99,42 +97,6 @@ func (c sqlitePathChecker) Check(ctx context.Context) cli.Diagnostic {
 		Category: c.Category(),
 		Status:   cli.StatusPass,
 		Message:  "SQLite path is valid and writable: " + c.dbPath,
-	}
-}
-
-// networkReachableChecker checks external API connectivity.
-// Skipped by default — only runs when explicitly requested.
-type networkReachableChecker struct{}
-
-func (c networkReachableChecker) Name() string     { return "dependencies.network_reachable" }
-func (c networkReachableChecker) Category() string { return "dependencies" }
-func (c networkReachableChecker) Check(ctx context.Context) cli.Diagnostic {
-	client := &http.Client{Timeout: 5}
-	resp, err := client.Get("https://api.anthropic.com")
-	if err != nil {
-		return cli.Diagnostic{
-			Name:     c.Name(),
-			Category: c.Category(),
-			Status:   cli.StatusFail,
-			Message:  "Cannot reach https://api.anthropic.com",
-			Detail:   err.Error(),
-			FixHint:  "Check network connection and DNS settings",
-		}
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode >= 200 && resp.StatusCode < 400 {
-		return cli.Diagnostic{
-			Name:     c.Name(),
-			Category: c.Category(),
-			Status:   cli.StatusPass,
-			Message:  fmt.Sprintf("API reachable (HTTP %d)", resp.StatusCode),
-		}
-	}
-	return cli.Diagnostic{
-		Name:     c.Name(),
-		Category: c.Category(),
-		Status:   cli.StatusWarn,
-		Message:  fmt.Sprintf("API returned unexpected status: HTTP %d", resp.StatusCode),
 	}
 }
 
