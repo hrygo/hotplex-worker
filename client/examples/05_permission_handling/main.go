@@ -13,9 +13,9 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
-	"unicode/utf8"
 
 	client "github.com/hrygo/hotplex/client"
+	"github.com/hrygo/hotplex/client/examples/internal/demo"
 )
 
 // Customize this map for your security requirements.
@@ -29,10 +29,10 @@ var allowPolicy = map[string]bool{
 }
 
 func main() {
-	gatewayURL := envOr("HOTPLEX_GATEWAY_URL", "ws://localhost:8888/ws")
-	apiKey := envOr("HOTPLEX_API_KEY", "test-api-key")
+	gatewayURL := demo.EnvOr("HOTPLEX_GATEWAY_URL", "ws://localhost:8888/ws")
+	apiKey := demo.EnvOr("HOTPLEX_API_KEY", "test-api-key")
 	autoApproveAll := os.Getenv("HOTPLEX_AUTO_APPROVE") == "1"
-	task := envOr("HOTPLEX_TASK", "Read the file go.mod and tell me the Go version.")
+	task := demo.EnvOr("HOTPLEX_TASK", "Read the file go.mod and tell me the Go version.")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
@@ -66,16 +66,14 @@ func main() {
 		for evt := range c.Events() {
 			switch evt.Type {
 			case client.EventMessageDelta:
-				if d, ok := evt.Data.(map[string]any); ok {
-					fmt.Print(d["content"])
-				}
+				fmt.Print(demo.FieldStr(evt.Data, "content"))
 			case client.EventToolCall:
 				if d, ok := evt.AsToolCallData(); ok {
 					fmt.Printf("\n  [tool call: %s]\n", d.Name)
 				}
 			case client.EventPermissionRequest:
 				if d, ok := evt.AsPermissionRequestData(); ok {
-					fmt.Printf("\n  [permission request] tool=%s  desc=%s\n", d.ToolName, truncate(d.Description, 80))
+					fmt.Printf("\n  [permission request] tool=%s  desc=%s\n", d.ToolName, demo.Truncate(d.Description, 80))
 
 					if autoApproveAll || allowPolicy[d.ToolName] {
 						fmt.Printf("  -> Approved (%s)\n", d.ToolName)
@@ -86,8 +84,8 @@ func main() {
 					}
 				}
 			case client.EventDone:
-				if done, ok := evt.AsDoneData(); ok {
-					fmt.Printf("\n\nDone (success=%v).\n", done.Success)
+				if d, ok := evt.AsDoneData(); ok {
+					fmt.Printf("\n\nDone (success=%v).\n", d.Success)
 				}
 				return
 			case client.EventError:
@@ -110,18 +108,4 @@ func main() {
 	case <-ctx.Done():
 		fmt.Fprintln(os.Stderr, "Timeout or cancelled.")
 	}
-}
-
-func envOr(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
-}
-
-func truncate(s string, max int) string {
-	if utf8.RuneCountInString(s) <= max {
-		return s
-	}
-	return string([]rune(s)[:max]) + "..."
 }

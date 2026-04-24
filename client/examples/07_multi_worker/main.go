@@ -13,9 +13,9 @@ import (
 	"strings"
 	"syscall"
 	"time"
-	"unicode/utf8"
 
 	client "github.com/hrygo/hotplex/client"
+	"github.com/hrygo/hotplex/client/examples/internal/demo"
 )
 
 var workerTypes = []string{
@@ -25,9 +25,9 @@ var workerTypes = []string{
 }
 
 func main() {
-	gatewayURL := envOr("HOTPLEX_GATEWAY_URL", "ws://localhost:8888/ws")
-	apiKey := envOr("HOTPLEX_API_KEY", "test-api-key")
-	task := envOr("HOTPLEX_TASK", "Respond with 'OK' and nothing else.")
+	gatewayURL := demo.EnvOr("HOTPLEX_GATEWAY_URL", "ws://localhost:8888/ws")
+	apiKey := demo.EnvOr("HOTPLEX_API_KEY", "test-api-key")
+	task := demo.EnvOr("HOTPLEX_TASK", "Respond with 'OK' and nothing else.")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -46,7 +46,7 @@ func main() {
 		testWorker(ctx, gatewayURL, apiKey, wt, task)
 	}
 
-	banner("Summary")
+	demo.Banner("Summary")
 	fmt.Printf("Tested %d worker types.\n", len(workerTypes))
 }
 
@@ -76,13 +76,13 @@ func testWorker(ctx context.Context, gatewayURL, apiKey, workerType, task string
 		for evt := range c.Events() {
 			switch evt.Type {
 			case client.EventMessageDelta:
-				r.output += fieldStr(evt.Data, "content")
+				r.output += demo.FieldStr(evt.Data, "content")
 			case client.EventDone:
 				r.success = true
 				done <- r
 				return
 			case client.EventError:
-				r.err = fmt.Sprintf("%s: %s", fieldStr(evt.Data, "code"), fieldStr(evt.Data, "message"))
+				r.err = fmt.Sprintf("%s: %s", demo.FieldStr(evt.Data, "code"), demo.FieldStr(evt.Data, "message"))
 				done <- r
 				return
 			}
@@ -96,7 +96,7 @@ func testWorker(ctx context.Context, gatewayURL, apiKey, workerType, task string
 	select {
 	case r := <-done:
 		status := "PASS"
-		detail := truncate(r.output, 40)
+		detail := demo.Truncate(r.output, 40)
 		if r.err != "" {
 			status = "ERROR"
 			detail = r.err
@@ -115,44 +115,4 @@ type result struct {
 	success bool
 	output  string
 	err     string
-}
-
-func banner(title string) {
-	w := len(title) + 4
-	if w < 50 {
-		w = 50
-	}
-	fmt.Println()
-	fmt.Println(strings.Repeat("=", w))
-	fmt.Printf("  %s\n", title)
-	fmt.Println(strings.Repeat("=", w))
-}
-
-func envOr(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
-}
-
-func fieldStr(data any, key string) string {
-	m, ok := data.(map[string]any)
-	if !ok {
-		return ""
-	}
-	v := m[key]
-	if v == nil {
-		return ""
-	}
-	if s, ok := v.(string); ok {
-		return s
-	}
-	return fmt.Sprintf("%v", v)
-}
-
-func truncate(s string, max int) string {
-	if utf8.RuneCountInString(s) <= max {
-		return s
-	}
-	return string([]rune(s)[:max]) + "..."
 }

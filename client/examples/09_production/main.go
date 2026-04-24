@@ -20,9 +20,9 @@ import (
 	"strings"
 	"syscall"
 	"time"
-	"unicode/utf8"
 
 	client "github.com/hrygo/hotplex/client"
+	"github.com/hrygo/hotplex/client/examples/internal/demo"
 )
 
 var allowPolicy = map[string]bool{
@@ -44,12 +44,12 @@ type sessionStats struct {
 }
 
 func main() {
-	gatewayURL := envOr("HOTPLEX_GATEWAY_URL", "ws://localhost:8888/ws")
-	signingKey := envOr("HOTPLEX_SIGNING_KEY", "")
-	apiKey := envOr("HOTPLEX_API_KEY", "")
+	gatewayURL := demo.EnvOr("HOTPLEX_GATEWAY_URL", "ws://localhost:8888/ws")
+	signingKey := demo.EnvOr("HOTPLEX_SIGNING_KEY", "")
+	apiKey := demo.EnvOr("HOTPLEX_API_KEY", "")
 	sessionID := os.Getenv("HOTPLEX_SESSION_ID")
-	workerType := envOr("HOTPLEX_WORKER_TYPE", "claude_code")
-	task := envOr("HOTPLEX_TASK", "List the files in the current directory and count them.")
+	workerType := demo.EnvOr("HOTPLEX_WORKER_TYPE", "claude_code")
+	task := demo.EnvOr("HOTPLEX_TASK", "List the files in the current directory and count them.")
 
 	// Auth: JWT, API Key, or none (for dev).
 	var authToken string
@@ -139,7 +139,7 @@ func main() {
 		fmt.Printf("Tools:    %s\n", strings.Join(ack.ServerCaps.Tools, ", "))
 	}
 
-	fmt.Printf("\n> %s\n", truncate(task, 80))
+	fmt.Printf("\n> %s\n", demo.Truncate(task, 80))
 	if err := c.SendInput(ctx, task); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: send input: %v\n", err)
 		return
@@ -152,21 +152,21 @@ func handleEvents(c *client.Client, st *sessionStats) {
 	for evt := range c.Events() {
 		switch evt.Type {
 		case client.EventMessageStart:
-			fmt.Printf("\n[%s] ", fieldStr(evt.Data, "role"))
+			fmt.Printf("\n[%s] ", demo.FieldStr(evt.Data, "role"))
 		case client.EventMessageDelta:
-			fmt.Print(fieldStr(evt.Data, "content"))
+			fmt.Print(demo.FieldStr(evt.Data, "content"))
 		case client.EventMessageEnd:
 			fmt.Println()
 		case client.EventToolCall:
 			st.toolCalls++
-			fmt.Printf("\n  [tool: %s]\n", fieldStr(evt.Data, "name"))
+			fmt.Printf("\n  [tool: %s]\n", demo.FieldStr(evt.Data, "name"))
 		case client.EventToolResult:
-			if output := fieldStr(evt.Data, "output"); output != "" {
-				fmt.Printf("  [result: %s]\n", truncate(output, 120))
+			if output := demo.FieldStr(evt.Data, "output"); output != "" {
+				fmt.Printf("  [result: %s]\n", demo.Truncate(output, 120))
 			}
 		case client.EventReasoning:
-			if content := fieldStr(evt.Data, "content"); content != "" {
-				fmt.Printf("\n  [reasoning: %s]\n", truncate(content, 120))
+			if content := demo.FieldStr(evt.Data, "content"); content != "" {
+				fmt.Printf("\n  [reasoning: %s]\n", demo.Truncate(content, 120))
 			}
 		case client.EventPermissionRequest:
 			if d, ok := evt.AsPermissionRequestData(); ok {
@@ -177,8 +177,8 @@ func handleEvents(c *client.Client, st *sessionStats) {
 				}
 			}
 		case client.EventState:
-			if d, ok := evt.Data.(map[string]any); ok {
-				fmt.Printf("\n[state: %s]\n", d["state"])
+			if d, ok := evt.AsStateData(); ok {
+				fmt.Printf("\n[state: %s]\n", d.State)
 			}
 		case client.EventDone:
 			printDoneSummary(c, st, evt)
@@ -202,7 +202,7 @@ func printDoneSummary(c *client.Client, st *sessionStats, evt client.Event) {
 		return
 	}
 
-	banner("Session Complete")
+	demo.Banner("Session Complete")
 	fmt.Printf("Session ID:  %s\n", c.SessionID())
 	fmt.Printf("Duration:    %.1fs\n", time.Since(st.startTime).Seconds())
 	fmt.Printf("Tool calls:  %d\n", st.toolCalls)
@@ -210,74 +210,21 @@ func printDoneSummary(c *client.Client, st *sessionStats, evt client.Event) {
 	fmt.Printf("Dropped:     %v\n", done.Dropped)
 
 	if done.Stats != nil {
-		if v := fieldFloat64(done.Stats, "input_tokens"); v > 0 {
+		if v := demo.FieldFloat64(done.Stats, "input_tokens"); v > 0 {
 			st.inputToks = int64(v)
 			fmt.Printf("Input tok:   %d\n", st.inputToks)
 		}
-		if v := fieldFloat64(done.Stats, "output_tokens"); v > 0 {
+		if v := demo.FieldFloat64(done.Stats, "output_tokens"); v > 0 {
 			st.outputToks = int64(v)
 			fmt.Printf("Output tok:  %d\n", st.outputToks)
 		}
-		if v := fieldFloat64(done.Stats, "cost_usd"); v > 0 {
+		if v := demo.FieldFloat64(done.Stats, "cost_usd"); v > 0 {
 			st.costUSD = v
 			fmt.Printf("Cost:        $%.4f\n", st.costUSD)
 		}
-		if v := fieldStr(done.Stats, "model"); v != "" {
+		if v := demo.FieldStr(done.Stats, "model"); v != "" {
 			st.model = v
 			fmt.Printf("Model:       %s\n", st.model)
 		}
 	}
-}
-
-func banner(title string) {
-	w := len(title) + 4
-	if w < 50 {
-		w = 50
-	}
-	fmt.Println()
-	fmt.Println(strings.Repeat("=", w))
-	fmt.Printf("  %s\n", title)
-	fmt.Println(strings.Repeat("=", w))
-}
-
-func envOr(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
-}
-
-func fieldStr(data any, key string) string {
-	m, ok := data.(map[string]any)
-	if !ok {
-		return ""
-	}
-	v := m[key]
-	if v == nil {
-		return ""
-	}
-	if s, ok := v.(string); ok {
-		return s
-	}
-	return fmt.Sprintf("%v", v)
-}
-
-func fieldFloat64(data any, key string) float64 {
-	m, ok := data.(map[string]any)
-	if !ok {
-		return 0
-	}
-	v, ok := m[key]
-	if !ok {
-		return 0
-	}
-	f, _ := v.(float64)
-	return f
-}
-
-func truncate(s string, max int) string {
-	if utf8.RuneCountInString(s) <= max {
-		return s
-	}
-	return string([]rune(s)[:max]) + "..."
 }

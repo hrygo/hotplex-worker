@@ -65,6 +65,14 @@ const (
 	ErrCodeSessionNotFound = events.ErrCodeSessionNotFound
 )
 
+// Streaming message data types (re-exported from pkg/events).
+type MessageStartData = events.MessageStartData
+type MessageDeltaData = events.MessageDeltaData
+type MessageEndData = events.MessageEndData
+type StateData = events.StateData
+type ReasoningData = events.ReasoningData
+type StepData = events.StepData
+
 // DoneData is the payload of a done event.
 type DoneData struct {
 	Success bool           `json:"success"`
@@ -101,7 +109,7 @@ type ToolCallData struct {
 // ToolResultData is the payload of a tool_result event.
 type ToolResultData struct {
 	ID     string      `json:"id"`
-	Output interface{} `json:"output,omitempty"`
+	Output any `json:"output,omitempty"`
 	Error  string      `json:"error,omitempty"`
 }
 

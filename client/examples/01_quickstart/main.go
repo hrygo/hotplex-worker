@@ -14,12 +14,13 @@ import (
 	"time"
 
 	client "github.com/hrygo/hotplex/client"
+	"github.com/hrygo/hotplex/client/examples/internal/demo"
 )
 
 func main() {
-	gatewayURL := envOr("HOTPLEX_GATEWAY_URL", "ws://localhost:8888/ws")
-	apiKey := envOr("HOTPLEX_API_KEY", "test-api-key")
-	task := envOr("HOTPLEX_TASK", "What is 2+2? Answer in one sentence.")
+	gatewayURL := demo.EnvOr("HOTPLEX_GATEWAY_URL", "ws://localhost:8888/ws")
+	apiKey := demo.EnvOr("HOTPLEX_API_KEY", "test-api-key")
+	task := demo.EnvOr("HOTPLEX_TASK", "What is 2+2? Answer in one sentence.")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
@@ -57,12 +58,10 @@ func main() {
 		for evt := range c.Events() {
 			switch evt.Type {
 			case client.EventMessageDelta:
-				if d, ok := evt.Data.(map[string]any); ok {
-					fmt.Print(d["content"])
-				}
+				fmt.Print(demo.FieldStr(evt.Data, "content"))
 			case client.EventDone:
-				if done, ok := evt.AsDoneData(); ok {
-					fmt.Printf("\nDone (success=%v).\n", done.Success)
+				if d, ok := evt.AsDoneData(); ok {
+					fmt.Printf("\nDone (success=%v).\n", d.Success)
 				}
 				return
 			case client.EventError:
@@ -87,11 +86,4 @@ func main() {
 			fmt.Fprintln(os.Stderr, "Timeout.")
 		}
 	}
-}
-
-func envOr(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
 }

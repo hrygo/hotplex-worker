@@ -13,16 +13,16 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
 	client "github.com/hrygo/hotplex/client"
+	"github.com/hrygo/hotplex/client/examples/internal/demo"
 )
 
 func main() {
-	gatewayURL := envOr("HOTPLEX_GATEWAY_URL", "ws://localhost:8888/ws")
-	apiKey := envOr("HOTPLEX_API_KEY", "test-api-key")
+	gatewayURL := demo.EnvOr("HOTPLEX_GATEWAY_URL", "ws://localhost:8888/ws")
+	apiKey := demo.EnvOr("HOTPLEX_API_KEY", "test-api-key")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -35,7 +35,7 @@ func main() {
 	}()
 
 	// Phase 1: Create session.
-	banner("Phase 1 — Create Session")
+	demo.Banner("Phase 1 — Create Session")
 
 	c1, err := client.New(ctx,
 		client.URL(gatewayURL),
@@ -63,9 +63,13 @@ func main() {
 	time.Sleep(2 * time.Second)
 
 	// Phase 2: Resume session.
-	banner("Phase 2 — Resume Session")
+	demo.Banner("Phase 2 — Resume Session")
 
-	c2, err := client.New(ctx, client.URL(gatewayURL), client.APIKey(apiKey))
+	c2, err := client.New(ctx,
+		client.URL(gatewayURL),
+		client.WorkerType("claude_code"),
+		client.APIKey(apiKey),
+	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: create client 2: %v\n", err)
 		os.Exit(1) //nolint:gocritic // example exit
@@ -81,7 +85,7 @@ func main() {
 
 	runAndPrint(ctx, c2, "What number did I ask you to remember?")
 
-	banner("Done")
+	demo.Banner("Done")
 	fmt.Println("Session resume successful — context preserved across connections.")
 }
 
@@ -94,12 +98,12 @@ func runAndPrint(ctx context.Context, c *client.Client, input string) {
 		for evt := range c.Events() {
 			switch evt.Type {
 			case client.EventMessageDelta:
-				fmt.Print(fieldStr(evt.Data, "content"))
+				fmt.Print(demo.FieldStr(evt.Data, "content"))
 			case client.EventDone:
 				fmt.Println("\n[done]")
 				return
 			case client.EventError:
-				fmt.Fprintf(os.Stderr, "\nError: %s\n", fieldStr(evt.Data, "message"))
+				fmt.Fprintf(os.Stderr, "\nError: %s\n", demo.FieldStr(evt.Data, "message"))
 				return
 			}
 		}
@@ -119,37 +123,4 @@ func runAndPrint(ctx context.Context, c *client.Client, input string) {
 	case <-time.After(90 * time.Second):
 		fmt.Fprintln(os.Stderr, "Timeout.")
 	}
-}
-
-func banner(title string) {
-	w := len(title) + 4
-	if w < 50 {
-		w = 50
-	}
-	fmt.Println()
-	fmt.Println(strings.Repeat("=", w))
-	fmt.Printf("  %s\n", title)
-	fmt.Println(strings.Repeat("=", w))
-}
-
-func envOr(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
-}
-
-func fieldStr(data any, key string) string {
-	m, ok := data.(map[string]any)
-	if !ok {
-		return ""
-	}
-	v := m[key]
-	if v == nil {
-		return ""
-	}
-	if s, ok := v.(string); ok {
-		return s
-	}
-	return fmt.Sprintf("%v", v)
 }
