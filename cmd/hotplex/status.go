@@ -78,7 +78,10 @@ func newStatusCmd() *cobra.Command {
 }
 
 func gatewayAddrFromConfig(configPath string) string {
-	absPath, _ := config.ExpandAndAbs(configPath)
+	absPath, err := config.ExpandAndAbs(configPath)
+	if err != nil {
+		return "localhost:8888"
+	}
 	loadEnvFile(filepath.Dir(absPath))
 	cfg, err := config.Load(absPath, config.LoadOptions{})
 	if err != nil {

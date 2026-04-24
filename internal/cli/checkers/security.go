@@ -233,8 +233,7 @@ func (c filePermsChecker) Check(ctx context.Context) cli.Diagnostic {
 			Name:     c.Name(),
 			Category: c.Category(),
 			Status:   cli.StatusWarn,
-			Message:  "Insecure file permissions detected",
-			Detail:   strings.Join(issues, "; "),
+			Message:  "Insecure permissions: " + strings.Join(issues, "; "),
 			FixHint:  "Restrict permissions (dirs: 0700, files: 0600)",
 			FixFunc: func() error {
 				for _, p := range toFix {

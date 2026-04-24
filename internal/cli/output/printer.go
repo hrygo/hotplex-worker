@@ -33,9 +33,10 @@ func PrintDiagnostic(out io.Writer, d cli.Diagnostic, verbose bool) {
 		symbol = "?"
 	}
 
-	line := symbol + " " + d.Category + "  " + d.Message
+	cat := fmt.Sprintf("%-12s", d.Category)
+	line := symbol + " " + cat + " " + d.Message
 	if tty && color != "" {
-		line = color + ansiBold + symbol + ansiReset + " " + d.Category + "  " + d.Message
+		line = color + ansiBold + symbol + ansiReset + " " + cat + " " + d.Message
 	}
 	_, _ = fmt.Fprintln(out, line)
 

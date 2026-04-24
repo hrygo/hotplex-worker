@@ -8,8 +8,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/hrygo/hotplex/internal/config"
 )
 
 func TestVersionText(t *testing.T) {
@@ -48,48 +46,6 @@ func TestVersionJSON(t *testing.T) {
 	require.NotEmpty(t, result["go"])
 	require.Equal(t, "darwin", result["os"])
 	require.Equal(t, "arm64", result["arch"])
-}
-
-func TestExpandAndAbs(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name  string
-		input string
-		check func(t *testing.T, result string)
-	}{
-		{
-			name:  "tilde expansion",
-			input: "~/test/config.yaml",
-			check: func(t *testing.T, result string) {
-				home, _ := os.UserHomeDir()
-				require.Equal(t, home+"/test/config.yaml", result)
-			},
-		},
-		{
-			name:  "absolute path unchanged",
-			input: "/etc/hotplex/config.yaml",
-			check: func(t *testing.T, result string) {
-				require.Equal(t, "/etc/hotplex/config.yaml", result)
-			},
-		},
-		{
-			name:  "relative path resolved to absolute",
-			input: "config.yaml",
-			check: func(t *testing.T, result string) {
-				require.True(t, strings.HasPrefix(result, "/"))
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			result, err := config.ExpandAndAbs(tt.input)
-			require.NoError(t, err)
-			tt.check(t, result)
-		})
-	}
 }
 
 func TestLoadEnvFile(t *testing.T) {

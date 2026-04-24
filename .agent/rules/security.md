@@ -1,6 +1,7 @@
 ---
 paths:
   - "**/security/*.go"
+  - "**/config/config.go"
 ---
 
 # 安全规范

@@ -29,7 +29,11 @@ Use --fix to automatically resolve issues where possible.`,
   hotplex security --fix             # Auto-fix security issues
   hotplex security --json            # JSON output`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			configPath, _ = config.ExpandAndAbs(configPath)
+			var err error
+			configPath, err = config.ExpandAndAbs(configPath)
+			if err != nil {
+				return fmt.Errorf("resolve config path: %w", err)
+			}
 			loadEnvFile(filepath.Dir(configPath))
 			checkers.SetConfigPath(configPath)
 

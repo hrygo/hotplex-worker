@@ -1,6 +1,7 @@
 ---
 paths:
   - "**/metrics/*.go"
+  - "**/tracing/*.go"
 ---
 
 # 可观测性规范

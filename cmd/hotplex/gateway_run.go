@@ -54,8 +54,6 @@ func runGateway(configPath string, devMode bool) (err error) {
 		}
 	}()
 
-	configPath, _ = config.ExpandAndAbs(configPath)
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

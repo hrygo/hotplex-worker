@@ -30,10 +30,11 @@ Supports non-interactive mode for automated deployments.`,
   hotplex onboard --enable-slack --enable-feishu  # Enable all platforms
   hotplex onboard --force             # Overwrite existing config`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if configPath == "" {
-				configPath = "~/.hotplex/config.yaml"
+			var err error
+			configPath, err = config.ExpandAndAbs(configPath)
+			if err != nil {
+				return fmt.Errorf("resolve config path: %w", err)
 			}
-			configPath, _ = config.ExpandAndAbs(configPath)
 
 			result, err := onboard.Run(context.Background(), onboard.WizardOptions{
 				ConfigPath:        configPath,
