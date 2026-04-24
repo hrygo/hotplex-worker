@@ -429,6 +429,64 @@ func TestManager_Delete(t *testing.T) {
 	require.False(t, ok)
 }
 
+func TestManager_DeletePhysical(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	cfg := config.Default()
+	store := new(mockStore)
+	store.Test(t)
+
+	store.On("Close").Return(nil)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
+	require.NoError(t, err)
+	defer m.Close()
+
+	t.Run("removes session from memory and database", func(t *testing.T) {
+		t.Parallel()
+
+		seed := &SessionInfo{
+			ID:         "sess_phys",
+			UserID:     "user1",
+			WorkerType: worker.TypeClaudeCode,
+			State:      events.StateRunning,
+			CreatedAt:  time.Now(),
+			UpdatedAt:  time.Now(),
+		}
+		m.mu.Lock()
+		m.sessions["sess_phys"] = &managedSession{info: *seed}
+		m.mu.Unlock()
+
+		store.On("DeletePhysical", ctx, "sess_phys").Return(nil)
+
+		err := m.DeletePhysical(ctx, "sess_phys")
+		require.NoError(t, err)
+
+		m.mu.RLock()
+		_, ok := m.sessions["sess_phys"]
+		m.mu.RUnlock()
+		require.False(t, ok)
+	})
+
+	t.Run("no-op when session not in memory", func(t *testing.T) {
+		t.Parallel()
+
+		store.On("DeletePhysical", ctx, "nonexistent").Return(nil)
+
+		err := m.DeletePhysical(ctx, "nonexistent")
+		require.NoError(t, err)
+	})
+
+	t.Run("returns database error", func(t *testing.T) {
+		t.Parallel()
+
+		store.On("DeletePhysical", ctx, "db_fail").Return(errors.New("db error"))
+
+		err := m.DeletePhysical(ctx, "db_fail")
+		require.Error(t, err)
+	})
+}
+
 func TestManager_ValidateOwnership(t *testing.T) {
 	t.Parallel()
 
