@@ -9,7 +9,7 @@ import (
 	lark "github.com/larksuite/oapi-sdk-go/v3"
 	larkspeech "github.com/larksuite/oapi-sdk-go/v3/service/speech_to_text/v1"
 
-	"github.com/hotplex/hotplex-worker/internal/messaging/stt"
+	"github.com/hrygo/hotplex/internal/messaging/stt"
 )
 
 // Transcriber converts raw audio bytes to text.

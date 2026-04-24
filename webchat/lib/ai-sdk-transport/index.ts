@@ -33,6 +33,7 @@ export type {
   MessageStartData,
   MessageDeltaData,
   MessageEndData,
+  MessageData,
   ToolCallData,
   ToolResultData,
   ReasoningData,

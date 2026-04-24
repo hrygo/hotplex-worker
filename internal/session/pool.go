@@ -6,7 +6,7 @@ import (
 
 	"sync"
 
-	"github.com/hotplex/hotplex-worker/internal/metrics"
+	"github.com/hrygo/hotplex/internal/metrics"
 )
 
 // PoolManager manages per-user and global concurrency quotas for worker sessions.

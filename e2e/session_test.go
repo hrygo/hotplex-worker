@@ -7,10 +7,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	client "github.com/hotplex/hotplex-go-client"
+	client "github.com/hrygo/hotplex/client"
 
-	"github.com/hotplex/hotplex-worker/internal/worker"
-	"github.com/hotplex/hotplex-worker/pkg/events"
+	"github.com/hrygo/hotplex/internal/worker"
+	"github.com/hrygo/hotplex/pkg/events"
 )
 
 func TestE2E_ConnectAndInit(t *testing.T) {

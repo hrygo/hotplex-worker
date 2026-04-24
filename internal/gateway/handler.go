@@ -7,12 +7,12 @@ import (
 	"log/slog"
 	"runtime/debug"
 
-	"github.com/hotplex/hotplex-worker/internal/metrics"
-	"github.com/hotplex/hotplex-worker/internal/security"
-	"github.com/hotplex/hotplex-worker/internal/session"
-	"github.com/hotplex/hotplex-worker/internal/worker"
-	"github.com/hotplex/hotplex-worker/pkg/aep"
-	"github.com/hotplex/hotplex-worker/pkg/events"
+	"github.com/hrygo/hotplex/internal/metrics"
+	"github.com/hrygo/hotplex/internal/security"
+	"github.com/hrygo/hotplex/internal/session"
+	"github.com/hrygo/hotplex/internal/worker"
+	"github.com/hrygo/hotplex/pkg/aep"
+	"github.com/hrygo/hotplex/pkg/events"
 )
 
 // ─── Message Handler ─────────────────────────────────────────────────────────

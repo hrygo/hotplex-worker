@@ -12,9 +12,12 @@ import type {
   Envelope,
   MessageDeltaData,
   MessageStartData,
+  MessageData,
   DoneData,
   ErrorData,
   ReasoningData,
+  ToolCallData,
+  ToolResultData,
 } from '@/lib/ai-sdk-transport';
 
 // ThreadSuggestion shape — matches @assistant-ui/core ThreadSuggestion
@@ -43,7 +46,21 @@ interface ReasoningPart {
   text: string;
 }
 
-type MessagePart = TextPart | ReasoningPart;
+interface ToolCallPart {
+  type: 'tool-call';
+  toolName: string;
+  args: any;
+  toolCallId: string;
+}
+
+interface ToolResultPart {
+  type: 'tool-result';
+  toolName: string;
+  result: any;
+  toolCallId: string;
+}
+
+type MessagePart = TextPart | ReasoningPart | ToolCallPart | ToolResultPart;
 
 // Internal message format for our store
 interface HotPlexMessage {
@@ -130,6 +147,11 @@ export function useHotPlexRuntime({
 
   // Initialize WebSocket client
   useEffect(() => {
+    if (!sessionId) {
+      console.log('HotPlexRuntimeAdapter: No session ID provided, skipping connection.');
+      return;
+    }
+
     const client = new BrowserHotPlexClient({
       url,
       workerType: workerType as any,
@@ -201,6 +223,52 @@ export function useHotPlexRuntime({
       setIsRunning(true);
     };
 
+    const handleMessage = (data: MessageData, env: Envelope) => {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: data.id || env.id,
+          role: data.role as 'assistant',
+          parts: [{ type: 'text', text: data.content }],
+          createdAt: new Date(env.timestamp || Date.now()),
+          status: 'complete',
+        },
+      ]);
+      setIsRunning(false);
+    };
+
+    const handleToolCall = (data: ToolCallData, env: Envelope) => {
+      setMessages((prev) => {
+        const lastMessage = prev[prev.length - 1];
+        if (lastMessage?.role === 'assistant') {
+          const parts = [...lastMessage.parts, {
+            type: 'tool-call' as const,
+            toolName: data.name,
+            args: data.input,
+            toolCallId: data.id,
+          }];
+          return [...prev.slice(0, -1), { ...lastMessage, parts }];
+        }
+        return prev;
+      });
+    };
+
+    const handleToolResult = (data: ToolResultData, env: Envelope) => {
+      setMessages((prev) => {
+        const lastMessage = prev[prev.length - 1];
+        if (lastMessage?.role === 'assistant') {
+          const parts = [...lastMessage.parts, {
+            type: 'tool-result' as const,
+            toolName: 'result', // ToolResultData doesn't have name, using placeholder or ID
+            result: data.output,
+            toolCallId: data.id,
+          }];
+          return [...prev.slice(0, -1), { ...lastMessage, parts }];
+        }
+        return prev;
+      });
+    };
+
     const handleDone = (data: DoneData, env: Envelope) => {
       console.log('HotPlexRuntimeAdapter: streaming done', data);
 
@@ -222,16 +290,24 @@ export function useHotPlexRuntime({
     };
 
     const handleError = (data: ErrorData, env: Envelope) => {
-      console.error('HotPlexRuntimeAdapter: error', data);
+      console.error('HotPlexRuntimeAdapter: error received', {
+        code: data?.code,
+        message: data?.message,
+        details: data?.details,
+        eventId: env?.id,
+        raw: data
+      });
       setIsRunning(false);
 
-      // Add error message
+      const errorMessage = data?.message || 'An unexpected error occurred in the HotPlex gateway.';
+
+      // Add error message to thread
       setMessages((prev) => [
         ...prev,
         {
           id: `error-${Date.now()}`,
           role: 'system',
-          parts: [{ type: 'text', text: `⚠️ Error: ${data.message}` }],
+          parts: [{ type: 'text', text: `⚠️ Error: ${errorMessage}` }],
           createdAt: new Date(),
           status: 'error',
         },
@@ -271,11 +347,14 @@ export function useHotPlexRuntime({
 
     // Subscribe to events
     client.on('delta', handleDelta);
+    client.on('message', handleMessage);
     client.on('done', handleDone);
     client.on('error', handleError);
     client.on('disconnected', handleDisconnected);
     client.on('reasoning', handleReasoning);
     client.on('messageStart', handleMessageStart);
+    client.on('toolCall', handleToolCall);
+    client.on('toolResult', handleToolResult);
 
     // Connect (resume an existing session or create new one)
     client.connect(sessionId).catch((err) => {
@@ -284,11 +363,14 @@ export function useHotPlexRuntime({
 
     return () => {
       client.off('delta', handleDelta);
+      client.off('message', handleMessage);
       client.off('done', handleDone);
       client.off('error', handleError);
       client.off('disconnected', handleDisconnected);
       client.off('reasoning', handleReasoning);
       client.off('messageStart', handleMessageStart);
+      client.off('toolCall', handleToolCall);
+      client.off('toolResult', handleToolResult);
       pendingReasoningRef.current = '';
       client.disconnect();
       clientRef.current = null;
@@ -323,25 +405,30 @@ export function useHotPlexRuntime({
       throw new Error('HotPlex client not initialized.');
     }
 
-    // Wait for connection if handshake is still in progress (up to 30s)
+    // Handle disconnected state: attempt to reconnect if not already connecting
     if (!client.connected) {
-      if (client.connecting) {
-        console.log('HotPlexRuntimeAdapter: waiting for connection...');
-        // Register listeners BEFORE checking connected to avoid TOCTOU:
-        // connected may fire between the if-check and listener registration.
+      console.log('HotPlexRuntimeAdapter: client not connected, attempting to reconnect...');
+      try {
+        if (!client.connecting) {
+          client.connect(sessionId).catch(err => {
+            console.error('HotPlexRuntimeAdapter: auto-connect failed', err);
+          });
+        }
+
+        // Wait for connection (up to 30s)
         await new Promise<void>((resolve, reject) => {
           let settled = false;
           const settle = (fn: () => void) => {
             if (settled) return;
             settled = true;
             clearTimeout(timeout);
+            client.off('connected', onConnected);
             client.off('disconnected', onDisconnected);
             connectionWaitRef.current = null;
             fn();
           };
 
           const timeout = setTimeout(() => {
-            client.off('connected', onConnected);
             settle(() => reject(new Error('Connection timeout. Please check your network.')));
           }, 30000);
 
@@ -349,22 +436,20 @@ export function useHotPlexRuntime({
             settle(() => resolve());
           };
           const onDisconnected = (reason: string) => {
-            client.off('connected', onConnected);
-            settle(() => reject(new Error(`Connection lost: ${reason}`)));
+            settle(() => reject(new Error(`Connection failed: ${reason}`)));
           };
 
           connectionWaitRef.current = { timeout, onConnected, onDisconnected };
           client.on('connected', onConnected);
           client.on('disconnected', onDisconnected);
 
-          // If connected flipped true between the outer check and listener registration,
-          // the 'connected' event already fired — call onConnected immediately.
+          // Check if it connected while we were setting up listeners
           if (client.connected) {
             settle(() => resolve());
           }
         });
-      } else {
-        throw new Error('HotPlex client not connected. Please wait for connection...');
+      } catch (err) {
+        throw new Error(err instanceof Error ? err.message : 'HotPlex client not connected. Please check your network.');
       }
     }
 

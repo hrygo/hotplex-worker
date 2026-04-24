@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/hotplex/hotplex-worker/internal/config"
+	"github.com/hrygo/hotplex/internal/config"
 )
 
 // ensureDBDir creates the parent directory of dbPath if it does not exist.

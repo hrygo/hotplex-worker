@@ -22,7 +22,7 @@ messaging/
 | Task | Location | Notes |
 |------|----------|-------|
 | Add new platform adapter | `internal/messaging/<name>/` | Embed `PlatformAdapter`, implement `PlatformAdapterInterface`: `Platform()`/`Start()`/`HandleTextMessage()`/`Close()` |
-| Wire adapter in main | `cmd/worker/main.go` | `startMessagingAdapters()`: config → New → Configure → SetHub/SetSM/SetHandler/SetBridge → Start |
+| Wire adapter in main | `cmd/hotplex/main.go` | `startMessagingAdapters()`: config → New → Configure → SetHub/SetSM/SetHandler/SetBridge → Start |
 | Bridge lifecycle | `bridge.go` | 3-step: `StartPlatformSession` → `JoinPlatformSession` → `Handle` |
 | PlatformConn interface | `platform_conn.go:11` | `WriteCtx(ctx, env)` + `Close()` — the contract gateway uses to send to platforms |
 | Adapter registration | `platform_adapter.go:47` | `Register(PlatformType, Builder)` — called in each adapter's `init()` |
@@ -37,9 +37,9 @@ messaging/
 // internal/messaging/slack/adapter.go
 func init() { messaging.Register(messaging.PlatformSlack, func() (PlatformAdapterInterface, error) { return New(), nil }) }
 
-// cmd/worker/main.go
-_ "hotplex-worker/internal/messaging/slack"
-_ "hotplex-worker/internal/messaging/feishu"
+// cmd/hotplex/main.go
+_ "hotplex/internal/messaging/slack"
+_ "hotplex/internal/messaging/feishu"
 ```
 
 **3-step Bridge lifecycle**

@@ -14,7 +14,7 @@ import (
 	larkcardkit "github.com/larksuite/oapi-sdk-go/v3/service/cardkit/v1"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 
-	"github.com/hotplex/hotplex-worker/internal/messaging"
+	"github.com/hrygo/hotplex/internal/messaging"
 )
 
 type CardPhase int32

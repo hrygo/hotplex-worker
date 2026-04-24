@@ -1,6 +1,7 @@
 ---
 paths:
   - "**/session/*.go"
+  - "**/gateway/bridge.go"
 ---
 
 # Session 管理规范

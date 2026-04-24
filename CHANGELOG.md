@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **CLI Self-Service**:
+  - **`onboard` Interactive Wizard**: First-time setup and reconfiguration with config detection, keep-or-reconfigure per messaging platform, and JWT/admin token auto-generation.
+  - **`doctor` Diagnostics**: Run categorized health checks (environment, config, dependencies, security, runtime, messaging) with optional `--fix` auto-repair.
+  - **`security` Audit**: Security-focused checks for JWT strength, admin tokens, TLS, SSRF origins, and file permissions.
+  - **`status` Command**: Check gateway process health via PID file and health endpoint.
+  - **`config validate`**: Validate YAML syntax and value constraints with optional `--strict` secret check.
+  - **Checker Framework**: Plugable `Checker` interface with registry, categories, fix hints, and auto-fix functions.
+  - **Terminal Output**: Color-coded printer with status icons, diagnostic report rendering, and JSON output format.
+- **Gateway**:
+  - **Request Throttling**: In-memory token bucket rate limiter via `internal/gateway/throttle.go`.
+  - **Worker Adapters**: Fixed missing blank imports for `opencodeserver` and `pi` adapters — all three worker types now register at startup.
+- **Webchat**:
+  - **Light Theme Redesign**: Refreshed white/blue visual style.
+  - **Persistent Sidebar**: Session history panel with state indicators.
 - **Go Client SDK (v1.1.0)**:
   - **Automatic Reconnection**: Intelligent connection recovery with exponential backoff strategy.
   - **Typed Event Helpers**: Fluent API for event processing (`AsDoneData()`, `AsErrorData()`, `AsToolCallData()`, etc.).
@@ -36,6 +50,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Project Renamed**: `hotplex-worker` → `hotplex`; single binary with subcommand architecture (gateway, doctor, security, onboard, config, status, version).
+- **Gateway Refactored**: Consolidated `conn.go` hub fields and split throttle into dedicated file for cleaner separation.
+- **Webchat UI**: SessionPanel restructured with better visual hierarchy; assistant-ui thread component updated.
 - **Config**: `MaxIdlePerUser` default raised from 3 to 5; config tuning for improved session pooling.
 - **Security**: Implemented granular 3-layer whitelists and security policies for tool/command execution.
 - **Worker Configuration**: Increased default zombie IO timeout from 10m to 30m for long-running batch tasks.
@@ -44,6 +61,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Onboard Verification**: `stepVerify` now loads `.env` into process environment before running checkers, fixing false-positive "Missing required fields" for JWT secret.
+- **CI Portability**: Tests now pass on GitHub Actions Linux runners — removed OS-specific hardcoding (`darwin`), fixed work directory validation, and resolved bot ID isolation test inconsistencies.
 - **Claude Code Worker**: Resolved `ResetContext` bug that caused "done" event leaks during session resets.
 - **Event Ordering**: Restored deterministic event sequencing in `Hub.Run` to eliminate flaky E2E test failures.
 - **Media Management**: Implemented automatic cleanup for temporary media files in the Slack adapter.

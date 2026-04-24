@@ -15,6 +15,8 @@ linters:
     - errorlint
     - gocritic
   exclusions:
+    paths:
+      - client # separate Go module with own go.mod
     rules:
       # Exclude test file noise for linters that only flag test patterns
       - path: '_test\.go'
@@ -92,7 +94,7 @@ formatters:
   settings:
     goimports:
       local-prefixes:
-        - github.com/hotplex/hotplex-worker
+        - github.com/hrygo/hotplex
 
 issues:
   max-issues-per-linter: 0

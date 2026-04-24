@@ -14,8 +14,8 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 
-	"github.com/hotplex/hotplex-worker/internal/config"
-	"github.com/hotplex/hotplex-worker/pkg/events"
+	"github.com/hrygo/hotplex/internal/config"
+	"github.com/hrygo/hotplex/pkg/events"
 )
 
 // ErrAuditChainInvalid is returned when the audit log hash chain is broken.

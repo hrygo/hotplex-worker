@@ -49,7 +49,7 @@ opencode serve --port 18789
 
 | 组件              | 位置                                       | 说明                              | 状态 |
 | ----------------- | ------------------------------------------ | --------------------------------- | ---- |
-| HTTP Server       | `cmd/worker/main.go:237-305`               | Go 标准库 net/http + Gorilla WS   | ✅    |
+| HTTP Server       | `cmd/hotplex/main.go:237-305`               | Go 标准库 net/http + Gorilla WS   | ✅    |
 | Worker Adapter    | `internal/worker/opencodeserver/worker.go` | OpenCode Server 进程管理          | ✅    |
 | Gateway Hub       | `internal/gateway/hub.go`                  | WebSocket 连接管理和事件广播      | ✅    |
 | Session Manager   | `internal/session/manager.go`              | Session 生命周期管理              | ✅    |
@@ -151,7 +151,7 @@ func (w *Worker) waitForServer(ctx context.Context) error {
 | `/admin/sessions/{id}/terminate` | POST   | 终止 session            | ✅    |
 | `/ws`               | WS     | WebSocket 入口点        | ✅    |
 
-**实现位置**: `cmd/worker/main.go:237-305`
+**实现位置**: `cmd/hotplex/main.go:237-305`
 
 ### 3.2 OpenCode Server 端点（子进程）
 
@@ -772,7 +772,7 @@ type conn struct {
 
 | 功能 | 实现位置 | 验证状态 |
 |------|----------|---------|
-| Gateway HTTP 服务器 | `cmd/worker/main.go` | ✅ 验证通过 |
+| Gateway HTTP 服务器 | `cmd/hotplex/main.go` | ✅ 验证通过 |
 | WebSocket 连接管理 | `gateway/conn.go` | ✅ 验证通过 |
 | Session 创建/管理 | `session/manager.go` | ✅ 验证通过 |
 | Session 持久化 | `session/store.go` | ✅ 验证通过 |

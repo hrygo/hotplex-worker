@@ -1,6 +1,6 @@
 [Unit]
 Description=HotPlex Worker Gateway
-Documentation=https://github.com/hotplex/hotplex-worker
+Documentation=https://github.com/hrygo/hotplex
 After=network-online.target
 Wants=network-online.target
 
@@ -14,7 +14,7 @@ WorkingDirectory=/var/lib/hotplex
 EnvironmentFile=/etc/hotplex/secrets.env
 
 # Main executable
-ExecStart=/usr/local/bin/hotplex-worker \
+ExecStart=/usr/local/bin/hotplex \
     -config /etc/hotplex/config.yaml
 
 # Graceful shutdown
@@ -60,7 +60,7 @@ WatchdogSec=30
 # Standard output and error
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=hotplex-worker
+SyslogIdentifier=hotplex
 
 [Install]
 WantedBy=multi-user.target

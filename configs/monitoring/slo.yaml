@@ -65,7 +65,7 @@ spec:
 apiVersion: openslo/v1
 kind: SLO
 metadata:
-  name: hotplex-worker-availability
+  name: hotplex-availability
   displayName: "Worker Availability"
   description: >
     Measures the percentage of active workers versus total (active + crashed).

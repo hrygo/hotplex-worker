@@ -1,6 +1,6 @@
 # PROJECT KNOWLEDGE BASE
 
-**Last updated:** 2026-04-22 · **Commit:** 1b69bfd2 · **Branch:** feat/21-worker-stdio-session-control
+**Last updated:** 2026-04-24 · **Commit:** 66631898 · **Branch:** feat/19-cli-self-service
 
 ## OVERVIEW
 
@@ -27,7 +27,20 @@ cp configs/env.example .env
 
 ### Entry
 ```
-cmd/worker/main.go    (~656 lines) flags, DI, signal, messaging init, LLM retry init
+cmd/hotplex/main.go          (~54 lines)  cobra CLI root: gateway, doctor, security, onboard, version
+cmd/hotplex/gateway_run.go   (~393 lines) gateway run: DI, signal handler, hub/session/bridge setup, HTTP routes
+cmd/hotplex/serve.go         (~110 lines) serve subcommand: flags, config loading, deps orchestration
+cmd/hotplex/routes.go        (~197 lines) HTTP route registration: gateway WS, admin API, health, metrics
+cmd/hotplex/messaging_init.go (~233 lines) messaging adapter lifecycle: init Slack/Feishu, STT setup
+cmd/hotplex/doctor.go        (~150 lines) doctor subcommand: diagnostic checks via CLI checker registry
+cmd/hotplex/security.go      (~182 lines) security subcommand: path/env validation
+cmd/hotplex/onboard.go       (~105 lines) onboard subcommand: interactive setup wizard
+cmd/hotplex/config_cmd.go    (~61 lines)  config subcommand: validate/dump/show
+cmd/hotplex/status.go        (~95 lines)  status subcommand: gateway process status
+cmd/hotplex/banner.go        (~167 lines) startup banner rendering (ASCII art + config summary)
+cmd/hotplex/dev.go           (~29 lines)  dev subcommand: start gateway + webchat
+cmd/hotplex/pid.go           (~50 lines)  PID file helpers for gateway process management
+cmd/hotplex/version.go       (~46 lines)  version subcommand
 ```
 
 ### internal/
@@ -46,6 +59,7 @@ cmd/worker/main.go    (~656 lines) flags, DI, signal, messaging init, LLM retry 
 - `gateway/api.go`     GatewayAPI: HTTP session endpoints (list/get/terminate)
 - `gateway/init.go`    Init handshake: InitData, InitAckData, caps, 30s timeout
 - `gateway/heartbeat.go` Missed ping counter with stop channel
+- `gateway/session_stats.go` Session statistics tracking
 
 **Session**
 - `session/manager.go`   5-state machine, state transitions, GC
@@ -80,6 +94,12 @@ cmd/worker/main.go    (~656 lines) flags, DI, signal, messaging init, LLM retry 
 - `worker/base/`          Shared BaseWorker + Conn + BuildEnv
 - `worker/proc/`          Process lifecycle: PGID isolation, layered SIGTERM→SIGKILL, PID file orphan cleanup
 
+**CLI** (Self-service commands — see `internal/cli/AGENTS.md`)
+- `cli/checker.go`       Checker interface + CheckerRegistry for diagnostic checks
+- `cli/checkers/`        7 checkers: config, dependencies, environment, messaging, runtime, security, stt
+- `cli/onboard/`         Interactive wizard + YAML templates for Slack/Feishu setup
+- `cli/output/`          Terminal output: printer (color/format), report (structured diagnostic results)
+
 **Support**
 - `security/`   JWT (ES256), SSRF, command whitelist, env isolation, path safety
 - `metrics/`    Prometheus counters/gauges/histograms
@@ -106,6 +126,16 @@ configs/  config.yaml, config-dev.yaml, env.example
 - New AEP event type → `pkg/events/events.go` — add Kind const + Data struct + Validate
 - New Worker adapter → `internal/worker/<name>/` — embed `base.BaseWorker`, implement `Start`/`Input`/`Resume`, register in `init()`
 - New messaging adapter → `internal/messaging/<name>/` — embed `PlatformAdapter`, implement `Start`/`HandleTextMessage`/`Close`
+- Add diagnostic check → `internal/cli/checkers/` — implement `Checker` interface, register in `DefaultRegistry`
+- New cobra subcommand → `cmd/hotplex/<name>.go` — register in `main.go` root cmd
+- New admin endpoint → `internal/admin/handlers.go` — follow `Handle*` pattern, check scopes
+
+**CLI self-service** (see `internal/cli/AGENTS.md` and `cmd/hotplex/AGENTS.md`)
+- Modify onboard wizard → `internal/cli/onboard/wizard.go` — interactive prompts and templates
+- CLI output formatting → `internal/cli/output/` — printer (color/status) and report (structured output)
+- Gateway startup/DI → `cmd/hotplex/gateway_run.go` — DI container, signal handler, hub/session/bridge setup
+- Messaging adapter wiring → `cmd/hotplex/messaging_init.go` — init Slack/Feishu, STT setup
+- Route registration → `cmd/hotplex/routes.go` — HTTP routes for gateway WS, admin API, health, metrics
 
 **Modify existing**
 - Session lifecycle → `internal/session/manager.go` — state machine + `TransitionWithInput` atomicity
@@ -115,7 +145,7 @@ configs/  config.yaml, config-dev.yaml, env.example
 - Gateway HTTP API → `internal/gateway/api.go` — session list/get/terminate over HTTP
 - Config structure → `internal/config/config.go` — structs + Default() + Validate()
 - STT config → `internal/config/config.go` — FeishuConfig.STTProvider/STTLocalCmd/STTLocalMode/STTLocalIdleTTL + SlackConfig.STTProvider/STTLocalCmd/STTLocalMode/STTLocalIdleTTL
-- Wire messaging adapter → `cmd/worker/main.go` — `startMessagingAdapters()`: config → New → Configure → SetConnFactory → Start
+- Wire messaging adapter → `cmd/hotplex/serve.go` — `startMessagingAdapters()`: config → New → Configure → SetConnFactory → Start
 
 **Security**
 - Add validation → `internal/security/` — one file per concern (jwt, ssrf, path, env, tool, command)
@@ -127,7 +157,8 @@ configs/  config.yaml, config-dev.yaml, env.example
 ## CODE MAP
 
 **Entry**
-- `main` / `GatewayDeps` → `cmd/worker/main.go` — entry point, DI container, LLM retry init
+- `main` → `cmd/hotplex/main.go` — cobra CLI root (gateway, doctor, security, onboard, version)
+- `GatewayDeps` → `cmd/hotplex/serve.go` — gateway DI container, signal handler, messaging init, LLM retry init
 
 **Gateway** (`internal/gateway/`)
 - `Hub` → `hub.go:57` — WS broadcast hub, conn registry, session routing, seq gen
@@ -192,7 +223,7 @@ configs/  config.yaml, config-dev.yaml, env.example
 - **Config**: Viper YAML + env expansion, `SecretsProvider` interface for secrets
 - **Worker registration**: `init()` + `worker.Register(WorkerType, Builder)` pattern via blank imports
 - **STT engine**: SenseVoice-Small via `funasr-onnx` (ONNX FP32, non-quantized), auto-patches ONNX model on first load, persistent subprocess for zero cold-start
-- **DI**: Manual constructor injection (no wire/dig), `GatewayDeps` struct in main.go
+- **DI**: Manual constructor injection (no wire/dig), `GatewayDeps` struct in serve.go
 - **Shutdown order**: signal → cancel ctx → tracing → hub → configWatcher → sessionMgr → HTTP server
 - **Panic recovery**: Gateway handler + bridge forwardEvents must recover panics, log error, return `handler panic` / `bridge panic` to caller
 - **Control commands**: Natural language triggers require `$` prefix (e.g. `$gc`, `$休眠`) to prevent accidental matches; slash commands (`/gc`, `/reset`, `/park`, `/new`) have no prefix
@@ -242,17 +273,34 @@ configs/  config.yaml, config-dev.yaml, env.example
 All build/test/lint operations MUST use `make` targets. Do NOT use raw `go build` / `go test` / `golangci-lint` directly.
 
 ```bash
-make build                    # Build gateway binary (optimized, output: bin/hotplex-worker-<os>-<arch>)
+make build                    # Build gateway binary (output: bin/hotplex-<os>-<arch>)
 make test                     # Run tests with -race (timeout 15m)
 make test-short               # Quick test pass (-short)
 make lint                     # golangci-lint
 make coverage                 # Coverage report
-make check                    # Full CI workflow: fmt + vet + lint + test + build
-make quality                  # fmt + vet + lint + test (no build)
+make check                    # Full CI workflow: quality + build
+make quality                  # fmt + lint + test (no build)
 make fmt                      # Format code (gofmt + goimports)
-make tidy                     # go mod tidy
-make build-pgo                # PGO-optimized build
 make clean                    # Clean build artifacts
+
+# Development
+make quickstart               # First-time setup (check-tools + build + test-short)
+make run                      # Build and run gateway
+make dev                      # Start dev environment (gateway + webchat)
+make dev-stop                 # Stop all dev services
+make dev-status               # Check running services
+make dev-logs                 # Tail gateway logs
+make dev-reset                # Stop and restart all services
+
+# Gateway management
+make gateway-start            # Build and start gateway
+make gateway-stop             # Stop gateway
+make gateway-status           # Check gateway status
+make gateway-logs             # Tail gateway logs
+
+# Webchat
+make webchat-dev              # Start webchat dev server
+make webchat-stop             # Stop webchat dev server
 ```
 
 ## NOTES
@@ -262,7 +310,7 @@ make clean                    # Clean build artifacts
 - `.claude` is symlinked to `.agent` — both directories exist
 - No `api/` directory — project uses JSON over WebSocket, not protobuf
 - Project targets POSIX only (PGID isolation requires `syscall.SysProcAttr{Setpgid: true}`)
-- Largest files: `feishu/adapter.go` (1065), `opencodeserver/worker.go` (1001), `slack/adapter.go` (915), `hub.go` (798), `manager.go` (777), `bridge.go` (766), `config.go` (728), `main.go` (656)
+- Largest files: `feishu/adapter.go` (1228), `slack/adapter.go` (1208), `opencodeserver/worker.go` (1002), `bridge.go` (817), `hub.go` (808), `manager.go` (804), `config.go` (772)
 - STT scripts (`scripts/stt_server.py`, `scripts/fix_onnx_model.py`) are also deployed to `~/.agents/skills/audio-transcribe/scripts/` for Claude Code skill use
 - STT model: `~/.cache/modelscope/hub/models/iic/SenseVoiceSmall` (~900MB), ONNX FP32 non-quantized
 - Zombie IO timeout default: 30 minutes (configurable via `worker.execution_timeout`)

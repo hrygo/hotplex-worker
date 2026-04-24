@@ -15,7 +15,7 @@
 export HOTPLEX_JWT_SECRET="dev-secret-change-in-production"
 
 # 2. Run with defaults
-./hotplex-worker
+./hotplex
 
 # Gateway: ws://localhost:8888
 # Admin:  http://localhost:9999
@@ -28,7 +28,7 @@ export HOTPLEX_JWT_SECRET="dev-secret-change-in-production"
 source /etc/hotplex/secrets.env
 
 # 2. Run with production config
-./hotplex-worker -config configs/config-prod.yaml
+./hotplex -config configs/config-prod.yaml
 
 # 3. Verify health
 curl http://localhost:9999/admin/health
@@ -60,7 +60,7 @@ export HOTPLEX_GATEWAY_ADDR=":7777"  # Priority 2 (env var)
 
 ```bash
 # Command-line override (highest priority)
-./hotplex-worker -gateway.addr :6666  # Priority 1 (flag)
+./hotplex -gateway.addr :6666  # Priority 1 (flag)
 ```
 
 Result: Gateway listens on `:6667`
@@ -197,7 +197,7 @@ Pattern: `HOTPLEX_<SECTION>_<FIELD>`
 Examples:
 ```bash
 HOTPLEX_GATEWAY_ADDR=:8888
-HOTPLEX_DB_PATH=/var/lib/hotplex/data/hotplex-worker.db
+HOTPLEX_DB_PATH=/var/lib/hotplex/data/hotplex.db
 HOTPLEX_SECURITY_TLS_ENABLED=true
 HOTPLEX_ADMIN_RATE_LIMIT_ENABLED=false
 ```
@@ -428,14 +428,14 @@ messaging:
 
 ```bash
 # Check syntax and required fields
-./hotplex-worker -config configs/config-prod.yaml -validate
+./hotplex -config configs/config-prod.yaml -validate
 
 # Expected output:
 # Config validation successful
 # Gateway: :8888
 # Admin: :9999
 # TLS: enabled
-# Database: hotplex-worker.db
+# Database: hotplex.db
 ```
 
 ### Validate Secrets
@@ -446,7 +446,7 @@ export HOTPLEX_JWT_SECRET="test-secret"
 export HOTPLEX_ADMIN_TOKEN_1="test-token"
 
 # Run with validation
-./hotplex-worker -config configs/config.yaml -validate
+./hotplex -config configs/config.yaml -validate
 
 # Should succeed if all required secrets are set
 ```
@@ -509,7 +509,7 @@ vim configs/config.yaml
 ```yaml
 services:
   gateway:
-    image: hotplex-worker:latest
+    image: hotplex:latest
     environment:
       - HOTPLEX_JWT_SECRET=${HOTPLEX_JWT_SECRET}
       - HOTPLEX_ADMIN_TOKEN_1=${HOTPLEX_ADMIN_TOKEN}
@@ -556,7 +556,7 @@ Error: open configs/config.yaml: no such file or directory
 **Solution**:
 ```bash
 # Use absolute path
-./hotplex-worker -config /etc/hotplex/config.yaml
+./hotplex -config /etc/hotplex/config.yaml
 
 # Or copy default config
 cp configs/config.yaml /etc/hotplex/
@@ -627,7 +627,7 @@ security:
 
 ✅ **Do**: Always validate first
 ```bash
-./hotplex-worker -config configs/config-prod.yaml -validate || exit 1
+./hotplex -config configs/config-prod.yaml -validate || exit 1
 ```
 
 ### 4. Documentation
@@ -648,7 +648,7 @@ gateway:
 
 - [ ] Copy `configs/env.example` to `.env`
 - [ ] Set `HOTPLEX_JWT_SECRET` (any random value for dev)
-- [ ] Run `./hotplex-worker` (uses defaults)
+- [ ] Run `./hotplex` (uses defaults)
 - [ ] Test: `curl http://localhost:9999/admin/health`
 
 ### Production Deployment
@@ -659,7 +659,7 @@ gateway:
 - [ ] Create TLS certificates (Let's Encrypt or internal CA)
 - [ ] Copy `configs/config-prod.yaml` to `/etc/hotplex/config.yaml`
 - [ ] Set environment variables from vault
-- [ ] Validate config: `./hotplex-worker -validate`
+- [ ] Validate config: `./hotplex -validate`
 - [ ] Enable TLS in config
 - [ ] Configure allowed origins (CORS)
 - [ ] Set up log rotation

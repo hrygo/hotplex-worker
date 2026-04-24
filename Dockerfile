@@ -41,7 +41,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
     -trimpath \
     -ldflags="-s -w \
         -X main.version=${GIT_SHA}" \
-    -o /build/bin/hotplex-worker \
+    -o /build/bin/hotplex \
     ./cmd/worker
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -86,7 +86,7 @@ RUN mkdir -p /etc/hotplex \
 WORKDIR /home/hotplex
 
 # Copy binary from builder
-COPY --from=builder /build/bin/hotplex-worker /usr/local/bin/hotplex-worker
+COPY --from=builder /build/bin/hotplex /usr/local/bin/hotplex
 
 # Copy default config
 COPY --chown=hotplex:hotplex configs/ /etc/hotplex/
@@ -109,7 +109,7 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:9999/admin/health || exit 1
 
 # Entry point
-ENTRYPOINT ["/usr/local/bin/hotplex-worker"]
+ENTRYPOINT ["/usr/local/bin/hotplex"]
 
 # Default command
 CMD ["-config", "/etc/hotplex/config.yaml"]

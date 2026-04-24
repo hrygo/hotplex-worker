@@ -13,12 +13,12 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/require"
 
-	"github.com/hotplex/hotplex-worker/internal/config"
-	"github.com/hotplex/hotplex-worker/internal/security"
-	"github.com/hotplex/hotplex-worker/internal/session"
-	"github.com/hotplex/hotplex-worker/internal/worker"
-	"github.com/hotplex/hotplex-worker/pkg/aep"
-	"github.com/hotplex/hotplex-worker/pkg/events"
+	"github.com/hrygo/hotplex/internal/config"
+	"github.com/hrygo/hotplex/internal/security"
+	"github.com/hrygo/hotplex/internal/session"
+	"github.com/hrygo/hotplex/internal/worker"
+	"github.com/hrygo/hotplex/pkg/aep"
+	"github.com/hrygo/hotplex/pkg/events"
 )
 
 // ─── WebSocket test helpers ───────────────────────────────────────────────────
@@ -58,10 +58,13 @@ func newTestWSConnPair(t *testing.T) (*websocket.Conn, *websocket.Conn) {
 	return client, conn
 }
 
-func newTestHub(t *testing.T) *Hub {
+func newTestHub(t *testing.T, opts ...func(cfg *config.Config)) *Hub {
 	t.Helper()
 	cfg := config.Default()
 	cfg.Gateway.BroadcastQueueSize = 16
+	for _, opt := range opts {
+		opt(cfg)
+	}
 	h := NewHub(slog.Default(), config.NewConfigStore(cfg, nil))
 	t.Cleanup(func() { h.Shutdown(context.Background()) })
 	return h

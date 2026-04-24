@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hotplex/hotplex-worker/pkg/events"
+	"github.com/hrygo/hotplex/pkg/events"
 )
 
 const (

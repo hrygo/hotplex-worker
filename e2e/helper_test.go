@@ -23,15 +23,15 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	client "github.com/hotplex/hotplex-go-client"
+	client "github.com/hrygo/hotplex/client"
 
-	"github.com/hotplex/hotplex-worker/internal/config"
-	"github.com/hotplex/hotplex-worker/internal/gateway"
-	"github.com/hotplex/hotplex-worker/internal/security"
-	"github.com/hotplex/hotplex-worker/internal/session"
-	"github.com/hotplex/hotplex-worker/internal/worker"
-	"github.com/hotplex/hotplex-worker/pkg/aep"
-	"github.com/hotplex/hotplex-worker/pkg/events"
+	"github.com/hrygo/hotplex/internal/config"
+	"github.com/hrygo/hotplex/internal/gateway"
+	"github.com/hrygo/hotplex/internal/security"
+	"github.com/hrygo/hotplex/internal/session"
+	"github.com/hrygo/hotplex/internal/worker"
+	"github.com/hrygo/hotplex/pkg/aep"
+	"github.com/hrygo/hotplex/pkg/events"
 )
 
 // ─── Simulated Worker ──────────────────────────────────────────────────────
@@ -375,7 +375,7 @@ func (tg *testGateway) wsURL() string {
 func (tg *testGateway) generateToken(subject string, ttl time.Duration) string {
 	now := time.Now()
 	claims := jwt.MapClaims{
-		"iss":    "hotplex-worker",
+		"iss":    "hotplex",
 		"sub":    subject,
 		"aud":    "gateway",
 		"exp":    now.Add(ttl).Unix(),

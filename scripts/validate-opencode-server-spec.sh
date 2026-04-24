@@ -16,7 +16,7 @@
 
 set -e
 
-PROJECT_ROOT="/Users/huangzhonghui/hotplex-worker"
+PROJECT_ROOT="/Users/huangzhonghui/hotplex"
 OPENCODE_SRC="${HOME}/opencode"
 WORKER_FILE="$PROJECT_ROOT/internal/worker/opencodeserver/worker.go"
 
@@ -95,14 +95,14 @@ section "3. API 端点实现验证"
 cd "$PROJECT_ROOT"
 
 # /health 端点
-if grep -q 'GET /health\|/health' cmd/worker/main.go; then
+if grep -q 'GET /health\|/health' cmd/hotplex/main.go; then
     verify "/health 端点已实现" "true"
 else
     warn "/health 端点在 main.go 中未找到"
 fi
 
 # /admin/health 端点
-if grep -q 'GET /admin/health' cmd/worker/main.go; then
+if grep -q 'GET /admin/health' cmd/hotplex/main.go; then
     verify "/admin/health 端点已实现" "true"
 else
     warn "/admin/health 端点未找到"

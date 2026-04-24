@@ -60,7 +60,7 @@ gateway:
   addr: ":8888"
 
 db:
-  path: "$DATA_DIR/hotplex-worker.db"
+  path: "$DATA_DIR/hotplex.db"
 
 worker:
   max_lifetime: 24h
@@ -94,7 +94,7 @@ cat <<EOF
 ${GREEN}Development environment ready!${NC}
 
 ${BLUE}Config:${NC}    $CONFIG_DIR/config.yaml
-${BLUE}Database:${NC}  $DATA_DIR/hotplex-worker.db
+${BLUE}Database:${NC}  $DATA_DIR/hotplex.db
 
 ${BLUE}Admin Token:${NC} $ADMIN_TOKEN
 
@@ -102,7 +102,7 @@ ${BLUE}Commands:${NC}
 
   Start gateway:
     export HOTPLEX_JWT_SECRET="\${JWT_SECRET}"
-    $BIN_DIR/hotplex-worker-\$(go env GOOS)-\$(go env GOARCH) \\
+    $BIN_DIR/hotplex-\$(go env GOOS)-\$(go env GOARCH) \\
       -config $CONFIG_DIR/config.yaml \\
       -dev
 
@@ -133,7 +133,7 @@ read -r -p "Start gateway now? (y/n) [n]: " start_now
 if [[ "$start_now" == "y" ]]; then
     log_info "Starting gateway..."
     export HOTPLEX_JWT_SECRET="$JWT_SECRET"
-    exec "$BIN_DIR/hotplex-worker-$(go env GOOS)-$(go env GOARCH)" \
+    exec "$BIN_DIR/hotplex-$(go env GOOS)-$(go env GOARCH)" \
         -config "$CONFIG_DIR/config.yaml" \
         -dev
 fi

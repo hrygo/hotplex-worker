@@ -478,7 +478,7 @@ mvn test
 
 ```bash
 # Start gateway
-./hotplex-worker &
+./hotplex &
 
 # Run integration tests
 mvn verify -Pintegration-test

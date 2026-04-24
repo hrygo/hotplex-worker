@@ -3,7 +3,7 @@ package messaging
 import (
 	"context"
 
-	"github.com/hotplex/hotplex-worker/pkg/events"
+	"github.com/hrygo/hotplex/pkg/events"
 )
 
 // PlatformConn models the write side of a platform connection.

@@ -8,11 +8,12 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/slack-go/slack"
 
-	"github.com/hotplex/hotplex-worker/pkg/events"
+	"github.com/hrygo/hotplex/pkg/events"
 )
 
 // StatusType represents the current AI processing phase.
@@ -66,11 +67,10 @@ type StatusManager struct {
 	adapter *Adapter
 	logger  *slog.Logger
 	mu      sync.Mutex
-	// per-thread tracking for emoji fallback cleanup.
-	// Key: "channelID:threadTS" → last emoji added via setStatusWithEmojiFallback.
-	emojiState map[string]string
-	// per-thread dedup + rate limiting.
-	// Key: "channelID:threadTS" → last text and timestamp.
+	// emojiOnly is set once during probe: true means workspace has no Assistant API,
+	// so Notify/Clear go directly to emoji reactions without checking isAssistantCapable.
+	emojiOnly   atomic.Bool
+	emojiState  map[string]string
 	threadState map[string]*threadState
 }
 
@@ -84,26 +84,33 @@ func NewStatusManager(adapter *Adapter, logger *slog.Logger) *StatusManager {
 	}
 }
 
+// SetEmojiOnly switches StatusManager to emoji-only mode.
+// Called once after probe determines the workspace lacks Assistant API.
+func (m *StatusManager) SetEmojiOnly(emojiOnly bool) {
+	m.emojiOnly.Store(emojiOnly)
+}
+
 // Notify sends a status update. Skips if text is identical to the last sent
 // value, or if less than statusMinInterval has elapsed since the last update.
 func (m *StatusManager) Notify(ctx context.Context, channelID, threadTS string, status StatusType, text string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	key := channelID + ":" + threadTS
 
+	m.mu.Lock()
 	m.evictStaleStates()
 
 	if text == "" {
 		m.clearEmojiLocked(ctx, channelID, threadTS)
 		delete(m.threadState, key)
+		m.mu.Unlock()
 		return nil
 	}
 	if ts := m.threadState[key]; ts != nil {
 		if ts.lastText == text {
+			m.mu.Unlock()
 			return nil
 		}
 		if time.Since(ts.lastTime) < statusMinInterval {
+			m.mu.Unlock()
 			return nil
 		}
 	}
@@ -113,6 +120,12 @@ func (m *StatusManager) Notify(ctx context.Context, channelID, threadTS string, 
 	}
 	m.threadState[key].lastText = text
 	m.threadState[key].lastTime = time.Now()
+	m.mu.Unlock()
+
+	// Fast path: workspace has no Assistant API → manage emoji directly.
+	if m.emojiOnly.Load() {
+		return m.setEmoji(ctx, channelID, threadTS, status)
+	}
 
 	if m.adapter != nil {
 		return m.adapter.SetStatus(ctx, channelID, threadTS, status, text)
@@ -159,10 +172,39 @@ func (m *StatusManager) clearEmojiLocked(ctx context.Context, channelID, threadT
 	}
 }
 
-// trackEmoji records the emoji added for a thread. Called by setStatusWithEmojiFallback.
-func (m *StatusManager) trackEmoji(channelID, threadTS, emoji string) {
+// setEmoji manages emoji reactions directly (fast path for free workspaces).
+// Removes previous emoji if different, then adds the new one.
+// Thread-safety for same channel:thread relies on SlackConn.handlerMu serialization upstream.
+func (m *StatusManager) setEmoji(ctx context.Context, channelID, threadTS string, status StatusType) error {
+	emoji, ok := StatusEmojiMap[status]
+	if !ok || emoji == "" || threadTS == "" {
+		return nil
+	}
+
+	m.mu.Lock()
 	key := channelID + ":" + threadTS
-	m.emojiState[key] = emoji
+	prevEmoji := m.emojiState[key]
+	m.mu.Unlock()
+
+	if m.adapter != nil && m.adapter.client != nil {
+		if prevEmoji != "" && prevEmoji != emoji {
+			_ = m.adapter.client.RemoveReactionContext(ctx, prevEmoji, slack.ItemRef{
+				Channel:   channelID,
+				Timestamp: threadTS,
+			})
+		}
+		err := m.adapter.client.AddReactionContext(ctx, emoji, slack.ItemRef{
+			Channel:   channelID,
+			Timestamp: threadTS,
+		})
+		if err == nil {
+			m.mu.Lock()
+			m.emojiState[key] = emoji
+			m.mu.Unlock()
+		}
+		return err
+	}
+	return nil
 }
 
 // aepEventToStatus maps an AEP envelope to a status type and text.
@@ -347,6 +389,9 @@ func (a *Adapter) handleCapabilityError(err error) {
 		a.log.Warn("slack: Assistant API no longer available, switching to emoji fallback",
 			"err", err)
 		a.isAssistantCapable.Store(false)
+		if a.statusMgr != nil {
+			a.statusMgr.SetEmojiOnly(true)
+		}
 	} else {
 		a.log.Debug("slack: Assistant API call failed, trying emoji fallback",
 			"err", err)
@@ -358,12 +403,28 @@ func (a *Adapter) setStatusWithEmojiFallback(ctx context.Context, channelID, thr
 	if !ok || emoji == "" || threadTS == "" {
 		return nil
 	}
+
+	// Remove previous status emoji before adding new one.
+	a.statusMgr.mu.Lock()
+	key := channelID + ":" + threadTS
+	prevEmoji := a.statusMgr.emojiState[key]
+	a.statusMgr.mu.Unlock()
+
+	if prevEmoji != "" && prevEmoji != emoji && a.client != nil {
+		_ = a.client.RemoveReactionContext(ctx, prevEmoji, slack.ItemRef{
+			Channel:   channelID,
+			Timestamp: threadTS,
+		})
+	}
+
 	err := a.client.AddReactionContext(ctx, emoji, slack.ItemRef{
 		Channel:   channelID,
 		Timestamp: threadTS,
 	})
 	if err == nil {
-		a.statusMgr.trackEmoji(channelID, threadTS, emoji)
+		a.statusMgr.mu.Lock()
+		a.statusMgr.emojiState[key] = emoji
+		a.statusMgr.mu.Unlock()
 	}
 	return err
 }

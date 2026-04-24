@@ -9,8 +9,8 @@ import (
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/socketmode"
 
-	"github.com/hotplex/hotplex-worker/internal/messaging"
-	"github.com/hotplex/hotplex-worker/pkg/events"
+	"github.com/hrygo/hotplex/internal/messaging"
+	"github.com/hrygo/hotplex/pkg/events"
 )
 
 // interactionActionPrefix is used to identify interaction button actions.

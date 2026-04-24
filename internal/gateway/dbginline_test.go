@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hotplex/hotplex-worker/pkg/aep"
-	"github.com/hotplex/hotplex-worker/pkg/events"
+	"github.com/hrygo/hotplex/pkg/aep"
+	"github.com/hrygo/hotplex/pkg/events"
 )
 
 func TestValidateInit_Debug(t *testing.T) {

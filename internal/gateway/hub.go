@@ -16,14 +16,14 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/hotplex/hotplex-worker/internal/config"
-	"github.com/hotplex/hotplex-worker/internal/messaging"
-	"github.com/hotplex/hotplex-worker/internal/metrics"
-	"github.com/hotplex/hotplex-worker/internal/security"
-	"github.com/hotplex/hotplex-worker/internal/session"
-	"github.com/hotplex/hotplex-worker/internal/tracing"
-	"github.com/hotplex/hotplex-worker/pkg/aep"
-	"github.com/hotplex/hotplex-worker/pkg/events"
+	"github.com/hrygo/hotplex/internal/config"
+	"github.com/hrygo/hotplex/internal/messaging"
+	"github.com/hrygo/hotplex/internal/metrics"
+	"github.com/hrygo/hotplex/internal/security"
+	"github.com/hrygo/hotplex/internal/session"
+	"github.com/hrygo/hotplex/internal/tracing"
+	"github.com/hrygo/hotplex/pkg/aep"
+	"github.com/hrygo/hotplex/pkg/events"
 )
 
 // isReadTimeout reports whether err is a read deadline exceeded error.
@@ -91,6 +91,9 @@ type Hub struct {
 	// Use it to capture events into an external ring buffer (e.g. /admin/logs).
 	// If nil, no events are captured.
 	LogHandler func(level, msg, sessionID string)
+
+	// InitThrottle prevents handshake loops.
+	InitThrottle *handshakeThrottle
 }
 
 // EnvelopeWithConn pairs a message with its originating connection.
@@ -122,6 +125,7 @@ func NewHub(log *slog.Logger, cfgStore *config.ConfigStore) *Hub {
 		broadcast:      make(chan *EnvelopeWithConn, broadcastQueueSize(cfg)),
 		ctx:            ctx,
 		cancel:         cancel,
+		InitThrottle:   newHandshakeThrottle(),
 	}
 
 	h.upgrader = websocket.Upgrader{
@@ -374,13 +378,17 @@ func (h *Hub) HandleHTTP(
 // The broadcast channel is never closed — sendBroadcast uses ctx.Done() to
 // detect shutdown, and this function drains remaining messages non-blockingly.
 func (h *Hub) Run() {
-	h.log.Info("gateway: hub running")
+	// Start periodic cleanup for throttler
+	throttleCleanup := time.NewTicker(10 * time.Minute)
+	defer throttleCleanup.Stop()
 
 	for {
 		select {
 		case <-h.ctx.Done():
 			h.drainBroadcast()
 			return
+		case <-throttleCleanup.C:
+			h.InitThrottle.Cleanup()
 		case msg := <-h.broadcast:
 			if msg == nil || msg.Env == nil {
 				continue

@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hotplex/hotplex-worker/internal/messaging"
+	"github.com/hrygo/hotplex/internal/messaging"
 
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 
-	"github.com/hotplex/hotplex-worker/pkg/events"
+	"github.com/hrygo/hotplex/pkg/events"
 )
 
 // sendPermissionRequest posts a permission request card to Feishu.

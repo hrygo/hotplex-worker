@@ -15,7 +15,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/hotplex/hotplex-worker/internal/messaging"
+	"github.com/hrygo/hotplex/internal/messaging"
 )
 
 // ---------------------------------------------------------------------------
@@ -382,30 +382,26 @@ func TestSemi_DMNoStatusUpdate(t *testing.T) {
 	}
 }
 
-// TestSemi_ClockEmojiStage verifies that typing indicator stages progress
-// correctly (eyes emoji on immediate receipt).
+// TestSemi_StatusEmojiFallback verifies that status emoji reactions are added
+// and cleaned up correctly when the Assistant API is unavailable (free workspace).
 //
-// AC: 3.3-11 — 2 min clock emoji (partial: verify eyes stage triggers)
-func TestSemi_ClockEmojiStage(t *testing.T) {
+// AC: 3.3-11 — emoji reaction fallback (partial: verify status pipeline triggers)
+func TestSemi_StatusEmojiFallback(t *testing.T) {
 	cfg := loadSemiConfig(t)
 	_, calls, _ := startRealAdapter(t, cfg)
 
-	// The immediate :eyes: stage should trigger on any message
-	// We can't easily verify the :clock1: stage (needs 2 min wait)
-	// without a real long-running worker, so we verify the initial stage.
-	fmt.Println("\n  >>> Send a DM 'test-typing' to the bot")
+	fmt.Println("\n  >>> Send a DM 'test-status-emoji' to the bot")
 	call := waitForCapture(t, calls, 30*time.Second, func(c capturedCall) bool {
-		return strings.Contains(c.Text, "test-typing")
+		return strings.Contains(c.Text, "test-status-emoji")
 	})
 
 	// If the message was captured, it passed through the pipeline
-	// which means activeIndicators.Start() was called with the typing stages.
+	// which means SetStatus/StatusManager was invoked for the session.
 	require.NotEmpty(t, call.SessionID, "message should be processed")
 
 	// Note: Verifying the actual emoji reaction on the Slack message
 	// requires the Slack Web API (reactions.get) or manual visual confirmation.
-	// This test verifies the pipeline reaches the typing indicator stage.
-	t.Log("Typing indicator pipeline executed — verify :eyes: emoji visually in Slack")
+	t.Log("Status emoji pipeline executed — verify reactions appear and are cleaned up in Slack")
 }
 
 // ---------------------------------------------------------------------------

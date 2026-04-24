@@ -86,7 +86,7 @@ if [[ "$NON_INTERACTIVE" == false ]]; then
     echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
     echo "The following will be removed:"
-    echo "  - Binary: $PREFIX/bin/hotplex-worker"
+    echo "  - Binary: $PREFIX/bin/hotplex"
     [[ "$KEEP_CONFIG" == false ]] && echo "  - Config: $CONFIG_DIR"
     [[ "$KEEP_DATA" == false ]] && echo "  - Data: $DATA_DIR"
     [[ "$KEEP_DATA" == false ]] && echo "  - Logs: $LOG_DIR"
@@ -109,11 +109,11 @@ fi
 log_section "Stopping Services"
 
 # Stop systemd service
-if systemctl is-active --quiet hotplex-worker 2>/dev/null; then
+if systemctl is-active --quiet hotplex 2>/dev/null; then
     log_info "Stopping systemd service..."
-    systemctl stop hotplex-worker
-    systemctl disable hotplex-worker
-    rm -f /etc/systemd/system/hotplex-worker.service
+    systemctl stop hotplex
+    systemctl disable hotplex
+    rm -f /etc/systemd/system/hotplex.service
     systemctl daemon-reload
     log_info "Systemd service stopped and disabled ✓"
 fi
@@ -128,9 +128,9 @@ fi
 log_section "Removing Files"
 
 # Remove binary
-if [[ -f "$PREFIX/bin/hotplex-worker" ]]; then
-    rm -f "$PREFIX/bin/hotplex-worker"
-    log_info "Binary removed: $PREFIX/bin/hotplex-worker ✓"
+if [[ -f "$PREFIX/bin/hotplex" ]]; then
+    rm -f "$PREFIX/bin/hotplex"
+    log_info "Binary removed: $PREFIX/bin/hotplex ✓"
 fi
 
 # Remove config directory
@@ -180,7 +180,7 @@ ${BLUE}Summary:${NC}
   $([[ "$KEEP_DATA" == false ]] && echo "  - Logs: Removed" || echo "  - Logs: Preserved")
 
 ${YELLOW}Note:${NC}
-  - Docker images are preserved (run 'docker rmi hotplex-worker:latest' to remove)
+  - Docker images are preserved (run 'docker rmi hotplex:latest' to remove)
   - Docker volumes are preserved (run 'docker volume rm hotplex-data' to remove)
 
 ${BLUE}Reinstallation:${NC}

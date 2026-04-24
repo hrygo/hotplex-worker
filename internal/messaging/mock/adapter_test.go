@@ -7,8 +7,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/hotplex/hotplex-worker/internal/messaging"
-	"github.com/hotplex/hotplex-worker/pkg/events"
+	"github.com/hrygo/hotplex/internal/messaging"
+	"github.com/hrygo/hotplex/pkg/events"
 )
 
 // mockPlatformConn captures WriteCtx calls for verification.

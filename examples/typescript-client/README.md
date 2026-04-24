@@ -35,8 +35,8 @@ yarn add @hotplex/client
 ### From Source
 
 ```bash
-git clone https://github.com/hotplex/hotplex-worker.git
-cd hotplex-worker/examples/typescript-client
+git clone https://github.com/hrygo/hotplex.git
+cd hotplex/examples/typescript-client
 npm install
 npm run build
 ```
@@ -83,7 +83,7 @@ client.on("done", (data) => {
 
 ```bash
 # Terminal 1: Start gateway
-./hotplex-worker
+./hotplex
 
 # Terminal 2: Run example
 cd examples/typescript-client
@@ -822,5 +822,5 @@ Apache-2.0
 
 ## Support
 
-- **Issues**: https://github.com/hotplex/hotplex-worker/issues
+- **Issues**: https://github.com/hrygo/hotplex/issues
 - **Docs**: https://hotplex.dev/docs/client/typescript

@@ -1,7 +1,7 @@
 // Package client provides a Go client SDK for the HotPlex Worker Gateway.
 package client
 
-import "github.com/hotplex/hotplex-worker/pkg/events"
+import "github.com/hrygo/hotplex/pkg/events"
 
 // AEP protocol version.
 const Version = events.Version // "aep/v1"

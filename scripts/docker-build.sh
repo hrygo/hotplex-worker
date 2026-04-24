@@ -30,7 +30,7 @@ log_info() {
 }
 
 # Parse arguments
-TAG="${1:-hotplex-worker:latest}"
+TAG="${1:-hotplex:latest}"
 PUSH=false
 NO_CACHE=""
 PLATFORM=""
@@ -118,7 +118,7 @@ ${BLUE}Environment Variables:${NC}
 
   HOTPLEX_JWT_SECRET     JWT secret (required)
   HOTPLEX_ADMIN_TOKEN_1  Admin token 1 (optional)
-  HOTPLEX_DB_PATH        Database path (default: /var/lib/hotplex/data/hotplex-worker.db)
+  HOTPLEX_DB_PATH        Database path (default: /var/lib/hotplex/data/hotplex.db)
 
 ${BLUE}Volumes:${NC}
 

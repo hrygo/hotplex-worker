@@ -40,10 +40,10 @@ public class JwtTokenGenerator {
      * The secret is used to derive an ECDSA P-256 key pair.
      *
      * @param secret   the secret key (must be at least 32 bytes)
-     * @param issuer   the token issuer (e.g., "hotplex-worker")
+     * @param issuer   the token issuer (e.g., "hotplex")
      */
     public JwtTokenGenerator(String secret, String issuer) {
-        this(secret, issuer, "hotplex-worker-gateway");
+        this(secret, issuer, "hotplex-gateway");
     }
 
     /**
@@ -51,8 +51,8 @@ public class JwtTokenGenerator {
      * The secret is used to derive an ECDSA P-256 key pair.
      *
      * @param secret   the secret key (must be at least 32 bytes)
-     * @param issuer   the token issuer (e.g., "hotplex-worker")
-     * @param audience the token audience (e.g., "hotplex-worker-gateway")
+     * @param issuer   the token issuer (e.g., "hotplex")
+     * @param audience the token audience (e.g., "hotplex-gateway")
      */
     public JwtTokenGenerator(String secret, String issuer, String audience) {
         this.issuer = issuer;

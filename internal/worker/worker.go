@@ -6,7 +6,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/hotplex/hotplex-worker/pkg/events"
+	"github.com/hrygo/hotplex/pkg/events"
 )
 
 // ErrNotImplemented is returned for unimplemented worker methods.

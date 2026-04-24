@@ -103,9 +103,13 @@ export function useSessions({
     setIsLoading(true);
     try {
       const { session_id } = await createSession(workerType);
+      
+      // Force a slight delay to ensure the database has indexed the new session
+      // (Optional, but helps with consistency in distributed environments)
+      await new Promise(r => setTimeout(r, 100));
+      
       await refreshSessions();
       onSelectRef.current(session_id);
-      setIsOpen(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to create session');
     } finally {

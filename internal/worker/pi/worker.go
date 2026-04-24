@@ -1,8 +1,8 @@
 package pi
 
 import (
-	"github.com/hotplex/hotplex-worker/internal/worker"
-	"github.com/hotplex/hotplex-worker/internal/worker/noop"
+	"github.com/hrygo/hotplex/internal/worker"
+	"github.com/hrygo/hotplex/internal/worker/noop"
 )
 
 func init() {

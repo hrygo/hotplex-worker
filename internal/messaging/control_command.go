@@ -5,7 +5,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/hotplex/hotplex-worker/pkg/events"
+	"github.com/hrygo/hotplex/pkg/events"
 )
 
 // ControlCommandResult holds the parsed control action and a human-readable label.

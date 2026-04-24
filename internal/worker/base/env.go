@@ -5,8 +5,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/hotplex/hotplex-worker/internal/security"
-	"github.com/hotplex/hotplex-worker/internal/worker"
+	"github.com/hrygo/hotplex/internal/security"
+	"github.com/hrygo/hotplex/internal/worker"
 )
 
 // hasAnyPrefix reports whether s has any of the given prefixes.

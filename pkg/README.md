@@ -29,7 +29,7 @@ Implements the AEP v1 protocol encoding/decoding logic.
 **Usage:**
 
 ```go
-import "hotplex-worker/pkg/aep"
+import "hotplex/pkg/aep"
 
 // Encode an envelope
 data, err := aep.EncodeJSON(env)
@@ -66,10 +66,10 @@ Provides JWT token generation and validation.
 **Usage:**
 
 ```go
-import "hotplex-worker/pkg/jwt"
+import "hotplex/pkg/jwt"
 
 // Generate a token
-generator := jwt.NewGenerator(privateKey, "hotplex-worker", "gateway")
+generator := jwt.NewGenerator(privateKey, "hotplex", "gateway")
 claims := &jwt.Claims{
     UserID: "user123",
     Scopes: []string{"worker:use"},

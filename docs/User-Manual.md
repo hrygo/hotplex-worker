@@ -22,7 +22,7 @@ export HOTPLEX_JWT_SECRET="your-256-bit-secret-key"
 ### 3. 启动网关 (开发模式)
 ```bash
 # -dev 模式会放宽 API Key 校验，适合快速本地调试
-./bin/hotplex-worker-darwin-arm64 -dev
+./bin/hotplex-darwin-arm64 -dev
 ```
 
 🎉 **网关现在已在 `localhost:8888` (WebSocket) 和 `localhost:9999` (Admin API) 运行！**
@@ -38,7 +38,7 @@ HotPlex 扮演着中转枢纽的角色：
 | **Gateway** | 核心 WebSocket 接口，处理 AEP v1 协议 | `ws://localhost:8888` |
 | **Admin API** | 运维管理、会话监控、配置热重载 | `http://localhost:9999` |
 | **Metrics** | Prometheus 标准监控指标 | `http://localhost:9999/metrics` |
-| **Storage** | SQLite 会话持久化与审计日志 | `hotplex-worker.db` |
+| **Storage** | SQLite 会话持久化与审计日志 | `hotplex.db` |
 
 ---
 

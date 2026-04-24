@@ -15,7 +15,7 @@ import (
 	"github.com/slack-go/slack/slackevents"
 	"github.com/stretchr/testify/require"
 
-	"github.com/hotplex/hotplex-worker/pkg/events"
+	"github.com/hrygo/hotplex/pkg/events"
 )
 
 // --- Phase 1.2: Dedup ---
@@ -490,31 +490,6 @@ func TestUserCache_ResolveMentions_UnknownUID(t *testing.T) {
 
 	result := uc.ResolveMentions(ctx, "<@U999> hello", "BOT1")
 	require.Equal(t, "<@U999> hello", result)
-}
-
-// --- TypingIndicator ---
-
-func TestTypingIndicator_StopIdempotent(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-
-	ti := NewTypingIndicator(nil, "C1", "123", "456", DefaultStages)
-	// Multiple stops should not panic
-	ti.Stop(ctx)
-	ti.Stop(ctx)
-	ti.Stop(ctx)
-}
-
-func TestActiveIndicators_StartStop(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-
-	ai := NewActiveIndicators()
-	// Start with nil adapter (no reactions added, but no panic)
-	ai.Start(ctx, nil, "C1", "123", "456", nil)
-	ai.Stop(ctx, "C1", "456")
-	// Double stop ok
-	ai.Stop(ctx, "C1", "456")
 }
 
 // ---------------------------------------------------------------------------
@@ -1315,7 +1290,7 @@ func TestStatusManager_EmojiTrackAndClear(t *testing.T) {
 	ch, ts := "C123", "1234.5678"
 	key := ch + ":" + ts
 
-	sm.trackEmoji(ch, ts, "brain")
+	sm.emojiState[key] = "brain"
 	require.Equal(t, "brain", sm.emojiState[key], "emoji should be tracked")
 
 	sm.Clear(ctx, ch, ts)
@@ -1334,7 +1309,7 @@ func TestStatusManager_Clear_Idempotent(t *testing.T) {
 	t.Parallel()
 
 	sm := NewStatusManager(nil, slog.Default())
-	sm.trackEmoji("C1", "TS1", "brain")
+	sm.emojiState["C1:TS1"] = "brain"
 
 	sm.Clear(context.Background(), "C1", "TS1")
 
@@ -1348,13 +1323,13 @@ func TestStatusManager_MultipleStatusCycles(t *testing.T) {
 	sm := NewStatusManager(nil, slog.Default())
 	key := "C99:9999.0000"
 
-	sm.trackEmoji("C99", "9999.0000", "brain")
+	sm.emojiState["C99:9999.0000"] = "brain"
 	require.Equal(t, "brain", sm.emojiState[key])
 
 	sm.Clear(context.Background(), "C99", "9999.0000")
 	require.Equal(t, "", sm.emojiState[key])
 
-	sm.trackEmoji("C99", "9999.0000", "gear")
+	sm.emojiState["C99:9999.0000"] = "gear"
 	require.Equal(t, "gear", sm.emojiState[key])
 
 	sm.Clear(context.Background(), "C99", "9999.0000")
@@ -1366,8 +1341,8 @@ func TestStatusManager_IndependentThreads(t *testing.T) {
 
 	sm := NewStatusManager(nil, slog.Default())
 
-	sm.trackEmoji("C1", "T1", "brain")
-	sm.trackEmoji("C1", "T2", "gear")
+	sm.emojiState["C1:T1"] = "brain"
+	sm.emojiState["C1:T2"] = "gear"
 
 	sm.Clear(context.Background(), "C1", "T1")
 	require.Equal(t, "", sm.emojiState["C1:T1"], "T1 cleared")
@@ -1378,7 +1353,7 @@ func TestStatusManager_ClearEmojiLocked_NilAdapter(t *testing.T) {
 	t.Parallel()
 
 	sm := NewStatusManager(nil, slog.Default())
-	sm.trackEmoji("C1", "T1", "brain")
+	sm.emojiState["C1:T1"] = "brain"
 
 	// clearEmojiLocked with nil adapter should not panic.
 	sm.clearEmojiLocked(context.Background(), "C1", "T1")
@@ -1397,7 +1372,7 @@ func TestClearStatus_CleansEmojiEvenWhenAssistantCapable(t *testing.T) {
 	key := ch + ":" + ts
 
 	// Simulate what setStatusWithEmojiFallback does: add emoji and track it.
-	sm.trackEmoji(ch, ts, "brain")
+	sm.emojiState[ch+":"+ts] = "brain"
 	require.Equal(t, "brain", sm.emojiState[key], "precondition: emoji must be tracked")
 
 	// Clear must remove emoji unconditionally — this is the invariant that

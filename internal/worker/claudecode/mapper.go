@@ -5,8 +5,8 @@ import (
 	"log/slog"
 	"maps"
 
-	"github.com/hotplex/hotplex-worker/pkg/aep"
-	"github.com/hotplex/hotplex-worker/pkg/events"
+	"github.com/hrygo/hotplex/pkg/aep"
+	"github.com/hrygo/hotplex/pkg/events"
 )
 
 // Mapper converts WorkerEvents to AEP envelopes.

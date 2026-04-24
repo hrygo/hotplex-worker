@@ -245,11 +245,33 @@ export class BrowserHotPlexClient extends EventEmitter<BrowserClientEvents> {
     });
   }
 
-  private _handleMessage(env: Envelope, resolve: (ack: InitAckData) => void, _reject: (err: Error) => void): void {
+  private _handleMessage(env: Envelope, resolve: (ack: InitAckData) => void, reject: (err: Error) => void): void {
     const { event, session_id } = env;
 
     if (isInitAck(env)) {
       const ackData = event.data as unknown as InitAckData;
+
+      // Handle handshake-level errors
+      if (ackData.error || ackData.code) {
+        const errorMsg = ackData.error || `Handshake failed with code: ${ackData.code}`;
+        console.error('BrowserHotPlexClient: handshake error', errorMsg);
+        
+        // Fatal errors shouldn't trigger reconnect
+        if (ackData.code === ErrorCode.SessionNotFound || 
+            ackData.code === ErrorCode.Unauthorized ||
+            ackData.code === ErrorCode.AuthRequired) {
+          this.shouldReconnect = false;
+        }
+        
+        this.emit('error', { 
+          code: ackData.code || ErrorCode.InternalError, 
+          message: errorMsg 
+        } as ErrorData, env);
+        
+        this.disconnect();
+        reject(new Error(errorMsg));
+        return;
+      }
 
       this._sessionId = session_id;
       this._connected = true;
@@ -282,8 +304,18 @@ export class BrowserHotPlexClient extends EventEmitter<BrowserClientEvents> {
 
     switch (event.type) {
       case EventKind.Error:
-        this.emit('error', event.data as ErrorData, env);
-        if ((event.data as ErrorData).code === ErrorCode.SessionBusy) {
+        const errData = event.data as ErrorData;
+        if (!event.data || Object.keys(event.data).length === 0) {
+          console.warn('BrowserHotPlexClient: received empty error data', env);
+        }
+        
+        // Fatal errors shouldn't trigger reconnect
+        if (errData.code === ErrorCode.SessionNotFound) {
+          this.shouldReconnect = false;
+        }
+
+        this.emit('error', errData, env);
+        if (errData.code === ErrorCode.SessionBusy) {
           this._handleSessionBusy();
         }
         break;

@@ -11,8 +11,8 @@ import (
 	"github.com/slack-go/slack/slackevents"
 	"github.com/stretchr/testify/require"
 
-	"github.com/hotplex/hotplex-worker/internal/messaging"
-	"github.com/hotplex/hotplex-worker/pkg/events"
+	"github.com/hrygo/hotplex/internal/messaging"
+	"github.com/hrygo/hotplex/pkg/events"
 )
 
 // ---------------------------------------------------------------------------
@@ -21,23 +21,20 @@ import (
 
 // newTestAdapter creates a minimal Adapter with all subsystems initialized
 // but without a real Slack client or Socket Mode connection.
-// Uses a single typing stage so runStages exits immediately (no subsequent stages to wait for).
 func newTestAdapter(t *testing.T) *Adapter {
 	t.Helper()
 	ctx := context.Background()
 
 	a := &Adapter{
-		log:              slog.Default(),
-		botID:            "B_TEST",
-		teamID:           "T_TEST",
-		dedup:            NewDedup(5000, 30*time.Minute),
-		userCache:        NewUserCache(nil),
-		activeIndicators: NewActiveIndicators(),
-		typingStages:     []TypingStage{{After: 0, Emoji: "eyes"}}, // single stage → runStages loop body never executes
-		rateLimiter:      NewChannelRateLimiter(ctx),
-		activeStreams:    make(map[string]*NativeStreamingWriter),
-		activeConns:      make(map[string]*SlackConn),
-		interactions:     messaging.NewInteractionManager(slog.Default()),
+		log:           slog.Default(),
+		botID:         "B_TEST",
+		teamID:        "T_TEST",
+		dedup:         NewDedup(5000, 30*time.Minute),
+		userCache:     NewUserCache(nil),
+		rateLimiter:   NewChannelRateLimiter(ctx),
+		activeStreams: make(map[string]*NativeStreamingWriter),
+		activeConns:   make(map[string]*SlackConn),
+		interactions:  messaging.NewInteractionManager(slog.Default()),
 	}
 	// StatusManager needs the adapter pointer; set after struct creation.
 	a.statusMgr = NewStatusManager(a, slog.Default())

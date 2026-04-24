@@ -1104,7 +1104,7 @@ if a.isAssistantCapable.Load() && threadTS != "" {
 
 **触发时机 2 — 出站**：`PlatformConn.WriteCtx` 实现中接收 AEP envelope 时，根据 event type 触发状态更新：
 
-> **⚠️ 架构注意**：当前 hotplex-worker 的 Slack 适配器使用 `NativeStreamingWriter`（实现 `io.WriteCloser`），**尚未实现** `PlatformConn` 接口（`WriteCtx(ctx, *Envelope) error`）。需要一个适配层或扩展现有类型。以下代码描述目标状态，具体实现时需决定：创建新的 `SlackConn` 包装器 或 扩展 `NativeStreamingWriter`。
+> **⚠️ 架构注意**：当前 hotplex 的 Slack 适配器使用 `NativeStreamingWriter`（实现 `io.WriteCloser`），**尚未实现** `PlatformConn` 接口（`WriteCtx(ctx, *Envelope) error`）。需要一个适配层或扩展现有类型。以下代码描述目标状态，具体实现时需决定：创建新的 `SlackConn` 包装器 或 扩展 `NativeStreamingWriter`。
 
 ```go
 // 目标状态：PlatformConn 实现中的 status 集成

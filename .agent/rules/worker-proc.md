@@ -1,7 +1,7 @@
 ---
 paths:
   - "**/worker/**/*.go"
-  - "**/session/**/*.go"
+  - "**/proc/*.go"
 ---
 
 # 进程管理规范
@@ -16,34 +16,22 @@ cmd.Env = append(os.Environ(), extraEnv...)
 
 ### 内存限制设置
 
-**平台兼容性**：
 ```go
 // RLIMIT_AS 只在支持的平台上设置
 if runtime.GOOS != "darwin" && cmd.Process != nil {
     const memLimit = 512 * 1024 * 1024 // 512 MB
     if err := syscall.Setrlimit(syscall.RLIMIT_AS, &syscall.Rlimit{
-        Cur: memLimit,
-        Max: memLimit,
+        Cur: memLimit, Max: memLimit,
     }); err != nil {
         m.log.Warn("proc: setrlimit RLIMIT_AS failed", "error", err)
-        // Non-fatal: log and continue
     }
 }
 ```
 
 **平台差异**：
-- **Linux/POSIX**: 支持 `RLIMIT_AS`，限制进程地址空间
-- **macOS (Darwin)**: 不支持 `RLIMIT_AS`（实现不符合 POSIX）
-  - 调用会返回 `EINVAL` (invalid argument)
-  - 通过 `runtime.GOOS != "darwin"` 检测并跳过
-- **其他平台**: Windows 不支持 POSIX `setrlimit`
-
-**设计原则**：
-- 内存限制是**优化特性**，失败不阻止进程启动
-- 警告级别日志，不中断流程
-- 平台检测优先于错误处理
-
-**相关文件**：`internal/worker/proc/manager.go:138`
+- Linux/POSIX: 支持 `RLIMIT_AS`
+- macOS: 不支持（返回 EINVAL），通过 `runtime.GOOS != "darwin"` 跳过
+- 内存限制失败不阻止进程启动
 
 ## Stdin / Stdout
 - stdin 写入：JSON + `\n`
@@ -72,31 +60,3 @@ defer func() {
     }
 }()
 ```
-
----
-
-## InputRecoverer 接口
-
-Worker crash recovery 需要从已死 Worker 提取最后输入用于重投递：
-
-```go
-// worker.go
-type InputRecoverer interface {
-    LastInput() string
-}
-
-// base.Conn 实现 — 记录每次 Send 的内容
-func (c *Conn) Send(ctx context.Context, env Envelope) error {
-    c.mu.Lock()
-    if env.Event.Type == events.KindInput {
-        c.lastInput = extractContent(env)
-    }
-    c.mu.Unlock()
-    // ... 实际发送
-}
-```
-
-**使用场景**：
-- Worker 崩溃后 bridge 通过 `conn.(worker.InputRecoverer)` 提取 `LastInput()`
-- Fresh start fallback 时将最后输入重投递到新 Worker
-- 确保 crash recovery 后用户不丢失最后一次操作

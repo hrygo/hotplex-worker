@@ -41,15 +41,15 @@ services:
 
 ```bash
 # Stop service first (recommended for consistency)
-systemctl stop hotplex-worker
+systemctl stop hotplex
 # OR
 docker-compose stop gateway
 
 # Backup database
-cp /var/lib/hotplex/hotplex-worker.db /backups/hotplex-backup-$(date +%Y%m%d-%H%M%S).db
+cp /var/lib/hotplex/hotplex.db /backups/hotplex-backup-$(date +%Y%m%d-%H%M%S).db
 
 # Restart service
-systemctl start hotplex-worker
+systemctl start hotplex
 # OR
 docker-compose up -d gateway
 ```
@@ -80,17 +80,17 @@ sqlite3 "$LATEST" "PRAGMA integrity_check;"
 **Manual Intervention** (if auto-restart fails):
 ```bash
 # Check status
-systemctl status hotplex-worker
+systemctl status hotplex
 # OR
 docker-compose ps
 
 # View logs
-journalctl -u hotplex-worker -n 50
+journalctl -u hotplex -n 50
 # OR
 docker-compose logs --tail=50 gateway
 
 # Manual restart
-systemctl restart hotplex-worker
+systemctl restart hotplex
 # OR
 docker-compose restart gateway
 ```
@@ -108,12 +108,12 @@ docker-compose restart gateway
 
 ```bash
 # 1. Stop the service
-systemctl stop hotplex-worker
+systemctl stop hotplex
 # OR
 docker-compose stop gateway
 
 # 2. Verify corruption
-sqlite3 /var/lib/hotplex/hotplex-worker.db "PRAGMA integrity_check;"
+sqlite3 /var/lib/hotplex/hotplex.db "PRAGMA integrity_check;"
 # Expected: "Error: database disk image is malformed"
 
 # 3. Find latest valid backup
@@ -125,17 +125,17 @@ sqlite3 "$LATEST" "PRAGMA integrity_check;"
 # Must return: "ok"
 
 # 5. Backup current (corrupted) database for analysis
-mv /var/lib/hotplex/hotplex-worker.db /var/lib/hotplex/hotplex-worker.db.corrupted.$(date +%Y%m%d)
+mv /var/lib/hotplex/hotplex.db /var/lib/hotplex/hotplex.db.corrupted.$(date +%Y%m%d)
 
 # 6. Restore from backup
-cp "$LATEST" /var/lib/hotplex/hotplex-worker.db
+cp "$LATEST" /var/lib/hotplex/hotplex.db
 
 # 7. Set correct permissions
-chown hotplex:hotplex /var/lib/hotplex/hotplex-worker.db
-chmod 644 /var/lib/hotplex/hotplex-worker.db
+chown hotplex:hotplex /var/lib/hotplex/hotplex.db
+chmod 644 /var/lib/hotplex/hotplex.db
 
 # 8. Start service
-systemctl start hotplex-worker
+systemctl start hotplex
 # OR
 docker-compose up -d gateway
 
@@ -174,7 +174,7 @@ docker-compose down
 docker-compose up -d
 
 # 5. For systemd, restart service
-systemctl restart hotplex-worker
+systemctl restart hotplex
 
 # 6. Update all clients with new admin tokens
 # 7. Note: Existing JWT tokens will be invalidated
@@ -205,8 +205,8 @@ yum install -y golang git openssl curl docker docker-compose
 brew install go git openssl
 
 # 2. Clone repository
-git clone <repository-url> hotplex-worker
-cd hotplex-worker
+git clone <repository-url> hotplex
+cd hotplex
 
 # 3. Restore secrets (if available)
 cp /path/to/backup/secrets.env /etc/hotplex/secrets.env
@@ -214,7 +214,7 @@ source /etc/hotplex/secrets.env
 
 # 4. Restore database
 mkdir -p /var/lib/hotplex/data
-cp /path/to/backup/hotplex-worker.db /var/lib/hotplex/data/
+cp /path/to/backup/hotplex.db /var/lib/hotplex/data/
 chown -R hotplex:hotplex /var/lib/hotplex
 
 # 5. Build and install
@@ -224,7 +224,7 @@ chown -R hotplex:hotplex /var/lib/hotplex
 cp /path/to/backup/config.yaml /etc/hotplex/config.yaml
 
 # 7. Start service
-systemctl start hotplex-worker
+systemctl start hotplex
 # OR
 docker-compose up -d
 
@@ -249,8 +249,8 @@ curl http://localhost:9999/admin/health
 After recovery:
 
 - [ ] Verify all sessions are accessible
-- [ ] Check database integrity: `sqlite3 hotplex-worker.db "PRAGMA integrity_check;"`
-- [ ] Review logs for errors: `journalctl -u hotplex-worker -n 100`
+- [ ] Check database integrity: `sqlite3 hotplex.db "PRAGMA integrity_check;"`
+- [ ] Review logs for errors: `journalctl -u hotplex -n 100`
 - [ ] Check LLM auto-retry stats in logs: `grep "llm_retry" logs/*.log`
 - [ ] Verify auto-retry config is correct if rate limit errors were involved
 - [ ] Update monitoring alerts if needed
@@ -285,7 +285,7 @@ curl -H "Authorization: Bearer $ADMIN_TOKEN" \
 
 ### Database Stats
 ```bash
-sqlite3 /var/lib/hotplex/hotplex-worker.db <<EOF
+sqlite3 /var/lib/hotplex/hotplex.db <<EOF
 SELECT 'sessions' as table_name, COUNT(*) as row_count FROM sessions
 UNION ALL
 SELECT 'audit_log', COUNT(*) FROM audit_log;
@@ -300,10 +300,10 @@ ls -lh /backups/*.db | tail -10
 ### Log Analysis
 ```bash
 # Error count last 24 hours
-journalctl -u hotplex-worker --since "24 hours ago" | grep -c "ERROR"
+journalctl -u hotplex --since "24 hours ago" | grep -c "ERROR"
 
 # Recent warnings
-journalctl -u hotplex-worker -p warning -n 50
+journalctl -u hotplex -p warning -n 50
 ```
 
 ---

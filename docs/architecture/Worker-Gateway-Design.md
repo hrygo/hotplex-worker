@@ -339,7 +339,7 @@ Lifecycle:   persistent | ephemeral | managed
 
 1. **中央集控**：`internal/worker/adapter.go` 维护线程安全的 `Registry` 字典，对外暴露无状态的门面函数 `worker.NewWorker(wt)`。
 2. **包级自组装**：各 Worker （如 `claudecode`, `opencodeserver`, `pi` 等）的独立子包维护私有的 `init()` 回调。子包对核心模块有所有权占领意识。
-3. **空导入编排**：系统执行链唯一的硬接驳点位于 `cmd/gateway/main.go`，通过 `import _ "hotplex-worker/internal/worker/pi"` 唤醒所有合法挂载项。
+3. **空导入编排**：系统执行链唯一的硬接驳点位于 `cmd/gateway/main.go`，通过 `import _ "hotplex/internal/worker/pi"` 唤醒所有合法挂载项。
 4. **安全断言 (Fail Fast)**：请求不合法的或者未经代码编译期验证挂载的引擎，网关将在会话初期强阻断。
 
 ---

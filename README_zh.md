@@ -9,12 +9,12 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/hrygo/hotplex-worker/actions/workflows/ci.yml"><img src="https://github.com/hrygo/hotplex-worker/actions/workflows/ci.yml/badge.svg" alt="CI 状态"></a>
-  <a href="https://github.com/hotplex/hotplex-worker/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-3B82F6?style=flat-square" alt="许可证"></a>
+  <a href="https://github.com/hrygo/hotplex/actions/workflows/ci.yml"><img src="https://github.com/hrygo/hotplex/actions/workflows/ci.yml/badge.svg" alt="CI 状态"></a>
+  <a href="https://github.com/hrygo/hotplex/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-3B82F6?style=flat-square" alt="许可证"></a>
   <img src="https://img.shields.io/badge/Go-1.26+-00ADD8?style=flat-square&logo=go" alt="Go">
   <img src="https://img.shields.io/badge/协议-AEP%20v1-7C3AED?style=flat-square" alt="AEP v1">
   <img src="https://img.shields.io/badge/平台-Slack%20%7C%20飞书-E11D48?style=flat-square" alt="平台">
-  <a href="https://github.com/hrygo/hotplex-worker/stargazers"><img src="https://img.shields.io/github/stars/hrygo/hotplex-worker?style=flat-square" alt="Stars"></a>
+  <a href="https://github.com/hrygo/hotplex/stargazers"><img src="https://img.shields.io/github/stars/hrygo/hotplex?style=flat-square" alt="Stars"></a>
 </p>
 
 ---
@@ -47,7 +47,8 @@ Hotplex 是一个高性能的 Go 语言编写的网关，它提供**统一的 We
 - 🔹 **管理 API**: 提供专门的 Admin API 用于会话控制和健康监测。
 
 ### 💎 开发者体验
-- 🔹 **即插即用的 Web UI**: 基于 Next.js 15 和 Vercel AI SDK 构建。
+- 🔹 **CLI 自服务**: 内置交互式 `onboard` 向导、`doctor` 诊断、`security` 安全审计、`status` 状态检查、`config validate` 配置验证 — 全集成在单个二进制中。
+- 🔹 **即插即用的 Web UI**: 基于 Next.js 15 和 Vercel AI SDK 构建，全新浅色主题和持久侧边栏。
 - 🔹 **配置热重载**: 无需停机即可实时更新网关设置。
 - 🔹 **多语言 SDK**: 原生支持 Go、TypeScript、Python 和 Java。
 
@@ -55,13 +56,22 @@ Hotplex 是一个高性能的 Go 语言编写的网关，它提供**统一的 We
 
 ### 1. 安装
 ```bash
-git clone https://github.com/hotplex/hotplex-worker.git
-cd hotplex-worker
-cp configs/env.example .env
+git clone https://github.com/hrygo/hotplex.git
+cd hotplex
 make quickstart
 ```
 
-### 2. 启动开发服务器
+### 2. 配置
+
+```bash
+# 交互式配置向导（自动检测已有配置，支持保留或重新配置）
+./hotplex onboard
+
+# 或快速自动生成全部配置：
+./hotplex onboard --non-interactive --enable-slack --enable-feishu
+```
+
+### 3. 启动开发服务器
 ```bash
 make dev
 ```
@@ -75,7 +85,7 @@ package main
 import (
     "context"
     "fmt"
-    client "github.com/hotplex/hotplex-go-client"
+    client "github.com/hrygo/hotplex/client"
 )
 
 func main() {

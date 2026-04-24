@@ -75,7 +75,7 @@ return fmt.Errorf("session %s: %w", id, err)
 ### goimports
 ```bash
 # 必须带 -local 参数，和 golangci.yml 的 local-prefixes 一致
-goimports -local github.com/hotplex/hotplex-worker -w file.go
+goimports -local github.com/hrygo/hotplex -w file.go
 ```
 
 ## 命令参考

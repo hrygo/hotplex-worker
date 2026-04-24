@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hotplex/hotplex-worker/internal/config"
-	"github.com/hotplex/hotplex-worker/pkg/events"
+	"github.com/hrygo/hotplex/internal/config"
+	"github.com/hrygo/hotplex/pkg/events"
 )
 
 // Default retryable error patterns (compiled once at startup).

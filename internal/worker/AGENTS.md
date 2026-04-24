@@ -43,7 +43,7 @@ func NewWorker(t WorkerType) (Worker, error)
 
 // Each adapter calls Register in its init():
 // func init() { Register(TypeClaudeCode, func() (Worker, error) { return New(), nil }) }
-// main.go blank imports: _ "hotplex-worker/internal/worker/claudecode"
+// main.go blank imports: _ "hotplex/internal/worker/claudecode"
 ```
 
 ### Process Lifecycle (proc/manager.go)

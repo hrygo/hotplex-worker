@@ -5,10 +5,10 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/hotplex/hotplex-worker/internal/security"
-	"github.com/hotplex/hotplex-worker/internal/worker"
+	"github.com/hrygo/hotplex/internal/security"
+	"github.com/hrygo/hotplex/internal/worker"
 
-	"github.com/hotplex/hotplex-worker/pkg/aep"
+	"github.com/hrygo/hotplex/pkg/aep"
 )
 
 type GatewayAPI struct {

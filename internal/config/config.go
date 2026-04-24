@@ -78,7 +78,7 @@ func (c *Config) Validate() []string {
 		errs = append(errs, "gateway.addr is required (or use default :8080)")
 	}
 	if c.DB.Path == "" {
-		errs = append(errs, "db.path is required (or use default hotplex-worker.db)")
+		errs = append(errs, "db.path is required (or use default hotplex.db)")
 	}
 	if c.Session.RetentionPeriod <= 0 {
 		errs = append(errs, "session.retention_period must be positive")
@@ -174,18 +174,10 @@ type SlackConfig struct {
 	AllowDMFrom         []string `mapstructure:"allow_dm_from"`
 	AllowGroupFrom      []string `mapstructure:"allow_group_from"`
 
-	TypingStages []TypingStageConfig `mapstructure:"typing_stages"`
-
 	ReconnectBaseDelay time.Duration `mapstructure:"reconnect_base_delay"`
 	ReconnectMaxDelay  time.Duration `mapstructure:"reconnect_max_delay"`
 
 	STTConfig `mapstructure:",squash"`
-}
-
-// TypingStageConfig defines a single emoji reaction stage for YAML/Viper deserialization.
-type TypingStageConfig struct {
-	After time.Duration `mapstructure:"after"`
-	Emoji string        `mapstructure:"emoji"`
 }
 
 // FeishuConfig holds Feishu WebSocket adapter settings.
@@ -364,7 +356,7 @@ func Default() *Config {
 			DeltaCoalesceSize:     200,
 		},
 		DB: DBConfig{
-			Path:         "data/hotplex-worker.db",
+			Path:         filepath.Join(HotplexHome(), "data", "hotplex.db"),
 			WALMode:      true,
 			BusyTimeout:  500 * time.Millisecond,
 			MaxOpenConns: 1,
@@ -375,8 +367,8 @@ func Default() *Config {
 			ExecutionTimeout: 30 * time.Minute,
 			AllowedEnvs:      nil,
 			EnvWhitelist:     nil,
-			DefaultWorkDir:   "/tmp/hotplex/workspace",
-			PIDDir:           "",
+			DefaultWorkDir:   filepath.Join(HotplexHome(), "workspace"),
+			PIDDir:           filepath.Join(HotplexHome(), ".pids"),
 			AutoRetry:        AutoRetryConfig{Enabled: true, MaxRetries: 9, BaseDelay: 5 * time.Second, MaxDelay: 120 * time.Second, RetryInput: "继续", NotifyUser: true},
 		},
 		Security: SecurityConfig{
@@ -420,8 +412,8 @@ func Default() *Config {
 				GroupPolicy:    "allowlist",
 				STTConfig: STTConfig{
 					Provider:     "feishu+local",
-					LocalCmd:     "python3 scripts/stt_once.py {file}",
-					LocalMode:    "ephemeral",
+					LocalCmd:     "python3 " + filepath.Join(HotplexHome(), "scripts", "stt_server.py"),
+					LocalMode:    "persistent",
 					LocalIdleTTL: time.Hour,
 				},
 			},
@@ -429,6 +421,12 @@ func Default() *Config {
 				RequireMention: true,
 				DMPolicy:       "allowlist",
 				GroupPolicy:    "allowlist",
+				STTConfig: STTConfig{
+					Provider:     "local",
+					LocalCmd:     "python3 " + filepath.Join(HotplexHome(), "scripts", "stt_server.py"),
+					LocalMode:    "persistent",
+					LocalIdleTTL: time.Hour,
+				},
 			},
 		},
 	}
@@ -519,7 +517,7 @@ func loadRecursive(filePath string, opts LoadOptions, visited []string) (*Config
 
 	// If a config file is provided, unmarshal it over defaults.
 	if filePath != "" {
-		absPath, err := normalizePath(filePath)
+		absPath, err := ExpandAndAbs(filePath)
 		if err != nil {
 			return nil, fmt.Errorf("config: resolve path %q: %w", filePath, err)
 		}
@@ -601,7 +599,7 @@ func loadRecursive(filePath string, opts LoadOptions, visited []string) (*Config
 
 	// Normalize DB path.
 	if cfg.DB.Path != "" {
-		absPath, err := normalizePath(cfg.DB.Path)
+		absPath, err := ExpandAndAbs(cfg.DB.Path)
 		if err != nil {
 			return nil, fmt.Errorf("config: normalize db path %q: %w", cfg.DB.Path, err)
 		}
@@ -611,11 +609,9 @@ func loadRecursive(filePath string, opts LoadOptions, visited []string) (*Config
 	return cfg, nil
 }
 
-// normalizePath returns an absolute path, resolving ~ and relative paths.
-// If the path starts with ~ and $HOME is not set, the original path is returned
-// with a warning logged. This allows tests to run without $HOME while still
-// catching configuration issues in production.
-func normalizePath(p string) (string, error) {
+// ExpandAndAbs returns an absolute path, resolving ~ and relative paths.
+// If the path starts with ~ and $HOME is not set, the original path is returned.
+func ExpandAndAbs(p string) (string, error) {
 	if p == "" {
 		return "", nil
 	}
@@ -637,6 +633,17 @@ func normalizePath(p string) (string, error) {
 		p = abs
 	}
 	return p, nil
+}
+
+// HotplexHome returns the base directory for all HotPlex state (~/.hotplex).
+// It does not create the directory — callers should use ensureDir or rely on
+// the components that need the directory to create it on first use.
+func HotplexHome() string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return "/tmp/hotplex"
+	}
+	return filepath.Join(home, ".hotplex")
 }
 
 // aggregateNumberedEnv appends values from environment variables like PREFIX_1, PREFIX_2...

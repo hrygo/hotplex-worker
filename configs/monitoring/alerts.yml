@@ -110,7 +110,7 @@ groups:
           description: >
             Event processing P95 latency is {{ $value | printf "%.2f" }}s.
 
-  - name: hotplex-worker-alerts
+  - name: hotplex-alerts
     interval: 30s
     rules:
       # -----------------------------------------------------------------------------

@@ -13,10 +13,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/hotplex/hotplex-worker/internal/messaging"
-	"github.com/hotplex/hotplex-worker/internal/messaging/stt"
-	"github.com/hotplex/hotplex-worker/pkg/aep"
-	"github.com/hotplex/hotplex-worker/pkg/events"
+	"github.com/hrygo/hotplex/internal/messaging"
+	"github.com/hrygo/hotplex/internal/messaging/stt"
+	"github.com/hrygo/hotplex/pkg/aep"
+	"github.com/hrygo/hotplex/pkg/events"
 
 	"runtime/debug"
 
@@ -65,8 +65,6 @@ type Adapter struct {
 	dedup              *Dedup
 	userCache          *UserCache
 	statusMgr          *StatusManager
-	activeIndicators   *ActiveIndicators
-	typingStages       []TypingStage
 	isAssistantCapable atomic.Bool
 	assistantEnabled   *bool
 	gate               *Gate
@@ -146,8 +144,6 @@ func (a *Adapter) Start(ctx context.Context) error {
 	a.dedup = NewDedup(dedupMaxEntries, dedupTTL)
 	a.userCache = NewUserCache(a.client)
 	a.statusMgr = NewStatusManager(a, a.log)
-	a.activeIndicators = NewActiveIndicators()
-	a.typingStages = a.resolveTypingStages()
 	a.interactions = messaging.NewInteractionManager(a.log)
 	a.activeStreams = make(map[string]*NativeStreamingWriter)
 	a.activeConns = make(map[string]*SlackConn)
@@ -164,6 +160,7 @@ func (a *Adapter) Start(ctx context.Context) error {
 			a.log.Info("slack: Assistant API capability confirmed (paid workspace)")
 		} else {
 			a.log.Info("slack: Assistant API not available, using emoji reaction fallback")
+			a.statusMgr.SetEmojiOnly(true)
 		}
 	}()
 
@@ -409,17 +406,12 @@ func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsA
 			conn.handlerMu.Lock()
 			defer conn.handlerMu.Unlock()
 		}
-		// Start status indicators for worker commands (typing emoji + assistant status)
-		a.activeIndicators.Start(ctx, a, channelID, threadTS, msgEvent.TimeStamp, a.typingStages)
 		if a.isAssistantCapable.Load() && threadTS != "" {
 			_ = a.SetAssistantStatus(ctx, channelID, threadTS, "Processing "+cmdResult.Label+"...")
 		}
 		a.handleTextWorkerCommand(ctx, teamID, channelID, threadTS, userID, cmdResult)
 		return
 	}
-
-	// Start typing indicator (emoji fallback for free workspaces)
-	a.activeIndicators.Start(ctx, a, channelID, threadTS, msgEvent.TimeStamp, a.typingStages)
 
 	// Set initial assistant status (native API for paid workspaces)
 	if a.isAssistantCapable.Load() && threadTS != "" {
@@ -429,20 +421,6 @@ func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsA
 	if err := a.HandleTextMessage(ctx, platformMsgID, channelID, teamID, threadTS, userID, text); err != nil {
 		a.log.Error("slack: handle message failed", "err", err)
 	}
-}
-
-// resolveTypingStages converts config TypingStageConfig to TypingStage,
-// falling back to DefaultStages when no custom config is provided.
-func (a *Adapter) resolveTypingStages() []TypingStage {
-	if len(a.typingStages) == 0 {
-		return DefaultStages
-	}
-	return a.typingStages
-}
-
-// SetTypingStages sets custom emoji progress stages from config.
-func (a *Adapter) SetTypingStages(stages []TypingStage) {
-	a.typingStages = stages
 }
 
 // GetOrCreateConn returns an existing SlackConn for the channel/thread pair,
@@ -530,10 +508,6 @@ func (a *Adapter) Close(ctx context.Context) error {
 
 	for _, c := range conns {
 		_ = c.Close()
-	}
-
-	if a.activeIndicators != nil {
-		a.activeIndicators.CloseAll(ctx)
 	}
 
 	a.mu.Lock()
@@ -665,7 +639,6 @@ func (a *Adapter) handleTextWorkerCommand(ctx context.Context, teamID, channelID
 
 	if err := a.bridge.Handle(ctx, cmdEnv, conn); err != nil {
 		a.log.Error("slack: worker command failed", "command", result.Label, "err", err)
-		a.activeIndicators.Stop(ctx, channelID, conn.messageTS)
 		a.sendEphemeralOrPost(ctx, channelID, threadTS, userID, fmt.Sprintf("❌ Failed to execute %s.", result.Label))
 		return
 	}
@@ -731,7 +704,6 @@ func (c *SlackConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 	switch env.Event.Type {
 	case events.Done, events.Error:
 		c.clearStatus(ctx)
-		c.adapter.activeIndicators.Stop(ctx, c.channelID, c.messageTS)
 		c.adapter.interactions.CancelAll(env.SessionID)
 		c.closeStreamWriter()
 		if env.Event.Type == events.Error {
@@ -760,17 +732,11 @@ func (c *SlackConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		c.notifyStatus(ctx, "Loading context usage...")
 		cErr := c.sendContextUsage(ctx, env)
 		c.clearStatus(ctx)
-		if c.adapter.activeIndicators != nil {
-			c.adapter.activeIndicators.Stop(ctx, c.channelID, c.messageTS)
-		}
 		return cErr
 	case events.MCPStatus:
 		c.notifyStatus(ctx, "Loading MCP status...")
 		mErr := c.sendMCPStatus(ctx, env)
 		c.clearStatus(ctx)
-		if c.adapter.activeIndicators != nil {
-			c.adapter.activeIndicators.Stop(ctx, c.channelID, c.messageTS)
-		}
 		return mErr
 	}
 
@@ -977,10 +943,7 @@ func (c *SlackConn) Close() error {
 
 	c.closeStreamWriter()
 
-	// Clean up typing indicator + status emoji (same as done/error path in WriteCtx).
-	ctx := context.Background()
-	c.adapter.activeIndicators.Stop(ctx, c.channelID, c.messageTS)
-	c.clearStatus(ctx)
+	c.clearStatus(context.Background())
 
 	return nil
 }

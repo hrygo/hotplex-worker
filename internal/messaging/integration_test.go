@@ -10,8 +10,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/hotplex/hotplex-worker/internal/session"
-	"github.com/hotplex/hotplex-worker/pkg/events"
+	"github.com/hrygo/hotplex/internal/session"
+	"github.com/hrygo/hotplex/pkg/events"
 )
 
 // mockPlatformConn is a test double for PlatformConn.

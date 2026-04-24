@@ -617,7 +617,7 @@ func TestNormalizePath(t *testing.T) {
 				tt.setup()
 			}
 
-			result, err := normalizePath(tt.input)
+			result, err := ExpandAndAbs(tt.input)
 
 			if tt.expectError {
 				require.Error(t, err)

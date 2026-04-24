@@ -135,20 +135,20 @@ func TestPersistentSTT_RequiresDisk(t *testing.T) {
 
 func TestPersistentSTT_CloseBeforeUse(t *testing.T) {
 	t.Parallel()
-	s := NewPersistentSTT("cat", 0, slog.Default())
+	s := NewPersistentSTT("cat", "test-stt", 0, slog.Default())
 	require.NoError(t, s.Close(context.Background()))
 }
 
 func TestPersistentSTT_LazyStart(t *testing.T) {
 	t.Parallel()
-	s := NewPersistentSTT("cat", 0, slog.Default())
+	s := NewPersistentSTT("cat", "test-stt", 0, slog.Default())
 	require.False(t, s.started)
 	_ = s.Close(context.Background())
 }
 
 func TestPersistentSTT_StartFailure(t *testing.T) {
 	t.Parallel()
-	s := NewPersistentSTT("/nonexistent/binary", 0, slog.Default())
+	s := NewPersistentSTT("/nonexistent/binary", "test-stt", 0, slog.Default())
 	defer func() { _ = s.Close(context.Background()) }()
 
 	_, err := s.Transcribe(context.Background(), []byte("audio"))
@@ -164,7 +164,7 @@ echo '{"text":"hello from persistent","error":""}'
 	scriptPath := filepath.Join(t.TempDir(), "mock_stt.sh")
 	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o755))
 
-	s := NewPersistentSTT(scriptPath, 0, slog.Default())
+	s := NewPersistentSTT(scriptPath, "test-stt", 0, slog.Default())
 	defer func() { _ = s.Close(context.Background()) }()
 
 	text, err := s.Transcribe(context.Background(), []byte("fake-audio"))
@@ -183,7 +183,7 @@ done
 	scriptPath := filepath.Join(t.TempDir(), "multi.sh")
 	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o755))
 
-	s := NewPersistentSTT(scriptPath, 0, slog.Default())
+	s := NewPersistentSTT(scriptPath, "test-stt", 0, slog.Default())
 	defer func() { _ = s.Close(context.Background()) }()
 
 	text1, err := s.Transcribe(context.Background(), []byte("audio1"))
@@ -202,7 +202,7 @@ read -r line
 	scriptPath := filepath.Join(t.TempDir(), "exit.sh")
 	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o755))
 
-	s := NewPersistentSTT(scriptPath, 0, slog.Default())
+	s := NewPersistentSTT(scriptPath, "test-stt", 0, slog.Default())
 	defer func() { _ = s.Close(context.Background()) }()
 
 	_, err := s.Transcribe(context.Background(), []byte("audio"))
@@ -217,7 +217,7 @@ echo 'not-json'
 	scriptPath := filepath.Join(t.TempDir(), "badjson.sh")
 	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o755))
 
-	s := NewPersistentSTT(scriptPath, 0, slog.Default())
+	s := NewPersistentSTT(scriptPath, "test-stt", 0, slog.Default())
 	defer func() { _ = s.Close(context.Background()) }()
 
 	_, err := s.Transcribe(context.Background(), []byte("audio"))
@@ -233,7 +233,7 @@ echo '{"text":"","error":"model load failed"}'
 	scriptPath := filepath.Join(t.TempDir(), "errresp.sh")
 	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o755))
 
-	s := NewPersistentSTT(scriptPath, 0, slog.Default())
+	s := NewPersistentSTT(scriptPath, "test-stt", 0, slog.Default())
 	defer func() { _ = s.Close(context.Background()) }()
 
 	_, err := s.Transcribe(context.Background(), []byte("audio"))
@@ -249,7 +249,7 @@ echo '{"text":"%s","error":""}'`, longText)
 	scriptPath := filepath.Join(t.TempDir(), "long.sh")
 	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o755))
 
-	s := NewPersistentSTT(scriptPath, 0, slog.Default())
+	s := NewPersistentSTT(scriptPath, "test-stt", 0, slog.Default())
 	defer func() { _ = s.Close(context.Background()) }()
 
 	text, err := s.Transcribe(context.Background(), []byte("audio"))
@@ -266,7 +266,7 @@ done
 	scriptPath := filepath.Join(t.TempDir(), "concurrent_close.sh")
 	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o755))
 
-	s := NewPersistentSTT(scriptPath, 0, slog.Default())
+	s := NewPersistentSTT(scriptPath, "test-stt", 0, slog.Default())
 	_, _ = s.Transcribe(context.Background(), []byte("audio"))
 
 	var wg sync.WaitGroup
@@ -293,7 +293,7 @@ fi
 	scriptPath := filepath.Join(t.TempDir(), "proto_test.sh")
 	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o755))
 
-	s := NewPersistentSTT(scriptPath, 0, slog.Default())
+	s := NewPersistentSTT(scriptPath, "test-stt", 0, slog.Default())
 	defer func() { _ = s.Close(context.Background()) }()
 
 	text, err := s.Transcribe(context.Background(), []byte("test-audio"))

@@ -18,7 +18,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/hotplex/hotplex-worker/internal/worker/proc"
+	"github.com/hrygo/hotplex/internal/worker/proc"
 )
 
 // Transcriber converts raw audio bytes to text.
@@ -133,6 +133,7 @@ type PersistentSTT struct {
 	cmdParts []string
 	idleTTL  time.Duration
 	log      *slog.Logger
+	pidKey   string // Unique identifier for PID file tracking
 
 	mu      sync.Mutex
 	cmd     *exec.Cmd
@@ -149,11 +150,16 @@ type PersistentSTT struct {
 
 // NewPersistentSTT creates a persistent STT transcriber.
 // cmdTemplate is the command to launch the subprocess (no {file} placeholder).
+// pidKey is used for PID file tracking (e.g. "stt-server" or a hash).
 // idleTTL controls auto-shutdown after idle (0 = disabled).
-func NewPersistentSTT(cmdTemplate string, idleTTL time.Duration, log *slog.Logger) *PersistentSTT {
+func NewPersistentSTT(cmdTemplate, pidKey string, idleTTL time.Duration, log *slog.Logger) *PersistentSTT {
 	parts := strings.Fields(cmdTemplate)
+	if pidKey == "" {
+		pidKey = "stt-server"
+	}
 	return &PersistentSTT{
 		cmdParts: parts,
+		pidKey:   pidKey,
 		idleTTL:  idleTTL,
 		log:      log,
 	}
@@ -260,8 +266,8 @@ func (s *PersistentSTT) start(_ context.Context) error {
 
 	// Track PID for orphan cleanup.
 	if tracker := proc.GlobalTracker(); tracker != nil {
-		if err := tracker.Write("stt-server", s.pgid); err != nil {
-			s.log.Warn("persistent stt: pidfile write", "err", err)
+		if err := tracker.Write(s.pidKey, s.pgid); err != nil {
+			s.log.Warn("persistent stt: pidfile write", "err", err, "key", s.pidKey)
 		}
 	}
 
@@ -329,7 +335,7 @@ func (s *PersistentSTT) terminate(ctx context.Context) {
 
 	// Clean up PID file.
 	if tracker := proc.GlobalTracker(); tracker != nil {
-		_ = tracker.Remove("stt-server")
+		_ = tracker.Remove(s.pidKey)
 	}
 
 	s.log.Info("persistent stt: stopped")
@@ -356,7 +362,7 @@ func (s *PersistentSTT) kill() {
 
 	// Clean up PID file.
 	if tracker := proc.GlobalTracker(); tracker != nil {
-		_ = tracker.Remove("stt-server")
+		_ = tracker.Remove(s.pidKey)
 	}
 }
 
@@ -435,4 +441,51 @@ func RandomAlphaNum(n int) string {
 		b[i] = charset[int(rb[0])%len(charset)]
 	}
 	return string(b)
+}
+
+// Shared STT Support
+// ---------------------------------------------------------------------------
+
+// SharedTranscriber wraps a Transcriber to support reference-counted shared
+// ownership. Multiple messaging adapters can share a single STT process.
+type SharedTranscriber struct {
+	Transcriber
+	closer Closer
+	mu     sync.Mutex
+	refs   atomic.Int32
+}
+
+func NewSharedTranscriber(t Transcriber) *SharedTranscriber {
+	s := &SharedTranscriber{
+		Transcriber: t,
+	}
+	s.refs.Store(1)
+	if c, ok := t.(Closer); ok {
+		s.closer = c
+	}
+	return s
+}
+
+func (s *SharedTranscriber) Refs() int32 { return s.refs.Load() }
+
+func (s *SharedTranscriber) Acquire() *SharedTranscriber {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.refs.Add(1)
+	return s
+}
+
+func (s *SharedTranscriber) Close(ctx context.Context) error {
+	s.mu.Lock()
+	if s.refs.Add(-1) > 0 {
+		s.mu.Unlock()
+		return nil
+	}
+	closer := s.closer
+	s.mu.Unlock()
+
+	if closer != nil {
+		return closer.Close(ctx)
+	}
+	return nil
 }

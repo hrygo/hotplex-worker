@@ -38,7 +38,7 @@ public class InteractiveExample {
         String signingKey = requireEnv("HOTPLEX_SIGNING_KEY");
 
         // Create JWT token generator
-        JwtTokenGenerator tokenGenerator = new JwtTokenGenerator(signingKey, "hotplex-worker");
+        JwtTokenGenerator tokenGenerator = new JwtTokenGenerator(signingKey, "hotplex");
 
         // Create client
         HotPlexClient client = HotPlexClient.builder()

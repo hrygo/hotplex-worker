@@ -9,7 +9,7 @@ import (
 	"maps"
 	"sync"
 
-	"github.com/hotplex/hotplex-worker/pkg/aep"
+	"github.com/hrygo/hotplex/pkg/aep"
 )
 
 // ControlResponse represents a response to Claude Code.

@@ -10,7 +10,7 @@
 ## 📦 交付物
 
 ### 编译产物
-- ✅ `target/hotplex-worker-client-1.0.0-SNAPSHOT.jar` (28MB)
+- ✅ `target/hotplex-client-1.0.0-SNAPSHOT.jar` (28MB)
 - ✅ 包含所有依赖的 fat JAR
 - ✅ 可直接运行
 
@@ -112,7 +112,7 @@ mvn clean compile
 ```bash
 mvn clean package -DskipTests
 ```
-**预期结果**: `target/hotplex-worker-client-1.0.0-SNAPSHOT.jar`
+**预期结果**: `target/hotplex-client-1.0.0-SNAPSHOT.jar`
 
 ### 3. 快速示例
 ```bash
@@ -142,7 +142,7 @@ examples/java-client/
 │       ├── application.yml
 │       └── logback.xml
 ├── target/
-│   └── hotplex-worker-client-1.0.0-SNAPSHOT.jar
+│   └── hotplex-client-1.0.0-SNAPSHOT.jar
 ├── pom.xml
 ├── README.md
 ├── IMPLEMENTATION_SUMMARY.md
@@ -159,7 +159,7 @@ examples/java-client/
 ```xml
 <dependency>
     <groupId>dev.hotplex</groupId>
-    <artifactId>hotplex-worker-client</artifactId>
+    <artifactId>hotplex-client</artifactId>
     <version>1.0.0</version>
 </dependency>
 ```
@@ -173,7 +173,7 @@ mvn clean install
 ```xml
 <dependency>
     <groupId>dev.hotplex</groupId>
-    <artifactId>hotplex-worker-client</artifactId>
+    <artifactId>hotplex-client</artifactId>
     <version>1.0.0-SNAPSHOT</version>
 </dependency>
 ```

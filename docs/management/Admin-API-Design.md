@@ -260,7 +260,7 @@ GET /admin/health HTTP/1.1
     "database": {
       "status": "healthy",
       "type": "sqlite",
-      "path": "/var/hotplex/data/hotplex-worker.db",
+      "path": "/var/hotplex/data/hotplex.db",
       "size_mb": 50
     },
     "workers": {

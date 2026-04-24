@@ -18,7 +18,7 @@ estimated_hours: 12
 
 ## Overview
 
-Create a Go client module under `client/` that demonstrates how to connect to the HotPlex Worker Gateway via WebSocket using the AEP v1 protocol. The module is an independent sub-module (own `go.mod`) that imports the `hotplex-worker` module as a third-party library, mirroring how real Go clients would consume the gateway.
+Create a Go client module under `client/` that demonstrates how to connect to the HotPlex Worker Gateway via WebSocket using the AEP v1 protocol. The module is an independent sub-module (own `go.mod`) that imports the `hotplex` module as a third-party library, mirroring how real Go clients would consume the gateway.
 
 ## Goals
 
@@ -149,7 +149,7 @@ Covers all event types, plus:
 ### scripts/gen-token/main.go
 
 Reads gateway signing key from file or env var, generates ES256 JWT with:
-- `iss: hotplex-worker`
+- `iss: hotplex`
 - `aud: gateway`
 - `sub: example-user`
 - `exp: 1 hour from now`

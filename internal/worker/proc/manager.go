@@ -15,7 +15,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/hotplex/hotplex-worker/internal/security"
+	"github.com/hrygo/hotplex/internal/security"
 )
 
 // Default output buffer limits for bufio.Scanner.

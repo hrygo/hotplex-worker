@@ -9,9 +9,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	client "github.com/hotplex/hotplex-go-client"
+	client "github.com/hrygo/hotplex/client"
 
-	"github.com/hotplex/hotplex-worker/internal/worker"
+	"github.com/hrygo/hotplex/internal/worker"
 )
 
 func TestE2E_SendInputReceiveEvents(t *testing.T) {

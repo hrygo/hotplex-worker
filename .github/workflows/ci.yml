@@ -84,7 +84,7 @@ jobs:
             $(go list ./... | grep -v \
               -e 'internal/worker/proc' \
               -e 'internal/worker/pi' \
-              -e 'cmd/worker' \
+              -e 'cmd/hotplex' \
               -e 'e2e')
 
       - name: Display coverage
@@ -99,10 +99,10 @@ jobs:
         uses: codecov/codecov-action@v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          slug: hrygo/hotplex-worker
+          slug: hrygo/hotplex
           files: ./coverage.out
           flags: unittests
-          name: hotplex-worker
+          name: hotplex
           fail_ci_if_error: false
 
   # ── Coverage gate ───────────────────────────────────────────────────────
@@ -228,7 +228,7 @@ jobs:
       - name: Build gateway binary
         run: |
           mkdir -p bin
-          go build -o bin/hotplex-worker ./cmd/worker
+          go build -o bin/hotplex ./cmd/hotplex
 
       - name: Verify binary
-        run: test -x ./bin/hotplex-worker && ./bin/hotplex-worker --help
+        run: test -x ./bin/hotplex && ./bin/hotplex --help

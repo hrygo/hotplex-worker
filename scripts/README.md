@@ -11,7 +11,7 @@ This directory contains installation and deployment scripts for HotPlex Worker G
 | `docker-build.sh` | Build Docker image | `./scripts/docker-build.sh` |
 | `uninstall.sh` | Complete uninstallation | `sudo ./scripts/uninstall.sh` |
 | `validate-acpx-spec.sh` | Validate ACPX spec via acpx CLI | `./scripts/validate-acpx-spec.sh` |
-| `hotplex-worker.service` | Systemd service unit | Install via `install.sh` |
+| `hotplex.service` | Systemd service unit | Install via `install.sh` |
 
 ## Installation Scripts
 
@@ -53,7 +53,7 @@ sudo ./scripts/install.sh --systemd
 **What it creates:**
 
 ```
-/usr/local/bin/hotplex-worker           # Binary
+/usr/local/bin/hotplex           # Binary
 /etc/hotplex/
   ├── config.yaml                       # Main config
   ├── secrets.env                       # Secrets (JWT, tokens)
@@ -63,7 +63,7 @@ sudo ./scripts/install.sh --systemd
       └── server.key                    # TLS private key
 /var/lib/hotplex/                       # Data directory (SQLite)
 /var/log/hotplex/                       # Log directory
-/etc/systemd/system/hotplex-worker.service  # Systemd unit
+/etc/systemd/system/hotplex.service  # Systemd unit
 ```
 
 **Post-installation:**
@@ -73,13 +73,13 @@ sudo ./scripts/install.sh --systemd
 source /etc/hotplex/secrets.env
 
 # Start service
-systemctl start hotplex-worker
+systemctl start hotplex
 
 # Check status
-systemctl status hotplex-worker
+systemctl status hotplex
 
 # View logs
-journalctl -u hotplex-worker -f
+journalctl -u hotplex -f
 
 # Test health
 curl http://localhost:9999/admin/health
@@ -106,7 +106,7 @@ curl http://localhost:9999/admin/health
 .dev/
   ├── config.yaml          # Dev config
   └── data/
-      └── hotplex-worker.db       # SQLite database
+      └── hotplex.db       # SQLite database
 ```
 
 **Dev mode features:**
@@ -132,16 +132,16 @@ curl http://localhost:9999/admin/health
 ./scripts/docker-build.sh
 
 # Custom tag
-./scripts/docker-build.sh hotplex-worker:v1.0.0
+./scripts/docker-build.sh hotplex:v1.0.0
 
 # Build and push
-./scripts/docker-build.sh hotplex-worker:latest --push
+./scripts/docker-build.sh hotplex:latest --push
 
 # Build without cache
 ./scripts/docker-build.sh --no-cache
 
 # Multi-platform build
-./scripts/docker-build.sh hotplex-worker:latest --platform linux/amd64
+./scripts/docker-build.sh hotplex:latest --platform linux/amd64
 ```
 
 **Run container:**
@@ -150,23 +150,23 @@ curl http://localhost:9999/admin/health
 # Development
 docker run -p 8080:8888 -p 9080:9999 \
   -e HOTPLEX_JWT_SECRET=your-secret \
-  hotplex-worker:latest
+  hotplex:latest
 
 # With custom config
 docker run -p 8080:8888 -p 9080:9999 \
   -v /path/to/config.yaml:/etc/hotplex/config.yaml \
   -e HOTPLEX_JWT_SECRET=your-secret \
-  hotplex-worker:latest
+  hotplex:latest
 
 # With TLS
 docker run -p 8443:8443 -p 9080:9999 \
   -v /path/to/tls.crt:/etc/hotplex/tls/server.crt \
   -v /path/to/tls.key:/etc/hotplex/tls/server.key \
   -e HOTPLEX_JWT_SECRET=your-secret \
-  hotplex-worker:latest
+  hotplex:latest
 ```
 
-### hotplex-worker.service
+### hotplex.service
 
 **Systemd service unit** for Linux systems.
 
@@ -182,32 +182,32 @@ docker run -p 8443:8443 -p 9080:9999 \
 **Installation:**
 
 ```bash
-sudo cp scripts/hotplex-worker.service /etc/systemd/system/
+sudo cp scripts/hotplex.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable hotplex-worker
-sudo systemctl start hotplex-worker
+sudo systemctl enable hotplex
+sudo systemctl start hotplex
 ```
 
 **Management:**
 
 ```bash
 # Start
-sudo systemctl start hotplex-worker
+sudo systemctl start hotplex
 
 # Stop
-sudo systemctl stop hotplex-worker
+sudo systemctl stop hotplex
 
 # Restart
-sudo systemctl restart hotplex-worker
+sudo systemctl restart hotplex
 
 # Status
-sudo systemctl status hotplex-worker
+sudo systemctl status hotplex
 
 # Logs
-sudo journalctl -u hotplex-worker -f
+sudo journalctl -u hotplex -f
 
 # Resource usage
-systemctl show hotplex-worker -p MemoryCurrent,CPUUsageNSec
+systemctl show hotplex -p MemoryCurrent,CPUUsageNSec
 ```
 
 ### validate-acpx-spec.sh
@@ -626,7 +626,7 @@ sudo ./scripts/install.sh
 
 ```bash
 # Check PATH
-which hotplex-worker
+which hotplex
 
 # Add to PATH if needed
 export PATH=$PATH:/usr/local/bin
@@ -636,26 +636,26 @@ export PATH=$PATH:/usr/local/bin
 
 ```bash
 # Check logs
-journalctl -u hotplex-worker -n 50
+journalctl -u hotplex -n 50
 
 # Verify secrets file exists
 ls -la /etc/hotplex/secrets.env
 
 # Verify config is valid
-hotplex-worker -config /etc/hotplex/config.yaml -validate
+hotplex -config /etc/hotplex/config.yaml -validate
 ```
 
 ### Docker container unhealthy
 
 ```bash
 # Check container logs
-docker logs hotplex-worker
+docker logs hotplex
 
 # Check health check output
-docker inspect hotplex-worker | jq '.[0].State.Health'
+docker inspect hotplex | jq '.[0].State.Health'
 
 # Run health check manually
-docker exec hotplex-worker curl -f http://localhost:9999/admin/health
+docker exec hotplex curl -f http://localhost:9999/admin/health
 ```
 
 ### Port already in use

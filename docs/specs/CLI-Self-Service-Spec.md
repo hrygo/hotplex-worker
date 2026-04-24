@@ -121,9 +121,9 @@ func init() {
 doctor 命令执行时通过 blank import 触发注册：
 
 ```go
-// cmd/worker/doctor.go
+// cmd/hotplex/doctor.go
 
-import _ "github.com/hotplex/hotplex-worker/internal/cli/checkers"
+import _ "github.com/hrygo/hotplex/internal/cli/checkers"
 ```
 
 ## 4. onboard 命令
@@ -258,7 +258,7 @@ Run 'hotplex doctor --fix' to auto-fix 1 issue(s)
 
 ### 重构目标
 
-将现有 `cmd/worker/main.go` (~656行) 拆分：
+将现有 `cmd/hotplex/main.go` (~656行) 拆分：
 
 - `main.go`: Cobra root cmd + 子命令注册（~50 行）
 - `serve.go`: 原有启动逻辑（~600 行，几乎原封不动）
@@ -267,11 +267,11 @@ Run 'hotplex doctor --fix' to auto-fix 1 issue(s)
 ### serve cmd 的 flag 兼容
 
 ```go
-func newServeCmd() *cobra.Command {
+func newGatewayCmd() *cobra.Command {
     cmd := &cobra.Command{
-        Use:   "serve",
+        Use:   "gateway",
         Short: "Start the gateway server",
-        RunE:  runServe,
+        RunE:  runGateway,
     }
     cmd.Flags().StringP("config", "c", "configs/config.yaml", "config file path")
     cmd.Flags().Bool("dev", false, "development mode")

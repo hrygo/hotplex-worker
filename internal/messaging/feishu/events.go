@@ -2,7 +2,7 @@
 package feishu
 
 import (
-	"github.com/hotplex/hotplex-worker/pkg/events"
+	"github.com/hrygo/hotplex/pkg/events"
 )
 
 // extractResponseText extracts text content from an AEP event for Feishu output.

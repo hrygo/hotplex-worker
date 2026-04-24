@@ -1,7 +1,7 @@
 # HotPlex Worker Gateway - Production Configuration
 #
 # Inherits: config.yaml (base)
-# Usage: ./hotplex-worker -config configs/config-prod.yaml
+# Usage: ./hotplex -config configs/config-prod.yaml
 #
 # Required env vars:
 #   HOTPLEX_JWT_SECRET       — JWT signing key (ES256)

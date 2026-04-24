@@ -16,7 +16,7 @@ version: v1.0
 > 维护者: HotPlex Engineering
 > 最后更新: 2026-03-31
 
-本文档为 hotplex-worker 项目所有规划功能定义验收标准（Acceptance Criteria）。每条 AC 均可测试，包含正例、负例和边界条件。
+本文档为 hotplex 项目所有规划功能定义验收标准（Acceptance Criteria）。每条 AC 均可测试，包含正例、负例和边界条件。
 
 **优先级说明：**
 - **P0**: MVP 必须实现，发布前必须全部通过
@@ -565,7 +565,7 @@ version: v1.0
 **描述**: Gateway 接受的所有 JWT 必须包含 RFC 7519 标准字段 (iss, sub, aud, exp, iat, jti) 以及 HotPlex 扩展字段 (role, scope, bot_id, session_id)。
 
 **验收标准**:
-- Given 有效 JWT 中 iss 字段为 'hotplex-worker', When JWTValidator.Validate, Then claims.Issuer == 'hotplex-worker'
+- Given 有效 JWT 中 iss 字段为 'hotplex', When JWTValidator.Validate, Then claims.Issuer == 'hotplex'
 - Given 有效 JWT 中 exp 字段已过期, When JWTValidator.Validate, Then 返回 ErrUnauthorized (token expired)
 - Given JWTClaims 中存在 bot_id 字段, When Validate, Then claims.BotID 可正确解析为非空字符串
 

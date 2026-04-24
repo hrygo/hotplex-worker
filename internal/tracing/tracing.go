@@ -95,7 +95,7 @@ func Shutdown(ctx context.Context) error {
 }
 
 func noopTracer() trace.Tracer {
-	return noop.NewTracerProvider().Tracer("hotplex-worker")
+	return noop.NewTracerProvider().Tracer("hotplex")
 }
 
 // SpanFromContext returns Tracer if non-nil, otherwise returns a no-op tracer.
@@ -103,7 +103,7 @@ func SpanFromContext(ctx context.Context) trace.Tracer {
 	if Tracer != nil {
 		return Tracer
 	}
-	return noop.NewTracerProvider().Tracer("hotplex-worker")
+	return noop.NewTracerProvider().Tracer("hotplex")
 }
 
 // Attr returns a trace attribute for span attributes.

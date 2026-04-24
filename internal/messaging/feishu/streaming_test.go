@@ -38,7 +38,6 @@ func TestCardPhase_String(t *testing.T) {
 
 func TestStreamingCardController_transition_ValidTransitions(t *testing.T) {
 	t.Parallel()
-	c := NewStreamingCardController(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	tests := []struct {
 		name string
@@ -68,6 +67,7 @@ func TestStreamingCardController_transition_ValidTransitions(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+			c := NewStreamingCardController(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
 			c.phase.Store(int32(tt.from))
 			got := c.transition(tt.to)
 			require.Equal(t, tt.want, got)

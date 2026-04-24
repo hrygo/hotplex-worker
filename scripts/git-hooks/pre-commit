@@ -40,11 +40,24 @@ fi
 # 3. Lint (golangci-lint on staged packages only)
 if command -v golangci-lint &> /dev/null; then
     printf "🔹 Running linter (golangci-lint)...\n"
-    # Lint only packages with staged changes
-    PACKAGES=$(echo "$STAGED_GO_FILES" | xargs dirname | sort -u | xargs -I{} echo "./{}")
-    if ! golangci-lint run $PACKAGES 2>&1; then
-        printf "${YELLOW}⚠️  Linter found issues. Fix before committing.${NC}\n"
-        exit 1
+    # Separate main-module files from client/ submodule (separate go.mod)
+    MAIN_FILES=$(echo "$STAGED_GO_FILES" | grep -v '^client/' || true)
+    CLIENT_FILES=$(echo "$STAGED_GO_FILES" | grep '^client/' || true)
+
+    # Lint main module packages
+    if [ -n "$MAIN_FILES" ]; then
+        if ! echo "$MAIN_FILES" | xargs dirname | sort -u | xargs golangci-lint run 2>&1; then
+            printf "${YELLOW}⚠️  Linter found issues. Fix before committing.${NC}\n"
+            exit 1
+        fi
+    fi
+
+    # Lint client submodule (run from client/ with its own go.mod)
+    if [ -n "$CLIENT_FILES" ]; then
+        if ! echo "$CLIENT_FILES" | sed 's|^client/||' | xargs dirname | sort -u | xargs -I{} sh -c 'cd client && golangci-lint run ./{} 2>&1'; then
+            printf "${YELLOW}⚠️  Linter found issues in client/. Fix before committing.${NC}\n"
+            exit 1
+        fi
     fi
 else
     printf "${YELLOW}⚠️  golangci-lint not found, skipping.${NC}\n"

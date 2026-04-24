@@ -1,11 +1,12 @@
 ---
 paths:
   - "**/security/*.go"
+  - "**/config/config.go"
 ---
 
 # 安全规范
 
-> hotplex-worker 必须实施多层安全防护：JWT 认证、SSRF 防护、命令白名单、Env 隔离、Tool 限制
+> hotplex 必须实施多层安全防护：JWT 认证、SSRF 防护、命令白名单、Env 隔离、Tool 限制
 > 参考：`docs/specs/Acceptance-Criteria.md` §SEC-001 ~ §SEC-045
 
 ---

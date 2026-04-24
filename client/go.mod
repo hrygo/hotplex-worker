@@ -1,4 +1,4 @@
-module github.com/hotplex/hotplex-go-client
+module github.com/hrygo/hotplex/client
 
 go 1.26
 
@@ -8,6 +8,6 @@ require (
 	github.com/gorilla/websocket v1.5.3
 )
 
-require github.com/hotplex/hotplex-worker v0.0.0
+require github.com/hrygo/hotplex v0.0.0
 
-replace github.com/hotplex/hotplex-worker => ..
+replace github.com/hrygo/hotplex => ..

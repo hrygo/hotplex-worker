@@ -8,7 +8,7 @@ global:
   scrape_interval: 15s
   evaluation_interval: 15s
   external_labels:
-    cluster: 'hotplex-worker'
+    cluster: 'hotplex'
     environment: 'docker'
 
 # Alertmanager configuration (optional - disabled by default)
@@ -29,7 +29,7 @@ scrape_configs:
     metrics_path: /metrics
 
   # Scrape HotPlex Worker Gateway
-  - job_name: 'hotplex-worker'
+  - job_name: 'hotplex'
     static_configs:
       - targets: ['gateway:9999']
     metrics_path: /admin/metrics

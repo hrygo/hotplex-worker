@@ -45,7 +45,7 @@ public class QuickStart {
         }
 
         // Create JWT token generator
-        JwtTokenGenerator tokenGenerator = new JwtTokenGenerator(signingKey, "hotplex-worker");
+        JwtTokenGenerator tokenGenerator = new JwtTokenGenerator(signingKey, "hotplex");
 
         // Create client using builder
         HotPlexClient client = HotPlexClient.builder()

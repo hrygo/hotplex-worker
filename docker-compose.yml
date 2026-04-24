@@ -23,8 +23,8 @@ services:
         GIT_SHA: ${GIT_SHA:-unknown}
         BUILD_TIME: ${BUILD_TIME:-unknown}
         GO_VERSION: ${GO_VERSION:-go1.26.0}
-    image: hotplex-worker:latest
-    container_name: hotplex-worker
+    image: hotplex:latest
+    container_name: hotplex
     restart: unless-stopped
 
     ports:
@@ -129,7 +129,7 @@ services:
         mkdir -p /backups &&
         while true; do
           TIMESTAMP=$$(date +%Y%m%d-%H%M%S) &&
-          cp /var/lib/hotplex/data/hotplex-worker.db "/backups/hotplex-$$TIMESTAMP.db" &&
+          cp /var/lib/hotplex/data/hotplex.db "/backups/hotplex-$$TIMESTAMP.db" &&
           find /backups -name '*.db' -mtime +$$RETENTION_DAYS -delete &&
           echo "Backup created: hotplex-$$TIMESTAMP.db" &&
           sleep $$BACKUP_INTERVAL

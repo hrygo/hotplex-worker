@@ -1018,7 +1018,7 @@ client.on('reconnect', (data) => {
 
 - [ ] 本地启动 Gateway
   ```bash
-  ./hotplex-worker
+  ./hotplex
   ```
 
 - [ ] 启动前端开发服务器

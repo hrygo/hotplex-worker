@@ -22,7 +22,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	client "github.com/hotplex/hotplex-go-client"
+	client "github.com/hrygo/hotplex/client"
 )
 
 var allowPolicy = map[string]bool{

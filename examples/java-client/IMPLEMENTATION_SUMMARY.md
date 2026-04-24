@@ -15,7 +15,7 @@ mvn clean compile
 mvn exec:java -Dexec.mainClass="dev.hotplex.example.QuickStart"
 
 # 或者直接运行打包好的 JAR
-java -jar target/hotplex-worker-client-1.0.0-SNAPSHOT.jar
+java -jar target/hotplex-client-1.0.0-SNAPSHOT.jar
 ```
 
 ## 主要功能
@@ -165,7 +165,7 @@ private static final Logger log = LoggerFactory.getLogger(HotPlexClient.class);
 ```java
 // 添加了两参数构造函数
 public JwtTokenGenerator(String secret, String issuer) {
-    this(secret, issuer, "hotplex-worker-gateway");
+    this(secret, issuer, "hotplex-gateway");
 }
 
 // 修复方法名: generate -> generateToken
@@ -178,7 +178,7 @@ public String generateToken(String subject, List<String> scopes, long ttlSeconds
 $ mvn clean package -DskipTests
 [INFO] BUILD SUCCESS
 [INFO] Total time:  4.427 s
-[INFO] Building jar: target/hotplex-worker-client-1.0.0-SNAPSHOT.jar
+[INFO] Building jar: target/hotplex-client-1.0.0-SNAPSHOT.jar
 ```
 
 ## 下一步

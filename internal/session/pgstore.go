@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/hotplex/hotplex-worker/pkg/events"
+	"github.com/hrygo/hotplex/pkg/events"
 )
 
 var ErrNotImplemented = errors.New("session: not implemented")

@@ -64,7 +64,7 @@ func TestValidate(t *testing.T) {
 					RegisteredClaims: jwt.RegisteredClaims{
 						ExpiresAt: jwt.NewNumericDate(time.Now().Add(1 * time.Hour)),
 						IssuedAt:  jwt.NewNumericDate(time.Now()),
-						Issuer:    "hotplex-worker",
+						Issuer:    "hotplex",
 						Subject:   "user-123",
 					},
 					UserID: "user-123",
@@ -99,7 +99,7 @@ func TestValidate(t *testing.T) {
 					RegisteredClaims: jwt.RegisteredClaims{
 						ExpiresAt: jwt.NewNumericDate(time.Now().Add(1 * time.Hour)),
 						IssuedAt:  jwt.NewNumericDate(time.Now()),
-						Issuer:    "hotplex-worker",
+						Issuer:    "hotplex",
 						Subject:   "user-123",
 					},
 					UserID: "user-123",
@@ -117,7 +117,7 @@ func TestValidate(t *testing.T) {
 					RegisteredClaims: jwt.RegisteredClaims{
 						ExpiresAt: jwt.NewNumericDate(time.Now().Add(-1 * time.Hour)),
 						IssuedAt:  jwt.NewNumericDate(time.Now().Add(-2 * time.Hour)),
-						Issuer:    "hotplex-worker",
+						Issuer:    "hotplex",
 						Subject:   "user-123",
 					},
 					UserID: "user-123",
@@ -137,7 +137,7 @@ func TestValidate(t *testing.T) {
 					RegisteredClaims: jwt.RegisteredClaims{
 						ExpiresAt: jwt.NewNumericDate(time.Now().Add(1 * time.Hour)),
 						IssuedAt:  jwt.NewNumericDate(time.Now()),
-						Issuer:    "hotplex-worker",
+						Issuer:    "hotplex",
 						Subject:   "user-123",
 						ID:        jti,
 					},
@@ -160,7 +160,7 @@ func TestValidate(t *testing.T) {
 					RegisteredClaims: jwt.RegisteredClaims{
 						ExpiresAt: jwt.NewNumericDate(time.Now().Add(1 * time.Hour)),
 						IssuedAt:  jwt.NewNumericDate(time.Now()),
-						Issuer:    "hotplex-worker",
+						Issuer:    "hotplex",
 						Subject:   "user-123",
 					},
 					UserID: "user-123",
@@ -180,7 +180,7 @@ func TestValidate(t *testing.T) {
 					RegisteredClaims: jwt.RegisteredClaims{
 						ExpiresAt: jwt.NewNumericDate(time.Now().Add(1 * time.Hour)),
 						IssuedAt:  jwt.NewNumericDate(time.Now()),
-						Issuer:    "hotplex-worker",
+						Issuer:    "hotplex",
 						Subject:   "user-123",
 					},
 					UserID: "user-123",
@@ -277,7 +277,7 @@ func TestGenerateToken(t *testing.T) {
 		require.Equal(t, "user-123", claims.UserID)
 		require.Equal(t, []string{"read", "write"}, claims.Scopes)
 		require.Equal(t, "user-123", claims.Subject)
-		require.Equal(t, "hotplex-worker", claims.Issuer)
+		require.Equal(t, "hotplex", claims.Issuer)
 		require.NotEmpty(t, claims.ID) // jti should be set
 	})
 
@@ -354,7 +354,7 @@ func TestGenerateTokenWithClaims(t *testing.T) {
 			RegisteredClaims: jwt.RegisteredClaims{
 				ExpiresAt: jwt.NewNumericDate(time.Now().Add(1 * time.Hour)),
 				IssuedAt:  jwt.NewNumericDate(time.Now()),
-				Issuer:    "hotplex-worker",
+				Issuer:    "hotplex",
 				Subject:   "user-999",
 			},
 			UserID: "user-999",
@@ -741,7 +741,7 @@ func TestJWTIntegration(t *testing.T) {
 			RegisteredClaims: jwt.RegisteredClaims{
 				ExpiresAt: jwt.NewNumericDate(time.Now().Add(1 * time.Hour)),
 				IssuedAt:  jwt.NewNumericDate(time.Now()),
-				Issuer:    "hotplex-worker",
+				Issuer:    "hotplex",
 				Subject:   "user-456",
 				Audience:  []string{"hotplex-gateway"},
 				ID:        mustGenerateJTI(),

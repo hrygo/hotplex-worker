@@ -9,12 +9,12 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/hrygo/hotplex-worker/actions/workflows/ci.yml"><img src="https://github.com/hrygo/hotplex-worker/actions/workflows/ci.yml/badge.svg" alt="CI Status"></a>
-  <a href="https://github.com/hotplex/hotplex-worker/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-3B82F6?style=flat-square" alt="License"></a>
+  <a href="https://github.com/hrygo/hotplex/actions/workflows/ci.yml"><img src="https://github.com/hrygo/hotplex/actions/workflows/ci.yml/badge.svg" alt="CI Status"></a>
+  <a href="https://github.com/hrygo/hotplex/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-3B82F6?style=flat-square" alt="License"></a>
   <img src="https://img.shields.io/badge/Go-1.26+-00ADD8?style=flat-square&logo=go" alt="Go">
   <img src="https://img.shields.io/badge/Protocol-AEP%20v1-7C3AED?style=flat-square" alt="AEP v1">
   <img src="https://img.shields.io/badge/Platforms-Slack%20%7C%20Feishu-E11D48?style=flat-square" alt="Platforms">
-  <a href="https://github.com/hrygo/hotplex-worker/stargazers"><img src="https://img.shields.io/github/stars/hrygo/hotplex-worker?style=flat-square" alt="Stars"></a>
+  <a href="https://github.com/hrygo/hotplex/stargazers"><img src="https://img.shields.io/github/stars/hrygo/hotplex?style=flat-square" alt="Stars"></a>
 </p>
 
 ---
@@ -47,7 +47,8 @@ Hotplex is a high-performance Go gateway that provides a **single WebSocket inte
 - 🔹 **Admin API**: Dedicated management interface for session control and health monitoring.
 
 ### 💎 Developer Experience
-- 🔹 **Ready-to-use Web UI**: Next.js 15 + Vercel AI SDK integration.
+- 🔹 **CLI Self-Service**: Interactive `onboard` wizard, `doctor` diagnostics, `security` audit, `status` check, and `config validate` — all built into a single binary.
+- 🔹 **Ready-to-use Web UI**: Next.js 15 + Vercel AI SDK integration with redesigned light theme and persistent sidebar.
 - 🔹 **Hot-Reload Config**: Update gateway settings without downtime.
 - 🔹 **Multi-Language SDKs**: Native support for Go, TypeScript, Python, and Java.
 
@@ -55,13 +56,22 @@ Hotplex is a high-performance Go gateway that provides a **single WebSocket inte
 
 ### 1. Installation
 ```bash
-git clone https://github.com/hotplex/hotplex-worker.git
-cd hotplex-worker
-cp configs/env.example .env
+git clone https://github.com/hrygo/hotplex.git
+cd hotplex
 make quickstart
 ```
 
-### 2. Run Development Servers
+### 2. Configure
+
+```bash
+# Interactive setup wizard (detects existing config, supports keep-or-reconfigure)
+./hotplex onboard
+
+# Or quick auto-generate all configs:
+./hotplex onboard --non-interactive --enable-slack --enable-feishu
+```
+
+### 3. Run Development Servers
 ```bash
 make dev
 ```
@@ -75,7 +85,7 @@ package main
 import (
     "context"
     "fmt"
-    client "github.com/hotplex/hotplex-go-client"
+    client "github.com/hrygo/hotplex/client"
 )
 
 func main() {

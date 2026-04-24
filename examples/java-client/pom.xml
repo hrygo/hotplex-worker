@@ -12,7 +12,7 @@
     </parent>
 
     <groupId>dev.hotplex</groupId>
-    <artifactId>hotplex-worker-client</artifactId>
+    <artifactId>hotplex-client</artifactId>
     <version>1.0.0-SNAPSHOT</version>
     <packaging>jar</packaging>
 

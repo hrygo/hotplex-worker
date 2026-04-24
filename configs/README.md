@@ -20,9 +20,8 @@ configs/
 ## 快速开始
 
 ```bash
-cp configs/env.example .env     # 填入 HOTPLEX_JWT_SECRET、HOTPLEX_ADMIN_TOKEN_1
-mkdir -p data
-make dev                        # 自动使用 config-dev.yaml
+cp configs/env.example ~/.hotplex/.env   # 填入 HOTPLEX_JWT_SECRET、HOTPLEX_ADMIN_TOKEN_1
+make dev                                # 自动使用 config-dev.yaml
 ```
 
 ---
@@ -103,7 +102,7 @@ log:
 
 | 字段 | 类型 | 默认值 | 热重载 | 说明 |
 |:-----|:-----|:-------|:------:|:-----|
-| `path` | string | `data/hotplex-worker.db` | — | SQLite 数据库文件路径。相对路径基于工作目录解析。文件不存在时自动创建。加载时自动转为绝对路径 |
+| `path` | string | `~/.hotplex/data/hotplex.db` | — | SQLite 数据库文件路径。`~` 自动展开为用户主目录。文件不存在时自动创建。加载时自动转为绝对路径 |
 | `wal_mode` | bool | `true` | — | 启用 Write-Ahead Logging 模式。WAL 允许并发读写（读不阻塞写），是单写 goroutine 架构的前提。**禁止关闭**，否则写性能急剧下降且并发读不可用 |
 | `busy_timeout` | duration | `500ms` | — | SQLite 锁等待超时。当另一个写操作持有时，当前操作在此时间内重试。500ms 在单写 goroutine 模型下足够覆盖一次批量刷盘 |
 | `max_open_conns` | int | `1` | — | 最大数据库连接数。SQLite 的并发写入受限于单连接，设为 1 确保所有操作在同一连接上串行化 |
@@ -120,7 +119,7 @@ log:
 | `tls_cert_file` | string | `/etc/hotplex/tls/server.crt` | — | TLS 证书文件路径。仅当 `tls_enabled: true` 时使用 |
 | `tls_key_file` | string | `/etc/hotplex/tls/server.key` | — | TLS 私钥文件路径。仅当 `tls_enabled: true` 时使用 |
 | `allowed_origins` | []string | `["*"]` | ✅ | CORS 允许的 Origin 列表。WebSocket 升级时 `Upgrader.CheckOrigin` 校验请求的 Origin 头。`["*"]` 允许所有来源（仅开发用），生产应限制为具体域名。热重载即时生效——每次 WS 升级请求读取最新配置 |
-| `jwt_audience` | string | `hotplex-worker-gateway` | — | JWT `aud` 声明的期望值。用于验证令牌的目标受众，防止令牌跨服务复用 |
+| `jwt_audience` | string | `hotplex-gateway` | — | JWT `aud` 声明的期望值。用于验证令牌的目标受众，防止令牌跨服务复用 |
 | `jwt_secret` | []byte | — | — | JWT 签名密钥（ES256）。**仅**通过 `HOTPLEX_JWT_SECRET` 环境变量提供（base64 编码），禁止写入 YAML。用于签发和验证 session token |
 
 ### session — 会话生命周期
@@ -167,7 +166,7 @@ Worker 进程启动时的工作目录遵循以下优先级覆盖逻辑：
 | `max_lifetime` | duration | `24h` | — | **绝对生存周期**。Worker 进程从启动开始计算的强制最大寿命。到期后无论是否活跃均会被终止。旨在通过定期刷新来清除潜在的内存泄漏或内部状态退化。Worker 可通过 resume 机制在下次请求时无缝重启。 |
 | `idle_timeout` | duration | `60m` | — | **闲置回收周期**（Idle Recycle）。Worker 在等待新输入（IDLE 状态）时的最大允许时长。每次接收到用户输入后该计时器都会重置。旨在及时释放不活跃会话占用的资源。较短的超时释放资源更快，但可能导致用户体感的冷启动增加。 |
 | `execution_timeout` | duration | `30m` | — | **僵死检测周期**（Zombie IO Timeout）。Worker 在执行中（RUNNING 状态）无任何 I/O 输出反馈的最大时长。用于检测并强制清理卡死、陷入无限循环或无响应的 Worker 进程，防止会话永久阻塞。 |
-| `default_work_dir` | string | `/tmp/hotplex/workspace` | — | Worker 进程的默认工作目录。当 session 或 platform 未指定 `work_dir` 时使用。目录不存在时自动创建（`mkdir -p`） |
+| `default_work_dir` | string | `~/.hotplex/workspace` | — | Worker 进程的默认工作目录。当 session 或 platform 未指定 `work_dir` 时使用。`~` 自动展开为用户主目录。目录不存在时自动创建（`mkdir -p`） |
 | `pid_dir` | string | `~/.hotplex/.pids/` | — | PID 文件目录。proc.Manager 在启动 Worker 时写入 PID 文件用于孤儿进程清理。网关重启时自动扫描此目录，杀死不再有父进程的孤儿 Worker |
 | `allowed_envs` | []string | `[]` | — | 额外透传给 Worker 的环境变量名白名单。这些环境变量从网关进程继承到 Worker 子进程。与 `env_whitelist` 合并去重 |
 | `env_whitelist` | []string | `["PATH", "HOME", ...]` | — | 安全透传的环境变量白名单。Worker 进程默认**不继承**网关的任何环境变量（安全隔离），仅白名单中的变量会被透传。`allowed_envs` 会被合并到此列表 |
@@ -217,7 +216,6 @@ Worker 进程启动时的工作目录遵循以下优先级覆盖逻辑：
 | `allow_group_from` | []string | `[]` | — | 仅群组白名单。与 `allow_from` 合并去重 |
 | `reconnect_base_delay` | duration | `1s` | — | Socket Mode 连接断开后的首次重连延迟。采用指数退避，每次翻倍直到 `reconnect_max_delay` |
 | `reconnect_max_delay` | duration | `60s` | — | 重连延迟上限。避免在网络故障时过于频繁地重试 |
-| `typing_stages` | []object | 内置 5 阶段 | — | 多阶段表情进度指示器配置（免费 Workspace 无法使用 Slack native typing indicator）。每项含 `after`（延迟）和 `emoji`（表情符号）。默认：eyes → clock1 → hourglass → gear → hourglass |
 | `assistant_api_enabled` | *bool | `nil` | — | 是否启用 Assistant API 模式。`nil`（未设置）= 自动检测。`true` = 强制使用 Assistant API，`false` = 使用标准对话模式 |
 
 ### messaging.feishu — 飞书 WebSocket

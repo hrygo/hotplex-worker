@@ -9,7 +9,7 @@
 ```bash
 [INFO] BUILD SUCCESS
 [INFO] Total time:  1.623 s
-[INFO] Building jar: target/hotplex-worker-client-1.0.0-SNAPSHOT.jar
+[INFO] Building jar: target/hotplex-client-1.0.0-SNAPSHOT.jar
 ```
 
 ---
@@ -184,7 +184,7 @@ mvn exec:java -Dexec.mainClass="dev.hotplex.example.InteractiveExample"
 
 ```java
 // 创建 JWT 生成器
-JwtTokenGenerator tokenGen = new JwtTokenGenerator(signingKey, "hotplex-worker");
+JwtTokenGenerator tokenGen = new JwtTokenGenerator(signingKey, "hotplex");
 
 // 创建客户端
 HotPlexClient client = HotPlexClient.builder()

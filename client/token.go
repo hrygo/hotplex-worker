@@ -37,7 +37,7 @@ func NewTokenGenerator(keyOrPath string) (*TokenGenerator, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &TokenGenerator{privateKey: key, issuer: "hotplex-worker", audience: "gateway"}, nil
+	return &TokenGenerator{privateKey: key, issuer: "hotplex", audience: "gateway"}, nil
 }
 
 // WithAudience sets a custom JWT audience (default "gateway").

@@ -1,6 +1,6 @@
 # Go Client SDK Examples
 
-Progressive examples for [hotplex-go-client](../), from quickstart to production.
+Progressive examples for [hotplex/client](../), from quickstart to production.
 
 ## Quick Start
 

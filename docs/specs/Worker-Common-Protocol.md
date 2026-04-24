@@ -51,7 +51,7 @@ completion_date: 2026-04-04
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                     BaseWorker 层                                 │
-│              (hotplex-worker 内部共享)                            │
+│              (hotplex 内部共享)                            │
 ├─────────────────────────────────────────────────────────────────┤
 │  • BaseWorker: Terminate/Kill/Wait/Health/LastIO                 │
 │  • proc.Manager: PGID 隔离进程管理                               │

@@ -35,10 +35,10 @@
 
 ```bash
 # 开发模式（零配置）
-./hotplex-worker
+./hotplex
 
 # 或使用配置文件
-./hotplex-worker -config configs/config-dev.yaml
+./hotplex -config configs/config-dev.yaml
 ```
 
 Gateway 默认监听：
@@ -164,7 +164,7 @@ import (
     "fmt"
     "time"
 
-    "github.com/hotplex/client"
+    "github.com/hrygo/hotplex/client"
 )
 
 func main() {
@@ -530,7 +530,7 @@ const client = new HotPlexClient({
 启动 Gateway 时使用 `-dev` 标志，接受任意 API Key：
 
 ```bash
-./hotplex-worker -dev
+./hotplex -dev
 ```
 
 ---
@@ -785,7 +785,7 @@ mvn test
 
 ```bash
 # 启动测试 Gateway
-./hotplex-worker -dev &
+./hotplex -dev &
 
 # 运行集成测试
 cd python-client
@@ -885,6 +885,6 @@ Apache-2.0
 
 ## 支持
 
-- **GitHub Issues**: https://github.com/hotplex/hotplex-worker/issues
+- **GitHub Issues**: https://github.com/hrygo/hotplex/issues
 - **文档**: `docs/`
 - **示例**: `examples/`

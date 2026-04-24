@@ -99,7 +99,7 @@ OpenClaw System Prompt 结构:
 | **SOUL.md 特殊处理** | 额外注入 "embody its persona and tone" 指令 | 人格指令得到强化 |
 | **缓存分界线** | 静态文件在 boundary 上方，HEARTBEAT.md 在下方 | 稳定内容可缓存，动态内容不破坏缓存 |
 | **子 Agent 裁剪** | subagent 只加载 AGENTS.md + TOOLS.md + SOUL.md + IDENTITY.md + USER.md | 节省 token，避免子 agent 看到 MEMORY |
-| **文件大小限制** | 单文件 12K chars，总计 60K chars | 防止 context 爆炸 |
+| **文件大小限制** | 单文件 4K chars，总计 20K chars | 防止 context 爆炸 |
 | **MEMORY 隔离** | MEMORY.md 仅主会话加载，不在群聊/共享会话加载 | 防止隐私泄漏 |
 | **排序机制** | `CONTEXT_FILE_ORDER` Map 定义数字优先级 | 确定性顺序，避免随机性 |
 | **frontmatter 剥离** | YAML frontmatter 加载时 strip | 元数据不注入到 prompt |
@@ -187,7 +187,7 @@ messages[role: "system"] (System Messages — 两层组装)
       ↑ 以上为 LLM 调用第一层 (llm.ts:99-111) 与 S2/S3 拼接为 system[0]
 
   S2  Call-level System     ← input.system (per-call 传入)
-  S3  Sticky User System    ← input.user.system (从最后一条用户消息持久提取)
+  S3  Last User System      ← input.user.system (从消息历史倒序查找 lastUser.system)
       ↑ S0+S2+S3 拼接为 system[0] (单个字符串块)
 
   S4  Environment Info      (每次调用生成，~150 tok)
@@ -204,7 +204,7 @@ messages[role: "user"/"assistant"] (对话)
 ```
 
 **两层组装架构** (详见 [[OpenCode-Server-Context-Analysis.md#4-system-prompt-槽位图]]):
-- **第一层** (`llm.ts:99-111`): S0 (Provider/Agent) + S2 (call-level system) + S3 (sticky user system) → 拼接为单个字符串 → `system[0]`
+- **第一层** (`llm.ts:99-111`): S0 (Provider/Agent) + S2 (call-level system) + S3 (last user system) → 拼接为单个字符串 → `system[0]`
 - **第二层** (`prompt.ts:1473-1479`): S4 (Environment) + S5 (Skills) + S6 (Instructions) → 追加到 `system[]` 数组
 - **缓存优化**: 若 `system[0]` 未变 → 合并为 `[header, rest]` 两段以利用 Provider 缓存断点
 
@@ -220,7 +220,7 @@ C 通道注入点: 同 B 合并; 文件方式写入 workdir AGENTS.md → 自动
 | **S0** | Provider 模板：由模型 ID 自动选择 (anthropic.txt / gpt.txt 等, ~3-5K tok) | ❌ | 无 | — |
 | **S1** | Agent 专用 prompt：内置 Agent (explore/compaction) 定义，存在时覆盖 S0 (~500-2K tok) | ⚠️ | 无 | — |
 | **S2** | Call-level System：每次 API 调用传入的 `system` 字段，与 S0/S3 拼接为 `system[0]` | ✅ | 无 | **B + C 通道** — `system` field 合并注入 |
-| **S3** | Sticky User System：从最后用户消息的 system 字段自动提取并持久化到 SQLite | 自动 | 无 | S2 注入后自动 sticky |
+| **S3** | Last User System：从消息历史倒序查找最后一个 user 消息的 system 字段 (llm.ts `input.user.system`)。**不是独立持久化机制** — 只是 `lastUser` 对象的字段读取。在同一 prompt cycle (tool 迭代) 内 `lastUser` 不变所以持续生效，但跨消息时 `lastUser` 切换为新消息，旧 system 丢失 | 自动 (单 cycle) | 无 | S2 注入后在该 cycle 内有效 |
 
 **第二层 — `system[1..]`** (prompt.ts:1473-1479, 追加到 system 数组):
 
@@ -238,7 +238,7 @@ C 通道注入点: 同 B 合并; 文件方式写入 workdir AGENTS.md → 自动
 | **M1** | 用户消息；第 2 轮起被 `<system-reminder>` 标签包裹 | ✅ | 第 2 轮起 hedged | — |
 | **M2+** | 对话历史 + 工具结果，支持 Compaction (摘要+截断双策略) | ✅ | 无 | — |
 
-> **要点**: 两层组装 — 第一层 (S0+S2+S3) 拼接为 `system[0]`，第二层 (S4+S5+S6+S7) 追加为 `system[1..]`。S2 具有 sticky 特性：注入一次自动持久化到 S3，后续轮次继承 (Compaction 可能导致丢失)。S2 全部内容无 hedging。S6 (项目 AGENTS.md) 与 S2 (HotPlex 注入) 分处不同 system 元素，天然隔离。
+> **要点**: 两层组装 — 第一层 (S0+S2+S3) 拼接为 `system[0]`，第二层 (S4+S5+S6+S7) 追加为 `system[1..]`。S3 的 "sticky" 效果仅限于同一 prompt cycle (tool 迭代间 `lastUser` 不变)：**跨消息时 `lastUser` 切换为新 user 消息，若新消息不带 `system` 则旧注入丢失**。因此 HotPlex 必须在每条消息都附带 `system` 字段。S2 全部内容无 hedging。S6 (项目 AGENTS.md) 与 S2 (HotPlex 注入) 分处不同 system 元素，天然隔离。
 
 ### 2.4 架构差异对照
 
@@ -383,8 +383,8 @@ Claude Code 注入位置效果 (从强到弱):
 OpenCode Server 注入位置效果 (无削弱，两层组装):
 
   S0 Provider Prompt   "You are OpenCode..."                 产品身份
-  S2 HotPlex 注入       "MUST follow these rules"  ← B+C 合并, Sticky
-  S3 Sticky 继承        (自动持久化, 同 S2 内容)
+  S2 HotPlex 注入       "MUST follow these rules"  ← B+C 合并, 每条消息带 system
+  S3 Last User System    (同 cycle 内 lastUser 不变)
   ───────────────────────────────────────────────────────────
   S4 Environment         Working dir / Platform
   S5 Skills              可用 Skill 目录
@@ -572,33 +572,35 @@ POST /session/:id/message
 `system` 字段内容被注入到 S2 槽位 (Call-level System)，
 作为 `messages[role: "system"]` 送达 LLM，**无削弱声明**。
 
-**Sticky 持久性** (llm.ts:107, 详见 [[OpenCode-Server-Context-Analysis.md#14-system-field-持久性]]):
-`input.user.system` 存在 Sticky User System (S3)，从最后一条用户消息的 system 字段自动提取。
-机制: 用户在消息中设置 system → 存入 `MessageV2.User.system` → 持久化到 SQLite →
-后续 LLM 调用从 `lastUser.system` 自动提取 → 覆盖 S2 (input.system)。
-因此 **HotPlex 注入的 system 字段具有 sticky 特性** — 发送一次即持续生效，
-直到被新消息覆盖或消息被 Compaction。
+**System 字段行为** (源码核实 `~/opencode` llm.ts + prompt.ts):
+OCS 的 `system` 字段通过两层路径进入 LLM system prompt：
+- **S2 (Call-level)**: API 请求中的 `system` 字段 → 直接进入 `input.system` 数组
+- **S3 (Last User)**: 存储在 `MessageV2.User.system` 中，prompt 循环从消息历史倒序查找最后一个 user 消息 (`lastUser`)，读取其 `system` 字段
+
+关键行为：`lastUser` 在同一 prompt cycle (tool 调用迭代) 内不变 → system 持续生效。
+但 **跨消息时 `lastUser` 切换为新的 user 消息**，若新消息不带 `system` 则旧注入丢失。
+**结论：HotPlex 必须在每条消息都附带 `system` 字段，不存在"发送一次即持久"的机制。**
 
 **迁移说明**: 当前 OpenCode Server Worker 使用 `POST /sessions/{id}/input` 端点
-(简化版，不含 `system` 字段)。迁移路径：
+(该端点在 OCS 源码中不存在，需迁移)。迁移路径：
 1. Worker `conn.Send()` 切换到 `POST /session/:id/message` 端点
-2. 首次调用附带 `system` 字段 → 由于 Sticky 特性，后续轮次自动继承
-3. 若需更新内容，重新发送新的 `system` 值即可覆盖
+2. **每条消息都附带 `system` 字段** — 不存在自动继承机制
+3. 若需更新内容，发送新的 `system` 值即可覆盖
 4. 不使用空消息注入 — 系统提示附加在真实的用户消息上，避免产生 phantom turn
 
 > ⚠️ **Compaction 风险**: 当会话触发 Compaction 时，被压缩的用户消息可能被移除。
-> 若最后一条用户消息的 system 字段所在消息被压缩，inject 内容可能丢失。
-> 建议在每次主 Agent 消息轮次都附带 system 字段确保持久性。
+> 若携带 `system` 字段的用户消息被压缩，该消息从历史中消失，`lastUser` 指向更早的不含 system 的消息。
+> 由于 HotPlex 每条消息都带 `system`，Compaction 只影响历史回溯，不影响当前轮次。
 
 ### 6.2 B + C 合并注入实现
 
 ```go
 // BuildOCSSystemPrompt 构建 OpenCode Server system field (S2) 内容。
 // B 通道和 C 通道内容合并到同一个 system 字段。
-// 注入到 llm.ts 的 S2 (Call-level System), 与 S0 (Provider/Agent) 和 S3 (Sticky) 拼接。
+// 注入到 llm.ts 的 S2 (Call-level System), 与 S0 (Provider/Agent) 拼接为 system[0]。
 //
-// 由于 OCS system 字段具有 sticky 特性 (S2 → S3 持久化)，
-// 只需在首次调用时注入，后续轮次自动继承。
+// 重要：OCS system 字段无跨消息持久性 — lastUser 在新消息到来时切换。
+// HotPlex 必须在每条消息都附带 system 字段，否则注入的 context 丢失。
 func BuildOCSSystemPrompt(configs *AgentConfigs) string {
     parts := []string{}
 
@@ -736,7 +738,7 @@ HotPlex 的 S2 system field 注入仅影响 **主 Agent 的对话轮次** — OC
   │  加载规则:                                                              │
   │  · 按平台选择变体: SOUL.slack.md > SOUL.md (优先平台特定版本)          │
   │  · frontmatter (YAML) 剥离后注入                                       │
-  │  · 单文件上限 12K chars，总计上限 60K chars                             │
+  │  · 单文件上限 4K chars，总计上限 20K chars                             │
   │  · 文件不存在 → 跳过 (不报错)                                          │
   └─────────────────────────────────────────────────────────────────────────┘
 
@@ -887,8 +889,8 @@ HotPlex 启动的 OpenCode Server 完整 Context 结构:
   │     # User Profile                   ← USER.md (C 通道)         │
   │     # Persistent Memory              ← MEMORY.md (C 通道)       │
   ├──────────────────────────────────────────────────────────────────┤
-  │ S3  Sticky User System               (从 lastUser 持久提取)      │
-  │     HotPlex 注入内容在此处被持久化，后续轮次自动继承              │
+  │ S3  Last User System                  (从 lastUser.system 读取)   │
+  │     同一 cycle 内持续生效; 跨消息 lastUser 切换,需每条带 system │
   └──────────────────────────────────────────────────────────────────┘
 
   ┌── 第二层 (prompt.ts:1473-1479) → system[1..] (追加) ───────────────┐
@@ -921,7 +923,7 @@ HotPlex 启动的 OpenCode Server 完整 Context 结构:
 与 Claude Code 的关键差异:
   1. 两层组装 — S0+S2+S3 拼接为 system[0], S4+S5+S6 追加为 system[1..]
   2. 无削弱声明 — system field (S2) 无 hedging, 所有内容等权
-  3. Sticky 持久性 — S2 注入后自动持久化到 S3, 后续轮次默认继承
+  3. Last User System — S2 通过 lastUser.system 在同一 cycle 内持续生效，跨消息需每条带 system
   4. S6 项目 AGENTS.md 与 HotPlex S2 注入共存 — 互不干扰
 ```
 
@@ -1112,7 +1114,7 @@ description: "HotPlex 用户画像"
 ```
 Phase 1: 共享基础设施 (1-2 天)
 ├── 实现 agent-configs/ 目录的文件加载器 (通用，两种 Worker 共享)
-├── 实现 frontmatter 解析与文件大小限制 (12K / file, 60K total)
+├── 实现 frontmatter 解析与文件大小限制 (4K / file, 20K total)
 ├── 实现 stripYAMLFrontmatter 通用工具函数
 └── 实现 loadAgentConfigs(dir, platform) → AgentConfigs 结构
 
@@ -1124,9 +1126,11 @@ Phase 2: Claude Code 集成 (1-2 天)
 └── Worker 会话结束时清理 .claude/rules/hotplex-*.md
 
 Phase 3: OpenCode Server 集成 (2-3 天)
+├── 修正 createSession URL: POST /sessions → POST /session (单数前缀)
+├── 修正 createSession 响应解析: session_id → id (Session.Info 字段)
 ├── 切换 Worker conn.Send 从 POST /sessions/{id}/input 到 POST /session/{id}/message
 ├── 实现 BuildOCSSystemPrompt (B + C 合并注入)
-├── 在首次消息中附带 system 字段注入上下文
+├── 每条消息附带 system 字段 (无跨消息持久性)
 ├── (可选) 实现 AGENTS.md workdir 共存方案 (C 通道备选)
 └── 在 OpenCode Server Worker 启动流程中集成
 
@@ -1170,6 +1174,7 @@ OpenCode Server Worker — internal/worker/opencodeserver/worker.go:
     }
 
     // 2. 创建 session
+    // 注意: POST /session (非 /sessions), 返回 { id: "..." } (非 session_id)
     sessionID, err := w.createSession(ctx, session.ProjectDir)
     // ...
 
@@ -1190,17 +1195,17 @@ OpenCode Server Worker — internal/worker/opencodeserver/worker.go:
       "parts": []map[string]any{{"type": "text", "text": inputData.Content}},
     }
 
-    // ⚠️ 关键: S2 (Call-level System) 具有 sticky 特性
-    // 首次发送后自动持久化到 S3 (Sticky User System), 后续轮次自动继承
-    // 但如果 Compaction 压缩了最后用户消息, S3 可能丢失
+    // ⚠️ 关键: system 字段无跨消息持久性
+    // lastUser 在新消息到来时切换为新的 user 消息
+    // 每条消息都必须附带 system 字段，否则注入 context 丢失
     if c.systemPrompt != "" {
       body["system"] = c.systemPrompt
     }
 
     // 发送到 /session/:id/message (注意: 单数 session)
     // POST /session/:id/message → body.system → S2 (Call-level System)
-    // llm.ts: 与 S0 (Provider) + S3 (Sticky) 拼接为 system[0]
-    // 由于 sticky 特性, 首次发送后自动持久化到 S3
+    // llm.ts: 与 S0 (Provider) + S3 (lastUser.system) 拼接为 system[0]
+    // 跨消息 lastUser 切换, 每条消息必须带 system
     url := fmt.Sprintf("%s/session/%s/message", c.httpAddr, c.sessionID)
     return c.httpPost(ctx, url, body)
   }
@@ -1251,8 +1256,8 @@ type AgentConfig struct {
     MemoryPath  string `yaml:"memory_path"  mapstructure:"memory_path"`
 
     // 大小限制
-    MaxFileChars  int `yaml:"max_file_chars"  mapstructure:"max_file_chars"`   // 默认 12000
-    MaxTotalChars int `yaml:"max_total_chars" mapstructure:"max_total_chars"`  // 默认 60000
+    MaxFileChars  int `yaml:"max_file_chars"  mapstructure:"max_file_chars"`   // 默认 4000
+    MaxTotalChars int `yaml:"max_total_chars" mapstructure:"max_total_chars"`  // 默认 20000
 
     // Claude Code C 通道清理策略
     CleanupRulesOnExit bool `yaml:"cleanup_rules_on_exit" mapstructure:"cleanup_rules_on_exit"` // 默认 false (保留复用)
@@ -1323,7 +1328,7 @@ type AgentConfig struct {
    AGENTS/SKILLS 同理，不同平台不同规则和工具指南
 
 7. **安全边界**
-   文件大小限制 (12K / file, 60K total)；frontmatter 剥离 (元数据不注入 prompt)
+   文件大小限制 (4K / file, 20K total)；frontmatter 剥离 (元数据不注入 prompt)
    MEMORY.md 仅主会话加载 (防止隐私泄漏)；子 Agent 场景裁剪 (仅加载 SOUL + AGENTS, 跳过 MEMORY)
 
 8. **Worker 路由**
@@ -1333,5 +1338,5 @@ type AgentConfig struct {
 9. **OCS 全量注入**
    OpenCode Server 的 B + C 通道合并到 S2 (Call-level System)，S2 无 hedging
    所有内容以同等权重送达，无需像 Claude Code 那样分离机制
-   ✅ S2 具有 sticky 持久性 (自动提取 → S3)，首次注入后即可继承
-   ⚠️ Compaction 可能影响 S3 持久化 (若最后用户消息被压缩)
+   ✅ S2 在同一 prompt cycle 内通过 lastUser.system 持续生效
+   ⚠️ 跨消息 lastUser 切换 — 每条消息必须附带 system 字段

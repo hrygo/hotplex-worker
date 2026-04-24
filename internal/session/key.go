@@ -6,7 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/hotplex/hotplex-worker/internal/worker"
+	"github.com/hrygo/hotplex/internal/worker"
 )
 
 // hotplexNamespace is the HotPlex namespace UUID (RFC 4122 §4.3).

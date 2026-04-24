@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Persistent STT server for hotplex-worker.
+"""Persistent STT server for hotplex.
 
 Reads JSON requests from stdin, writes JSON responses to stdout.
 The model is loaded once at startup and stays in memory.

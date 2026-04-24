@@ -7,7 +7,7 @@ const P256_N_MINUS_1 = P256_N - BigInt(1);
 export async function generateTestToken(
   secret: string = 'test-secret-key-for-development-32bytes',
   userId: string = 'test-user',
-  issuer: string = 'hotplex-worker',
+  issuer: string = 'hotplex',
   ttlSeconds: number = 3600
 ): Promise<string> {
   const secretBytes = Buffer.from(secret, 'utf-8');
@@ -39,7 +39,7 @@ export async function generateTestToken(
     .setProtectedHeader({ alg: 'ES256', typ: 'JWT' })
     .setIssuer(issuer)
     .setSubject(userId)
-    .setAudience(['hotplex-worker-gateway'])
+    .setAudience(['hotplex-gateway'])
     .setIssuedAt(now)
     .setExpirationTime(now + ttlSeconds)
     .setNotBefore(now)
@@ -50,7 +50,7 @@ export async function generateTestToken(
 const args = process.argv.slice(2);
 let secret = 'test-secret-key-for-development-32bytes';
 let userId = 'test-user';
-let issuer = 'hotplex-worker';
+let issuer = 'hotplex';
 let ttl = 3600;
 
 for (let i = 0; i < args.length; i++) {

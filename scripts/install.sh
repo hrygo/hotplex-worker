@@ -43,7 +43,7 @@ PREFIX="/usr/local"
 CONFIG_DIR="/etc/hotplex"
 DATA_DIR="/var/lib/hotplex"
 LOG_DIR="/var/log/hotplex"
-BIN_NAME="hotplex-worker"
+BIN_NAME="hotplex"
 NON_INTERACTIVE=false
 DEV_MODE=false
 INSTALL_SYSTEMD=false
@@ -364,7 +364,7 @@ build_binary() {
         -X main.goVersion=$GO_VERSION"
 
     if ! go build -trimpath -ldflags="$LDFLAGS" \
-        -o "$PREFIX/bin/$BIN_NAME" ./cmd/worker 2>&1; then
+        -o "$PREFIX/bin/$BIN_NAME" ./cmd/hotplex 2>&1; then
         log_error "Build failed!"
         log_error "Go version: $(go version)"
         log_error "Check build logs above for details"
@@ -507,7 +507,7 @@ generate_config() {
     # Interactive configuration
     local gateway_addr=$(prompt_input "Gateway WebSocket address" ":8888")
     local admin_addr=$(prompt_input "Admin API address" ":9999")
-    local db_path=$(prompt_input "Database path" "$DATA_DIR/hotplex-worker.db")
+    local db_path=$(prompt_input "Database path" "$DATA_DIR/hotplex.db")
 
     local tls_enabled="false"
     if [[ "$DEV_MODE" == true ]]; then
@@ -613,12 +613,12 @@ install_systemd_service() {
 
     log_section "Installing Systemd Service"
 
-    local service_file="/etc/systemd/system/hotplex-worker.service"
+    local service_file="/etc/systemd/system/hotplex.service"
 
     cat > "$service_file" <<EOF
 [Unit]
 Description=HotPlex Worker Gateway
-Documentation=https://github.com/hotplex/hotplex-worker
+Documentation=https://github.com/hrygo/hotplex
 After=network.target
 
 [Service]
@@ -651,7 +651,7 @@ LimitNPROC=4096
 # Logging
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=hotplex-worker
+SyslogIdentifier=hotplex
 
 [Install]
 WantedBy=multi-user.target
@@ -672,12 +672,12 @@ EOF
 
     # Reload systemd
     systemctl daemon-reload
-    systemctl enable hotplex-worker
+    systemctl enable hotplex
 
     log_info "Systemd service installed ✓"
-    log_info "  Start: systemctl start hotplex-worker"
-    log_info "  Status: systemctl status hotplex-worker"
-    log_info "  Logs: journalctl -u hotplex-worker -f"
+    log_info "  Start: systemctl start hotplex"
+    log_info "  Status: systemctl status hotplex"
+    log_info "  Logs: journalctl -u hotplex -f"
 }
 
 create_env_example() {
@@ -705,7 +705,7 @@ export HOTPLEX_ADMIN_TOKEN_2="${ADMIN_TOKEN_2}"
 
 # ─── Database ────────────────────────────────────────────────────────────────
 
-export HOTPLEX_DB_PATH="${DATA_DIR}/hotplex-worker.db"
+export HOTPLEX_DB_PATH="${DATA_DIR}/hotplex.db"
 
 # ─── TLS (Production) ────────────────────────────────────────────────────────
 
@@ -790,13 +790,13 @@ ${BLUE}Documentation:${NC}
 
 EOF
 
-    if [[ -f "/etc/systemd/system/hotplex-worker.service" ]]; then
+    if [[ -f "/etc/systemd/system/hotplex.service" ]]; then
         echo "${BLUE}Systemd Service:${NC}"
-        echo "  Start:   systemctl start hotplex-worker"
-        echo "  Stop:    systemctl stop hotplex-worker"
-        echo "  Restart: systemctl restart hotplex-worker"
-        echo "  Status:  systemctl status hotplex-worker"
-        echo "  Logs:    journalctl -u hotplex-worker -f"
+        echo "  Start:   systemctl start hotplex"
+        echo "  Stop:    systemctl stop hotplex"
+        echo "  Restart: systemctl restart hotplex"
+        echo "  Status:  systemctl status hotplex"
+        echo "  Logs:    journalctl -u hotplex -f"
         echo ""
     fi
 }

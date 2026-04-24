@@ -1,7 +1,7 @@
 # HotPlex Worker Gateway - Development Configuration
 #
 # Inherits: config.yaml (base)
-# Usage: ./hotplex-worker -config configs/config-dev.yaml
+# Usage: ./hotplex -config configs/config-dev.yaml
 #
 # Only fields that differ from base are listed below.
 
@@ -30,7 +30,7 @@ worker:
   execution_timeout: 30m
 
 log:
-  level: "info"
+  level: "debug"
   format: "text"
 
 messaging:

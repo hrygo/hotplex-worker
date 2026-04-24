@@ -174,11 +174,14 @@ parameter: messages[] (role: "system") → ModelMessage[]
 └──────────────────────────────────────────────────────────────────────────┘
 
 ┌──────────────────────────────────────────────────────────────────────────┐
-│ S3  STICKY USER SYSTEM                从最后一条用户消息提取            │
+│ S3  LAST USER SYSTEM                  从消息历史倒序查找 lastUser       │
 │  来源: input.user.system (存储在 MessageV2.User 对象的 system 字段)     │
-│  特性: 用户发送带有 system 字段的消息后，该字段会 **持久化**             │
-│        后续 LLM 调用自动从最后一条用户消息的 system 字段提取             │
-│        新消息可覆盖 (发送新的 system 字段值)                             │
+│  机制: prompt 循环每轮从消息历史倒序查找最后一个 role=user 的消息        │
+│        将其 system 字段注入到 system[0]                                 │
+│  ⚠️ 不是独立持久化机制:                                                │
+│    · 同一 prompt cycle 内 (tool 迭代): lastUser 不变 → system 持续生效  │
+│    · 跨消息时: 新 user 消息成为新 lastUser → 若不带 system 则旧注入丢失 │
+│    · 结论: 外部系统 (如 HotPlex) 必须每条消息都携带 system 字段         │
 │  Token: 0-5000 tok                                                      │
 └──────────────────────────────────────────────────────────────────────────┘
 
@@ -785,7 +788,7 @@ OpenCode 在关键流程中埋入了 Plugin Hook，允许运行时修改 Context
   │ system[0] = S0 + S2 + S3              │ ← 拼接为一个字符串
   │   S0 = Provider 或 Agent prompt        │ ← 产品身份声明
   │   S2 = input.system (调用级)           │ ← HotPlex B+C 通道注入点
-  │   S3 = input.user.system (sticky)     │ ← 用户最后消息的 system 字段
+  │   S3 = input.user.system (lastUser)   │ ← 来自消息历史倒序的最后 user 消息
   └───────────────────────────────────────┘
 
   第二层 (prompt.ts) → 动态上下文
@@ -801,21 +804,25 @@ OpenCode 在关键流程中埋入了 Plugin Hook，允许运行时修改 Context
   缓存优化: 若 system[0] 未变 → 合并为 [header, rest] 两段
 ```
 
-## 14. System Field 持久性
+## 14. System Field 行为 (源码核实: prompt.ts + llm.ts)
 
-`input.user.system` 存储在 `MessageV2.User` 对象中，通过以下链路传递:
+`input.user` 即 `lastUser` — 从消息历史倒序查找的最后一条 user 消息 (prompt.ts:1319-1331)。
 
 ```
 POST /session/:id/message { system: "..." }
   → PromptInput.schema 验证
   → createUserMessage() → 存入 MessageV2.User.system 字段
   → 持久化到 SQLite
-  → 下次 runLoop 时: lastUser = 最后一条用户消息
-  → llm.ts:107: input.user.system → 自动提取
-  → 注入到 system[0]
+
+llm.ts:99-111 组装时:
+  input.user = lastUser (倒序查找)
+  input.user.system → 拼入 system[0]
 ```
 
-**设计关键**: system 字段是 **sticky** 的 — 一旦用户在消息中设置了 system 值，它会持续影响后续 LLM 调用，直到被新消息覆盖或消息被压缩。这是外部系统 (如 HotPlex) 注入 Agent Config 的核心通道。
+**实际行为 (非 sticky)**:
+- **同一 prompt cycle 内** (tool 迭代): `lastUser` 不变 → system 持续生效
+- **跨消息时**: 新 user 消息成为新 `lastUser` → 若不带 `system` 则旧注入丢失
+- **结论: HotPlex 每条消息都必须携带 `system` 字段** — 不存在跨消息自动继承
 
 ## 15. <system-reminder> 包裹
 

@@ -18,13 +18,13 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/hotplex/hotplex-worker/internal/config"
-	"github.com/hotplex/hotplex-worker/internal/security"
-	"github.com/hotplex/hotplex-worker/internal/session"
-	"github.com/hotplex/hotplex-worker/internal/worker"
-	"github.com/hotplex/hotplex-worker/internal/worker/noop"
-	"github.com/hotplex/hotplex-worker/pkg/aep"
-	"github.com/hotplex/hotplex-worker/pkg/events"
+	"github.com/hrygo/hotplex/internal/config"
+	"github.com/hrygo/hotplex/internal/security"
+	"github.com/hrygo/hotplex/internal/session"
+	"github.com/hrygo/hotplex/internal/worker"
+	"github.com/hrygo/hotplex/internal/worker/noop"
+	"github.com/hrygo/hotplex/pkg/aep"
+	"github.com/hrygo/hotplex/pkg/events"
 )
 
 // ─── Init message validation ──────────────────────────────────────────────────
@@ -539,6 +539,12 @@ func newBotIDTestConn(h *Hub, wc *websocket.Conn, sessionID, userID, botID strin
 	}
 }
 
+// safeTestWorkDir is a work directory that passes security.ValidateWorkDir on all platforms.
+// CI runners have $HOME under /home which is in ForbiddenWorkDirs, so we cannot use
+// config.Default().Worker.DefaultWorkDir (which is ~/.hotplex/workspace).
+// /tmp/hotplex is an allowed base directory — see AllowedBaseDirs.
+const safeTestWorkDir = "/tmp/hotplex/test-workspace"
+
 // newECDSAKey generates a fresh P-256 ECDSA key pair for ES256 JWT signing in tests.
 func newECDSAKey(t *testing.T) *ecdsa.PrivateKey {
 	t.Helper()
@@ -558,7 +564,7 @@ func TestBotIDIsolation_CreateMismatch(t *testing.T) {
 		botBob         = "bot_bob"
 	)
 	// Derive the server session ID using the same algorithm as conn.go:DeriveSessionKey.
-	derivedSID := session.DeriveSessionKey("alice", worker.WorkerType(workerType), sessionIDConst, config.Default().Worker.DefaultWorkDir)
+	derivedSID := session.DeriveSessionKey("alice", worker.WorkerType(workerType), sessionIDConst, safeTestWorkDir)
 
 	// Build a JWT token for bot_alice using ES256 (ECDSA P-256).
 	jwtKey := newECDSAKey(t)
@@ -585,7 +591,10 @@ func TestBotIDIsolation_CreateMismatch(t *testing.T) {
 	store1.On("Upsert", mock.Anything, mock.AnythingOfType("*session.SessionInfo")).Return(nil)
 
 	cfg := config.Default()
-	h1 := newTestHub(t)
+	cfg.Worker.DefaultWorkDir = safeTestWorkDir
+	h1 := newTestHub(t, func(cfg *config.Config) {
+		cfg.Worker.DefaultWorkDir = safeTestWorkDir
+	})
 	mgr1, err := session.NewManager(context.Background(), slog.Default(), cfg, nil, store1, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { mgr1.Close() })
@@ -646,7 +655,10 @@ func TestBotIDIsolation_CreateMismatch(t *testing.T) {
 	store2.On("AttachWorker", mock.Anything, derivedSID, mock.Anything).Return(nil)
 
 	cfg2 := config.Default()
-	h2 := newTestHub(t)
+	cfg2.Worker.DefaultWorkDir = safeTestWorkDir
+	h2 := newTestHub(t, func(cfg *config.Config) {
+		cfg.Worker.DefaultWorkDir = safeTestWorkDir
+	})
 	mgr2, err := session.NewManager(context.Background(), slog.Default(), cfg2, nil, store2, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { mgr2.Close() })
@@ -694,7 +706,7 @@ func TestBotIDIsolation_MatchAllowed(t *testing.T) {
 		workerType     = "claude-code"
 		botID          = "bot_team_a"
 	)
-	derivedSID := session.DeriveSessionKey("user1", worker.WorkerType(workerType), sessionIDConst, config.Default().Worker.DefaultWorkDir)
+	derivedSID := session.DeriveSessionKey("user1", worker.WorkerType(workerType), sessionIDConst, safeTestWorkDir)
 
 	jwtKey := newECDSAKey(t)
 	jwtVal := security.NewJWTValidator(jwtKey, "")
@@ -717,7 +729,10 @@ func TestBotIDIsolation_MatchAllowed(t *testing.T) {
 	store.On("Get", mock.Anything, derivedSID).Return(existingSession, nil)
 
 	cfg := config.Default()
-	hubForTest := newTestHub(t)
+	cfg.Worker.DefaultWorkDir = safeTestWorkDir
+	hubForTest := newTestHub(t, func(cfg *config.Config) {
+		cfg.Worker.DefaultWorkDir = safeTestWorkDir
+	})
 	mgr, err := session.NewManager(context.Background(), slog.Default(), cfg, nil, store, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { mgr.Close() })
@@ -765,7 +780,7 @@ func TestBotIDIsolation_EmptyBotIDAllowed(t *testing.T) {
 		workerType     = "claude-code"
 	)
 	// When no JWT is provided, c.userID defaults to "anon" (from newBotIDTestConn).
-	derivedSID := session.DeriveSessionKey("anon", worker.WorkerType(workerType), sessionIDConst, config.Default().Worker.DefaultWorkDir)
+	derivedSID := session.DeriveSessionKey("anon", worker.WorkerType(workerType), sessionIDConst, safeTestWorkDir)
 
 	// No JWT token (empty botID scenario).
 	store := new(mockSessionStoreForBotID)
@@ -776,7 +791,10 @@ func TestBotIDIsolation_EmptyBotIDAllowed(t *testing.T) {
 	store.On("Upsert", mock.Anything, mock.AnythingOfType("*session.SessionInfo")).Return(nil)
 
 	cfg := config.Default()
-	h := newTestHub(t)
+	cfg.Worker.DefaultWorkDir = safeTestWorkDir
+	h := newTestHub(t, func(cfg *config.Config) {
+		cfg.Worker.DefaultWorkDir = safeTestWorkDir
+	})
 	mgr, err := session.NewManager(context.Background(), slog.Default(), cfg, nil, store, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { mgr.Close() })
@@ -825,7 +843,7 @@ func TestBotIDIsolation_NewSessionStoresBotID(t *testing.T) {
 		workerType     = "claude-code"
 		botID          = "bot_new_session"
 	)
-	derivedSID := session.DeriveSessionKey("user1", worker.WorkerType(workerType), sessionIDConst, config.Default().Worker.DefaultWorkDir)
+	derivedSID := session.DeriveSessionKey("user1", worker.WorkerType(workerType), sessionIDConst, safeTestWorkDir)
 
 	jwtKey := newECDSAKey(t)
 	jwtVal := security.NewJWTValidator(jwtKey, "")
@@ -847,7 +865,10 @@ func TestBotIDIsolation_NewSessionStoresBotID(t *testing.T) {
 	})).Return(nil).Maybe() // Maybe() allows 0 or more calls
 
 	cfg := config.Default()
-	h := newTestHub(t)
+	cfg.Worker.DefaultWorkDir = safeTestWorkDir
+	h := newTestHub(t, func(cfg *config.Config) {
+		cfg.Worker.DefaultWorkDir = safeTestWorkDir
+	})
 	mgr, err := session.NewManager(context.Background(), slog.Default(), cfg, nil, store, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { mgr.Close() })

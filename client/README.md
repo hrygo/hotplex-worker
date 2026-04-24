@@ -2,12 +2,12 @@
 
 > Go client SDK for HotPlex Worker Gateway — AEP v1 WebSocket protocol
 
-[![Go Reference](https://pkg.go.dev/badge/github.com/hotplex/hotplex-go-client.svg)](https://pkg.go.dev/github.com/hotplex/hotplex-go-client)
+[![Go Reference](https://pkg.go.dev/badge/github.com/hrygo/hotplex/client.svg)](https://pkg.go.dev/github.com/hrygo/hotplex/client)
 
 ## Installation
 
 ```bash
-go get github.com/hotplex/hotplex-go-client
+go get github.com/hrygo/hotplex/client
 ```
 
 ## Quick Start
@@ -21,7 +21,7 @@ import (
     "log"
     "os"
 
-    client "github.com/hotplex/hotplex-go-client"
+    client "github.com/hrygo/hotplex/client"
 )
 
 func main() {

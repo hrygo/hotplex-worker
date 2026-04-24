@@ -17,7 +17,7 @@ import (
 	"syscall"
 	"time"
 
-	client "github.com/hotplex/hotplex-go-client"
+	client "github.com/hrygo/hotplex/client"
 )
 
 func main() {

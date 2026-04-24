@@ -32,7 +32,7 @@ admin:
 # ─────────────────────────────────────────────────────────────────────────────
 
 db:
-  path: "data/hotplex-worker.db"
+  path: "~/.hotplex/data/hotplex.db"
   wal_mode: true
   busy_timeout: 500ms
 
@@ -47,7 +47,7 @@ security:
   tls_key_file: "/etc/hotplex/tls/server.key"
   allowed_origins:
     - "*"
-  jwt_audience: "hotplex-worker-gateway"
+  jwt_audience: "hotplex-gateway"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # SESSION
@@ -107,6 +107,10 @@ messaging:
     dm_policy: "allowlist"
     group_policy: "allowlist"
     require_mention: true
+    stt_provider: "local"
+    stt_local_cmd: "python3 ~/.hotplex/scripts/stt_server.py"
+    stt_local_mode: "persistent"
+    stt_local_idle_ttl: 1h
 
   feishu:
     enabled: false
@@ -115,5 +119,6 @@ messaging:
     group_policy: "allowlist"
     require_mention: true
     stt_provider: "feishu+local"
-    stt_local_mode: "ephemeral"
+    stt_local_cmd: "python3 ~/.hotplex/scripts/stt_server.py"
+    stt_local_mode: "persistent"
     stt_local_idle_ttl: 1h

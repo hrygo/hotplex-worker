@@ -12,13 +12,13 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 
-	"github.com/hotplex/hotplex-worker/internal/metrics"
-	"github.com/hotplex/hotplex-worker/internal/security"
-	"github.com/hotplex/hotplex-worker/internal/session"
-	"github.com/hotplex/hotplex-worker/internal/tracing"
-	"github.com/hotplex/hotplex-worker/internal/worker"
-	"github.com/hotplex/hotplex-worker/pkg/aep"
-	"github.com/hotplex/hotplex-worker/pkg/events"
+	"github.com/hrygo/hotplex/internal/metrics"
+	"github.com/hrygo/hotplex/internal/security"
+	"github.com/hrygo/hotplex/internal/session"
+	"github.com/hrygo/hotplex/internal/tracing"
+	"github.com/hrygo/hotplex/internal/worker"
+	"github.com/hrygo/hotplex/pkg/aep"
+	"github.com/hrygo/hotplex/pkg/events"
 )
 
 // SessionStarter initiates a worker session. It is the only Bridge capability
@@ -258,22 +258,21 @@ func (c *Conn) performInit(handler *Handler) error {
 	}
 
 	// Determine session ID via deterministic UUIDv5 mapping from client session ID.
-	// DeriveSessionKey(ownerID, workerType, clientSessionID, workDir) is always deterministic
-	// for the same (ownerID, workerType, clientSessionID, workDir) tuple.
 	sessionID := session.DeriveSessionKey(c.userID, initData.WorkerType, initData.SessionID, workDir)
 
-	// Enable init-phase buffering: WriteMessage will buffer events until
-	// markInitDone is called after init_ack is sent. This ensures init_ack
-	// is always the first message the client receives, even when state
-	// transitions during StartSession/ResumeSession race with init_ack.
-	// Placed after init validation so tests that don't send init remain unaffected.
+	// Check throttler before doing heavy work.
+	if !c.hub.InitThrottle.Check(sessionID) {
+		c.sendInitError(events.ErrCodeRateLimited, "too many failed attempts, please back off")
+		metrics.GatewayErrorsTotal.WithLabelValues(string(events.ErrCodeRateLimited)).Inc()
+		return fmt.Errorf("init throttled for session %s", sessionID)
+	}
+
+	// Enable init-phase buffering.
 	c.mu.Lock()
 	c.initDone = false
 	c.mu.Unlock()
 
-	// Subscribe to session BEFORE creation/resume so that state events
-	// (e.g., RUNNING transition during StartSession) are delivered to this
-	// connection. Cleanup on error is handled by UnregisterConn in readPump's defer.
+	// Subscribe to session BEFORE creation/resume.
 	c.hub.LeaveSession("", c)
 	c.hub.JoinSession(sessionID, c)
 
@@ -282,66 +281,53 @@ func (c *Conn) performInit(handler *Handler) error {
 	if err != nil {
 		// Session does not exist → create and start via SessionStarter.
 		if errors.Is(err, session.ErrSessionNotFound) {
-			// starter.StartSession creates the DB record, worker, transitions to RUNNING,
-			// and starts forwarding events. nil starter means test mode.
 			if c.starter != nil {
 				if err := c.starter.StartSession(context.Background(), sessionID, c.userID, c.botID, initData.WorkerType, initData.Config.AllowedTools, workDir, "", nil); err != nil {
+					c.hub.InitThrottle.RecordFailure(sessionID)
 					c.sendInitError(events.ErrCodeInternalError, "failed to create session")
 					metrics.GatewayErrorsTotal.WithLabelValues(string(events.ErrCodeInternalError)).Inc()
 					return fmt.Errorf("create session: %w", err)
 				}
-				// Fetch the session info that StartSession created.
 				si, err = handler.sm.Get(sessionID)
 				if err != nil {
+					c.hub.InitThrottle.RecordFailure(sessionID)
 					c.sendInitError(events.ErrCodeInternalError, "session not found after creation")
 					metrics.GatewayErrorsTotal.WithLabelValues(string(events.ErrCodeInternalError)).Inc()
 					return fmt.Errorf("get session after start: %w", err)
 				}
-				c.log.Info("gateway: session created via init", "session_id", sessionID,
-					"worker_type", initData.WorkerType)
 			} else {
-				// Test mode — create session without starting a worker.
+				// Test mode
 				si, err = handler.sm.CreateWithBot(context.Background(), sessionID, c.userID, c.botID, initData.WorkerType, initData.Config.AllowedTools, "", nil)
 				if err != nil {
+					c.hub.InitThrottle.RecordFailure(sessionID)
 					c.sendInitError(events.ErrCodeInternalError, "failed to create session")
-					metrics.GatewayErrorsTotal.WithLabelValues(string(events.ErrCodeInternalError)).Inc()
 					return fmt.Errorf("create session: %w", err)
 				}
-				c.log.Info("gateway: session created via init (test mode)", "session_id", sessionID,
-					"worker_type", initData.WorkerType)
 			}
 		} else {
+			c.hub.InitThrottle.RecordFailure(sessionID)
 			c.sendInitError(events.ErrCodeInternalError, err.Error())
-			metrics.GatewayErrorsTotal.WithLabelValues(string(events.ErrCodeInternalError)).Inc()
 			return fmt.Errorf("get session: %w", err)
 		}
 	} else if si.State == events.StateDeleted {
-		// Deleted session → reject.
+		c.hub.InitThrottle.RecordFailure(sessionID)
 		c.sendInitError(events.ErrCodeSessionNotFound, "session was deleted")
 		return ErrInitSessionDeleted
 	} else if si.State == events.StateCreated {
-		// Session was created but never started (gateway crashed between
-		// CreateWithBot and worker Start). Start fresh with the same session ID.
-		c.log.Info("gateway: starting unstarted session", "session_id", sessionID)
 		if c.starter != nil {
 			if err := c.starter.StartSession(context.Background(), sessionID, c.userID, c.botID, initData.WorkerType, initData.Config.AllowedTools, workDir, "", nil); err != nil {
+				c.hub.InitThrottle.RecordFailure(sessionID)
 				c.sendInitError(events.ErrCodeInternalError, "failed to start session")
 				return fmt.Errorf("start unstarted session: %w", err)
 			}
 		}
 	} else if si.State == events.StateIdle || si.State == events.StateTerminated ||
 		(si.State == events.StateRunning && handler.sm.GetWorker(sessionID) == nil) {
-		// Session exists but needs a worker: IDLE/TERMINATED have none, RUNNING is
-		// an orphan after gateway restart. Try Resume to preserve conversation history.
-		// If Resume fails (files deleted/corrupted), fall back to Start.
-		c.log.Info("gateway: resuming session", "session_id", sessionID, "state", si.State)
 		if c.starter != nil {
 			if err := c.starter.ResumeSession(context.Background(), sessionID, workDir); err != nil {
-				// Resume failed — fall back to Start (--session-id) for a fresh session.
-				c.log.Warn("gateway: resume failed, falling back to new session",
-					"session_id", sessionID, "state", si.State, "err", err)
 				if err := c.starter.StartSession(context.Background(), sessionID, c.userID, c.botID,
 					initData.WorkerType, initData.Config.AllowedTools, workDir, "", nil); err != nil {
+					c.hub.InitThrottle.RecordFailure(sessionID)
 					c.sendInitError(events.ErrCodeInternalError, "failed to start session after resume fallback")
 					return fmt.Errorf("start session after resume fallback: %w", err)
 				}
@@ -349,14 +335,18 @@ func (c *Conn) performInit(handler *Handler) error {
 		}
 	}
 
-	// SEC-007: reject cross-bot access — bot_id from JWT must match session's bot_id.
+	// SEC-007: reject cross-bot access.
 	if c.botID != "" && si.BotID != "" && c.botID != si.BotID {
+		c.hub.InitThrottle.RecordFailure(sessionID)
 		c.sendInitError(events.ErrCodeUnauthorized, "bot_id mismatch")
 		metrics.GatewayErrorsTotal.WithLabelValues(string(events.ErrCodeUnauthorized)).Inc()
 		return fmt.Errorf("bot_id mismatch: connection=%s session=%s", c.botID, si.BotID)
 	}
 
-	// Update connection's session ID if it changed.
+	// Success!
+	c.hub.InitThrottle.RecordSuccess(sessionID)
+
+	// Update connection's session ID.
 	c.mu.Lock()
 	c.sessionID = sessionID
 	c.userID = si.UserID
@@ -371,14 +361,7 @@ func (c *Conn) performInit(handler *Handler) error {
 	}
 	metrics.GatewayMessagesTotal.WithLabelValues("outgoing", InitAck).Inc()
 
-	// Flush any events buffered by WriteMessage during init.
-	// This ensures init_ack was written first, then state events
-	// (e.g., RUNNING transition from StartSession) follow in order.
 	c.markInitDone()
-
-	// NOTE: Session remains in CREATED state until handleInput transitions it to RUNNING.
-	// Do NOT transition here — handleInput (→ TransitionWithInput) is the sole entry point
-	// for the CREATED → RUNNING transition and is atomic with input delivery.
 
 	c.log.Info("gateway: init complete", "session_id", sessionID,
 		"worker_type", initData.WorkerType, "state", si.State)

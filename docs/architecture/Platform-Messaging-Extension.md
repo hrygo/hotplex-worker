@@ -119,7 +119,7 @@ internal/
       adapter_test.go                # 单元测试（~10 tests）
       # card.go                      # [Phase 4 延后] CardKit 流式消息
 
-cmd/worker/
+cmd/hotplex/
   main.go                            # 增加 ~52 行：messaging 初始化 + 配置 + ConnFactory 注册
 
 internal/gateway/
@@ -155,7 +155,7 @@ package messaging
 
 import (
 	"context"
-	"github.com/hotplex/hotplex-worker/pkg/events"
+	"github.com/hrygo/hotplex/pkg/events"
 )
 
 // PlatformConn models the write side of a platform connection.
@@ -441,9 +441,9 @@ import (
 	"log/slog"
 	"sync"
 
-	"github.com/hotplex/hotplex-worker/internal/messaging"
-	"github.com/hotplex/hotplex-worker/internal/security"
-	"github.com/hotplex/hotplex-worker/pkg/events"
+	"github.com/hrygo/hotplex/internal/messaging"
+	"github.com/hrygo/hotplex/internal/security"
+	"github.com/hrygo/hotplex/pkg/events"
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/socketmode"
 )
@@ -865,8 +865,8 @@ import (
 	"log/slog"
 	"sync"
 
-	"github.com/hotplex/hotplex-worker/internal/messaging"
-	"github.com/hotplex/hotplex-worker/pkg/events"
+	"github.com/hrygo/hotplex/internal/messaging"
+	"github.com/hrygo/hotplex/pkg/events"
 	lark "github.com/larksuite/oapi-sdk-go/v3"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	larkcardkit "github.com/larksuite/oapi-sdk-go/v3/service/cardkit/v1"
@@ -1239,7 +1239,7 @@ func (a *Adapter) streamCardContent(ctx context.Context, cardID, elementID, text
 3. 实现 `platform_adapter.go` — 基座 + 自注册工厂
 4. 实现 `bridge.go` — PlatformBridge（复用 Handler.Handle() 入口）
 5. 修改 `internal/gateway/hub.go` — 新增 `JoinPlatformSession()` 方法（~20 行）
-6. 修改 `cmd/worker/main.go` — 初始化 messaging bridge、注册适配器（~30 行）
+6. 修改 `cmd/hotplex/main.go` — 初始化 messaging bridge、注册适配器（~30 行）
 
 **验证**: 写一个 mock 适配器（无网络调用），验证 Envelope 能正确路由到 Handler。
 
@@ -1471,7 +1471,7 @@ func (h *Hub) JoinPlatformSession(sessionID string, pc PlatformConn) {
 | PlatformBridge 编排 | §4.3 | `messaging/bridge.go` | 80 | 单元 | P1 |
 | Hub.JoinPlatformSession | §4.4, 附录A | `gateway/hub.go` (+20) | 20 | 单元 | P1 |
 | Hub.pcEntry wrapper | 附录A | `gateway/hub.go` (+15) | 15 | 单元 | P1 |
-| cmd/worker 初始化 | §3 | `cmd/worker/main.go` (+30) | 30 | 集成 | P1 |
+| cmd/hotplex 初始化 | §3 | `cmd/hotplex/main.go` (+30) | 30 | 集成 | P1 |
 | Mock 适配器验证 | §8 Phase 1 | `messaging/mock/adapter_test.go` | 80 | 单元 | P1 |
 | Slack Socket Mode 接入 | §5.1-5.3 | `messaging/slack/adapter.go` | 200 | 集成 | P2 |
 | Slack 事件映射 | §5.3 | `messaging/slack/events.go` | 60 | 单元 | P2 |

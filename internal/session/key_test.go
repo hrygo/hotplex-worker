@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/hotplex/hotplex-worker/internal/worker"
+	"github.com/hrygo/hotplex/internal/worker"
 )
 
 func TestDeriveSessionKey_Deterministic(t *testing.T) {

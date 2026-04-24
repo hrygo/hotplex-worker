@@ -1,7 +1,7 @@
 # Go Client SDK
 
 ## OVERVIEW
-Standalone Go module (github.com/hotplex/hotplex-go-client) for connecting to HotPlex Worker Gateway via WebSocket + AEP v1 protocol. Separate go.mod from main gateway. Typed event constants + data helpers.
+Standalone Go module (github.com/hrygo/hotplex/client) for connecting to HotPlex Worker Gateway via WebSocket + AEP v1 protocol. Separate go.mod from main gateway. Typed event constants + data helpers.
 
 ## STRUCTURE
 ```

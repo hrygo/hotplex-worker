@@ -10,9 +10,9 @@
 # Configuration
 # ─────────────────────────────────────────────────────────────────────────────
 
-BINARY_NAME  := hotplex-worker
+BINARY_NAME  := hotplex
 BUILD_DIR    := bin
-MAIN_PATH    := ./cmd/worker
+MAIN_PATH    := ./cmd/hotplex
 CONFIG_DIR   := configs
 LOG_DIR      := logs
 
@@ -24,8 +24,8 @@ BUILD_TIME   := $(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
 LDFLAGS      := -s -w -X main.version=$(GIT_SHA) -X main.buildTime=$(BUILD_TIME)
 BUILD_OPTS   := -trimpath
 
-WORKER_PID    := $(HOME)/.hotplex/.pids/hotplex-worker.pid
-WORKER_LOG    := $(LOG_DIR)/hotplex-worker.log
+GATEWAY_PID   := $(HOME)/.hotplex/.pids/gateway.pid
+GATEWAY_LOG   := $(LOG_DIR)/hotplex.log
 WEB_CHAT_PID  := $(HOME)/.hotplex/.pids/hotplex-webchat.pid
 WEB_CHAT_PORT := 3000
 WEB_CHAT_LOG  := $(CURDIR)/$(LOG_DIR)/webchat.log
@@ -50,7 +50,7 @@ CYAN   := \033[36m
 
 .PHONY: all help quickstart check-tools build run
 .PHONY: dev dev-start dev-stop dev-status dev-logs dev-reset
-.PHONY: worker-start worker-stop worker-status worker-logs
+.PHONY: gateway-start gateway-stop gateway-status gateway-logs
 .PHONY: webchat-dev webchat-stop
 .PHONY: test test-short lint fmt quality check clean
 
@@ -99,7 +99,7 @@ build:
 
 run: build
 	@./$(BUILD_DIR)/$(BINARY_NAME)-$(GOOS)-$(GOARCH) \
-		-config $(CONFIG_DIR)/config-dev.yaml
+		gateway start -c $(CONFIG_DIR)/config-dev.yaml
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Test
@@ -118,7 +118,7 @@ test-short:
 coverage:
 	@echo "$(CYAN)Generating coverage report...$(RESET)"
 	@go test -timeout=15m -coverprofile=coverage.out -covermode=atomic \
-		$$(go list ./... | grep -v -e 'internal/worker/proc' -e 'internal/worker/pi' -e 'cmd/worker')
+		$$(go list ./... | grep -v -e 'internal/worker/proc' -e 'internal/worker/pi' -e 'cmd/hotplex')
 	@echo ""
 	@echo "$(BOLD)Per-package coverage:$(RESET)"
 	@go tool cover -func=coverage.out | grep -v "^total:" | sort -t: -k3 -n
@@ -161,22 +161,15 @@ dev: dev-start
 	@echo ""
 	@echo "  $(GREEN)✓ Dev environment ready$(RESET)"
 	@echo ""
-	@echo "    Gateway  http://localhost:8888"
-	@if [ -f $(WEB_CHAT_PID) ] && kill -0 $$(cat $(WEB_CHAT_PID)) 2>/dev/null; then \
-		echo "    Webchat  http://localhost:3000"; \
-	else \
-		echo "    Webchat  $(DIM)not running$(RESET)"; fi
-	@echo "    Admin    http://localhost:9999"
-	@echo ""
 	@echo "    make dev-logs     View logs"
 	@echo "    make dev-status  Check status"
 	@echo "    make dev-stop    Stop all"
 	@echo ""
 
-dev-start: worker-start
+dev-start: gateway-start
 	@$(MAKE) webchat-dev || echo "  $(YELLOW)⚠$(RESET) Webchat skipped (run 'cd webchat && pnpm install' to fix)"
 
-dev-stop: webchat-stop worker-stop
+dev-stop: webchat-stop gateway-stop
 	@echo "  $(GREEN)✓ Dev environment stopped$(RESET)"
 
 dev-status:
@@ -191,16 +184,16 @@ dev-reset: dev-stop dev-start
 # Gateway
 # ─────────────────────────────────────────────────────────────────────────────
 
-worker-start: build
+gateway-start: build
 	@./scripts/dev.sh start gateway
 
-worker-stop:
+gateway-stop:
 	@./scripts/dev.sh stop gateway
 
-worker-status:
+gateway-status:
 	@./scripts/dev.sh status gateway
 
-worker-logs:
+gateway-logs:
 	@./scripts/dev.sh logs gateway
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -239,7 +232,7 @@ help:
 	@echo ""
 	@echo "  $(BOLD)⏹  Stop"
 	@printf "    $(CYAN)make %-15s$(RESET)  %s\n" "dev-stop"      "Stop all services"
-	@printf "    $(CYAN)make %-15s$(RESET)  %s\n" "worker-stop"   "Stop gateway"
+	@printf "    $(CYAN)make %-15s$(RESET)  %s\n" "gateway-stop"   "Stop gateway"
 	@printf "    $(CYAN)make %-15s$(RESET)  %s\n" "webchat-stop"  "Stop webchat"
 	@echo ""
 	@echo "  $(BOLD)🔧 Build"
@@ -256,9 +249,9 @@ help:
 	@echo ""
 	@echo "  $(BOLD)📊 Status & Logs"
 	@printf "    $(CYAN)make %-15s$(RESET)  %s\n" "dev-status"     "All services"
-	@printf "    $(CYAN)make %-15s$(RESET)  %s\n" "worker-status"  "Gateway"
+	@printf "    $(CYAN)make %-15s$(RESET)  %s\n" "gateway-status"  "Gateway"
 	@printf "    $(CYAN)make %-15s$(RESET)  %s\n" "dev-logs"      "View all logs"
-	@printf "    $(CYAN)make %-15s$(RESET)  %s\n" "worker-logs"   "Gateway logs"
+	@printf "    $(CYAN)make %-15s$(RESET)  %s\n" "gateway-logs"   "Gateway logs"
 	@echo ""
 	@echo "  $(BOLD)🔄 Workflow"
 	@printf "    $(CYAN)make %-15s$(RESET)  %s\n" "dev-reset"   "Restart all services"

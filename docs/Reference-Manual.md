@@ -3,7 +3,7 @@
 > HotPlex Worker Gateway is a WebSocket-based access layer for AI Coding Agent sessions, supporting Claude Code, and OpenCode Server adapters.
 >
 > **Version:** `v1.0.1` (Git SHA injected at build time)
-> **Binary:** `hotplex-worker`
+> **Binary:** `hotplex`
 > **Protocol:** AEP v1 (Agent Exchange Protocol)
 > **Runtime:** Go 1.26+
 
@@ -63,21 +63,21 @@ Client (WebSocket) ──→ Gateway (AEP v1) ──→ Worker (Claude Code / Op
 ### 2.1 Run with Zero Config
 
 ```bash
-./bin/hotplex-worker-darwin-arm64
+./bin/hotplex-darwin-arm64
 ```
 
-Binary starts with all defaults (`:8888` WebSocket, `:9999` Admin, `hotplex-worker.db` SQLite).
+Binary starts with all defaults (`:8888` WebSocket, `:9999` Admin, `hotplex.db` SQLite).
 
 ### 2.2 Run with Config File
 
 ```bash
-./bin/hotplex-worker-darwin-arm64 -config /etc/hotplex/config.yaml
+./bin/hotplex-darwin-arm64 -config /etc/hotplex/config.yaml
 ```
 
 ### 2.3 Run in Dev Mode
 
 ```bash
-./bin/hotplex-worker-darwin-arm64 -dev
+./bin/hotplex-darwin-arm64 -dev
 ```
 
 Dev mode relaxes security: any API key header value is accepted.
@@ -88,7 +88,7 @@ Dev mode relaxes security: any API key header value is accepted.
 docker run -p 8888:8888 -p 9999:9999 \
   -v /path/to/config.yaml:/config.yaml \
   -e HOTPLEX_JWT_SECRET=your-secret \
-  hotplex-worker:latest
+  hotplex:latest
 ```
 
 ---
@@ -98,12 +98,12 @@ docker run -p 8888:8888 -p 9999:9999 \
 ### 3.1 Build from Source
 
 ```bash
-git clone https://github.com/hotplex/hotplex-worker.git
-cd hotplex-worker
+git clone https://github.com/hrygo/hotplex.git
+cd hotplex
 make build
 ```
 
-Output: `bin/hotplex-worker-<os>-<arch>` (e.g. `bin/hotplex-worker-darwin-arm64`)
+Output: `bin/hotplex-<os>-<arch>` (e.g. `bin/hotplex-darwin-arm64`)
 
 ### 3.2 Cross-Compile
 
@@ -148,7 +148,7 @@ gateway:
   broadcast_queue_size: 256
 
 db:
-  path: "/var/hotplex/hotplex-worker.db"
+  path: "/var/hotplex/hotplex.db"
   wal_mode: true
   busy_timeout: 500ms
 
@@ -248,7 +248,7 @@ Set `HOTPLEX_JWT_SECRET` for JWT authentication:
 
 ```bash
 export HOTPLEX_JWT_SECRET="your-es256-secret-key-base64"
-./hotplex-worker -config config.yaml
+./hotplex -config config.yaml
 ```
 
 ### 4.3 Config Defaults
@@ -262,7 +262,7 @@ All non-sensitive fields have production defaults. Binary runs with zero config.
 | `gateway.pong_timeout` | `60s` | |
 | `gateway.idle_timeout` | `5m` | |
 | `gateway.broadcast_queue_size` | `256` | |
-| `db.path` | `hotplex-worker.db` | SQLite path |
+| `db.path` | `hotplex.db` | SQLite path |
 | `db.wal_mode` | `true` | |
 | `worker.max_lifetime` | `24h` | |
 | `worker.idle_timeout` | `30m` | |
@@ -318,7 +318,7 @@ pool:
 ## 5. CLI Flags
 
 ```bash
-./hotplex-worker [flags]
+./hotplex [flags]
 ```
 
 | Flag | Type | Default | Description |
@@ -468,7 +468,7 @@ curl http://localhost:9999/admin/health
   "status": "healthy",
   "checks": {
     "gateway": { "status": "healthy", "uptime_seconds": 3600 },
-    "database": { "status": "healthy", "type": "sqlite", "path": "/var/hotplex/hotplex-worker.db" },
+    "database": { "status": "healthy", "type": "sqlite", "path": "/var/hotplex/hotplex.db" },
     "workers": { "status": "healthy" }
   },
   "version": "88e4e3e8"
@@ -782,7 +782,7 @@ Tracing is disabled by default. Enable via OTEL environment variables:
 
 ```bash
 export OTEL_EXPORTER_OTLP_ENDPOINT="http://collector:4317"
-./hotplex-worker
+./hotplex
 ```
 
 ### 10.4 Health Checks
@@ -836,7 +836,7 @@ Set `HOTPLEX_JWT_SECRET` environment variable:
 
 ```bash
 export HOTPLEX_JWT_SECRET="your-256-bit-secret"
-./hotplex-worker
+./hotplex
 ```
 
 **Error: `config: read "config.yaml": no such file or directory`**
@@ -844,7 +844,7 @@ export HOTPLEX_JWT_SECRET="your-256-bit-secret"
 Verify config file path. Use absolute path:
 
 ```bash
-./hotplex-worker -config /absolute/path/to/config.yaml
+./hotplex -config /absolute/path/to/config.yaml
 ```
 
 **Error: `TLS is disabled on non-local address`**
