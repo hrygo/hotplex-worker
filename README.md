@@ -47,7 +47,8 @@ Hotplex is a high-performance Go gateway that provides a **single WebSocket inte
 - 🔹 **Admin API**: Dedicated management interface for session control and health monitoring.
 
 ### 💎 Developer Experience
-- 🔹 **Ready-to-use Web UI**: Next.js 15 + Vercel AI SDK integration.
+- 🔹 **CLI Self-Service**: Interactive `onboard` wizard, `doctor` diagnostics, `security` audit, `status` check, and `config validate` — all built into a single binary.
+- 🔹 **Ready-to-use Web UI**: Next.js 15 + Vercel AI SDK integration with redesigned light theme and persistent sidebar.
 - 🔹 **Hot-Reload Config**: Update gateway settings without downtime.
 - 🔹 **Multi-Language SDKs**: Native support for Go, TypeScript, Python, and Java.
 
@@ -57,20 +58,17 @@ Hotplex is a high-performance Go gateway that provides a **single WebSocket inte
 ```bash
 git clone https://github.com/hrygo/hotplex.git
 cd hotplex
-cp configs/env.example .env
 make quickstart
 ```
 
-### 2. Configure Environment
+### 2. Configure
 
 ```bash
-# Option A: Interactive setup (recommended for Claude Code users)
-# Say "setup-env" or "配置 .env" to your Claude Code session
-# The built-in skill will auto-validate tokens and fetch user IDs
+# Interactive setup wizard (detects existing config, supports keep-or-reconfigure)
+./hotplex onboard
 
-# Option B: Manual setup
-cp configs/env.example .env
-# Edit .env with your Slack/Feishu credentials
+# Or quick auto-generate all configs:
+./hotplex onboard --non-interactive --enable-slack --enable-feishu
 ```
 
 ### 3. Run Development Servers

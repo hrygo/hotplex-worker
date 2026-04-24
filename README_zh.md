@@ -47,7 +47,8 @@ Hotplex 是一个高性能的 Go 语言编写的网关，它提供**统一的 We
 - 🔹 **管理 API**: 提供专门的 Admin API 用于会话控制和健康监测。
 
 ### 💎 开发者体验
-- 🔹 **即插即用的 Web UI**: 基于 Next.js 15 和 Vercel AI SDK 构建。
+- 🔹 **CLI 自服务**: 内置交互式 `onboard` 向导、`doctor` 诊断、`security` 安全审计、`status` 状态检查、`config validate` 配置验证 — 全集成在单个二进制中。
+- 🔹 **即插即用的 Web UI**: 基于 Next.js 15 和 Vercel AI SDK 构建，全新浅色主题和持久侧边栏。
 - 🔹 **配置热重载**: 无需停机即可实时更新网关设置。
 - 🔹 **多语言 SDK**: 原生支持 Go、TypeScript、Python 和 Java。
 
@@ -57,20 +58,17 @@ Hotplex 是一个高性能的 Go 语言编写的网关，它提供**统一的 We
 ```bash
 git clone https://github.com/hrygo/hotplex.git
 cd hotplex
-cp configs/env.example .env
 make quickstart
 ```
 
-### 2. 配置环境变量
+### 2. 配置
 
 ```bash
-# 方式 A：交互式配置（推荐 Claude Code 用户使用）
-# 在 Claude Code 会话中输入 "配置 .env" 或 "setup-env"
-# 内置 skill 会自动验证 token 并获取用户 ID
+# 交互式配置向导（自动检测已有配置，支持保留或重新配置）
+./hotplex onboard
 
-# 方式 B：手动配置
-cp configs/env.example .env
-# 编辑 .env，填入 Slack/飞书凭据
+# 或快速自动生成全部配置：
+./hotplex onboard --non-interactive --enable-slack --enable-feishu
 ```
 
 ### 3. 启动开发服务器
