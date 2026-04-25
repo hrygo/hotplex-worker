@@ -1,5 +1,5 @@
 /**
- * HotPlex Worker Gateway - Complete Example
+ * HotPlex Gateway - Complete Example
  * 
  * Full-featured demo showing all client capabilities:
  * - Custom configuration (model, system prompt, tools)
@@ -87,7 +87,7 @@ const AUTO_APPROVE_TOOLS = ['read_file', 'grep', 'glob', 'bash'];
 
 async function main() {
   console.log('═══════════════════════════════════════════════════════════════');
-  console.log('      HotPlex Worker Gateway - Complete Example');
+  console.log('      HotPlex Gateway - Complete Example');
   console.log('═══════════════════════════════════════════════════════════════\n');
 
   printConfig();

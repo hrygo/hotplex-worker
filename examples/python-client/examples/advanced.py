@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-HotPlex Worker 高级示例
+HotPlex 高级示例
 
 演示完整功能：
 1. 完整错误处理和重连

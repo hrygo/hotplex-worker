@@ -16,8 +16,8 @@
     <version>1.0.0-SNAPSHOT</version>
     <packaging>jar</packaging>
 
-    <name>HotPlex Worker Client</name>
-    <description>Java client SDK for HotPlex Worker Gateway</description>
+    <name>HotPlex Client</name>
+    <description>Java client SDK for HotPlex Gateway</description>
 
     <properties>
         <java.version>17</java.version>

@@ -1,5 +1,5 @@
 /**
- * HotPlexClient - TypeScript client SDK for HotPlex Worker Gateway (AEP v1)
+ * HotPlexClient - TypeScript client SDK for HotPlex Gateway (AEP v1)
  */
 
 import { EventEmitter } from 'eventemitter3';

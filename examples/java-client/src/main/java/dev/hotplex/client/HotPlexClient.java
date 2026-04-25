@@ -24,7 +24,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
 
 /**
- * HotPlexClient - Java client SDK for HotPlex Worker Gateway (AEP v1).
+ * HotPlexClient - Java client SDK for HotPlex Gateway (AEP v1).
  *
  * This client provides:
  * - Raw WebSocket connection (NOT STOMP)

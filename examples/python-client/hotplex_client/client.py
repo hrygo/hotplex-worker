@@ -47,7 +47,7 @@ Callback = Callable[[Any], Coroutine[None, None, None]]
 
 class HotPlexClient:
     """
-    High-level client for HotPlex Worker Gateway.
+    High-level client for HotPlex Gateway.
 
     Example:
         ```python

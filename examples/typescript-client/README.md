@@ -1,6 +1,6 @@
-# HotPlex Worker TypeScript Client
+# HotPlex TypeScript Client
 
-> TypeScript/Node.js client SDK for HotPlex Worker Gateway
+> TypeScript/Node.js client SDK for HotPlex Gateway
 
 [![npm version](https://img.shields.io/npm/v/@hotplex/client.svg)](https://www.npmjs.com/package/@hotplex/client)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)

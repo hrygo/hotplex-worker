@@ -1,11 +1,20 @@
-# Go Example .gitignore
+# HotPlex Go Client SDK
 bin/
+hotplex-client
 *.exe
 *.exe~
 *.dll
 *.so
 *.dylib
+
+# Test & Coverage
 *.test
 *.out
+coverage.txt
+coverage/
+
+# Development
 vendor/
 go.work
+go.work.sum
+.DS_Store

@@ -1,36 +1,25 @@
-# Python Example .gitignore
+# Python Client Example
 __pycache__/
 *.py[cod]
 *$py.class
 .venv/
 venv/
 env/
+.env
+
+# Testing & Coverage
 .pytest_cache/
 .coverage
 htmlcov/
 .mypy_cache/
-*.egg-info/
-.eggs/
+.tox/
 
 # Distribution
 build/
-develop-eggs/
 dist/
-downloads/
-eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
+*.egg-info/
+.eggs/
 *.egg
 
-# Testing
-.tox/
-.dmypy.json
-dmypy.json
-
-# Manifests
-*.manifest
-*.spec
+# OS
+.DS_Store

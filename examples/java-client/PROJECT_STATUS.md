@@ -1,4 +1,4 @@
-# HotPlex Worker Java Client - 项目状态
+# HotPlex Java Client - 项目状态
 
 ![Status](https://img.shields.io/badge/Status-Complete-brightgreen)
 ![Build](https://img.shields.io/badge/Build-Success-brightgreen)

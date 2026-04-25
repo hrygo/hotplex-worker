@@ -1,5 +1,5 @@
 /**
- * HotPlex Worker Gateway - Quick Start Example
+ * HotPlex Gateway - Quick Start Example
  * 
  * Minimal demo showing how to connect to the gateway and send a simple task.
  * 
@@ -15,7 +15,7 @@ import { HotPlexClient, WorkerType } from '../src/index.js';
 import { generateTestToken } from '../scripts/generate-test-token.js';
 
 async function main() {
-  console.log('🚀 HotPlex Worker Gateway - Quick Start\n');
+  console.log('🚀 HotPlex Gateway - Quick Start\n');
 
   const token = await generateTestToken();
   

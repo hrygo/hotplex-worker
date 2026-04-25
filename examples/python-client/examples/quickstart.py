@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-HotPlex Worker 快速上手示例
+HotPlex 快速上手示例
 
 演示最基本的功能：
 1. 连接到 gateway
@@ -31,7 +31,7 @@ from hotplex_client import (
 
 
 async def main():
-    """主函数：演示基本的 HotPlex Worker 交互流程"""
+    """主函数：演示基本的 HotPlex 交互流程"""
 
     # 1. 创建客户端（使用 async with 自动管理连接）
     async with HotPlexClient(

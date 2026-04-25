@@ -1,6 +1,6 @@
-# HotPlex Worker Client SDKs
+# HotPlex Client SDKs
 
-> 多语言客户端 SDK，通过 WebSocket (AEP v1) 与 HotPlex Worker Gateway 交互
+> 多语言客户端 SDK，通过 WebSocket (AEP v1) 与 HotPlex Gateway 交互
 
 ---
 

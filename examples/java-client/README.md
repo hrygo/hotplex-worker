@@ -1,6 +1,6 @@
-# HotPlex Worker Java Client
+# HotPlex Java Client
 
-> Java client SDK for HotPlex Worker Gateway
+> Java client SDK for HotPlex Gateway
 
 [![Maven Central](https://img.shields.io/maven-central/v/dev.hotplex/hotplex-client.svg)](https://mavenbadges.herokuapp.com/maven-central/dev.hotplex/hotplex-client)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)

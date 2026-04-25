@@ -159,11 +159,12 @@ check: quality build
 
 dev: dev-start
 	@echo ""
+	@echo "  $(DIM)─────────────────────────────────────$(RESET)"
 	@echo "  $(GREEN)✓ Dev environment ready$(RESET)"
 	@echo ""
-	@echo "    make dev-logs     View logs"
-	@echo "    make dev-status  Check status"
-	@echo "    make dev-stop    Stop all"
+	@printf "    make %-12s %s\n" "dev-logs" "View logs"
+	@printf "    make %-12s %s\n" "dev-status" "Check status"
+	@printf "    make %-12s %s\n" "dev-stop" "Stop all"
 	@echo ""
 
 dev-start: gateway-start

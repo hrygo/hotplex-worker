@@ -8,7 +8,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 /**
- * HotPlex Worker Gateway - Quick Start Example
+ * HotPlex Gateway - Quick Start Example
  * 
  * Minimal demo showing how to connect to the gateway and send a simple task.
  * 
@@ -26,7 +26,7 @@ public class QuickStart {
     private static final String DEFAULT_TASK = "Write a hello world program in Go that prints \"Hello, World!\" to stdout.";
 
     public static void main(String[] args) throws Exception {
-        System.out.println("🚀 HotPlex Worker Gateway - Quick Start\n");
+        System.out.println("🚀 HotPlex Gateway - Quick Start\n");
 
         // Configuration from environment
         String gatewayUrl = System.getenv("HOTPLEX_GATEWAY_URL");

@@ -1,13 +1,13 @@
-# HotPlex Worker Python Client
+# HotPlex Python Client
 
-Python 客户端示例模块，演示如何通过 WebSocket 与 HotPlex Worker Gateway 交互。
+Python 客户端示例模块，演示如何通过 WebSocket 与 HotPlex Gateway 交互。
 
 ## 快速开始
 
 ### 前置要求
 
 - Python 3.10+
-- 运行中的 HotPlex Worker Gateway（默认 `ws://localhost:8888`）
+- 运行中的 HotPlex Gateway（默认 `ws://localhost:8888`）
 
 ### 安装依赖
 

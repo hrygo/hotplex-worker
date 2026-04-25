@@ -1,7 +1,7 @@
 package dev.hotplex.protocol;
 
 /**
- * Protocol constants for AEP v1 communication with HotPlex Worker Gateway.
+ * Protocol constants for AEP v1 communication with HotPlex Gateway.
  */
 public final class ProtocolConstants {
 

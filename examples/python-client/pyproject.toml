@@ -1,7 +1,7 @@
 [project]
 name = "hotplex-client"
 version = "1.0.0"
-description = "Python client example for HotPlex Worker Gateway (AEP v1)"
+description = "Python client example for HotPlex Gateway (AEP v1)"
 requires-python = ">=3.10"
 dependencies = [
     "websockets>=12.0",

@@ -1,4 +1,5 @@
-import sys
+import argparse
+import os
 
 def colored(r, g, b, text):
     return f"\033[38;2;{r};{g};{b}m{text}\033[0m"
@@ -87,18 +88,28 @@ for i in range(6):
     banner.append(get_line(i))
 
 # Add a subtitle/tagline without nodes and version
-line_sep = colored(100, 100, 100, "─────────────────────────────────────────────────────────────────────")
-tagline = "      " + colored(200, 200, 200, "HOTPLEX WORKER GATEWAY")
-desc = "      " + colored(120, 120, 120, "Unified AI Coding Agent Access Layer · Multi-Protocol Abstraction")
+parser = argparse.ArgumentParser(description="Generate HOTPLEX banner_art.txt")
+parser.add_argument("--pad", type=int, default=2, help="Left padding spaces (default: 2)")
+parser.add_argument("--output", default=None, help="Output file path")
+args = parser.parse_args()
+
+line_sep = colored(60, 60, 60, "─────────────────────────────────────────────────────────────")
+tagline = colored(255, 138, 0, "HOTPLEX ") + colored(0, 185, 203, "GATEWAY")
+desc = colored(100, 100, 100, "Unified AI Coding Agent Access Layer")
 
 banner.append("")
-banner.append("    " + line_sep)
+banner.append(line_sep)
 banner.append(tagline)
 banner.append(desc)
-banner.append("    " + line_sep)
+banner.append(line_sep)
+
+# Apply left padding to all lines.
+prefix = " " * args.pad
+banner = [prefix + line for line in banner]
 
 output = "\n".join(banner)
-with open("cmd/worker/banner_art.txt", "w") as f:
+out_path = args.output or os.path.join(os.path.dirname(__file__), "..", "cmd", "hotplex", "banner_art.txt")
+with open(out_path, "w") as f:
     f.write(output)
 
-print("Banner generated successfully.")
+print(f"Banner generated with {args.pad}-space left padding → {out_path}")

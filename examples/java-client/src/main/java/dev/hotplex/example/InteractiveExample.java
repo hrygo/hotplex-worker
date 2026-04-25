@@ -9,7 +9,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Interactive HotPlex Worker Client Example
+ * Interactive HotPlex Client Example
  * <p>
  * Demonstrates:
  * - Session management
@@ -28,7 +28,7 @@ public class InteractiveExample {
     private static final String DEFAULT_GATEWAY_URL = "ws://localhost:8888";
 
     public static void main(String[] args) throws Exception {
-        System.out.println("🚀 HotPlex Worker - Interactive Example\n");
+        System.out.println("🚀 HotPlex - Interactive Example\n");
         System.out.println("Commands:");
         System.out.println("  /status  - Show session status");
         System.out.println("  /quit    - Exit\n");

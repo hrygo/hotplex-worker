@@ -1,7 +1,7 @@
 /**
- * HotPlex Worker Gateway - TypeScript Client SDK
+ * HotPlex Gateway - TypeScript Client SDK
  * 
- * AEP v1 WebSocket client for connecting to HotPlex Worker Gateway.
+ * AEP v1 WebSocket client for connecting to HotPlex Gateway.
  */
 
 // Main client

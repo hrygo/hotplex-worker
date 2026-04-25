@@ -1,6 +1,7 @@
-# Java / Maven Example .gitignore
+# Java Client Example
 target/
 *.class
+.env
 
 # Eclipse
 .project
@@ -8,7 +9,7 @@ target/
 .settings/
 .factorypath
 
-# IntelliJ IDEA (in case of local opening)
+# IntelliJ IDEA
 .idea/
 *.iml
 
@@ -23,3 +24,6 @@ nb-configuration.xml
 
 # VS Code
 .vscode/
+
+# OS
+.DS_Store

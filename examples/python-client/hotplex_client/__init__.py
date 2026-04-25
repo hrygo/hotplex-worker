@@ -1,7 +1,7 @@
 """
-HotPlex Worker Python Client
+HotPlex Python Client
 
-A Python client library for interacting with HotPlex Worker Gateway via AEP v1 protocol.
+A Python client library for interacting with HotPlex Gateway via AEP v1 protocol.
 """
 
 __version__ = "1.0.0"

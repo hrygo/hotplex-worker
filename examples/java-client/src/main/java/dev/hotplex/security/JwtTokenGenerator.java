@@ -20,7 +20,7 @@ import org.bouncycastle.jce.spec.ECParameterSpec;
 import org.bouncycastle.math.ec.ECPoint;
 
 /**
- * JWT Token Generator for HotPlex Worker Gateway authentication.
+ * JWT Token Generator for HotPlex Gateway authentication.
  * Uses ES256 (ECDSA P-256) signing method with key derivation from secret.
  * Key derivation algorithm matches the Go implementation:
  * scalar = (secret_bytes mod (N-1)) + 1, where N is the P-256 curve order.

@@ -1,60 +1,109 @@
-# HotPlex Worker Gateway
+# ============================================================
+# HotPlex Gateway — .gitignore
+# ============================================================
 
-# Go backend
+# --- Core & Binaries ---
 bin/
-hotplex-worker
-hotplex-worker-*
-/worker
-/gateway
-hotplex-worker.pid
+hotplex
+hotplex-*
+hotplex.pid
+!cmd/hotplex
 *.test
 *.out
-*.html
-coverage.txt
-coverage/
-vendor/
-go.work
 *.so
 *.dylib
+*.exe
+*.dll
 
-# Database & runtime
+# --- Go Development ---
+vendor/
+go.work
+go.work.sum
+coverage.txt
+coverage.html
+coverage/
+
+# --- Node.js / Next.js (Webchat) ---
+node_modules/
+.next/
+out/
+build/
+dist/
+.npm
+.pnpm-debug.log*
+pnpm-lock.yaml
+.eslintcache
+.stylelintcache
+next-env.d.ts
+.turbo/
+
+# --- Database & Persistence ---
 data/
 *.db
 *.db-shm
 *.db-wal
 hotplex-worker.db*
+*.sqlite
+
+# --- Logs & Runtime ---
 *.log
 logs/
+*.pid
+tmp/
+temp/
+.sisyphus
+test_output.txt
 
-# Configs & secrets
-*.local.yaml
-*.local.yml
+# --- Configs & Secrets ---
 .env
 .env.*
+!.env.example
+*.local.yaml
+*.local.yml
 .agent/settings.local.json
 *.pem
 *.key
+*.cert
+*.crt
 
-# OS
-.DS_Store
-Thumbs.db
-ehthumbs.db
-Desktop.ini
-
-# IDEs
+# --- IDEs & Editors ---
 .idea/
 *.iml
 .vscode/
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/launch.json
 *.swp
 *.swo
 *~
-.playwright-mcp
-.loki/
-.playwright-cli
-.ruff_cache
-__pycache__
-./*.png
+.history/
+.project
+.settings/
+.classpath
+
+# --- OS Specific ---
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# --- Test Artifacts ---
 test-results/
 e2e/test-results/
+playwright-report/
+.playwright-mcp
+.playwright-cli
+.loki/
+.ruff_cache
+__pycache__
+
+# --- Miscellaneous ---
 /.worktrees/
-.sisyphus
+*.bak
+*.tmp
+# Ignore temporary png files but keep intentional assets
+# ./*.png 
