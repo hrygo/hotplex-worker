@@ -132,7 +132,7 @@ curl http://localhost:9999/admin/health
 ./scripts/docker-build.sh
 
 # Custom tag
-./scripts/docker-build.sh hotplex:v1.0.0
+./scripts/docker-build.sh hotplex:v1.1.0
 
 # Build and push
 ./scripts/docker-build.sh hotplex:latest --push

@@ -3,7 +3,7 @@
 > **Purpose**: Restore HotPlex Worker Gateway service after failure or data loss.
 >
 > **Last Updated**: 2026-04-21
-> **Version**: 1.0.0
+> **Version**: 1.1.0
 
 ---
 
