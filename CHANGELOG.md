@@ -5,7 +5,7 @@ All notable changes to the HotPlex Worker Gateway project will be documented in 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.1.0] - 2026-04-23
+## [1.1.0] - 2026-04-25
 
 ### Added
 
@@ -20,9 +20,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Gateway**:
   - **Request Throttling**: In-memory token bucket rate limiter via `internal/gateway/throttle.go`.
   - **Worker Adapters**: Fixed missing blank imports for `opencodeserver` and `pi` adapters — all three worker types now register at startup.
-- **Webchat**:
-  - **Light Theme Redesign**: Refreshed white/blue visual style.
-  - **Persistent Sidebar**: Session history panel with state indicators.
+- **Premium WebChat UI/UX (Specs v1.1)**:
+  - **SDK-Native Architecture**: Deep integration with `@assistant-ui/react` and Vercel AI SDK, replacing custom state machines with industry-standard runtime providers.
+  - **Generative UI (GenUI)**: Interactive high-fidelity rendering for `edit_file` (Monaco-based Diff views), `run_command` (Terminal mockup with stdout/err highlighting), and `ask_permission` (MCP-style interaction cards).
+  - **Advanced Session Initialization**: Full support for multi-parameter session creation (`workerType`, `workDir`, `agentConfig`) with persistent recent directories and URL-driven deep linking via `nuqs`.
+  - **Premium Design System**: Glassmorphism visual language with `backdrop-blur-2xl`, Tailwind 4 advanced theme tokens, and dark-mode-first aesthetics.
+  - **Motion & Feedback**: Smooth layout transitions and micro-interactions powered by `framer-motion` v12.
+  - **Workspace Awareness**: Real-time token usage, latency monitoring, and environment indicators (Worker type, Project path) integrated into the NavBar.
+  - **Modern Tech Stack**: Upgraded foundation to Next.js 16, React 19, and AI SDK v7/v4 beta tracks for peak performance.
 - **Go Client SDK (v1.1.0)**:
   - **Automatic Reconnection**: Intelligent connection recovery with exponential backoff strategy.
   - **Typed Event Helpers**: Fluent API for event processing (`AsDoneData()`, `AsErrorData()`, `AsToolCallData()`, etc.).
