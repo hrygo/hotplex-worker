@@ -1,14 +1,14 @@
 ---
-title: HotPlex v1.0 — Design Documents
+title: HotPlex v1.1 — Design Documents
 type: moc
 tags:
   - project/HotPlex
 status: active
 ---
 
-# HotPlex v1.0 — Design Documents
+# HotPlex v1.1 — Design Documents
 
-> HotPlex v1.0.0 大版本设计文档集合。从当前 Cli-as-a-Service 重构为 Agent Gateway 平台。
+> HotPlex v1.1.0 大版本设计文档集合。从当前 Cli-as-a-Service 重构为 Agent Gateway 平台。
 
 ---
 
@@ -114,7 +114,7 @@ AEP-v1-Appendix（可视化层）
 
 ## 当前设计范围
 
-v1.0-design 当前覆盖 **Worker 抽象封装 + WS Gateway + AEP 协议**，后续将补充：
+v1.1-design 当前覆盖 **Worker 抽象封装 + WS Gateway + AEP 协议**，后续将补充：
 
 - 安全与隔离增强（沙箱 / cgroup / network namespace）
 - 可观测性（trace / metrics 集成 AEP）
@@ -141,7 +141,7 @@ v1.0-design 当前覆盖 **Worker 抽象封装 + WS Gateway + AEP 协议**，后
 
 ```
 1-Projects/HotPlex/
-├── v1.0-design/     ← 当前（Agent Gateway + AEP 协议）
+├── v1.1-design/     ← 当前（Agent Gateway + AEP 协议）
 ├── v1.1-design/     ← SSE fallback / 动态配置 / 多客户端 attach / client-side throttling
 └── v2.0-design/     ← 多实例 / 分布式 / 调度层 / 多 agent 协作（A2A）
 ```
