@@ -257,8 +257,8 @@ body {
 
 /* Scroll to bottom button */
 .scroll-bottom-btn {
-  position: absolute;
-  bottom: 7rem;
+  position: sticky;
+  bottom: 1rem;
   left: 50%;
   transform: translateX(-50%);
   padding: 0.5rem 1rem;
@@ -276,13 +276,15 @@ body {
   z-index: 60;
   transition: all 0.2s ease;
   backdrop-filter: blur(16px);
+  margin-top: 1rem;
+  margin-bottom: -3rem;
 }
 
 .scroll-bottom-btn:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
   transform: translateX(-50%) translateY(-2px);
-  border-color: var(--border-gold);
+  border-color: var(--accent-gold);
 }
 
 /* ============================================================
