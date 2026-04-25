@@ -17,6 +17,7 @@ import { SearchTool } from "./tools/SearchTool";
 import { PermissionCard } from "./tools/PermissionCard";
 import { BrandIcon } from "@/components/icons";
 import { getToolCategory } from "@/lib/tool-categories";
+import { CommandMenu } from "./CommandMenu";
 
 /* ============================================================
    Animation variants — spec §4.4
@@ -502,11 +503,13 @@ function Composer() {
   const aui = useAui();
   const text = useAuiState((s) => s.composer.text);
   const [localText, setLocalText] = useState(text || "");
+  const [menuOpen, setMenuOpen] = useState(false);
 
   // Sync global text changes (like clearing after send) back to local state
   React.useEffect(() => {
     if (!composingRef.current) {
       setLocalText(text || "");
+      if (!text) setMenuOpen(false);
     }
   }, [text]);
 
@@ -523,46 +526,80 @@ function Composer() {
 
   const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target.value;
-    // Always update local state immediately so the DOM matches perfectly (prevents IME flicker)
     setLocalText(val);
     
-    // Only sync to the global store if we are not actively in a real composition.
-    // Syncing to global store during composition causes asynchronous re-renders that break third-party IMEs.
-    // This also elegantly handles the macOS Chinese IME English-mode bug where compositionStart never fires.
+    // Show menu if starting with / or contains non-whitespace
+    if (val.startsWith("/") || (val.length > 0 && !val.includes(" "))) {
+      setMenuOpen(true);
+    } else {
+      setMenuOpen(false);
+    }
+    
     if (!composingRef.current) {
       aui.composer().setText(val);
     }
   }, [aui]);
 
+  const handleSelectCommand = useCallback((cmd: string) => {
+    setLocalText(cmd);
+    aui.composer().setText(cmd);
+    setMenuOpen(false);
+  }, [aui]);
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (menuOpen && (e.key === "ArrowUp" || e.key === "ArrowDown" || e.key === "Enter" || e.key === "Escape")) {
+      // These are handled by CommandMenu via global window listener, but we might want to prevent default here
+      // if it conflicts with assistant-ui default composer behavior.
+      if (e.key === "Enter") {
+         // Don't send the message if menu is open and Enter is pressed
+         // CommandMenu's global listener will handle selection
+      }
+    }
+  }, [menuOpen]);
+
   return (
     <ComposerPrimitive.Root className="composer-root">
-      <div className="composer-input-row">
-        <ComposerPrimitive.Input
-          className="composer-input"
-          rows={1}
-          autoFocus
-          placeholder="Type a message or '/' for commands..."
-          value={localText}
-          onChange={handleChange}
-          onCompositionStart={handleCompositionStart}
-          onCompositionEnd={handleCompositionEnd}
-        />
+      <div className="relative">
+        <AnimatePresence>
+          {menuOpen && (
+            <CommandMenu 
+              inputValue={localText} 
+              onSelect={handleSelectCommand} 
+              isOpen={menuOpen} 
+              onClose={() => setMenuOpen(false)} 
+            />
+          )}
+        </AnimatePresence>
+        
+        <div className="composer-input-row">
+          <ComposerPrimitive.Input
+            className="composer-input"
+            rows={1}
+            autoFocus
+            placeholder="Type a message or '/' for commands..."
+            value={localText}
+            onChange={handleChange}
+            onCompositionStart={handleCompositionStart}
+            onCompositionEnd={handleCompositionEnd}
+            onKeyDown={handleKeyDown}
+          />
 
-        <div className="flex items-center gap-2">
-          <ComposerPrimitive.Cancel
-            className="btn-icon text-[var(--accent-coral)] hover:bg-[rgba(244,63,94,0.1)]"
-            title="Stop"
-          >
-            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-              <rect x="6" y="6" width="12" height="12" rx="2" />
-            </svg>
-          </ComposerPrimitive.Cancel>
+          <div className="flex items-center gap-2">
+            <ComposerPrimitive.Cancel
+              className="btn-icon text-[var(--accent-coral)] hover:bg-[rgba(244,63,94,0.1)]"
+              title="Stop"
+            >
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                <rect x="6" y="6" width="12" height="12" rx="2" />
+              </svg>
+            </ComposerPrimitive.Cancel>
 
-          <ComposerPrimitive.Send className="btn-icon btn-primary" disabled>
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 12h14M12 5l7 7-7 7" />
-            </svg>
-          </ComposerPrimitive.Send>
+            <ComposerPrimitive.Send className="btn-icon btn-primary" disabled>
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 12h14M12 5l7 7-7 7" />
+              </svg>
+            </ComposerPrimitive.Send>
+          </div>
         </div>
       </div>
     </ComposerPrimitive.Root>
