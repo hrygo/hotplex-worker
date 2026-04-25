@@ -296,7 +296,7 @@ function AssistantMessage() {
         </MessagePrimitive.Parts>
         
         {/* Loading indicator when running but no parts yet */}
-        {status?.type === "running" && (!message.content || message.content.length === 0) && (
+        {(message as any).status?.type === "running" && (!message.content || message.content.length === 0) && (
           <div className="flex items-center gap-2 py-2">
             <motion.div 
               className="w-2 h-2 rounded-full bg-[var(--accent-gold)]"
