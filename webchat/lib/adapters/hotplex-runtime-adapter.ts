@@ -319,13 +319,18 @@ export function useHotPlexRuntime({
     const handleError = (data: ErrorData, env: Envelope) => {
       const hasData = data && (data.code || data.message);
       if (hasData) {
-        console.error(`HotPlexRuntimeAdapter: error received. Code: ${data.code || 'unknown'}, Message: ${data.message || 'none'}`, {
-          details: data.details,
-          eventId: env?.id,
-        });
+        const detailsStr = data.details ? ` Details: ${JSON.stringify(data.details)}` : '';
+        const eventStr = env?.id ? ` EventID: ${env.id}` : '';
+        console.error(`HotPlexRuntimeAdapter: error received. Code: ${data.code || 'unknown'}, Message: ${data.message || 'none'}${detailsStr}${eventStr}`);
       } else {
-        console.warn('HotPlexRuntimeAdapter: empty error event received (no code/message)', { env });
+        console.warn(`HotPlexRuntimeAdapter: empty error event received (no code/message). EventID: ${env?.id}`);
       }
+
+      // SESSION_BUSY is a transient state handled internally by auto-retry, so do not show it to the user.
+      if (data?.code === 'SESSION_BUSY') {
+        return;
+      }
+
       setIsRunning(false);
 
       const errorMessage = data?.message
