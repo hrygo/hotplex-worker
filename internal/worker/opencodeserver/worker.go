@@ -268,6 +268,11 @@ func (w *Worker) Start(ctx context.Context, session worker.SessionInfo) error {
 		sessionID: sessionID,
 	}
 
+	// Apply permission bypass (equivalent to --dangerously-skip-permissions in Claude Code)
+	if err := w.applyPermissions(ctx, session); err != nil {
+		w.Log.Warn("opencodeserver: failed to set permissions", "error", err)
+	}
+
 	// Record startup time
 	w.Mu.Lock()
 	w.StartTime = time.Now()
@@ -383,6 +388,11 @@ func (w *Worker) Resume(ctx context.Context, session worker.SessionInfo) error {
 		client:    w.client,
 		baseURL:   w.httpAddr,
 		sessionID: session.SessionID,
+	}
+
+	// Apply permission bypass (equivalent to --dangerously-skip-permissions in Claude Code)
+	if err := w.applyPermissions(ctx, session); err != nil {
+		w.Log.Warn("opencodeserver: failed to set permissions", "error", err)
 	}
 
 	// Record resume time
@@ -517,13 +527,29 @@ func (w *Worker) Rewind(ctx context.Context, targetID string) error {
 
 // ─── Internal Methods ─────────────────────────────────────────────────────────
 
+// applyPermissions configures session-level permissions via HTTP API.
+// Equivalent to --dangerously-skip-permissions in Claude Code CLI.
+func (w *Worker) applyPermissions(ctx context.Context, _ worker.SessionInfo) error {
+	w.Mu.Lock()
+	cmd := w.cmd
+	w.Mu.Unlock()
+
+	if cmd == nil {
+		return fmt.Errorf("commander not initialized")
+	}
+
+	_, err := cmd.SendControlRequest(ctx, "set_permission_mode", map[string]any{
+		"mode": "bypassPermissions",
+	})
+	return err
+}
+
 // startServerProcess launches the opencode serve subprocess.
 func (w *Worker) startServerProcess(ctx context.Context, session worker.SessionInfo) error {
 	// Build command arguments
 	args := []string{
 		"serve",
 		"--port", fmt.Sprintf("%d", defaultServePort),
-		"--dangerously-skip-permissions",
 	}
 
 	// Build environment using shared base.BuildEnv

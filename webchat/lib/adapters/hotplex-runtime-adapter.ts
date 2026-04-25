@@ -333,17 +333,30 @@ export function useHotPlexRuntime({
 
       setIsRunning(false);
 
-      const errorMessage = data?.message
-        || (data?.code ? `Error: ${data.code}` : undefined)
-        || 'An unexpected error occurred. The session may have been interrupted.';
+      // Mark last streaming message as errored/complete to stop loading state
+      setMessages((prev) => {
+        const lastMessage = prev[prev.length - 1];
+        if (lastMessage?.role === 'assistant' && lastMessage.status === 'streaming') {
+          return [
+            ...prev.slice(0, -1),
+            { ...lastMessage, status: 'complete' },
+          ];
+        }
+        return prev;
+      });
 
-      // Add error message to thread (use assistant role for assistant-ui compatibility)
+      const isTimeout = data?.code === 'TURN_TIMEOUT';
+      const errorMessage = isTimeout 
+        ? "Session timeout: The agent took too long to respond (limit: 15m). You may want to break your request into smaller steps."
+        : (data?.message || (data?.code ? `Error: ${data.code}` : 'An unexpected error occurred.'));
+
+      // Add error message to thread
       setMessages((prev) => [
         ...prev,
         {
           id: `error-${Date.now()}`,
           role: 'assistant',
-          parts: [{ type: 'text', text: `⚠️ Error: ${errorMessage}` }],
+          parts: [{ type: 'text', text: `⚠️ ${errorMessage}` }],
           createdAt: new Date(),
           status: 'complete',
         },

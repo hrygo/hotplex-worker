@@ -34,7 +34,7 @@ func setupRoutes(
 		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
 
-	gatewayAPI := gateway.NewGatewayAPI(auth, sm, bridge)
+	gatewayAPI := gateway.NewGatewayAPI(auth, sm, bridge, deps.ConfigStore)
 
 	// withCORS wraps a handler to inject CORS headers.
 	withCORS := func(h http.HandlerFunc) http.HandlerFunc {

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/hrygo/hotplex/internal/config"
 	"github.com/hrygo/hotplex/internal/security"
 	"github.com/hrygo/hotplex/internal/worker"
 
@@ -13,13 +14,19 @@ import (
 )
 
 type GatewayAPI struct {
-	auth   *security.Authenticator
-	sm     SessionManager
-	bridge SessionStarter
+	auth     *security.Authenticator
+	sm       SessionManager
+	bridge   SessionStarter
+	cfgStore configLoader
 }
 
-func NewGatewayAPI(auth *security.Authenticator, sm SessionManager, bridge SessionStarter) *GatewayAPI {
-	return &GatewayAPI{auth: auth, sm: sm, bridge: bridge}
+// configLoader mirrors the subset of *config.ConfigStore used by GatewayAPI.
+type configLoader interface {
+	Load() *config.Config
+}
+
+func NewGatewayAPI(auth *security.Authenticator, sm SessionManager, bridge SessionStarter, cfgStore configLoader) *GatewayAPI {
+	return &GatewayAPI{auth: auth, sm: sm, bridge: bridge, cfgStore: cfgStore}
 }
 
 func respondJSON(w http.ResponseWriter, v any) {
@@ -81,6 +88,18 @@ func (g *GatewayAPI) CreateSession(w http.ResponseWriter, r *http.Request) {
 		userID = "anonymous"
 	}
 
+	// Resolve work dir: use client-provided value or default from config.
+	workDir := r.URL.Query().Get("work_dir")
+	if workDir == "" {
+		workDir = g.cfgStore.Load().Worker.DefaultWorkDir
+	}
+	if workDir != "" {
+		if err := security.ValidateWorkDir(workDir); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+
 	// Idempotency check: if session exists and is active, just return it.
 	if si, err := g.sm.Get(id); err == nil {
 		if si.State != events.StateDeleted {
@@ -92,7 +111,7 @@ func (g *GatewayAPI) CreateSession(w http.ResponseWriter, r *http.Request) {
 		_ = g.sm.DeletePhysical(r.Context(), id)
 	}
 
-	if err := g.bridge.StartSession(r.Context(), id, userID, botID, wt, nil, "", "webchat", nil); err != nil {
+	if err := g.bridge.StartSession(r.Context(), id, userID, botID, wt, nil, workDir, "webchat", nil); err != nil {
 		http.Error(w, "failed to create session", http.StatusInternalServerError)
 		return
 	}
