@@ -22,7 +22,9 @@ Support switching the working directory during an active session. The feature cr
 
 **Format:** `/cd <path>`
 
-**Registered in:** `internal/messaging/control_command.go`, new `cd` action
+**Natural language triggers:** `$cd <path>`, `$切换目录 <path>`
+
+**Registered in:** `internal/messaging/control_command.go`, new `cd` action (slash command + `$` prefix triggers)
 
 **Behavior:**
 
