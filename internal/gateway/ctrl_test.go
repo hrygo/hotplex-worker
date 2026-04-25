@@ -143,7 +143,7 @@ func TestHandleInput_Success(t *testing.T) {
 
 	const sid = "sess_input_ok"
 	// Create session in StateCreated so transition CREATED→RUNNING succeeds.
-	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil)
+	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "")
 	require.NoError(t, err)
 
 	env := inputEnvelope(sid, "hello")
@@ -171,7 +171,7 @@ func TestHandleInput_SessionNotActive(t *testing.T) {
 
 	const sid = "sess_inactive"
 	// Create session and transition to TERMINATED state.
-	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil)
+	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "")
 	require.NoError(t, err)
 	err = mgr.Transition(context.Background(), sid, events.StateTerminated)
 	require.NoError(t, err)
@@ -187,7 +187,7 @@ func TestHandleInput_RunningSession_AcceptsInput(t *testing.T) {
 	handler, mgr, _, _ := newHandlerWithRealStore(t)
 
 	const sid = "sess_inv_trans"
-	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil)
+	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "")
 	require.NoError(t, err)
 	// Transition CREATED→RUNNING (valid).
 	err = mgr.Transition(context.Background(), sid, events.StateRunning)
@@ -209,7 +209,7 @@ func TestHandlePing_KnownSession(t *testing.T) {
 	handler, mgr, hub, _ := newHandlerWithRealStore(t)
 
 	const sid = "sess_ping"
-	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil)
+	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "")
 	require.NoError(t, err)
 
 	conn, _ := newTestWSConnPair(t)
@@ -242,7 +242,7 @@ func TestHandleControl_Terminate_Success(t *testing.T) {
 	handler, mgr, hub, _ := newHandlerWithRealStore(t)
 
 	const sid = "sess_term"
-	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil)
+	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "")
 	require.NoError(t, err)
 	err = mgr.Transition(context.Background(), sid, events.StateRunning)
 	require.NoError(t, err)
@@ -262,7 +262,7 @@ func TestHandleControl_Terminate_Unauthorized(t *testing.T) {
 	handler, mgr, hub, _ := newHandlerWithRealStore(t)
 
 	const sid = "sess_term_unauth"
-	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil)
+	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "")
 	require.NoError(t, err)
 	err = mgr.Transition(context.Background(), sid, events.StateRunning)
 	require.NoError(t, err)
@@ -283,7 +283,7 @@ func TestHandleControl_Delete_Success(t *testing.T) {
 	handler, mgr, _, _ := newHandlerWithRealStore(t)
 
 	const sid = "sess_del"
-	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil)
+	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "")
 	require.NoError(t, err)
 	err = mgr.Transition(context.Background(), sid, events.StateRunning)
 	require.NoError(t, err)
@@ -299,7 +299,7 @@ func TestHandleControl_Delete_Unauthorized(t *testing.T) {
 	handler, mgr, hub, _ := newHandlerWithRealStore(t)
 
 	const sid = "sess_del_unauth"
-	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil)
+	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "")
 	require.NoError(t, err)
 	err = mgr.Transition(context.Background(), sid, events.StateRunning)
 	require.NoError(t, err)
@@ -320,7 +320,7 @@ func TestHandleControl_UnknownAction(t *testing.T) {
 	handler, mgr, hub, _ := newHandlerWithRealStore(t)
 
 	const sid = "sess_unknown"
-	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil)
+	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "")
 	require.NoError(t, err)
 	err = mgr.Transition(context.Background(), sid, events.StateRunning)
 	require.NoError(t, err)
@@ -341,7 +341,7 @@ func TestHandleControl_InvalidData(t *testing.T) {
 	handler, mgr, hub, _ := newHandlerWithRealStore(t)
 
 	const sid = "sess_bad"
-	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil)
+	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "")
 	require.NoError(t, err)
 
 	conn, _ := newTestWSConnPair(t)
@@ -362,7 +362,7 @@ func TestHandle_InputRoute(t *testing.T) {
 	handler, mgr, _, _ := newHandlerWithRealStore(t)
 
 	const sid = "sess_handle"
-	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil)
+	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "")
 	require.NoError(t, err)
 
 	env := inputEnvelope(sid, "test")
@@ -375,7 +375,7 @@ func TestHandle_PingRoute(t *testing.T) {
 	handler, mgr, hub, _ := newHandlerWithRealStore(t)
 
 	const sid = "sess_hping"
-	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil)
+	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "")
 	require.NoError(t, err)
 
 	conn, _ := newTestWSConnPair(t)
@@ -392,7 +392,7 @@ func TestHandle_ControlRoute(t *testing.T) {
 	handler, mgr, _, _ := newHandlerWithRealStore(t)
 
 	const sid = "sess_hctrl"
-	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil)
+	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "")
 	require.NoError(t, err)
 	err = mgr.Transition(context.Background(), sid, events.StateRunning)
 	require.NoError(t, err)
@@ -408,7 +408,7 @@ func TestHandle_UnknownEventType(t *testing.T) {
 	handler, mgr, _, _ := newHandlerWithRealStore(t)
 
 	const sid = "sess_unknown_evt"
-	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil)
+	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "")
 	require.NoError(t, err)
 
 	// Unknown event type: Handle now returns the error from sendErrorf.
@@ -424,7 +424,7 @@ func TestHandle_InputMalformedData(t *testing.T) {
 	handler, mgr, hub, _ := newHandlerWithRealStore(t)
 
 	const sid = "sess_mal"
-	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil)
+	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "")
 	require.NoError(t, err)
 
 	conn, _ := newTestWSConnPair(t)
@@ -444,7 +444,7 @@ func TestSendControlToSession_Reconnect(t *testing.T) {
 	handler, mgr, hub, _ := newHandlerWithRealStore(t)
 
 	const sid = "sess_reconn"
-	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil)
+	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "")
 	require.NoError(t, err)
 
 	clientConn, serverConn := newTestWSConnPair(t)
@@ -469,7 +469,7 @@ func TestSendControlToSession_SessionInvalid(t *testing.T) {
 	handler, mgr, hub, _ := newHandlerWithRealStore(t)
 
 	const sid = "sess_inval"
-	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil)
+	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "")
 	require.NoError(t, err)
 
 	clientConn, serverConn := newTestWSConnPair(t)
@@ -493,7 +493,7 @@ func TestSendControlToSession_Throttle(t *testing.T) {
 	handler, mgr, hub, _ := newHandlerWithRealStore(t)
 
 	const sid = "sess_throttle"
-	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil)
+	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "")
 	require.NoError(t, err)
 
 	clientConn, serverConn := newTestWSConnPair(t)
@@ -519,7 +519,7 @@ func TestSendReconnect(t *testing.T) {
 	handler, mgr, hub, _ := newHandlerWithRealStore(t)
 
 	const sid = "sess_send_reconn"
-	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil)
+	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "")
 	require.NoError(t, err)
 
 	clientConn, serverConn := newTestWSConnPair(t)

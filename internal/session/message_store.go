@@ -93,15 +93,9 @@ func NewSQLiteMessageStore(ctx context.Context, cfg *config.Config) (*SQLiteMess
 		return nil, fmt.Errorf("session store: open msg db: %w", err)
 	}
 
-	if cfg.DB.WALMode {
-		if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
-			_ = db.Close()
-			return nil, fmt.Errorf("session store: msg WAL: %w", err)
-		}
-	}
-	if _, err := db.Exec(fmt.Sprintf("PRAGMA busy_timeout=%d", int(cfg.DB.BusyTimeout.Milliseconds()))); err != nil {
+	if err := initSQLiteDB(db, cfg, "msg"); err != nil {
 		_ = db.Close()
-		return nil, fmt.Errorf("session store: msg busy_timeout: %w", err)
+		return nil, err
 	}
 
 	// Limit to one connection since writes are serialized by the single writer goroutine.

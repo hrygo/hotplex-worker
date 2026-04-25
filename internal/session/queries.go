@@ -6,18 +6,17 @@ import (
 	"strings"
 )
 
-//go:embed sql/*.sql
+//go:embed sql/queries/*.sql
 var sqlFS embed.FS
 
 // queries holds all SQL queries loaded at package initialization.
 var queries = loadQueries()
 
 // loadQueries reads all .sql files from the embedded fs and returns
-// a map of query name → SQL text. The query name is derived from the
-// filename without the .sql extension and without its package prefix
-// (e.g. "store.get_session.sql" → "get_session").
+// a map of query name → SQL text. The query name is the filename
+// with the .sql extension stripped (e.g. "store.get_session.sql" → "store.get_session").
 func loadQueries() map[string]string {
-	entries, err := fs.ReadDir(sqlFS, "sql")
+	entries, err := fs.ReadDir(sqlFS, "sql/queries")
 	if err != nil {
 		panic("session: read sql fs: " + err.Error())
 	}
@@ -28,7 +27,7 @@ func loadQueries() map[string]string {
 		if !strings.HasSuffix(name, ".sql") {
 			continue
 		}
-		data, err := sqlFS.ReadFile("sql/" + name)
+		data, err := sqlFS.ReadFile("sql/queries/" + name)
 		if err != nil {
 			panic("session: read sql file " + name + ": " + err.Error())
 		}

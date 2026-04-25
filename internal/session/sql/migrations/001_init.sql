@@ -1,6 +1,6 @@
--- Sessions: core session metadata.
--- id is a UUIDv5 derived from (ownerID, workerType, platform, platform_key) via DerivePlatformSessionKey.
--- This deterministic mapping ensures the same platform conversation always maps to the same session.
+-- +goose Up
+-- Complete schema with all current columns and indexes.
+-- Uses IF NOT EXISTS for idempotency on existing databases.
 CREATE TABLE IF NOT EXISTS sessions (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
@@ -27,7 +27,6 @@ CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
 CREATE INDEX IF NOT EXISTS idx_sessions_idle_expires_at ON sessions(idle_expires_at);
 CREATE INDEX IF NOT EXISTS idx_sessions_platform ON sessions(platform);
 
--- EVT-001: events table for AEP message persistence.
 CREATE TABLE IF NOT EXISTS events (
     id TEXT PRIMARY KEY,
     session_id TEXT NOT NULL,
@@ -40,7 +39,6 @@ CREATE INDEX IF NOT EXISTS idx_events_session_id ON events(session_id);
 CREATE INDEX IF NOT EXISTS idx_events_session_seq ON events(session_id, seq);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_events_session_seq_unique ON events(session_id, seq);
 
--- EVT-008: audit_log table with hash chain for tamper-evident audit trail.
 CREATE TABLE IF NOT EXISTS audit_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     timestamp INTEGER NOT NULL,
@@ -53,3 +51,8 @@ CREATE TABLE IF NOT EXISTS audit_log (
 );
 CREATE INDEX IF NOT EXISTS idx_audit_session_id ON audit_log(session_id);
 CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_log(timestamp);
+
+-- +goose Down
+DROP TABLE IF EXISTS audit_log;
+DROP TABLE IF EXISTS events;
+DROP TABLE IF EXISTS sessions;

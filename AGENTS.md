@@ -253,6 +253,7 @@ configs/  config.yaml, config-dev.yaml, env.example
 ## ANTI-PATTERNS (THIS PROJECT)
 
 - ❌ `sync.Mutex` embedding or pointer passing — always explicit `mu` field
+- ❌ Multi-statement SQL in single `db.Exec()` — SQLite driver silently ignores all but the first; split into individual `db.Exec()` calls
 - ❌ `math/rand` for crypto (JTI, tokens) — use `crypto/rand`
 - ❌ Shell execution — only `claude` binary, no shell interpreters
 - ❌ Non-ES256 JWT algorithms

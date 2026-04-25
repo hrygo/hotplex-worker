@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -49,58 +48,36 @@ func NewSQLiteStore(ctx context.Context, cfg *config.Config) (*SQLiteStore, erro
 		return nil, fmt.Errorf("session store: open db: %w", err)
 	}
 
-	if cfg.DB.WALMode {
-		if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
-			_ = db.Close()
-			return nil, fmt.Errorf("session store: enable WAL: %w", err)
-		}
-	}
-	if _, err := db.Exec(fmt.Sprintf("PRAGMA busy_timeout=%d", int(cfg.DB.BusyTimeout.Milliseconds()))); err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("session store: set busy_timeout: %w", err)
-	}
-
-	store := &SQLiteStore{db: db}
-	if err := store.migrate(ctx); err != nil {
+	if err := initSQLiteDB(db, cfg, "enable"); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
 
-	return store, nil
+	if err := runMigrations(ctx, db); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+
+	return &SQLiteStore{db: db}, nil
 }
 
-func (s *SQLiteStore) migrate(ctx context.Context) error {
-	// Execute schema DDL from embedded file (SQLite supports multi-statement exec).
-	schema, err := sqlFS.ReadFile("sql/sessions.schema.sql")
-	if err != nil {
-		return fmt.Errorf("session store: read schema: %w", err)
-	}
-	if _, err := s.db.ExecContext(ctx, string(schema)); err != nil {
-		return fmt.Errorf("session store: apply schema: %w", err)
-	}
-
-	// Execute migration ALTER TABLE statements from embedded file.
-	// Errors are ignored since ALTER COLUMN is idempotent on fresh installs
-	// and silently no-op when columns already exist.
-	migrationSQL, err := sqlFS.ReadFile("sql/sessions.migrations.sql")
-	if err != nil {
-		return fmt.Errorf("session store: read migrations: %w", err)
-	}
-	_, _ = s.db.ExecContext(ctx, strings.TrimSpace(stripSQLComments(string(migrationSQL))))
-
-	return nil
-}
-
-// stripSQLComments removes single-line (--) SQL comments from text.
-func stripSQLComments(sql string) string {
-	var result strings.Builder
-	for _, line := range strings.SplitAfter(sql, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if !strings.HasPrefix(trimmed, "--") {
-			result.WriteString(line)
+// initSQLiteDB configures a SQLite connection with standard PRAGMAs.
+func initSQLiteDB(db *sql.DB, cfg *config.Config, label string) error {
+	if cfg.DB.WALMode {
+		if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
+			return fmt.Errorf("session store: %s WAL: %w", label, err)
 		}
 	}
-	return result.String()
+	if _, err := db.Exec(fmt.Sprintf("PRAGMA busy_timeout=%d", int(cfg.DB.BusyTimeout.Milliseconds()))); err != nil {
+		return fmt.Errorf("session store: %s busy_timeout: %w", label, err)
+	}
+	if _, err := db.Exec("PRAGMA foreign_keys=ON"); err != nil {
+		return fmt.Errorf("session store: %s foreign_keys: %w", label, err)
+	}
+	if _, err := db.Exec("PRAGMA synchronous=NORMAL"); err != nil {
+		return fmt.Errorf("session store: %s synchronous: %w", label, err)
+	}
+	return nil
 }
 
 func (s *SQLiteStore) Upsert(ctx context.Context, info *SessionInfo) error {
@@ -142,22 +119,21 @@ func (s *SQLiteStore) Upsert(ctx context.Context, info *SessionInfo) error {
 	return err
 }
 
-func (s *SQLiteStore) Get(ctx context.Context, id string) (*SessionInfo, error) {
+type rowScanner interface{ Scan(dest ...any) error }
+
+func scanSession(sc rowScanner) (*SessionInfo, error) {
 	var info SessionInfo
 	var ctxJSON, platformKeyStr sql.NullString
 	var expiresAt, idleExpiresAt sql.NullTime
 	var createdAt, updatedAt time.Time
 
-	err := s.db.QueryRowContext(ctx, queries["store.get_session"], id).Scan(
+	err := sc.Scan(
 		&info.ID, &info.UserID, &info.OwnerID, &info.WorkerSessionID, &info.WorkerType, &info.State, &info.BotID,
 		&info.Platform, &platformKeyStr, &info.WorkDir,
-		&createdAt, &updatedAt, &expiresAt, &idleExpiresAt, &ctxJSON)
-
-	if err == sql.ErrNoRows {
-		return nil, ErrSessionNotFound
-	}
+		&createdAt, &updatedAt, &expiresAt, &idleExpiresAt, &ctxJSON,
+	)
 	if err != nil {
-		return nil, fmt.Errorf("session store: load: %w", err)
+		return nil, err
 	}
 
 	info.CreatedAt = createdAt
@@ -176,8 +152,18 @@ func (s *SQLiteStore) Get(ctx context.Context, id string) (*SessionInfo, error) 
 	if platformKeyStr.Valid && platformKeyStr.String != "" {
 		_ = json.Unmarshal([]byte(platformKeyStr.String), &info.PlatformKey)
 	}
-
 	return &info, nil
+}
+
+func (s *SQLiteStore) Get(ctx context.Context, id string) (*SessionInfo, error) {
+	info, err := scanSession(s.db.QueryRowContext(ctx, queries["store.get_session"], id))
+	if err == sql.ErrNoRows {
+		return nil, ErrSessionNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("session store: load: %w", err)
+	}
+	return info, nil
 }
 
 func (s *SQLiteStore) List(ctx context.Context, userID, platform string, limit, offset int) ([]*SessionInfo, error) {
@@ -192,31 +178,11 @@ func (s *SQLiteStore) List(ctx context.Context, userID, platform string, limit, 
 
 	var sessions []*SessionInfo
 	for rows.Next() {
-		var si SessionInfo
-		var ctxJSON, platformKeyStr sql.NullString
-		var expiresAt, idleExpiresAt sql.NullTime
-		var createdAt, updatedAt time.Time
-
-		err := rows.Scan(&si.ID, &si.UserID, &si.OwnerID, &si.WorkerSessionID, &si.WorkerType, &si.State,
-			&si.BotID, &si.Platform, &platformKeyStr, &si.WorkDir, &createdAt, &updatedAt, &expiresAt, &idleExpiresAt, &ctxJSON)
+		si, err := scanSession(rows)
 		if err != nil {
 			continue
 		}
-		si.CreatedAt = createdAt
-		si.UpdatedAt = updatedAt
-		if expiresAt.Valid {
-			si.ExpiresAt = &expiresAt.Time
-		}
-		if idleExpiresAt.Valid {
-			si.IdleExpiresAt = &idleExpiresAt.Time
-		}
-		if ctxJSON.Valid && ctxJSON.String != "" {
-			_ = json.Unmarshal([]byte(ctxJSON.String), &si.Context)
-		}
-		if platformKeyStr.Valid && platformKeyStr.String != "" {
-			_ = json.Unmarshal([]byte(platformKeyStr.String), &si.PlatformKey)
-		}
-		sessions = append(sessions, &si)
+		sessions = append(sessions, si)
 	}
 	return sessions, rows.Err()
 }

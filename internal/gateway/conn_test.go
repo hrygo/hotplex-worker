@@ -923,7 +923,7 @@ type mockBridgeSM struct {
 	mock.Mock
 }
 
-func (m *mockBridgeSM) CreateWithBot(ctx context.Context, id, userID, botID string, wt worker.WorkerType, allowedTools []string, platform string, platformKey map[string]string) (*session.SessionInfo, error) {
+func (m *mockBridgeSM) CreateWithBot(ctx context.Context, id, userID, botID string, wt worker.WorkerType, allowedTools []string, platform string, platformKey map[string]string, workDir string) (*session.SessionInfo, error) {
 	args := m.Called(ctx, id, userID, botID, wt, allowedTools)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)

@@ -319,7 +319,7 @@ func (tc workerCommandTestCase) run(t *testing.T) {
 	testCtx := &workerCommandTestCtx{}
 	tc.setup(testCtx)
 
-	_, err := mgr.Create(ctx, sid, "user1", worker.TypeClaudeCode, nil)
+	_, err := mgr.Create(ctx, sid, "user1", worker.TypeClaudeCode, nil, "")
 	require.NoError(t, err)
 
 	targetState := tc.state
