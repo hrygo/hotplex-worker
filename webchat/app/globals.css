@@ -1,43 +1,45 @@
 @import "tailwindcss";
 
 /* ============================================================
-   Design System — "Obsidian Gold" Premium Theme
+   Design System — "Obsidian" Premium Dark Theme
+   Spec: premium-ux-sdk-integration.md §4.1-4.2
    ============================================================ */
 :root {
-  /* Backgrounds — clean ivory & soft whites */
-  --bg-base:        #fcfcfc;
-  --bg-surface:     #ffffff;
-  --bg-elevated:    #f4f4f5;
-  --bg-glass:       rgba(255, 255, 255, 0.85);
-  --bg-hover:       rgba(0, 0, 0, 0.03);
-  --bg-input:       #fcfcfc;
+  /* Backgrounds — deep dark with subtle warmth */
+  --bg-base:        #09090b;
+  --bg-surface:     #0f0f12;
+  --bg-elevated:    #18181b;
+  --bg-glass:       rgba(255, 255, 255, 0.03);
+  --bg-hover:       rgba(255, 255, 255, 0.06);
+  --bg-input:       #0f0f12;
 
-  /* Borders — delicate & precise */
-  --border-subtle:  rgba(0, 0, 0, 0.04);
-  --border-default: rgba(0, 0, 0, 0.08);
-  --border-bright:  rgba(0, 0, 0, 0.12);
-  --border-gold:    rgba(217, 119, 6, 0.4);
+  /* Borders — glassmorphism edges */
+  --border-subtle:  rgba(255, 255, 255, 0.06);
+  --border-default: rgba(255, 255, 255, 0.10);
+  --border-bright:  rgba(255, 255, 255, 0.15);
+  --border-gold:    rgba(251, 191, 36, 0.4);
 
-  /* Accent tokens — Vibrant Gold / Amber */
-  --amber-light:    rgba(217, 119, 6, 0.06);
-  --amber-border:   rgba(217, 119, 6, 0.25);
-  --amber-glow:     rgba(217, 119, 6, 0.1);
-  
-  /* Text — Maximum legibility */
-  --text-primary:   #0a0a0a;
-  --text-secondary: #262626;
-  --text-muted:     #525252;
-  --text-faint:     #737373;
+  /* Accent tokens — Amber glow */
+  --amber-light:    rgba(251, 191, 36, 0.08);
+  --amber-border:   rgba(251, 191, 36, 0.25);
+  --amber-glow:     rgba(251, 191, 36, 0.12);
 
-  /* Brand Colors */
-  --accent-gold:        #d97706;
-  --accent-gold-bright: #f59e0b;
-  --accent-emerald:     #059669;
-  --accent-coral:       #e11d48;
-  --accent-violet:      #7c3aed;
+  /* Text — high contrast on dark */
+  --text-primary:   #fafafa;
+  --text-secondary: #d4d4d8;
+  --text-muted:     #a1a1aa;
+  --text-faint:     #71717a;
 
-  /* Typography — Using Inter for superior legibility */
-  --font-display: 'Syne', system-ui, sans-serif;
+  /* Brand Colors — neon accents for dark bg */
+  --accent-gold:        #fbbf24;
+  --accent-gold-bright: #fcd34d;
+  --accent-emerald:     #34d399;
+  --accent-coral:       #f43f5e;
+  --accent-violet:      #a78bfa;
+  --accent-blue:        #3b82f6;
+
+  /* Typography */
+  --font-display: 'Outfit', system-ui, sans-serif;
   --font-body:    'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-mono:    'JetBrains Mono', 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
@@ -50,11 +52,11 @@
   --radius-2xl:  32px;
   --radius-full: 9999px;
 
-  /* Shadows — soft & airy */
-  --shadow-card:     0 2px 8px rgba(0,0,0,0.04), 0 8px 16px -4px rgba(0,0,0,0.02);
-  --shadow-hover:    0 12px 24px rgba(0,0,0,0.06), 0 24px 48px -12px rgba(0,0,0,0.04);
-  --shadow-elevated: 0 32px 64px -16px rgba(0,0,0,0.1);
-  --shadow-gold:     0 8px 30px rgba(217, 119, 6, 0.12);
+  /* Shadows — colored shadows for dark surfaces */
+  --shadow-card:     0 2px 8px rgba(0,0,0,0.4), 0 8px 16px -4px rgba(0,0,0,0.3);
+  --shadow-hover:    0 12px 24px rgba(0,0,0,0.5), 0 24px 48px -12px rgba(0,0,0,0.4);
+  --shadow-elevated: 0 8px 32px rgba(0,0,0,0.5);
+  --shadow-gold:     0 8px 30px rgba(251, 191, 36, 0.08);
 }
 
 /* ============================================================
@@ -79,24 +81,25 @@ body {
   margin: 0;
 }
 
-::selection { 
-  background: rgba(217, 119, 6, 0.3); 
-  color: #fff; 
+::selection {
+  background: rgba(251, 191, 36, 0.3);
+  color: #fff;
 }
 
 /* ============================================================
-   Background Effects
+   Background Effects — Mesh Gradient + Noise
    ============================================================ */
 .bg-mesh {
   position: fixed;
   inset: 0;
   z-index: -1;
   background-color: var(--bg-base);
-  background-image: 
-    radial-gradient(at 0% 0%, rgba(217, 119, 6, 0.02) 0px, transparent 40%),
-    radial-gradient(at 100% 0%, rgba(124, 58, 237, 0.01) 0px, transparent 40%),
-    radial-gradient(at 100% 100%, rgba(5, 150, 105, 0.01) 0px, transparent 40%),
-    radial-gradient(at 0% 100%, rgba(225, 29, 72, 0.01) 0px, transparent 40%);
+  background-image:
+    radial-gradient(ellipse at top, rgba(49, 46, 129, 0.15) 0px, transparent 50%),
+    radial-gradient(at 0% 0%, rgba(251, 191, 36, 0.04) 0px, transparent 40%),
+    radial-gradient(at 100% 0%, rgba(167, 139, 250, 0.05) 0px, transparent 40%),
+    radial-gradient(at 100% 100%, rgba(52, 211, 153, 0.04) 0px, transparent 40%),
+    radial-gradient(at 0% 100%, rgba(244, 63, 94, 0.03) 0px, transparent 40%);
   filter: blur(80px);
 }
 
@@ -104,18 +107,18 @@ body {
   position: fixed;
   inset: 0;
   z-index: -1;
-  opacity: 0.015;
+  opacity: 0.018;
   pointer-events: none;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
 /* ============================================================
-   Scrollbar — Sophisticated Thin
+   Scrollbar — subtle on dark
    ============================================================ */
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { 
-  background: rgba(255, 255, 255, 0.08); 
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
   border-radius: var(--radius-full);
   transition: background 0.2s ease;
 }
@@ -165,8 +168,19 @@ body {
   50% { border-color: var(--border-gold); }
 }
 
-.animate-fade-in-up { 
-  animation: fadeInUp 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both; 
+@keyframes pulseGold {
+  0% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.4); }
+  70% { box-shadow: 0 0 0 10px rgba(251, 191, 36, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0); }
+}
+
+@keyframes streamingCursor {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
 .animate-shimmer {
@@ -181,6 +195,19 @@ body {
 
 .animate-pulse-subtle {
   animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.animate-pulse-gold {
+  animation: pulseGold 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Streaming cursor — blinking block */
+.streaming-cursor::after {
+  content: '▍';
+  animation: streamingCursor 0.8s steps(2) infinite;
+  color: var(--accent-gold);
+  font-weight: 400;
+  margin-left: 1px;
 }
 
 /* ============================================================
@@ -198,7 +225,7 @@ body {
   height: 64px;
   display: flex;
   align-items: center;
-  background: rgba(5, 5, 5, 0.6);
+  background: rgba(15, 15, 18, 0.6);
   backdrop-filter: blur(24px) saturate(180%);
   border-bottom: 1px solid var(--border-subtle);
   z-index: 100;
@@ -219,7 +246,7 @@ body {
   overflow-y: auto;
   overflow-x: hidden;
   padding-top: 2rem;
-  padding-bottom: 8rem; /* Space for fixed composer */
+  padding-bottom: 8rem;
 }
 
 .thread-content {
@@ -235,8 +262,8 @@ body {
   left: 50%;
   transform: translateX(-50%);
   padding: 0.5rem 1rem;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-bright);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-full);
   color: var(--text-secondary);
   font-size: 0.75rem;
@@ -244,15 +271,15 @@ body {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
   cursor: pointer;
   z-index: 60;
   transition: all 0.2s ease;
-  backdrop-filter: blur(8px);
+  backdrop-filter: blur(16px);
 }
 
 .scroll-bottom-btn:hover {
-  background: var(--bg-elevated);
+  background: var(--bg-hover);
   color: var(--text-primary);
   transform: translateX(-50%) translateY(-2px);
   border-color: var(--border-gold);
@@ -272,14 +299,13 @@ body {
   max-width: 85%;
   padding: 0.875rem 1.25rem;
   border-radius: var(--radius-lg) var(--radius-lg) var(--radius-xs) var(--radius-lg);
-  background: #fdf2f2; /* Subtle warm tint for user */
-  background: linear-gradient(135deg, #fff 0%, #fafafa 100%);
+  background: var(--bg-elevated);
   border: 1px solid var(--border-default);
   color: var(--text-primary);
   font-size: 0.9375rem;
   line-height: 1.6;
   letter-spacing: -0.011em;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
   position: relative;
 }
 
@@ -299,7 +325,7 @@ body {
 }
 
 /* ============================================================
-   Composer — Fixed Floating
+   Composer — Glassmorphism Floating
    ============================================================ */
 .composer-wrapper {
   position: absolute;
@@ -320,9 +346,9 @@ body {
 
 .composer-root {
   background: var(--bg-surface);
-  border: 1px solid var(--border-bright);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
-  box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
   transition: all 0.3s cubic-bezier(0.2, 0, 0, 1);
   display: flex;
   flex-direction: column;
@@ -337,7 +363,7 @@ body {
   inset: 0;
   border-radius: inherit;
   padding: 1px;
-  background: linear-gradient(135deg, rgba(217, 119, 6, 0.2), transparent, rgba(5, 150, 105, 0.1));
+  background: linear-gradient(135deg, rgba(251, 191, 36, 0.2), transparent, rgba(52, 211, 153, 0.1));
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
@@ -349,8 +375,12 @@ body {
 
 .composer-root:focus-within {
   border-color: var(--amber-border);
-  box-shadow: 0 0 0 4px rgba(217, 119, 6, 0.05), 0 20px 40px rgba(0,0,0,0.4);
+  box-shadow: 0 0 0 4px rgba(251, 191, 36, 0.06), 0 12px 40px rgba(0,0,0,0.5);
   transform: translateY(-2px);
+}
+
+.composer-root:focus-within::after {
+  opacity: 1;
 }
 
 .composer-input-row {
@@ -392,21 +422,36 @@ body {
 
 .btn-primary {
   background: var(--accent-gold);
-  color: #fff;
+  color: #000;
 }
 
 .btn-primary:hover:not(:disabled) {
   background: var(--accent-gold-bright);
   transform: scale(1.05);
-  box-shadow: 0 0 20px rgba(217, 119, 6, 0.3);
+  box-shadow: 0 0 20px rgba(251, 191, 36, 0.25);
 }
 
 .btn-primary:active:not(:disabled) { transform: scale(0.95); }
 .btn-primary:disabled { opacity: 0.3; cursor: not-allowed; }
 
 /* ============================================================
-   Components
+   Glass Panels — Glassmorphism System
    ============================================================ */
+.glass {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.glass-dark {
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(24px) saturate(200%);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  box-shadow:
+    0 4px 16px rgba(0,0,0,0.3),
+    inset 0 0 0 1px rgba(255,255,255,0.05);
+}
+
 .card-glass {
   background: rgba(255, 255, 255, 0.03);
   backdrop-filter: blur(12px);
@@ -416,7 +461,7 @@ body {
 
 .suggestion-card {
   padding: 0.75rem 1rem;
-  background: var(--bg-surface);
+  background: var(--bg-elevated);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
   color: var(--text-secondary);
@@ -427,18 +472,18 @@ body {
 }
 
 .suggestion-card:hover {
-  background: var(--bg-elevated);
+  background: var(--bg-hover);
   border-color: var(--border-gold);
   color: var(--text-primary);
   transform: translateY(-2px);
 }
 
 /* ============================================================
-   Reasoning / Tools
+   Reasoning / Tools — Dark themed
    ============================================================ */
 .reasoning-block {
-  background: #fffbeb; /* Light amber background */
-  border: 1px solid var(--amber-border);
+  background: rgba(251, 191, 36, 0.05);
+  border: 1px solid rgba(251, 191, 36, 0.12);
   border-radius: var(--radius-sm);
   margin-bottom: 1rem;
   overflow: hidden;
@@ -457,8 +502,8 @@ body {
 }
 
 .tool-call-block {
-  background: #f0fdf4; /* Light emerald background */
-  border: 1px solid rgba(5, 150, 105, 0.15);
+  background: rgba(52, 211, 153, 0.04);
+  border: 1px solid rgba(52, 211, 153, 0.12);
   border-radius: var(--radius-sm);
   margin-bottom: 1rem;
   overflow: hidden;
@@ -475,10 +520,10 @@ body {
 }
 
 /* ============================================================
-   Markdown Styling
+   Markdown Styling — Dark optimized
    ============================================================ */
 .prose pre {
-  background: #000 !important;
+  background: #0c0c0f !important;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
   margin: 1.25rem 0;
@@ -491,14 +536,15 @@ body {
 }
 
 .prose :not(pre) > code {
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(251, 191, 36, 0.08);
   padding: 0.2em 0.4em;
   border-radius: var(--radius-xs);
   color: var(--accent-gold-bright);
+  border: 1px solid rgba(251, 191, 36, 0.12);
 }
 
 /* ============================================================
-   Session Panel
+   Session Panel — Dark glass sidebar
    ============================================================ */
 .side-panel {
   position: fixed;
@@ -511,7 +557,7 @@ body {
   z-index: 200;
   display: flex;
   flex-direction: column;
-  box-shadow: -20px 0 60px rgba(0,0,0,0.05);
+  box-shadow: -20px 0 60px rgba(0,0,0,0.4);
   animation: slideIn 0.3s cubic-bezier(0.2, 1, 0.2, 1);
 }
 
@@ -545,26 +591,10 @@ body {
 .font-mono { font-family: var(--font-mono); }
 
 .text-gradient-gold {
-  background: linear-gradient(135deg, #fbbf24 0%, #d97706 100%);
+  background: linear-gradient(135deg, #fcd34d 0%, #fbbf24 50%, #f59e0b 100%);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
-}
-
-/* Utilities */
-.glass {
-  background: rgba(255, 255, 255, 0.03);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.glass-dark {
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(32px) saturate(200%);
-  border: 1px solid rgba(255, 255, 255, 0.4);
-  box-shadow: 
-    0 4px 12px rgba(0,0,0,0.05),
-    inset 0 0 0 1px rgba(255,255,255,0.2);
 }
 
 .panel-icon-btn {
@@ -572,11 +602,11 @@ body {
 }
 .panel-icon-btn:hover {
   background: var(--amber-light);
-  color: var(--accent-amber);
+  color: var(--accent-gold);
 }
 .panel-icon-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-/* Delete button — CSS-only hover */
+/* Delete button */
 .session-delete-btn {
   opacity: 0;
   display: flex;
@@ -592,20 +622,20 @@ body {
 }
 .session-row:hover .session-delete-btn { opacity: 1; }
 .session-delete-btn:hover {
-  background: rgba(251,113,133,0.08);
+  background: rgba(244, 63, 94, 0.1);
   color: var(--accent-coral);
 }
 .session-delete-confirm {
   padding: 4px 10px;
   font-size: 11px;
   border-radius: var(--radius-xs);
-  border: 1px solid rgba(251,113,133,0.2);
-  background: rgba(251,113,133,0.08);
+  border: 1px solid rgba(244, 63, 94, 0.2);
+  background: rgba(244, 63, 94, 0.1);
   color: var(--accent-coral);
   cursor: pointer;
   transition: all 0.12s ease;
 }
-.session-delete-confirm:hover { background: rgba(251,113,133,0.15); }
+.session-delete-confirm:hover { background: rgba(244, 63, 94, 0.2); }
 .session-delete-cancel {
   padding: 4px 10px;
   font-size: 11px;
@@ -653,7 +683,9 @@ body {
   animation: skeletonPulse 1.8s ease-in-out infinite;
 }
 
-/* Mobile responsiveness */
+/* ============================================================
+   Mobile responsiveness
+   ============================================================ */
 @media (max-width: 768px) {
   .header-inner { padding: 0 1rem; }
   .thread-viewport { padding-top: 1rem; }
@@ -661,7 +693,7 @@ body {
   .composer-wrapper { padding: 1rem; }
   .composer-root { border-radius: var(--radius-md); }
   .side-panel { width: 100%; }
-  
+
   .msg-assistant { gap: 0.75rem; margin-bottom: 2rem; }
   .msg-assistant-body { font-size: 0.875rem; }
   .msg-user-bubble { max-width: 90%; font-size: 0.875rem; }
@@ -671,13 +703,4 @@ body {
   .app-header h1 { font-size: 0.75rem; }
   .welcome-title { font-size: 1.5rem; }
   .suggestion-card { padding: 0.625rem; font-size: 0.75rem; }
-}
-@keyframes pulse-gold {
-  0% { box-shadow: 0 0 0 0 rgba(217, 119, 6, 0.4); }
-  70% { box-shadow: 0 0 0 10px rgba(217, 119, 6, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(217, 119, 6, 0); }
-}
-
-.animate-pulse-gold {
-  animation: pulse-gold 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }

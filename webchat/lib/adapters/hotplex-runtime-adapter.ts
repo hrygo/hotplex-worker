@@ -5,7 +5,7 @@
  * This is the core integration layer that bridges the two systems.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ExternalStoreAdapter, ThreadMessageLike, AppendMessage } from '@assistant-ui/react';
 import { BrowserHotPlexClient } from '@/lib/ai-sdk-transport';
 import type { InitConfig } from '@/lib/ai-sdk-transport/client/types';
@@ -502,11 +502,18 @@ export function useHotPlexRuntime({
     setIsRunning(false);
   }, []);
 
+  // Memoized thread messages conversion (spec §7.1)
+  const threadMessages = useMemo(
+    () => messages.map((m, i) => convertToThreadMessage(m, i)),
+    [messages]
+  );
+
   // Return ExternalStoreAdapter
   return {
     // State
     isRunning,
     messages,
+    threadMessages,
     suggestions,
     setMessages: (messages: readonly HotPlexMessage[]) => {
       setMessages([...messages]);
@@ -519,9 +526,12 @@ export function useHotPlexRuntime({
     onNew: handleNew,
     onCancel: handleCancel,
 
-    // Capabilities
+    // Capabilities — preparing for Phase 3 branching/editing
     unstable_capabilities: {
       copy: true,
+      // TODO: Phase 3 — enable when adapter supports branching
+      // edit: true,
+      // branching: true,
     },
   } as ExternalStoreAdapter<HotPlexMessage>;
 }

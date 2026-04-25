@@ -26,9 +26,9 @@ function SessionRow({
       onClick={onSelect}
       onKeyDown={(e) => e.key === 'Enter' && onSelect()}
       className={`relative group px-3 py-3 rounded-xl transition-all duration-300 cursor-pointer border ${
-        isActive 
-          ? 'bg-white border-[var(--accent-gold)] shadow-[0_12px_24px_rgba(217,119,6,0.12)] ring-1 ring-[var(--accent-gold)] ring-opacity-10' 
-          : 'bg-transparent border-transparent hover:bg-[var(--bg-elevated)]'
+        isActive
+          ? 'bg-[var(--amber-light)] border-[var(--amber-border)] shadow-[0_8px_24px_rgba(251,191,36,0.08)]'
+          : 'bg-transparent border-transparent hover:bg-[var(--bg-hover)]'
       }`}
     >
       {isActive && (
@@ -77,7 +77,7 @@ function SessionRow({
           ) : (
             <button
               onClick={(e) => { e.stopPropagation(); setConfirmDelete(true); }}
-              className="opacity-0 group-hover:opacity-100 p-1.5 text-[var(--text-faint)] hover:text-[var(--accent-coral)] hover:bg-white rounded-lg transition-all"
+              className="opacity-0 group-hover:opacity-100 p-1.5 text-[var(--text-faint)] hover:text-[var(--accent-coral)] hover:bg-[var(--bg-hover)] rounded-lg transition-all"
               title="Delete session"
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -94,7 +94,7 @@ function SessionRow({
 function EmptyState({ onCreate }: { onCreate: () => void }) {
   return (
     <div className="flex flex-col items-center justify-center py-16 px-6 text-center animate-fade-in">
-      <div className="w-16 h-16 rounded-2xl bg-[var(--bg-elevated)] border border-[var(--border-subtle)] flex items-center justify-center mb-6 shadow-xl">
+      <div className="w-16 h-16 rounded-2xl glass-dark flex items-center justify-center mb-6">
         <BrandIcon size={48} className="opacity-40" />
       </div>
       <p className="text-sm font-medium mb-1 text-[var(--text-primary)]">No sessions yet</p>
@@ -103,7 +103,7 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
       </p>
       <button 
         onClick={onCreate} 
-        className="px-6 py-2.5 rounded-full bg-[var(--accent-gold)] text-white text-sm font-bold shadow-[0_8px_20px_rgba(217,119,6,0.2)] hover:scale-105 active:scale-95 transition-all"
+        className="px-6 py-2.5 rounded-full bg-[var(--accent-gold)] text-black text-sm font-bold shadow-[0_8px_20px_rgba(251,191,36,0.15)] hover:scale-105 active:scale-95 transition-all"
       >
         New Session
       </button>
@@ -139,7 +139,7 @@ export function SessionPanel({
       {/* Sidebar Header */}
       <div className="px-5 py-6">
         <div className="flex items-center gap-3 mb-6">
-          <div className="w-9 h-9 rounded-xl bg-white shadow-sm border border-[var(--border-default)] flex items-center justify-center">
+          <div className="w-9 h-9 rounded-xl glass-dark flex items-center justify-center">
             <BrandIcon size={28} />
           </div>
           <div>
@@ -152,7 +152,7 @@ export function SessionPanel({
         <button
           onClick={() => onCreate()}
           disabled={isLoading}
-          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-[var(--text-primary)] text-white hover:bg-[#000] active:scale-95 transition-all shadow-sm font-bold text-xs disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-[var(--accent-gold)] text-black hover:bg-[var(--accent-gold-bright)] active:scale-95 transition-all shadow-[0_4px_16px_rgba(251,191,36,0.15)] font-bold text-xs disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {isLoading ? (
             <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -176,7 +176,7 @@ export function SessionPanel({
             placeholder="Search history..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-[var(--bg-elevated)] border border-transparent rounded-xl pl-9 pr-4 py-2 text-xs text-[var(--text-primary)] focus:bg-white focus:border-[var(--border-bright)] transition-all placeholder:text-[var(--text-faint)]"
+            className="w-full bg-[var(--bg-elevated)] border border-transparent rounded-xl pl-9 pr-4 py-2 text-xs text-[var(--text-primary)] focus:bg-[var(--bg-surface)] focus:border-[var(--border-bright)] transition-all placeholder:text-[var(--text-faint)]"
           />
         </div>
       </div>

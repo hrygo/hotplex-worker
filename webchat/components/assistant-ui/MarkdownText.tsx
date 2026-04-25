@@ -25,9 +25,9 @@ function CodeBlock({ raw, lang, highlighted }: { raw: string; lang: string; high
   };
 
   return (
-    <div className="relative group/code my-6 rounded-[var(--radius-lg)] overflow-hidden border border-[var(--border-default)] bg-black shadow-2xl">
-      <div className="flex items-center justify-between px-4 py-2 bg-[var(--bg-elevated)] border-bottom border-[var(--border-subtle)]">
-        <span className="text-[10px] font-mono font-bold tracking-widest text-[var(--text-muted)] uppercase">
+    <div className="relative group/code my-6 rounded-[var(--radius-lg)] overflow-hidden border border-[var(--border-default)] bg-[#0c0c0f] shadow-[0_8px_32px_rgba(0,0,0,0.5)]">
+      <div className="flex items-center justify-between px-4 py-2 bg-[var(--bg-surface)] border-b border-[var(--border-subtle)]">
+        <span className="text-[10px] font-mono font-bold tracking-widest text-[var(--text-faint)] uppercase">
           {lang || "code"}
         </span>
         <button
