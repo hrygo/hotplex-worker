@@ -503,6 +503,7 @@ function Composer({ skills }: { skills?: string[] }) {
   const composingRef = useRef(false);
   const aui = useAui();
   const text = useAuiState((s) => s.composer.text);
+  const isRunning = useAuiState((s) => s.thread.isRunning);
   const [localText, setLocalText] = useState(text || "");
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -583,16 +584,18 @@ function Composer({ skills }: { skills?: string[] }) {
           />
 
           <div className="flex items-center gap-2">
-            <ComposerPrimitive.Cancel
-              className="btn-icon text-[var(--accent-coral)] hover:bg-[rgba(244,63,94,0.1)]"
-              title="Stop"
-            >
-              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                <rect x="6" y="6" width="12" height="12" rx="2" />
-              </svg>
-            </ComposerPrimitive.Cancel>
+            {isRunning && (
+              <ComposerPrimitive.Cancel
+                className="btn-icon text-[var(--accent-coral)] hover:bg-[rgba(244,63,94,0.1)]"
+                title="Stop"
+              >
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                  <rect x="6" y="6" width="12" height="12" rx="2" />
+                </svg>
+              </ComposerPrimitive.Cancel>
+            )}
 
-            <ComposerPrimitive.Send className="btn-icon btn-primary" disabled>
+            <ComposerPrimitive.Send className="btn-icon btn-primary">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 12h14M12 5l7 7-7 7" />
               </svg>

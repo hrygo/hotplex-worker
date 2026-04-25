@@ -636,6 +636,28 @@ func (m *Manager) ListActive() []*SessionInfo {
 	return sessions
 }
 
+// RepairRunningSessions transitions all sessions stuck in RUNNING state to TERMINATED.
+// Called at gateway startup to repair sessions orphaned by a previous crash/restart.
+func (m *Manager) RepairRunningSessions(ctx context.Context) (int, error) {
+	ids, err := m.store.GetSessionsByState(ctx, events.StateRunning)
+	if err != nil {
+		return 0, fmt.Errorf("repair running sessions: %w", err)
+	}
+	if len(ids) == 0 {
+		return 0, nil
+	}
+
+	repaired := 0
+	for _, id := range ids {
+		if err := m.TransitionWithReason(ctx, id, events.StateTerminated, "gateway_restart"); err != nil {
+			m.log.Warn("session: repair running session failed", "session_id", id, "err", err)
+		} else {
+			repaired++
+		}
+	}
+	return repaired, nil
+}
+
 // Stats returns the active worker pool utilization.
 func (m *Manager) Stats() (totalWorkers, maxWorkers, uniqueUsers int) {
 	total, max, users := m.pool.Stats()

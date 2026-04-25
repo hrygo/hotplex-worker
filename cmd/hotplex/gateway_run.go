@@ -156,6 +156,17 @@ func runGateway(configPath string, devMode bool) (err error) {
 		log.Info("gateway: session terminated", "session_id", sessionID)
 	}
 
+	// Repair sessions orphaned by previous gateway crash/restart.
+	// Sessions stuck in RUNNING state have no live worker — their processes
+	// were killed by CleanupOrphans above. Transition them to TERMINATED so
+	// clients get a clean reconnect instead of crash-looping on resume.
+	repaired, repairErr := sm.RepairRunningSessions(ctx)
+	if repairErr != nil {
+		log.Warn("gateway: session state repair failed", "err", repairErr)
+	} else if repaired > 0 {
+		log.Info("gateway: repaired orphaned sessions", "count", repaired)
+	}
+
 	hub := gateway.NewHub(log, cfgStore)
 
 	hub.LogHandler = func(level, msg, sessionID string) {

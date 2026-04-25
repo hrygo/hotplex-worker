@@ -428,7 +428,7 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 		// Skip for resumed workers with no output — these are resume failures
 		// (e.g., "No conversation found"), not transient LLM errors. The resume
 		// fallback mechanism handles these cases with its own retry logic.
-		if env.Event.Type == events.Done && b.retryCtrl != nil && !(opts.resumed && turnText.Len() == 0) {
+		if env.Event.Type == events.Done && b.retryCtrl != nil && (!opts.resumed || turnText.Len() > 0) {
 			if shouldRetry, attempt := b.retryCtrl.ShouldRetry(sessionID, turnText.String(), lastError); shouldRetry {
 				// Suppress buffered error — user sees the notify message instead of raw LLM error.
 				pendingError = nil

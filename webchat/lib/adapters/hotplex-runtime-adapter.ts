@@ -262,12 +262,13 @@ export function useHotPlexRuntime({
     };
 
     const handleMessage = (data: MessageData, env: Envelope) => {
+      const role: 'user' | 'assistant' = data?.role === 'user' ? 'user' : 'assistant';
       setMessages((prev) => [
         ...prev,
         {
           id: data.id || env.id,
-          role: (data.role as 'user' | 'assistant') || 'assistant',
-          parts: [{ type: 'text', text: data.content }],
+          role,
+          parts: [{ type: 'text', text: data?.content || '' }],
           createdAt: new Date(env.timestamp || Date.now()),
           status: 'complete',
         },
@@ -345,9 +346,17 @@ export function useHotPlexRuntime({
     const handleError = (data: ErrorData, env: Envelope) => {
       const isBusy = (data?.code as string) === 'SESSION_BUSY';
       const isResumeRetry = (data?.code as string) === 'RESUME_RETRY';
-      
+      const isShutdown = (data?.message || '').includes('during shutdown');
+
       // SESSION_BUSY is a transient state handled internally by auto-retry, so do not show it to the user and don't log as error.
       if (isBusy) {
+        return;
+      }
+
+      // Shutdown errors are transient — gateway is restarting. Don't pollute the
+      // chat with error messages; the client will auto-reconnect.
+      if (isShutdown) {
+        console.log('HotPlexRuntimeAdapter: gateway shutdown detected, waiting for reconnect');
         return;
       }
 
@@ -615,8 +624,12 @@ export function useHotPlexRuntime({
   }, []);
 
   // Memoized thread messages conversion (spec §7.1)
+  // Filter out malformed messages and guard against undefined roles to prevent
+  // assistant-ui's internal converter from crashing with "Unknown message role".
   const threadMessages = useMemo(
-    () => messages.map((m) => convertToThreadMessage(m)),
+    () => messages
+      .filter((m): m is HotPlexMessage => !!m && (m.role === 'user' || m.role === 'assistant'))
+      .map((m) => convertToThreadMessage(m)),
     [messages]
   );
 

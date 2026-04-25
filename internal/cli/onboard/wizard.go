@@ -680,12 +680,13 @@ func stepAgentConfig() (StepResult, []string) {
 	files := []struct {
 		name    string
 		content string
-	}{
-		{"SOUL.md", defaultSoulTemplate},
-		{"AGENTS.md", defaultAgentsTemplate},
-		{"SKILLS.md", defaultSkillsTemplate},
-		{"USER.md", defaultUserTemplate},
-		{"MEMORY.md", defaultMemoryTemplate},
+	}{}
+
+	for _, t := range DefaultTemplates() {
+		files = append(files, struct {
+			name    string
+			content string
+		}{t.Name, t.Content})
 	}
 
 	var created []string

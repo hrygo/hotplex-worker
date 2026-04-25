@@ -498,6 +498,11 @@ func (m *mockSessionStoreForBotID) DeletePhysical(ctx context.Context, id string
 	return args.Error(0)
 }
 
+func (m *mockSessionStoreForBotID) GetSessionsByState(ctx context.Context, state events.SessionState) ([]string, error) {
+	args := m.Called(ctx, state)
+	return args.Get(0).([]string), args.Error(1)
+}
+
 func (m *mockSessionStoreForBotID) Close() error {
 	args := m.Called()
 	return args.Error(0)
@@ -590,6 +595,8 @@ func TestBotIDIsolation_CreateMismatch(t *testing.T) {
 	store1 := new(mockSessionStoreForBotID)
 	store1.Test(t)
 	store1.On("Close").Return(nil)
+	// Get for raw client session ID (env.SessionID pre-check) returns not-found.
+	store1.On("Get", mock.Anything, sessionIDConst).Return(nil, session.ErrSessionNotFound)
 	// Get returns not-found to trigger Create.
 	store1.On("Get", mock.Anything, derivedSID).Return(nil, session.ErrSessionNotFound)
 	// Upsert for Create + Transition to RUNNING.
@@ -653,6 +660,7 @@ func TestBotIDIsolation_CreateMismatch(t *testing.T) {
 		WorkerType:   worker.WorkerType(workerType),
 		AllowedTools: []string{},
 	}
+	store2.On("Get", mock.Anything, sessionIDConst).Return(nil, session.ErrSessionNotFound)
 	store2.On("Get", mock.Anything, derivedSID).Return(existingSession, nil)
 	// Transition to RUNNING (called by ResumeSession for StateIdle→RUNNING).
 	store2.On("Transition", mock.Anything, derivedSID, events.StateRunning).Return(nil)
@@ -731,6 +739,7 @@ func TestBotIDIsolation_MatchAllowed(t *testing.T) {
 		State:      events.StateIdle,
 		WorkerType: worker.WorkerType(workerType),
 	}
+	store.On("Get", mock.Anything, sessionIDConst).Return(nil, session.ErrSessionNotFound)
 	store.On("Get", mock.Anything, derivedSID).Return(existingSession, nil)
 
 	cfg := config.Default()
@@ -792,6 +801,7 @@ func TestBotIDIsolation_EmptyBotIDAllowed(t *testing.T) {
 	store.Test(t)
 	store.On("Close").Return(nil).Maybe()
 	// Session does not exist → create new.
+	store.On("Get", mock.Anything, sessionIDConst).Return(nil, session.ErrSessionNotFound)
 	store.On("Get", mock.Anything, derivedSID).Return(nil, session.ErrSessionNotFound)
 	store.On("Upsert", mock.Anything, mock.AnythingOfType("*session.SessionInfo")).Return(nil)
 
@@ -862,6 +872,7 @@ func TestBotIDIsolation_NewSessionStoresBotID(t *testing.T) {
 	store.Test(t)
 	store.On("Close").Return(nil).Maybe()
 	// Session does not exist on Get → triggers CreateWithBot.
+	store.On("Get", mock.Anything, sessionIDConst).Return(nil, session.ErrSessionNotFound)
 	store.On("Get", mock.Anything, derivedSID).Return(nil, session.ErrSessionNotFound)
 	// Upsert is called twice: once for CreateWithBot, once for Transition(CREATED→RUNNING).
 	// Both must carry the correct botID.

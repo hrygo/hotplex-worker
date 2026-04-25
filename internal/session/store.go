@@ -29,6 +29,7 @@ type Store interface {
 	GetExpiredIdle(ctx context.Context, now time.Time) ([]string, error)
 	DeleteTerminated(ctx context.Context, cutoff time.Time) error
 	DeletePhysical(ctx context.Context, id string) error
+	GetSessionsByState(ctx context.Context, state events.SessionState) ([]string, error)
 	Close() error
 }
 
@@ -234,6 +235,23 @@ func (s *SQLiteStore) DeletePhysical(ctx context.Context, id string) error {
 
 func (s *SQLiteStore) Close() error {
 	return s.db.Close()
+}
+
+func (s *SQLiteStore) GetSessionsByState(ctx context.Context, state events.SessionState) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, queries["store.get_sessions_by_state"], string(state))
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err == nil {
+			ids = append(ids, id)
+		}
+	}
+	return ids, rows.Err()
 }
 
 func (s *SQLiteStore) AppendAudit(ctx context.Context, action, actorID, sessionID string, details map[string]any) error {
