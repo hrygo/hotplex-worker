@@ -69,7 +69,7 @@ export function NewSessionModal({ onConfirm, onCancel }: NewSessionModalProps) {
 
       {/* Modal */}
       <motion.div
-        className="relative w-full max-w-lg mx-4 rounded-[var(--radius-xl)] border border-[var(--border-default)] bg-[var(--bg-surface)] backdrop-blur-2xl shadow-[0_32px_64px_rgba(0,0,0,0.5)] overflow-hidden"
+        className="relative w-full max-w-lg mx-4 rounded-[var(--radius-xl)] border border-[var(--border-default)] bg-[var(--bg-surface)] backdrop-blur-2xl shadow-[0_32px_64px_rgba(0,0,0,0.5)]"
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         transition={{ type: "spring" as const, stiffness: 300, damping: 28 }}
