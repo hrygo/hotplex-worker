@@ -20,6 +20,9 @@ related:
 > 实现包: `internal/agentconfig/` — 实际配置结构比设计简化：`AgentConfig{Enabled, ConfigDir}`，
 > 大小限制调整为 12K/文件、60K/总计，平台变体采用追加模式（非替换）。
 > Phase 5（动态能力）待后续版本实现。
+> ⚠️ **upstream-blocked**: 子 Agent 裁剪受 CC 上游限制，详见 §6.5.1。
+> 🔄 **B+C 合并**: CC 的 C 通道已合并到 B 通道 (`--append-system-prompt`)，不再使用文件注入。
+> 详见 §5.4。两个 Worker 现在都用 system-level 注入，消除了 SSOT 双写和清理问题。
 
 > 基于 [[Claude-Code-Context-Analysis]] + [[OpenCode-Server-Context-Analysis]] 双研究报告 + OpenClaw SOUL.md/AGENTS.md/USER.md 体系分析，
 > 设计 HotPlex 如何通过统一设定文件同时控制 Claude Code 和 OpenCode Server 的行为框架。
@@ -106,7 +109,7 @@ OpenClaw System Prompt 结构:
 | **注入位置** | system prompt 内，`# Project Context` section | 高优先级，直接塑造模型行为 |
 | **SOUL.md 特殊处理** | 额外注入 "embody its persona and tone" 指令 | 人格指令得到强化 |
 | **缓存分界线** | 静态文件在 boundary 上方，HEARTBEAT.md 在下方 | 稳定内容可缓存，动态内容不破坏缓存 |
-| **子 Agent 裁剪** | subagent 只加载 AGENTS.md + TOOLS.md + SOUL.md + IDENTITY.md + USER.md | 节省 token，避免子 agent 看到 MEMORY |
+| **子 Agent 裁剪** | subagent 只加载 AGENTS.md + TOOLS.md + SOUL.md + IDENTITY.md + USER.md | 节省 token，避免子 agent 看到 MEMORY (**HotPlex 不可复用** — CC 子 Agent 继承全部上下文) |
 | **文件大小限制** | 单文件 4K chars，总计 20K chars | 防止 context 爆炸 |
 | **MEMORY 隔离** | MEMORY.md 仅主会话加载，不在群聊/共享会话加载 | 防止隐私泄漏 |
 | **排序机制** | `CONTEXT_FILE_ORDER` Map 定义数字优先级 | 确定性顺序，避免随机性 |
@@ -560,6 +563,31 @@ func CleanupCRules(workdir string) error {
 }
 ```
 
+### 5.4 B+C 通道合并 (2026-04-25 实施决策)
+
+> **决策**: CC 的 C 通道（USER.md, MEMORY.md）不再通过 `.claude/rules/` 文件注入，
+> 而是合并到 B 通道 (`--append-system-prompt`) 中，与 SOUL/AGENTS/SKILLS 一起注入 S3。
+> 此决策使 CC 与 OCS 的注入方式统一（均为 system-level），消除了以下问题：
+>
+> 1. **SSOT 双重写入** — 文件注入创建了 `~/.hotplex/agent-configs/` 之外的第二个数据源
+> 2. **CleanupCRules** — 文件残留/过时问题，合并后无文件需要清理
+> 3. **hedging 负优化** — CC 对 C 通道的 hedging ("may not be relevant") 削弱了用户偏好和记忆
+> 4. **代码简化** — 删除 `cc_rules.go`（~37 行），净减少 ~70 行代码
+>
+> **结构**: 使用 XML 标签分隔各 section（遵循 Anthropic 提示工程最佳实践）：
+> ```xml
+> <hotplex-context>
+>   <agent-persona>[SOUL.md]</agent-persona>
+>   <workspace-rules>[AGENTS.md]</workspace-rules>
+>   <tool-guide>[SKILLS.md]</tool-guide>
+>   <user-profile>[USER.md]</user-profile>
+>   <persistent-memory>[MEMORY.md]</persistent-memory>
+> </hotplex-context>
+> ```
+>
+> B 通道内容在前（行为指令优先），C 通道内容在后（参考信息补充）。
+> 语义分层通过 XML 标签名和顺序维持，不再依赖不同的注入机制。
+
 ---
 
 ## 6. OpenCode Server 通道实现
@@ -713,6 +741,42 @@ HotPlex 的 S2 system field 注入仅影响 **主 Agent 的对话轮次** — OC
 **已知限制**: HotPlex 的 MEMORY.md 和 USER.md 不会传播到 OCS 子 Agent。
 子 Agent 在搜索/研究时无法参考用户的偏好和历史记忆。这是可接受的 — 子 Agent 执行的是
 短期、特定任务的上下文搜索，不需要用户画像。
+
+### 6.5.1 Claude Code 子 Agent 上下文继承 (upstream-blocked)
+
+> **状态**: `upstream-blocked` — Claude Code 当前不支持按 Agent 类型限制规则作用域。
+
+Claude Code 通过内置 `Agent` 工具派生子 Agent（如 Explore、Plan、General-purpose）执行并行子任务。
+根据 [CC 官方文档](https://code.claude.com/docs/en/features-overview)：
+
+> Subagents load a fresh, isolated context that includes the **system prompt**, full content
+> of specified **skills**, **CLAUDE.md**, **git status**, and any context passed by the lead agent.
+> Subagents **do not inherit** conversation history or invoked skills from the main session.
+
+**子 Agent 上下文继承矩阵**:
+
+| 内容 | 主 Agent | 子 Agent | 继承机制 |
+|------|---------|---------|---------|
+| System prompt (`--append-system-prompt`) | ✅ | ✅ | system prompt 全量继承 |
+| CLAUDE.md | ✅ | ✅ | 项目级自动发现 |
+| `.claude/rules/*.md` | ✅ | ✅ | 项目级自动发现，无条件加载 |
+| Skills | ✅ | ✅（指定的） | 显式传递 |
+| 对话历史 | ✅ | ❌ | 隔离 |
+| 已调用的 Skills | ✅ | ❌ | 隔离 |
+| Auto memory | ✅ | ❌ | 隔离 |
+
+**裁剪不可行的原因**:
+
+1. `.claude/rules/` 文件 frontmatter 仅支持 `paths`（文件 glob 限定），无 agent-scoped 字段
+2. `--append-system-prompt` 属于 system prompt，子 Agent 全量继承
+3. HotPlex 不控制 CC 子 Agent 的创建和上下文加载——那是 CC 内部调度行为
+4. OpenClaw 能做裁剪是因为它自己控制子 Agent 创建，HotPlex 无此能力
+
+**实际风险评估**: 低。子 Agent 在同一进程树内，结果回到主 Agent 摘要后展示，不对外暴露。
+MEMORY.md 内容（用户偏好、项目上下文）对搜索/研究类子 Agent 无害，不会产生误导性行为。
+
+**决策**: 接受 MEMORY.md 对 CC 子 Agent 可见。若未来 CC 上游支持 agent-scoped rules，
+可重新评估实现裁剪。
 
 ### 6.6 对比: Claude Code vs OpenCode Server 通道实现
 
@@ -1145,7 +1209,7 @@ Phase 3: OpenCode Server 集成 (2-3 天)
 Phase 4: Bridge 集成与路由 (1-2 天)
 ├── bridge.StartSession 按 workerType 路由到不同 Prompt Builder
 ├── 修复 SessionInfo.SystemPrompt 字段的传播链 (InitConfig → SessionInfo)
-├── 子 Agent 场景裁剪 (仅加载 SOUL.md + AGENTS.md, 不加载 MEMORY)
+├── ~~子 Agent 场景裁剪~~ (upstream-blocked: CC 不支持 agent-scoped rules，见 §6.5.1)
 └── 端到端验证 (CC + OCS 双通道)
 
 Phase 5: 动态能力 (1 周)
@@ -1337,7 +1401,7 @@ type AgentConfig struct {
 
 7. **安全边界**
    文件大小限制 (4K / file, 20K total)；frontmatter 剥离 (元数据不注入 prompt)
-   MEMORY.md 仅主会话加载 (防止隐私泄漏)；子 Agent 场景裁剪 (仅加载 SOUL + AGENTS, 跳过 MEMORY)
+   ~~MEMORY.md 仅主会话加载~~ (upstream-blocked: CC 子 Agent 继承全部 rules，见 §6.5.1)；OCS 子 Agent 天然隔离
 
 8. **Worker 路由**
    Bridge 层根据 `worker.WorkerType` 选择注入机制 — 同一 Config 文件，不同交付路径

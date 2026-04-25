@@ -110,7 +110,7 @@ func (b *Bridge) StartSession(ctx context.Context, id, userID, botID string, wt 
 		Args:         nil,
 		AllowedTools: si.AllowedTools,
 	}
-	b.injectAgentConfig(&workerInfo, wt, workDir, platform)
+	b.injectAgentConfig(&workerInfo, platform)
 	if err := w.Start(ctx, workerInfo); err != nil {
 		b.sm.DetachWorker(id)
 		_ = b.sm.Delete(ctx, id)
@@ -196,7 +196,7 @@ func (b *Bridge) resumeWithOpts(ctx context.Context, id, workDir string, opts fo
 		WorkerSessionID: si.WorkerSessionID,
 		ProjectDir:      workDir,
 	}
-	b.injectAgentConfig(&workerInfo, si.WorkerType, workDir, si.Platform)
+	b.injectAgentConfig(&workerInfo, si.Platform)
 	if err := w.Resume(ctx, workerInfo); err != nil {
 		b.sm.DetachWorker(id)
 		return fmt.Errorf("bridge: resume start: %w", err)
@@ -574,7 +574,7 @@ func (b *Bridge) attemptResumeFallback(p fallbackParams) bool {
 		WorkerSessionID: si.WorkerSessionID,
 		ProjectDir:      p.workDir,
 	}
-	b.injectAgentConfig(&workerInfo, si.WorkerType, p.workDir, si.Platform)
+	b.injectAgentConfig(&workerInfo, si.Platform)
 	if err := w.Start(context.Background(), workerInfo); err != nil {
 		b.sm.DetachWorker(p.sessionID)
 		b.log.Error("bridge: fresh worker start failed", "session_id", p.sessionID, "err", err)
@@ -737,10 +737,10 @@ func (b *Bridge) CancelRetry(sessionID string) {
 	}
 }
 
-// injectAgentConfig loads agent config files and injects them into the
-// session info according to worker type. A no-op when config dir is empty
-// or agent config is not configured.
-func (b *Bridge) injectAgentConfig(info *worker.SessionInfo, wt worker.WorkerType, workDir, platform string) {
+// injectAgentConfig loads agent config files and injects the unified system
+// prompt into session info. A no-op when config dir is empty or agent config
+// is not configured.
+func (b *Bridge) injectAgentConfig(info *worker.SessionInfo, platform string) {
 	if b.agentConfigDir == "" {
 		return
 	}
@@ -753,18 +753,8 @@ func (b *Bridge) injectAgentConfig(info *worker.SessionInfo, wt worker.WorkerTyp
 		return
 	}
 
-	switch wt {
-	case worker.TypeClaudeCode:
-		if prompt := agentconfig.BuildCCBPrompt(configs); prompt != "" {
-			info.SystemPrompt = prompt
-		}
-		if err := agentconfig.InjectCRules(workDir, configs); err != nil {
-			b.log.Warn("bridge: inject C-rules failed", "session_id", info.SessionID, "err", err)
-		}
-	case worker.TypeOpenCodeSrv:
-		if prompt := agentconfig.BuildOCSSystemPrompt(configs); prompt != "" {
-			info.SystemPrompt = prompt
-		}
+	if prompt := agentconfig.BuildSystemPrompt(configs); prompt != "" {
+		info.SystemPrompt = prompt
 	}
 }
 

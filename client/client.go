@@ -94,19 +94,29 @@ func (e Event) AsErrorData() (ErrorData, bool) { return decodeAs[ErrorData](e.Da
 func (e Event) AsToolCallData() (ToolCallData, bool) { return decodeAs[ToolCallData](e.Data) }
 
 // AsPermissionRequestData parses event data as PermissionRequestData.
-func (e Event) AsPermissionRequestData() (PermissionRequestData, bool) { return decodeAs[PermissionRequestData](e.Data) }
+func (e Event) AsPermissionRequestData() (PermissionRequestData, bool) {
+	return decodeAs[PermissionRequestData](e.Data)
+}
 
 // AsQuestionRequestData parses event data as QuestionRequestData.
-func (e Event) AsQuestionRequestData() (QuestionRequestData, bool) { return decodeAs[QuestionRequestData](e.Data) }
+func (e Event) AsQuestionRequestData() (QuestionRequestData, bool) {
+	return decodeAs[QuestionRequestData](e.Data)
+}
 
 // AsElicitationRequestData parses event data as ElicitationRequestData.
-func (e Event) AsElicitationRequestData() (ElicitationRequestData, bool) { return decodeAs[ElicitationRequestData](e.Data) }
+func (e Event) AsElicitationRequestData() (ElicitationRequestData, bool) {
+	return decodeAs[ElicitationRequestData](e.Data)
+}
 
 // AsMessageStartData parses event data as MessageStartData.
-func (e Event) AsMessageStartData() (MessageStartData, bool) { return decodeAs[MessageStartData](e.Data) }
+func (e Event) AsMessageStartData() (MessageStartData, bool) {
+	return decodeAs[MessageStartData](e.Data)
+}
 
 // AsMessageDeltaData parses event data as MessageDeltaData.
-func (e Event) AsMessageDeltaData() (MessageDeltaData, bool) { return decodeAs[MessageDeltaData](e.Data) }
+func (e Event) AsMessageDeltaData() (MessageDeltaData, bool) {
+	return decodeAs[MessageDeltaData](e.Data)
+}
 
 // AsMessageEndData parses event data as MessageEndData.
 func (e Event) AsMessageEndData() (MessageEndData, bool) { return decodeAs[MessageEndData](e.Data) }

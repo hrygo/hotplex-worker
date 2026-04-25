@@ -159,90 +159,57 @@ func TestStripFrontmatter(t *testing.T) {
 	}
 }
 
-func TestBuildCCBPrompt(t *testing.T) {
+func TestBuildSystemPrompt(t *testing.T) {
 	t.Parallel()
 
 	t.Run("nil configs returns empty", func(t *testing.T) {
-		require.Empty(t, BuildCCBPrompt(nil))
+		require.Empty(t, BuildSystemPrompt(nil))
 	})
 
 	t.Run("empty configs returns empty", func(t *testing.T) {
-		require.Empty(t, BuildCCBPrompt(&AgentConfigs{}))
+		require.Empty(t, BuildSystemPrompt(&AgentConfigs{}))
 	})
 
-	t.Run("assembles soul agents skills", func(t *testing.T) {
-		cfg := &AgentConfigs{Soul: "Persona", Agents: "Rules", Skills: "Tools"}
-		prompt := BuildCCBPrompt(cfg)
-		require.Contains(t, prompt, "# Agent Persona")
+	t.Run("assembles B+C with XML tags", func(t *testing.T) {
+		cfg := &AgentConfigs{Soul: "Persona", Agents: "Rules", Skills: "Tools", User: "User data", Memory: "Memory data"}
+		prompt := BuildSystemPrompt(cfg)
+		require.Contains(t, prompt, "<hotplex-context>")
+		require.Contains(t, prompt, "</hotplex-context>")
+		require.Contains(t, prompt, "<agent-persona>")
 		require.Contains(t, prompt, "Persona")
-		require.Contains(t, prompt, "# Workspace Rules")
+		require.Contains(t, prompt, "<workspace-rules>")
 		require.Contains(t, prompt, "Rules")
-		require.Contains(t, prompt, "# Tool Usage Guide")
+		require.Contains(t, prompt, "<tool-guide>")
 		require.Contains(t, prompt, "Tools")
+		require.Contains(t, prompt, "<user-profile>")
+		require.Contains(t, prompt, "User data")
+		require.Contains(t, prompt, "<persistent-memory>")
+		require.Contains(t, prompt, "Memory data")
 	})
 
-	t.Run("partial configs work", func(t *testing.T) {
+	t.Run("B-channel only", func(t *testing.T) {
 		cfg := &AgentConfigs{Agents: "Rules only"}
-		prompt := BuildCCBPrompt(cfg)
-		require.Contains(t, prompt, "# Workspace Rules")
-		require.NotContains(t, prompt, "# Agent Persona")
-	})
-}
-
-func TestBuildOCSSystemPrompt(t *testing.T) {
-	t.Parallel()
-
-	t.Run("assembles all channels", func(t *testing.T) {
-		cfg := &AgentConfigs{Soul: "S", Agents: "A", Skills: "K", User: "U", Memory: "M"}
-		prompt := BuildOCSSystemPrompt(cfg)
-		require.Contains(t, prompt, "# Agent Persona")
-		require.Contains(t, prompt, "# Workspace Rules")
-		require.Contains(t, prompt, "# Tool Usage Guide")
-		require.Contains(t, prompt, "# User Profile")
-		require.Contains(t, prompt, "# Persistent Memory")
-	})
-}
-
-func TestInjectCRules(t *testing.T) {
-	t.Parallel()
-
-	t.Run("writes user and memory rules", func(t *testing.T) {
-		dir := t.TempDir()
-		cfg := &AgentConfigs{User: "User data", Memory: "Memory data"}
-		err := InjectCRules(dir, cfg)
-		require.NoError(t, err)
-
-		userContent, err := os.ReadFile(filepath.Join(dir, ".claude", "rules", "hotplex-user.md"))
-		require.NoError(t, err)
-		require.Equal(t, "User data", string(userContent))
-
-		memContent, err := os.ReadFile(filepath.Join(dir, ".claude", "rules", "hotplex-memory.md"))
-		require.NoError(t, err)
-		require.Equal(t, "Memory data", string(memContent))
+		prompt := BuildSystemPrompt(cfg)
+		require.Contains(t, prompt, "<workspace-rules>")
+		require.NotContains(t, prompt, "<agent-persona>")
+		require.NotContains(t, prompt, "<user-profile>")
 	})
 
-	t.Run("skips empty fields", func(t *testing.T) {
-		dir := t.TempDir()
-		cfg := &AgentConfigs{User: "Only user"}
-		err := InjectCRules(dir, cfg)
-		require.NoError(t, err)
-
-		require.FileExists(t, filepath.Join(dir, ".claude", "rules", "hotplex-user.md"))
-		require.NoFileExists(t, filepath.Join(dir, ".claude", "rules", "hotplex-memory.md"))
+	t.Run("C-channel only", func(t *testing.T) {
+		cfg := &AgentConfigs{User: "User only", Memory: "Memory only"}
+		prompt := BuildSystemPrompt(cfg)
+		require.Contains(t, prompt, "<user-profile>")
+		require.Contains(t, prompt, "<persistent-memory>")
+		require.NotContains(t, prompt, "<agent-persona>")
+		require.NotContains(t, prompt, "<workspace-rules>")
 	})
 
-	t.Run("nil configs is no-op", func(t *testing.T) {
-		dir := t.TempDir()
-		err := InjectCRules(dir, nil)
-		require.NoError(t, err)
-		require.NoDirExists(t, filepath.Join(dir, ".claude"))
-	})
-
-	t.Run("empty configs is no-op", func(t *testing.T) {
-		dir := t.TempDir()
-		err := InjectCRules(dir, &AgentConfigs{})
-		require.NoError(t, err)
-		require.NoDirExists(t, filepath.Join(dir, ".claude"))
+	t.Run("B sections before C sections", func(t *testing.T) {
+		cfg := &AgentConfigs{Soul: "S", User: "U"}
+		prompt := BuildSystemPrompt(cfg)
+		bIdx := strings.Index(prompt, "<agent-persona>")
+		cIdx := strings.Index(prompt, "<user-profile>")
+		require.Less(t, bIdx, cIdx)
 	})
 }
 

@@ -139,7 +139,7 @@ configs/  config.yaml, config-dev.yaml, env.example
 - Route registration → `cmd/hotplex/routes.go` — HTTP routes for gateway WS, admin API, health, metrics
 
 **Modify existing**
-- Agent config files → `internal/agentconfig/loader.go` — file loading, size limits, frontmatter stripping; `cc_prompt.go` / `ocs_prompt.go` for prompt assembly; `cc_rules.go` for C-channel rules injection
+- Agent config files → `internal/agentconfig/loader.go` — file loading, size limits, frontmatter stripping; `prompt.go` for unified system prompt assembly (B+C merged, XML-tagged)
 - Agent config directory → `~/.hotplex/agent-configs/` — place SOUL.md, AGENTS.md, SKILLS.md (B-channel) + USER.md, MEMORY.md (C-channel); platform variants like SOUL.slack.md
 - Session lifecycle → `internal/session/manager.go` — state machine + `TransitionWithInput` atomicity + `DeletePhysical` for forced removal
 - Session key derivation → `internal/session/key.go` — UUIDv5 deterministic session IDs + platform context
@@ -211,9 +211,7 @@ configs/  config.yaml, config-dev.yaml, env.example
 **Agent Config** (`internal/agentconfig/`)
 - `AgentConfigs` → `loader.go` — holds loaded content: Soul/Agents/Skills (B-channel) + User/Memory (C-channel)
 - `Load` → `loader.go` — reads config dir, appends platform variants (e.g. SOUL.slack.md), strips YAML frontmatter, enforces size limits (12K/file, 60K total)
-- `BuildCCBPrompt` → `cc_prompt.go` — assembles B-channel system prompt for Claude Code (--append-system-prompt)
-- `InjectCRules` → `cc_rules.go` — writes C-channel files (USER.md, MEMORY.md) to workdir/.claude/rules/ for CC auto-discovery
-- `BuildOCSSystemPrompt` → `ocs_prompt.go` — assembles B+C combined system prompt for OpenCode Server (system field per message)
+- `BuildSystemPrompt` → `prompt.go` — assembles unified B+C system prompt with XML tags for both CC and OCS
 
 **Core**
 - `Envelope` → `pkg/events/events.go:73` — AEP v1 envelope (id, version, seq, session_id, event)
@@ -280,7 +278,7 @@ configs/  config.yaml, config-dev.yaml, env.example
 - **LLM auto-retry**: LLMRetryController detects retryable errors via regex patterns (429/5xx/network), exponential backoff (initial 2s, max 60s), per-session attempt counter
 - **Deterministic session IDs**: DeriveSessionKey uses UUIDv5 (SHA-1 namespace+name) for cross-environment consistency; PlatformContext for platform-specific key derivation
 - **Per-user memory tracking**: PoolManager tracks estimated memory per user (512MB/worker) alongside session count quotas
-- **Agent config B/C channel split**: B-channel (system-level: SOUL.md, AGENTS.md, SKILLS.md) reaches model with different hedging per worker type; C-channel (context-level: USER.md, MEMORY.md) injected into CC rules dir for auto-discovery; OCS has no B/C distinction — all content in system field with no cross-message persistence
+- **Agent config unified prompt**: B+C channels merged into single `BuildSystemPrompt` with XML tags; both CC (`--append-system-prompt`) and OCS (`system` field) use identical structure injected via `bridge.injectAgentConfig`; no file-based injection, no hedging
 - **Webchat session stickiness**: Deterministic "main" session ID via DeriveSessionKey + localStorage persistence for active session across page reloads; auto-creates first session when none exist
 
 ## COMMANDS

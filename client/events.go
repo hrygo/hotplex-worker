@@ -67,22 +67,22 @@ const (
 
 // Event data types re-exported from pkg/events for type-safe access.
 type (
-	MessageStartData       = events.MessageStartData
-	MessageDeltaData       = events.MessageDeltaData
-	MessageEndData         = events.MessageEndData
-	StateData              = events.StateData
-	ReasoningData          = events.ReasoningData
-	StepData               = events.StepData
-	DoneData               = events.DoneData
-	ToolCallData           = events.ToolCallData
-	ToolResultData         = events.ToolResultData
-	PermissionRequestData  = events.PermissionRequestData
-	PermissionResponseData = events.PermissionResponseData
-	QuestionOption         = events.QuestionOption
-	Question               = events.Question
-	QuestionRequestData    = events.QuestionRequestData
-	QuestionResponseData   = events.QuestionResponseData
-	ElicitationRequestData = events.ElicitationRequestData
+	MessageStartData        = events.MessageStartData
+	MessageDeltaData        = events.MessageDeltaData
+	MessageEndData          = events.MessageEndData
+	StateData               = events.StateData
+	ReasoningData           = events.ReasoningData
+	StepData                = events.StepData
+	DoneData                = events.DoneData
+	ToolCallData            = events.ToolCallData
+	ToolResultData          = events.ToolResultData
+	PermissionRequestData   = events.PermissionRequestData
+	PermissionResponseData  = events.PermissionResponseData
+	QuestionOption          = events.QuestionOption
+	Question                = events.Question
+	QuestionRequestData     = events.QuestionRequestData
+	QuestionResponseData    = events.QuestionResponseData
+	ElicitationRequestData  = events.ElicitationRequestData
 	ElicitationResponseData = events.ElicitationResponseData
 )
 
