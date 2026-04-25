@@ -427,7 +427,7 @@ function ToolCallBlock({ toolName, args, active }: { toolName: string; args: any
           </motion.span>
         )}
       </div>
-      <div className="p-3 pt-0 font-mono text-[11px] text-[var(--text-muted)] opacity-70">
+      <div className="p-3 pt-0 font-mono text-[11px] text-[var(--text-muted)] opacity-70 break-all whitespace-pre-wrap">
         {JSON.stringify(args, null, 2)}
       </div>
     </div>
