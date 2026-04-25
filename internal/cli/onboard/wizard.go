@@ -113,10 +113,12 @@ func hasEnvValue(content, key string) bool {
 }
 
 type WizardResult struct {
-	ConfigPath string
-	EnvPath    string
-	Steps      []StepResult
-	Action     string // "keep" or "reconfigure"
+	ConfigPath     string
+	EnvPath        string
+	Steps          []StepResult
+	Action         string // "keep" or "reconfigure"
+	AgentConfigDir string   // agent-config directory path
+	AgentConfigNew []string // files created by this run
 }
 
 type StepResult struct {
@@ -147,6 +149,9 @@ func Run(ctx context.Context, opts WizardOptions) (*WizardResult, error) {
 		if opts.NonInteractive {
 			result.Action = "keep"
 			result.add(StepResult{Name: "onboard", Status: "pass", Detail: "kept existing configuration (non-interactive)"})
+			sAgent, agentCreated := stepAgentConfig()
+			result.add(sAgent)
+			result.AgentConfigNew = agentCreated
 			result.add(stepVerify(opts.ConfigPath))
 			return result, nil
 		}
@@ -154,6 +159,9 @@ func Run(ctx context.Context, opts WizardOptions) (*WizardResult, error) {
 		if promptKeepOrReconfigure() {
 			result.Action = "keep"
 			result.add(StepResult{Name: "onboard", Status: "pass", Detail: "kept existing configuration"})
+			sAgent, agentCreated := stepAgentConfig()
+			result.add(sAgent)
+			result.AgentConfigNew = agentCreated
 			result.add(stepVerify(opts.ConfigPath))
 			return result, nil
 		}
@@ -216,6 +224,10 @@ func Run(ctx context.Context, opts WizardOptions) (*WizardResult, error) {
 	if s6.Status == "fail" {
 		return result, fmt.Errorf("config write failed: %s", s6.Detail)
 	}
+
+	s6b, agentCreated := stepAgentConfig()
+	result.add(s6b)
+	result.AgentConfigNew = agentCreated
 
 	result.add(stepVerify(opts.ConfigPath))
 	result.Action = "reconfigure"
@@ -652,4 +664,43 @@ func promptCommaList(reader *bufio.Reader, question string) []string {
 		}
 	}
 	return result
+}
+
+// ─── Step 6b: Agent config ──────────────────────────────────────────────────
+
+func stepAgentConfig() (StepResult, []string) {
+	dir := filepath.Join(config.HotplexHome(), "agent-configs")
+	_ = os.MkdirAll(dir, 0o755)
+
+	files := []struct {
+		name    string
+		content string
+	}{
+		{"SOUL.md", defaultSoulTemplate},
+		{"AGENTS.md", defaultAgentsTemplate},
+		{"SKILLS.md", defaultSkillsTemplate},
+		{"USER.md", defaultUserTemplate},
+		{"MEMORY.md", defaultMemoryTemplate},
+	}
+
+	var created []string
+	for _, f := range files {
+		path := filepath.Join(dir, f.name)
+		if _, err := os.Stat(path); err == nil {
+			continue
+		}
+		if err := os.WriteFile(path, []byte(f.content), 0o644); err != nil {
+			return StepResult{Name: "agent_config", Status: "warn", Detail: "write " + f.name + ": " + err.Error()}, created
+		}
+		created = append(created, f.name)
+	}
+
+	if len(created) == 0 {
+		return StepResult{Name: "agent_config", Status: "pass", Detail: dir}, created
+	}
+	return StepResult{
+		Name:   "agent_config",
+		Status: "pass",
+		Detail: fmt.Sprintf("%s (%s)", dir, strings.Join(created, ", ")),
+	}, created
 }

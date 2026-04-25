@@ -356,7 +356,6 @@ body {
   flex-direction: column;
   backdrop-filter: blur(24px) saturate(200%);
   position: relative;
-  overflow: hidden;
 }
 
 .composer-root::after {

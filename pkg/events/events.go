@@ -283,6 +283,7 @@ const (
 	ControlActionDelete         ControlAction = "delete"
 	ControlActionReset          ControlAction = "reset" // 清空上下文，Worker 自行决定 in-place 或 terminate+start
 	ControlActionGC             ControlAction = "gc"    // 归档会话，Worker 终止，保留历史
+	ControlActionCD             ControlAction = "cd"    // 切换工作目录，创建新会话
 )
 
 // ControlData is the payload for Control events.
