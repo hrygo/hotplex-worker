@@ -10,16 +10,18 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
-    "@ai-sdk/react": "4.0.0-beta.64",
+    "@ai-sdk/react": "^4.0.0-beta.111",
     "@assistant-ui/react": "^0.12.23",
     "@tailwindcss/postcss": "^4.2.2",
     "@tailwindcss/vite": "^4.2.2",
-    "ai": "^6.0.146",
+    "ai": "^7.0.0-beta.111",
     "eventemitter3": "^5.0.1",
+    "framer-motion": "^12.38.0",
     "highlight.js": "^11.11.1",
-    "next": "^15.0.0",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
+    "next": "^16.2.4",
+    "nuqs": "^2.8.9",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
     "react-markdown": "^10.1.0",
     "rehype-highlight": "^7.0.2",
     "remark-gfm": "^4.0.1",
@@ -29,8 +31,8 @@
   "devDependencies": {
     "@playwright/test": "^1.59.1",
     "@tailwindcss/typography": "^0.5.19",
-    "@types/node": "^22.0.0",
-    "@types/react": "^18.3.1",
-    "typescript": "^5.7.0"
+    "@types/node": "^25.6.0",
+    "@types/react": "^19.2.14",
+    "typescript": "^6.0.3"
   }
 }
