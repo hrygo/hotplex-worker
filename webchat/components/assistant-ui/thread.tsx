@@ -10,6 +10,10 @@ import {
 } from "@assistant-ui/react";
 import { motion, AnimatePresence } from "framer-motion";
 import { MarkdownText } from "./MarkdownText";
+import { TerminalTool } from "./tools/TerminalTool";
+import { FileDiffTool } from "./tools/FileDiffTool";
+import { SearchTool } from "./tools/SearchTool";
+import { PermissionCard } from "./tools/PermissionCard";
 import { BrandIcon } from "@/components/icons";
 
 /* ============================================================
@@ -33,6 +37,22 @@ const toolCardVariants = {
     transition: { type: "spring" as const, stiffness: 260, damping: 20 },
   },
 };
+
+/* ============================================================
+   Tool Name Router — Maps tool names to specialized GenUI
+   ============================================================ */
+const TERMINAL_TOOLS = new Set(["run_command", "bash", "execute_command", "shell"]);
+const FILE_TOOLS = new Set(["edit_file", "write_file", "replace_file_content", "create_file", "apply_diff"]);
+const SEARCH_TOOLS = new Set(["grep_search", "view_file", "search_files", "list_directory", "read_file"]);
+const PERMISSION_TOOLS = new Set(["ask_permission", "confirm", "elicitation"]);
+
+function getToolCategory(name: string): "terminal" | "file" | "search" | "permission" | "default" {
+  if (TERMINAL_TOOLS.has(name)) return "terminal";
+  if (FILE_TOOLS.has(name)) return "file";
+  if (SEARCH_TOOLS.has(name)) return "search";
+  if (PERMISSION_TOOLS.has(name)) return "permission";
+  return "default";
+}
 
 /* ============================================================
    Thread — Main conversation wrapper
@@ -203,17 +223,72 @@ function AssistantMessage() {
               );
             }
             if (p.type === "tool-call") {
-              if (p.result !== undefined) {
+              const category = getToolCategory(p.toolName);
+              const hasResult = p.result !== undefined;
+
+              // Route to specialized GenUI components
+              if (category === "terminal") {
                 return (
-                  <motion.div variants={toolCardVariants} initial="hidden" animate="visible">
-                    <ToolResultBlock key={p.toolCallId} toolName={p.toolName} result={p.result} />
+                  <motion.div key={p.toolCallId} variants={toolCardVariants} initial="hidden" animate="visible">
+                    <TerminalTool
+                      command={p.args?.command || p.args?.Command || JSON.stringify(p.args)}
+                      stdout={hasResult ? (typeof p.result === "string" ? p.result : p.result?.stdout || JSON.stringify(p.result)) : undefined}
+                      stderr={hasResult ? p.result?.stderr : undefined}
+                      status={hasResult ? "complete" : "running"}
+                    />
+                  </motion.div>
+                );
+              }
+
+              if (category === "file") {
+                return (
+                  <motion.div key={p.toolCallId} variants={toolCardVariants} initial="hidden" animate="visible">
+                    <FileDiffTool
+                      toolName={p.toolName}
+                      filePath={p.args?.file_path || p.args?.path || p.args?.target_file}
+                      content={hasResult ? (typeof p.result === "string" ? p.result : p.args?.content || p.args?.code || p.args?.CodeContent || p.args?.ReplacementContent || JSON.stringify(p.result, null, 2)) : p.args?.content || p.args?.code || p.args?.CodeContent || p.args?.ReplacementContent}
+                      status={hasResult ? "complete" : "running"}
+                    />
+                  </motion.div>
+                );
+              }
+
+              if (category === "search") {
+                return (
+                  <motion.div key={p.toolCallId} variants={toolCardVariants} initial="hidden" animate="visible">
+                    <SearchTool
+                      toolName={p.toolName}
+                      query={p.args?.pattern || p.args?.query || p.args?.path}
+                      results={hasResult && Array.isArray(p.result) ? p.result : undefined}
+                      status={hasResult ? "complete" : "running"}
+                    />
+                  </motion.div>
+                );
+              }
+
+              if (category === "permission") {
+                return (
+                  <motion.div key={p.toolCallId} variants={toolCardVariants} initial="hidden" animate="visible">
+                    <PermissionCard
+                      toolName={p.toolName}
+                      args={p.args}
+                      status={hasResult ? "complete" : "running"}
+                    />
+                  </motion.div>
+                );
+              }
+
+              // Default fallback for unknown tools
+              if (hasResult) {
+                return (
+                  <motion.div key={p.toolCallId} variants={toolCardVariants} initial="hidden" animate="visible">
+                    <ToolResultBlock toolName={p.toolName} result={p.result} />
                   </motion.div>
                 );
               }
               return (
-                <motion.div variants={toolCardVariants} initial="hidden" animate="visible">
+                <motion.div key={p.toolCallId} variants={toolCardVariants} initial="hidden" animate="visible">
                   <ToolCallBlock
-                    key={p.toolCallId}
                     toolName={p.toolName}
                     args={p.args}
                     active={isStreaming}
