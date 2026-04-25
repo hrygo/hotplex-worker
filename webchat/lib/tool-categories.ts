@@ -52,9 +52,10 @@ const PERMISSION_TOOLS: ReadonlySet<string> = new Set([
 ]);
 
 export function getToolCategory(name: string): ToolCategory {
-  if (TERMINAL_TOOLS.has(name)) return "terminal";
-  if (FILE_TOOLS.has(name)) return "file";
-  if (SEARCH_TOOLS.has(name)) return "search";
-  if (PERMISSION_TOOLS.has(name)) return "permission";
+  const lowerName = name?.toLowerCase()?.trim() || "";
+  if (TERMINAL_TOOLS.has(lowerName)) return "terminal";
+  if (FILE_TOOLS.has(lowerName)) return "file";
+  if (SEARCH_TOOLS.has(lowerName)) return "search";
+  if (PERMISSION_TOOLS.has(lowerName)) return "permission";
   return "default";
 }
