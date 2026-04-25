@@ -133,15 +133,15 @@ func TestSQLiteStore_List(t *testing.T) {
 	}
 
 	// List with pagination
-	list, err := store.List(ctx, 3, 0)
+	list, err := store.List(ctx, "", "", 3, 0)
 	require.NoError(t, err)
 	require.Len(t, list, 3)
 
-	list, err = store.List(ctx, 3, 3)
+	list, err = store.List(ctx, "", "", 3, 3)
 	require.NoError(t, err)
 	require.Len(t, list, 2)
 
-	list, err = store.List(ctx, 10, 10)
+	list, err = store.List(ctx, "", "", 10, 10)
 	require.NoError(t, err)
 	require.Empty(t, list)
 }

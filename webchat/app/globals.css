@@ -42,11 +42,13 @@
   --font-mono:    'JetBrains Mono', 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
   /* Radius */
-  --radius-xs: 6px;
-  --radius-sm: 10px;
-  --radius-md: 16px;
-  --radius-lg: 24px;
-  --radius-xl: 32px;
+  --radius-xs:   4px;
+  --radius-sm:   8px;
+  --radius-md:   12px;
+  --radius-lg:   16px;
+  --radius-xl:   24px;
+  --radius-2xl:  32px;
+  --radius-full: 9999px;
 
   /* Shadows — soft & airy */
   --shadow-card:     0 2px 8px rgba(0,0,0,0.04), 0 8px 16px -4px rgba(0,0,0,0.02);
@@ -114,7 +116,7 @@ body {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { 
   background: rgba(255, 255, 255, 0.08); 
-  border-radius: 20px;
+  border-radius: var(--radius-full);
   transition: background 0.2s ease;
 }
 ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.15); }
@@ -235,7 +237,7 @@ body {
   padding: 0.5rem 1rem;
   background: var(--bg-surface);
   border: 1px solid var(--border-bright);
-  border-radius: 9999px;
+  border-radius: var(--radius-full);
   color: var(--text-secondary);
   font-size: 0.75rem;
   font-weight: 600;
@@ -269,7 +271,7 @@ body {
 .msg-user-bubble {
   max-width: 85%;
   padding: 0.875rem 1.25rem;
-  border-radius: 20px 20px 4px 20px;
+  border-radius: var(--radius-lg) var(--radius-lg) var(--radius-xs) var(--radius-lg);
   background: #fdf2f2; /* Subtle warm tint for user */
   background: linear-gradient(135deg, #fff 0%, #fafafa 100%);
   border: 1px solid var(--border-default);
@@ -491,7 +493,7 @@ body {
 .prose :not(pre) > code {
   background: rgba(255, 255, 255, 0.06);
   padding: 0.2em 0.4em;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   color: var(--accent-gold-bright);
 }
 
@@ -581,7 +583,7 @@ body {
   align-items: center;
   justify-content: center;
   padding: 6px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   border: none;
   background: transparent;
   cursor: pointer;
@@ -596,7 +598,7 @@ body {
 .session-delete-confirm {
   padding: 4px 10px;
   font-size: 11px;
-  border-radius: 6px;
+  border-radius: var(--radius-xs);
   border: 1px solid rgba(251,113,133,0.2);
   background: rgba(251,113,133,0.08);
   color: var(--accent-coral);
@@ -607,7 +609,7 @@ body {
 .session-delete-cancel {
   padding: 4px 10px;
   font-size: 11px;
-  border-radius: 6px;
+  border-radius: var(--radius-xs);
   border: none;
   background: var(--bg-elevated);
   color: var(--text-muted);
@@ -640,13 +642,13 @@ body {
 .skeleton-circle {
   width: 32px;
   height: 32px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--bg-elevated);
   animation: skeletonPulse 1.8s ease-in-out infinite;
 }
 .skeleton-line {
   height: 10px;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   background: var(--bg-elevated);
   animation: skeletonPulse 1.8s ease-in-out infinite;
 }

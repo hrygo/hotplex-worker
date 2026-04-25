@@ -230,6 +230,9 @@ func runGateway(configPath string, devMode bool) (err error) {
 	if cfg.AgentConfig.Enabled {
 		bridge.SetAgentConfigDir(cfg.AgentConfig.ConfigDir)
 	}
+	if cfg.Worker.TurnTimeout > 0 {
+		bridge.SetTurnTimeout(cfg.Worker.TurnTimeout)
+	}
 
 	cfgStore.RegisterFunc(func(prev, next *config.Config) {
 		if !reflect.DeepEqual(prev.Worker.AutoRetry, next.Worker.AutoRetry) {

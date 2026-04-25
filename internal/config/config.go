@@ -268,6 +268,7 @@ type WorkerConfig struct {
 	MaxLifetime      time.Duration   `mapstructure:"max_lifetime"`
 	IdleTimeout      time.Duration   `mapstructure:"idle_timeout"`
 	ExecutionTimeout time.Duration   `mapstructure:"execution_timeout"`
+	TurnTimeout      time.Duration   `mapstructure:"turn_timeout"`
 	AllowedEnvs      []string        `mapstructure:"allowed_envs"`
 	EnvWhitelist     []string        `mapstructure:"env_whitelist"`
 	DefaultWorkDir   string          `mapstructure:"default_work_dir"`
@@ -372,6 +373,7 @@ func Default() *Config {
 			MaxLifetime:      24 * time.Hour,
 			IdleTimeout:      60 * time.Minute,
 			ExecutionTimeout: 30 * time.Minute,
+			TurnTimeout:      15 * time.Minute,
 			AllowedEnvs:      nil,
 			EnvWhitelist:     nil,
 			DefaultWorkDir:   filepath.Join(HotplexHome(), "workspace"),

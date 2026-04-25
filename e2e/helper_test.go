@@ -238,8 +238,8 @@ func (m *mockStore) Get(ctx context.Context, id string) (*session.SessionInfo, e
 	return args.Get(0).(*session.SessionInfo), args.Error(1)
 }
 
-func (m *mockStore) List(ctx context.Context, limit, offset int) ([]*session.SessionInfo, error) {
-	args := m.Called(ctx, limit, offset)
+func (m *mockStore) List(ctx context.Context, userID, platform string, limit, offset int) ([]*session.SessionInfo, error) {
+	args := m.Called(ctx, userID, platform, limit, offset)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
@@ -321,7 +321,7 @@ func setupTestGateway(t *testing.T) *testGateway {
 	store.On("GetExpiredMaxLifetime", mock.Anything, mock.AnythingOfType("time.Time")).Return([]string{}, nil)
 	store.On("GetExpiredIdle", mock.Anything, mock.AnythingOfType("time.Time")).Return([]string{}, nil)
 	store.On("DeleteTerminated", mock.Anything, mock.AnythingOfType("time.Time")).Return(nil)
-	store.On("List", mock.Anything, mock.AnythingOfType("int"), mock.AnythingOfType("int")).Return([]*session.SessionInfo{}, nil)
+	store.On("List", mock.Anything, mock.AnythingOfType("string"), mock.AnythingOfType("string"), mock.AnythingOfType("int"), mock.AnythingOfType("int")).Return([]*session.SessionInfo{}, nil)
 	// Get falls back to store when session is not in Manager's in-memory map.
 	// Return not-found for all store lookups (Manager holds sessions in memory after Create).
 	store.On("Get", mock.Anything, mock.AnythingOfType("string")).Return(nil, session.ErrSessionNotFound)

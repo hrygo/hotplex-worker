@@ -473,8 +473,8 @@ func (m *mockSessionStoreForBotID) Get(ctx context.Context, id string) (*session
 	return args.Get(0).(*session.SessionInfo), args.Error(1)
 }
 
-func (m *mockSessionStoreForBotID) List(ctx context.Context, limit, offset int) ([]*session.SessionInfo, error) {
-	args := m.Called(ctx, limit, offset)
+func (m *mockSessionStoreForBotID) List(ctx context.Context, userID, platform string, limit, offset int) ([]*session.SessionInfo, error) {
+	args := m.Called(ctx, userID, platform, limit, offset)
 	return args.Get(0).([]*session.SessionInfo), args.Error(1)
 }
 
@@ -971,8 +971,8 @@ func (m *mockBridgeSM) DeletePhysical(ctx context.Context, id string) error {
 	return args.Error(0)
 }
 
-func (m *mockBridgeSM) List(ctx context.Context, limit, offset int) ([]*session.SessionInfo, error) {
-	args := m.Called(ctx, limit, offset)
+func (m *mockBridgeSM) List(ctx context.Context, userID, platform string, limit, offset int) ([]*session.SessionInfo, error) {
+	args := m.Called(ctx, userID, platform, limit, offset)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}

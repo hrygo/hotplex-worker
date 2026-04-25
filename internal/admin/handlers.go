@@ -13,7 +13,7 @@ func (a *AdminAPI) HandleStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	total, _, _ := a.sm.Stats()
-	sessions, _ := a.sm.List(r.Context(), 0, 0)
+	sessions, _ := a.sm.List(r.Context(), "", "", 0, 0)
 
 	byType := make(map[string]map[string]any)
 	for _, si := range sessions {
@@ -51,7 +51,7 @@ func (a *AdminAPI) HandleStats(w http.ResponseWriter, r *http.Request) {
 func (a *AdminAPI) HandleHealth(w http.ResponseWriter, r *http.Request) {
 	cfg := a.cfg.Get()
 	dbHealthy := true
-	if _, err := a.sm.List(r.Context(), 1, 0); err != nil {
+	if _, err := a.sm.List(r.Context(), "", "", 1, 0); err != nil {
 		dbHealthy = false
 	}
 

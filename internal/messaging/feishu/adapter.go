@@ -917,6 +917,14 @@ func (a *Adapter) handleTextControlCommand(ctx context.Context, chatID, userID, 
 	// by checkPendingInteraction as a response to a dead interaction.
 	if result.Action == events.ControlActionReset || result.Action == events.ControlActionGC {
 		a.interactions.CancelAll(envelope.SessionID)
+		// Abort any active streaming card — GC/Reset kills the worker without a
+		// done event, so the card would otherwise remain in streaming state.
+		conn.mu.RLock()
+		ctrl := conn.streamCtrl
+		conn.mu.RUnlock()
+		if ctrl != nil {
+			_ = ctrl.Abort(ctx)
+		}
 	}
 
 	if platformMsgID != "" {

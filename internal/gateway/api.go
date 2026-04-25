@@ -33,9 +33,10 @@ func (g *GatewayAPI) ListSessions(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	_ = userID
 	limit := 100
 	offset := 0
+	platform := "webchat" // Default to webchat as requested
+
 	if l := r.URL.Query().Get("limit"); l != "" {
 		if v, err := strconv.Atoi(l); err == nil && v > 0 {
 			limit = v
@@ -46,12 +47,20 @@ func (g *GatewayAPI) ListSessions(w http.ResponseWriter, r *http.Request) {
 			offset = v
 		}
 	}
-	sessions, err := g.sm.List(r.Context(), limit, offset)
+	if p := r.URL.Query().Get("platform"); p != "" {
+		if p == "all" {
+			platform = ""
+		} else {
+			platform = p
+		}
+	}
+
+	sessions, err := g.sm.List(r.Context(), userID, platform, limit, offset)
 	if err != nil {
 		http.Error(w, "failed to list sessions", http.StatusInternalServerError)
 		return
 	}
-	respondJSON(w, map[string]any{"sessions": sessions, "limit": limit, "offset": offset})
+	respondJSON(w, map[string]any{"sessions": sessions, "limit": limit, "offset": offset, "platform": platform})
 }
 
 func (g *GatewayAPI) CreateSession(w http.ResponseWriter, r *http.Request) {
@@ -83,7 +92,7 @@ func (g *GatewayAPI) CreateSession(w http.ResponseWriter, r *http.Request) {
 		_ = g.sm.DeletePhysical(r.Context(), id)
 	}
 
-	if err := g.bridge.StartSession(r.Context(), id, userID, botID, wt, nil, "", "", nil); err != nil {
+	if err := g.bridge.StartSession(r.Context(), id, userID, botID, wt, nil, "", "webchat", nil); err != nil {
 		http.Error(w, "failed to create session", http.StatusInternalServerError)
 		return
 	}

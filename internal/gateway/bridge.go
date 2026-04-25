@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/hrygo/hotplex/internal/agentconfig"
+	"github.com/hrygo/hotplex/internal/messaging"
 	"github.com/hrygo/hotplex/internal/metrics"
 	"github.com/hrygo/hotplex/internal/session"
 	"github.com/hrygo/hotplex/internal/worker"
@@ -41,7 +42,8 @@ type Bridge struct {
 	retryCancelMu sync.Mutex
 	retryCancel   map[string]chan struct{} // sessionID → cancel channel
 
-	agentConfigDir string // agent config directory path; "" = disabled
+	agentConfigDir string        // agent config directory path; "" = disabled
+	turnTimeout    time.Duration // per-turn timeout; 0 = disabled
 
 	accum   map[string]*sessionAccumulator // per-session stats accumulator
 	accumMu sync.Mutex
@@ -75,6 +77,12 @@ func (b *Bridge) SetRetryController(ctrl *LLMRetryController) {
 // files are loaded. Pass "" to disable agent config loading.
 func (b *Bridge) SetAgentConfigDir(dir string) {
 	b.agentConfigDir = dir
+}
+
+// SetTurnTimeout sets the maximum duration a single worker turn may run
+// before being terminated. Pass 0 to disable turn-level timeouts.
+func (b *Bridge) SetTurnTimeout(d time.Duration) {
+	b.turnTimeout = d
 }
 
 // StartSession creates a new session and starts a worker.
@@ -258,7 +266,7 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 		}
 	}()
 	workerType := w.Type()
-	b.log.Info("bridge: forwardEvents goroutine started", "session_id", sessionID, "worker_type", workerType, "resumed", opts.resumed)
+	b.log.Debug("bridge: forwardEvents goroutine started", "session_id", sessionID, "worker_type", workerType, "resumed", opts.resumed)
 	startTime := time.Now()
 	firstEvent := true
 	doneReceived := false
@@ -275,6 +283,28 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 	var turnText strings.Builder
 	var lastError *events.ErrorData
 	var pendingError *events.Envelope // buffered error event; suppressed if retry triggers
+
+	// Turn timeout: kill worker if a single turn exceeds the configured duration.
+	// Timer resets on every received event; stops on done.
+	var turnTimerFired atomic.Bool
+	var turnTimer *time.Timer
+	if b.turnTimeout > 0 {
+		turnTimer = time.AfterFunc(b.turnTimeout, func() {
+			if !turnTimerFired.CompareAndSwap(false, true) {
+				return
+			}
+			b.log.Warn("bridge: turn timeout exceeded, terminating worker",
+				"session_id", sessionID, "worker_type", workerType, "turn_timeout", b.turnTimeout)
+			timeoutEvt := events.NewEnvelope(aep.NewID(), sessionID,
+				b.hub.NextSeq(sessionID), events.Error, events.ErrorData{
+					Code:    "TURN_TIMEOUT",
+					Message: fmt.Sprintf("Turn exceeded %v time limit and was terminated.", b.turnTimeout),
+				})
+			_ = b.hub.SendToSession(context.Background(), timeoutEvt)
+			_ = w.Terminate(context.Background())
+		})
+		defer turnTimer.Stop()
+	}
 
 	for env := range w.Conn().Recv() {
 		if env.Event.Type == events.Error {
@@ -301,6 +331,17 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 			b.persistWorkerSessionID(w, sessionID)
 			firstEvent = false
 		}
+
+		// Turn timeout: reset timer on every received event (turn is still alive).
+		// Skip if timer already fired (worker is being terminated).
+		if turnTimer != nil && !turnTimerFired.Load() {
+			turnTimer.Reset(b.turnTimeout)
+		}
+		// If turn timer fired, drain remaining events without processing.
+		if turnTimerFired.Load() {
+			continue
+		}
+
 		// Make a defensive copy before mutating SessionID to avoid a data race
 		// with Hub.Run which reads env during JSON encoding (hub mutates Seq).
 		env = events.Clone(env)
@@ -320,12 +361,21 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 			acc := b.getOrInitAccum(sessionID)
 			acc.ToolCallCount++
 		case events.Done:
+			if turnTimer != nil {
+				turnTimer.Stop()
+			}
 			acc := b.getOrInitAccum(sessionID)
 			if dd, ok := env.Event.Data.(events.DoneData); ok {
 				acc.mergePerTurnStats(dd)
 			}
 			acc.TurnCount++
 			b.injectSessionStats(env, acc)
+			if b.log.Enabled(context.Background(), slog.LevelDebug) {
+				b.log.Debug("bridge: turn completed",
+					"session_id", sessionID, "worker_type", workerType, "turn", acc.TurnCount,
+					"duration", time.Since(startTime).Round(time.Millisecond),
+					"text_len", turnText.Len(), "tools", acc.ToolCallCount)
+			}
 		}
 
 		// UI Reconciliation (Fallback full message if silent dropped)
@@ -351,7 +401,7 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 		}
 
 		if err := b.hub.SendToSession(context.Background(), env); err != nil {
-			b.log.Warn("bridge: forward event failed", "err", err, "session_id", sessionID, "worker_type", workerType)
+			b.log.Warn("bridge: forward event failed", "err", err, "session_id", sessionID, "worker_type", workerType, "event_type", env.Event.Type)
 		}
 
 		// Flush buffered error on non-Done events (no retry decision possible yet).
@@ -436,7 +486,7 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 		var lastInput string
 		if conn := w.Conn(); conn != nil {
 			if ir, ok := conn.(worker.InputRecoverer); ok {
-				lastInput = ir.LastInput()
+				lastInput = sanitizeLastInput(ir.LastInput())
 			}
 		}
 		if b.attemptResumeFallback(fallbackParams{
@@ -474,7 +524,10 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 	}
 
 	if exitCode != 0 {
-		b.log.Warn("bridge: worker exited with non-zero code, sending crash done", "session_id", sessionID, "worker_type", workerType, "exit_code", exitCode)
+		acc := b.getOrInitAccum(sessionID)
+		b.log.Warn("bridge: worker exited with non-zero code, sending crash done",
+			"session_id", sessionID, "worker_type", workerType, "exit_code", exitCode,
+			"duration", time.Since(startTime).Round(time.Millisecond), "turn_count", acc.TurnCount)
 		metrics.WorkerCrashesTotal.WithLabelValues(string(workerType), fmt.Sprintf("%d", exitCode)).Inc()
 		crashDone := events.NewEnvelope(aep.NewID(), sessionID, b.hub.NextSeq(sessionID), events.Done, events.DoneData{
 			Success: false,
@@ -607,6 +660,8 @@ func (b *Bridge) attemptResumeFallback(p fallbackParams) bool {
 // cleanupCrashedWorker detaches the dead worker and transitions the session to TERMINATED
 // so the next message triggers orphan resume instead of silently dropping input.
 func (b *Bridge) cleanupCrashedWorker(sessionID string) {
+	acc := b.getOrInitAccum(sessionID)
+	b.log.Debug("bridge: cleaning up crashed worker", "session_id", sessionID, "turn_count", acc.TurnCount)
 	b.deleteAccum(sessionID)
 	if b.sm == nil {
 		return
@@ -627,7 +682,7 @@ func (b *Bridge) cleanupCrashedWorker(sessionID string) {
 //  4. No worker, state=RUNNING/IDLE/TERMINATED → Resume (--resume)
 //     If Resume fails (files gone/corrupted), fall back to Start (--session-id)
 func (b *Bridge) StartPlatformSession(ctx context.Context, sessionID, ownerID, workerType, workDir, platform string, platformKey map[string]string) error {
-	b.log.Debug("bridge: StartPlatformSession called", "session_id", sessionID, "owner_id", ownerID, "worker_type", workerType, "work_dir", workDir, "platform", platform)
+	b.log.Debug("bridge: StartPlatformSession called", "session_id", sessionID, "owner_id", ownerID, "worker_type", workerType, "work_dir", workDir, "platform", platform, "platform_key", platformKey)
 	si, err := b.sm.Get(sessionID)
 	if err == nil {
 		if w := b.sm.GetWorker(sessionID); w != nil {
@@ -847,4 +902,32 @@ func (b *Bridge) injectSessionStats(env *events.Envelope, acc *sessionAccumulato
 	}
 	dd.Stats["_session"] = acc.snapshot()
 	env.Event.Data = dd
+}
+
+// sanitizeLastInput filters control-like text from lastInput before re-delivery
+// during crash recovery. When a worker crashes, the last user input is captured
+// for crash recovery. If that input matches a control command pattern ($gc, /reset,
+// etc.), re-delivering it would cause the new worker to interpret it as a command,
+// triggering another termination — defeating the purpose of crash recovery.
+func sanitizeLastInput(input string) string {
+	if input == "" {
+		return ""
+	}
+	// Single-line control command: discard entirely.
+	if messaging.ParseControlCommand(input) != nil {
+		return ""
+	}
+	// Multi-line: filter out lines that are control commands.
+	lines := strings.Split(input, "\n")
+	filtered := lines[:0]
+	for _, line := range lines {
+		if messaging.ParseControlCommand(strings.TrimSpace(line)) != nil {
+			continue
+		}
+		filtered = append(filtered, line)
+	}
+	if len(filtered) == 0 {
+		return ""
+	}
+	return strings.Join(filtered, "\n")
 }

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"runtime/debug"
 
+	"github.com/hrygo/hotplex/internal/messaging"
 	"github.com/hrygo/hotplex/internal/metrics"
 	"github.com/hrygo/hotplex/internal/security"
 	"github.com/hrygo/hotplex/internal/session"
@@ -70,8 +71,6 @@ func (h *Handler) Handle(ctx context.Context, env *events.Envelope) (err error) 
 }
 
 func (h *Handler) handleInput(ctx context.Context, env *events.Envelope) error {
-	h.log.Debug("gateway: handleInput called", "session_id", env.SessionID, "seq", env.Seq)
-
 	// Cancel pending auto-retry if user sends new input during backoff.
 	if h.bridge != nil {
 		h.bridge.CancelRetry(env.SessionID)
@@ -84,7 +83,56 @@ func (h *Handler) handleInput(ctx context.Context, env *events.Envelope) error {
 	}
 
 	content, _ := data["content"].(string)
-	h.log.Debug("gateway: handleInput content received", "session_id", env.SessionID, "content_len", len(content))
+
+	// --- Command detection (parity with Slack/Feishu adapters) ---
+
+	// Help command: reply directly without involving the worker.
+	if messaging.IsHelpCommand(content) {
+		helpEnv := events.NewEnvelope(
+			aep.NewID(), env.SessionID,
+			h.hub.NextSeq(env.SessionID),
+			events.Message, events.MessageData{Content: messaging.HelpText()},
+		)
+		return h.hub.SendToSession(ctx, helpEnv)
+	}
+
+	// Control command: convert to AEP control event and dispatch.
+	if result := messaging.ParseControlCommand(content); result != nil {
+		ctrlEnv := &events.Envelope{
+			Version:   events.Version,
+			ID:        aep.NewID(),
+			SessionID: env.SessionID,
+			Seq:       h.hub.NextSeq(env.SessionID),
+			Event: events.Event{
+				Type: events.Control,
+				Data: events.ControlData{Action: result.Action},
+			},
+			OwnerID: env.OwnerID,
+		}
+		return h.handleControl(ctx, ctrlEnv)
+	}
+
+	// Worker command: convert to AEP worker_cmd event and dispatch.
+	if cmdResult := messaging.ParseWorkerCommand(content); cmdResult != nil {
+		wcmdEnv := &events.Envelope{
+			Version:   events.Version,
+			ID:        aep.NewID(),
+			SessionID: env.SessionID,
+			Seq:       h.hub.NextSeq(env.SessionID),
+			Event: events.Event{
+				Type: events.WorkerCmd,
+				Data: events.WorkerCommandData{
+					Command: cmdResult.Command,
+					Args:    cmdResult.Args,
+					Extra:   cmdResult.Extra,
+				},
+			},
+			OwnerID: env.OwnerID,
+		}
+		return h.handleWorkerCommand(ctx, wcmdEnv)
+	}
+
+	// --- End command detection ---
 
 	// Check SESSION_BUSY: session must be active.
 	si, err := h.sm.Get(env.SessionID)
@@ -92,8 +140,6 @@ func (h *Handler) handleInput(ctx context.Context, env *events.Envelope) error {
 		h.log.Warn("gateway: handleInput session not found", "session_id", env.SessionID, "err", err)
 		return h.sendErrorf(ctx, env, events.ErrCodeSessionNotFound, "session not found")
 	}
-
-	h.log.Debug("gateway: handleInput session state", "session_id", env.SessionID, "state", si.State)
 
 	if !si.State.IsActive() {
 		h.log.Warn("gateway: handleInput session not active", "session_id", env.SessionID, "state", si.State)
@@ -112,15 +158,21 @@ func (h *Handler) handleInput(ctx context.Context, env *events.Envelope) error {
 	// Deliver to worker.
 	w := h.sm.GetWorker(env.SessionID)
 	if w != nil {
-		h.log.Debug("gateway: delivering input to worker", "session_id", env.SessionID, "content_preview", content)
+		if h.log.Enabled(ctx, slog.LevelDebug) {
+			preview := content
+			if len(preview) > 20 {
+				preview = preview[:20] + "..."
+			}
+			h.log.Debug("gateway: delivering input to worker", "session_id", env.SessionID, "content_len", len(content), "preview", preview)
+		}
 		if err := w.Input(ctx, content, nil); err != nil {
 			h.log.Warn("gateway: worker input", "err", err, "session_id", env.SessionID)
 			_ = h.sendErrorf(ctx, env, events.ErrCodeInternalError, "worker input failed: %v", err)
 		} else {
-			h.log.Info("gateway: input delivered to worker", "session_id", env.SessionID)
+			h.log.Debug("gateway: input delivered to worker", "session_id", env.SessionID)
 		}
 	} else {
-		h.log.Error("gateway: handleInput no worker found", "session_id", env.SessionID)
+		h.log.Warn("gateway: handleInput no worker found", "session_id", env.SessionID)
 		_ = h.sendErrorf(ctx, env, events.ErrCodeSessionNotFound, "no worker attached to session")
 	}
 
@@ -540,7 +592,7 @@ type SessionManager interface {
 	GetWorker(id string) worker.Worker
 	Delete(ctx context.Context, id string) error
 	DeletePhysical(ctx context.Context, id string) error
-	List(ctx context.Context, limit, offset int) ([]*session.SessionInfo, error)
+	List(ctx context.Context, userID, platform string, limit, offset int) ([]*session.SessionInfo, error)
 	UpdateWorkerSessionID(ctx context.Context, id, workerSessionID string) error
 }
 

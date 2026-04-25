@@ -25,7 +25,7 @@ var ErrAuditChainInvalid = errors.New("session store: audit chain invalid")
 type Store interface {
 	Upsert(ctx context.Context, info *SessionInfo) error
 	Get(ctx context.Context, id string) (*SessionInfo, error)
-	List(ctx context.Context, limit, offset int) ([]*SessionInfo, error)
+	List(ctx context.Context, userID, platform string, limit, offset int) ([]*SessionInfo, error)
 	GetExpiredMaxLifetime(ctx context.Context, now time.Time) ([]string, error)
 	GetExpiredIdle(ctx context.Context, now time.Time) ([]string, error)
 	DeleteTerminated(ctx context.Context, cutoff time.Time) error
@@ -180,11 +180,11 @@ func (s *SQLiteStore) Get(ctx context.Context, id string) (*SessionInfo, error) 
 	return &info, nil
 }
 
-func (s *SQLiteStore) List(ctx context.Context, limit, offset int) ([]*SessionInfo, error) {
+func (s *SQLiteStore) List(ctx context.Context, userID, platform string, limit, offset int) ([]*SessionInfo, error) {
 	if limit <= 0 {
 		limit = 100
 	}
-	rows, err := s.db.QueryContext(ctx, queries["store.list_sessions"], limit, offset)
+	rows, err := s.db.QueryContext(ctx, queries["store.list_sessions"], userID, userID, platform, platform, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("session store: list: %w", err)
 	}

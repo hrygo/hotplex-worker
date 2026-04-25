@@ -25,7 +25,7 @@ function CodeBlock({ raw, lang, highlighted }: { raw: string; lang: string; high
   };
 
   return (
-    <div className="relative group/code my-6 rounded-xl overflow-hidden border border-[var(--border-default)] bg-black shadow-2xl">
+    <div className="relative group/code my-6 rounded-[var(--radius-lg)] overflow-hidden border border-[var(--border-default)] bg-black shadow-2xl">
       <div className="flex items-center justify-between px-4 py-2 bg-[var(--bg-elevated)] border-bottom border-[var(--border-subtle)]">
         <span className="text-[10px] font-mono font-bold tracking-widest text-[var(--text-muted)] uppercase">
           {lang || "code"}
@@ -77,7 +77,7 @@ export function MarkdownText({ text }: { text: string }) {
 
             if (!className) {
               return (
-                <code className="bg-[var(--bg-elevated)] text-[var(--accent-gold-bright)] px-1.5 py-0.5 rounded text-[0.9em] font-mono border border-[var(--border-subtle)]">
+                <code className="bg-[var(--bg-elevated)] text-[var(--accent-gold-bright)] px-1.5 py-0.5 rounded-[var(--radius-xs)] text-[0.9em] font-mono border border-[var(--border-subtle)]">
                   {raw}
                 </code>
               );
@@ -101,7 +101,7 @@ export function MarkdownText({ text }: { text: string }) {
             </a>
           ),
           table: ({ children }) => (
-            <div className="my-6 overflow-x-auto rounded-xl border border-[var(--border-default)]">
+            <div className="my-6 overflow-x-auto rounded-[var(--radius-lg)] border border-[var(--border-default)]">
               <table className="min-w-full divide-y divide-[var(--border-subtle)] bg-[var(--bg-surface)]">
                 {children}
               </table>

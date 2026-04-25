@@ -121,7 +121,7 @@ start_gateway() {
             rm -f "$GATEWAY_PID"
             exit 1
         fi
-        if grep -qv '^time=' "$GATEWAY_LOG" 2>/dev/null; then
+        if grep -qvE '^(time=|\{"time":)' "$GATEWAY_LOG" 2>/dev/null; then
             sleep 0.5  # give banner a moment to flush fully
             break
         fi
@@ -129,8 +129,7 @@ start_gateway() {
     done
 
     if kill -0 "$(cat "$GATEWAY_PID")" 2>/dev/null; then
-        ok "Gateway started (PID $(cat "$GATEWAY_PID"))"
-        grep -v '^time=' "$GATEWAY_LOG" | sed '/^$/d' | sed 's/^/  /' || true
+        grep -vE '^(time=|\{"time":)' "$GATEWAY_LOG" | sed '/^$/d' || true
     fi
 }
 
@@ -197,13 +196,13 @@ start_webchat() {
         (cd "$WEBCHAT_DIR" && pnpm install --frozen-lockfile 2>/dev/null || pnpm install)
     fi
 
-    info "Starting webchat dev server (port $WEBCHAT_PORT)..."
-    (cd "$WEBCHAT_DIR" && PORT="$WEBCHAT_PORT" pnpm dev --port "$WEBCHAT_PORT" >> "$WEBCHAT_LOG" 2>&1) &
+    echo -e "  ${DIM}› Starting webchat (port $WEBCHAT_PORT)...${NC}"
+    (cd "$WEBCHAT_DIR" && exec pnpm dev --port "$WEBCHAT_PORT" >> "$WEBCHAT_LOG" 2>&1) &
     echo $! > "$WEBCHAT_PID"
     sleep 3
 
     if webchat_running; then
-        ok "Web-chat started (PID $(cat "$WEBCHAT_PID")) → http://localhost:$WEBCHAT_PORT"
+        echo -e "  ${GREEN}✓ Web-chat → http://localhost:$WEBCHAT_PORT${NC}"
     else
         err "Web-chat failed to start"
         tail -20 "$WEBCHAT_LOG"

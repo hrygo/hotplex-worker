@@ -140,13 +140,3 @@ func (c *AgentConfigs) IsEmpty() bool {
 	return c.Soul == "" && c.Agents == "" && c.Skills == "" &&
 		c.User == "" && c.Memory == ""
 }
-
-// HasBPrompt returns true if any B-channel content is present.
-func (c *AgentConfigs) HasBPrompt() bool {
-	return c.Soul != "" || c.Agents != "" || c.Skills != ""
-}
-
-// HasCRules returns true if any C-channel content is present.
-func (c *AgentConfigs) HasCRules() bool {
-	return c.User != "" || c.Memory != ""
-}

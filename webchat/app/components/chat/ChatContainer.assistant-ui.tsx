@@ -98,14 +98,14 @@ export default function ChatContainer() {
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-[var(--bg-base)] z-10 animate-fade-in">
               <div className="relative mb-6">
                 <div className="absolute inset-0 bg-[var(--accent-gold)] opacity-20 blur-2xl rounded-full animate-pulse" />
-                <BrandIcon size={48} className="relative z-10 animate-float" />
+                <BrandIcon size={56} className="relative z-10 animate-float" />
               </div>
               <p className="text-sm font-medium text-[var(--text-secondary)] animate-pulse">Starting new session...</p>
             </div>
           ) : !activeSessionId ? (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-[var(--bg-base)] p-8 text-center">
                <div className="w-20 h-20 rounded-3xl bg-white shadow-xl border border-[var(--border-subtle)] flex items-center justify-center mb-8">
-                  <BrandIcon size={40} />
+                  <BrandIcon size={60} />
                </div>
                <h2 className="text-xl font-display font-bold text-[var(--text-primary)] mb-3">Empower Your Coding</h2>
                <p className="text-sm text-[var(--text-muted)] max-w-sm mb-10 leading-relaxed">

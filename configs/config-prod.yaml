@@ -23,7 +23,7 @@ security:
 pool:
   min_size: 10
   max_size: 500
-  max_memory_per_user: 2147483648  # 2GB
+  max_memory_per_user: 3221225472  # 3GB
 
 worker:
   idle_timeout: 30m

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -95,6 +96,7 @@ type NativeStreamingWriter struct {
 	client    *slack.Client
 	channelID string
 	threadTS  string
+	log       *slog.Logger
 
 	mu          sync.Mutex
 	started     bool
@@ -123,12 +125,13 @@ type NativeStreamingWriter struct {
 
 // NewNativeStreamingWriter creates a new streaming writer for Slack.
 func NewNativeStreamingWriter(ctx context.Context, client *slack.Client, channelID, threadTS string,
-	rateLimiter *ChannelRateLimiter, onComplete func(string), onRegister func(*NativeStreamingWriter)) *NativeStreamingWriter {
+	rateLimiter *ChannelRateLimiter, log *slog.Logger, onComplete func(string), onRegister func(*NativeStreamingWriter)) *NativeStreamingWriter {
 	w := &NativeStreamingWriter{
 		ctx:          ctx,
 		client:       client,
 		channelID:    channelID,
 		threadTS:     threadTS,
+		log:          log,
 		onComplete:   onComplete,
 		onRegister:   onRegister,
 		rateLimiter:  rateLimiter,
@@ -161,6 +164,9 @@ func (w *NativeStreamingWriter) Write(p []byte) (int, error) {
 			w.streamExpired = true
 			if !w.ttlWarningLogged {
 				w.ttlWarningLogged = true
+				w.log.Warn("slack: stream TTL exceeded before start",
+					"channel", w.channelID, "thread", w.threadTS,
+					"ttl", StreamTTL, "elapsed", time.Since(w.streamStartTime).Round(time.Second))
 			}
 			return 0, fmt.Errorf("stream expired after %v", StreamTTL)
 		}
@@ -327,6 +333,20 @@ func (w *NativeStreamingWriter) Close() error {
 	}
 
 	integrityOK := len(failedChunks) == 0 && bytesWritten == bytesFlushed
+	duration := time.Since(w.streamStartTime).Round(time.Millisecond)
+
+	if !integrityOK || streamExpired {
+		w.log.Warn("slack: stream closed with issues",
+			"channel", w.channelID, "thread", w.threadTS,
+			"duration", duration,
+			"bytes_written", bytesWritten, "bytes_flushed", bytesFlushed,
+			"failed_chunks", len(failedChunks), "expired", streamExpired)
+	} else {
+		w.log.Debug("slack: stream closed",
+			"channel", w.channelID, "thread", w.threadTS,
+			"duration", duration,
+			"bytes_written", bytesWritten)
+	}
 
 	// Use a fresh context for cleanup since w.ctx may be cancelled
 	cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

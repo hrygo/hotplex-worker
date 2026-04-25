@@ -23,7 +23,7 @@ session:
 
 pool:
   max_size: 50
-  max_memory_per_user: 3221225472  # 3GB (~6 concurrent workers)
+  max_memory_per_user: 3221225472  # 3GB
 
 worker:
   idle_timeout: 30m
@@ -31,7 +31,7 @@ worker:
 
 log:
   level: "debug"
-  format: "text"
+  format: "json"
 
 messaging:
   slack:

@@ -419,7 +419,7 @@ func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsA
 	}
 
 	if err := a.HandleTextMessage(ctx, platformMsgID, channelID, teamID, threadTS, userID, text); err != nil {
-		a.log.Error("slack: handle message failed", "err", err)
+		a.log.Error("slack: handle message failed", "err", err, "channel", channelID, "thread", threadTS, "user", userID)
 	}
 }
 
@@ -464,7 +464,7 @@ func (a *Adapter) HandleTextMessage(ctx context.Context, platformMsgID, channelI
 
 // NewStreamingWriter creates a streaming writer for the given channel/thread.
 func (a *Adapter) NewStreamingWriter(ctx context.Context, channelID, threadTS string, onComplete func(string)) *NativeStreamingWriter {
-	w := NewNativeStreamingWriter(ctx, a.client, channelID, threadTS, a.rateLimiter, func(ts string) {
+	w := NewNativeStreamingWriter(ctx, a.client, channelID, threadTS, a.rateLimiter, a.log, func(ts string) {
 		if !a.closed.Load() {
 			a.mu.Lock()
 			delete(a.activeStreams, ts)
@@ -604,6 +604,11 @@ func (a *Adapter) handleTextControlCommand(ctx context.Context, teamID, channelI
 	// Cancel them now so stale interactive buttons don't route to the new worker.
 	if result.Action == events.ControlActionReset || result.Action == events.ControlActionGC {
 		a.interactions.CancelAll(env.SessionID)
+		// Abort any active streaming writer — GC/Reset kills the worker without a
+		// done event, so the writer would otherwise remain active until TTL expiry.
+		if conn := a.GetOrCreateConn(channelID, threadTS); conn != nil {
+			conn.closeStreamWriter()
+		}
 	}
 
 	a.sendEphemeralOrPost(ctx, channelID, threadTS, userID, controlFeedbackMessage(result.Action))

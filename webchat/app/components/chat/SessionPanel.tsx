@@ -95,7 +95,7 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
   return (
     <div className="flex flex-col items-center justify-center py-16 px-6 text-center animate-fade-in">
       <div className="w-16 h-16 rounded-2xl bg-[var(--bg-elevated)] border border-[var(--border-subtle)] flex items-center justify-center mb-6 shadow-xl">
-        <BrandIcon size={32} className="opacity-40" />
+        <BrandIcon size={48} className="opacity-40" />
       </div>
       <p className="text-sm font-medium mb-1 text-[var(--text-primary)]">No sessions yet</p>
       <p className="text-xs text-[var(--text-muted)] mb-8 max-w-[180px] mx-auto leading-relaxed">
@@ -140,7 +140,7 @@ export function SessionPanel({
       <div className="px-5 py-6">
         <div className="flex items-center gap-3 mb-6">
           <div className="w-9 h-9 rounded-xl bg-white shadow-sm border border-[var(--border-default)] flex items-center justify-center">
-            <BrandIcon size={24} />
+            <BrandIcon size={28} />
           </div>
           <div>
             <h2 className="text-sm font-display font-bold text-[var(--text-primary)]">HotPlex Sessions</h2>

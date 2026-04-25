@@ -86,18 +86,18 @@ function WelcomeScreen() {
   return (
     <div className="flex flex-col items-center justify-center py-24 text-center animate-fade-in-up">
       <div className="relative mb-8 flex items-center justify-center">
-        <div className="absolute inset-0 bg-[var(--accent-gold)] opacity-10 blur-3xl rounded-full scale-[2]" />
+        <div className="absolute inset-0 bg-[var(--accent-gold)] opacity-10 blur-3xl rounded-[var(--radius-full)] scale-[2]" />
         
         {/* Orbital rings */}
-        <div className="absolute w-32 h-32 border border-[var(--border-gold)] opacity-20 rounded-full animate-[spin_10s_linear_infinite]" />
-        <div className="absolute w-40 h-40 border border-[var(--accent-emerald)] opacity-10 rounded-full animate-[spin_15s_linear_infinite_reverse]" />
+        <div className="absolute w-32 h-32 border border-[var(--border-gold)] opacity-20 rounded-[var(--radius-full)] animate-[spin_10s_linear_infinite]" />
+        <div className="absolute w-40 h-40 border border-[var(--accent-emerald)] opacity-10 rounded-[var(--radius-full)] animate-[spin_15s_linear_infinite_reverse]" />
         
         {/* Orbiting particles */}
         <div className="absolute w-full h-full animate-[orbit_4s_linear_infinite]">
-           <div className="w-2 h-2 rounded-full bg-[var(--accent-gold)] blur-[1px]" />
+           <div className="w-2 h-2 rounded-[var(--radius-full)] bg-[var(--accent-gold)] blur-[1px]" />
         </div>
         
-        <BrandIcon size={84} className="relative z-10 animate-float" />
+        <BrandIcon size={96} className="relative z-10 animate-float" />
       </div>
 
       <h1 className="text-4xl font-display font-bold tracking-tight mb-3 text-gradient-gold">
@@ -119,7 +119,7 @@ function WelcomeScreen() {
               {...(selfContained ? { send: true } : {})}
               className="suggestion-card flex items-center gap-3"
             >
-              <div className="w-8 h-8 rounded-lg bg-[var(--bg-elevated)] flex items-center justify-center text-[var(--accent-gold)]">
+              <div className="w-8 h-8 rounded-[var(--radius-sm)] bg-[var(--bg-elevated)] flex items-center justify-center text-[var(--accent-gold)]">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d={ICON_PATHS[s.icon]} />
                 </svg>
@@ -142,8 +142,8 @@ function AssistantMessage() {
   return (
     <MessagePrimitive.Root className="group msg-assistant animate-fade-in-up">
       <div className="flex-shrink-0 mt-1">
-        <div className="w-9 h-9 rounded-xl glass-dark flex items-center justify-center border border-[var(--border-default)]">
-          <BrandIcon size={24} />
+        <div className="w-9 h-9 rounded-[var(--radius-md)] glass-dark flex items-center justify-center border border-[var(--border-default)]">
+          <BrandIcon size={28} />
         </div>
       </div>
 
@@ -177,7 +177,7 @@ function AssistantMessage() {
         </MessagePrimitive.Parts>
 
         <ActionBarPrimitive.Root className="flex items-center gap-2 mt-4 opacity-0 group-hover:opacity-100 transition-opacity">
-          <ActionBarPrimitive.Copy className="text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors px-2 py-1 rounded hover:bg-[var(--bg-elevated)]" />
+          <ActionBarPrimitive.Copy className="text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors px-2 py-1 rounded-[var(--radius-xs)] hover:bg-[var(--bg-elevated)]" />
         </ActionBarPrimitive.Root>
       </div>
     </MessagePrimitive.Root>

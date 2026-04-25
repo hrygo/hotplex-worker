@@ -125,8 +125,8 @@ func (a *sessionManagerAdapter) Stats() (int, int, int) {
 	return a.sm.Stats()
 }
 
-func (a *sessionManagerAdapter) List(ctx context.Context, limit, offset int) ([]any, error) {
-	sessions, err := a.sm.List(ctx, limit, offset)
+func (a *sessionManagerAdapter) List(ctx context.Context, userID, platform string, limit, offset int) ([]any, error) {
+	sessions, err := a.sm.List(ctx, userID, platform, limit, offset)
 	if err != nil {
 		return nil, err
 	}

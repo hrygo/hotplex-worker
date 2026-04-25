@@ -63,6 +63,9 @@ func (a *AdminAPI) ListSessions(w http.ResponseWriter, r *http.Request) {
 	}
 	limit := 100
 	offset := 0
+	platform := r.URL.Query().Get("platform")
+	userID := r.URL.Query().Get("user_id")
+
 	if l := r.URL.Query().Get("limit"); l != "" {
 		if v, err := strconv.Atoi(l); err == nil && v > 0 {
 			limit = v
@@ -74,7 +77,7 @@ func (a *AdminAPI) ListSessions(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	sessions, err := a.sm.List(r.Context(), limit, offset)
+	sessions, err := a.sm.List(r.Context(), userID, platform, limit, offset)
 	if err != nil {
 		a.log.Error("admin: list sessions", "err", err)
 		http.Error(w, "failed to list sessions", http.StatusInternalServerError)

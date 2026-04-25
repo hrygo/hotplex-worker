@@ -78,6 +78,7 @@ worker:
   max_lifetime: 24h
   idle_timeout: 60m
   execution_timeout: 30m
+  turn_timeout: 15m
 
   auto_retry:
     enabled: true
