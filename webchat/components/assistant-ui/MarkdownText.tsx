@@ -72,10 +72,14 @@ function CodeBlock({ raw, lang, highlighted }: { raw: string; lang: string; high
         </div>
       </div>
       <div 
-        className={`p-4 overflow-x-auto custom-scrollbar transition-[max-height] duration-300 ease-in-out ${!showContent ? "max-height-[100px] overflow-hidden" : "max-height-[1000px]"}`}
+        className="p-4 overflow-x-auto custom-scrollbar transition-[max-height] duration-300 ease-in-out relative"
+        style={{ 
+          maxHeight: showContent ? "none" : "200px",
+          overflowY: showContent ? "auto" : "hidden"
+        }}
       >
         <code
-          className="block font-mono text-[13px] leading-relaxed"
+          className="block font-mono text-[13px] leading-relaxed whitespace-pre"
           dangerouslySetInnerHTML={{ __html: highlighted }}
         />
         {!showContent && (
