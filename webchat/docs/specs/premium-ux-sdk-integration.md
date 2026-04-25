@@ -1,6 +1,6 @@
 # 架构与技术规范：HotPlex WebChat 生产级进阶方案
 
-**版本**：1.1  
+**版本**：1.1.0  
 **状态**：已核准 (Approved Specs)  
 **定位**：统一 AI 编码智能体网关 (HotPlex Gateway) 的企业级高保真 Web 客户端。
 

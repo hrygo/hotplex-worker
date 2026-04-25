@@ -46,10 +46,10 @@ func TestNewJSONReport(t *testing.T) {
 		},
 	}
 
-	report := NewJSONReport("0.1.0", diags)
+	report := NewJSONReport("1.1.0", diags)
 
-	if report.Version != "0.1.0" {
-		t.Errorf("Version = %q, want %q", report.Version, "0.1.0")
+	if report.Version != "1.1.0" {
+		t.Errorf("Version = %q, want %q", report.Version, "1.1.0")
 	}
 
 	_, err := time.Parse(time.RFC3339, report.Timestamp)
@@ -82,7 +82,7 @@ func TestWriteJSON(t *testing.T) {
 		},
 	}
 
-	report := NewJSONReport("0.1.0", diags)
+	report := NewJSONReport("1.1.0", diags)
 
 	var buf bytes.Buffer
 	err := WriteJSON(&buf, report)
@@ -91,7 +91,7 @@ func TestWriteJSON(t *testing.T) {
 	}
 
 	output := buf.String()
-	if !strings.Contains(output, `"version": "0.1.0"`) {
+	if !strings.Contains(output, `"version": "1.1.0"`) {
 		t.Errorf("output missing version: %s", output)
 	}
 	if !strings.Contains(output, `"pass": 1`) {
@@ -106,8 +106,8 @@ func TestWriteJSON(t *testing.T) {
 		t.Fatalf("output is not valid JSON: %v", err)
 	}
 
-	if decoded.Version != "0.1.0" {
-		t.Errorf("decoded.Version = %q, want %q", decoded.Version, "0.1.0")
+	if decoded.Version != "1.1.0" {
+		t.Errorf("decoded.Version = %q, want %q", decoded.Version, "1.1.0")
 	}
 	if decoded.Summary.Pass != 1 {
 		t.Errorf("decoded.Summary.Pass = %d, want %d", decoded.Summary.Pass, 1)
