@@ -345,10 +345,31 @@ export function useHotPlexRuntime({
         return prev;
       });
 
-      const isTimeout = (data?.code as string) === 'TURN_TIMEOUT';
-      const errorMessage = isTimeout 
-        ? "Session timeout: The agent took too long to respond (limit: 15m). You may want to break your request into smaller steps."
-        : (data?.message || (data?.code ? `Error: ${data.code}` : 'An unexpected error occurred.'));
+      let errorMessage = data?.message;
+      
+      // User-friendly mapping for specific terminal errors
+      switch (data?.code as string) {
+        case 'TURN_TIMEOUT':
+          errorMessage = "Session timeout: The agent took too long to respond (limit: 15m). You may want to break your request into smaller steps.";
+          break;
+        case 'WORKER_CRASH':
+          errorMessage = "The coding agent crashed unexpectedly. Please try again or reset the session.";
+          break;
+        case 'SESSION_EXPIRED':
+          errorMessage = "This session has expired due to inactivity. Please start a new session.";
+          break;
+        case 'RATE_LIMITED':
+          errorMessage = "You've reached the rate limit. Please wait a moment before sending more messages.";
+          break;
+        case 'UNAUTHORIZED':
+          errorMessage = "Authentication failed. Please check your API key or connection settings.";
+          break;
+        case 'WORKER_OUTPUT_LIMIT':
+          errorMessage = "The agent produced too much output and was terminated. Try to narrow down your request.";
+          break;
+        default:
+          errorMessage = errorMessage || (data?.code ? `Error: ${data.code}` : 'An unexpected error occurred.');
+      }
 
       // Add error message to thread
       setMessages((prev) => [
