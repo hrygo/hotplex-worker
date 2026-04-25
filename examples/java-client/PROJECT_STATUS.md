@@ -10,7 +10,7 @@
 ## 📦 交付物
 
 ### 编译产物
-- ✅ `target/hotplex-client-1.0.0-SNAPSHOT.jar` (28MB)
+- ✅ `target/hotplex-client-1.1.0-SNAPSHOT.jar` (28MB)
 - ✅ 包含所有依赖的 fat JAR
 - ✅ 可直接运行
 
@@ -112,7 +112,7 @@ mvn clean compile
 ```bash
 mvn clean package -DskipTests
 ```
-**预期结果**: `target/hotplex-client-1.0.0-SNAPSHOT.jar`
+**预期结果**: `target/hotplex-client-1.1.0-SNAPSHOT.jar`
 
 ### 3. 快速示例
 ```bash
@@ -142,7 +142,7 @@ examples/java-client/
 │       ├── application.yml
 │       └── logback.xml
 ├── target/
-│   └── hotplex-client-1.0.0-SNAPSHOT.jar
+│   └── hotplex-client-1.1.0-SNAPSHOT.jar
 ├── pom.xml
 ├── README.md
 ├── IMPLEMENTATION_SUMMARY.md
@@ -160,7 +160,7 @@ examples/java-client/
 <dependency>
     <groupId>dev.hotplex</groupId>
     <artifactId>hotplex-client</artifactId>
-    <version>1.0.0</version>
+    <version>1.1.0</version>
 </dependency>
 ```
 
@@ -174,7 +174,7 @@ mvn clean install
 <dependency>
     <groupId>dev.hotplex</groupId>
     <artifactId>hotplex-client</artifactId>
-    <version>1.0.0-SNAPSHOT</version>
+    <version>1.1.0-SNAPSHOT</version>
 </dependency>
 ```
 
@@ -198,7 +198,7 @@ mvn clean install
 
 ## 📝 版本历史
 
-### v1.0.0-SNAPSHOT (2026-04-03)
+### v1.1.0-SNAPSHOT (2026-04-03)
 - ✅ 完整实现 AEP v1 协议
 - ✅ 修复所有已知问题
 - ✅ 完整文档和示例
