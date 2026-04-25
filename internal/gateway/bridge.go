@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"runtime/debug"
 	"strings"
 	"sync"
@@ -13,6 +15,7 @@ import (
 	"github.com/hrygo/hotplex/internal/agentconfig"
 	"github.com/hrygo/hotplex/internal/messaging"
 	"github.com/hrygo/hotplex/internal/metrics"
+	"github.com/hrygo/hotplex/internal/security"
 	"github.com/hrygo/hotplex/internal/session"
 	"github.com/hrygo/hotplex/internal/worker"
 	"github.com/hrygo/hotplex/internal/worker/noop"
@@ -771,6 +774,95 @@ func (b *Bridge) ResetSession(ctx context.Context, sessionID string) error {
 	}()
 
 	return nil
+}
+
+// SwitchWorkDirResult holds the result of a workdir switch operation.
+type SwitchWorkDirResult struct {
+	OldSessionID string
+	NewSessionID string
+	WorkDir      string
+}
+
+// SwitchWorkDir terminates the current session's worker, transitions it to idle,
+// and creates a new session with the given workDir. The new session inherits
+// the same user, bot, worker type, and platform context.
+func (b *Bridge) SwitchWorkDir(ctx context.Context, oldSessionID, newWorkDir string) (*SwitchWorkDirResult, error) {
+	// 1. Get old session info.
+	si, err := b.sm.Get(oldSessionID)
+	if err != nil {
+		return nil, fmt.Errorf("switch-workdir: get session: %w", err)
+	}
+
+	// 2. Validate session is active.
+	if !si.State.IsActive() {
+		return nil, fmt.Errorf("switch-workdir: session not active (state: %s)", si.State)
+	}
+
+	// 3. Validate new workDir exists and is a directory.
+	cleaned := filepath.Clean(newWorkDir)
+	info, err := os.Stat(cleaned)
+	if err != nil {
+		return nil, fmt.Errorf("switch-workdir: path %s: %w", cleaned, err)
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("switch-workdir: %s is not a directory", cleaned)
+	}
+	if err := security.ValidateWorkDir(cleaned); err != nil {
+		return nil, fmt.Errorf("switch-workdir: %w", err)
+	}
+
+	// 4. Terminate old worker + detach.
+	if w := b.sm.GetWorker(oldSessionID); w != nil {
+		if err := w.Terminate(ctx); err != nil {
+			b.log.Warn("switch-workdir: worker terminate failed", "session_id", oldSessionID, "err", err)
+		}
+		b.sm.DetachWorker(oldSessionID)
+	}
+
+	// 5. Transition old session to idle.
+	if err := b.sm.Transition(ctx, oldSessionID, events.StateIdle); err != nil {
+		b.log.Warn("switch-workdir: transition to idle failed", "session_id", oldSessionID, "err", err)
+	}
+
+	// 6. Derive new session ID.
+	var newID string
+	if si.Platform != "" && len(si.PlatformKey) > 0 {
+		pc := session.PlatformContext{Platform: si.Platform, WorkDir: cleaned}
+		for k, v := range si.PlatformKey {
+			switch k {
+			case "team_id":
+				pc.TeamID = v
+			case "channel_id":
+				pc.ChannelID = v
+			case "thread_ts":
+				pc.ThreadTS = v
+			case "chat_id":
+				pc.ChatID = v
+			case "user_id":
+				pc.UserID = v
+			}
+		}
+		newID = session.DerivePlatformSessionKey(si.UserID, si.WorkerType, pc)
+	} else {
+		newID = aep.NewSessionID()
+	}
+
+	// 7. Start new session.
+	if err := b.StartSession(ctx, newID, si.UserID, si.BotID, si.WorkerType, si.AllowedTools, cleaned, si.Platform, si.PlatformKey); err != nil {
+		return nil, fmt.Errorf("switch-workdir: start session: %w", err)
+	}
+
+	b.log.Info("switch-workdir: session switched",
+		"old_session_id", oldSessionID,
+		"new_session_id", newID,
+		"work_dir", cleaned,
+	)
+
+	return &SwitchWorkDirResult{
+		OldSessionID: oldSessionID,
+		NewSessionID: newID,
+		WorkDir:      cleaned,
+	}, nil
 }
 
 // isWorkerInUseError checks if the worker rejected the session because its

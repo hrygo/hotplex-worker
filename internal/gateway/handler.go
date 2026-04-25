@@ -98,6 +98,10 @@ func (h *Handler) handleInput(ctx context.Context, env *events.Envelope) error {
 
 	// Control command: convert to AEP control event and dispatch.
 	if result := messaging.ParseControlCommand(content); result != nil {
+		data := events.ControlData{Action: result.Action}
+		if result.Arg != "" {
+			data.Details = map[string]any{"path": result.Arg}
+		}
 		ctrlEnv := &events.Envelope{
 			Version:   events.Version,
 			ID:        aep.NewID(),
@@ -105,7 +109,7 @@ func (h *Handler) handleInput(ctx context.Context, env *events.Envelope) error {
 			Seq:       h.hub.NextSeq(env.SessionID),
 			Event: events.Event{
 				Type: events.Control,
-				Data: events.ControlData{Action: result.Action},
+				Data: data,
 			},
 			OwnerID: env.OwnerID,
 		}
@@ -285,6 +289,9 @@ func (h *Handler) handleControl(ctx context.Context, env *events.Envelope) error
 	case events.ControlActionGC:
 		return h.handleGC(ctx, env)
 
+	case events.ControlActionCD:
+		return h.handleCD(ctx, env)
+
 	default:
 		return h.sendErrorf(ctx, env, events.ErrCodeProtocolViolation, "unknown control action: %s", action)
 	}
@@ -426,6 +433,78 @@ func (h *Handler) handleGC(ctx context.Context, env *events.Envelope) error {
 
 	h.log.Info("gateway: session gc'd", "session_id", env.SessionID)
 	return nil
+}
+
+func (h *Handler) handleCD(ctx context.Context, env *events.Envelope) error {
+	// Extract path from control data.
+	var path string
+	switch d := env.Event.Data.(type) {
+	case events.ControlData:
+		if d.Details != nil {
+			path, _ = d.Details["path"].(string)
+		}
+	case map[string]any:
+		path, _ = d["path"].(string)
+	}
+
+	// /cd with no arg: return current workDir.
+	if path == "" {
+		si, err := h.sm.Get(env.SessionID)
+		if err != nil {
+			return h.sendErrorf(ctx, env, events.ErrCodeSessionNotFound, "session not found")
+		}
+		workDir := ""
+		if si.Context != nil {
+			if wd, ok := si.Context["work_dir"].(string); ok {
+				workDir = wd
+			}
+		}
+		msgEnv := events.NewEnvelope(
+			aep.NewID(), env.SessionID, h.hub.NextSeq(env.SessionID),
+			events.Message, events.MessageData{Content: workDir},
+		)
+		return h.hub.SendToSession(ctx, msgEnv)
+	}
+
+	// Expand ~ to $HOME.
+	path = expandHome(path)
+
+	// Validate ownership.
+	if _, err := h.validateOwner(ctx, env); err != nil {
+		if errors.Is(err, session.ErrSessionNotFound) {
+			return h.sendErrorf(ctx, env, events.ErrCodeSessionNotFound, "session not found")
+		}
+		return h.sendErrorf(ctx, env, events.ErrCodeUnauthorized, "ownership required")
+	}
+
+	// Delegate to bridge.
+	if h.bridge == nil {
+		return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "cd not available")
+	}
+	result, err := h.bridge.SwitchWorkDir(ctx, env.SessionID, path)
+	if err != nil {
+		return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "切换失败：%v", err)
+	}
+
+	// Notify client.
+	msg := fmt.Sprintf("已切换到 %s（新会话 %s）", result.WorkDir, result.NewSessionID)
+	msgEnv := events.NewEnvelope(
+		aep.NewID(), env.SessionID, h.hub.NextSeq(env.SessionID),
+		events.Message, events.MessageData{Content: msg},
+	)
+	_ = h.hub.SendToSession(ctx, msgEnv)
+
+	return nil
+}
+
+// expandHome replaces a leading ~ with $HOME.
+func expandHome(path string) string {
+	if strings.HasPrefix(path, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			return home + path[1:]
+		}
+	}
+	return path
 }
 
 // ControlRequester is implemented by workers that support structured control queries.

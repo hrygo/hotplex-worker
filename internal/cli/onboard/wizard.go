@@ -117,7 +117,6 @@ type WizardResult struct {
 	EnvPath        string
 	Steps          []StepResult
 	Action         string // "keep" or "reconfigure"
-	AgentConfigDir string   // agent-config directory path
 	AgentConfigNew []string // files created by this run
 }
 
@@ -139,6 +138,12 @@ func Run(ctx context.Context, opts WizardOptions) (*WizardResult, error) {
 
 	displayBanner()
 
+	runAgentConfigStep := func() {
+		s, created := stepAgentConfig()
+		result.add(s)
+		result.AgentConfigNew = created
+	}
+
 	result.add(stepEnvPreCheck())
 	if result.hasFail() {
 		return result, fmt.Errorf("environment pre-check failed, resolve errors above before continuing")
@@ -149,9 +154,7 @@ func Run(ctx context.Context, opts WizardOptions) (*WizardResult, error) {
 		if opts.NonInteractive {
 			result.Action = "keep"
 			result.add(StepResult{Name: "onboard", Status: "pass", Detail: "kept existing configuration (non-interactive)"})
-			sAgent, agentCreated := stepAgentConfig()
-			result.add(sAgent)
-			result.AgentConfigNew = agentCreated
+			runAgentConfigStep()
 			result.add(stepVerify(opts.ConfigPath))
 			return result, nil
 		}
@@ -159,9 +162,7 @@ func Run(ctx context.Context, opts WizardOptions) (*WizardResult, error) {
 		if promptKeepOrReconfigure() {
 			result.Action = "keep"
 			result.add(StepResult{Name: "onboard", Status: "pass", Detail: "kept existing configuration"})
-			sAgent, agentCreated := stepAgentConfig()
-			result.add(sAgent)
-			result.AgentConfigNew = agentCreated
+			runAgentConfigStep()
 			result.add(stepVerify(opts.ConfigPath))
 			return result, nil
 		}

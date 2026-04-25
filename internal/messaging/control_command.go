@@ -76,8 +76,8 @@ func parseCdCommand(original, normalized string) (ControlCommandResult, bool) {
 		if p.isCase {
 			src = original
 		}
-		if strings.HasPrefix(src, p.prefix) {
-			arg := strings.TrimSpace(strings.TrimPrefix(src, p.prefix))
+		if after, ok := strings.CutPrefix(src, p.prefix); ok {
+			arg := strings.TrimSpace(after)
 			return ControlCommandResult{Action: events.ControlActionCD, Label: "cd", Arg: arg}, true
 		}
 	}
@@ -211,6 +211,7 @@ func HelpText() string {
 				Entries: []helpEntry{
 					{Commands: []string{"/gc", "/park"}, Desc: "休眠会话（停止 Worker，保留会话）"},
 					{Commands: []string{"/reset", "/new"}, Desc: "重置上下文（全新开始）"},
+					{Commands: []string{"/cd"}, Args: "<目录>", Desc: "切换工作目录（创建新会话）"},
 				},
 			},
 			{

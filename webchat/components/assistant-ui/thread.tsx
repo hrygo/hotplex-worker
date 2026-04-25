@@ -499,63 +499,50 @@ function ToolResultBlock({ toolName, result }: { toolName: string; result: any }
    Composer
    ============================================================ */
 function Composer() {
-  const composingRef = useRef(false);
   const aui = useAui();
   const text = useAuiState((s) => s.composer.text);
-  const [localText, setLocalText] = useState(text || "");
   const [menuOpen, setMenuOpen] = useState(false);
 
-  // Sync global text changes (like clearing after send) back to local state
+  // Sync menu state with composer text
   React.useEffect(() => {
-    if (!composingRef.current) {
-      setLocalText(text || "");
-      if (!text) setMenuOpen(false);
-    }
-  }, [text]);
-
-  const handleCompositionStart = useCallback(() => {
-    composingRef.current = true;
-  }, []);
-
-  const handleCompositionEnd = useCallback((e: React.CompositionEvent<HTMLTextAreaElement>) => {
-    composingRef.current = false;
-    const val = e.currentTarget.value;
-    setLocalText(val);
-    aui.composer().setText(val);
-  }, [aui]);
-
-  const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const val = e.target.value;
-    setLocalText(val);
-    
-    // Show menu if starting with / or contains non-whitespace
+    const val = text || "";
     if (val.startsWith("/") || (val.length > 0 && !val.includes(" "))) {
       setMenuOpen(true);
     } else {
       setMenuOpen(false);
     }
-    
-    if (!composingRef.current) {
-      aui.composer().setText(val);
-    }
-  }, [aui]);
+  }, [text]);
 
   const handleSelectCommand = useCallback((cmd: string) => {
-    setLocalText(cmd);
     aui.composer().setText(cmd);
+    // Focus the input after selection to allow immediately appending or pressing enter
+    setTimeout(() => {
+      const input = document.querySelector('.composer-input') as HTMLTextAreaElement;
+      if (input) {
+        input.focus();
+        // Move cursor to end
+        input.selectionStart = input.value.length;
+        input.selectionEnd = input.value.length;
+      }
+    }, 10);
     setMenuOpen(false);
   }, [aui]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (menuOpen && (e.key === "ArrowUp" || e.key === "ArrowDown" || e.key === "Enter" || e.key === "Escape")) {
-      // These are handled by CommandMenu via global window listener, but we might want to prevent default here
-      // if it conflicts with assistant-ui default composer behavior.
+      // These are handled by CommandMenu via global window listener
       if (e.key === "Enter") {
-         // Don't send the message if menu is open and Enter is pressed
-         // CommandMenu's global listener will handle selection
+         // Prevent form submission if menu is open and Enter is pressed
+         const val = text || "";
+         const isSlash = val.startsWith("/");
+         const filterText = isSlash ? val.slice(1).toLowerCase() : val.toLowerCase();
+         // If there are valid suggestions, prevent default to let CommandMenu handle selection
+         if (filterText.length > 0 || isSlash) {
+           e.preventDefault();
+         }
       }
     }
-  }, [menuOpen]);
+  }, [menuOpen, text]);
 
   return (
     <ComposerPrimitive.Root className="composer-root">
@@ -563,7 +550,7 @@ function Composer() {
         <AnimatePresence>
           {menuOpen && (
             <CommandMenu 
-              inputValue={localText} 
+              inputValue={text || ""} 
               onSelect={handleSelectCommand} 
               isOpen={menuOpen} 
               onClose={() => setMenuOpen(false)} 
@@ -577,10 +564,6 @@ function Composer() {
             rows={1}
             autoFocus
             placeholder="Type a message or '/' for commands..."
-            value={localText}
-            onChange={handleChange}
-            onCompositionStart={handleCompositionStart}
-            onCompositionEnd={handleCompositionEnd}
             onKeyDown={handleKeyDown}
           />
 
