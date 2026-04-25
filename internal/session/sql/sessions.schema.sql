@@ -16,7 +16,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     expires_at DATETIME,
     idle_expires_at DATETIME,
     is_active INTEGER NOT NULL DEFAULT 0,
-    context_json TEXT
+    context_json TEXT,
+    work_dir TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_state ON sessions(state);
 CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);

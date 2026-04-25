@@ -135,7 +135,7 @@ func (s *SQLiteStore) Upsert(ctx context.Context, info *SessionInfo) error {
 
 	_, err := s.db.ExecContext(ctx, queries["sessions.upsert_session"],
 		info.ID, info.UserID, info.OwnerID, info.BotID, info.WorkerSessionID, info.WorkerType, string(info.State),
-		info.Platform, string(platformKeyJSON),
+		info.Platform, string(platformKeyJSON), info.WorkDir,
 		info.CreatedAt, info.UpdatedAt, info.ExpiresAt, info.IdleExpiresAt,
 		isActive, string(ctxJSON),
 	)
@@ -150,7 +150,7 @@ func (s *SQLiteStore) Get(ctx context.Context, id string) (*SessionInfo, error) 
 
 	err := s.db.QueryRowContext(ctx, queries["store.get_session"], id).Scan(
 		&info.ID, &info.UserID, &info.OwnerID, &info.WorkerSessionID, &info.WorkerType, &info.State, &info.BotID,
-		&info.Platform, &platformKeyStr,
+		&info.Platform, &platformKeyStr, &info.WorkDir,
 		&createdAt, &updatedAt, &expiresAt, &idleExpiresAt, &ctxJSON)
 
 	if err == sql.ErrNoRows {
@@ -198,7 +198,7 @@ func (s *SQLiteStore) List(ctx context.Context, userID, platform string, limit, 
 		var createdAt, updatedAt time.Time
 
 		err := rows.Scan(&si.ID, &si.UserID, &si.OwnerID, &si.WorkerSessionID, &si.WorkerType, &si.State,
-			&si.BotID, &si.Platform, &platformKeyStr, &createdAt, &updatedAt, &expiresAt, &idleExpiresAt, &ctxJSON)
+			&si.BotID, &si.Platform, &platformKeyStr, &si.WorkDir, &createdAt, &updatedAt, &expiresAt, &idleExpiresAt, &ctxJSON)
 		if err != nil {
 			continue
 		}

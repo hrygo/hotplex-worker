@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface Command {
@@ -10,8 +10,7 @@ interface Command {
   type: "slash" | "skill";
 }
 
-const COMMANDS: Command[] = [
-  // Slash Commands
+const SLASH_COMMANDS: Command[] = [
   { key: "/gc", label: "/gc", description: "Trigger garbage collection and session cleanup", type: "slash" },
   { key: "/reset", label: "/reset", description: "Reset current session and clear history", type: "slash" },
   { key: "/park", label: "/park", description: "Park the current session to save resources", type: "slash" },
@@ -20,14 +19,6 @@ const COMMANDS: Command[] = [
   { key: "/cd", label: "/cd", description: "Switch working directory and create new session", type: "slash" },
   { key: "/skills", label: "/skills", description: "List currently loaded skills and their usage", type: "slash" },
   { key: "/help", label: "/help", description: "Show available commands and documentation", type: "slash" },
-  
-  // Skills
-  { key: "agent-browser", label: "agent-browser", description: "Browser automation and web interaction skill", type: "skill" },
-  { key: "feishu-doc", label: "feishu-doc", description: "Read/write Feishu cloud documents", type: "skill" },
-  { key: "pdf", label: "pdf", description: "PDF processing and OCR capabilities", type: "skill" },
-  { key: "systematic-debugging", label: "systematic-debugging", description: "Expert-level bug analysis and fixing", type: "skill" },
-  { key: "ui-ux-pro-max", label: "ui-ux-pro-max", description: "Advanced UI/UX design intelligence", type: "skill" },
-  { key: "notebooklm", label: "notebooklm", description: "Source-grounded RAG with NotebookLM", type: "skill" },
 ];
 
 interface CommandMenuProps {
@@ -35,29 +26,39 @@ interface CommandMenuProps {
   onSelect: (value: string) => void;
   isOpen: boolean;
   onClose: () => void;
+  skills?: string[];
 }
 
-export function CommandMenu({ inputValue, onSelect, isOpen, onClose }: CommandMenuProps) {
+export function CommandMenu({ inputValue, onSelect, isOpen, onClose, skills }: CommandMenuProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const containerRef = useRef<HTMLDivElement>(null);
+
+  const COMMANDS: Command[] = useMemo(() => [
+    ...SLASH_COMMANDS,
+    ...(skills ?? []).map(name => ({
+      key: name,
+      label: name,
+      description: `${name} skill`,
+      type: "skill" as const,
+    })),
+  ], [skills]);
 
   // Filter commands based on input value
   // If starts with /, filter only slash commands. Otherwise filter skills.
   const isSlash = inputValue.startsWith("/");
   const filterText = isSlash ? inputValue.slice(1).toLowerCase() : inputValue.toLowerCase();
-  
+
   const filtered = COMMANDS.filter(cmd => {
     if (isSlash) {
       if (cmd.type !== "slash") return false;
       if (!filterText) return true; // Show all slash commands if only '/' is typed
-      return cmd.key.toLowerCase().includes(inputValue.toLowerCase()) || 
+      return cmd.key.toLowerCase().includes(inputValue.toLowerCase()) ||
              cmd.description.toLowerCase().includes(filterText);
     }
-    
+
     // Skill filtering
     if (!inputValue) return false;
     if (cmd.type !== "skill") return false;
-    return cmd.key.toLowerCase().includes(filterText) || 
+    return cmd.key.toLowerCase().includes(filterText) ||
            cmd.description.toLowerCase().includes(filterText);
   }).slice(0, 8);
 
@@ -91,7 +92,6 @@ export function CommandMenu({ inputValue, onSelect, isOpen, onClose }: CommandMe
 
   return (
     <div
-      ref={containerRef}
       style={{ zIndex: 99999, pointerEvents: 'auto' }}
       className="absolute bottom-full left-0 right-0 mb-2 rounded-[var(--radius-lg)] bg-[var(--bg-surface)] border border-[var(--border-default)] shadow-[0_12px_48px_rgba(0,0,0,0.6)] backdrop-blur-2xl overflow-hidden"
     >
@@ -99,14 +99,14 @@ export function CommandMenu({ inputValue, onSelect, isOpen, onClose }: CommandMe
         <span>{isSlash ? "System Commands" : "Available Skills"}</span>
         <span className="opacity-50">↑↓ to navigate · Enter to select</span>
       </div>
-      
+
       <div className="max-h-[320px] overflow-y-auto custom-scrollbar">
         {filtered.map((cmd, i) => (
           <button
             key={cmd.key}
             className={`w-full px-4 py-3 text-left flex flex-col gap-0.5 transition-all ${
-              i === selectedIndex 
-                ? "bg-[var(--bg-hover)] translate-x-1" 
+              i === selectedIndex
+                ? "bg-[var(--bg-hover)] translate-x-1"
                 : "hover:bg-[rgba(255,255,255,0.02)]"
             }`}
             onClick={() => onSelect(cmd.key)}

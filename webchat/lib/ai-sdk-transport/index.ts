@@ -20,6 +20,7 @@ export {
   ErrorCode,
   ControlAction,
   WorkerType,
+  WorkerStdioCommand,
   AEP_VERSION,
 } from './client/constants';
 
@@ -44,4 +45,8 @@ export type {
   ReconnectConfig,
   HeartbeatConfig,
   ClientState,
+  ContextUsageData,
+  ContextSkillInfo,
+  ContextCategory,
+  WorkerCommandData,
 } from './client/types';

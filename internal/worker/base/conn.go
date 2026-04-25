@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"runtime"
+	"strings"
 	"sync"
 	"syscall"
 
@@ -67,6 +68,9 @@ func (c *Conn) Send(ctx context.Context, msg *events.Envelope) error {
 
 	// Write NDJSON to stdin.
 	if err := aep.Encode(c.stdin, msg); err != nil {
+		if strings.Contains(err.Error(), "file already closed") || strings.Contains(err.Error(), "broken pipe") {
+			return fmt.Errorf("base: worker process is not running or stdin is closed")
+		}
 		return fmt.Errorf("base: encode: %w", err)
 	}
 
@@ -122,6 +126,9 @@ func (c *Conn) SendUserMessage(ctx context.Context, content string) error {
 
 	err = WriteAll(int(c.stdin.Fd()), data)
 	if err != nil {
+		if strings.Contains(err.Error(), "file already closed") || strings.Contains(err.Error(), "broken pipe") {
+			return fmt.Errorf("base: worker process is not running or stdin is closed")
+		}
 		return fmt.Errorf("base: write user message: %w", err)
 	}
 

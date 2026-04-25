@@ -344,10 +344,18 @@ func (w *Worker) Health() worker.WorkerHealth {
 
 // SendControlRequest sends a control request to Claude Code and waits for the response.
 func (w *Worker) SendControlRequest(ctx context.Context, subtype string, body map[string]any) (map[string]any, error) {
-	if w.control == nil {
+	w.Mu.Lock()
+	if w.Proc == nil || !w.Proc.IsRunning() {
+		w.Mu.Unlock()
+		return nil, fmt.Errorf("claudecode: worker process is not running")
+	}
+	ctrl := w.control
+	w.Mu.Unlock()
+
+	if ctrl == nil {
 		return nil, fmt.Errorf("claudecode: control handler not initialized")
 	}
-	return w.control.SendControlRequest(ctx, subtype, body)
+	return ctrl.SendControlRequest(ctx, subtype, body)
 }
 
 func (w *Worker) LastIO() time.Time {

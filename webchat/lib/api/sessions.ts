@@ -22,6 +22,7 @@ export interface SessionInfo {
   expires_at?: string;
   idle_expires_at?: string;
   turn_count?: number;
+  work_dir?: string;
 }
 
 export type SessionState = 'created' | 'running' | 'idle' | 'terminated' | 'deleted';

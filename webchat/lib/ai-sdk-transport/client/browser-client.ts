@@ -33,6 +33,7 @@ import type {
   StepData,
   PongData,
   ControlData,
+  ContextUsageData,
 } from './types';
 import {
   createInitEnvelope,
@@ -40,6 +41,7 @@ import {
   createPingEnvelope,
   createControlEnvelope,
   createPermissionResponseEnvelope,
+  createWorkerCommandEnvelope,
   serializeEnvelope,
   deserializeEnvelope,
   newSessionId,
@@ -70,6 +72,7 @@ export interface BrowserClientEvents {
   sessionInvalid: (data: ControlData, env: Envelope) => void;
   throttle: (data: ControlData, env: Envelope) => void;
   pong: (data: PongData, env: Envelope) => void;
+  contextUsage: (data: ContextUsageData, env: Envelope) => void;
 }
 
 // ============================================================================
@@ -390,6 +393,10 @@ export class BrowserHotPlexClient extends EventEmitter<BrowserClientEvents> {
       case EventKind.Control:
         this._handleControlMessage(event.data as ControlData, env);
         break;
+
+      case EventKind.ContextUsage:
+        this.emit('contextUsage', event.data as ContextUsageData, env);
+        break;
     }
   }
 
@@ -466,6 +473,11 @@ export class BrowserHotPlexClient extends EventEmitter<BrowserClientEvents> {
 
   sendControl(action: 'terminate' | 'delete'): void {
     const env = createControlEnvelope(this._sessionId!, action);
+    this._send(env);
+  }
+
+  sendWorkerCommand(command: string, args?: string, extra?: Record<string, unknown>): void {
+    const env = createWorkerCommandEnvelope(this._sessionId!, command, args, extra);
     this._send(env);
   }
 

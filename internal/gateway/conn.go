@@ -302,7 +302,7 @@ func (c *Conn) performInit(handler *Handler) error {
 				}
 			} else {
 				// Test mode
-				si, err = handler.sm.CreateWithBot(context.Background(), sessionID, c.userID, c.botID, initData.WorkerType, initData.Config.AllowedTools, "", nil)
+				si, err = handler.sm.CreateWithBot(context.Background(), sessionID, c.userID, c.botID, initData.WorkerType, initData.Config.AllowedTools, "", nil, workDir)
 				if err != nil {
 					c.hub.InitThrottle.RecordFailure(sessionID)
 					c.sendInitError(events.ErrCodeInternalError, "failed to create session")

@@ -72,7 +72,7 @@ function extractSearchQuery(args: Record<string, any>): string | undefined {
 /* ============================================================
    Thread — Main conversation wrapper
    ============================================================ */
-export function Thread() {
+export function Thread({ skills }: { skills?: string[] }) {
   return (
     <ThreadPrimitive.Root className="flex flex-col h-full relative overflow-hidden">
       {/* Background elements */}
@@ -94,32 +94,31 @@ export function Thread() {
             }
           </ThreadPrimitive.Messages>
         </div>
+      </ThreadPrimitive.Viewport>
 
-          {/* Scroll to bottom button */}
+      {/* Composer wrapper (floating footer) */}
+      <div className="composer-wrapper">
+        <div className="composer-container relative">
           <ThreadPrimitive.ScrollToBottom asChild>
             <button className="scroll-bottom-btn">
               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 14l-7 7-7-7" />
               </svg>
-              <span>Jump to Latest</span>
+              <span>Jump to latest</span>
             </button>
           </ThreadPrimitive.ScrollToBottom>
-        </ThreadPrimitive.Viewport>
-
-        {/* Composer wrapper (floating footer) */}
-        <div className="composer-wrapper">
-          <div className="composer-container">
-            <Composer />
-            <div className="mt-2 text-center">
-              <p className="text-[10px] text-[var(--text-faint)] font-mono uppercase tracking-widest">
-                Shift + Enter for new line · Cmd + Enter to send
-              </p>
-            </div>
+          
+          <Composer skills={skills} />
+          <div className="mt-2 text-center">
+            <p className="text-[10px] text-[var(--text-faint)] font-mono uppercase tracking-widest">
+              Shift + Enter for new line · Cmd + Enter to send
+            </p>
           </div>
         </div>
-      </ThreadPrimitive.Root>
-    );
-  }
+      </div>
+    </ThreadPrimitive.Root>
+  );
+}
 
 /* ============================================================
    Welcome Screen
@@ -213,13 +212,13 @@ function AssistantMessage() {
       initial="hidden"
       animate="visible"
     >
-      <div className="flex-shrink-0 mt-1">
+      <div className="flex-shrink-0">
         <div className="w-9 h-9 rounded-[var(--radius-md)] glass-dark flex items-center justify-center">
           <BrandIcon size={28} />
         </div>
       </div>
 
-      <div className="msg-assistant-body">
+      <div className="msg-assistant-body pt-[5px]">
         <MessagePrimitive.Parts>
           {({ part }) => {
             const p = part as Record<string, any>;
@@ -500,7 +499,7 @@ function ToolResultBlock({ toolName, result }: { toolName: string; result: any }
 /* ============================================================
    Composer
    ============================================================ */
-function Composer() {
+function Composer({ skills }: { skills?: string[] }) {
   const composingRef = useRef(false);
   const aui = useAui();
   const text = useAuiState((s) => s.composer.text);
@@ -564,12 +563,13 @@ function Composer() {
       <div className="relative">
         <AnimatePresence>
           {menuOpen && (
-            <CommandMenu 
+            <CommandMenu
               key="command-menu"
-              inputValue={localText} 
-              onSelect={handleSelectCommand} 
-              isOpen={menuOpen} 
-              onClose={() => setMenuOpen(false)} 
+              inputValue={localText}
+              onSelect={handleSelectCommand}
+              isOpen={menuOpen}
+              onClose={() => setMenuOpen(false)}
+              skills={skills}
             />
           )}
         </AnimatePresence>

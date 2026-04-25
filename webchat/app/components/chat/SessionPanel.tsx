@@ -53,6 +53,8 @@ function SessionRow({
           <div className="flex items-center gap-1.5 text-[10px] text-[var(--text-faint)]">
             <span className="capitalize">{session.state}</span>
             <span>•</span>
+            <span className="truncate max-w-[80px]" title={session.work_dir}>{session.work_dir ? (session.work_dir.split('/').pop() || session.work_dir) : 'no-dir'}</span>
+            <span>•</span>
             <span>{formatRelativeTime(session.updated_at)}</span>
           </div>
         </div>

@@ -8,7 +8,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ExternalStoreAdapter, ThreadMessageLike, AppendMessage } from '@assistant-ui/react';
 import { BrowserHotPlexClient } from '@/lib/ai-sdk-transport';
-import type { InitConfig } from '@/lib/ai-sdk-transport/client/types';
+import type { InitConfig, ContextUsageData } from '@/lib/ai-sdk-transport/client/types';
+import { WorkerStdioCommand } from '@/lib/ai-sdk-transport/client/constants';
 import { wsUrl, workerType, apiKey, workDir, allowedTools } from '@/lib/config';
 import { useMetrics } from '@/lib/hooks/useMetrics';
 import type {
@@ -37,6 +38,8 @@ export interface UseHotPlexRuntimeConfig {
   overrideWorkDir?: string;
   /** Called when session metrics update (for dashboard display). */
   onMetricsChange?: (metrics: import('@/lib/hooks/useMetrics').SessionMetrics) => void;
+  /** Called when skills list is fetched from the worker. */
+  onSkillsChange?: (skills: string[]) => void;
 }
 
 // Single part of a message
@@ -86,9 +89,11 @@ function convertToThreadMessage(message: HotPlexMessage): ThreadMessageLike {
       ? [{ type: 'text' as const, text: (message as unknown as { content: string }).content }]
       : [];
 
+  const role = (message.role as string) === 'user' ? 'user' : 'assistant';
+
   const result: ThreadMessageLike = {
     id: message.id,
-    role: message.role as 'user' | 'assistant',
+    role,
     content,
     createdAt: message.createdAt,
     attachments: [],
@@ -125,6 +130,7 @@ export function useHotPlexRuntime({
   sessionId,
   overrideWorkDir,
   onMetricsChange,
+  onSkillsChange,
 }: UseHotPlexRuntimeConfig = {}): ExternalStoreAdapter<HotPlexMessage> {
   // State
   const [messages, setMessages] = useState<HotPlexMessage[]>([]);
@@ -142,6 +148,13 @@ export function useHotPlexRuntime({
 
   // Pending reasoning content accumulated before messageStart
   const pendingReasoningRef = useRef<string>('');
+
+  // Stable ref for skills callback — avoids adding to useEffect deps
+  const onSkillsChangeRef = useRef(onSkillsChange);
+  onSkillsChangeRef.current = onSkillsChange;
+
+  // Track whether skills have been fetched (only after first turn completes)
+  const skillsFetchedRef = useRef(false);
 
   // Metrics tracking (spec §4.5 — Token & latency dashboard)
   const { sessionMetrics, startTurn, recordTurn } = useMetrics();
@@ -208,8 +221,9 @@ export function useHotPlexRuntime({
 
     // Handle reasoning/thinking content (appends to last reasoning part or creates one)
     const handleReasoning = (data: ReasoningData, _env: Envelope) => {
+      if (!data) return;
       // Accumulate content in ref (content may arrive before messageStart)
-      pendingReasoningRef.current += data.content;
+      pendingReasoningRef.current += data.content || '';
 
       setMessages((prev) => {
         const lastMessage = prev[prev.length - 1];
@@ -240,7 +254,8 @@ export function useHotPlexRuntime({
     };
 
     const handleDelta = (data: MessageDeltaData, env: Envelope) => {
-      appendDelta(data.content);
+      if (!data) return;
+      appendDelta(data.content || '');
       setIsRunning(true);
     };
 
@@ -249,7 +264,7 @@ export function useHotPlexRuntime({
         ...prev,
         {
           id: data.id || env.id,
-          role: data.role as 'assistant',
+          role: (data.role as 'user' | 'assistant') || 'assistant',
           parts: [{ type: 'text', text: data.content }],
           createdAt: new Date(env.timestamp || Date.now()),
           status: 'complete',
@@ -259,6 +274,7 @@ export function useHotPlexRuntime({
     };
 
     const handleToolCall = (data: ToolCallData, env: Envelope) => {
+      if (!data) return;
       setMessages((prev) => {
         const lastMessage = prev[prev.length - 1];
         if (lastMessage?.role === 'assistant') {
@@ -275,6 +291,7 @@ export function useHotPlexRuntime({
     };
 
     const handleToolResult = (data: ToolResultData, env: Envelope) => {
+      if (!data) return;
       setMessages((prev) => {
         const lastMessage = prev[prev.length - 1];
         if (lastMessage?.role === 'assistant') {
@@ -292,14 +309,12 @@ export function useHotPlexRuntime({
     const handleDone = (data: DoneData, env: Envelope) => {
       console.log('HotPlexRuntimeAdapter: streaming done', data);
 
-      // Record turn metrics from done.stats
       if (data?.stats) {
         recordTurn(data.stats);
       } else {
         recordTurn({});
       }
 
-      // Mark last assistant message as complete
       setMessages((prev) => {
         const lastMessage = prev[prev.length - 1];
         if (lastMessage?.role === 'assistant' && lastMessage.status === 'streaming') {
@@ -311,9 +326,18 @@ export function useHotPlexRuntime({
         return prev;
       });
 
-      // Clear pending reasoning for next message
       pendingReasoningRef.current = '';
       setIsRunning(false);
+
+      // Fetch skills after the first turn completes (worker conversation is now active)
+      if (!skillsFetchedRef.current) {
+        skillsFetchedRef.current = true;
+        try {
+          client.sendWorkerCommand(WorkerStdioCommand.Skills);
+        } catch {
+          // Non-critical — skills list stays empty
+        }
+      }
     };
 
     const handleError = (data: ErrorData, env: Envelope) => {
@@ -404,6 +428,7 @@ export function useHotPlexRuntime({
     // Handle messageStart: if we already created a placeholder message for this env.id
     // (from reasoning events arriving early), keep it. Otherwise create new one.
     const handleMessageStart = (data: MessageStartData, env: Envelope) => {
+      if (!data) return;
       setMessages((prev) => {
         const existingIdx = prev.findIndex((m) => m.id === env.id);
         if (existingIdx !== -1) {
@@ -438,7 +463,12 @@ export function useHotPlexRuntime({
     client.on('toolCall', handleToolCall);
     client.on('toolResult', handleToolResult);
 
-    // Connect (resume an existing session or create new one)
+    const handleContextUsage = (data: ContextUsageData) => {
+      const names = data?.skills?.names ?? [];
+      onSkillsChangeRef.current?.(names);
+    };
+    client.on('contextUsage', handleContextUsage);
+
     client.connect(sessionId).catch((err) => {
       console.error('HotPlexRuntimeAdapter: connection failed', err);
     });
@@ -453,6 +483,7 @@ export function useHotPlexRuntime({
       client.off('messageStart', handleMessageStart);
       client.off('toolCall', handleToolCall);
       client.off('toolResult', handleToolResult);
+      client.off('contextUsage', handleContextUsage);
       pendingReasoningRef.current = '';
       client.disconnect();
       clientRef.current = null;

@@ -95,7 +95,7 @@ func (b *Bridge) StartSession(ctx context.Context, id, userID, botID string, wt 
 	}
 
 	// Create session in DB with bot_id and allowed_tools.
-	si, err := b.sm.CreateWithBot(ctx, id, userID, botID, wt, allowedTools, platform, platformKey)
+	si, err := b.sm.CreateWithBot(ctx, id, userID, botID, wt, allowedTools, platform, platformKey, workDir)
 	if err != nil {
 		return fmt.Errorf("bridge: create session: %w", err)
 	}

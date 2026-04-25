@@ -153,6 +153,40 @@ export interface ControlSuggestion {
 }
 
 // ============================================================================
+// Worker Command & Context Usage (from pkg/events/events.go:331-365)
+// ============================================================================
+
+export interface WorkerCommandData {
+  command: string;
+  args?: string;
+  extra?: Record<string, unknown>;
+}
+
+export interface ContextUsageData {
+  total_tokens: number;
+  max_tokens: number;
+  percentage: number;
+  model?: string;
+  categories?: ContextCategory[];
+  memory_files?: number;
+  mcp_tools?: number;
+  agents?: number;
+  skills?: ContextSkillInfo;
+}
+
+export interface ContextCategory {
+  name: string;
+  tokens: number;
+}
+
+export interface ContextSkillInfo {
+  total: number;
+  included: number;
+  tokens: number;
+  names?: string[];
+}
+
+// ============================================================================
 // Init Handshake Types (from internal/gateway/init.go)
 // ============================================================================
 
@@ -261,6 +295,7 @@ export interface ServerEventDataMap {
   [EventKind.PermissionRequest]: PermissionRequestData;
   [EventKind.Pong]: PongData;
   [EventKind.Control]: ControlData;
+  [EventKind.ContextUsage]: ContextUsageData;
 }
 
 export interface ServerEventEnvelopeMap {
@@ -279,6 +314,7 @@ export interface ServerEventEnvelopeMap {
   [EventKind.PermissionRequest]: Envelope<PermissionRequestData>;
   [EventKind.Pong]: Envelope<PongData>;
   [EventKind.Control]: Envelope<ControlData>;
+  [EventKind.ContextUsage]: Envelope<ContextUsageData>;
 }
 
 // ============================================================================

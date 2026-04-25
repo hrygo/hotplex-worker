@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"runtime/debug"
+	"strings"
 
 	"github.com/hrygo/hotplex/internal/config"
 	"github.com/hrygo/hotplex/internal/messaging"
@@ -564,7 +565,11 @@ func (h *Handler) handleWorkerCommand(ctx context.Context, env *events.Envelope)
 	case events.StdioContextUsage, events.StdioSkills:
 		resp, err := cr.SendControlRequest(ctx, "get_context_usage", nil)
 		if err != nil {
-			return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "context query: %v", err)
+			code := events.ErrCodeInternalError
+			if strings.Contains(err.Error(), "not running") || strings.Contains(err.Error(), "closed") {
+				code = events.ErrCodeSessionTerminated
+			}
+			return h.sendErrorf(ctx, env, code, "context query: %v", err)
 		}
 		data := events.MapContextUsageResponse(resp)
 		respEnv := events.NewEnvelope(
@@ -577,7 +582,11 @@ func (h *Handler) handleWorkerCommand(ctx context.Context, env *events.Envelope)
 	case events.StdioMCPStatus:
 		resp, err := cr.SendControlRequest(ctx, "mcp_status", nil)
 		if err != nil {
-			return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "mcp status: %v", err)
+			code := events.ErrCodeInternalError
+			if strings.Contains(err.Error(), "not running") || strings.Contains(err.Error(), "closed") {
+				code = events.ErrCodeSessionTerminated
+			}
+			return h.sendErrorf(ctx, env, code, "mcp status: %v", err)
 		}
 		data := events.MapMCPStatusResponse(resp)
 		respEnv := events.NewEnvelope(
@@ -597,7 +606,11 @@ func (h *Handler) handleWorkerCommand(ctx context.Context, env *events.Envelope)
 		}
 		_, err := cr.SendControlRequest(ctx, "set_model", map[string]any{"model": modelName})
 		if err != nil {
-			return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "set model: %v", err)
+			code := events.ErrCodeInternalError
+			if strings.Contains(err.Error(), "not running") || strings.Contains(err.Error(), "closed") {
+				code = events.ErrCodeSessionTerminated
+			}
+			return h.sendErrorf(ctx, env, code, "set model: %v", err)
 		}
 
 	case events.StdioSetPermMode:
@@ -610,7 +623,11 @@ func (h *Handler) handleWorkerCommand(ctx context.Context, env *events.Envelope)
 		}
 		_, err := cr.SendControlRequest(ctx, "set_permission_mode", map[string]any{"mode": mode})
 		if err != nil {
-			return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "set permission: %v", err)
+			code := events.ErrCodeInternalError
+			if strings.Contains(err.Error(), "not running") || strings.Contains(err.Error(), "closed") {
+				code = events.ErrCodeSessionTerminated
+			}
+			return h.sendErrorf(ctx, env, code, "set permission: %v", err)
 		}
 
 	default:
@@ -657,7 +674,7 @@ func (h *Handler) handlePassthroughCommand(ctx context.Context, env *events.Enve
 // SessionManager abstracts the session.Manager methods used by Bridge.
 // It allows Bridge to be tested without a real Manager instance.
 type SessionManager interface {
-	CreateWithBot(ctx context.Context, id, userID, botID string, wt worker.WorkerType, allowedTools []string, platform string, platformKey map[string]string) (*session.SessionInfo, error)
+	CreateWithBot(ctx context.Context, id, userID, botID string, wt worker.WorkerType, allowedTools []string, platform string, platformKey map[string]string, workDir string) (*session.SessionInfo, error)
 	AttachWorker(id string, w worker.Worker) error
 	DetachWorker(id string)
 	Transition(ctx context.Context, id string, to events.SessionState) error

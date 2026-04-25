@@ -88,6 +88,8 @@ type SessionInfo struct {
 	// Example (Feishu): {"chat_id":"oc_xxx","thread_ts":"","user_id":"ou_xxx"}
 	// Example (Slack):  {"team_id":"Txxx","channel_id":"Cxxx","thread_ts":"1234.56","user_id":"Uxxx"}
 	PlatformKey map[string]string `json:"platform_key,omitempty"`
+	// WorkDir is the working directory for this session.
+	WorkDir string `json:"work_dir,omitempty"`
 }
 
 // NewManager creates a new session manager using the provided Store and optional MessageStore.
@@ -119,12 +121,12 @@ func NewManager(ctx context.Context, log *slog.Logger, cfg *config.Config, cfgSt
 }
 
 // Create creates a new session and persists it to SQLite.
-func (m *Manager) Create(ctx context.Context, id, userID string, workerType worker.WorkerType, allowedTools []string) (*SessionInfo, error) {
-	return m.CreateWithBot(ctx, id, userID, "", workerType, allowedTools, "", nil)
+func (m *Manager) Create(ctx context.Context, id, userID string, workerType worker.WorkerType, allowedTools []string, workDir string) (*SessionInfo, error) {
+	return m.CreateWithBot(ctx, id, userID, "", workerType, allowedTools, "", nil, workDir)
 }
 
 // CreateWithBot creates a new session with explicit bot_id and persists it to SQLite.
-func (m *Manager) CreateWithBot(ctx context.Context, id, userID, botID string, workerType worker.WorkerType, allowedTools []string, platform string, platformKey map[string]string) (*SessionInfo, error) {
+func (m *Manager) CreateWithBot(ctx context.Context, id, userID, botID string, workerType worker.WorkerType, allowedTools []string, platform string, platformKey map[string]string, workDir string) (*SessionInfo, error) {
 	now := time.Now()
 	info := &SessionInfo{
 		ID:           id,
@@ -138,6 +140,7 @@ func (m *Manager) CreateWithBot(ctx context.Context, id, userID, botID string, w
 		AllowedTools: allowedTools,
 		Platform:     platform,
 		PlatformKey:  platformKey,
+		WorkDir:      workDir,
 	}
 
 	if err := m.store.Upsert(ctx, info); err != nil {

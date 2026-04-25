@@ -12,3 +12,4 @@ ALTER TABLE sessions ADD COLUMN bot_id TEXT;
 -- Migrate: add platform + platform_key_json for consistency mapping persistence.
 ALTER TABLE sessions ADD COLUMN platform TEXT NOT NULL DEFAULT '';
 ALTER TABLE sessions ADD COLUMN platform_key_json TEXT NOT NULL DEFAULT '';
+ALTER TABLE sessions ADD COLUMN work_dir TEXT;

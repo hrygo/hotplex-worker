@@ -374,7 +374,11 @@ func stepWorkerDep(workerType string) StepResult {
 	}
 	if bin, ok := binaries[workerType]; ok {
 		if p, err := exec.LookPath(bin); err == nil {
-			return StepResult{Name: "worker_dep", Status: "pass", Detail: bin + " binary found: " + p}
+			detail := bin + " binary found: " + p
+			if workerType == "opencode_server" {
+				detail += " (singleton mode: shared process across sessions)"
+			}
+			return StepResult{Name: "worker_dep", Status: "pass", Detail: detail}
 		}
 		return StepResult{Name: "worker_dep", Status: "pass", Detail: bin + " binary not found in PATH — install before running serve"}
 	}
