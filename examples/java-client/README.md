@@ -28,20 +28,20 @@
 <dependency>
     <groupId>dev.hotplex</groupId>
     <artifactId>hotplex-client</artifactId>
-    <version>1.0.0</version>
+    <version>1.1.0</version>
 </dependency>
 ```
 
 ### Gradle (Groovy)
 
 ```groovy
-implementation 'dev.hotplex:hotplex-client:1.0.0'
+implementation 'dev.hotplex:hotplex-client:1.1.0'
 ```
 
 ### Gradle (Kotlin)
 
 ```kotlin
-implementation("dev.hotplex:hotplex-client:1.0.0")
+implementation("dev.hotplex:hotplex-client:1.1.0")
 ```
 
 ---
