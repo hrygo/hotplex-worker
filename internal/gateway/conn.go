@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -90,6 +91,9 @@ func (c *Conn) RemoteAddr() string {
 // It also handles pong responses, missed pong detection, and the AEP init handshake.
 func (c *Conn) ReadPump(handler *Handler) {
 	defer func() {
+		if r := recover(); r != nil {
+			c.log.Error("gateway: panic in ReadPump", "session_id", c.sessionID, "panic", r, "stack", string(debug.Stack()))
+		}
 		c.markInitDone() // flush buffered events or release on init failure
 		c.hb.Stop()
 

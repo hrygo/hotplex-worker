@@ -68,6 +68,9 @@ func New(opts Opts) *Manager {
 // It sets up a new process group (PGID) so that signals can be delivered
 // to the entire subtree without affecting the gateway process.
 func (m *Manager) Start(ctx context.Context, name string, args, env []string, dir string) (stdin, stdout, stderr *os.File, err error) {
+	if m == nil {
+		return nil, nil, nil, fmt.Errorf("proc: Start called on nil Manager")
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 

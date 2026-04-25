@@ -111,6 +111,8 @@ func (w *Worker) Start(ctx context.Context, session worker.SessionInfo) error {
 }
 
 func (w *Worker) Resume(ctx context.Context, session worker.SessionInfo) error {
+	w.Mu.Lock()
+	defer w.Mu.Unlock()
 	return w.startLocked(ctx, session, true)
 }
 
