@@ -53,7 +53,7 @@ function extractTerminalOutput(result: any): { stdout?: string; stderr?: string 
 }
 
 function extractFilePath(args: Record<string, any>): string | undefined {
-  return args?.file_path || args?.path || args?.target_file;
+  return args?.file_path || args?.path || args?.target_file || args?.TargetFile;
 }
 
 function extractFileContent(args: Record<string, any>, result: any): string | undefined {

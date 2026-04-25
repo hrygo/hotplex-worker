@@ -39,6 +39,7 @@ const TERMINAL_TOOLS: ReadonlySet<string> = new Set([
 const FILE_TOOLS: ReadonlySet<string> = new Set([
   ToolName.EditFile, ToolName.WriteFile, ToolName.ReplaceFileContent,
   ToolName.CreateFile, ToolName.ApplyDiff,
+  "write", "write_to_file", "multi_replace_file_content", "edit", "str_replace_editor"
 ]);
 
 const SEARCH_TOOLS: ReadonlySet<string> = new Set([
