@@ -6,9 +6,10 @@ interface PermissionCardProps {
   toolName: string;
   args?: Record<string, any>;
   status: "running" | "complete";
+  onRespond?: (approved: boolean) => void;
 }
 
-export function PermissionCard({ toolName, args, status }: PermissionCardProps) {
+export function PermissionCard({ toolName, args, status, onRespond }: PermissionCardProps) {
   const isElicitation = toolName === "elicitation";
   const isPermission = toolName === "ask_permission" || toolName === "confirm";
   const title = isElicitation
@@ -57,10 +58,10 @@ export function PermissionCard({ toolName, args, status }: PermissionCardProps) 
       {/* Actions — only show when awaiting response */}
       {status === "running" && (
         <div className="flex items-center gap-2 px-4 py-3 bg-[var(--bg-surface)] border-t border-[var(--border-subtle)]">
-          <button className="flex-1 py-2 rounded-[var(--radius-sm)] bg-[var(--accent-emerald)] text-black font-bold text-xs transition-all hover:opacity-90 active:scale-[0.98]">
+          <button onClick={() => onRespond?.(true)} className="flex-1 py-2 rounded-[var(--radius-sm)] bg-[var(--accent-emerald)] text-black font-bold text-xs transition-all hover:opacity-90 active:scale-[0.98]">
             Approve
           </button>
-          <button className="flex-1 py-2 rounded-[var(--radius-sm)] bg-[var(--accent-coral)] text-white font-bold text-xs transition-all hover:opacity-90 active:scale-[0.98]">
+          <button onClick={() => onRespond?.(false)} className="flex-1 py-2 rounded-[var(--radius-sm)] bg-[var(--accent-coral)] text-white font-bold text-xs transition-all hover:opacity-90 active:scale-[0.98]">
             Reject
           </button>
         </div>

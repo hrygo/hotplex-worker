@@ -74,7 +74,7 @@ interface HotPlexMessage {
  * Converts HotPlex message to assistant-ui ThreadMessageLike format.
  * Handles both old format (content: string) and new format (parts: MessagePart[]).
  */
-function convertToThreadMessage(message: HotPlexMessage, idx: number): ThreadMessageLike {
+function convertToThreadMessage(message: HotPlexMessage): ThreadMessageLike {
   // Support both old (content: string) and new (parts: MessagePart[]) message formats
   const content = 'parts' in message && Array.isArray(message.parts)
     ? message.parts
@@ -516,7 +516,7 @@ export function useHotPlexRuntime({
 
   // Memoized thread messages conversion (spec §7.1)
   const threadMessages = useMemo(
-    () => messages.map((m, i) => convertToThreadMessage(m, i)),
+    () => messages.map((m) => convertToThreadMessage(m)),
     [messages]
   );
 

@@ -7,12 +7,10 @@ import {
 } from '@assistant-ui/react';
 import { useHotPlexRuntime } from '@/lib/adapters/hotplex-runtime-adapter';
 import { useSessions } from '@/lib/hooks/useSessions';
-import { useMetrics } from '@/lib/hooks/useMetrics';
 import { Thread } from '@/components/assistant-ui/thread';
-import { MetricsBar } from '@/components/assistant-ui/MetricsBar';
 import { BrandIcon } from '@/components/icons';
 import { SessionPanel } from './SessionPanel';
-import { workerType } from '@/lib/config';
+import { workerType, workDir } from '@/lib/config';
 
 function ChatInterface({
   sessionId,
@@ -32,7 +30,6 @@ function ChatInterface({
 
 export default function ChatContainer() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const { sessionMetrics } = useMetrics();
 
   const {
     activeSession,
@@ -86,14 +83,15 @@ export default function ChatContainer() {
                     <span className="inline-block w-1.5 h-1.5 rounded-full bg-[var(--accent-emerald)] shadow-[0_0_6px_var(--accent-emerald)]" />
                     Active · {workerType}
                   </p>
+                  {workDir && (
+                    <p className="text-[9px] text-[var(--text-faint)] font-mono mt-0.5 truncate max-w-[200px]" title={workDir}>
+                      {workDir.length > 30 ? `…${workDir.slice(-28)}` : workDir}
+                    </p>
+                  )}
                </div>
             </div>
 
             <div className="flex items-center gap-2">
-               {/* Session Metrics — spec §4.5 */}
-               {sessionMetrics.turnCount > 0 && (
-                 <MetricsBar session={sessionMetrics} />
-               )}
                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[var(--bg-glass)] backdrop-blur-xl border border-[var(--border-default)]">
                   <div className={`w-1.5 h-1.5 rounded-full ${isLoading ? 'bg-[var(--accent-gold)] animate-pulse' : 'bg-[var(--accent-emerald)] shadow-[0_0_8px_var(--accent-emerald)]'}`} />
                   <span className="text-[10px] font-bold text-[var(--text-secondary)]">{isLoading ? 'PREPARING...' : 'GATEWAY ONLINE'}</span>

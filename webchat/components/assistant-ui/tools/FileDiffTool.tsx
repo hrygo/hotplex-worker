@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
+import { ToolLoadingSkeleton } from "./ToolLoadingSkeleton";
 
 interface FileDiffToolProps {
   toolName: string;
@@ -13,6 +14,7 @@ interface FileDiffToolProps {
 export function FileDiffTool({ toolName, filePath, content, status }: FileDiffToolProps) {
   const [copied, setCopied] = useState(false);
   const lines = content?.split("\n") ?? [];
+  const displayPath = filePath || "unknown file";
 
   const handleCopy = () => {
     if (content) {
@@ -21,8 +23,6 @@ export function FileDiffTool({ toolName, filePath, content, status }: FileDiffTo
       setTimeout(() => setCopied(false), 2000);
     }
   };
-
-  const displayPath = filePath || "unknown file";
 
   return (
     <div className="rounded-[var(--radius-md)] overflow-hidden border border-[var(--border-default)] my-4 shadow-[0_8px_32px_rgba(0,0,0,0.5)]">
@@ -42,47 +42,22 @@ export function FileDiffTool({ toolName, filePath, content, status }: FileDiffTo
             onClick={handleCopy}
             className="text-[9px] font-mono font-bold tracking-wider text-[var(--text-faint)] hover:text-[var(--accent-gold)] transition-colors flex items-center gap-1 ml-2"
           >
-            {copied ? (
-              <>
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                </svg>
-                COPIED
-              </>
-            ) : (
-              <>
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                </svg>
-                COPY
-              </>
-            )}
+            {copied ? "COPIED" : "COPY"}
           </button>
         )}
       </div>
 
-      {/* Code content */}
+      {/* Running skeleton */}
       {status === "running" && !content && (
-        <div className="bg-[#0c0c0f] px-4 py-6 flex items-center gap-3">
-          <motion.div
-            className="flex gap-1"
-            animate={{ opacity: [0.3, 1, 0.3] }}
-            transition={{ repeat: Infinity, duration: 1.2 }}
-          >
-            {[0, 1, 2].map((i) => (
-              <span key={i} className="w-1.5 h-1.5 rounded-full bg-[var(--accent-blue)] opacity-60" />
-            ))}
-          </motion.div>
-          <span className="text-[11px] font-mono text-[var(--text-faint)]">Patching...</span>
-        </div>
+        <ToolLoadingSkeleton color="var(--accent-blue)" label="Patching..." />
       )}
 
+      {/* Code content */}
       {content && (
         <div className="bg-[#0c0c0f] max-h-[300px] overflow-y-auto">
           <table className="w-full border-collapse">
             <tbody>
               {lines.map((line, i) => {
-                const lineNum = i + 1;
                 const isAdd = line.startsWith("+") && !line.startsWith("+++");
                 const isDel = line.startsWith("-") && !line.startsWith("---");
                 return (
@@ -91,7 +66,7 @@ export function FileDiffTool({ toolName, filePath, content, status }: FileDiffTo
                     isDel ? "bg-[rgba(244,63,94,0.06)]" : ""
                   }`}>
                     <td className="px-3 py-0 text-right text-[var(--text-faint)] select-none w-[1%] whitespace-nowrap opacity-50">
-                      {lineNum}
+                      {i + 1}
                     </td>
                     <td className={`px-3 py-0 whitespace-pre ${
                       isAdd ? "text-[var(--accent-emerald)]" :

@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
+import { ToolLoadingSkeleton } from "./ToolLoadingSkeleton";
 
 interface TerminalToolProps {
   command: string;
@@ -73,7 +74,7 @@ export function TerminalTool({ command, stdout, stderr, status }: TerminalToolPr
           {needsCollapse && (
             <button
               onClick={() => setExpanded(true)}
-              className="mt-2 text-[11px] font-mono text-[var(--accent-blue)] hover:text-[var(--accent-blue)] hover:underline underline-offset-2 transition-colors"
+              className="mt-2 text-[11px] font-mono text-[var(--accent-blue)] hover:underline underline-offset-2 transition-colors"
             >
               Expand Output ({lines.length - MAX_VISIBLE_LINES} more lines)
             </button>
@@ -81,20 +82,9 @@ export function TerminalTool({ command, stdout, stderr, status }: TerminalToolPr
         </div>
       )}
 
-      {/* Running skeleton — no output yet */}
+      {/* Running skeleton */}
       {status === "running" && !output && (
-        <div className="bg-[#0c0c0f] px-4 py-6 flex items-center gap-3">
-          <motion.div
-            className="flex gap-1"
-            animate={{ opacity: [0.3, 1, 0.3] }}
-            transition={{ repeat: Infinity, duration: 1.2 }}
-          >
-            {[0, 1, 2].map((i) => (
-              <span key={i} className="w-1.5 h-1.5 rounded-full bg-[var(--accent-emerald)] opacity-60" />
-            ))}
-          </motion.div>
-          <span className="text-[11px] font-mono text-[var(--text-faint)]">Waiting for output...</span>
-        </div>
+        <ToolLoadingSkeleton color="var(--accent-emerald)" label="Waiting for output..." />
       )}
     </div>
   );

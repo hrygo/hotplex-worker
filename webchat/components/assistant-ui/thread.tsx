@@ -15,6 +15,7 @@ import { FileDiffTool } from "./tools/FileDiffTool";
 import { SearchTool } from "./tools/SearchTool";
 import { PermissionCard } from "./tools/PermissionCard";
 import { BrandIcon } from "@/components/icons";
+import { getToolCategory } from "@/lib/tool-categories";
 
 /* ============================================================
    Animation variants — spec §4.4
@@ -39,19 +40,30 @@ const toolCardVariants = {
 };
 
 /* ============================================================
-   Tool Name Router — Maps tool names to specialized GenUI
+   Tool prop extractors — avoid JSON.stringify in render path
    ============================================================ */
-const TERMINAL_TOOLS = new Set(["run_command", "bash", "execute_command", "shell"]);
-const FILE_TOOLS = new Set(["edit_file", "write_file", "replace_file_content", "create_file", "apply_diff"]);
-const SEARCH_TOOLS = new Set(["grep_search", "view_file", "search_files", "list_directory", "read_file"]);
-const PERMISSION_TOOLS = new Set(["ask_permission", "confirm", "elicitation"]);
+function extractCommand(args: Record<string, any>): string {
+  return args?.command || args?.Command || Object.values(args).join(" ");
+}
 
-function getToolCategory(name: string): "terminal" | "file" | "search" | "permission" | "default" {
-  if (TERMINAL_TOOLS.has(name)) return "terminal";
-  if (FILE_TOOLS.has(name)) return "file";
-  if (SEARCH_TOOLS.has(name)) return "search";
-  if (PERMISSION_TOOLS.has(name)) return "permission";
-  return "default";
+function extractTerminalOutput(result: any): { stdout?: string; stderr?: string } {
+  if (typeof result === "string") return { stdout: result };
+  return { stdout: result?.stdout, stderr: result?.stderr };
+}
+
+function extractFilePath(args: Record<string, any>): string | undefined {
+  return args?.file_path || args?.path || args?.target_file;
+}
+
+function extractFileContent(args: Record<string, any>, result: any): string | undefined {
+  const fromArgs = args?.content || args?.code || args?.CodeContent || args?.ReplacementContent;
+  if (fromArgs) return fromArgs;
+  if (typeof result === "string") return result;
+  return undefined;
+}
+
+function extractSearchQuery(args: Record<string, any>): string | undefined {
+  return args?.pattern || args?.query || args?.path;
 }
 
 /* ============================================================
@@ -207,10 +219,10 @@ function AssistantMessage() {
       <div className="msg-assistant-body">
         <MessagePrimitive.Parts>
           {({ part }) => {
-            const p = part as any;
-            if (!p) return null;
-            const m = message as any;
-            const isStreaming = m.status?.type === "running";
+            const p = part as Record<string, any>;
+            if (!p || !p.type) return null;
+            const status = (message as Record<string, any>)?.status;
+            const isStreaming = status?.type === "running";
 
             if (p.type === "reasoning") {
               return <ReasoningBlock text={p.text} />;
@@ -225,76 +237,58 @@ function AssistantMessage() {
             if (p.type === "tool-call") {
               const category = getToolCategory(p.toolName);
               const hasResult = p.result !== undefined;
+              const args = p.args ?? {};
+              const motionWrap = (el: React.ReactNode) => (
+                <motion.div key={p.toolCallId} variants={toolCardVariants} initial="hidden" animate="visible">
+                  {el}
+                </motion.div>
+              );
 
-              // Route to specialized GenUI components
-              if (category === "terminal") {
-                return (
-                  <motion.div key={p.toolCallId} variants={toolCardVariants} initial="hidden" animate="visible">
+              switch (category) {
+                case "terminal": {
+                  const out = hasResult ? extractTerminalOutput(p.result) : {};
+                  return motionWrap(
                     <TerminalTool
-                      command={p.args?.command || p.args?.Command || JSON.stringify(p.args)}
-                      stdout={hasResult ? (typeof p.result === "string" ? p.result : p.result?.stdout || JSON.stringify(p.result)) : undefined}
-                      stderr={hasResult ? p.result?.stderr : undefined}
+                      command={extractCommand(args)}
+                      stdout={out.stdout}
+                      stderr={out.stderr}
                       status={hasResult ? "complete" : "running"}
                     />
-                  </motion.div>
-                );
-              }
-
-              if (category === "file") {
-                return (
-                  <motion.div key={p.toolCallId} variants={toolCardVariants} initial="hidden" animate="visible">
+                  );
+                }
+                case "file":
+                  return motionWrap(
                     <FileDiffTool
                       toolName={p.toolName}
-                      filePath={p.args?.file_path || p.args?.path || p.args?.target_file}
-                      content={hasResult ? (typeof p.result === "string" ? p.result : p.args?.content || p.args?.code || p.args?.CodeContent || p.args?.ReplacementContent || JSON.stringify(p.result, null, 2)) : p.args?.content || p.args?.code || p.args?.CodeContent || p.args?.ReplacementContent}
+                      filePath={extractFilePath(args)}
+                      content={extractFileContent(args, p.result)}
                       status={hasResult ? "complete" : "running"}
                     />
-                  </motion.div>
-                );
-              }
-
-              if (category === "search") {
-                return (
-                  <motion.div key={p.toolCallId} variants={toolCardVariants} initial="hidden" animate="visible">
+                  );
+                case "search":
+                  return motionWrap(
                     <SearchTool
                       toolName={p.toolName}
-                      query={p.args?.pattern || p.args?.query || p.args?.path}
+                      query={extractSearchQuery(args)}
                       results={hasResult && Array.isArray(p.result) ? p.result : undefined}
                       status={hasResult ? "complete" : "running"}
                     />
-                  </motion.div>
-                );
-              }
-
-              if (category === "permission") {
-                return (
-                  <motion.div key={p.toolCallId} variants={toolCardVariants} initial="hidden" animate="visible">
+                  );
+                case "permission":
+                  return motionWrap(
                     <PermissionCard
                       toolName={p.toolName}
-                      args={p.args}
+                      args={args}
                       status={hasResult ? "complete" : "running"}
                     />
-                  </motion.div>
-                );
+                  );
+                default:
+                  return motionWrap(
+                    hasResult
+                      ? <ToolResultBlock toolName={p.toolName} result={p.result} />
+                      : <ToolCallBlock toolName={p.toolName} args={args} active={isStreaming} />
+                  );
               }
-
-              // Default fallback for unknown tools
-              if (hasResult) {
-                return (
-                  <motion.div key={p.toolCallId} variants={toolCardVariants} initial="hidden" animate="visible">
-                    <ToolResultBlock toolName={p.toolName} result={p.result} />
-                  </motion.div>
-                );
-              }
-              return (
-                <motion.div key={p.toolCallId} variants={toolCardVariants} initial="hidden" animate="visible">
-                  <ToolCallBlock
-                    toolName={p.toolName}
-                    args={p.args}
-                    active={isStreaming}
-                  />
-                </motion.div>
-              );
             }
             return null;
           }}

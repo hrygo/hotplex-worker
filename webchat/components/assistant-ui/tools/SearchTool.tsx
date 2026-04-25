@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
+import { ToolLoadingSkeleton } from "./ToolLoadingSkeleton";
 
 interface SearchToolProps {
   toolName: string;
@@ -28,22 +29,12 @@ export function SearchTool({ toolName, query, results, status }: SearchToolProps
         )}
       </div>
 
-      {/* Results */}
+      {/* Running skeleton */}
       {status === "running" && (
-        <div className="bg-[#0c0c0f] px-4 py-4 flex items-center gap-3">
-          <motion.div
-            className="flex gap-1"
-            animate={{ opacity: [0.3, 1, 0.3] }}
-            transition={{ repeat: Infinity, duration: 1.2 }}
-          >
-            {[0, 1, 2].map((i) => (
-              <span key={i} className="w-1.5 h-1.5 rounded-full bg-[var(--accent-violet)] opacity-60" />
-            ))}
-          </motion.div>
-          <span className="text-[11px] font-mono text-[var(--text-faint)]">Searching...</span>
-        </div>
+        <ToolLoadingSkeleton color="var(--accent-violet)" label="Searching..." />
       )}
 
+      {/* Results */}
       {status === "complete" && results && results.length > 0 && (
         <div className="bg-[#0c0c0f] max-h-[250px] overflow-y-auto divide-y divide-[var(--border-subtle)]">
           {results.map((r, i) => (
@@ -56,15 +47,7 @@ export function SearchTool({ toolName, query, results, status }: SearchToolProps
                   {r.file}
                 </span>
                 <span className="text-[12px] font-mono text-[var(--text-muted)] block truncate">
-                  {r.match ? (
-                    <>
-                      {r.text.split(r.match)[0]}
-                      <span className="text-[var(--accent-gold)] bg-[rgba(251,191,36,0.1)] px-0.5 rounded">
-                        {r.match}
-                      </span>
-                      {r.text.split(r.match).slice(1).join(r.match)}
-                    </>
-                  ) : r.text}
+                  {r.text}
                 </span>
               </div>
             </div>
