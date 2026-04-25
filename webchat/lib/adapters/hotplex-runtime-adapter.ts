@@ -319,9 +319,7 @@ export function useHotPlexRuntime({
     const handleError = (data: ErrorData, env: Envelope) => {
       const hasData = data && (data.code || data.message);
       if (hasData) {
-        console.error('HotPlexRuntimeAdapter: error received', {
-          code: data.code,
-          message: data.message,
+        console.error(`HotPlexRuntimeAdapter: error received. Code: ${data.code || 'unknown'}, Message: ${data.message || 'none'}`, {
           details: data.details,
           eventId: env?.id,
         });
