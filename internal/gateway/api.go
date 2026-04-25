@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"strconv"
@@ -174,8 +175,13 @@ func (g *GatewayAPI) SwitchWorkDir(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Expand ~ to $HOME.
-	body.WorkDir = expandHome(body.WorkDir)
+	// Expand ~ and resolve to absolute path.
+	expanded, err := config.ExpandAndAbs(body.WorkDir)
+	if err != nil {
+		http.Error(w, "invalid work_dir: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	body.WorkDir = expanded
 
 	// Ownership check.
 	si, err := g.sm.Get(id)
@@ -195,7 +201,8 @@ func (g *GatewayAPI) SwitchWorkDir(w http.ResponseWriter, r *http.Request) {
 	// Delegate to bridge.
 	result, err := g.bridge.SwitchWorkDir(r.Context(), id, body.WorkDir)
 	if err != nil {
-		if strings.Contains(err.Error(), "not a directory") || strings.Contains(err.Error(), "path") {
+		var pathErr *os.PathError
+		if errors.As(err, &pathErr) || strings.Contains(err.Error(), "not a directory") {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -208,14 +215,4 @@ func (g *GatewayAPI) SwitchWorkDir(w http.ResponseWriter, r *http.Request) {
 		"new_session_id": result.NewSessionID,
 		"work_dir":       result.WorkDir,
 	})
-}
-
-// expandHome replaces a leading ~ with $HOME.
-func expandHome(path string) string {
-	if strings.HasPrefix(path, "~/") {
-		if home, err := os.UserHomeDir(); err == nil {
-			return home + path[1:]
-		}
-	}
-	return path
 }

@@ -88,14 +88,10 @@ export function CommandMenu({ inputValue, onSelect, isOpen, onClose }: CommandMe
   if (!isOpen || filtered.length === 0) return null;
 
   return (
-    <motion.div
+    <div
       ref={containerRef}
       style={{ zIndex: 99999, pointerEvents: 'auto' }}
       className="absolute bottom-full left-0 right-0 mb-2 rounded-[var(--radius-lg)] bg-[var(--bg-surface)] border border-[var(--border-default)] shadow-[0_12px_48px_rgba(0,0,0,0.6)] backdrop-blur-2xl overflow-hidden"
-      initial={{ opacity: 0, y: 8, scale: 0.98 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: 8, scale: 0.98 }}
-      transition={{ type: "spring", stiffness: 300, damping: 25 }}
     >
       <div className="px-3 py-2 text-[10px] font-mono font-bold text-[var(--text-faint)] uppercase tracking-widest border-b border-[var(--border-subtle)] flex justify-between items-center bg-[rgba(255,255,255,0.02)]">
         <span>{isSlash ? "System Commands" : "Available Skills"}</span>
@@ -130,6 +126,6 @@ export function CommandMenu({ inputValue, onSelect, isOpen, onClose }: CommandMe
           </button>
         ))}
       </div>
-    </motion.div>
+    </div>
   );
 }

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"runtime/debug"
 
+	"github.com/hrygo/hotplex/internal/config"
 	"github.com/hrygo/hotplex/internal/messaging"
 	"github.com/hrygo/hotplex/internal/metrics"
 	"github.com/hrygo/hotplex/internal/security"
@@ -466,8 +467,12 @@ func (h *Handler) handleCD(ctx context.Context, env *events.Envelope) error {
 		return h.hub.SendToSession(ctx, msgEnv)
 	}
 
-	// Expand ~ to $HOME.
-	path = expandHome(path)
+	// Expand ~ and resolve to absolute path.
+	expanded, err := config.ExpandAndAbs(path)
+	if err != nil {
+		return h.sendErrorf(ctx, env, events.ErrCodeConfigInvalid, "invalid path: %v", err)
+	}
+	path = expanded
 
 	// Validate ownership.
 	if _, err := h.validateOwner(ctx, env); err != nil {
