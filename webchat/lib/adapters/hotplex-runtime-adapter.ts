@@ -33,6 +33,10 @@ type ThreadSuggestion = { title: string; label: string; prompt: string };
 export interface UseHotPlexRuntimeConfig {
   /** Initial session ID to resume (calls resume() instead of connect()). */
   sessionId?: string;
+  /** Override workDir from URL deep link (spec §5.2). */
+  overrideWorkDir?: string;
+  /** Called when session metrics update (for dashboard display). */
+  onMetricsChange?: (metrics: import('@/lib/hooks/useMetrics').SessionMetrics) => void;
 }
 
 // Single part of a message
@@ -119,6 +123,8 @@ function convertToThreadMessage(message: HotPlexMessage): ThreadMessageLike {
  */
 export function useHotPlexRuntime({
   sessionId,
+  overrideWorkDir,
+  onMetricsChange,
 }: UseHotPlexRuntimeConfig = {}): ExternalStoreAdapter<HotPlexMessage> {
   // State
   const [messages, setMessages] = useState<HotPlexMessage[]>([]);
@@ -140,6 +146,11 @@ export function useHotPlexRuntime({
   // Metrics tracking (spec §4.5 — Token & latency dashboard)
   const { sessionMetrics, startTurn, recordTurn } = useMetrics();
 
+  // Sync metrics to parent (ChatContainer header dashboard)
+  useEffect(() => {
+    onMetricsChange?.(sessionMetrics);
+  }, [sessionMetrics, onMetricsChange]);
+
   // Initialize WebSocket client
   useEffect(() => {
     if (!sessionId) {
@@ -148,7 +159,8 @@ export function useHotPlexRuntime({
     }
 
     const initConfig: InitConfig = {};
-    if (workDir) initConfig.work_dir = workDir;
+    const effectiveWorkDir = overrideWorkDir || workDir;
+    if (effectiveWorkDir) initConfig.work_dir = effectiveWorkDir;
     if (allowedTools.length > 0) initConfig.allowed_tools = allowedTools;
 
     const client = new BrowserHotPlexClient({

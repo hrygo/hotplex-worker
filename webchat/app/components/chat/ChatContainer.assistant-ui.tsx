@@ -1,25 +1,36 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   AssistantRuntimeProvider,
   useExternalStoreRuntime,
 } from '@assistant-ui/react';
+import { useQueryState, parseAsString } from 'nuqs';
 import { useHotPlexRuntime } from '@/lib/adapters/hotplex-runtime-adapter';
 import { useSessions } from '@/lib/hooks/useSessions';
 import { Thread } from '@/components/assistant-ui/thread';
 import { BrandIcon } from '@/components/icons';
 import { SessionPanel } from './SessionPanel';
+import { NewSessionModal } from './NewSessionModal';
+import { MetricsBar } from '@/components/assistant-ui/MetricsBar';
 import { workerType, workDir } from '@/lib/config';
+import type { SessionMetrics } from '@/lib/hooks/useMetrics';
 
 function ChatInterface({
   sessionId,
+  overrideWorkDir,
+  onMetricsChange,
 }: {
   sessionId: string | null;
+  overrideWorkDir?: string;
+  onMetricsChange?: (metrics: SessionMetrics) => void;
 }) {
-  const runtime = useExternalStoreRuntime(
-    useHotPlexRuntime({ sessionId: sessionId ?? undefined })
-  );
+  const adapter = useHotPlexRuntime({
+    sessionId: sessionId ?? undefined,
+    overrideWorkDir,
+    onMetricsChange,
+  });
+  const runtime = useExternalStoreRuntime(adapter);
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
@@ -30,6 +41,12 @@ function ChatInterface({
 
 export default function ChatContainer() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [showNewModal, setShowNewModal] = useState(false);
+  const [sessionMetrics, setSessionMetrics] = useState<SessionMetrics | null>(null);
+
+  // nuqs deep link params (spec §5.2)
+  const [urlWorker] = useQueryState('worker', parseAsString);
+  const [urlDir] = useQueryState('dir', parseAsString);
 
   const {
     activeSession,
@@ -39,10 +56,30 @@ export default function ChatContainer() {
     removeSession,
     sessions,
   } = useSessions({
-    onSelect: () => {}, // Handled internally by useSessions
+    onSelect: () => {},
   });
 
   const activeSessionId = activeSession?.id || null;
+
+  // Handle NewSessionModal confirm
+  const handleModalConfirm = useCallback(async (wt: string, dir: string) => {
+    setShowNewModal(false);
+    await createNewSession(wt, dir || undefined);
+  }, [createNewSession]);
+
+  // Handle "New Chat" button — show modal instead of direct creation
+  const handleCreateNew = useCallback(async () => {
+    // If URL params are present, skip modal and create directly
+    if (urlWorker && urlDir) {
+      await createNewSession(urlWorker, urlDir);
+    } else if (workDir) {
+      // Default workDir from config — create directly with defaults
+      await createNewSession();
+    } else {
+      // No workDir configured — show modal for user input
+      setShowNewModal(true);
+    }
+  }, [createNewSession, urlWorker, urlDir]);
 
   return (
     <div className="flex h-screen overflow-hidden bg-[var(--bg-base)]">
@@ -53,7 +90,7 @@ export default function ChatContainer() {
           activeSession={activeSession}
           isLoading={isLoading}
           onSelect={selectSession}
-          onCreate={createNewSession}
+          onCreate={handleCreateNew}
           onDelete={removeSession}
         />
       </aside>
@@ -83,13 +120,21 @@ export default function ChatContainer() {
                     <span className="inline-block w-1.5 h-1.5 rounded-full bg-[var(--accent-emerald)] shadow-[0_0_6px_var(--accent-emerald)]" />
                     Active · {workerType}
                   </p>
-                  {workDir && (
-                    <p className="text-[9px] text-[var(--text-faint)] font-mono mt-0.5 truncate max-w-[200px]" title={workDir}>
-                      {workDir.length > 30 ? `…${workDir.slice(-28)}` : workDir}
+                  {(urlDir || workDir) && (
+                    <p className="text-[9px] text-[var(--text-faint)] font-mono mt-0.5 truncate max-w-[200px]" title={urlDir || workDir}>
+                      {(() => {
+                        const d = urlDir || workDir || '';
+                        return d.length > 30 ? `…${d.slice(-28)}` : d;
+                      })()}
                     </p>
                   )}
                </div>
             </div>
+
+            {/* MetricsBar — spec §4.5 Token & latency dashboard */}
+            {sessionMetrics && sessionMetrics.turnCount > 0 && (
+              <MetricsBar session={sessionMetrics} />
+            )}
 
             <div className="flex items-center gap-2">
                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[var(--bg-glass)] backdrop-blur-xl border border-[var(--border-default)]">
@@ -120,7 +165,7 @@ export default function ChatContainer() {
                  Select an existing session from the sidebar or start a new high-fidelity coding conversation.
                </p>
                <button
-                 onClick={() => createNewSession()}
+                 onClick={handleCreateNew}
                  className="px-8 py-3 rounded-full bg-[var(--accent-gold)] text-black text-sm font-bold shadow-[0_8px_32px_rgba(251,191,36,0.15)] hover:scale-105 active:scale-95 transition-all"
                >
                  {sessions.length === 0 ? 'Start Your First Project' : 'New Chat'}
@@ -130,10 +175,20 @@ export default function ChatContainer() {
             <ChatInterface
               key={activeSessionId}
               sessionId={activeSessionId}
+              overrideWorkDir={urlDir ?? undefined}
+              onMetricsChange={setSessionMetrics}
             />
           )}
         </div>
       </main>
+
+      {/* New Session Modal (spec §5.1) */}
+      {showNewModal && (
+        <NewSessionModal
+          onConfirm={handleModalConfirm}
+          onCancel={() => setShowNewModal(false)}
+        />
+      )}
     </div>
   );
 }

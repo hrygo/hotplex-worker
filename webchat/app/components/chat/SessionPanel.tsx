@@ -44,7 +44,7 @@ function SessionRow({
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between gap-1 mb-0.5">
             <span className={`text-xs font-semibold truncate ${isActive ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}>
-              Session {displayId}
+              {displayId}
             </span>
             <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[var(--text-faint)] font-mono font-bold scale-90">
               {workerName}
@@ -116,7 +116,7 @@ interface SessionPanelProps {
   activeSession: SessionInfo | null;
   isLoading: boolean;
   onSelect: (session: SessionInfo) => void;
-  onCreate: (workerType?: string) => Promise<void>;
+  onCreate: (workerType?: string, workDir?: string) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
 }
 

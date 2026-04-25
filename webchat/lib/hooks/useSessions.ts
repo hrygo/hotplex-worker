@@ -35,7 +35,7 @@ export interface UseSessionsReturn {
   openPanel: () => void;
   closePanel: () => void;
   selectSession: (session: SessionInfo) => void;
-  createNewSession: (workerType?: string) => Promise<void>;
+  createNewSession: (workerType?: string, workDir?: string) => Promise<void>;
   removeSession: (id: string) => Promise<void>;
   refreshSessions: () => Promise<void>;
   handleSessionSelect: (id: string) => void;
@@ -111,7 +111,7 @@ export function useSessions({
       if (!initId && !savedId && filtered.length === 0 && !isCreating.current) {
         isCreating.current = true;
         try {
-          const { session_id } = await createSession(DEFAULT_WORKER_TYPE, MAIN_SESSION_ID);
+          const { session_id } = await createSession({ workerType: DEFAULT_WORKER_TYPE, sessionId: MAIN_SESSION_ID });
           
           const { sessions: updatedList } = await listSessions(5, 0);
           const newSession = updatedList.find(s => s.id === session_id);
@@ -145,13 +145,13 @@ export function useSessions({
     setIsOpen(false);
   }, []);
 
-  const createNewSession = useCallback(async (workerType?: string) => {
+  const createNewSession = useCallback(async (workerType?: string, workDir?: string) => {
     const wt = workerType || DEFAULT_WORKER_TYPE;
     if (isCreating.current) return;
     isCreating.current = true;
     setIsLoading(true);
     try {
-      const { session_id } = await createSession(wt);
+      const { session_id } = await createSession({ workerType: wt, workDir });
 
       const { sessions: list } = await listSessions(20, 0);
       const filtered = list.filter(s => s.state !== 'deleted');

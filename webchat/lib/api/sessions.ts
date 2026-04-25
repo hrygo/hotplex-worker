@@ -41,10 +41,20 @@ export async function listSessions(limit = 20, offset = 0): Promise<ListSessions
   return res.json();
 }
 
-export async function createSession(workerType = 'claude_code', sessionId?: string): Promise<{ session_id: string }> {
+export interface CreateSessionOptions {
+  workerType?: string;
+  sessionId?: string;
+  workDir?: string;
+}
+
+export async function createSession(opts: CreateSessionOptions = {}): Promise<{ session_id: string }> {
+  const workerType = opts.workerType ?? 'claude_code';
   let url = `${BASE}/api/sessions?${AUTH}&worker_type=${encodeURIComponent(workerType)}`;
-  if (sessionId) {
-    url += `&session_id=${encodeURIComponent(sessionId)}`;
+  if (opts.sessionId) {
+    url += `&session_id=${encodeURIComponent(opts.sessionId)}`;
+  }
+  if (opts.workDir) {
+    url += `&work_dir=${encodeURIComponent(opts.workDir)}`;
   }
   const res = await fetch(url, { method: 'POST' });
   if (!res.ok) throw new Error(`createSession failed: ${res.status}`);
