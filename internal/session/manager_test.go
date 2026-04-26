@@ -64,6 +64,21 @@ func (m *mockStore) DeletePhysical(ctx context.Context, id string) error {
 	return args.Error(0)
 }
 
+func (m *mockStore) DeleteExpiredEvents(ctx context.Context, cutoff time.Time) (int64, error) {
+	args := m.Called(ctx, cutoff)
+	return args.Get(0).(int64), args.Error(1)
+}
+
+func (m *mockStore) Compact(ctx context.Context, threshold float64) error {
+	args := m.Called(ctx, threshold)
+	return args.Error(0)
+}
+
+func (m *mockStore) GetSessionsByState(ctx context.Context, state events.SessionState) ([]string, error) {
+	args := m.Called(ctx, state)
+	return args.Get(0).([]string), args.Error(1)
+}
+
 func (m *mockStore) Close() error {
 	args := m.Called()
 	return args.Error(0)
@@ -141,7 +156,7 @@ func TestManager_Create(t *testing.T) {
 	require.NoError(t, err)
 	defer m.Close()
 
-	info, err := m.Create(ctx, "sess_new", "user1", worker.TypeClaudeCode, nil)
+	info, err := m.Create(ctx, "sess_new", "user1", worker.TypeClaudeCode, nil, "", "test-session")
 	require.NoError(t, err)
 	require.NotNil(t, info)
 	require.Equal(t, "sess_new", info.ID)
@@ -1422,6 +1437,7 @@ func TestManager_GC_ZombieDetection(t *testing.T) {
 	store.On("Upsert", mock.Anything, mock.AnythingOfType("*session.SessionInfo")).Return(nil)
 	store.On("GetExpiredMaxLifetime", mock.Anything, mock.AnythingOfType("time.Time")).Return([]string(nil), nil)
 	store.On("GetExpiredIdle", mock.Anything, mock.AnythingOfType("time.Time")).Return([]string(nil), nil)
+	store.On("DeleteExpiredEvents", mock.Anything, mock.AnythingOfType("time.Time")).Return(int64(0), nil)
 	store.On("DeleteTerminated", mock.Anything, mock.AnythingOfType("time.Time")).Return(nil)
 
 	m.gc(ctx)
@@ -1464,6 +1480,7 @@ func TestManager_GC_NoZombieWhenRecentIO(t *testing.T) {
 
 	store.On("GetExpiredMaxLifetime", mock.Anything, mock.AnythingOfType("time.Time")).Return([]string(nil), nil)
 	store.On("GetExpiredIdle", mock.Anything, mock.AnythingOfType("time.Time")).Return([]string(nil), nil)
+	store.On("DeleteExpiredEvents", mock.Anything, mock.AnythingOfType("time.Time")).Return(int64(0), nil)
 	store.On("DeleteTerminated", mock.Anything, mock.AnythingOfType("time.Time")).Return(nil)
 
 	m.gc(ctx)
@@ -1488,6 +1505,7 @@ func TestManager_GC_ExpiredMaxLifetime(t *testing.T) {
 		Return([]string{"sess_maxlife"}, nil)
 	store.On("GetExpiredIdle", mock.Anything, mock.AnythingOfType("time.Time")).
 		Return([]string(nil), nil)
+	store.On("DeleteExpiredEvents", mock.Anything, mock.AnythingOfType("time.Time")).Return(int64(0), nil)
 	store.On("DeleteTerminated", mock.Anything, mock.AnythingOfType("time.Time")).
 		Return(nil)
 	store.On("Close").Return(nil)
@@ -1529,6 +1547,7 @@ func TestManager_GC_ExpiredIdleTimeout(t *testing.T) {
 		Return([]string(nil), nil)
 	store.On("GetExpiredIdle", mock.Anything, mock.AnythingOfType("time.Time")).
 		Return([]string{"sess_idle_exp"}, nil)
+	store.On("DeleteExpiredEvents", mock.Anything, mock.AnythingOfType("time.Time")).Return(int64(0), nil)
 	store.On("DeleteTerminated", mock.Anything, mock.AnythingOfType("time.Time")).
 		Return(nil)
 	store.On("Close").Return(nil)
@@ -1569,6 +1588,7 @@ func TestManager_GC_NoRetentionCleanup(t *testing.T) {
 		Return([]string(nil), nil)
 	store.On("GetExpiredIdle", mock.Anything, mock.AnythingOfType("time.Time")).
 		Return([]string(nil), nil)
+	store.On("DeleteExpiredEvents", mock.Anything, mock.AnythingOfType("time.Time")).Return(int64(0), nil)
 	// DeleteTerminated is NOT expected — retention cleanup is intentionally
 	// removed so that TERMINATED records serve as "resume decision flags".
 	store.On("Close").Return(nil)
@@ -1591,6 +1611,7 @@ func TestManager_GC_TerminatedSessionPreserved(t *testing.T) {
 		Return([]string(nil), nil)
 	store.On("GetExpiredIdle", mock.Anything, mock.AnythingOfType("time.Time")).
 		Return([]string(nil), nil)
+	store.On("DeleteExpiredEvents", mock.Anything, mock.AnythingOfType("time.Time")).Return(int64(0), nil)
 	store.On("Close").Return(nil)
 
 	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
@@ -1640,6 +1661,7 @@ func TestManager_GC_TerminatedSession_DBError_NoImpact(t *testing.T) {
 		Return([]string(nil), errors.New("db error"))
 	store.On("GetExpiredIdle", mock.Anything, mock.AnythingOfType("time.Time")).
 		Return([]string(nil), errors.New("db error"))
+	store.On("DeleteExpiredEvents", mock.Anything, mock.AnythingOfType("time.Time")).Return(int64(0), nil)
 	store.On("Close").Return(nil)
 
 	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
@@ -1682,6 +1704,7 @@ func TestManager_GC_NoPanicOnStoreErrors(t *testing.T) {
 		Return([]string(nil), errors.New("db error"))
 	store.On("GetExpiredIdle", mock.Anything, mock.AnythingOfType("time.Time")).
 		Return([]string(nil), errors.New("db error"))
+	store.On("DeleteExpiredEvents", mock.Anything, mock.AnythingOfType("time.Time")).Return(int64(0), nil)
 	// DeleteTerminated no longer called — retention cleanup removed.
 	store.On("Close").Return(nil)
 
@@ -1800,6 +1823,244 @@ func TestManager_ClearContext_UpdatesTimestamp(t *testing.T) {
 	require.True(t, updatedMs.info.UpdatedAt.After(now.Add(-5*time.Second)))
 }
 
+// ─── RepairRunningSessions tests ──────────────────────────────────────────────
+
+func TestManager_RepairRunningSessions_Success(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	cfg := config.Default()
+	store := new(mockStore)
+	store.Test(t)
+
+	store.On("GetSessionsByState", ctx, events.StateRunning).
+		Return([]string{"sess_r1", "sess_r2", "sess_r3"}, nil)
+	store.On("Upsert", ctx, mock.AnythingOfType("*session.SessionInfo")).Return(nil)
+	store.On("Close").Return(nil)
+
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
+	require.NoError(t, err)
+	defer m.Close()
+
+	// Seed sessions in memory in RUNNING state.
+	for _, id := range []string{"sess_r1", "sess_r2", "sess_r3"} {
+		m.mu.Lock()
+		m.sessions[id] = &managedSession{info: SessionInfo{
+			ID:         id,
+			UserID:     "user1",
+			WorkerType: worker.TypeClaudeCode,
+			State:      events.StateRunning,
+			CreatedAt:  time.Now(),
+			UpdatedAt:  time.Now(),
+		}}
+		m.mu.Unlock()
+	}
+
+	repaired, err := m.RepairRunningSessions(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 3, repaired)
+
+	// All sessions should now be TERMINATED.
+	for _, id := range []string{"sess_r1", "sess_r2", "sess_r3"} {
+		info, _ := m.Get(id)
+		require.Equal(t, events.StateTerminated, info.State)
+	}
+}
+
+func TestManager_RepairRunningSessions_Empty(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	cfg := config.Default()
+	store := new(mockStore)
+	store.Test(t)
+
+	store.On("GetSessionsByState", ctx, events.StateRunning).
+		Return([]string(nil), nil)
+	store.On("Close").Return(nil)
+
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
+	require.NoError(t, err)
+	defer m.Close()
+
+	repaired, err := m.RepairRunningSessions(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 0, repaired)
+}
+
+func TestManager_RepairRunningSessions_StoreError(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	cfg := config.Default()
+	store := new(mockStore)
+	store.Test(t)
+
+	store.On("GetSessionsByState", ctx, events.StateRunning).
+		Return([]string(nil), errors.New("db error"))
+	store.On("Close").Return(nil)
+
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
+	require.NoError(t, err)
+	defer m.Close()
+
+	_, err = m.RepairRunningSessions(ctx)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "repair running sessions")
+}
+
+func TestManager_RepairRunningSessions_PartialFailure(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	cfg := config.Default()
+	store := new(mockStore)
+	store.Test(t)
+
+	store.On("GetSessionsByState", ctx, events.StateRunning).
+		Return([]string{"sess_ok", "sess_fail"}, nil)
+	store.On("Upsert", ctx, mock.AnythingOfType("*session.SessionInfo")).Return(nil)
+	store.On("Close").Return(nil)
+
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
+	require.NoError(t, err)
+	defer m.Close()
+
+	// sess_ok is in memory and can transition.
+	m.mu.Lock()
+	m.sessions["sess_ok"] = &managedSession{info: SessionInfo{
+		ID:         "sess_ok",
+		UserID:     "user1",
+		WorkerType: worker.TypeClaudeCode,
+		State:      events.StateRunning,
+		CreatedAt:  time.Now(),
+		UpdatedAt:  time.Now(),
+	}}
+	// sess_fail is DELETED (terminal) — transition will fail.
+	m.sessions["sess_fail"] = &managedSession{info: SessionInfo{
+		ID:         "sess_fail",
+		UserID:     "user1",
+		WorkerType: worker.TypeClaudeCode,
+		State:      events.StateDeleted,
+		CreatedAt:  time.Now(),
+		UpdatedAt:  time.Now(),
+	}}
+	m.mu.Unlock()
+
+	repaired, err := m.RepairRunningSessions(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, repaired, "only sess_ok should be repaired")
+}
+
+// ─── DetachWorkerIf CAS tests ─────────────────────────────────────────────────
+
+func TestManager_DetachWorkerIf_CAS_Success(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	cfg := config.Default()
+	store := new(mockStore)
+	store.Test(t)
+
+	store.On("Close").Return(nil)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
+	require.NoError(t, err)
+	defer m.Close()
+
+	seed := &SessionInfo{
+		ID:         "sess_cas_ok",
+		UserID:     "user_cas",
+		WorkerType: worker.TypeClaudeCode,
+		State:      events.StateRunning,
+		CreatedAt:  time.Now(),
+		UpdatedAt:  time.Now(),
+	}
+	m.mu.Lock()
+	m.sessions["sess_cas_ok"] = &managedSession{info: *seed}
+	m.mu.Unlock()
+
+	w := newMockWorker(worker.TypeClaudeCode, 0)
+	w.On("Terminate", mock.Anything).Return(nil)
+	err = m.AttachWorker("sess_cas_ok", w)
+	require.NoError(t, err)
+
+	// Detach with the correct expected worker → success.
+	detached := m.DetachWorkerIf("sess_cas_ok", w)
+	require.True(t, detached)
+
+	// Worker gone, pool released.
+	require.Nil(t, m.GetWorker("sess_cas_ok"))
+	total, _, _ := m.Stats()
+	require.Equal(t, 0, total)
+}
+
+func TestManager_DetachWorkerIf_CAS_Mismatch(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	cfg := config.Default()
+	store := new(mockStore)
+	store.Test(t)
+
+	store.On("Close").Return(nil)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
+	require.NoError(t, err)
+	defer m.Close()
+
+	seed := &SessionInfo{
+		ID:         "sess_cas_mismatch",
+		UserID:     "user_cas2",
+		WorkerType: worker.TypeClaudeCode,
+		State:      events.StateRunning,
+		CreatedAt:  time.Now(),
+		UpdatedAt:  time.Now(),
+	}
+	m.mu.Lock()
+	m.sessions["sess_cas_mismatch"] = &managedSession{info: *seed}
+	m.mu.Unlock()
+
+	w := newMockWorker(worker.TypeClaudeCode, 0)
+	w.On("Terminate", mock.Anything).Return(nil)
+	err = m.AttachWorker("sess_cas_mismatch", w)
+	require.NoError(t, err)
+
+	// Try to detach with a different worker instance → CAS failure.
+	otherWorker := newMockWorker(worker.TypeClaudeCode, 0)
+	detached := m.DetachWorkerIf("sess_cas_mismatch", otherWorker)
+	require.False(t, detached)
+
+	// Original worker still attached, pool not released.
+	require.NotNil(t, m.GetWorker("sess_cas_mismatch"))
+	total, _, _ := m.Stats()
+	require.Equal(t, 1, total)
+}
+
+func TestManager_DetachWorkerIf_NilManager(t *testing.T) {
+	t.Parallel()
+
+	m := (*Manager)(nil)
+	detached := m.DetachWorkerIf("any", nil)
+	require.False(t, detached)
+}
+
+func TestManager_DetachWorkerIf_NotFound(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	cfg := config.Default()
+	store := new(mockStore)
+	store.Test(t)
+
+	store.On("Get", ctx, "sess_ghost_cas").Return(nil, ErrSessionNotFound)
+	store.On("Close").Return(nil)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
+	require.NoError(t, err)
+	defer m.Close()
+
+	detached := m.DetachWorkerIf("sess_ghost_cas", nil)
+	require.False(t, detached)
+}
+
 func TestManager_ClearContext_PreservesOtherFields(t *testing.T) {
 	t.Parallel()
 
@@ -1845,4 +2106,162 @@ func TestManager_ClearContext_PreservesOtherFields(t *testing.T) {
 	require.Equal(t, worker.TypeOpenCodeSrv, ms.info.WorkerType)
 	require.Equal(t, events.StateRunning, ms.info.State)
 	require.Empty(t, ms.info.Context)
+}
+
+// ─── UpdateWorkerSessionID tests ─────────────────────────────────────────────
+
+func TestManager_UpdateWorkerSessionID(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	cfg := config.Default()
+	store := new(mockStore)
+	store.Test(t)
+
+	store.On("Close").Return(nil)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
+	require.NoError(t, err)
+	defer m.Close()
+
+	now := time.Now()
+	seed := &SessionInfo{
+		ID:         "sess_wsid",
+		UserID:     "user1",
+		WorkerType: worker.TypeOpenCodeSrv,
+		State:      events.StateRunning,
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}
+	m.mu.Lock()
+	m.sessions["sess_wsid"] = &managedSession{info: *seed}
+	m.mu.Unlock()
+
+	store.On("Upsert", ctx, mock.AnythingOfType("*session.SessionInfo")).Return(nil)
+
+	err = m.UpdateWorkerSessionID(ctx, "sess_wsid", "ocs_internal_123")
+	require.NoError(t, err)
+
+	// Verify in-memory state
+	info, _ := m.Get("sess_wsid")
+	require.Equal(t, "ocs_internal_123", info.WorkerSessionID)
+}
+
+func TestManager_UpdateWorkerSessionID_SameValue_NoUpsert(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	cfg := config.Default()
+	store := new(mockStore)
+	store.Test(t)
+
+	store.On("Close").Return(nil)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
+	require.NoError(t, err)
+	defer m.Close()
+
+	now := time.Now()
+	seed := &SessionInfo{
+		ID:              "sess_wsid_same",
+		UserID:          "user1",
+		WorkerType:      worker.TypeOpenCodeSrv,
+		State:           events.StateRunning,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		WorkerSessionID: "existing_id",
+	}
+	m.mu.Lock()
+	m.sessions["sess_wsid_same"] = &managedSession{info: *seed}
+	m.mu.Unlock()
+
+	// Same value — Upsert should NOT be called
+	err = m.UpdateWorkerSessionID(ctx, "sess_wsid_same", "existing_id")
+	require.NoError(t, err)
+}
+
+func TestManager_UpdateWorkerSessionID_NotFound(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	cfg := config.Default()
+	store := new(mockStore)
+	store.Test(t)
+
+	store.On("Get", ctx, "ghost").Return(nil, ErrSessionNotFound)
+	store.On("Close").Return(nil)
+
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
+	require.NoError(t, err)
+	defer m.Close()
+
+	err = m.UpdateWorkerSessionID(ctx, "ghost", "any")
+	require.True(t, errors.Is(err, ErrSessionNotFound))
+}
+
+func TestManager_UpdateWorkerSessionID_NilManager(t *testing.T) {
+	t.Parallel()
+
+	m := (*Manager)(nil)
+	err := m.UpdateWorkerSessionID(context.Background(), "any", "id")
+	require.True(t, errors.Is(err, ErrSessionNotFound))
+}
+
+// ─── MessageStore() accessor tests ───────────────────────────────────────────
+
+func TestManager_MessageStore_Nil(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	cfg := config.Default()
+	store := new(mockStore)
+	store.Test(t)
+
+	store.On("Close").Return(nil)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
+	require.NoError(t, err)
+	defer m.Close()
+
+	require.Nil(t, m.MessageStore())
+}
+
+// ─── ResetGCInterval tests ───────────────────────────────────────────────────
+
+func TestManager_ResetGCInterval(t *testing.T) {
+	ctx := context.Background()
+	cfg := config.Default()
+	store := new(mockStore)
+	store.Test(t)
+
+	store.On("Close").Return(nil)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
+	require.NoError(t, err)
+	defer m.Close()
+
+	// Should not panic with valid interval
+	m.ResetGCInterval(30 * time.Second)
+
+	// Zero/negative interval should be ignored
+	m.ResetGCInterval(0)
+	m.ResetGCInterval(-1 * time.Second)
+}
+
+// ─── Pool() accessor tests ───────────────────────────────────────────────────
+
+func TestManager_Pool(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	cfg := config.Default()
+	store := new(mockStore)
+	store.Test(t)
+
+	store.On("Close").Return(nil)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
+	require.NoError(t, err)
+	defer m.Close()
+
+	pool := m.Pool()
+	require.NotNil(t, pool)
+	total, max, _ := pool.Stats()
+	require.Equal(t, 0, total)
+	require.Equal(t, cfg.Pool.MaxSize, max)
 }

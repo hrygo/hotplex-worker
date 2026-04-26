@@ -736,6 +736,25 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		"text_len", len(text),
 	)
 
+	// TTL rotation: proactively replace expired streaming cards before
+	// Feishu's 10-minute server limit kicks in.
+	if streamCtrl != nil && streamCtrl.IsCreated() && streamCtrl.Expired() {
+		oldMsgID := streamCtrl.MsgID()
+		go func() { _ = streamCtrl.Abort(context.Background()) }()
+		c.adapter.log.Info("feishu: streaming card rotated",
+			"old_msg_id", oldMsgID)
+
+		newCtrl := NewStreamingCardController(c.adapter.larkClient, c.adapter.rateLimiter, c.adapter.log)
+		c.mu.Lock()
+		c.streamCtrl = newCtrl
+		if oldMsgID != "" {
+			c.replyToMsgID = oldMsgID
+			replyToMsgID = oldMsgID
+		}
+		streamCtrl = newCtrl
+		c.mu.Unlock()
+	}
+
 	if streamCtrl != nil {
 		// Lazy-init: create card on first content arrival.
 		if !streamCtrl.IsCreated() {
@@ -750,9 +769,15 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		} else {
 			// Subsequent content: write + flush.
 			if err := streamCtrl.Write(text); err != nil {
-				return err
+				// Streaming failed — close and fall back to static delivery.
+				c.adapter.log.Warn("feishu: streaming write failed, falling back to static", "err", err)
+				_ = streamCtrl.Abort(context.Background())
+				c.mu.Lock()
+				c.streamCtrl = nil
+				c.mu.Unlock()
+			} else {
+				return streamCtrl.Flush(ctx)
 			}
-			return streamCtrl.Flush(ctx)
 		}
 	}
 
@@ -830,7 +855,11 @@ func (c *FeishuConn) sendContextUsage(ctx context.Context, env *events.Envelope)
 		extras = append(extras, fmt.Sprintf("🤖 %d agents", d.Agents))
 	}
 	if d.Skills.Total > 0 {
-		extras = append(extras, fmt.Sprintf("⚡ %d skills (%d included, %d tokens)", d.Skills.Total, d.Skills.Included, d.Skills.Tokens))
+		skillsStr := fmt.Sprintf("⚡ %d skills (%d included, %d tokens)", d.Skills.Total, d.Skills.Included, d.Skills.Tokens)
+		if len(d.Skills.Names) > 0 {
+			skillsStr += "\n📜 " + strings.Join(d.Skills.Names, ", ")
+		}
+		extras = append(extras, skillsStr)
 	}
 	if len(extras) > 0 {
 		sb.WriteString("\n" + strings.Join(extras, " · "))

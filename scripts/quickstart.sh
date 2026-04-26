@@ -39,6 +39,8 @@ BIN_DIR="$PROJECT_ROOT/bin"
 CONFIG_DIR="$PROJECT_ROOT/.dev"
 DATA_DIR="$PROJECT_ROOT/.dev/data"
 
+command -v openssl &>/dev/null || { echo "error: openssl is required"; exit 1; }
+
 # Build
 log_section "Building Binary"
 make build
@@ -64,7 +66,7 @@ db:
 
 worker:
   max_lifetime: 24h
-  idle_timeout: 30m
+  idle_timeout: 60m
 
 security:
   api_keys:
@@ -101,10 +103,9 @@ ${BLUE}Admin Token:${NC} $ADMIN_TOKEN
 ${BLUE}Commands:${NC}
 
   Start gateway:
-    export HOTPLEX_JWT_SECRET="\${JWT_SECRET}"
+    export HOTPLEX_JWT_SECRET='$JWT_SECRET'
     $BIN_DIR/hotplex-\$(go env GOOS)-\$(go env GOARCH) \\
-      -config $CONFIG_DIR/config.yaml \\
-      -dev
+      gateway start -c $CONFIG_DIR/config.yaml --dev
 
   Test health:
     curl http://localhost:9999/admin/health
@@ -134,6 +135,5 @@ if [[ "$start_now" == "y" ]]; then
     log_info "Starting gateway..."
     export HOTPLEX_JWT_SECRET="$JWT_SECRET"
     exec "$BIN_DIR/hotplex-$(go env GOOS)-$(go env GOARCH)" \
-        -config "$CONFIG_DIR/config.yaml" \
-        -dev
+        gateway start -c "$CONFIG_DIR/config.yaml" --dev
 fi

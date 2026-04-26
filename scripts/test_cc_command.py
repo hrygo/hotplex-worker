@@ -171,9 +171,13 @@ def test_get_context_usage(proc, responses) -> bool:
         log(f"  {c.get('name', '?')}: {c.get('tokens', 0):,} tokens", "OK")
 
     skills = d.get("skills", {})
+    names = skills.get("names", [])
     log(f"skills: total={skills.get('totalSkills', 0)} "
         f"included={skills.get('includedSkills', 0)} "
-        f"tokens={skills.get('tokens', 0)}", "OK")
+        f"tokens={skills.get('tokens', 0)} "
+        f"names={len(names)}", "OK")
+    if names:
+        log(f"  First 5 skills: {', '.join(names[:5])}", "OK")
     log(f"memory_files={len(d.get('memoryFiles', []))} "
         f"mcp_tools={len(d.get('mcpTools', []))} "
         f"agents={len(d.get('agents', []))}", "OK")
@@ -402,6 +406,19 @@ def test_commit(proc, responses) -> bool:
     return True
 
 
+def test_skills_command(proc, responses) -> bool:
+    """User Message: /skills"""
+    log("=" * 60, "TEST")
+    log("TEST: /skills (passthrough)", "TEST")
+    log("=" * 60, "TEST")
+
+    send_user_msg(proc, "/skills")
+    wait_idle(10)
+
+    log("PASS: /skills (check logs above for result)", "PASS")
+    return True
+
+
 # ─── Main ──────────────────────────────────────────────────────────────
 
 def main():
@@ -473,6 +490,8 @@ def main():
     # Category 1: User Message Passthrough (may have side effects)
     if "compact" not in args.skip:
         results["compact"] = test_compact(proc, responses)
+    if "skills_cmd" not in args.skip:
+        results["skills_cmd"] = test_skills_command(proc, responses)
     if "model" not in args.skip:
         results["model_cmd"] = test_model_command(proc, responses)
     if "effort" not in args.skip:

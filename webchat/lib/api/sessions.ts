@@ -22,6 +22,8 @@ export interface SessionInfo {
   expires_at?: string;
   idle_expires_at?: string;
   turn_count?: number;
+  work_dir?: string;
+  title?: string;
 }
 
 export type SessionState = 'created' | 'running' | 'idle' | 'terminated' | 'deleted';
@@ -41,13 +43,23 @@ export async function listSessions(limit = 20, offset = 0): Promise<ListSessions
   return res.json();
 }
 
-export async function createSession(workerType = 'claude_code', sessionId?: string): Promise<{ session_id: string }> {
-  let url = `${BASE}/api/sessions?${AUTH}&worker_type=${encodeURIComponent(workerType)}`;
-  if (sessionId) {
-    url += `&session_id=${encodeURIComponent(sessionId)}`;
+export interface CreateSessionOptions {
+  workerType?: string;
+  title: string;
+  workDir?: string;
+}
+
+export async function createSession(opts: CreateSessionOptions): Promise<{ session_id: string }> {
+  const workerType = opts.workerType ?? 'claude_code';
+  let url = `${BASE}/api/sessions?${AUTH}&worker_type=${encodeURIComponent(workerType)}&title=${encodeURIComponent(opts.title)}`;
+  if (opts.workDir) {
+    url += `&work_dir=${encodeURIComponent(opts.workDir)}`;
   }
   const res = await fetch(url, { method: 'POST' });
-  if (!res.ok) throw new Error(`createSession failed: ${res.status}`);
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(body || `createSession failed: ${res.status}`);
+  }
   return res.json();
 }
 

@@ -204,6 +204,25 @@ export function createPermissionResponseEnvelope(
   );
 }
 
+/**
+ * Create a worker command envelope for sending stdio commands to the worker
+ * (e.g., "skills" to fetch loaded skills).
+ */
+export function createWorkerCommandEnvelope(
+  sessionId: string,
+  command: string,
+  args?: string,
+  extra?: Record<string, unknown>,
+): Envelope<{ command: string; args?: string; extra?: Record<string, unknown> }> {
+  return createEnvelope(
+    newEventId(),
+    sessionId,
+    1,
+    EventKind.WorkerCommand,
+    { command, args, extra },
+  );
+}
+
 // ============================================================================
 // NDJSON Serialization
 // ============================================================================

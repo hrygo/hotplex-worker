@@ -88,8 +88,19 @@ func (p *PoolManager) Acquire(userID string) error {
 }
 
 // Release frees a concurrency slot previously acquired for userID.
+// Also releases memory quota under the same lock.
 func (p *PoolManager) Release(userID string) {
 	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if p.userCount[userID] <= 0 || p.totalCount <= 0 {
+		p.log.Error("pool: release without acquire — possible double-release", "user_id", userID,
+			"user_count", p.userCount[userID], "total", p.totalCount)
+		metrics.PoolReleaseErrorsTotal.Inc()
+		// Best-effort memory cleanup to prevent quota leak on accounting bug.
+		p.releaseMemoryLocked(userID)
+		return
+	}
 	p.userCount[userID]--
 	if p.userCount[userID] <= 0 {
 		delete(p.userCount, userID)
@@ -99,7 +110,7 @@ func (p *PoolManager) Release(userID string) {
 	if p.maxSize > 0 {
 		metrics.PoolUtilization.Set(float64(total) / float64(p.maxSize))
 	}
-	p.mu.Unlock()
+	p.releaseMemoryLocked(userID)
 	p.log.Debug("pool: released", "user_id", userID, "total", total)
 }
 
@@ -150,13 +161,20 @@ func (p *PoolManager) AcquireMemory(userID string) error {
 func (p *PoolManager) ReleaseMemory(userID string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	p.releaseMemoryLocked(userID)
+}
 
+// releaseMemoryLocked frees memory quota. Caller must hold p.mu.
+func (p *PoolManager) releaseMemoryLocked(userID string) {
 	if p.maxMemoryPerUser > 0 {
 		used := p.userMemory[userID]
 		if used >= workerMemoryEstimate {
 			p.userMemory[userID] = used - workerMemoryEstimate
-		} else {
+		} else if used > 0 {
 			p.userMemory[userID] = 0
+		}
+		if p.userMemory[userID] <= 0 {
+			delete(p.userMemory, userID)
 		}
 	}
 }

@@ -20,6 +20,17 @@ type sessionAccumulator struct {
 	ContextWindow int64  // from modelUsage.contextWindow (0 = unknown)
 	ModelName     string // first model seen
 	StartedAt     time.Time
+
+	// Per-turn tracking (reset after each done).
+	ToolNames     map[string]int // tool name -> call count this turn
+	PerTurnInput  int64
+	PerTurnOutput int64
+	PerTurnCost   float64
+
+	// Cumulative totals at the end of the previous turn (for delta computation).
+	PrevTotalIn   int64
+	PrevTotalOut  int64
+	PrevTotalCost float64
 }
 
 // mergePerTurnStats extracts standard fields from different Worker formats
@@ -64,6 +75,35 @@ func (a *sessionAccumulator) mergePerTurnStats(data events.DoneData) {
 	// Cost: Claude Code uses "total_cost_usd", OpenCode uses "cost"
 	a.TotalCostUSD += toFloat64(data.Stats["total_cost_usd"])
 	a.TotalCostUSD += toFloat64(data.Stats["cost"])
+}
+
+// Workers report cumulative token totals, not per-turn values. computePerTurnDeltas
+// derives the delta for the current turn by subtracting the previous baseline.
+func (a *sessionAccumulator) computePerTurnDeltas() {
+	a.PerTurnInput = a.TotalInput - a.PrevTotalIn
+	a.PerTurnOutput = a.TotalOutput - a.PrevTotalOut
+	a.PerTurnCost = a.TotalCostUSD - a.PrevTotalCost
+	if a.PerTurnInput < 0 {
+		a.PerTurnInput = 0
+	}
+	if a.PerTurnOutput < 0 {
+		a.PerTurnOutput = 0
+	}
+	if a.PerTurnCost < 0 {
+		a.PerTurnCost = 0
+	}
+}
+
+// resetPerTurn must be called after computePerTurnDeltas and the record is written.
+func (a *sessionAccumulator) resetPerTurn() {
+	a.PrevTotalIn = a.TotalInput
+	a.PrevTotalOut = a.TotalOutput
+	a.PrevTotalCost = a.TotalCostUSD
+	a.ToolNames = nil
+	a.ToolCallCount = 0
+	a.PerTurnInput = 0
+	a.PerTurnOutput = 0
+	a.PerTurnCost = 0
 }
 
 // computeContextPct calculates context window usage percentage.

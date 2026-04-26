@@ -88,6 +88,11 @@ type SessionInfo struct {
 	// Example (Feishu): {"chat_id":"oc_xxx","thread_ts":"","user_id":"ou_xxx"}
 	// Example (Slack):  {"team_id":"Txxx","channel_id":"Cxxx","thread_ts":"1234.56","user_id":"Uxxx"}
 	PlatformKey map[string]string `json:"platform_key,omitempty"`
+	// WorkDir is the working directory for this session.
+	WorkDir string `json:"work_dir,omitempty"`
+	// Title is the user-facing session name. Used as DeriveSessionKey input for WebChat sessions.
+	// Empty for Slack/Feishu sessions (they use DerivePlatformSessionKey instead).
+	Title string `json:"title,omitempty"`
 }
 
 // NewManager creates a new session manager using the provided Store and optional MessageStore.
@@ -119,12 +124,12 @@ func NewManager(ctx context.Context, log *slog.Logger, cfg *config.Config, cfgSt
 }
 
 // Create creates a new session and persists it to SQLite.
-func (m *Manager) Create(ctx context.Context, id, userID string, workerType worker.WorkerType, allowedTools []string) (*SessionInfo, error) {
-	return m.CreateWithBot(ctx, id, userID, "", workerType, allowedTools, "", nil)
+func (m *Manager) Create(ctx context.Context, id, userID string, workerType worker.WorkerType, allowedTools []string, workDir, title string) (*SessionInfo, error) {
+	return m.CreateWithBot(ctx, id, userID, "", workerType, allowedTools, "", nil, workDir, title)
 }
 
 // CreateWithBot creates a new session with explicit bot_id and persists it to SQLite.
-func (m *Manager) CreateWithBot(ctx context.Context, id, userID, botID string, workerType worker.WorkerType, allowedTools []string, platform string, platformKey map[string]string) (*SessionInfo, error) {
+func (m *Manager) CreateWithBot(ctx context.Context, id, userID, botID string, workerType worker.WorkerType, allowedTools []string, platform string, platformKey map[string]string, workDir, title string) (*SessionInfo, error) {
 	now := time.Now()
 	info := &SessionInfo{
 		ID:           id,
@@ -138,6 +143,8 @@ func (m *Manager) CreateWithBot(ctx context.Context, id, userID, botID string, w
 		AllowedTools: allowedTools,
 		Platform:     platform,
 		PlatformKey:  platformKey,
+		WorkDir:      workDir,
+		Title:        title,
 	}
 
 	if err := m.store.Upsert(ctx, info); err != nil {
@@ -391,24 +398,43 @@ func (m *Manager) GetWorker(id string) worker.Worker {
 	return ms.worker
 }
 
-// releaseWorkerQuota delegates to PoolManager.Release.
+// releaseWorkerQuota releases both concurrency slot and memory quota.
+// pool.Release now handles both slot and memory under a single lock.
 func (m *Manager) releaseWorkerQuota(ms *managedSession) {
 	m.pool.Release(ms.info.UserID)
 }
 
 // DetachWorker removes the worker from the session and releases the concurrency quota.
 // It is safe to call even if no worker is attached.
-// Acquires ms.mu then pool lock to avoid deadlock with Delete.
 func (m *Manager) DetachWorker(id string) {
+	m.detachWorkerUnchecked(id, nil)
+}
+
+// DetachWorkerIf removes the worker only if it matches the expected one (CAS semantics).
+// Returns true if detached, false if the current worker differs (another goroutine already replaced it).
+// Use this from stale goroutines (e.g., old forwardEvents) to avoid clobbering a newer worker.
+func (m *Manager) DetachWorkerIf(id string, expected worker.Worker) bool {
+	return m.detachWorkerUnchecked(id, expected)
+}
+
+// detachWorkerUnchecked is the shared implementation.
+// If expected is non-nil, it acts as a CAS guard — only detaches when ms.worker == expected.
+func (m *Manager) detachWorkerUnchecked(id string, expected worker.Worker) bool {
 	if m == nil {
-		return
+		return false
 	}
 	ms := m.getManagedSession(id)
 	if ms == nil {
-		return
+		return false
 	}
 
 	ms.mu.Lock()
+	if expected != nil && ms.worker != expected {
+		// CAS mismatch — another goroutine already replaced the worker.
+		ms.mu.Unlock()
+		m.log.Debug("session: detach skipped, worker replaced", "session_id", id)
+		return false
+	}
 	hasWorker := ms.worker != nil
 	workerType := ms.info.WorkerType
 	ms.worker = nil
@@ -418,9 +444,9 @@ func (m *Manager) DetachWorker(id string) {
 	if hasWorker {
 		metrics.WorkersRunning.WithLabelValues(string(workerType)).Dec()
 		m.pool.Release(uid)
-		m.pool.ReleaseMemory(uid)
 		m.log.Debug("session: worker detached", "session_id", id)
 	}
+	return true
 }
 
 // Delete marks a session as DELETED and removes it from the in-memory cache.
@@ -438,6 +464,7 @@ func (m *Manager) Delete(ctx context.Context, id string) error {
 	ms.mu.Lock()
 	hasWorker := ms.worker != nil
 	workerType := ms.info.WorkerType
+	uid := ms.info.UserID
 	ms.info.State = events.StateDeleted
 	ms.info.UpdatedAt = time.Now()
 	if err := m.store.Upsert(ctx, &ms.info); err != nil {
@@ -445,14 +472,13 @@ func (m *Manager) Delete(ctx context.Context, id string) error {
 		m.mu.Unlock()
 		return err
 	}
-	uid := ms.info.UserID
 	ms.mu.Unlock()
 
 	// Release quota and remove from map while still holding m.mu.
 	if hasWorker {
 		metrics.WorkersRunning.WithLabelValues(string(workerType)).Dec()
+		m.pool.Release(uid)
 	}
-	m.pool.Release(uid)
 	delete(m.sessions, id)
 	m.mu.Unlock()
 
@@ -474,10 +500,10 @@ func (m *Manager) DeletePhysical(ctx context.Context, id string) error {
 	ms, ok := m.sessions[id]
 	if ok {
 		ms.mu.Lock()
-		m.releaseWorkerQuota(ms)
 		if ms.worker != nil {
 			_ = ms.worker.Kill()
 			metrics.WorkersRunning.WithLabelValues(string(ms.info.WorkerType)).Dec()
+			m.releaseWorkerQuota(ms)
 		}
 		ms.mu.Unlock()
 		delete(m.sessions, id)
@@ -612,6 +638,28 @@ func (m *Manager) ListActive() []*SessionInfo {
 		sessions = append(sessions, &ms.info)
 	}
 	return sessions
+}
+
+// RepairRunningSessions transitions all sessions stuck in RUNNING state to TERMINATED.
+// Called at gateway startup to repair sessions orphaned by a previous crash/restart.
+func (m *Manager) RepairRunningSessions(ctx context.Context) (int, error) {
+	ids, err := m.store.GetSessionsByState(ctx, events.StateRunning)
+	if err != nil {
+		return 0, fmt.Errorf("repair running sessions: %w", err)
+	}
+	if len(ids) == 0 {
+		return 0, nil
+	}
+
+	repaired := 0
+	for _, id := range ids {
+		if err := m.TransitionWithReason(ctx, id, events.StateTerminated, "gateway_restart"); err != nil {
+			m.log.Warn("session: repair running session failed", "session_id", id, "err", err)
+		} else {
+			repaired++
+		}
+	}
+	return repaired, nil
 }
 
 // Stats returns the active worker pool utilization.
@@ -794,6 +842,22 @@ func (m *Manager) gc(ctx context.Context) {
 	// the conversation. Deleting DB records would force --session-id (new
 	// session) instead of --resume, losing conversation history.
 	// Physical deletion should be an explicit admin action, not automatic GC.
+
+	// 4. Events TTL cleanup for terminated/deleted sessions.
+	if m.cfg.DB.EventRetention > 0 {
+		cutoff := now.Add(-m.cfg.DB.EventRetention)
+		if n, err := m.store.DeleteExpiredEvents(ctx, cutoff); err != nil {
+			m.log.Warn("session: gc (events TTL) error", "err", err)
+		} else if n > 0 {
+			m.log.Info("session: gc (events TTL) cleaned", "count", n)
+			// 5. Compact if events were reclaimed and free space exceeds threshold.
+			if m.cfg.DB.VacuumThreshold > 0 {
+				if err := m.store.Compact(ctx, m.cfg.DB.VacuumThreshold); err != nil {
+					m.log.Warn("session: gc (compact) error", "err", err)
+				}
+			}
+		}
+	}
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

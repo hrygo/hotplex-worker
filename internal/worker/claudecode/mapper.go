@@ -1,6 +1,7 @@
 package claudecode
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -86,31 +87,17 @@ func (m *Mapper) Map(evt *WorkerEvent) ([]*events.Envelope, error) {
 		}
 		return m.mapResult(payload)
 	case EventSystem:
-		payload, ok := evt.Payload.(string)
+		raw, ok := evt.Payload.(json.RawMessage)
 		if !ok {
-			return nil, fmt.Errorf("mapper: system payload is not string: %T", evt.Payload)
+			return nil, fmt.Errorf("mapper: system payload is not json.RawMessage: %T", evt.Payload)
 		}
-		env, err := m.mapSystem(payload)
-		if err != nil {
-			return nil, err
-		}
-		if env == nil {
-			return nil, nil
-		}
-		return []*events.Envelope{env}, nil
+		return m.mapRawStringPayload(raw, m.mapSystem)
 	case EventSessionState:
-		payload, ok := evt.Payload.(string)
+		raw, ok := evt.Payload.(json.RawMessage)
 		if !ok {
-			return nil, fmt.Errorf("mapper: session_state payload is not string: %T", evt.Payload)
+			return nil, fmt.Errorf("mapper: session_state payload is not json.RawMessage: %T", evt.Payload)
 		}
-		env, err := m.mapSessionState(payload)
-		if err != nil {
-			return nil, err
-		}
-		if env == nil {
-			return nil, nil
-		}
-		return []*events.Envelope{env}, nil
+		return m.mapRawStringPayload(raw, m.mapSessionState)
 	case EventToolResult:
 		// Signal-only: tool completed. Emit lightweight tool_result for activity feedback.
 		return []*events.Envelope{events.NewEnvelope(
@@ -123,6 +110,23 @@ func (m *Mapper) Map(evt *WorkerEvent) ([]*events.Envelope, error) {
 	default:
 		return nil, fmt.Errorf("mapper: unknown event type: %v", evt.Type)
 	}
+}
+
+// mapRawStringPayload unmarshal a json.RawMessage payload to string and delegates
+// to the given map function. Returns nil for non-string payloads (JSON objects).
+func (m *Mapper) mapRawStringPayload(raw json.RawMessage, mapFn func(string) (*events.Envelope, error)) ([]*events.Envelope, error) {
+	var s string
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return nil, nil
+	}
+	env, err := mapFn(s)
+	if err != nil {
+		return nil, err
+	}
+	if env == nil {
+		return nil, nil
+	}
+	return []*events.Envelope{env}, nil
 }
 
 // mapStream converts a stream_event to an AEP envelope.

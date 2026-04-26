@@ -111,12 +111,23 @@ func (w *Worker) Start(ctx context.Context, session worker.SessionInfo) error {
 }
 
 func (w *Worker) Resume(ctx context.Context, session worker.SessionInfo) error {
+	w.Mu.Lock()
+	defer w.Mu.Unlock()
 	return w.startLocked(ctx, session, true)
 }
 
 func (w *Worker) startLocked(_ context.Context, session worker.SessionInfo, resume bool) error {
 	if w.Proc != nil {
 		return fmt.Errorf("claudecode: already started")
+	}
+
+	// When creating a new session (--session-id), clean up leftover files from
+	// previous sessions to prevent "already in use" errors from Claude Code CLI.
+	if !resume {
+		w.sessionID = session.SessionID
+		if err := w.deleteSessionFiles(); err != nil {
+			w.Log.Warn("claudecode: pre-start session file cleanup failed", "err", err)
+		}
 	}
 
 	args := w.buildCLIArgs(session, resume)
@@ -333,10 +344,18 @@ func (w *Worker) Health() worker.WorkerHealth {
 
 // SendControlRequest sends a control request to Claude Code and waits for the response.
 func (w *Worker) SendControlRequest(ctx context.Context, subtype string, body map[string]any) (map[string]any, error) {
-	if w.control == nil {
+	w.Mu.Lock()
+	if w.Proc == nil || !w.Proc.IsRunning() {
+		w.Mu.Unlock()
+		return nil, fmt.Errorf("claudecode: worker process is not running")
+	}
+	ctrl := w.control
+	w.Mu.Unlock()
+
+	if ctrl == nil {
 		return nil, fmt.Errorf("claudecode: control handler not initialized")
 	}
-	return w.control.SendControlRequest(ctx, subtype, body)
+	return ctrl.SendControlRequest(ctx, subtype, body)
 }
 
 func (w *Worker) LastIO() time.Time {

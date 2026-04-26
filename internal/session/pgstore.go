@@ -33,6 +33,10 @@ func (s *PostgresMessageStore) Query(ctx context.Context, sessionID string, from
 	return nil, ErrNotImplemented
 }
 
+func (s *PostgresMessageStore) SessionStats(ctx context.Context, sessionID string) (*SessionStats, error) {
+	return nil, ErrNotImplemented
+}
+
 func (s *PostgresMessageStore) Close() error {
 	return ErrNotImplemented
 }

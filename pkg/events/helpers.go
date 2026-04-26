@@ -36,11 +36,21 @@ func MapContextUsageResponse(raw map[string]any) *ContextUsageData {
 		})
 	}
 	if s, ok := raw["skills"].(map[string]any); ok {
-		data.Skills = ContextSkillInfo{
+		info := ContextSkillInfo{
 			Total:    IntFloat(s["totalSkills"]),
 			Included: IntFloat(s["includedSkills"]),
 			Tokens:   IntFloat(s["tokens"]),
 		}
+		if details, ok := s["details"].([]any); ok {
+			for _, d := range details {
+				if m, ok := d.(map[string]any); ok {
+					if name := StrVal(m["name"]); name != "" {
+						info.Names = append(info.Names, name)
+					}
+				}
+			}
+		}
+		data.Skills = info
 	}
 	return data
 }

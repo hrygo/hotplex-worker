@@ -125,6 +125,13 @@ var (
 		Help:      "Total pool acquire attempts by result (success, pool_exhausted, user_quota_exceeded)",
 	}, []string{"result"})
 
+	// PoolReleaseErrorsTotal tracks pool release calls without a corresponding acquire (double-release bugs).
+	PoolReleaseErrorsTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: "hotplex",
+		Name:      "pool_release_errors_total",
+		Help:      "Total pool release without acquire errors (indicates double-release bugs)",
+	})
+
 	// PoolUtilization tracks pool utilization percentage.
 	PoolUtilization = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: "hotplex",

@@ -1,10 +1,10 @@
 # PROJECT KNOWLEDGE BASE
 
-**Last updated:** 2026-04-25 · **Commit:** eba36f15 · **Branch:** feat/25-agent-config-implementation
+**Last updated:** 2026-04-25 · **Commit:** fcedf5cd · **Branch:** feat/28-premium-ux-sdk-integration
 
 ## OVERVIEW
 
-HotPlex Worker Gateway — Go 1.26 unified access layer for AI Coding Agent sessions.
+HotPlex Gateway — Go 1.26 unified access layer for AI Coding Agent sessions.
 WebSocket gateway (AEP v1) abstracting Claude Code, OpenCode Server, Pi-mono protocol differences.
 Multi-language client SDKs (TS, Python, Java, Go) + AI SDK transport adapter + web chat UI + bidirectional messaging (Slack/Feishu).
 
@@ -88,7 +88,7 @@ cmd/hotplex/version.go       (~46 lines)  version subcommand
 
 **Worker** (3 runtime adapters + 1 noop)
 - `worker/claudecode/`    Claude Code adapter
-- `worker/opencodeserver/`  OpenCode Server adapter
+- `worker/opencodeserver/`  OpenCode Server adapter (singleton process via `SingletonProcessManager`)
 - `worker/pi/`            Pi-mono adapter
 - `worker/noop/`          No-op adapter (testing)
 - `worker/acpx/`          ACPX type constant only (no implementation)
@@ -134,12 +134,12 @@ configs/  config.yaml, config-dev.yaml, env.example
 **CLI self-service** (see `internal/cli/AGENTS.md` and `cmd/hotplex/AGENTS.md`)
 - Modify onboard wizard → `internal/cli/onboard/wizard.go` — interactive prompts and templates
 - CLI output formatting → `internal/cli/output/` — printer (color/status) and report (structured output)
-- Gateway startup/DI → `cmd/hotplex/gateway_run.go` — DI container, signal handler, hub/session/bridge setup
+- Gateway startup/DI → `cmd/hotplex/gateway_run.go` — DI container, signal handler, hub/session/bridge setup, OCS singleton init
 - Messaging adapter wiring → `cmd/hotplex/messaging_init.go` — init Slack/Feishu, STT setup
 - Route registration → `cmd/hotplex/routes.go` — HTTP routes for gateway WS, admin API, health, metrics
 
 **Modify existing**
-- Agent config files → `internal/agentconfig/loader.go` — file loading, size limits, frontmatter stripping; `prompt.go` for unified system prompt assembly (B+C merged, XML-tagged)
+- Agent config files → `internal/agentconfig/loader.go` — file loading, size limits, frontmatter stripping; `prompt.go` for unified system prompt assembly (nested XML: `<directives>` + `<context>` groups with per-section behavioral directives)
 - Agent config directory → `~/.hotplex/agent-configs/` — place SOUL.md, AGENTS.md, SKILLS.md (B-channel) + USER.md, MEMORY.md (C-channel); platform variants like SOUL.slack.md
 - Session lifecycle → `internal/session/manager.go` — state machine + `TransitionWithInput` atomicity + `DeletePhysical` for forced removal
 - Session key derivation → `internal/session/key.go` — UUIDv5 deterministic session IDs + platform context
@@ -167,8 +167,8 @@ configs/  config.yaml, config-dev.yaml, env.example
 **Gateway** (`internal/gateway/`)
 - `Hub` → `hub.go:68` — WS broadcast hub, conn registry, session routing, seq gen
 - `Conn` → `conn.go:35` — single WS connection, read/write pumps, heartbeat
-- `Handler` → `handler.go` — AEP event dispatch (input, ping, control) + panic recovery
-- `Bridge` → `bridge.go` — session ↔ worker lifecycle, StartPlatformSession, fresh start fallback, InputRecoverer, LLM retry integration, agent config injection
+- `Handler` → `handler.go` — AEP event dispatch (input, ping, control, /cd workdir switch) + panic recovery
+- `Bridge` → `bridge.go` — session ↔ worker lifecycle, StartPlatformSession, fresh start fallback, InputRecoverer, LLM retry integration, agent config injection, SwitchWorkDir
 - `LLMRetryController` → `llm_retry.go` — retryable error pattern detection, per-session attempt tracking, exponential backoff
 - `GatewayAPI` → `api.go` — HTTP session endpoints: ListSessions, GetSession, TerminateSession, CreateSession (idempotent with DeletePhysical fallback)
 - `pcEntry` → `hub.go` — wraps PlatformConn for sessions map
@@ -193,12 +193,17 @@ configs/  config.yaml, config-dev.yaml, env.example
 - `proc.Manager` → `proc/manager.go:26` — PGID isolation, layered SIGTERM→SIGKILL
 - `proc.Tracker` → `proc/pidfile.go` — PID file orphan cleanup: Write/Remove/RemoveAll/CleanupOrphans, globalTracker, PID recycling defense
 
+**OpenCode Server** (`internal/worker/opencodeserver/`)
+- `SingletonProcessManager` → `singleton.go` — lazy-started shared `opencode serve` process with ref counting, 30m idle drain, crash detection
+- `Worker` → `worker.go` — thin session adapter; Start/Resume acquire singleton ref, Terminate/Kill only release ref + close SSE (not process)
+- `InitSingleton` / `ShutdownSingleton` → `singleton.go` — gateway lifecycle hooks for the global singleton
+
 **Messaging** (`internal/messaging/`)
 - `Bridge` → `bridge.go` — 3-step: StartSession → Join → handler.Handle
 - `PlatformConn` (interface) → `platform_conn.go` — WriteCtx + Close
 - `PlatformAdapter` → `platform_adapter.go` — base: SetHub/SetSM/SetHandler/SetBridge
 - `InteractionManager` → `interaction.go` — PendingInteraction registry with timeout + auto-deny (5min default)
-- `ParseControlCommand` → `control_command.go` — slash commands (/gc, /reset, /park, /new) + $prefix natural language
+- `ParseControlCommand` → `control_command.go` — slash commands (/gc, /reset, /park, /new, /cd) + $prefix natural language
 - `SanitizeText` → `sanitize.go` — removes control chars, null bytes, BOM, surrogates
 - `FeishuSTT` → `feishu/stt.go` — cloud transcription via Feishu speech_to_text API
 - `LocalSTT` → `stt/stt.go` — ephemeral per-request external command transcription
@@ -211,7 +216,7 @@ configs/  config.yaml, config-dev.yaml, env.example
 **Agent Config** (`internal/agentconfig/`)
 - `AgentConfigs` → `loader.go` — holds loaded content: Soul/Agents/Skills (B-channel) + User/Memory (C-channel)
 - `Load` → `loader.go` — reads config dir, appends platform variants (e.g. SOUL.slack.md), strips YAML frontmatter, enforces size limits (12K/file, 60K total)
-- `BuildSystemPrompt` → `prompt.go` — assembles unified B+C system prompt with XML tags for both CC and OCS
+- `BuildSystemPrompt` → `prompt.go` — assembles unified B+C system prompt with nested XML tags (`<directives>/<context>`) for both CC and OCS
 
 **Core**
 - `Envelope` → `pkg/events/events.go:73` — AEP v1 envelope (id, version, seq, session_id, event)
@@ -235,12 +240,12 @@ configs/  config.yaml, config-dev.yaml, env.example
 - **DI**: Manual constructor injection (no wire/dig), `GatewayDeps` struct in serve.go
 - **Shutdown order**: signal → cancel ctx → tracing → hub → configWatcher → sessionMgr → HTTP server
 - **Panic recovery**: Gateway handler + bridge forwardEvents must recover panics, log error, return `handler panic` / `bridge panic` to caller
-- **Control commands**: Natural language triggers require `$` prefix (e.g. `$gc`, `$休眠`) to prevent accidental matches; slash commands (`/gc`, `/reset`, `/park`, `/new`) have no prefix
+- **Control commands**: Natural language triggers require `$` prefix (e.g. `$gc`, `$休眠`) to prevent accidental matches; slash commands (`/gc`, `/reset`, `/park`, `/new`, `/cd <path>`) have no prefix
 - **Text sanitization**: All user-facing text output passes through `SanitizeText()` before delivery to messaging platforms
 - **Interaction timeout**: Permission/Q&A/elicitation requests auto-deny after 5 minutes to prevent indefinite blocking
 - **Session key derivation**: UUIDv5 deterministic mapping from (ownerID, workerType, clientSessionID, workDir) for cross-environment consistency
 - **LLM auto-retry**: Configurable retryable error patterns (429, 5xx, network errors) with exponential backoff; per-session attempt tracking
-- **Agent config injection**: `agentconfig` package loads personality/context from `~/.hotplex/agent-configs/`; B-channel (SOUL.md, AGENTS.md, SKILLS.md) injected as system prompt; C-channel (USER.md, MEMORY.md) injected as rules files; platform variants (e.g. SOUL.slack.md) appended automatically; size limits: 12K/file, 60K total
+- **Agent config injection**: `agentconfig` package loads personality/context from `~/.hotplex/agent-configs/`; B-channel (SOUL.md, AGENTS.md, SKILLS.md) in `<directives>` XML group; C-channel (USER.md, MEMORY.md) in `<context>` XML group; platform variants (e.g. SOUL.slack.md) appended automatically; size limits: 8K/file, 40K total
 - **Session physical delete**: `DeletePhysical` bypasses state machine for forced removal — used by GatewayAPI for idempotent session creation when previous session is in `deleted` state
 - **Documentation**: 增量文档中文优先，重要文档中英双语。技术术语保留英文原文。增量文档（Issue/PR 模板、配置说明、changelog）用中文；重要文档（根 README、架构设计、协议规范）拆分为独立的中英文文件（如 `README.md` + `README_zh.md`），文件头部互相链接跳转
 - **File safety (multi-agent)**: 当前环境存在多 Agent 协同工作，对文件执行还原（`git restore`）、恢复、撤销（`git checkout`）、暂存（`git stash`）等操作前，**必须先在 `/tmp` 下创建备份**（`cp <file> /tmp/<file>.bak.$(date +%s)`），防止其他 Agent 的未提交改动被意外覆盖或丢失
@@ -248,6 +253,7 @@ configs/  config.yaml, config-dev.yaml, env.example
 ## ANTI-PATTERNS (THIS PROJECT)
 
 - ❌ `sync.Mutex` embedding or pointer passing — always explicit `mu` field
+- ❌ Multi-statement SQL in single `db.Exec()` — SQLite driver silently ignores all but the first; split into individual `db.Exec()` calls
 - ❌ `math/rand` for crypto (JTI, tokens) — use `crypto/rand`
 - ❌ Shell execution — only `claude` binary, no shell interpreters
 - ❌ Non-ES256 JWT algorithms
@@ -278,8 +284,10 @@ configs/  config.yaml, config-dev.yaml, env.example
 - **LLM auto-retry**: LLMRetryController detects retryable errors via regex patterns (429/5xx/network), exponential backoff (initial 2s, max 60s), per-session attempt counter
 - **Deterministic session IDs**: DeriveSessionKey uses UUIDv5 (SHA-1 namespace+name) for cross-environment consistency; PlatformContext for platform-specific key derivation
 - **Per-user memory tracking**: PoolManager tracks estimated memory per user (512MB/worker) alongside session count quotas
-- **Agent config unified prompt**: B+C channels merged into single `BuildSystemPrompt` with XML tags; both CC (`--append-system-prompt`) and OCS (`system` field) use identical structure injected via `bridge.injectAgentConfig`; no file-based injection, no hedging
+- **Agent config unified prompt**: B+C channels merged into single `BuildSystemPrompt` with nested XML tags (`<agent-configuration>` → `<directives>` + `<context>`); each section has a 1-line behavioral directive; both CC (`--append-system-prompt`) and OCS (`system` field) use identical structure injected via `bridge.injectAgentConfig`; no file-based injection, no hedging
 - **Webchat session stickiness**: Deterministic "main" session ID via DeriveSessionKey + localStorage persistence for active session across page reloads; auto-creates first session when none exist
+- **OCS singleton process**: All OpenCode Server sessions share one lazily-started `opencode serve` process managed by `SingletonProcessManager`; ref-counted with 30m idle drain; Workers are thin adapters that acquire/release refs; Terminate/Kill only close SSE connections, never the shared process; crash detected via `monitorProcess` goroutine, new `crashCh` created per lifecycle
+- **Switch-workdir**: `/cd <path>` (WebSocket control) or `POST /api/sessions/{id}/cd` (REST) terminates old worker, derives new session ID via PlatformContext with new workDir, starts fresh session on the same singleton process; security validated via `config.ExpandAndAbs` + `security.ValidateWorkDir`
 
 ## COMMANDS
 
@@ -327,7 +335,9 @@ make webchat-stop             # Stop webchat dev server
 - STT scripts (`scripts/stt_server.py`, `scripts/fix_onnx_model.py`) are also deployed to `~/.agents/skills/audio-transcribe/scripts/` for Claude Code skill use
 - STT model: `~/.cache/modelscope/hub/models/iic/SenseVoiceSmall` (~900MB), ONNX FP32 non-quantized
 - Zombie IO timeout default: 30 minutes (configurable via `worker.execution_timeout`); worker idle timeout default: 60 minutes (configurable via `worker.idle_timeout`)
-- OpenCode CLI adapter removed — replaced by OpenCode Server adapter
+- OpenCode CLI adapter removed — replaced by OpenCode Server adapter (singleton process model)
+- OCS singleton config defaults: `idle_drain_period=30m`, `ready_timeout=10s`, `ready_poll_interval=200ms`, `http_timeout=30s` — configurable via `worker.opencode_server` in config.yaml
+- Onboard wizard auto-generates OCS singleton config when `opencode_server` worker type is selected
 - ACPX adapter has type constant (`TypeACPX`) but no implementation — `internal/worker/acpx/` is empty
 - Postgres store is stub only (`ErrNotImplemented`) — only SQLite is production-ready
 - `internal/gateway/api.go` provides REST session management alongside the WebSocket gateway

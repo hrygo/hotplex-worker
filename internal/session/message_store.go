@@ -29,6 +29,34 @@ type EventRecord struct {
 	CreatedAt time.Time
 }
 
+// TurnStats holds statistics for a single turn.
+type TurnStats struct {
+	Seq           int64          `json:"seq"`
+	Success       bool           `json:"success"`
+	Dropped       bool           `json:"dropped"`
+	DurationMs    int64          `json:"duration_ms"`
+	DurationAPIMs int64          `json:"duration_api_ms"`
+	CostUSD       float64        `json:"cost_usd"`
+	Usage         map[string]any `json:"usage"`
+	ModelUsage    map[string]any `json:"model_usage"`
+	CreatedAt     string         `json:"created_at"`
+}
+
+// SessionStats holds aggregated statistics across all turns of a session.
+type SessionStats struct {
+	SessionID        string                        `json:"session_id"`
+	TotalTurns       int                           `json:"total_turns"`
+	SuccessTurns     int                           `json:"success_turns"`
+	FailedTurns      int                           `json:"failed_turns"`
+	DroppedTurns     int                           `json:"dropped_turns"`
+	TotalDurationMs  int64                         `json:"total_duration_ms"`
+	TotalAPIDuration int64                         `json:"total_api_duration_ms"`
+	TotalCostUSD     float64                       `json:"total_cost_usd"`
+	TotalUsage       map[string]float64            `json:"total_usage"`
+	TotalModelUsage  map[string]map[string]float64 `json:"total_model_usage"`
+	Turns            []TurnStats                   `json:"turns"`
+}
+
 // MessageStore defines the interface for AEP event persistence (EVT-003).
 //
 // Append-Only Enforcement (EVT-002):
@@ -49,6 +77,8 @@ type MessageStore interface {
 	// GetOwner returns the owner ID of a session by querying the sessions table.
 	// Returns ErrSessionNotFound if the session does not exist (EVT-006).
 	GetOwner(ctx context.Context, sessionID string) (string, error)
+	// SessionStats returns aggregated turn statistics for a session.
+	SessionStats(ctx context.Context, sessionID string) (*SessionStats, error)
 	// Close gracefully shuts down the async writer and closes the DB connection.
 	Close() error
 }
@@ -93,19 +123,16 @@ func NewSQLiteMessageStore(ctx context.Context, cfg *config.Config) (*SQLiteMess
 		return nil, fmt.Errorf("session store: open msg db: %w", err)
 	}
 
-	if cfg.DB.WALMode {
-		if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
-			_ = db.Close()
-			return nil, fmt.Errorf("session store: msg WAL: %w", err)
-		}
-	}
-	if _, err := db.Exec(fmt.Sprintf("PRAGMA busy_timeout=%d", int(cfg.DB.BusyTimeout.Milliseconds()))); err != nil {
+	if err := initSQLiteDB(db, cfg, "msg"); err != nil {
 		_ = db.Close()
-		return nil, fmt.Errorf("session store: msg busy_timeout: %w", err)
+		return nil, err
 	}
 
 	// Limit to one connection since writes are serialized by the single writer goroutine.
 	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	db.SetConnMaxLifetime(0)
+	db.SetConnMaxIdleTime(5 * time.Minute)
 
 	ms := &SQLiteMessageStore{
 		db:     db,
@@ -291,6 +318,145 @@ func (s *SQLiteMessageStore) Query(ctx context.Context, sessionID string, fromSe
 	}
 
 	return envelopes, nil
+}
+
+// SessionStats returns aggregated turn statistics for a session by querying
+// all done events and extracting usage/cost/duration from their payloads.
+func (s *SQLiteMessageStore) SessionStats(ctx context.Context, sessionID string) (*SessionStats, error) {
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+	}
+
+	rows, err := s.db.QueryContext(ctx, queries["message_store.get_session_done_events"], sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("session store: session stats: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	stats := &SessionStats{
+		SessionID:       sessionID,
+		TotalUsage:      make(map[string]float64),
+		TotalModelUsage: make(map[string]map[string]float64),
+	}
+
+	for rows.Next() {
+		var seq int64
+		var payloadStr, createdAt string
+		if err := rows.Scan(&seq, &payloadStr, &createdAt); err != nil {
+			continue
+		}
+
+		var raw map[string]any
+		if err := json.Unmarshal([]byte(payloadStr), &raw); err != nil {
+			continue
+		}
+
+		event, _ := raw["event"].(map[string]any)
+		if event == nil {
+			continue
+		}
+		data, _ := event["data"].(map[string]any)
+		if data == nil {
+			continue
+		}
+		st, _ := data["stats"].(map[string]any)
+
+		ts := TurnStats{
+			Seq:       seq,
+			Success:   toBool(data["success"]),
+			Dropped:   toBool(data["dropped"]),
+			CreatedAt: createdAt,
+		}
+
+		if st != nil {
+			ts.DurationMs = toInt64(st["duration_ms"])
+			ts.DurationAPIMs = toInt64(st["duration_api_ms"])
+			ts.CostUSD = toFloat64(st["total_cost_usd"])
+
+			if u, ok := st["usage"].(map[string]any); ok {
+				ts.Usage = u
+				accumulateMap(stats.TotalUsage, u)
+			}
+			if mu, ok := st["model_usage"].(map[string]any); ok {
+				ts.ModelUsage = mu
+				accumulateModelUsage(stats.TotalModelUsage, mu)
+			}
+		}
+
+		stats.TotalTurns++
+		if ts.Success {
+			stats.SuccessTurns++
+		} else {
+			stats.FailedTurns++
+		}
+		if ts.Dropped {
+			stats.DroppedTurns++
+		}
+		stats.TotalDurationMs += ts.DurationMs
+		stats.TotalAPIDuration += ts.DurationAPIMs
+		stats.TotalCostUSD += ts.CostUSD
+		stats.Turns = append(stats.Turns, ts)
+	}
+
+	if stats.TotalTurns == 0 {
+		return nil, ErrEventNotFound
+	}
+	return stats, rows.Err()
+}
+
+func toBool(v any) bool {
+	b, _ := v.(bool)
+	return b
+}
+
+func toInt64(v any) int64 {
+	switch n := v.(type) {
+	case float64:
+		return int64(n)
+	case int:
+		return int64(n)
+	case int64:
+		return n
+	case json.Number:
+		i, _ := n.Int64()
+		return i
+	default:
+		return 0
+	}
+}
+
+func toFloat64(v any) float64 {
+	switch n := v.(type) {
+	case float64:
+		return n
+	case int:
+		return float64(n)
+	case int64:
+		return float64(n)
+	default:
+		return 0
+	}
+}
+
+func accumulateMap(dst map[string]float64, src map[string]any) {
+	for k, v := range src {
+		dst[k] += toFloat64(v)
+	}
+}
+
+func accumulateModelUsage(dst map[string]map[string]float64, src map[string]any) {
+	for model, v := range src {
+		fields, ok := v.(map[string]any)
+		if !ok {
+			continue
+		}
+		if dst[model] == nil {
+			dst[model] = make(map[string]float64)
+		}
+		accumulateMap(dst[model], fields)
+	}
 }
 
 // Close gracefully shuts down the async writer (draining pending writes) and closes the DB.

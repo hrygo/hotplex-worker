@@ -42,7 +42,7 @@ func (a *AdminAPI) CreateSession(w http.ResponseWriter, r *http.Request) {
 		userID = "anonymous"
 	}
 
-	if err := a.bridge.StartSession(r.Context(), id, userID, "", wt, nil, "", "", nil); err != nil {
+	if err := a.bridge.StartSession(r.Context(), id, userID, "", wt, nil, "", "", nil, ""); err != nil {
 		a.log.Error("admin: create session", "err", err)
 		http.Error(w, "failed to create session", http.StatusInternalServerError)
 		return
@@ -163,4 +163,34 @@ func (a *AdminAPI) PoolStats(w http.ResponseWriter, r *http.Request) {
 		"max":   max,
 		"users": users,
 	})
+}
+
+func (a *AdminAPI) HandleSessionStats(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodOptions {
+		preflight(w)
+		return
+	}
+	if !hasScope(r, ScopeSessionRead) {
+		http.Error(w, "insufficient scope: need session:read", http.StatusForbidden)
+		return
+	}
+	if a.msgStore == nil {
+		http.Error(w, "event store not enabled", http.StatusServiceUnavailable)
+		return
+	}
+
+	id := r.PathValue("id")
+	stats, err := a.msgStore.SessionStats(r.Context(), id)
+	if err != nil {
+		if r.Context().Err() != nil {
+			http.Error(w, "request cancelled", http.StatusServiceUnavailable)
+			return
+		}
+		a.log.Warn("admin: session stats", "id", id, "err", err)
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+
+	addCORSHeaders(w)
+	respondJSON(w, stats)
 }

@@ -972,6 +972,9 @@ func (*fakeMsgStore) Query(ctx context.Context, sessionID string, fromSeq int64)
 func (*fakeMsgStore) GetOwner(ctx context.Context, sessionID string) (string, error) {
 	return "", nil
 }
+func (*fakeMsgStore) SessionStats(ctx context.Context, sessionID string) (*session.SessionStats, error) {
+	return nil, session.ErrNotImplemented
+}
 func (*fakeMsgStore) Close() error { return nil }
 
 var _ session.MessageStore = (*fakeMsgStore)(nil)

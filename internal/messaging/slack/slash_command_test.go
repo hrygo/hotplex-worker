@@ -52,6 +52,7 @@ func TestSlashRateLimiter_SweepRemovesStaleEntries(t *testing.T) {
 		lastUsed: make(map[string]time.Time),
 		done:     make(chan struct{}),
 	}
+	_ = rl.done
 
 	// Add entries with different timestamps
 	now := time.Now()

@@ -41,7 +41,7 @@ type HubProvider interface {
 }
 
 type BridgeProvider interface {
-	StartSession(ctx context.Context, id, userID, botID string, wt worker.WorkerType, allowedTools []string, workDir string, platform string, platformKey map[string]string) error
+	StartSession(ctx context.Context, id, userID, botID string, wt worker.WorkerType, allowedTools []string, workDir string, platform string, platformKey map[string]string, title string) error
 }
 
 type ConfigProvider interface {
@@ -50,6 +50,10 @@ type ConfigProvider interface {
 
 type ConfigWatcherProvider interface {
 	Rollback(version int) (*config.Config, int, error)
+}
+
+type MessageStoreProvider interface {
+	SessionStats(ctx context.Context, sessionID string) (any, error)
 }
 
 type DebugSessionSnapshot struct {
@@ -62,6 +66,7 @@ type AdminAPI struct {
 	log           *slog.Logger
 	cfg           ConfigProvider
 	sm            SessionManagerProvider
+	msgStore      MessageStoreProvider
 	hub           HubProvider
 	bridge        BridgeProvider
 	configWatcher ConfigWatcherProvider
@@ -75,6 +80,7 @@ type Deps struct {
 	Log           *slog.Logger
 	Config        ConfigProvider
 	SessionMgr    SessionManagerProvider
+	MsgStore      MessageStoreProvider
 	Hub           HubProvider
 	Bridge        BridgeProvider
 	ConfigWatcher ConfigWatcherProvider
@@ -87,6 +93,7 @@ func New(deps Deps) *AdminAPI {
 		log:           deps.Log,
 		cfg:           deps.Config,
 		sm:            deps.SessionMgr,
+		msgStore:      deps.MsgStore,
 		hub:           deps.Hub,
 		bridge:        deps.Bridge,
 		configWatcher: deps.ConfigWatcher,

@@ -31,7 +31,7 @@ worker:
 
 log:
   level: "debug"
-  format: "json"
+  format: "text"
 
 messaging:
   slack:

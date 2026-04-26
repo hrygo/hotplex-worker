@@ -5,11 +5,13 @@
  * This is the core integration layer that bridges the two systems.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ExternalStoreAdapter, ThreadMessageLike, AppendMessage } from '@assistant-ui/react';
 import { BrowserHotPlexClient } from '@/lib/ai-sdk-transport';
-import type { InitConfig } from '@/lib/ai-sdk-transport/client/types';
+import type { InitConfig, ContextUsageData } from '@/lib/ai-sdk-transport/client/types';
+import { WorkerStdioCommand } from '@/lib/ai-sdk-transport/client/constants';
 import { wsUrl, workerType, apiKey, workDir, allowedTools } from '@/lib/config';
+import { useMetrics } from '@/lib/hooks/useMetrics';
 import type {
   Envelope,
   MessageDeltaData,
@@ -32,6 +34,12 @@ type ThreadSuggestion = { title: string; label: string; prompt: string };
 export interface UseHotPlexRuntimeConfig {
   /** Initial session ID to resume (calls resume() instead of connect()). */
   sessionId?: string;
+  /** Override workDir from URL deep link (spec §5.2). */
+  overrideWorkDir?: string;
+  /** Called when session metrics update (for dashboard display). */
+  onMetricsChange?: (metrics: import('@/lib/hooks/useMetrics').SessionMetrics) => void;
+  /** Called when skills list is fetched from the worker. */
+  onSkillsChange?: (skills: string[]) => void;
 }
 
 // Single part of a message
@@ -73,17 +81,14 @@ interface HotPlexMessage {
  * Converts HotPlex message to assistant-ui ThreadMessageLike format.
  * Handles both old format (content: string) and new format (parts: MessagePart[]).
  */
-function convertToThreadMessage(message: HotPlexMessage, idx: number): ThreadMessageLike {
-  // Support both old (content: string) and new (parts: MessagePart[]) message formats
-  const content = 'parts' in message && Array.isArray(message.parts)
-    ? message.parts
-    : typeof (message as unknown as { content?: unknown }).content === 'string'
-      ? [{ type: 'text' as const, text: (message as unknown as { content: string }).content }]
-      : [];
+function convertToThreadMessage(message: HotPlexMessage): ThreadMessageLike {
+  const content = message.parts;
+
+  const role = (message.role as string) === 'user' ? 'user' : 'assistant';
 
   const result: ThreadMessageLike = {
     id: message.id,
-    role: message.role as 'user' | 'assistant',
+    role,
     content,
     createdAt: message.createdAt,
     attachments: [],
@@ -118,23 +123,41 @@ function convertToThreadMessage(message: HotPlexMessage, idx: number): ThreadMes
  */
 export function useHotPlexRuntime({
   sessionId,
+  overrideWorkDir,
+  onMetricsChange,
+  onSkillsChange,
 }: UseHotPlexRuntimeConfig = {}): ExternalStoreAdapter<HotPlexMessage> {
   // State
   const [messages, setMessages] = useState<HotPlexMessage[]>([]);
   const [isRunning, setIsRunning] = useState(false);
   const clientRef = useRef<BrowserHotPlexClient | null>(null);
 
-  // Welcome suggestions — shown when thread is empty
-  const suggestions: readonly ThreadSuggestion[] = [
+  // Welcome suggestions — shown when thread is empty (stable reference)
+  const suggestions: readonly ThreadSuggestion[] = useMemo(() => [
     { title: '帮我写一个 React 组件', label: '代码', prompt: '帮我写一个 React 组件' },
     { title: '解释这段代码的逻辑', label: '学习', prompt: '解释这段代码的逻辑' },
     { title: '帮我调试这个错误', label: '调试', prompt: '帮我调试这个错误' },
     { title: '重构这段代码让它更简洁', label: '重构', prompt: '重构这段代码让它更简洁' },
     { title: '解释系统架构设计', label: '架构', prompt: '解释系统架构设计' },
-  ];
+  ], []);
 
   // Pending reasoning content accumulated before messageStart
   const pendingReasoningRef = useRef<string>('');
+
+  // Stable ref for skills callback — avoids adding to useEffect deps
+  const onSkillsChangeRef = useRef(onSkillsChange);
+  onSkillsChangeRef.current = onSkillsChange;
+
+  // Track whether skills have been fetched (only after first turn completes)
+  const skillsFetchedRef = useRef(false);
+
+  // Metrics tracking (spec §4.5 — Token & latency dashboard)
+  const { sessionMetrics, startTurn, recordTurn } = useMetrics();
+
+  // Sync metrics to parent (ChatContainer header dashboard)
+  useEffect(() => {
+    onMetricsChange?.(sessionMetrics);
+  }, [sessionMetrics, onMetricsChange]);
 
   // Initialize WebSocket client
   useEffect(() => {
@@ -143,8 +166,11 @@ export function useHotPlexRuntime({
       return;
     }
 
+    skillsFetchedRef.current = false;
+
     const initConfig: InitConfig = {};
-    if (workDir) initConfig.work_dir = workDir;
+    const effectiveWorkDir = overrideWorkDir || workDir;
+    if (effectiveWorkDir) initConfig.work_dir = effectiveWorkDir;
     if (allowedTools.length > 0) initConfig.allowed_tools = allowedTools;
 
     const client = new BrowserHotPlexClient({
@@ -192,8 +218,9 @@ export function useHotPlexRuntime({
 
     // Handle reasoning/thinking content (appends to last reasoning part or creates one)
     const handleReasoning = (data: ReasoningData, _env: Envelope) => {
+      if (!data) return;
       // Accumulate content in ref (content may arrive before messageStart)
-      pendingReasoningRef.current += data.content;
+      pendingReasoningRef.current += data.content || '';
 
       setMessages((prev) => {
         const lastMessage = prev[prev.length - 1];
@@ -224,17 +251,19 @@ export function useHotPlexRuntime({
     };
 
     const handleDelta = (data: MessageDeltaData, env: Envelope) => {
-      appendDelta(data.content);
+      if (!data) return;
+      appendDelta(data.content || '');
       setIsRunning(true);
     };
 
     const handleMessage = (data: MessageData, env: Envelope) => {
+      const role: 'user' | 'assistant' = data?.role === 'user' ? 'user' : 'assistant';
       setMessages((prev) => [
         ...prev,
         {
           id: data.id || env.id,
-          role: data.role as 'assistant',
-          parts: [{ type: 'text', text: data.content }],
+          role,
+          parts: [{ type: 'text', text: data?.content || '' }],
           createdAt: new Date(env.timestamp || Date.now()),
           status: 'complete',
         },
@@ -243,6 +272,7 @@ export function useHotPlexRuntime({
     };
 
     const handleToolCall = (data: ToolCallData, env: Envelope) => {
+      if (!data) return;
       setMessages((prev) => {
         const lastMessage = prev[prev.length - 1];
         if (lastMessage?.role === 'assistant') {
@@ -259,6 +289,7 @@ export function useHotPlexRuntime({
     };
 
     const handleToolResult = (data: ToolResultData, env: Envelope) => {
+      if (!data) return;
       setMessages((prev) => {
         const lastMessage = prev[prev.length - 1];
         if (lastMessage?.role === 'assistant') {
@@ -273,10 +304,14 @@ export function useHotPlexRuntime({
       });
     };
 
-    const handleDone = (data: DoneData, env: Envelope) => {
-      console.log('HotPlexRuntimeAdapter: streaming done', data);
+    const handleDone = (data: DoneData, _env: Envelope) => {
 
-      // Mark last assistant message as complete
+      if (data?.stats) {
+        recordTurn(data.stats);
+      } else {
+        recordTurn({});
+      }
+
       setMessages((prev) => {
         const lastMessage = prev[prev.length - 1];
         if (lastMessage?.role === 'assistant' && lastMessage.status === 'streaming') {
@@ -288,30 +323,102 @@ export function useHotPlexRuntime({
         return prev;
       });
 
-      // Clear pending reasoning for next message
       pendingReasoningRef.current = '';
       setIsRunning(false);
+
+      // Fetch skills after the first turn completes (worker conversation is now active)
+      if (!skillsFetchedRef.current) {
+        skillsFetchedRef.current = true;
+        try {
+          client.sendWorkerCommand(WorkerStdioCommand.Skills);
+        } catch {
+          // Non-critical — skills list stays empty
+        }
+      }
     };
 
     const handleError = (data: ErrorData, env: Envelope) => {
-      console.error('HotPlexRuntimeAdapter: error received', {
-        code: data?.code,
-        message: data?.message,
-        details: data?.details,
-        eventId: env?.id,
-        raw: data
-      });
-      setIsRunning(false);
+      const isBusy = (data?.code as string) === 'SESSION_BUSY';
+      const isResumeRetry = (data?.code as string) === 'RESUME_RETRY';
+      const isShutdown = (data?.message || '').includes('during shutdown');
 
-      const errorMessage = data?.message || 'An unexpected error occurred in the HotPlex gateway.';
+      // SESSION_BUSY is a transient state handled internally by auto-retry, so do not show it to the user and don't log as error.
+      if (isBusy) {
+        return;
+      }
 
-      // Add error message to thread (use assistant role for assistant-ui compatibility)
+      // Shutdown errors are transient — gateway is restarting. Don't pollute the
+      // chat with error messages; the client will auto-reconnect.
+      if (isShutdown) {
+        console.log('HotPlexRuntimeAdapter: gateway shutdown detected, waiting for reconnect');
+        return;
+      }
+
+      const hasData = data && (data.code || data.message);
+      if (hasData) {
+        const detailsStr = data.details ? ` Details: ${JSON.stringify(data.details)}` : '';
+        const eventStr = env?.id ? ` EventID: ${env.id}` : '';
+        if (isResumeRetry) {
+          console.warn(`HotPlexRuntimeAdapter: worker recovery triggered. Code: ${data.code}, Message: ${data.message}${detailsStr}${eventStr}`);
+        } else {
+          console.error(`HotPlexRuntimeAdapter: error received. Code: ${data.code || 'unknown'}, Message: ${data.message || 'none'}${detailsStr}${eventStr}`);
+        }
+      } else {
+        console.warn(`HotPlexRuntimeAdapter: empty error event received (no code/message). EventID: ${env?.id}`);
+      }
+
+      // If it's a fatal error, stop the run and complete the streaming message
+      if (!isResumeRetry) {
+        setIsRunning(false);
+
+        setMessages((prev) => {
+          const lastMessage = prev[prev.length - 1];
+          if (lastMessage?.role === 'assistant' && lastMessage.status === 'streaming') {
+            return [
+              ...prev.slice(0, -1),
+              { ...lastMessage, status: 'complete' },
+            ];
+          }
+          return prev;
+        });
+      }
+
+      let errorMessage = data?.message;
+      
+      // User-friendly mapping for specific terminal errors
+      switch (data?.code as string) {
+        case 'TURN_TIMEOUT':
+          errorMessage = "Session timeout: The agent took too long to respond (limit: 15m). You may want to break your request into smaller steps.";
+          break;
+        case 'WORKER_CRASH':
+          errorMessage = "The coding agent crashed unexpectedly. Please try again or reset the session.";
+          break;
+        case 'SESSION_EXPIRED':
+          errorMessage = "This session has expired due to inactivity. Please start a new session.";
+          break;
+        case 'RATE_LIMITED':
+          errorMessage = "You've reached the rate limit. Please wait a moment before sending more messages.";
+          break;
+        case 'UNAUTHORIZED':
+          errorMessage = "Authentication failed. Please check your API key or connection settings.";
+          break;
+        case 'WORKER_OUTPUT_LIMIT':
+          errorMessage = "The agent produced too much output and was terminated. Try to narrow down your request.";
+          break;
+        case 'RESUME_RETRY':
+          errorMessage = `🔄 ${data?.message || 'Recovering session after unexpected crash...'}`;
+          break;
+        default:
+          errorMessage = errorMessage || (data?.code ? `Error: ${data.code}` : 'An unexpected error occurred.');
+      }
+
+      // Add error message to thread
       setMessages((prev) => [
         ...prev,
         {
           id: `error-${Date.now()}`,
           role: 'assistant',
-          parts: [{ type: 'text', text: `⚠️ Error: ${errorMessage}` }],
+          parts: [{ type: 'text', text: `⚠️ ${errorMessage}` }],
           createdAt: new Date(),
           status: 'complete',
         },
@@ -326,6 +433,7 @@ export function useHotPlexRuntime({
     // Handle messageStart: if we already created a placeholder message for this env.id
     // (from reasoning events arriving early), keep it. Otherwise create new one.
     const handleMessageStart = (data: MessageStartData, env: Envelope) => {
+      if (!data) return;
       setMessages((prev) => {
         const existingIdx = prev.findIndex((m) => m.id === env.id);
         if (existingIdx !== -1) {
@@ -360,7 +468,12 @@ export function useHotPlexRuntime({
     client.on('toolCall', handleToolCall);
     client.on('toolResult', handleToolResult);
 
-    // Connect (resume an existing session or create new one)
+    const handleContextUsage = (data: ContextUsageData) => {
+      const names = data?.skills?.names ?? [];
+      onSkillsChangeRef.current?.(names);
+    };
+    client.on('contextUsage', handleContextUsage);
+
     client.connect(sessionId).catch((err) => {
       console.error('HotPlexRuntimeAdapter: connection failed', err);
     });
@@ -375,6 +488,7 @@ export function useHotPlexRuntime({
       client.off('messageStart', handleMessageStart);
       client.off('toolCall', handleToolCall);
       client.off('toolResult', handleToolResult);
+      client.off('contextUsage', handleContextUsage);
       pendingReasoningRef.current = '';
       client.disconnect();
       clientRef.current = null;
@@ -481,6 +595,7 @@ export function useHotPlexRuntime({
     };
 
     setMessages((prev) => [...prev, userMessage]);
+    startTurn(); // Begin timing for metrics
 
     // Send to HotPlex gateway with error handling
     try {
@@ -502,15 +617,40 @@ export function useHotPlexRuntime({
     setIsRunning(false);
   }, []);
 
-  // Return ExternalStoreAdapter
-  return {
+  // Memoized thread messages conversion (spec §7.1)
+  // Filter out malformed messages and guard against undefined roles to prevent
+  // assistant-ui's internal converter from crashing with "Unknown message role".
+  const threadMessages = useMemo(
+    () => messages
+      .filter((m): m is HotPlexMessage => !!m && (m.role === 'user' || m.role === 'assistant'))
+      .map((m) => convertToThreadMessage(m)),
+    [messages]
+  );
+
+  // Stable setMessages callback to prevent adapter churn
+  const handleSetMessages = useCallback((msgs: readonly HotPlexMessage[]) => {
+    setMessages([...msgs]);
+  }, []);
+
+  // Stable capabilities reference
+  const capabilities = useMemo(() => ({
+    copy: true,
+    edit: true,
+  }), []);
+
+  // Stable extras reference — only changes when metrics change
+  const extras = useMemo(() => ({
+    metrics: sessionMetrics,
+  }), [sessionMetrics]);
+
+  // Return ExternalStoreAdapter — memoized to prevent unnecessary setAdapter calls
+  return useMemo(() => ({
     // State
     isRunning,
     messages,
+    threadMessages,
     suggestions,
-    setMessages: (messages: readonly HotPlexMessage[]) => {
-      setMessages([...messages]);
-    },
+    setMessages: handleSetMessages,
 
     // Message conversion
     convertMessage: convertToThreadMessage,
@@ -519,9 +659,13 @@ export function useHotPlexRuntime({
     onNew: handleNew,
     onCancel: handleCancel,
 
-    // Capabilities
-    unstable_capabilities: {
-      copy: true,
-    },
-  } as ExternalStoreAdapter<HotPlexMessage>;
+    // Capabilities — Phase 3: branching and editing enabled
+    unstable_capabilities: capabilities,
+
+    // Metrics — exposed for session dashboard (spec §4.5)
+    extras,
+  } as ExternalStoreAdapter<HotPlexMessage>), [
+    isRunning, messages, threadMessages, suggestions,
+    handleSetMessages, handleNew, handleCancel, capabilities, extras,
+  ]);
 }

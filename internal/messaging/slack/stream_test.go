@@ -186,6 +186,7 @@ func TestAC25_CloseTriggersFallbackOnStreamExpired(t *testing.T) {
 		streamExpired: true,
 		started:       true,
 	}
+	_ = w.started
 
 	require.True(t, w.streamExpired, "AC-2.5: Stream should be marked expired")
 
@@ -229,6 +230,7 @@ func TestNativeStreamingWriter_WriteChecksStreamExpired(t *testing.T) {
 		streamExpired: true,
 		closed:        false,
 	}
+	_ = w.closed
 
 	w.mu.Lock()
 	expired := w.streamExpired

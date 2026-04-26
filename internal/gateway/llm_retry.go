@@ -18,6 +18,7 @@ var defaultPatterns = []string{
 	`(?i)API Error.*reject`,
 	`(?i)(network|connection.*reset|ECONNREFUSED|timeout|request failed)`,
 	`(?i)(500|502|503|server error)`,
+	`(?i)(INTERNAL_ERROR|internal error)`,
 }
 
 // LLMRetryController detects retryable errors and manages exponential backoff.

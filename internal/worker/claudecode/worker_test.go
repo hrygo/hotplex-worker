@@ -428,14 +428,14 @@ func TestMapper_Map_UnknownStatus(t *testing.T) {
 	mapper := NewMapper(log, "session_123", func() int64 { return 1 })
 
 	t.Run("mapSystem unknown status returns nil", func(t *testing.T) {
-		evt := &WorkerEvent{Type: EventSystem, Payload: "unknown_status"}
+		evt := &WorkerEvent{Type: EventSystem, Payload: json.RawMessage(`"unknown_status"`)}
 		envs, err := mapper.Map(evt)
 		require.NoError(t, err)
 		require.Nil(t, envs)
 	})
 
 	t.Run("mapSessionState unknown returns nil", func(t *testing.T) {
-		evt := &WorkerEvent{Type: EventSessionState, Payload: "unknown_status"}
+		evt := &WorkerEvent{Type: EventSessionState, Payload: json.RawMessage(`"unknown_status"`)}
 		envs, err := mapper.Map(evt)
 		require.NoError(t, err)
 		require.Nil(t, envs)

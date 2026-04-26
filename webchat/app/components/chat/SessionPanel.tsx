@@ -1,8 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { formatRelativeTime, type SessionInfo } from '@/lib/api/sessions';
-import { BrandIcon, WORKER_DISPLAY } from '@/components/icons';
+import { BrandIcon, WORKER_DISPLAY, WorkerIcon } from '@/components/icons';
+
+function getDisplayTitle(session: SessionInfo): string {
+  return session.title || session.id.slice(0, 8);
+}
 
 function SessionRow({
   session,
@@ -16,8 +20,14 @@ function SessionRow({
   onDelete: () => void;
 }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const displayId = session.id.slice(0, 8);
+  const displayTitle = getDisplayTitle(session);
   const workerName = WORKER_DISPLAY[session.worker_type] ?? session.worker_type;
+
+  // Path processing for workdir
+  const displayPath = session.work_dir || 'No workspace';
+  const parts = displayPath === '/' ? [] : displayPath.split('/');
+  const lastSegment = parts.length ? (parts[parts.length - 1] || displayPath) : '/';
+  const parentPath = parts.length > 1 ? parts.slice(0, -1).join('/') : '';
 
   return (
     <div
@@ -25,66 +35,91 @@ function SessionRow({
       tabIndex={0}
       onClick={onSelect}
       onKeyDown={(e) => e.key === 'Enter' && onSelect()}
-      className={`relative group px-3 py-3 rounded-xl transition-all duration-300 cursor-pointer border ${
-        isActive 
-          ? 'bg-white border-[var(--accent-gold)] shadow-[0_12px_24px_rgba(217,119,6,0.12)] ring-1 ring-[var(--accent-gold)] ring-opacity-10' 
-          : 'bg-transparent border-transparent hover:bg-[var(--bg-elevated)]'
+      className={`group relative mx-2 mb-2 p-3.5 rounded-2xl border transition-all duration-300 cursor-pointer overflow-hidden ${
+        isActive
+          ? 'bg-[var(--amber-light)] border-[var(--amber-border)] shadow-[0_8px_32px_rgba(251,191,36,0.12)]'
+          : 'bg-[var(--bg-surface)] border-[var(--border-subtle)] hover:bg-[var(--bg-hover)] hover:border-[var(--border-bright)]'
       }`}
     >
+      {/* Active Indicator Glow */}
       {isActive && (
-        <div className="absolute -left-1 top-1/2 -translate-y-1/2 w-1.5 h-6 bg-[var(--accent-gold)] rounded-full shadow-[0_0_8px_var(--accent-gold)]" />
+        <div className="absolute -right-4 -top-4 w-24 h-24 bg-[var(--accent-gold)] opacity-[0.05] blur-2xl pointer-events-none" />
       )}
-      <div className="flex items-center gap-3">
-        {/* Status indicator */}
-        <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-          session.state === 'running' ? 'bg-[var(--accent-emerald)] shadow-[0_0_8px_var(--accent-emerald)]' :
-          session.state === 'idle' ? 'bg-[var(--accent-gold)]' : 'bg-[var(--text-faint)]'
-        }`} />
 
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between gap-1 mb-0.5">
-            <span className={`text-xs font-semibold truncate ${isActive ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}>
-              Session {displayId}
-            </span>
-            <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[var(--text-faint)] font-mono font-bold scale-90">
+      <div className="flex flex-col gap-3">
+        {/* Header: Icon + Worker Type + ID */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className={`p-1.5 rounded-lg transition-colors duration-300 ${isActive ? 'bg-[var(--accent-gold)] text-black' : 'bg-[var(--bg-elevated)] text-[var(--text-secondary)]'}`}>
+              <WorkerIcon type={session.worker_type} className="w-3.5 h-3.5" />
+            </div>
+            <span className={`text-[11px] font-bold tracking-tight uppercase ${isActive ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}>
               {workerName}
             </span>
           </div>
-          <div className="flex items-center gap-1.5 text-[10px] text-[var(--text-faint)]">
-            <span className="capitalize">{session.state}</span>
-            <span>•</span>
-            <span>{formatRelativeTime(session.updated_at)}</span>
-          </div>
+          <span className="text-[9px] font-mono text-[var(--text-faint)] bg-[var(--bg-elevated)] px-1.5 py-0.5 rounded-md border border-[var(--border-subtle)]">
+            {displayTitle}
+          </span>
         </div>
 
-        {/* Delete button with confirmation */}
-        <div className="flex items-center gap-1">
-          {confirmDelete ? (
-            <div className="flex items-center gap-1 animate-fade-in">
-              <button
-                onClick={(e) => { e.stopPropagation(); onDelete(); }}
-                className="px-2 py-1 text-[9px] font-bold bg-[var(--accent-coral)] text-white rounded-md hover:bg-red-600 transition-colors"
-              >
-                Delete
-              </button>
-              <button
-                onClick={(e) => { e.stopPropagation(); setConfirmDelete(false); }}
-                className="px-2 py-1 text-[9px] font-bold bg-[var(--bg-elevated)] text-[var(--text-secondary)] rounded-md hover:bg-[var(--bg-hover)] transition-colors"
-              >
-                Cancel
-              </button>
+        {/* Workdir - Prominent Section */}
+        <div className="flex flex-col">
+          <div className="flex items-center gap-1.5 text-[var(--text-primary)] font-semibold text-[13px] truncate">
+            <svg className={`w-3.5 h-3.5 ${isActive ? 'text-[var(--accent-gold)]' : 'text-[var(--text-faint)]'} opacity-70`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+            </svg>
+            <span className="truncate" title={displayPath}>{lastSegment}</span>
+          </div>
+          {parentPath && (
+            <div className="text-[10px] text-[var(--text-faint)] truncate pl-5 mt-0.5 opacity-60 font-mono">
+              {parentPath}/
             </div>
-          ) : (
-            <button
-              onClick={(e) => { e.stopPropagation(); setConfirmDelete(true); }}
-              className="opacity-0 group-hover:opacity-100 p-1.5 text-[var(--text-faint)] hover:text-[var(--accent-coral)] hover:bg-white rounded-lg transition-all"
-              title="Delete session"
-            >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-              </svg>
-            </button>
           )}
+        </div>
+
+        {/* Footer: Status + Time + Actions */}
+        <div className="flex items-center justify-between mt-1 pt-2.5 border-t border-[var(--border-subtle)]/40">
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
+              <div className={`w-1.5 h-1.5 rounded-full ${
+                session.state === 'running' ? 'bg-[var(--accent-emerald)] shadow-[0_0_8px_var(--accent-emerald)] animate-pulse' :
+                session.state === 'idle' ? 'bg-[var(--accent-gold)]' : 'bg-[var(--text-faint)]'
+              }`} />
+              <span className="text-[10px] text-[var(--text-muted)] capitalize font-medium">{session.state}</span>
+            </div>
+            <span className="text-[10px] text-[var(--text-faint)] opacity-40">•</span>
+            <span className="text-[10px] text-[var(--text-faint)]">{formatRelativeTime(session.updated_at)}</span>
+          </div>
+
+          {/* Delete button with confirmation */}
+          <div className="flex items-center">
+            {confirmDelete ? (
+              <div className="flex items-center gap-2 animate-fade-in">
+                <button
+                  onClick={(e) => { e.stopPropagation(); onDelete(); }}
+                  className="text-[10px] font-bold text-[var(--accent-coral)] hover:underline"
+                >
+                  Confirm
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); setConfirmDelete(false); }}
+                  className="text-[10px] font-bold text-[var(--text-faint)] hover:text-[var(--text-secondary)]"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={(e) => { e.stopPropagation(); setConfirmDelete(true); }}
+                className="opacity-0 group-hover:opacity-100 p-1 text-[var(--text-faint)] hover:text-[var(--accent-coral)] transition-all transform hover:scale-110"
+                title="Delete session"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -94,7 +129,7 @@ function SessionRow({
 function EmptyState({ onCreate }: { onCreate: () => void }) {
   return (
     <div className="flex flex-col items-center justify-center py-16 px-6 text-center animate-fade-in">
-      <div className="w-16 h-16 rounded-2xl bg-[var(--bg-elevated)] border border-[var(--border-subtle)] flex items-center justify-center mb-6 shadow-xl">
+      <div className="w-16 h-16 rounded-2xl glass-dark flex items-center justify-center mb-6">
         <BrandIcon size={48} className="opacity-40" />
       </div>
       <p className="text-sm font-medium mb-1 text-[var(--text-primary)]">No sessions yet</p>
@@ -103,7 +138,7 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
       </p>
       <button 
         onClick={onCreate} 
-        className="px-6 py-2.5 rounded-full bg-[var(--accent-gold)] text-white text-sm font-bold shadow-[0_8px_20px_rgba(217,119,6,0.2)] hover:scale-105 active:scale-95 transition-all"
+        className="px-6 py-2.5 rounded-full bg-[var(--accent-gold)] text-black text-sm font-bold shadow-[0_8px_20px_rgba(251,191,36,0.15)] hover:scale-105 active:scale-95 transition-all"
       >
         New Session
       </button>
@@ -116,7 +151,7 @@ interface SessionPanelProps {
   activeSession: SessionInfo | null;
   isLoading: boolean;
   onSelect: (session: SessionInfo) => void;
-  onCreate: (workerType?: string) => Promise<void>;
+  onCreate: () => void;
   onDelete: (id: string) => Promise<void>;
 }
 
@@ -130,16 +165,19 @@ export function SessionPanel({
 }: SessionPanelProps) {
   const [searchQuery, setSearchQuery] = useState('');
 
-  const filteredSessions = sessions
-    .filter(s => s.id.toLowerCase().includes(searchQuery.toLowerCase()))
-    .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+  const filteredSessions = useMemo(() =>
+    sessions
+      .filter(s => getDisplayTitle(s).toLowerCase().includes(searchQuery.toLowerCase()))
+      .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()),
+    [sessions, searchQuery]
+  );
 
   return (
     <div className="pc-sidebar flex flex-col h-full bg-[var(--bg-base)] border-r border-[var(--border-subtle)] w-[280px]">
       {/* Sidebar Header */}
       <div className="px-5 py-6">
         <div className="flex items-center gap-3 mb-6">
-          <div className="w-9 h-9 rounded-xl bg-white shadow-sm border border-[var(--border-default)] flex items-center justify-center">
+          <div className="w-9 h-9 rounded-xl glass-dark flex items-center justify-center">
             <BrandIcon size={28} />
           </div>
           <div>
@@ -152,7 +190,7 @@ export function SessionPanel({
         <button
           onClick={() => onCreate()}
           disabled={isLoading}
-          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-[var(--text-primary)] text-white hover:bg-[#000] active:scale-95 transition-all shadow-sm font-bold text-xs disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-[var(--accent-gold)] text-black hover:bg-[var(--accent-gold-bright)] active:scale-95 transition-all shadow-[0_4px_16px_rgba(251,191,36,0.15)] font-bold text-xs disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {isLoading ? (
             <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -171,12 +209,14 @@ export function SessionPanel({
           <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--text-faint)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
           </svg>
-          <input 
+          <input
+            id="session-search"
+            name="session-search"
             type="text"
             placeholder="Search history..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-[var(--bg-elevated)] border border-transparent rounded-xl pl-9 pr-4 py-2 text-xs text-[var(--text-primary)] focus:bg-white focus:border-[var(--border-bright)] transition-all placeholder:text-[var(--text-faint)]"
+            className="w-full bg-[var(--bg-elevated)] border border-transparent rounded-xl pl-9 pr-4 py-2 text-xs text-[var(--text-primary)] focus:bg-[var(--bg-surface)] focus:border-[var(--border-bright)] transition-all placeholder:text-[var(--text-faint)]"
           />
         </div>
       </div>
@@ -187,7 +227,7 @@ export function SessionPanel({
           Recent Conversations
         </div>
         
-        <div className="space-y-0.5">
+        <div className="space-y-1 session-list-cascade">
           {filteredSessions.map((session) => (
             <SessionRow
               key={session.id}

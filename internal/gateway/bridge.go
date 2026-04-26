@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"runtime/debug"
 	"strings"
 	"sync"
@@ -13,6 +14,7 @@ import (
 	"github.com/hrygo/hotplex/internal/agentconfig"
 	"github.com/hrygo/hotplex/internal/messaging"
 	"github.com/hrygo/hotplex/internal/metrics"
+	"github.com/hrygo/hotplex/internal/security"
 	"github.com/hrygo/hotplex/internal/session"
 	"github.com/hrygo/hotplex/internal/worker"
 	"github.com/hrygo/hotplex/internal/worker/noop"
@@ -33,7 +35,8 @@ type Bridge struct {
 	log       *slog.Logger
 	hub       *Hub
 	sm        SessionManager
-	msgStore  session.MessageStore // EVT-004: optional; nil means event persistence disabled
+	msgStore  session.MessageStore      // EVT-004: optional; nil means event persistence disabled
+	convStore session.ConversationStore // optional; nil means conversation logging disabled
 	wf        WorkerFactory
 	retryCtrl *LLMRetryController
 
@@ -73,6 +76,11 @@ func (b *Bridge) SetRetryController(ctrl *LLMRetryController) {
 	b.retryCtrl = ctrl
 }
 
+// SetConvStore injects the conversation store for turn-level persistence.
+func (b *Bridge) SetConvStore(cs session.ConversationStore) {
+	b.convStore = cs
+}
+
 // SetAgentConfigDir sets the directory from which agent personality/context
 // files are loaded. Pass "" to disable agent config loading.
 func (b *Bridge) SetAgentConfigDir(dir string) {
@@ -86,13 +94,13 @@ func (b *Bridge) SetTurnTimeout(d time.Duration) {
 }
 
 // StartSession creates a new session and starts a worker.
-func (b *Bridge) StartSession(ctx context.Context, id, userID, botID string, wt worker.WorkerType, allowedTools []string, workDir, platform string, platformKey map[string]string) error {
+func (b *Bridge) StartSession(ctx context.Context, id, userID, botID string, wt worker.WorkerType, allowedTools []string, workDir, platform string, platformKey map[string]string, title string) error {
 	if b.closed.Load() {
 		return fmt.Errorf("bridge: rejecting new session during shutdown")
 	}
 
 	// Create session in DB with bot_id and allowed_tools.
-	si, err := b.sm.CreateWithBot(ctx, id, userID, botID, wt, allowedTools, platform, platformKey)
+	si, err := b.sm.CreateWithBot(ctx, id, userID, botID, wt, allowedTools, platform, platformKey, workDir, title)
 	if err != nil {
 		return fmt.Errorf("bridge: create session: %w", err)
 	}
@@ -146,6 +154,7 @@ type forwardOpts struct {
 	resumed    bool   // true if this goroutine was spawned by ResumeSession
 	workDir    string // workDir to use for resume retry
 	retryDepth int    // number of resume retries attempted (limits to 1)
+	lastInput  string // inherited lastInput from previous retry goroutine; used as fallback when retry worker never receives input
 }
 
 // ResumeSession reattaches to an existing session.
@@ -267,7 +276,17 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 	}()
 	workerType := w.Type()
 	b.log.Debug("bridge: forwardEvents goroutine started", "session_id", sessionID, "worker_type", workerType, "resumed", opts.resumed)
+
+	// Cache session info for conversation store writes (avoids per-turn DB lookup).
+	var sessPlatform, sessOwner string
+	if b.convStore != nil && b.sm != nil {
+		if si, err := b.sm.Get(sessionID); err == nil {
+			sessPlatform = si.Platform
+			sessOwner = si.OwnerID
+		}
+	}
 	startTime := time.Now()
+	turnStartTime := startTime
 	firstEvent := true
 	doneReceived := false
 
@@ -360,6 +379,12 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 		case events.ToolCall:
 			acc := b.getOrInitAccum(sessionID)
 			acc.ToolCallCount++
+			if tc, ok := env.Event.Data.(events.ToolCallData); ok {
+				if acc.ToolNames == nil {
+					acc.ToolNames = make(map[string]int)
+				}
+				acc.ToolNames[tc.Name]++
+			}
 		case events.Done:
 			if turnTimer != nil {
 				turnTimer.Stop()
@@ -421,7 +446,10 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 		}
 
 		// LLM retry: check after Done is forwarded and persisted.
-		if env.Event.Type == events.Done && b.retryCtrl != nil {
+		// Skip for resumed workers with no output — these are resume failures
+		// (e.g., "No conversation found"), not transient LLM errors. The resume
+		// fallback mechanism handles these cases with its own retry logic.
+		if env.Event.Type == events.Done && b.retryCtrl != nil && (!opts.resumed || turnText.Len() > 0) {
 			if shouldRetry, attempt := b.retryCtrl.ShouldRetry(sessionID, turnText.String(), lastError); shouldRetry {
 				// Suppress buffered error — user sees the notify message instead of raw LLM error.
 				pendingError = nil
@@ -438,8 +466,38 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 				pendingError = nil
 			}
 			b.retryCtrl.RecordSuccess(sessionID)
-			turnText.Reset()
 			lastError = nil
+		}
+
+		// Record assistant response to conversation store after retry decision.
+		if env.Event.Type == events.Done && b.convStore != nil {
+			dd, _ := env.Event.Data.(events.DoneData)
+			acc := b.getOrInitAccum(sessionID)
+			acc.computePerTurnDeltas()
+			success := dd.Success
+			_ = b.convStore.Append(context.Background(), &session.ConversationRecord{
+				SessionID:     sessionID,
+				Seq:           env.Seq,
+				Role:          session.RoleAssistant,
+				Content:       turnText.String(),
+				Platform:      sessPlatform,
+				UserID:        sessOwner,
+				Model:         acc.ModelName,
+				Success:       &success,
+				Source:        session.SourceNormal,
+				Tools:         acc.ToolNames,
+				ToolCallCount: acc.ToolCallCount,
+				TokensIn:      acc.PerTurnInput,
+				TokensOut:     acc.PerTurnOutput,
+				DurationMs:    time.Since(turnStartTime).Milliseconds(),
+				CostUSD:       acc.PerTurnCost,
+			})
+			acc.resetPerTurn()
+		}
+
+		if env.Event.Type == events.Done {
+			turnText.Reset()
+			turnStartTime = time.Now()
 		}
 	}
 
@@ -480,22 +538,29 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 	// failed to restore its conversation state. Retry resume once (limited by
 	// retryDepth) to recover, then fall back to fresh start if retry also fails.
 	// Skip during shutdown to avoid spawning workers that will be immediately killed.
-	fallbackAttempted := !b.closed.Load() && exitCode != 0 && opts.resumed && opts.retryDepth < 2 && time.Since(startTime) < 15*time.Second
+	// Skip for exit 143 (SIGTERM) — intentional termination by a new connection, not a crash.
+	fallbackAttempted := !b.closed.Load() && exitCode != 0 && exitCode != 143 && opts.resumed && opts.retryDepth < 2 && time.Since(startTime) < 15*time.Second
 	if fallbackAttempted {
 		// Extract last input from dead worker's conn for re-delivery after fresh start.
+		// Fall back to inherited lastInput from previous retry goroutine when the
+		// retry worker never received any input (conn.LastInput is empty).
 		var lastInput string
 		if conn := w.Conn(); conn != nil {
 			if ir, ok := conn.(worker.InputRecoverer); ok {
 				lastInput = sanitizeLastInput(ir.LastInput())
 			}
 		}
+		if lastInput == "" {
+			lastInput = opts.lastInput
+		}
 		if b.attemptResumeFallback(fallbackParams{
-			sessionID:  sessionID,
-			workDir:    opts.workDir,
-			exitCode:   exitCode,
-			retryDepth: opts.retryDepth,
-			workerType: workerType,
-			lastInput:  lastInput,
+			sessionID:     sessionID,
+			workDir:       opts.workDir,
+			exitCode:      exitCode,
+			retryDepth:    opts.retryDepth,
+			workerType:    workerType,
+			lastInput:     lastInput,
+			crashedWorker: w,
 		}) {
 			return // new forwardEvents goroutine took over
 		}
@@ -505,7 +570,7 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 	// During shutdown, skip crash detection — workers are SIGTERM'd by design.
 	// Just clean up without sending crash done events or incrementing crash metrics.
 	if b.closed.Load() {
-		b.cleanupCrashedWorker(sessionID)
+		b.cleanupCrashedWorker(sessionID, w)
 		return
 	}
 
@@ -517,7 +582,7 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 		if smErr == nil && si.State == events.StateTerminated {
 			b.log.Debug("bridge: session already terminated, skipping done for handler-killed worker", "session_id", sessionID, "worker_type", workerType)
 			if !fallbackAttempted {
-				b.cleanupCrashedWorker(sessionID)
+				b.cleanupCrashedWorker(sessionID, w)
 			}
 			return
 		}
@@ -546,22 +611,47 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 		_ = b.hub.SendToSession(context.Background(), syntheticDone)
 	}
 
+	// Record partial assistant response on crash/timeout (Path 3).
+	workerCrashed := exitCode != 0 || (!doneReceived && turnTimerFired.Load())
+	if b.convStore != nil && turnText.Len() > 0 && workerCrashed {
+		acc := b.getOrInitAccum(sessionID)
+		src := session.SourceCrash
+		if turnTimerFired.Load() {
+			src = session.SourceTimeout
+		}
+		falseVal := false
+		_ = b.convStore.Append(context.Background(), &session.ConversationRecord{
+			SessionID:     sessionID,
+			Seq:           b.hub.NextSeq(sessionID),
+			Role:          session.RoleAssistant,
+			Content:       turnText.String(),
+			Platform:      sessPlatform,
+			UserID:        sessOwner,
+			Model:         acc.ModelName,
+			Success:       &falseVal,
+			Source:        src,
+			Tools:         acc.ToolNames,
+			ToolCallCount: acc.ToolCallCount,
+		})
+	}
+
 	// Clean up: detach the dead worker and transition session to TERMINATED
 	// so the next message triggers orphan resume instead of silently dropping input.
 	// Skip when attemptResumeFallback already performed cleanup.
 	if !fallbackAttempted {
-		b.cleanupCrashedWorker(sessionID)
+		b.cleanupCrashedWorker(sessionID, w)
 	}
 }
 
 // fallbackParams carries the context needed by attemptResumeFallback.
 type fallbackParams struct {
-	sessionID  string
-	workDir    string
-	exitCode   int
-	retryDepth int
-	workerType worker.WorkerType
-	lastInput  string
+	sessionID     string
+	workDir       string
+	exitCode      int
+	retryDepth    int
+	workerType    worker.WorkerType
+	lastInput     string
+	crashedWorker worker.Worker
 }
 
 // attemptResumeFallback handles a crashed resumed worker with a two-step strategy:
@@ -574,11 +664,11 @@ func (b *Bridge) attemptResumeFallback(p fallbackParams) bool {
 		"session_id", p.sessionID, "worker_type", p.workerType, "exit_code", p.exitCode, "retry_depth", p.retryDepth)
 
 	// Clean up the crashed worker first.
-	b.cleanupCrashedWorker(p.sessionID)
+	b.cleanupCrashedWorker(p.sessionID, p.crashedWorker)
 
 	// Step 1: Retry resume once for transient failures (e.g., file lock, timing).
 	if p.retryDepth == 0 {
-		if err := b.resumeWithOpts(context.Background(), p.sessionID, p.workDir, forwardOpts{resumed: true, workDir: p.workDir, retryDepth: p.retryDepth + 1}); err != nil {
+		if err := b.resumeWithOpts(context.Background(), p.sessionID, p.workDir, forwardOpts{resumed: true, workDir: p.workDir, retryDepth: p.retryDepth + 1, lastInput: p.lastInput}); err != nil {
 			b.log.Error("bridge: resume retry failed synchronously, falling back to fresh start", "session_id", p.sessionID, "worker_type", p.workerType, "err", err)
 			// Synchronous failure — fall through to fresh start below.
 		} else {
@@ -645,6 +735,16 @@ func (b *Bridge) attemptResumeFallback(p fallbackParams) bool {
 		b.log.Info("bridge: re-delivering input to fresh worker", "session_id", p.sessionID, "content_len", len(p.lastInput))
 		if err := w.Input(context.Background(), p.lastInput, nil); err != nil {
 			b.log.Warn("bridge: input re-delivery failed", "session_id", p.sessionID, "err", err)
+		} else if b.convStore != nil {
+			_ = b.convStore.Append(context.Background(), &session.ConversationRecord{
+				SessionID: p.sessionID,
+				Seq:       b.hub.NextSeq(p.sessionID),
+				Role:      session.RoleUser,
+				Content:   p.lastInput,
+				Platform:  si.Platform,
+				UserID:    si.OwnerID,
+				Source:    session.SourceFreshStart,
+			})
 		}
 	}
 
@@ -659,14 +759,25 @@ func (b *Bridge) attemptResumeFallback(p fallbackParams) bool {
 
 // cleanupCrashedWorker detaches the dead worker and transitions the session to TERMINATED
 // so the next message triggers orphan resume instead of silently dropping input.
-func (b *Bridge) cleanupCrashedWorker(sessionID string) {
-	acc := b.getOrInitAccum(sessionID)
+// Uses CAS via crashedWorker to avoid detaching a worker that was already replaced
+// by a concurrent ResumeSession or attemptResumeFallback.
+func (b *Bridge) cleanupCrashedWorker(sessionID string, crashedWorker worker.Worker) {
+	acc := b.getAndDeleteAccum(sessionID)
+	if acc == nil {
+		acc = &sessionAccumulator{}
+	}
 	b.log.Debug("bridge: cleaning up crashed worker", "session_id", sessionID, "turn_count", acc.TurnCount)
-	b.deleteAccum(sessionID)
 	if b.sm == nil {
 		return
 	}
-	b.sm.DetachWorker(sessionID)
+	if crashedWorker != nil {
+		if !b.sm.DetachWorkerIf(sessionID, crashedWorker) {
+			b.log.Debug("bridge: crashed worker already replaced, skipping cleanup", "session_id", sessionID)
+			return
+		}
+	} else {
+		b.sm.DetachWorker(sessionID)
+	}
 	if err := b.sm.Transition(context.Background(), sessionID, events.StateTerminated); err != nil {
 		b.log.Debug("bridge: transition to terminated after worker exit", "session_id", sessionID, "err", err)
 	}
@@ -716,7 +827,7 @@ func (b *Bridge) StartPlatformSession(ctx context.Context, sessionID, ownerID, w
 // files are already in use (leftover from a crashed session), falls back to
 // ResumeSession to recover the existing conversation history.
 func (b *Bridge) startOrResumeOnInUse(ctx context.Context, sessionID, ownerID string, wt worker.WorkerType, workDir, platform string, platformKey map[string]string) error {
-	if err := b.StartSession(ctx, sessionID, ownerID, "", wt, nil, workDir, platform, platformKey); err != nil {
+	if err := b.StartSession(ctx, sessionID, ownerID, "", wt, nil, workDir, platform, platformKey, ""); err != nil {
 		if isWorkerInUseError(err) {
 			b.log.Info("bridge: worker rejected as in-use, switching to resume", "session_id", sessionID, "err", err)
 			return b.ResumeSession(ctx, sessionID, workDir)
@@ -765,6 +876,81 @@ func (b *Bridge) ResetSession(ctx context.Context, sessionID string) error {
 	}()
 
 	return nil
+}
+
+// SwitchWorkDirResult holds the result of a workdir switch operation.
+type SwitchWorkDirResult struct {
+	OldSessionID string
+	NewSessionID string
+	WorkDir      string
+}
+
+// SwitchWorkDir terminates the current session's worker, transitions it to idle,
+// and creates a new session with the given workDir. The new session inherits
+// the same user, bot, worker type, and platform context.
+func (b *Bridge) SwitchWorkDir(ctx context.Context, oldSessionID, newWorkDir string) (*SwitchWorkDirResult, error) {
+	si, err := b.sm.Get(oldSessionID)
+	if err != nil {
+		return nil, fmt.Errorf("switch-workdir: get session: %w", err)
+	}
+
+	if !si.State.IsActive() {
+		return nil, fmt.Errorf("switch-workdir: session not active (state: %s)", si.State)
+	}
+
+	cleaned := filepath.Clean(newWorkDir)
+	if err := security.ValidateWorkDir(cleaned); err != nil {
+		return nil, fmt.Errorf("switch-workdir: %w", err)
+	}
+
+	if w := b.sm.GetWorker(oldSessionID); w != nil {
+		if err := w.Terminate(ctx); err != nil {
+			b.log.Warn("switch-workdir: worker terminate failed", "session_id", oldSessionID, "err", err)
+		}
+		b.sm.DetachWorker(oldSessionID)
+	}
+
+	if err := b.sm.Transition(ctx, oldSessionID, events.StateIdle); err != nil {
+		b.log.Warn("switch-workdir: transition to idle failed", "session_id", oldSessionID, "err", err)
+	}
+
+	var newID string
+	if si.Platform != "" && len(si.PlatformKey) > 0 {
+		pc := session.PlatformContext{Platform: si.Platform, WorkDir: cleaned}
+		for k, v := range si.PlatformKey {
+			switch k {
+			case "team_id":
+				pc.TeamID = v
+			case "channel_id":
+				pc.ChannelID = v
+			case "thread_ts":
+				pc.ThreadTS = v
+			case "chat_id":
+				pc.ChatID = v
+			case "user_id":
+				pc.UserID = v
+			}
+		}
+		newID = session.DerivePlatformSessionKey(si.UserID, si.WorkerType, pc)
+	} else {
+		newID = aep.NewSessionID()
+	}
+
+	if err := b.StartSession(ctx, newID, si.UserID, si.BotID, si.WorkerType, si.AllowedTools, cleaned, si.Platform, si.PlatformKey, si.Title); err != nil {
+		return nil, fmt.Errorf("switch-workdir: start session: %w", err)
+	}
+
+	b.log.Info("switch-workdir: session switched",
+		"old_session_id", oldSessionID,
+		"new_session_id", newID,
+		"work_dir", cleaned,
+	)
+
+	return &SwitchWorkDirResult{
+		OldSessionID: oldSessionID,
+		NewSessionID: newID,
+		WorkDir:      cleaned,
+	}, nil
 }
 
 // isWorkerInUseError checks if the worker rejected the session because its
@@ -884,11 +1070,14 @@ func (b *Bridge) getOrInitAccum(sessionID string) *sessionAccumulator {
 	return acc
 }
 
-// deleteAccum removes the accumulator for a session (called on cleanup).
-func (b *Bridge) deleteAccum(sessionID string) {
+// getAndDeleteAccum returns and removes the accumulator in a single lock acquisition.
+// Returns nil if no accumulator exists for the session.
+func (b *Bridge) getAndDeleteAccum(sessionID string) *sessionAccumulator {
 	b.accumMu.Lock()
+	defer b.accumMu.Unlock()
+	acc := b.accum[sessionID]
 	delete(b.accum, sessionID)
-	b.accumMu.Unlock()
+	return acc
 }
 
 // injectSessionStats merges the accumulator snapshot into DoneData.Stats["_session"].
