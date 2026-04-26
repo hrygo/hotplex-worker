@@ -740,7 +740,7 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 	// Feishu's 10-minute server limit kicks in.
 	if streamCtrl != nil && streamCtrl.IsCreated() && streamCtrl.Expired() {
 		oldMsgID := streamCtrl.MsgID()
-		go streamCtrl.Abort(context.Background())
+		go func() { _ = streamCtrl.Abort(context.Background()) }()
 		c.adapter.log.Info("feishu: streaming card rotated",
 			"old_msg_id", oldMsgID)
 

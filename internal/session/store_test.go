@@ -217,13 +217,13 @@ func TestSQLiteStore_GetExpiredMaxLifetime(t *testing.T) {
 
 	now := time.Now()
 	info := &SessionInfo{
-		ID:        "sess_expired",
-		UserID:    "user1",
+		ID:         "sess_expired",
+		UserID:     "user1",
 		WorkerType: "claude_code",
-		State:     events.StateRunning,
-		CreatedAt: now,
-		UpdatedAt: now,
-		ExpiresAt: &now,
+		State:      events.StateRunning,
+		CreatedAt:  now,
+		UpdatedAt:  now,
+		ExpiresAt:  &now,
 	}
 	err := store.Upsert(ctx, info)
 	require.NoError(t, err)
