@@ -118,6 +118,13 @@ Update `CHANGELOG.md` following [Keep a Changelog](https://keepachangelog.com/) 
 ```markdown
 ## [X.X.X] - YYYY-MM-DD
 
+### Summary
+
+1-3 句话概括本版本的核心主题和最重要变更。
+- 提及版本定位（patch/minor/major）
+- 点出 2-3 个最关键的 feature 或 fix
+- 说明影响面（哪些模块受益，用户可感知的变化）
+
 ### Added
 
 - **Display Group**: One-line description of the change. (#PR or commit SHA for significant changes)
@@ -137,33 +144,42 @@ Update `CHANGELOG.md` following [Keep a Changelog](https://keepachangelog.com/) 
 
 ### Writing Rules
 
-1. **One entry per logical change**, not per commit — squash related commits into one entry
-2. **Present tense, imperative mood**: "Add feature" not "Added feature" or "Adds feature"
-3. **Bold the display group** at the start of each entry for scanability
-4. **Include PR number or commit SHA** only for significant/user-facing changes
-5. **Omit** internal refactors, CI changes, and doc-only updates unless user-facing
-6. **Merge small fixes** into a single "minor fixes" entry if individually insignificant
-7. **Order entries** within each section by impact (most significant first)
+1. **Summary 必须有** — 不能只有三段式。Summary 是面向用户的版本叙事，帮助读者在 10 秒内判断是否与自己相关
+2. **Summary 写法**: 先说版本定位，再说核心变化，最后说影响面。用自然语言而非条目列表
+3. **One entry per logical change**, not per commit — squash related commits into one entry
+4. **Present tense, imperative mood**: "Add feature" not "Added feature" or "Adds feature"
+5. **Bold the display group** at the start of each entry for scanability
+6. **Include PR number or commit SHA** only for significant/user-facing changes
+7. **Omit** internal refactors, CI changes, and doc-only updates unless user-facing
+8. **Merge small fixes** into a single "minor fixes" entry if individually insignificant
+9. **Order entries** within each section by impact (most significant first)
 
 ### Example Entry
 
 ```markdown
 ## [1.2.0] - 2026-04-30
 
+### Summary
+
+v1.2.0 是一次 minor 版本更新，聚焦于 **可观测性与运维体验**。新增 Session Stats API 和 Conversation Store，
+为 WebChat 和管理端提供会话级别的 token/延迟/成本统计。WebChat 经历了全面 UX 重构（暗色主题 + GenUI 工具组件 +
+CommandMenu），Gateway Core 获得了连接稳定性修复（CAS race guard、fast reconnect、session ID 一致性）。
+
 ### Added
 
-- **Gateway Core**: Request throttling with in-memory token bucket rate limiter.
-- **CLI**: `hotplex status` command for gateway process health monitoring.
-- **Messaging**: Speech-to-text support for Feishu via SenseVoice-Small ONNX engine.
+- **Gateway Core**: Session stats API — aggregated turn statistics from done events (`GET /api/sessions/{id}/stats`).
+- **Session**: Conversation store — async batch writer for turn-level persistence (user input + assistant response with tools, tokens, cost, duration).
+- **WebChat UI**: "Obsidian" dark theme with glassmorphism design system, GenUI tool rendering, and slash command palette.
 
 ### Changed
 
-- **Configuration**: Default `idle_timeout` raised from 30m to 60m.
+- **Session**: SQLite storage optimization — PRAGMA tuning, cascade delete, events TTL cleanup, automatic VACUUM.
+- **Gateway Core**: Fast reconnect for idle sessions — skip terminate+resume cycle when worker is still alive.
 
 ### Fixed
 
-- **Worker**: Reset context bug causing "done" event leaks during session resets.
-- **Slack**: Help command replies to wrong thread — now always replies in original thread.
+- **Gateway Core**: ClaudeCode mapper silently discarded `EventSystem` and `EventSessionState` — payload type mismatch caused all state transitions to be dropped.
+- **WebChat UI**: Connection stability — deterministic session IDs across REST/WS paths, browser console warnings eliminated.
 ```
 
 ## Step 4: Version Unification
@@ -253,7 +269,7 @@ git tag -a vX.X.X -m "Release vX.X.X"
 The CI workflow (`.github/workflows/release.yml`) auto-triggers on tag push and:
 - Builds binaries for `darwin-amd64`, `darwin-arm64`, `linux-amd64`, `linux-arm64`
 - Computes SHA-256 checksums
-- Creates a GitHub Release with `generate_release_notes: true`
+- Creates a GitHub Release with `generate_release_notes: true` (auto-generated notes — **must be replaced**)
 
 ```bash
 # Push commit and tag to trigger release
@@ -261,26 +277,26 @@ git push origin main && git push origin vX.X.X
 
 # Monitor the workflow
 gh run list --workflow=release.yml --limit=1
+gh run watch <RUN_ID> --exit-status
 
-# After CI completes, verify the release
+# After CI completes, replace auto-generated notes with full CHANGELOG content
+awk '/^## \[X\.X\.X\]/{found=1} found{print} /^## \[PREV\]/{exit}' CHANGELOG.md | sed '$d' > /tmp/release-notes.md
+
+gh release edit vX.X.X --notes-file /tmp/release-notes.md
+
+# Verify release
 gh release view vX.X.X
 ```
 
-If you need to manually create a release (e.g., for workflow_dispatch):
-
-```bash
-# Extract changelog section to temp file
-sed -n "/^## \[X.X.X\]/,/^## \[/p" CHANGELOG.md | head -n -1 > /tmp/release-notes.md
-
-gh release create vX.X.X --title "vX.X.X" --notes-file /tmp/release-notes.md
-```
+> [!IMPORTANT]
+> **Release Notes 必须使用 CHANGELOG.md 内容**。CI 的 `generate_release_notes: true` 只生成 PR 级别摘要，缺少 Summary/Added/Changed/Fixed 完整结构。每次 release 完成后 **必须** 执行 `gh release edit --notes-file` 用 CHANGELOG.md 对应版本段落覆盖。
 
 ## Step 8: Post-Release
 
-1. Verify release artifacts are attached on GitHub: `gh release view vX.X.X`
-2. Verify install works: `./scripts/install.sh --release vX.X.X --prefix /tmp/test-install`
-3. Clean up temporary files (`rm -f /tmp/release-notes.md`)
-4. Announce to the team
+1. Verify release notes show full CHANGELOG content with Summary section (not just PR summary): `gh release view vX.X.X`
+2. Verify all 5 artifacts attached: 4 platform binaries + `checksums.txt`
+3. Verify binary version: download and run `./hotplex-* version`
+4. Clean up temporary files (`rm -f /tmp/release-notes.md`)
 
 ---
 
