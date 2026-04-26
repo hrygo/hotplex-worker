@@ -34,7 +34,7 @@ func setupRoutes(
 		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
 
-	gatewayAPI := gateway.NewGatewayAPI(auth, sm, bridge)
+	gatewayAPI := gateway.NewGatewayAPI(auth, sm, bridge, deps.ConfigStore)
 
 	// withCORS wraps a handler to inject CORS headers.
 	withCORS := func(h http.HandlerFunc) http.HandlerFunc {
@@ -54,6 +54,7 @@ func setupRoutes(
 	mux.HandleFunc("POST /api/sessions", withCORS(gatewayAPI.CreateSession))
 	mux.HandleFunc("GET /api/sessions/{id}", withCORS(gatewayAPI.GetSession))
 	mux.HandleFunc("DELETE /api/sessions/{id}", withCORS(gatewayAPI.DeleteSession))
+	mux.HandleFunc("POST /api/sessions/{id}/cd", withCORS(gatewayAPI.SwitchWorkDir))
 	mux.HandleFunc("OPTIONS /api/sessions", withCORS(func(w http.ResponseWriter, r *http.Request) {}))
 	mux.HandleFunc("OPTIONS /api/sessions/", withCORS(func(w http.ResponseWriter, r *http.Request) {}))
 	mux.HandleFunc("OPTIONS /api/sessions/{id}", withCORS(func(w http.ResponseWriter, r *http.Request) {}))
@@ -72,11 +73,13 @@ func setupRoutes(
 	bridgeAdapter := &bridgeAdapter{bridge: bridge}
 	configAdapter := &configAdapter{cfgStore: deps.ConfigStore}
 	configWatcherAdapter := &configWatcherAdapter{watcher: configWatcher}
+	msgStoreAdapter := &msgStoreAdapter{ms: deps.MsgStore}
 
 	adminAPI := admin.New(admin.Deps{
 		Log:           log,
 		Config:        configAdapter,
 		SessionMgr:    sessionAdapter,
+		MsgStore:      msgStoreAdapter,
 		Hub:           hubAdapter,
 		Bridge:        bridgeAdapter,
 		ConfigWatcher: configWatcherAdapter,
@@ -111,6 +114,7 @@ func setupRoutes(
 	adminMux.HandleFunc("GET /admin/sessions/{id}", adminAPI.GetSession)
 	adminMux.HandleFunc("DELETE /admin/sessions/{id}", adminAPI.DeleteSession)
 	adminMux.HandleFunc("POST /admin/sessions/{id}/terminate", adminAPI.TerminateSession)
+	adminMux.HandleFunc("GET /admin/sessions/{id}/stats", adminAPI.HandleSessionStats)
 
 	mux.HandleFunc("GET /admin/health", adminAPI.HandleHealth)
 
@@ -181,12 +185,20 @@ func (a *hubAdapter) NextSeqPeek(sessionID string) int64 {
 	return a.hub.NextSeqPeek(sessionID)
 }
 
+type msgStoreAdapter struct {
+	ms session.MessageStore
+}
+
+func (a *msgStoreAdapter) SessionStats(ctx context.Context, sessionID string) (any, error) {
+	return a.ms.SessionStats(ctx, sessionID)
+}
+
 type bridgeAdapter struct {
 	bridge *gateway.Bridge
 }
 
-func (a *bridgeAdapter) StartSession(ctx context.Context, id, userID, botID string, wt worker.WorkerType, allowedTools []string, workDir, platform string, platformKey map[string]string) error {
-	return a.bridge.StartSession(ctx, id, userID, botID, wt, allowedTools, workDir, platform, platformKey)
+func (a *bridgeAdapter) StartSession(ctx context.Context, id, userID, botID string, wt worker.WorkerType, allowedTools []string, workDir, platform string, platformKey map[string]string, title string) error {
+	return a.bridge.StartSession(ctx, id, userID, botID, wt, allowedTools, workDir, platform, platformKey, title)
 }
 
 type configAdapter struct {

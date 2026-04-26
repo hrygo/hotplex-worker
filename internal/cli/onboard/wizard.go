@@ -113,10 +113,11 @@ func hasEnvValue(content, key string) bool {
 }
 
 type WizardResult struct {
-	ConfigPath string
-	EnvPath    string
-	Steps      []StepResult
-	Action     string // "keep" or "reconfigure"
+	ConfigPath     string
+	EnvPath        string
+	Steps          []StepResult
+	Action         string   // "keep" or "reconfigure"
+	AgentConfigNew []string // files created by this run
 }
 
 type StepResult struct {
@@ -137,6 +138,12 @@ func Run(ctx context.Context, opts WizardOptions) (*WizardResult, error) {
 
 	displayBanner()
 
+	runAgentConfigStep := func() {
+		s, created := stepAgentConfig()
+		result.add(s)
+		result.AgentConfigNew = created
+	}
+
 	result.add(stepEnvPreCheck())
 	if result.hasFail() {
 		return result, fmt.Errorf("environment pre-check failed, resolve errors above before continuing")
@@ -147,6 +154,7 @@ func Run(ctx context.Context, opts WizardOptions) (*WizardResult, error) {
 		if opts.NonInteractive {
 			result.Action = "keep"
 			result.add(StepResult{Name: "onboard", Status: "pass", Detail: "kept existing configuration (non-interactive)"})
+			runAgentConfigStep()
 			result.add(stepVerify(opts.ConfigPath))
 			return result, nil
 		}
@@ -154,6 +162,7 @@ func Run(ctx context.Context, opts WizardOptions) (*WizardResult, error) {
 		if promptKeepOrReconfigure() {
 			result.Action = "keep"
 			result.add(StepResult{Name: "onboard", Status: "pass", Detail: "kept existing configuration"})
+			runAgentConfigStep()
 			result.add(stepVerify(opts.ConfigPath))
 			return result, nil
 		}
@@ -216,6 +225,8 @@ func Run(ctx context.Context, opts WizardOptions) (*WizardResult, error) {
 	if s6.Status == "fail" {
 		return result, fmt.Errorf("config write failed: %s", s6.Detail)
 	}
+
+	runAgentConfigStep()
 
 	result.add(stepVerify(opts.ConfigPath))
 	result.Action = "reconfigure"
@@ -363,7 +374,11 @@ func stepWorkerDep(workerType string) StepResult {
 	}
 	if bin, ok := binaries[workerType]; ok {
 		if p, err := exec.LookPath(bin); err == nil {
-			return StepResult{Name: "worker_dep", Status: "pass", Detail: bin + " binary found: " + p}
+			detail := bin + " binary found: " + p
+			if workerType == "opencode_server" {
+				detail += " (singleton mode: shared process across sessions)"
+			}
+			return StepResult{Name: "worker_dep", Status: "pass", Detail: detail}
 		}
 		return StepResult{Name: "worker_dep", Status: "pass", Detail: bin + " binary not found in PATH — install before running serve"}
 	}
@@ -652,4 +667,37 @@ func promptCommaList(reader *bufio.Reader, question string) []string {
 		}
 	}
 	return result
+}
+
+// ─── Step 6b: Agent config ──────────────────────────────────────────────────
+
+func stepAgentConfig() (StepResult, []string) {
+	dir := filepath.Join(config.HotplexHome(), "agent-configs")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return StepResult{Name: "agent_config", Status: "warn", Detail: "create dir: " + err.Error()}, nil
+	}
+
+	var created []string
+	for _, t := range DefaultTemplates() {
+		path := filepath.Join(dir, t.Name)
+		fh, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+		if err != nil {
+			if os.IsExist(err) {
+				continue
+			}
+			return StepResult{Name: "agent_config", Status: "warn", Detail: "write " + t.Name + ": " + err.Error()}, created
+		}
+		_, _ = fh.WriteString(t.Content)
+		_ = fh.Close()
+		created = append(created, t.Name)
+	}
+
+	if len(created) == 0 {
+		return StepResult{Name: "agent_config", Status: "pass", Detail: dir}, created
+	}
+	return StepResult{
+		Name:   "agent_config",
+		Status: "pass",
+		Detail: fmt.Sprintf("%s (%s)", dir, strings.Join(created, ", ")),
+	}, created
 }

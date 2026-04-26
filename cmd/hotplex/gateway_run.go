@@ -24,6 +24,7 @@ import (
 	"github.com/hrygo/hotplex/internal/security"
 	"github.com/hrygo/hotplex/internal/session"
 	"github.com/hrygo/hotplex/internal/tracing"
+	"github.com/hrygo/hotplex/internal/worker/opencodeserver"
 	"github.com/hrygo/hotplex/internal/worker/proc"
 	"github.com/hrygo/hotplex/pkg/aep"
 	"github.com/hrygo/hotplex/pkg/events"
@@ -35,6 +36,8 @@ type GatewayDeps struct {
 	ConfigStore   *config.ConfigStore
 	Hub           *gateway.Hub
 	SessionMgr    *session.Manager
+	MsgStore      session.MessageStore
+	ConvStore     session.ConversationStore
 	Auth          *security.Authenticator
 	Handler       *gateway.Handler
 	Bridge        *gateway.Bridge
@@ -146,6 +149,15 @@ func runGateway(configPath string, devMode bool) (err error) {
 		}
 	}
 
+	var convStore session.ConversationStore
+	if cfg.Session.EventStoreEnabled {
+		convStore, err = session.NewSQLiteConversationStore(ctx, cfg)
+		if err != nil {
+			_ = store.Close()
+			return fmt.Errorf("gateway: init conversation store: %w", err)
+		}
+	}
+
 	sm, err := session.NewManager(ctx, log, cfg, cfgStore, store, msgStore)
 	if err != nil {
 		return err
@@ -153,6 +165,17 @@ func runGateway(configPath string, devMode bool) (err error) {
 
 	sm.OnTerminate = func(sessionID string) {
 		log.Info("gateway: session terminated", "session_id", sessionID)
+	}
+
+	// Repair sessions orphaned by previous gateway crash/restart.
+	// Sessions stuck in RUNNING state have no live worker — their processes
+	// were killed by CleanupOrphans above. Transition them to TERMINATED so
+	// clients get a clean reconnect instead of crash-looping on resume.
+	repaired, repairErr := sm.RepairRunningSessions(ctx)
+	if repairErr != nil {
+		log.Warn("gateway: session state repair failed", "err", repairErr)
+	} else if repaired > 0 {
+		log.Info("gateway: repaired orphaned sessions", "count", repaired)
 	}
 
 	hub := gateway.NewHub(log, cfgStore)
@@ -220,6 +243,10 @@ func runGateway(configPath string, devMode bool) (err error) {
 	handler := gateway.NewHandler(log, hub, sm, jwtValidator)
 	bridge := gateway.NewBridge(log, hub, sm, msgStore)
 	handler.SetBridge(bridge)
+	if convStore != nil {
+		handler.SetConvStore(convStore)
+		bridge.SetConvStore(convStore)
+	}
 
 	retryCtrl := gateway.NewLLMRetryController(cfg.Worker.AutoRetry, log)
 	bridge.SetRetryController(retryCtrl)
@@ -233,6 +260,9 @@ func runGateway(configPath string, devMode bool) (err error) {
 	if cfg.Worker.TurnTimeout > 0 {
 		bridge.SetTurnTimeout(cfg.Worker.TurnTimeout)
 	}
+
+	// Initialize OpenCode Server singleton process manager.
+	opencodeserver.InitSingleton(log, cfg.Worker.OpenCodeServer)
 
 	cfgStore.RegisterFunc(func(prev, next *config.Config) {
 		if !reflect.DeepEqual(prev.Worker.AutoRetry, next.Worker.AutoRetry) {
@@ -253,6 +283,8 @@ func runGateway(configPath string, devMode bool) (err error) {
 		ConfigStore:   cfgStore,
 		Hub:           hub,
 		SessionMgr:    sm,
+		MsgStore:      msgStore,
+		ConvStore:     convStore,
 		Auth:          auth,
 		Handler:       handler,
 		Bridge:        bridge,
@@ -328,12 +360,19 @@ func runGateway(configPath string, devMode bool) (err error) {
 	closeSTTCache(shutdownCtx, log)
 
 	bridge.Shutdown()
+	opencodeserver.ShutdownSingleton(shutdownCtx)
 
 	cleanupWG.Wait()
 	pidTracker.RemoveAll()
 
 	if err := sm.Close(); err != nil {
 		log.Warn("gateway: session manager close", "err", err)
+	}
+
+	if convStore != nil {
+		if err := convStore.Close(); err != nil {
+			log.Warn("gateway: conversation store close", "err", err)
+		}
 	}
 
 	if err := server.Shutdown(shutdownCtx); err != nil {

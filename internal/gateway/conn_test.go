@@ -498,6 +498,21 @@ func (m *mockSessionStoreForBotID) DeletePhysical(ctx context.Context, id string
 	return args.Error(0)
 }
 
+func (m *mockSessionStoreForBotID) DeleteExpiredEvents(ctx context.Context, cutoff time.Time) (int64, error) {
+	args := m.Called(ctx, cutoff)
+	return args.Get(0).(int64), args.Error(1)
+}
+
+func (m *mockSessionStoreForBotID) Compact(ctx context.Context, threshold float64) error {
+	args := m.Called(ctx, threshold)
+	return args.Error(0)
+}
+
+func (m *mockSessionStoreForBotID) GetSessionsByState(ctx context.Context, state events.SessionState) ([]string, error) {
+	args := m.Called(ctx, state)
+	return args.Get(0).([]string), args.Error(1)
+}
+
 func (m *mockSessionStoreForBotID) Close() error {
 	args := m.Called()
 	return args.Error(0)
@@ -590,6 +605,8 @@ func TestBotIDIsolation_CreateMismatch(t *testing.T) {
 	store1 := new(mockSessionStoreForBotID)
 	store1.Test(t)
 	store1.On("Close").Return(nil)
+	// Get for raw client session ID (env.SessionID pre-check) returns not-found.
+	store1.On("Get", mock.Anything, sessionIDConst).Return(nil, session.ErrSessionNotFound)
 	// Get returns not-found to trigger Create.
 	store1.On("Get", mock.Anything, derivedSID).Return(nil, session.ErrSessionNotFound)
 	// Upsert for Create + Transition to RUNNING.
@@ -653,6 +670,7 @@ func TestBotIDIsolation_CreateMismatch(t *testing.T) {
 		WorkerType:   worker.WorkerType(workerType),
 		AllowedTools: []string{},
 	}
+	store2.On("Get", mock.Anything, sessionIDConst).Return(nil, session.ErrSessionNotFound)
 	store2.On("Get", mock.Anything, derivedSID).Return(existingSession, nil)
 	// Transition to RUNNING (called by ResumeSession for StateIdle→RUNNING).
 	store2.On("Transition", mock.Anything, derivedSID, events.StateRunning).Return(nil)
@@ -731,6 +749,7 @@ func TestBotIDIsolation_MatchAllowed(t *testing.T) {
 		State:      events.StateIdle,
 		WorkerType: worker.WorkerType(workerType),
 	}
+	store.On("Get", mock.Anything, sessionIDConst).Return(nil, session.ErrSessionNotFound)
 	store.On("Get", mock.Anything, derivedSID).Return(existingSession, nil)
 
 	cfg := config.Default()
@@ -792,6 +811,7 @@ func TestBotIDIsolation_EmptyBotIDAllowed(t *testing.T) {
 	store.Test(t)
 	store.On("Close").Return(nil).Maybe()
 	// Session does not exist → create new.
+	store.On("Get", mock.Anything, sessionIDConst).Return(nil, session.ErrSessionNotFound)
 	store.On("Get", mock.Anything, derivedSID).Return(nil, session.ErrSessionNotFound)
 	store.On("Upsert", mock.Anything, mock.AnythingOfType("*session.SessionInfo")).Return(nil)
 
@@ -862,6 +882,7 @@ func TestBotIDIsolation_NewSessionStoresBotID(t *testing.T) {
 	store.Test(t)
 	store.On("Close").Return(nil).Maybe()
 	// Session does not exist on Get → triggers CreateWithBot.
+	store.On("Get", mock.Anything, sessionIDConst).Return(nil, session.ErrSessionNotFound)
 	store.On("Get", mock.Anything, derivedSID).Return(nil, session.ErrSessionNotFound)
 	// Upsert is called twice: once for CreateWithBot, once for Transition(CREATED→RUNNING).
 	// Both must carry the correct botID.
@@ -923,7 +944,7 @@ type mockBridgeSM struct {
 	mock.Mock
 }
 
-func (m *mockBridgeSM) CreateWithBot(ctx context.Context, id, userID, botID string, wt worker.WorkerType, allowedTools []string, platform string, platformKey map[string]string) (*session.SessionInfo, error) {
+func (m *mockBridgeSM) CreateWithBot(ctx context.Context, id, userID, botID string, wt worker.WorkerType, allowedTools []string, platform string, platformKey map[string]string, workDir, title string) (*session.SessionInfo, error) {
 	args := m.Called(ctx, id, userID, botID, wt, allowedTools)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -938,6 +959,11 @@ func (m *mockBridgeSM) AttachWorker(id string, w worker.Worker) error {
 
 func (m *mockBridgeSM) DetachWorker(id string) {
 	m.Called(id)
+}
+
+func (m *mockBridgeSM) DetachWorkerIf(id string, expected worker.Worker) bool {
+	args := m.Called(id, expected)
+	return args.Bool(0)
 }
 
 func (m *mockBridgeSM) Transition(ctx context.Context, id string, to events.SessionState) error {
@@ -1287,7 +1313,7 @@ func TestBridge_StartSession_Success(t *testing.T) {
 	// we replace it after construction (field injection for tests).
 	b.wf = wf
 
-	err := b.StartSession(ctx, "sess_start", "user1", "", worker.TypeClaudeCode, nil, "", "", nil)
+	err := b.StartSession(ctx, "sess_start", "user1", "", worker.TypeClaudeCode, nil, "", "", nil, "")
 	require.NoError(t, err, "StartSession should succeed")
 
 	sm.AssertExpectations(t)
@@ -1307,7 +1333,7 @@ func TestBridge_StartSession_CreateFails(t *testing.T) {
 	// Inject a worker factory that would fail if Start were called.
 	b.wf = &failingWorkerFactory{}
 
-	err := b.StartSession(context.Background(), "sess_fail", "user1", "", worker.TypeClaudeCode, nil, "", "", nil)
+	err := b.StartSession(context.Background(), "sess_fail", "user1", "", worker.TypeClaudeCode, nil, "", "", nil, "")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "create failed")
 

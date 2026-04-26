@@ -23,6 +23,8 @@ export const EventKind = {
   Ping: 'ping',
   Pong: 'pong',
   Control: 'control',
+  WorkerCommand: 'worker_command',
+  ContextUsage: 'context_usage',
 } as const;
 
 export type EventKind = typeof EventKind[keyof typeof EventKind];
@@ -78,6 +80,8 @@ export const ErrorCode = {
   ExecutionTimeout: 'EXECUTION_TIMEOUT',
   ReconnectRequired: 'RECONNECT_REQUIRED',
   WorkerOutputLimit: 'WORKER_OUTPUT_LIMIT',
+  TurnTimeout: 'TURN_TIMEOUT',
+  ResumeRetry: 'RESUME_RETRY',
 } as const;
 
 export type ErrorCode = typeof ErrorCode[keyof typeof ErrorCode];
@@ -101,6 +105,12 @@ export const WorkerType = {
 } as const;
 
 export type WorkerType = typeof WorkerType[keyof typeof WorkerType];
+
+// Worker stdio commands (from pkg/events/events.go:306-311)
+export const WorkerStdioCommand = {
+  Skills: 'skills',
+  ContextUsage: 'context_usage',
+} as const;
 
 // Protocol constants (from internal/gateway/hub.go and conn.go)
 export const ProtocolConstants = {

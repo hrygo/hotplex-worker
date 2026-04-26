@@ -21,10 +21,10 @@ type AgentConfigs struct {
 }
 
 // MaxFileChars is the maximum character limit per file.
-const MaxFileChars = 12_000
+const MaxFileChars = 8_000
 
 // MaxTotalChars is the maximum combined character limit across all files.
-const MaxTotalChars = 60_000
+const MaxTotalChars = 40_000
 
 // Load reads all config files from dir, appending platform-specific variants.
 // Returns AgentConfigs with frontmatter stripped and size limits enforced.

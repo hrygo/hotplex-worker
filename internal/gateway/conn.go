@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -21,12 +22,16 @@ import (
 	"github.com/hrygo/hotplex/pkg/events"
 )
 
+// platformWebChat is the platform tag for WebSocket webchat sessions.
+const platformWebChat = "webchat"
+
 // SessionStarter initiates a worker session. It is the only Bridge capability
 // used by Conn (called once during the AEP init handshake).
 type SessionStarter interface {
 	StartSession(ctx context.Context, id, userID, botID string,
-		wt worker.WorkerType, allowedTools []string, workDir string, platform string, platformKey map[string]string) error
+		wt worker.WorkerType, allowedTools []string, workDir string, platform string, platformKey map[string]string, title string) error
 	ResumeSession(ctx context.Context, id string, workDir string) error
+	SwitchWorkDir(ctx context.Context, oldSessionID, newWorkDir string) (*SwitchWorkDirResult, error)
 }
 
 var _ SessionStarter = (*Bridge)(nil) // compile-time: Bridge implements SessionStarter
@@ -90,6 +95,9 @@ func (c *Conn) RemoteAddr() string {
 // It also handles pong responses, missed pong detection, and the AEP init handshake.
 func (c *Conn) ReadPump(handler *Handler) {
 	defer func() {
+		if r := recover(); r != nil {
+			c.log.Error("gateway: panic in ReadPump", "session_id", c.sessionID, "panic", r, "stack", string(debug.Stack()))
+		}
 		c.markInitDone() // flush buffered events or release on init failure
 		c.hb.Stop()
 
@@ -167,7 +175,14 @@ func (c *Conn) ReadPump(handler *Handler) {
 			env.Seq = c.hub.NextSeq(c.sessionID)
 		}
 
-		// Route to handler with tracing span.
+		// Route to handler — skip tracing span for high-frequency pings.
+		if env.Event.Type == events.Ping {
+			if err := handler.Handle(context.Background(), env); err != nil {
+				c.log.Debug("gateway: handle ping error", "err", err, "session_id", c.sessionID)
+			}
+			continue
+		}
+
 		_, span := tracing.SpanFromContext(context.Background()).Start(context.Background(), "conn.recv")
 		span.SetAttributes(
 			attribute.String("session_id", c.sessionID),
@@ -257,8 +272,21 @@ func (c *Conn) performInit(handler *Handler) error {
 		return err
 	}
 
-	// Determine session ID via deterministic UUIDv5 mapping from client session ID.
-	sessionID := session.DeriveSessionKey(c.userID, initData.WorkerType, initData.SessionID, workDir)
+	// Resolve session ID: clients put session_id at the envelope level
+	// (env.SessionID), not inside event.data. If the envelope session_id
+	// already exists in the DB (e.g., a derived UUID from REST API
+	// CreateSession), use it directly. Otherwise derive via UUIDv5.
+	var sessionID string
+	var preResolved *session.SessionInfo
+	if env.SessionID != "" {
+		if existing, getErr := handler.sm.Get(env.SessionID); getErr == nil && existing != nil && existing.State != events.StateDeleted {
+			sessionID = env.SessionID
+			preResolved = existing
+		}
+	}
+	if sessionID == "" {
+		sessionID = session.DeriveSessionKey(c.userID, initData.WorkerType, env.SessionID, workDir)
+	}
 
 	// Check throttler before doing heavy work.
 	if !c.hub.InitThrottle.Check(sessionID) {
@@ -277,12 +305,18 @@ func (c *Conn) performInit(handler *Handler) error {
 	c.hub.JoinSession(sessionID, c)
 
 	// Resolve session: create new or resume existing.
-	si, err := handler.sm.Get(sessionID)
+	// Reuse preResolved when it's for the same session ID.
+	var si *session.SessionInfo
+	if preResolved != nil {
+		si = preResolved
+	} else {
+		si, err = handler.sm.Get(sessionID)
+	}
 	if err != nil {
 		// Session does not exist → create and start via SessionStarter.
 		if errors.Is(err, session.ErrSessionNotFound) {
 			if c.starter != nil {
-				if err := c.starter.StartSession(context.Background(), sessionID, c.userID, c.botID, initData.WorkerType, initData.Config.AllowedTools, workDir, "", nil); err != nil {
+				if err := c.starter.StartSession(context.Background(), sessionID, c.userID, c.botID, initData.WorkerType, initData.Config.AllowedTools, workDir, platformWebChat, nil, ""); err != nil {
 					c.hub.InitThrottle.RecordFailure(sessionID)
 					c.sendInitError(events.ErrCodeInternalError, "failed to create session")
 					metrics.GatewayErrorsTotal.WithLabelValues(string(events.ErrCodeInternalError)).Inc()
@@ -297,7 +331,7 @@ func (c *Conn) performInit(handler *Handler) error {
 				}
 			} else {
 				// Test mode
-				si, err = handler.sm.CreateWithBot(context.Background(), sessionID, c.userID, c.botID, initData.WorkerType, initData.Config.AllowedTools, "", nil)
+				si, err = handler.sm.CreateWithBot(context.Background(), sessionID, c.userID, c.botID, initData.WorkerType, initData.Config.AllowedTools, platformWebChat, nil, workDir, "")
 				if err != nil {
 					c.hub.InitThrottle.RecordFailure(sessionID)
 					c.sendInitError(events.ErrCodeInternalError, "failed to create session")
@@ -311,10 +345,15 @@ func (c *Conn) performInit(handler *Handler) error {
 		}
 	} else if si.State == events.StateCreated {
 		if c.starter != nil {
-			if err := c.starter.StartSession(context.Background(), sessionID, c.userID, c.botID, initData.WorkerType, initData.Config.AllowedTools, workDir, "", nil); err != nil {
+			if err := c.starter.StartSession(context.Background(), sessionID, c.userID, c.botID, initData.WorkerType, initData.Config.AllowedTools, workDir, platformWebChat, nil, ""); err != nil {
 				c.hub.InitThrottle.RecordFailure(sessionID)
 				c.sendInitError(events.ErrCodeInternalError, "failed to start session")
 				return fmt.Errorf("start unstarted session: %w", err)
+			}
+			si, err = handler.sm.Get(sessionID)
+			if err != nil {
+				c.sendInitError(events.ErrCodeInternalError, "session lost after creation")
+				return fmt.Errorf("get session after start: %w", err)
 			}
 		}
 	} else if si.State == events.StateDeleted {
@@ -322,27 +361,44 @@ func (c *Conn) performInit(handler *Handler) error {
 		_ = handler.sm.DeletePhysical(context.Background(), sessionID)
 		if c.starter != nil {
 			if err := c.starter.StartSession(context.Background(), sessionID, c.userID, c.botID,
-				initData.WorkerType, initData.Config.AllowedTools, workDir, "", nil); err != nil {
+				initData.WorkerType, initData.Config.AllowedTools, workDir, platformWebChat, nil, ""); err != nil {
 				c.hub.InitThrottle.RecordFailure(sessionID)
 				msg := fmt.Sprintf("failed to recreate deleted session: %v", err)
 				c.sendInitError(events.ErrCodeInternalError, msg)
 				metrics.GatewayErrorsTotal.WithLabelValues(string(events.ErrCodeInternalError)).Inc()
 				return fmt.Errorf("recreate deleted session: %w", err)
 			}
+			si, err = handler.sm.Get(sessionID)
+			if err != nil {
+				c.sendInitError(events.ErrCodeInternalError, "session lost after recreation")
+				return fmt.Errorf("get session after recreation: %w", err)
+			}
+		}
+	} else if w := handler.sm.GetWorker(sessionID); w != nil {
+		// Fast reconnect: worker still alive, skip terminate+resume cycle.
+		if err := handler.sm.Transition(context.Background(), sessionID, events.StateRunning); err != nil {
+			c.log.Debug("gateway: idle→running on fast reconnect", "session_id", sessionID, "err", err)
+		} else {
+			si.State = events.StateRunning
 		}
 	} else if si.State == events.StateIdle || si.State == events.StateTerminated ||
-		(si.State == events.StateRunning && handler.sm.GetWorker(sessionID) == nil) {
+		(si.State == events.StateRunning) {
 		if c.starter != nil {
 			resumeErr := c.starter.ResumeSession(context.Background(), sessionID, workDir)
 			if resumeErr != nil {
 				if err := c.starter.StartSession(context.Background(), sessionID, c.userID, c.botID,
-					initData.WorkerType, initData.Config.AllowedTools, workDir, "", nil); err != nil {
+					initData.WorkerType, initData.Config.AllowedTools, workDir, platformWebChat, nil, ""); err != nil {
 					c.hub.InitThrottle.RecordFailure(sessionID)
 					msg := fmt.Sprintf("resume failed (%v), then start also failed (%v)", resumeErr, err)
 					c.sendInitError(events.ErrCodeInternalError, msg)
 					metrics.GatewayErrorsTotal.WithLabelValues(string(events.ErrCodeInternalError)).Inc()
 					return fmt.Errorf("start session after resume fallback: %w", err)
 				}
+			}
+			si, err = handler.sm.Get(sessionID)
+			if err != nil {
+				c.sendInitError(events.ErrCodeInternalError, "session lost after resume")
+				return fmt.Errorf("get session after resume: %w", err)
 			}
 		}
 	}

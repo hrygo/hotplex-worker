@@ -92,7 +92,7 @@ func (r *SlashRateLimiter) Stop() {
 	r.wg.Wait()
 }
 
-func (a *Adapter) handleSlashCommandEvent(ctx context.Context, evt socketmode.Event) { //nolint:unused // wired in runSocketMode when slash commands enabled
+func (a *Adapter) handleSlashCommandEvent(ctx context.Context, evt socketmode.Event) {
 	cmd, ok := evt.Data.(slack.SlashCommand)
 	if !ok {
 		a.log.Warn("slack: slash command event type assertion failed")
@@ -135,7 +135,7 @@ func (a *Adapter) handleSlashCommandEvent(ctx context.Context, evt socketmode.Ev
 	}
 }
 
-func (a *Adapter) handleControlCommand(ctx context.Context, cmd slack.SlashCommand, action events.ControlAction, logPrefix, successMsg, errorMsg string) { //nolint:unused // wired via handleSlashCommandEvent
+func (a *Adapter) handleControlCommand(ctx context.Context, cmd slack.SlashCommand, action events.ControlAction, logPrefix, successMsg, errorMsg string) {
 	sessionID := a.deriveSessionIDFromCommand(cmd)
 
 	env := &events.Envelope{
@@ -164,7 +164,7 @@ func (a *Adapter) handleControlCommand(ctx context.Context, cmd slack.SlashComma
 	a.sendEphemeralOrPost(ctx, cmd.ChannelID, "", cmd.UserID, successMsg)
 }
 
-func (a *Adapter) sendEphemeralOrPost(ctx context.Context, channelID, threadTS, userID, text string) { //nolint:unused // wired via slash command handlers
+func (a *Adapter) sendEphemeralOrPost(ctx context.Context, channelID, threadTS, userID, text string) {
 	if userID != "" && channelID != "" && channelID[0] != 'D' {
 		opts := []slack.MsgOption{slack.MsgOptionText(text, false)}
 		if threadTS != "" {
@@ -181,7 +181,7 @@ func (a *Adapter) sendEphemeralOrPost(ctx context.Context, channelID, threadTS, 
 	_, _, _ = a.client.PostMessageContext(ctx, channelID, opts...)
 }
 
-func (a *Adapter) deriveSessionIDFromCommand(cmd slack.SlashCommand) string { //nolint:unused // wired via handleControlCommand
+func (a *Adapter) deriveSessionIDFromCommand(cmd slack.SlashCommand) string {
 	envelope := a.bridge.MakeSlackEnvelope(cmd.TeamID, cmd.ChannelID, "", cmd.UserID, "")
 	if envelope == nil {
 		return ""

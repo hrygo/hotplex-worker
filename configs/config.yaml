@@ -34,7 +34,9 @@ admin:
 db:
   path: "~/.hotplex/data/hotplex.db"
   wal_mode: true
-  busy_timeout: 500ms
+  busy_timeout: 5s
+  event_retention: 720h     # 30 days
+  vacuum_threshold: 0.2     # VACUUM when 20%+ free pages
 
 # ─────────────────────────────────────────────────────────────────────────────
 # SECURITY

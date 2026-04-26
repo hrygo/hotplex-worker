@@ -40,6 +40,7 @@ opencode serve --port 18789
 ```
 
 > OpenCode Server 是一个独立的 HTTP 服务器进程，通过 REST API 管理会话，通过 SSE 推送事件。
+> 权限绕过通过 HTTP API PATCH `/session/{id}` 设置，而非 CLI 参数（`opencode serve` 不支持 `--dangerously-skip-permissions`）。
 
 ---
 
@@ -100,11 +101,14 @@ opencode serve --port 18789
 **实现细节**:
 
 ```go
-// worker.go:82-85 - 启动命令
+// worker.go - 启动命令
 args := []string{
     "serve",
     "--port", fmt.Sprintf("%d", defaultServePort),  // 18789
 }
+
+// 权限绕过通过 HTTP API 实现（非 CLI 参数）
+// applyPermissions() → PATCH /session/{id} with {"permission": [{"permission": "*", "action": "allow", "pattern": "*"}]}
 
 // worker.go:291-303 - 等待服务器就绪
 func (w *Worker) waitForServer(ctx context.Context) error {
@@ -158,11 +162,18 @@ func (w *Worker) waitForServer(ctx context.Context) error {
 | 端点                       | 方法   | 说明                   | 状态 |
 | -------------------------- | ------ | ---------------------- | ---- |
 | `/health`                  | GET    | 服务器就绪检查         | ✅    |
-| `/sessions`                | POST   | 创建新会话             | ✅    |
-| `/sessions/{session_id}`   | GET    | 获取会话信息           | ✅    |
-| `/sessions/{session_id}`   | DELETE | 删除会话               | ✅    |
-| `/sessions/{session_id}/input` | POST   | 发送输入               | ✅    |
+| `/session`                 | POST   | 创建新会话             | ✅    |
+| `/session/{session_id}`    | GET    | 获取会话信息           | ✅    |
+| `/session/{session_id}`    | PATCH  | 更新会话配置（权限等） | ✅    |
+| `/session/{session_id}`    | DELETE | 删除会话               | ✅    |
+| `/session/{session_id}/input` | POST   | 发送输入               | ✅    |
+| `/session/{session_id}/reset` | POST   | 重置会话上下文         | ✅    |
+| `/session/{session_id}/summarize` | POST   | 压缩会话上下文         | ✅    |
+| `/session/{session_id}/revert` | POST   | 回退会话消息           | ✅    |
 | `/events?session_id={id}`  | GET    | SSE 事件流             | ✅    |
+| `/permission/{id}/reply`   | POST   | 回复权限请求           | ✅    |
+| `/question/{id}/reply`     | POST   | 回复用户提问           | ✅    |
+| `/experimental/tool`       | GET    | 查询 MCP 工具状态      | ✅    |
 
 **实现位置**: `internal/worker/opencodeserver/worker.go`
 
@@ -493,8 +504,12 @@ Start
   ├─► 轮询 /health 直到 200 OK
   │   └─► worker.go:waitForServer()
   │
-  ├─► POST /sessions → session_id
+  ├─► POST /session → session_id
   │   └─► worker.go:createSession()
+  │
+  ├─► PATCH /session/{id} 设置权限绕过
+  │   └─► worker.go:applyPermissions()
+  │   └─► {"permission": [{"permission": "*", "action": "allow", "pattern": "*"}]}
   │
   ├─► 创建 conn{recvCh}
   │   └─► worker.go:httpConn
@@ -506,7 +521,7 @@ Start
            │
    ◄────────┴─────────►
    │                   │
-   │  POST /sessions/{id}/input
+   │  POST /session/{id}/input
    │  (通过 recvCh 接收 SSE 事件)
    │
    └─► Close() → close(recvCh)
@@ -524,45 +539,16 @@ Start
 **已完全实现**。
 
 ```go
-// worker.go:177-239 - Resume 实现
+// worker.go - Resume 实现
 func (w *Worker) Resume(ctx context.Context, session worker.SessionInfo) error {
     // 1. 启动 serve 进程
     args := []string{"serve", "--port", fmt.Sprintf("%d", defaultServePort)}
     env := base.BuildEnv(session, openCodeSrvEnvWhitelist, "opencode-server")
-    
-    w.Proc = proc.New(proc.Opts{
-        Logger:       w.Log,
-        AllowedTools: session.AllowedTools,
-    })
-    
-    _, _, _, err := w.Proc.Start(ctx, "opencode", args, env, session.ProjectDir)
-    if err != nil {
-        return fmt.Errorf("opencodeserver: resume start: %w", err)
-    }
 
     // 2. 等待服务器就绪
-    w.port = defaultServePort
-    w.httpAddr = fmt.Sprintf("http://localhost:%d", w.port)
-    
-    if err := w.waitForServer(ctx); err != nil {
-        _ = w.Proc.Kill()
-        return fmt.Errorf("opencodeserver: wait for server: %w", err)
-    }
-
-    // 3. 使用现有 session_id
-    w.httpConn = &conn{
-        userID:    session.UserID,
-        sessionID: session.SessionID,  // 关键：复用现有 ID
-        httpAddr:  w.httpAddr,
-        client:    w.client,
-        recvCh:    make(chan *events.Envelope, 256),
-        log:       w.Log,
-    }
-
-    // 4. 重连 SSE
-    go w.readSSE(session.SessionID)
-
-    return nil
+    // 3. 使用现有 session_id 复用连接
+    // 4. PATCH /session/{id} 设置权限绕过（applyPermissions）
+    // 5. 重连 SSE
 }
 ```
 
@@ -742,6 +728,7 @@ type conn struct {
 | -------------- | --------------------------------- | ---- |
 | **Transport**  | HTTP + SSE                        | ✅    |
 | **命令**       | `opencode serve --port 18789`     | ✅    |
+| **权限绕过**   | HTTP API PATCH `/session/{id}`    | ✅    |
 | **Session ID** | 外部指定或内部生成                | ✅    |
 | **Resume**     | **支持**                          | ✅    |
 | **进程模型**   | 多会话复用                        | ✅    |
@@ -865,6 +852,7 @@ type conn struct {
 
 | 日期       | 版本  | 变更说明                                      |
 | ---------- | ----- | --------------------------------------------- |
+| 2026-04-25 | 2.1   | 修复权限绕过：移除无效的 CLI `--dangerously-skip-permissions`，改为 HTTP API PATCH 实现；补全 API 端点列表 |
 | 2026-04-04 | 2.0   | 基于源码验证的完整更新，修正所有不准确描述    |
 | 2026-04-04 | 1.0   | 初始版本（已过时，包含不准确描述）            |
 
@@ -879,5 +867,5 @@ type conn struct {
 
 ---
 
-**文档状态**: ✅ 已验证并更新（2026-04-04）
+**文档状态**: ✅ 已验证并更新（2026-04-25）
 **下一步**: 持续维护，随代码变更同步更新

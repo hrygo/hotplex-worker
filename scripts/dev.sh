@@ -197,7 +197,7 @@ start_webchat() {
     fi
 
     echo -e "  ${DIM}› Starting webchat (port $WEBCHAT_PORT)...${NC}"
-    (cd "$WEBCHAT_DIR" && exec pnpm dev --port "$WEBCHAT_PORT" >> "$WEBCHAT_LOG" 2>&1) &
+    (cd "$WEBCHAT_DIR" && exec pnpm dev --port "$WEBCHAT_PORT" --hostname 127.0.0.1 >> "$WEBCHAT_LOG" 2>&1) &
     echo $! > "$WEBCHAT_PID"
     sleep 3
 

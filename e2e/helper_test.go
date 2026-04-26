@@ -272,6 +272,21 @@ func (m *mockStore) DeletePhysical(ctx context.Context, id string) error {
 	return args.Error(0)
 }
 
+func (m *mockStore) DeleteExpiredEvents(ctx context.Context, cutoff time.Time) (int64, error) {
+	args := m.Called(ctx, cutoff)
+	return args.Get(0).(int64), args.Error(1)
+}
+
+func (m *mockStore) Compact(ctx context.Context, threshold float64) error {
+	args := m.Called(ctx, threshold)
+	return args.Error(0)
+}
+
+func (m *mockStore) GetSessionsByState(ctx context.Context, state events.SessionState) ([]string, error) {
+	args := m.Called(ctx, state)
+	return args.Get(0).([]string), args.Error(1)
+}
+
 func (m *mockStore) Close() error {
 	args := m.Called()
 	return args.Error(0)

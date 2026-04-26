@@ -108,12 +108,12 @@ func TestPoolRelease_Underflow(t *testing.T) {
 
 	pool := NewPoolManager(nil, 10, 3, 0)
 
-	// Release without acquire should be safe
+	// Release without acquire is guarded — no underflow.
 	pool.Release("user1")
 	pool.Release("user1")
 
 	total, _, users := pool.Stats()
-	require.Equal(t, -2, total) // each Release decrements totalCount even without prior Acquire
+	require.Equal(t, 0, total) // guard prevents negative total
 	require.Equal(t, 0, users)
 }
 

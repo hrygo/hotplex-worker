@@ -9,7 +9,7 @@
 ```bash
 [INFO] BUILD SUCCESS
 [INFO] Total time:  1.623 s
-[INFO] Building jar: target/hotplex-client-1.1.0-SNAPSHOT.jar
+[INFO] Building jar: target/hotplex-client-${version}-SNAPSHOT.jar
 ```
 
 ---

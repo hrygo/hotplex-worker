@@ -143,6 +143,7 @@ Messaging ────────► │                   │ ───► Wor
 | 命令 | Slash 触发 | 自然语言 | CC subtype | 返回方式 | 进程影响 |
 |------|-----------|---------|-----------|---------|---------|
 | context_usage | `/context` | `上下文` `容量` `token` | `get_context_usage` | control_response | 只读 |
+| skills | `/skills` | `技能` `插件` `能力` | `get_context_usage` | control_response | 只读 |
 | mcp_status | `/mcp` | `MCP状态` `工具状态` | `mcp_status` | control_response | 只读 |
 | set_model | `/model <name>` | `切换模型` | `set_model` | control_response | 原地 |
 | set_permission | `/perm <mode>` | `权限模式` | `set_permission_mode` | control_response | 原地 |

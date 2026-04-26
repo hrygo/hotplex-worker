@@ -170,46 +170,62 @@ func TestBuildSystemPrompt(t *testing.T) {
 		require.Empty(t, BuildSystemPrompt(&AgentConfigs{}))
 	})
 
-	t.Run("assembles B+C with XML tags", func(t *testing.T) {
+	t.Run("assembles B+C with nested XML tags", func(t *testing.T) {
 		cfg := &AgentConfigs{Soul: "Persona", Agents: "Rules", Skills: "Tools", User: "User data", Memory: "Memory data"}
 		prompt := BuildSystemPrompt(cfg)
-		require.Contains(t, prompt, "<hotplex-context>")
-		require.Contains(t, prompt, "</hotplex-context>")
-		require.Contains(t, prompt, "<agent-persona>")
+		require.Contains(t, prompt, "<agent-configuration>")
+		require.Contains(t, prompt, "</agent-configuration>")
+		require.Contains(t, prompt, "<directives>")
+		require.Contains(t, prompt, "</directives>")
+		require.Contains(t, prompt, "<persona>")
 		require.Contains(t, prompt, "Persona")
-		require.Contains(t, prompt, "<workspace-rules>")
+		require.Contains(t, prompt, "<rules>")
 		require.Contains(t, prompt, "Rules")
-		require.Contains(t, prompt, "<tool-guide>")
+		require.Contains(t, prompt, "<skills>")
 		require.Contains(t, prompt, "Tools")
-		require.Contains(t, prompt, "<user-profile>")
+		require.Contains(t, prompt, "<context>")
+		require.Contains(t, prompt, "</context>")
+		require.Contains(t, prompt, "<user>")
 		require.Contains(t, prompt, "User data")
-		require.Contains(t, prompt, "<persistent-memory>")
+		require.Contains(t, prompt, "<memory>")
 		require.Contains(t, prompt, "Memory data")
 	})
 
-	t.Run("B-channel only", func(t *testing.T) {
+	t.Run("B-channel only omits context group", func(t *testing.T) {
 		cfg := &AgentConfigs{Agents: "Rules only"}
 		prompt := BuildSystemPrompt(cfg)
-		require.Contains(t, prompt, "<workspace-rules>")
-		require.NotContains(t, prompt, "<agent-persona>")
-		require.NotContains(t, prompt, "<user-profile>")
+		require.Contains(t, prompt, "<directives>")
+		require.Contains(t, prompt, "<rules>")
+		require.NotContains(t, prompt, "<persona>")
+		require.NotContains(t, prompt, "<context>")
 	})
 
-	t.Run("C-channel only", func(t *testing.T) {
+	t.Run("C-channel only omits directives group", func(t *testing.T) {
 		cfg := &AgentConfigs{User: "User only", Memory: "Memory only"}
 		prompt := BuildSystemPrompt(cfg)
-		require.Contains(t, prompt, "<user-profile>")
-		require.Contains(t, prompt, "<persistent-memory>")
-		require.NotContains(t, prompt, "<agent-persona>")
-		require.NotContains(t, prompt, "<workspace-rules>")
+		require.Contains(t, prompt, "<context>")
+		require.Contains(t, prompt, "<user>")
+		require.Contains(t, prompt, "<memory>")
+		require.NotContains(t, prompt, "<directives>")
+		require.NotContains(t, prompt, "<persona>")
 	})
 
-	t.Run("B sections before C sections", func(t *testing.T) {
+	t.Run("directives before context", func(t *testing.T) {
 		cfg := &AgentConfigs{Soul: "S", User: "U"}
 		prompt := BuildSystemPrompt(cfg)
-		bIdx := strings.Index(prompt, "<agent-persona>")
-		cIdx := strings.Index(prompt, "<user-profile>")
+		bIdx := strings.Index(prompt, "<directives>")
+		cIdx := strings.Index(prompt, "<context>")
 		require.Less(t, bIdx, cIdx)
+	})
+
+	t.Run("behavioral directives present per section", func(t *testing.T) {
+		cfg := &AgentConfigs{Soul: "S", Agents: "A", Skills: "K", User: "U", Memory: "M"}
+		prompt := BuildSystemPrompt(cfg)
+		require.Contains(t, prompt, "Embody this persona naturally")
+		require.Contains(t, prompt, "mandatory workspace constraints")
+		require.Contains(t, prompt, "Apply these capabilities when relevant")
+		require.Contains(t, prompt, "Tailor responses to this user")
+		require.Contains(t, prompt, "Recall relevant past context")
 	})
 }
 

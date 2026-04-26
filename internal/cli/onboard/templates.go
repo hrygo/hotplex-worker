@@ -142,6 +142,17 @@ worker:
 
 `, workerType)
 
+	if workerType == "opencode_server" {
+		b.WriteString(`  # OpenCode Server singleton process (shared across all sessions)
+  opencode_server:
+    idle_drain_period: 30m    # keep process alive 30m after last session
+    ready_timeout: 10s        # max wait for server startup
+    ready_poll_interval: 200ms
+    http_timeout: 30s
+
+`)
+	}
+
 	b.WriteString(`# ─────────────────────────────────────────────────────────────────────────────
 # LOGGING
 # ─────────────────────────────────────────────────────────────────────────────

@@ -166,7 +166,7 @@ func validateBlockElement(elem slack.BlockElement, blockIdx int, blockType strin
 }
 
 // validateUnknownBlock attempts basic validation on unknown block types
-func validateUnknownBlock(block slack.Block, idx int) error {
+func validateUnknownBlock(_ slack.Block, _ int) error {
 	// Try to get any text or action IDs through reflection-like checks
 	// This is a best-effort for extensibility
 	return nil

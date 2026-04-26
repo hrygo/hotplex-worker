@@ -2,24 +2,31 @@ package gateway
 
 import (
 	"encoding/json"
+	"errors"
+	"log/slog"
 	"net/http"
+	"os"
 	"strconv"
+	"strings"
 
+	"github.com/hrygo/hotplex/internal/config"
+	"github.com/hrygo/hotplex/internal/messaging"
 	"github.com/hrygo/hotplex/internal/security"
+	"github.com/hrygo/hotplex/internal/session"
 	"github.com/hrygo/hotplex/internal/worker"
 
-	"github.com/hrygo/hotplex/pkg/aep"
 	"github.com/hrygo/hotplex/pkg/events"
 )
 
 type GatewayAPI struct {
-	auth   *security.Authenticator
-	sm     SessionManager
-	bridge SessionStarter
+	auth     *security.Authenticator
+	sm       SessionManager
+	bridge   SessionStarter
+	cfgStore *config.ConfigStore
 }
 
-func NewGatewayAPI(auth *security.Authenticator, sm SessionManager, bridge SessionStarter) *GatewayAPI {
-	return &GatewayAPI{auth: auth, sm: sm, bridge: bridge}
+func NewGatewayAPI(auth *security.Authenticator, sm SessionManager, bridge SessionStarter, cfgStore *config.ConfigStore) *GatewayAPI {
+	return &GatewayAPI{auth: auth, sm: sm, bridge: bridge, cfgStore: cfgStore}
 }
 
 func respondJSON(w http.ResponseWriter, v any) {
@@ -35,7 +42,7 @@ func (g *GatewayAPI) ListSessions(w http.ResponseWriter, r *http.Request) {
 	}
 	limit := 100
 	offset := 0
-	platform := "webchat" // Default to webchat as requested
+	platform := platformWebChat // Default to webchat as requested
 
 	if l := r.URL.Query().Get("limit"); l != "" {
 		if v, err := strconv.Atoi(l); err == nil && v > 0 {
@@ -69,14 +76,39 @@ func (g *GatewayAPI) CreateSession(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	id := r.URL.Query().Get("session_id")
+	title := strings.TrimSpace(r.URL.Query().Get("title"))
+	title = messaging.SanitizeText(title)
 	wt := worker.WorkerType(r.URL.Query().Get("worker_type"))
 	if wt == "" {
 		wt = worker.TypeClaudeCode
 	}
-	if id == "" {
-		id = aep.NewSessionID()
+	if title == "" {
+		http.Error(w, "title is required", http.StatusBadRequest)
+		return
 	}
+	if len(title) > 256 {
+		http.Error(w, "title too long (max 256 chars)", http.StatusBadRequest)
+		return
+	}
+
+	// Resolve work dir: use client-provided value or default from config.
+	workDir := r.URL.Query().Get("work_dir")
+	if workDir == "" {
+		workDir = g.cfgStore.Load().Worker.DefaultWorkDir
+	}
+	if workDir != "" {
+		if err := security.ValidateWorkDir(workDir); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+
+	// Derive session ID via UUIDv5 for consistency with WebSocket path.
+	// Both REST and WS use the auth userID ("anonymous" in dev mode, "api_user"
+	// with API keys) so they produce the same derived session ID.
+	id := session.DeriveSessionKey(userID, wt, title, workDir)
+
+	// Default userID after derivation — bridge expects non-empty.
 	if userID == "" {
 		userID = "anonymous"
 	}
@@ -92,7 +124,8 @@ func (g *GatewayAPI) CreateSession(w http.ResponseWriter, r *http.Request) {
 		_ = g.sm.DeletePhysical(r.Context(), id)
 	}
 
-	if err := g.bridge.StartSession(r.Context(), id, userID, botID, wt, nil, "", "webchat", nil); err != nil {
+	if err := g.bridge.StartSession(r.Context(), id, userID, botID, wt, nil, workDir, platformWebChat, nil, title); err != nil {
+		slog.Error("gateway: create session failed", "session_id", id, "worker_type", wt, "work_dir", workDir, "err", err)
 		http.Error(w, "failed to create session", http.StatusInternalServerError)
 		return
 	}
@@ -127,9 +160,82 @@ func (g *GatewayAPI) DeleteSession(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "session id required", http.StatusBadRequest)
 		return
 	}
+
+	// Gracefully terminate the worker through the state machine before deleting.
+	// Transition sends SIGTERM → wait → SIGKILL and releases pool quota.
+	if err := g.sm.Transition(r.Context(), id, events.StateTerminated); err != nil {
+		slog.Debug("gateway: pre-delete transition skipped", "session_id", id, "err", err)
+	}
+
 	if err := g.sm.DeletePhysical(r.Context(), id); err != nil {
 		http.Error(w, "failed to delete session", http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (g *GatewayAPI) SwitchWorkDir(w http.ResponseWriter, r *http.Request) {
+	userID, _, err := g.auth.AuthenticateRequest(r)
+	if err != nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	id := r.PathValue("id")
+	if id == "" {
+		http.Error(w, "session id required", http.StatusBadRequest)
+		return
+	}
+
+	var body struct {
+		WorkDir string `json:"work_dir"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if body.WorkDir == "" {
+		http.Error(w, "work_dir is required", http.StatusBadRequest)
+		return
+	}
+
+	// Expand ~ and resolve to absolute path.
+	expanded, err := config.ExpandAndAbs(body.WorkDir)
+	if err != nil {
+		http.Error(w, "invalid work_dir: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	body.WorkDir = expanded
+
+	// Ownership check.
+	si, err := g.sm.Get(id)
+	if err != nil {
+		http.Error(w, "session not found", http.StatusNotFound)
+		return
+	}
+	if si.UserID != userID {
+		http.Error(w, "ownership required", http.StatusForbidden)
+		return
+	}
+	if !si.State.IsActive() {
+		http.Error(w, "session not active", http.StatusConflict)
+		return
+	}
+
+	// Delegate to bridge.
+	result, err := g.bridge.SwitchWorkDir(r.Context(), id, body.WorkDir)
+	if err != nil {
+		var pathErr *os.PathError
+		if errors.As(err, &pathErr) || strings.Contains(err.Error(), "not a directory") {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	respondJSON(w, map[string]string{
+		"old_session_id": result.OldSessionID,
+		"new_session_id": result.NewSessionID,
+		"work_dir":       result.WorkDir,
+	})
 }

@@ -35,7 +35,7 @@ export interface UseSessionsReturn {
   openPanel: () => void;
   closePanel: () => void;
   selectSession: (session: SessionInfo) => void;
-  createNewSession: (workerType?: string) => Promise<void>;
+  createNewSession: (title: string, workerType?: string, workDir?: string) => Promise<void>;
   removeSession: (id: string) => Promise<void>;
   refreshSessions: () => Promise<void>;
   handleSessionSelect: (id: string) => void;
@@ -60,9 +60,9 @@ export function useSessions({
   const STORAGE_KEY = 'hotplex_active_session_id';
   const DEFAULT_WORKER_TYPE = defaultWorkerType;
 
-  // Deterministic anchor session ID — ensures the first auto-created session
-  // maps to the same server-side key via DeriveSessionKey(userID, workerType, clientSessionID, workDir).
-  const MAIN_SESSION_ID = 'main';
+  // Deterministic anchor session title — ensures the first auto-created session
+  // maps to the same server-side key via DeriveSessionKey(userID, workerType, title, workDir).
+  const MAIN_SESSION_TITLE = 'main';
 
   const refreshSessions = useCallback(async () => {
     try {
@@ -111,16 +111,21 @@ export function useSessions({
       if (!initId && !savedId && filtered.length === 0 && !isCreating.current) {
         isCreating.current = true;
         try {
-          const { session_id } = await createSession(DEFAULT_WORKER_TYPE, MAIN_SESSION_ID);
-          
-          const { sessions: updatedList } = await listSessions(5, 0);
-          const newSession = updatedList.find(s => s.id === session_id);
-          if (newSession) {
-            setSessions([newSession]);
-            setActiveSession(newSession);
-            onSelectRef.current(newSession.id);
-            localStorage.setItem(STORAGE_KEY, newSession.id);
-          }
+          const { session_id } = await createSession({ workerType: DEFAULT_WORKER_TYPE, title: MAIN_SESSION_TITLE });
+          const now = new Date().toISOString();
+          const newSession: SessionInfo = {
+            id: session_id,
+            user_id: '',
+            worker_type: DEFAULT_WORKER_TYPE,
+            state: 'created',
+            title: MAIN_SESSION_TITLE,
+            created_at: now,
+            updated_at: now,
+          };
+          setSessions([newSession]);
+          setActiveSession(newSession);
+          onSelectRef.current(newSession.id);
+          localStorage.setItem(STORAGE_KEY, newSession.id);
         } finally {
           isCreating.current = false;
         }
@@ -145,24 +150,28 @@ export function useSessions({
     setIsOpen(false);
   }, []);
 
-  const createNewSession = useCallback(async (workerType?: string) => {
+  const createNewSession = useCallback(async (title: string, workerType?: string, workDir?: string) => {
     const wt = workerType || DEFAULT_WORKER_TYPE;
     if (isCreating.current) return;
     isCreating.current = true;
     setIsLoading(true);
     try {
-      const { session_id } = await createSession(wt);
-
-      const { sessions: list } = await listSessions(20, 0);
-      const filtered = list.filter(s => s.state !== 'deleted');
-      setSessions(filtered);
-      
-      const newSession = filtered.find(s => s.id === session_id);
-      if (newSession) {
-        setActiveSession(newSession);
-        onSelectRef.current(session_id);
-        localStorage.setItem(STORAGE_KEY, session_id);
-      }
+      const { session_id } = await createSession({ workerType: wt, title, workDir });
+      const now = new Date().toISOString();
+      const newSession: SessionInfo = {
+        id: session_id,
+        user_id: '',
+        worker_type: wt,
+        state: 'created',
+        title,
+        work_dir: workDir || undefined,
+        created_at: now,
+        updated_at: now,
+      };
+      setSessions(prev => [newSession, ...prev.filter(s => s.state !== 'deleted')]);
+      setActiveSession(newSession);
+      onSelectRef.current(session_id);
+      localStorage.setItem(STORAGE_KEY, session_id);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to create session');
     } finally {
@@ -196,14 +205,17 @@ export function useSessions({
     }
   }, [sessions, selectSession]);
 
+  const openPanel = useCallback(() => setIsOpen(true), []);
+  const closePanel = useCallback(() => setIsOpen(false), []);
+
   return {
     sessions,
     activeSession,
     isLoading,
     error,
     isOpen,
-    openPanel: () => setIsOpen(true),
-    closePanel: () => setIsOpen(false),
+    openPanel,
+    closePanel,
     refreshSessions,
     createNewSession,
     removeSession,

@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 	"runtime/debug"
+	"strings"
 
+	"github.com/hrygo/hotplex/internal/config"
 	"github.com/hrygo/hotplex/internal/messaging"
 	"github.com/hrygo/hotplex/internal/metrics"
 	"github.com/hrygo/hotplex/internal/security"
@@ -26,6 +28,7 @@ type Handler struct {
 	sm           *session.Manager
 	jwtValidator *security.JWTValidator
 	bridge       *Bridge // set via SetBridge; nil during tests
+	convStore    session.ConversationStore
 }
 
 // NewHandler creates a new message handler.
@@ -41,6 +44,9 @@ func NewHandler(log *slog.Logger, hub *Hub, sm *session.Manager, jwtValidator *s
 // SetBridge injects the Bridge for lifecycle operations (reset).
 // Must be called after NewHandler and NewBridge.
 func (h *Handler) SetBridge(b *Bridge) { h.bridge = b }
+
+// SetConvStore injects the conversation store for turn-level persistence.
+func (h *Handler) SetConvStore(cs session.ConversationStore) { h.convStore = cs }
 
 // Handle processes an incoming envelope from a client.
 func (h *Handler) Handle(ctx context.Context, env *events.Envelope) (err error) {
@@ -98,6 +104,10 @@ func (h *Handler) handleInput(ctx context.Context, env *events.Envelope) error {
 
 	// Control command: convert to AEP control event and dispatch.
 	if result := messaging.ParseControlCommand(content); result != nil {
+		data := events.ControlData{Action: result.Action}
+		if result.Arg != "" {
+			data.Details = map[string]any{"path": result.Arg}
+		}
 		ctrlEnv := &events.Envelope{
 			Version:   events.Version,
 			ID:        aep.NewID(),
@@ -105,7 +115,7 @@ func (h *Handler) handleInput(ctx context.Context, env *events.Envelope) error {
 			Seq:       h.hub.NextSeq(env.SessionID),
 			Event: events.Event{
 				Type: events.Control,
-				Data: events.ControlData{Action: result.Action},
+				Data: data,
 			},
 			OwnerID: env.OwnerID,
 		}
@@ -170,6 +180,17 @@ func (h *Handler) handleInput(ctx context.Context, env *events.Envelope) error {
 			_ = h.sendErrorf(ctx, env, events.ErrCodeInternalError, "worker input failed: %v", err)
 		} else {
 			h.log.Debug("gateway: input delivered to worker", "session_id", env.SessionID)
+			// Record user input to conversation store (best-effort).
+			if h.convStore != nil {
+				_ = h.convStore.Append(ctx, &session.ConversationRecord{
+					SessionID: env.SessionID,
+					Seq:       env.Seq,
+					Role:      session.RoleUser,
+					Content:   content,
+					Platform:  si.Platform,
+					UserID:    env.OwnerID,
+				})
+			}
 		}
 	} else {
 		h.log.Warn("gateway: handleInput no worker found", "session_id", env.SessionID)
@@ -284,6 +305,9 @@ func (h *Handler) handleControl(ctx context.Context, env *events.Envelope) error
 
 	case events.ControlActionGC:
 		return h.handleGC(ctx, env)
+
+	case events.ControlActionCD:
+		return h.handleCD(ctx, env)
 
 	default:
 		return h.sendErrorf(ctx, env, events.ErrCodeProtocolViolation, "unknown control action: %s", action)
@@ -428,6 +452,66 @@ func (h *Handler) handleGC(ctx context.Context, env *events.Envelope) error {
 	return nil
 }
 
+func (h *Handler) handleCD(ctx context.Context, env *events.Envelope) error {
+	// Extract path from control data.
+	var path string
+	switch d := env.Event.Data.(type) {
+	case events.ControlData:
+		if d.Details != nil {
+			path, _ = d.Details["path"].(string)
+		}
+	case map[string]any:
+		path, _ = d["path"].(string)
+	}
+
+	// /cd with no arg: return current workDir.
+	if path == "" {
+		si, err := h.sm.Get(env.SessionID)
+		if err != nil {
+			return h.sendErrorf(ctx, env, events.ErrCodeSessionNotFound, "session not found")
+		}
+		workDir := si.WorkDir
+		msgEnv := events.NewEnvelope(
+			aep.NewID(), env.SessionID, h.hub.NextSeq(env.SessionID),
+			events.Message, events.MessageData{Content: workDir},
+		)
+		return h.hub.SendToSession(ctx, msgEnv)
+	}
+
+	// Expand ~ and resolve to absolute path.
+	expanded, err := config.ExpandAndAbs(path)
+	if err != nil {
+		return h.sendErrorf(ctx, env, events.ErrCodeConfigInvalid, "invalid path: %v", err)
+	}
+	path = expanded
+
+	// Validate ownership.
+	if _, err := h.validateOwner(ctx, env); err != nil {
+		if errors.Is(err, session.ErrSessionNotFound) {
+			return h.sendErrorf(ctx, env, events.ErrCodeSessionNotFound, "session not found")
+		}
+		return h.sendErrorf(ctx, env, events.ErrCodeUnauthorized, "ownership required")
+	}
+
+	// Delegate to bridge.
+	if h.bridge == nil {
+		return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "cd not available")
+	}
+	result, err := h.bridge.SwitchWorkDir(ctx, env.SessionID, path)
+	if err != nil {
+		return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "切换失败：%v", err)
+	}
+
+	msg := fmt.Sprintf("已切换到 %s（新会话 %s）", result.WorkDir, result.NewSessionID)
+	msgEnv := events.NewEnvelope(
+		aep.NewID(), result.NewSessionID, h.hub.NextSeq(result.NewSessionID),
+		events.Message, events.MessageData{Content: msg},
+	)
+	_ = h.hub.SendToSession(ctx, msgEnv)
+
+	return nil
+}
+
 // ControlRequester is implemented by workers that support structured control queries.
 type ControlRequester interface {
 	SendControlRequest(ctx context.Context, subtype string, body map[string]any) (map[string]any, error)
@@ -488,10 +572,14 @@ func (h *Handler) handleWorkerCommand(ctx context.Context, env *events.Envelope)
 	}
 
 	switch cmd {
-	case events.StdioContextUsage:
+	case events.StdioContextUsage, events.StdioSkills:
 		resp, err := cr.SendControlRequest(ctx, "get_context_usage", nil)
 		if err != nil {
-			return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "context query: %v", err)
+			code := events.ErrCodeInternalError
+			if strings.Contains(err.Error(), "not running") || strings.Contains(err.Error(), "closed") {
+				code = events.ErrCodeSessionTerminated
+			}
+			return h.sendErrorf(ctx, env, code, "context query: %v", err)
 		}
 		data := events.MapContextUsageResponse(resp)
 		respEnv := events.NewEnvelope(
@@ -504,7 +592,11 @@ func (h *Handler) handleWorkerCommand(ctx context.Context, env *events.Envelope)
 	case events.StdioMCPStatus:
 		resp, err := cr.SendControlRequest(ctx, "mcp_status", nil)
 		if err != nil {
-			return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "mcp status: %v", err)
+			code := events.ErrCodeInternalError
+			if strings.Contains(err.Error(), "not running") || strings.Contains(err.Error(), "closed") {
+				code = events.ErrCodeSessionTerminated
+			}
+			return h.sendErrorf(ctx, env, code, "mcp status: %v", err)
 		}
 		data := events.MapMCPStatusResponse(resp)
 		respEnv := events.NewEnvelope(
@@ -524,7 +616,11 @@ func (h *Handler) handleWorkerCommand(ctx context.Context, env *events.Envelope)
 		}
 		_, err := cr.SendControlRequest(ctx, "set_model", map[string]any{"model": modelName})
 		if err != nil {
-			return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "set model: %v", err)
+			code := events.ErrCodeInternalError
+			if strings.Contains(err.Error(), "not running") || strings.Contains(err.Error(), "closed") {
+				code = events.ErrCodeSessionTerminated
+			}
+			return h.sendErrorf(ctx, env, code, "set model: %v", err)
 		}
 
 	case events.StdioSetPermMode:
@@ -537,7 +633,11 @@ func (h *Handler) handleWorkerCommand(ctx context.Context, env *events.Envelope)
 		}
 		_, err := cr.SendControlRequest(ctx, "set_permission_mode", map[string]any{"mode": mode})
 		if err != nil {
-			return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "set permission: %v", err)
+			code := events.ErrCodeInternalError
+			if strings.Contains(err.Error(), "not running") || strings.Contains(err.Error(), "closed") {
+				code = events.ErrCodeSessionTerminated
+			}
+			return h.sendErrorf(ctx, env, code, "set permission: %v", err)
 		}
 
 	default:
@@ -584,9 +684,10 @@ func (h *Handler) handlePassthroughCommand(ctx context.Context, env *events.Enve
 // SessionManager abstracts the session.Manager methods used by Bridge.
 // It allows Bridge to be tested without a real Manager instance.
 type SessionManager interface {
-	CreateWithBot(ctx context.Context, id, userID, botID string, wt worker.WorkerType, allowedTools []string, platform string, platformKey map[string]string) (*session.SessionInfo, error)
+	CreateWithBot(ctx context.Context, id, userID, botID string, wt worker.WorkerType, allowedTools []string, platform string, platformKey map[string]string, workDir, title string) (*session.SessionInfo, error)
 	AttachWorker(id string, w worker.Worker) error
 	DetachWorker(id string)
+	DetachWorkerIf(id string, expected worker.Worker) bool
 	Transition(ctx context.Context, id string, to events.SessionState) error
 	Get(id string) (*session.SessionInfo, error)
 	GetWorker(id string) worker.Worker

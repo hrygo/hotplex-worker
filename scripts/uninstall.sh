@@ -1,189 +1,102 @@
 #!/usr/bin/env bash
 #
-# HotPlex Worker Gateway - Uninstall Script
+# HotPlex Worker Gateway — Uninstaller
 #
-# This script completely removes HotPlex Worker Gateway from the system.
+# Removes the hotplex binary. Optionally purges config and data.
 #
 # Usage:
-#   sudo ./scripts/uninstall.sh
+#   sudo ./scripts/uninstall.sh [options]
 #
 # Options:
-#   --keep-data      Preserve data directory (database, backups)
-#   --keep-config    Preserve configuration directory
-#   --non-interactive Run without prompts
-#
+#   --prefix PATH     Installation prefix (default: /usr/local)
+#   --purge           Also remove config (~/.hotplex) and data
+#   --non-interactive Skip confirmation prompt
+#   --help            Show this help
 
 set -euo pipefail
 
-# Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
 NC='\033[0m'
 
-# Default paths
 PREFIX="/usr/local"
-CONFIG_DIR="/etc/hotplex"
-DATA_DIR="/var/lib/hotplex"
-LOG_DIR="/var/log/hotplex"
-
-# Options
-KEEP_DATA=false
-KEEP_CONFIG=false
+PURGE=false
 NON_INTERACTIVE=false
+USER_DIR="$HOME/.hotplex"
 
-log_info() {
-    echo -e "${GREEN}[INFO]${NC} $1"
+need_arg() {
+    [[ $# -lt 2 || "$2" == --* ]] && { echo -e "${RED}error: $1 requires an argument${NC}"; exit 1; }
 }
 
-log_warn() {
-    echo -e "${YELLOW}[WARN]${NC} $1"
-}
-
-log_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
-
-log_section() {
-    echo ""
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${BLUE}  $1${NC}"
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo ""
-}
-
-# Parse arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --keep-data)
-            KEEP_DATA=true
-            shift
-            ;;
-        --keep-config)
-            KEEP_CONFIG=true
-            shift
-            ;;
-        --non-interactive)
-            NON_INTERACTIVE=true
-            shift
-            ;;
-        --help)
-            sed -n '1,/^$/p' "$0" | sed '1d;$d'
-            exit 0
-            ;;
-        *)
-            echo -e "${RED}Unknown option: $1${NC}"
-            exit 1
-            ;;
+        --prefix)         need_arg "$@"; PREFIX="$2"; shift 2 ;;
+        --purge)          PURGE=true; shift ;;
+        --non-interactive) NON_INTERACTIVE=true; shift ;;
+        --help)           sed -n '2,/^$/p' "$0" | sed 's/^# //; /^$/d'; exit 0 ;;
+        *)                echo -e "${RED}Unknown option: $1${NC}"; exit 1 ;;
     esac
 done
 
-# Confirmation
+info()  { echo -e "${GREEN}[INFO]${NC} $1"; }
+warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
+
+# ── Confirm ──────────────────────────────────────────────────────────────────
+
 if [[ "$NON_INTERACTIVE" == false ]]; then
-    echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${RED}  ⚠️  WARNING: This will completely uninstall HotPlex Worker Gateway${NC}"
-    echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo ""
-    echo "The following will be removed:"
-    echo "  - Binary: $PREFIX/bin/hotplex"
-    [[ "$KEEP_CONFIG" == false ]] && echo "  - Config: $CONFIG_DIR"
-    [[ "$KEEP_DATA" == false ]] && echo "  - Data: $DATA_DIR"
-    [[ "$KEEP_DATA" == false ]] && echo "  - Logs: $LOG_DIR"
-    echo ""
-
-    read -r -p "Are you sure you want to continue? (y/n) " confirm
-    if [[ "$confirm" != "y" ]]; then
-        log_info "Uninstall cancelled"
-        exit 0
-    fi
-
-    # Final warning
-    read -r -p "This action cannot be undone. Type 'uninstall' to confirm: " final_confirm
-    if [[ "$final_confirm" != "uninstall" ]]; then
-        log_info "Uninstall cancelled"
-        exit 0
-    fi
+    echo -e "${RED}This will uninstall HotPlex Worker Gateway${NC}"
+    [[ "$PURGE" == true ]] && echo "  --purge: config and data will also be removed"
+    read -r -p "Continue? [y/N] " confirm
+    [[ "$confirm" != "y" && "$confirm" != "Y" ]] && exit 0
 fi
 
-log_section "Stopping Services"
+# ── Stop services ────────────────────────────────────────────────────────────
 
-# Stop systemd service
-if systemctl is-active --quiet hotplex 2>/dev/null; then
-    log_info "Stopping systemd service..."
+if [[ $EUID -eq 0 ]] && systemctl is-active --quiet hotplex 2>/dev/null; then
     systemctl stop hotplex
     systemctl disable hotplex
     rm -f /etc/systemd/system/hotplex.service
     systemctl daemon-reload
-    log_info "Systemd service stopped and disabled ✓"
+    info "Systemd service stopped and removed"
 fi
 
-# Stop Docker containers
-if command -v docker-compose &>/dev/null && [[ -f docker-compose.yml ]]; then
-    log_info "Stopping Docker containers..."
-    docker-compose down || true
-    log_info "Docker containers stopped ✓"
-fi
-
-log_section "Removing Files"
-
-# Remove binary
-if [[ -f "$PREFIX/bin/hotplex" ]]; then
-    rm -f "$PREFIX/bin/hotplex"
-    log_info "Binary removed: $PREFIX/bin/hotplex ✓"
-fi
-
-# Remove config directory
-if [[ "$KEEP_CONFIG" == false && -d "$CONFIG_DIR" ]]; then
-    rm -rf "$CONFIG_DIR"
-    log_info "Config directory removed: $CONFIG_DIR ✓"
-elif [[ "$KEEP_CONFIG" == true && -d "$CONFIG_DIR" ]]; then
-    log_warn "Keeping config directory: $CONFIG_DIR"
-fi
-
-# Remove data directory
-if [[ "$KEEP_DATA" == false && -d "$DATA_DIR" ]]; then
-    rm -rf "$DATA_DIR"
-    log_info "Data directory removed: $DATA_DIR ✓"
-elif [[ "$KEEP_DATA" == true && -d "$DATA_DIR" ]]; then
-    log_warn "Keeping data directory: $DATA_DIR"
-fi
-
-# Remove log directory
-if [[ "$KEEP_DATA" == false && -d "$LOG_DIR" ]]; then
-    rm -rf "$LOG_DIR"
-    log_info "Log directory removed: $LOG_DIR ✓"
-elif [[ "$KEEP_DATA" == true && -d "$LOG_DIR" ]]; then
-    log_warn "Keeping log directory: $LOG_DIR"
-fi
-
-# Remove hotplex user (if exists and not used by other processes)
-if id -u hotplex &>/dev/null; then
-    # Check if user is running any processes
-    if ! pgrep -u hotplex &>/dev/null; then
-        userdel hotplex 2>/dev/null || true
-        log_info "User 'hotplex' removed ✓"
-    else
-        log_warn "User 'hotplex' still has running processes, skipping removal"
+# Kill dev-mode gateway process and clean PID file
+if [[ -f "$USER_DIR/.pids/gateway.pid" ]]; then
+    pid=$(cat "$USER_DIR/.pids/gateway.pid" 2>/dev/null || true)
+    if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+        kill "$pid" 2>/dev/null || true
+        sleep 1
+        kill -9 "$pid" 2>/dev/null || true
+        info "Gateway process stopped (PID $pid)"
     fi
+    rm -f "$USER_DIR/.pids/gateway.pid"
 fi
 
-log_section "Uninstall Complete"
+# ── Remove binary ────────────────────────────────────────────────────────────
 
-cat <<EOF
-${GREEN}HotPlex Worker Gateway has been uninstalled.${NC}
+TARGET="$PREFIX/bin/hotplex"
+if [[ -f "$TARGET" ]]; then
+    rm -f "$TARGET"
+    info "Binary removed: $TARGET"
+else
+    warn "Binary not found: $TARGET"
+fi
 
-${BLUE}Summary:${NC}
-  - Binary: Removed
-  $([[ "$KEEP_CONFIG" == false ]] && echo "  - Config: Removed" || echo "  - Config: Preserved")
-  $([[ "$KEEP_DATA" == false ]] && echo "  - Data: Removed" || echo "  - Data: Preserved")
-  $([[ "$KEEP_DATA" == false ]] && echo "  - Logs: Removed" || echo "  - Logs: Preserved")
+# ── Remove systemd user ──────────────────────────────────────────────────────
 
-${YELLOW}Note:${NC}
-  - Docker images are preserved (run 'docker rmi hotplex:latest' to remove)
-  - Docker volumes are preserved (run 'docker volume rm hotplex-data' to remove)
+if [[ $EUID -eq 0 ]] && id -u hotplex &>/dev/null 2>/dev/null && ! pgrep -u hotplex &>/dev/null; then
+    userdel hotplex 2>/dev/null || true
+    info "System user 'hotplex' removed"
+fi
 
-${BLUE}Reinstallation:${NC}
-  To reinstall, run: ./scripts/install.sh
+# ── Purge config & data ──────────────────────────────────────────────────────
 
-EOF
+if [[ "$PURGE" == true && -d "$USER_DIR" ]]; then
+    rm -rf "$USER_DIR"
+    info "User directory removed: $USER_DIR"
+fi
+
+echo ""
+info "Uninstall complete."
+[[ "$PURGE" == false ]] && echo "  Config preserved in $USER_DIR (use --purge to remove)"

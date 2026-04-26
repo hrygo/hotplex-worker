@@ -90,8 +90,9 @@ type StreamingCardController struct {
 const streamingElementID = "streaming_content"
 
 // StreamTTL is the maximum duration a streaming card can remain active.
-// Matches the Slack NativeStreamingWriter TTL for consistency.
-const StreamTTL = 10 * time.Minute
+// Feishu server auto-closes streaming after 10 minutes; we rotate at 6 minutes
+// to proactively create a new card and avoid hitting the server limit.
+const StreamTTL = 6 * time.Minute
 
 func NewStreamingCardController(client *lark.Client, limiter *FeishuRateLimiter, log *slog.Logger) *StreamingCardController {
 	var p atomic.Int32
@@ -290,6 +291,23 @@ func (c *StreamingCardController) Flush(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// Expired reports whether the streaming session has exceeded its TTL.
+func (c *StreamingCardController) Expired() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.streamStartTime.IsZero() {
+		return false
+	}
+	return time.Since(c.streamStartTime) > StreamTTL
+}
+
+// MsgID returns the platform message ID of the streaming card.
+func (c *StreamingCardController) MsgID() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.msgID
 }
 
 func (c *StreamingCardController) Close(ctx context.Context) error {

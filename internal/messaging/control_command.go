@@ -12,44 +12,77 @@ import (
 type ControlCommandResult struct {
 	Action events.ControlAction
 	Label  string // e.g. "gc" or "reset"
+	Arg    string // optional argument, e.g. path for cd
 }
 
 // slashCommandMap maps slash-form strings to control actions.
 var slashCommandMap = map[string]ControlCommandResult{
 	// GC: reclaim process and resources, session preserved for resume.
-	"/gc":   {events.ControlActionGC, "gc"},
-	"/park": {events.ControlActionGC, "gc"},
+	"/gc":   {Action: events.ControlActionGC, Label: "gc"},
+	"/park": {Action: events.ControlActionGC, Label: "gc"},
 	// Reset: reuse session ID, everything else starts from scratch.
-	"/reset": {events.ControlActionReset, "reset"},
-	"/new":   {events.ControlActionReset, "reset"},
+	"/reset": {Action: events.ControlActionReset, Label: "reset"},
+	"/new":   {Action: events.ControlActionReset, Label: "reset"},
+	"/cd":    {Action: events.ControlActionCD, Label: "cd"},
 }
 
 // naturalLanguageMap maps normalized natural language triggers to control actions.
 // All keys require $ prefix to avoid accidental matches in normal conversation.
 var naturalLanguageMap = map[string]ControlCommandResult{
 	// GC: sleep, suspend — worker stopped but session alive for resume.
-	"$gc": {events.ControlActionGC, "gc"},
-	"$休眠": {events.ControlActionGC, "gc"},
-	"$挂起": {events.ControlActionGC, "gc"},
+	"$gc": {Action: events.ControlActionGC, Label: "gc"},
+	"$休眠": {Action: events.ControlActionGC, Label: "gc"},
+	"$挂起": {Action: events.ControlActionGC, Label: "gc"},
 	// Reset: start over — same session ID, fresh context.
-	"$重置":    {events.ControlActionReset, "reset"},
-	"$reset": {events.ControlActionReset, "reset"},
+	"$重置":    {Action: events.ControlActionReset, Label: "reset"},
+	"$reset": {Action: events.ControlActionReset, Label: "reset"},
 }
 
 // ParseControlCommand checks whether text is a control command.
 // Returns nil if the text is not a control command.
 // Matching: exact match after trim + lowercase + strip trailing punctuation.
+// Special case: /cd and $cd/$切换目录 accept a path argument.
 func ParseControlCommand(text string) *ControlCommandResult {
-	t := strings.TrimSpace(strings.ToLower(text))
-	t = trimTrailingPunct(t)
+	t := strings.TrimSpace(text)
+	tl := strings.ToLower(trimTrailingPunct(t))
 
-	if result, ok := slashCommandMap[t]; ok {
+	// cd commands: prefix match to extract path argument.
+	if arg, ok := parseCdCommand(t, tl); ok {
+		return &arg
+	}
+
+	if result, ok := slashCommandMap[tl]; ok {
 		return &result
 	}
-	if result, ok := naturalLanguageMap[t]; ok {
+	if result, ok := naturalLanguageMap[tl]; ok {
 		return &result
 	}
 	return nil
+}
+
+// cdPrefixes lists the slash and natural language triggers that accept a path argument.
+var cdPrefixes = []struct {
+	prefix string
+	isCase bool // true = case-sensitive match on original text
+}{
+	{"/cd ", false},
+	{"$cd ", false},
+	{"$切换目录 ", true},
+	{"$CD ", false},
+}
+
+func parseCdCommand(original, normalized string) (ControlCommandResult, bool) {
+	for _, p := range cdPrefixes {
+		src := normalized
+		if p.isCase {
+			src = original
+		}
+		if after, ok := strings.CutPrefix(src, p.prefix); ok {
+			arg := strings.TrimSpace(after)
+			return ControlCommandResult{Action: events.ControlActionCD, Label: "cd", Arg: arg}, true
+		}
+	}
+	return ControlCommandResult{}, false
 }
 
 func parseWorkerSlashCommands(text string) (base, args string) {
@@ -71,6 +104,7 @@ var workerSlashCommandsWithArgs = map[string]bool{
 // workerSlashMap maps slash-form strings to worker stdio commands.
 var workerSlashMap = map[string]events.WorkerStdioCommand{
 	"/context": events.StdioContextUsage,
+	"/skills":  events.StdioSkills,
 	"/mcp":     events.StdioMCPStatus,
 	"/model":   events.StdioSetModel,
 	"/perm":    events.StdioSetPermMode,
@@ -86,6 +120,8 @@ var workerSlashMap = map[string]events.WorkerStdioCommand{
 var workerNLMap = map[string]events.WorkerStdioCommand{
 	"$context": events.StdioContextUsage,
 	"$上下文":     events.StdioContextUsage,
+	"$skills":  events.StdioSkills,
+	"$技能":      events.StdioSkills,
 	"$mcp":     events.StdioMCPStatus,
 	"$model":   events.StdioSetModel,
 	"$切换模型":    events.StdioSetModel,
@@ -179,12 +215,14 @@ func HelpText() string {
 				Entries: []helpEntry{
 					{Commands: []string{"/gc", "/park"}, Desc: "休眠会话（停止 Worker，保留会话）"},
 					{Commands: []string{"/reset", "/new"}, Desc: "重置上下文（全新开始）"},
+					{Commands: []string{"/cd"}, Args: "<目录>", Desc: "切换工作目录（创建新会话）"},
 				},
 			},
 			{
 				Title: "信息与状态", Emoji: "📊",
 				Entries: []helpEntry{
 					{Commands: []string{"/context"}, Desc: "查看上下文窗口使用量"},
+					{Commands: []string{"/skills"}, Desc: "查看已加载的技能列表"},
 					{Commands: []string{"/mcp"}, Desc: "查看 MCP 服务器状态"},
 				},
 			},

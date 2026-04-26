@@ -2,7 +2,7 @@
 
 > HotPlex Worker Gateway is a WebSocket-based access layer for AI Coding Agent sessions, supporting Claude Code, and OpenCode Server adapters.
 >
-> **Version:** `v1.0.1` (Git SHA injected at build time)
+> **Version:** Git SHA injected at build time (see `hotplex version`)
 > **Binary:** `hotplex`
 > **Protocol:** AEP v1 (Agent Exchange Protocol)
 > **Runtime:** Go 1.26+
@@ -16,7 +16,7 @@
 3. [Installation & Build](#3-installation--build)
 4. [Configuration](#4-configuration)
 5. [Agent Config](#5-agent-config)
-6. [CLI Flags](#6-cli-flags)
+6. [CLI Commands](#6-cli-commands)
 7. [AEP WebSocket Protocol](#7-aep-websocket-protocol)
 8. [Admin API Reference](#8-admin-api-reference)
 9. [Session Lifecycle](#9-session-lifecycle)
@@ -64,32 +64,32 @@ Client (WebSocket) ──→ Gateway (AEP v1) ──→ Worker (Claude Code / Op
 ### 2.1 Run with Zero Config
 
 ```bash
-./bin/hotplex-darwin-arm64
+hotplex gateway start
 ```
 
-Binary starts with all defaults (`:8888` WebSocket, `:9999` Admin, `hotplex.db` SQLite).
+Binary starts with all defaults (`:8888` WebSocket, `:9999` Admin, `~/.hotplex/data/hotplex.db` SQLite).
 
 ### 2.2 Run with Config File
 
 ```bash
-./bin/hotplex-darwin-arm64 -config /etc/hotplex/config.yaml
+hotplex gateway start -c /etc/hotplex/config.yaml
 ```
 
 ### 2.3 Run in Dev Mode
 
 ```bash
-./bin/hotplex-darwin-arm64 -dev
+hotplex dev
 ```
 
-Dev mode relaxes security: any API key header value is accepted.
+Shortcut for `hotplex gateway start --dev`. Disables API key and admin token checks.
 
 ### 2.4 Docker
 
 ```bash
 docker run -p 8888:8888 -p 9999:9999 \
-  -v /path/to/config.yaml:/config.yaml \
+  -v /path/to/config.yaml:/root/.hotplex/config.yaml \
   -e HOTPLEX_JWT_SECRET=your-secret \
-  hotplex:latest
+  hotplex:latest gateway start
 ```
 
 ---
@@ -155,8 +155,8 @@ db:
 
 worker:
   max_lifetime: 24h
-  idle_timeout: 30m
-  execution_timeout: 10m
+  idle_timeout: 60m
+  execution_timeout: 30m
   env_whitelist:
     - HOME
     - PATH
@@ -253,7 +253,7 @@ Set `HOTPLEX_JWT_SECRET` for JWT authentication:
 
 ```bash
 export HOTPLEX_JWT_SECRET="your-es256-secret-key-base64"
-./hotplex -config config.yaml
+hotplex gateway start -c config.yaml
 ```
 
 ### 4.3 Config Defaults
@@ -267,17 +267,17 @@ All non-sensitive fields have production defaults. Binary runs with zero config.
 | `gateway.pong_timeout` | `60s` | |
 | `gateway.idle_timeout` | `5m` | |
 | `gateway.broadcast_queue_size` | `256` | |
-| `db.path` | `hotplex.db` | SQLite path |
+| `db.path` | `~/.hotplex/data/hotplex.db` | SQLite path |
 | `db.wal_mode` | `true` | |
 | `worker.max_lifetime` | `24h` | |
 | `worker.idle_timeout` | `60m` | |
-| `worker.execution_timeout` | `10m` | |
+| `worker.execution_timeout` | `30m` | |
 | `security.api_key_header` | `X-API-Key` | |
 | `security.tls_enabled` | `false` | |
 | `session.retention_period` | `7d` | |
 | `session.gc_scan_interval` | `1m` | |
 | `pool.max_size` | `100` | |
-| `pool.max_memory_per_user` | `2GB` | |
+| `pool.max_memory_per_user` | `3GB` | |
 | `admin.enabled` | `true` | |
 | `admin.addr` | `:9999` | |
 | `admin.rate_limit_enabled` | `true` | |
@@ -360,8 +360,8 @@ Platform variants (e.g. `SOUL.slack.md`) are automatically appended to the base 
 
 ### 5.4 Size Limits
 
-- Per file: 12,000 chars
-- Total across all files: 60,000 chars
+- Per file: 8,000 chars
+- Total across all files: 40,000 chars
 - YAML frontmatter is automatically stripped
 
 ### 5.5 Worker Injection
@@ -376,18 +376,36 @@ Platform variants (e.g. `SOUL.slack.md`) are automatically appended to the base 
 
 ---
 
-## 6. CLI Flags
+## 6. CLI Commands
+
+HotPlex uses cobra subcommands. Run `hotplex --help` to see all available commands.
 
 ```bash
-./hotplex [flags]
+hotplex [command]
 ```
+
+| Command | Description |
+|---------|-------------|
+| `gateway start` | Start the gateway server |
+| `gateway stop` | Stop the gateway server |
+| `gateway restart` | Restart the gateway server |
+| `dev` | Quick start in development mode (gateway + webchat) |
+| `version` | Print version info |
+| `doctor` | Run diagnostic checks |
+| `status` | Check gateway status |
+| `config validate` | Validate config file |
+| `config dump` | Dump resolved config |
+| `security` | Security validation commands |
+| `onboard` | Interactive setup wizard |
+
+### Common Flags
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `-config` | string | `""` | Path to YAML/JSON/TOML config file |
-| `-dev` | bool | `false` | Enable dev mode (relaxed security, any API key accepted) |
+| `-c, --config` | string | `~/.hotplex/config.yaml` | Path to YAML/JSON/TOML config file |
+| `--dev` | bool | `false` | Enable dev mode (disables API key and admin token checks) |
 
-No `-version` or `-help` flag is defined (falls through to standard `flag` package usage output).
+`--dev` is available on `gateway start` and `gateway restart` subcommands.
 
 ---
 
@@ -747,8 +765,8 @@ GC (after 7d)   → deleted
 When the AI provider returns temporary errors (429 rate limit, 529 overload, network issues, 5xx errors), the gateway automatically retries with exponential backoff — no manual "继续" needed.
 
 - **Enabled by default** — configurable via `worker.auto_retry.enabled`
-- **Max 3 retries** — configurable via `worker.auto_retry.max_retries`
-- **Backoff**: 5s → 10s → 20s (with ±25% jitter, cap at 120s)
+- **Max 9 retries** — configurable via `worker.auto_retry.max_retries`
+- **Backoff**: 5s base, doubles per attempt (with ±25% jitter, cap at 120s)
 - **User interrupt**: Sending a new message cancels pending retry immediately
 - **Notifications**: User sees `🔄 遇到临时错误，正在自动重试...` during retry
 
@@ -779,9 +797,9 @@ var AllowedCommands = map[string]bool{
 
 ### 10.3 Environment Variable Isolation
 
-- **Protected vars** (cannot be set by Worker): `HOME`, `PATH`, `GOPATH`, `GOROOT`, `CLAUDECODE`, `GATEWAY_ADDR`, `GATEWAY_TOKEN`
-- **Sensitive prefixes** (auto-redacted in logs): `AWS_`, `AZURE_`, `GITHUB_`, `ANTHROPIC_`, `OPENAI_`, `SECRET`, `PASSWORD`
-- **Nested agent prevention**: `CLAUDECODE=` env var is stripped from worker env to prevent nested sessions
+- **Protected vars** (cannot be set by Worker): `CLAUDECODE`, `GATEWAY_ADDR`, `GATEWAY_TOKEN`
+- **Sensitive prefixes** (auto-redacted in logs): `AWS_`, `AZURE_`, `GITHUB_`, `GH_TOKEN`, `STRIPE_`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`, `GEMINI_API_KEY`, `SLACK_`, `SENTRY_`, `DATADOG_`, `NETLIFY_`, `VERCEL_`, `HEROKU_`, `CLOUDFLARE_`, `VAULT_`, `NPM_TOKEN`, and regex patterns for `*key`, `*secret`, `*token`, `*password`, `*cred` suffixes
+- **Nested agent prevention**: `CLAUDECODE=` env var is stripped from worker env to prevent nested sessions; `GATEWAY_ADDR` and `GATEWAY_TOKEN` are also stripped
 
 ### 10.4 SSRF Protection
 
@@ -843,7 +861,7 @@ Tracing is disabled by default. Enable via OTEL environment variables:
 
 ```bash
 export OTEL_EXPORTER_OTLP_ENDPOINT="http://collector:4317"
-./hotplex
+hotplex gateway start
 ```
 
 ### 11.4 Health Checks
@@ -897,7 +915,7 @@ Set `HOTPLEX_JWT_SECRET` environment variable:
 
 ```bash
 export HOTPLEX_JWT_SECRET="your-256-bit-secret"
-./hotplex
+hotplex gateway start
 ```
 
 **Error: `config: read "config.yaml": no such file or directory`**
@@ -905,7 +923,7 @@ export HOTPLEX_JWT_SECRET="your-256-bit-secret"
 Verify config file path. Use absolute path:
 
 ```bash
-./hotplex -config /absolute/path/to/config.yaml
+hotplex gateway start -c /absolute/path/to/config.yaml
 ```
 
 **Error: `TLS is disabled on non-local address`**

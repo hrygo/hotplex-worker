@@ -15,7 +15,7 @@ mvn clean compile
 mvn exec:java -Dexec.mainClass="dev.hotplex.example.QuickStart"
 
 # 或者直接运行打包好的 JAR
-java -jar target/hotplex-client-1.1.0-SNAPSHOT.jar
+java -jar target/hotplex-client-${version}-SNAPSHOT.jar
 ```
 
 ## 主要功能
@@ -178,7 +178,7 @@ public String generateToken(String subject, List<String> scopes, long ttlSeconds
 $ mvn clean package -DskipTests
 [INFO] BUILD SUCCESS
 [INFO] Total time:  4.427 s
-[INFO] Building jar: target/hotplex-client-1.1.0-SNAPSHOT.jar
+[INFO] Building jar: target/hotplex-client-${version}-SNAPSHOT.jar
 ```
 
 ## 下一步

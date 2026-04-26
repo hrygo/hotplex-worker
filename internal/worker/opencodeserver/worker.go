@@ -5,22 +5,23 @@
 // communicates via HTTP REST API for commands and Server-Sent Events (SSE) for
 // streaming responses.
 //
-// # Architecture Overview
+// # Architecture
 //
 //	Gateway (main process)
-//	    ↓ starts subprocess
-//	OpenCode Server Worker (this adapter)
-//	    ↓ manages lifecycle
-//	OpenCode Server Process (independent HTTP server on port 18789)
-//	    ↕ HTTP POST /sessions + GET /events (SSE)
+//	    ↓ creates Worker instances (one per session)
+//	OpenCode Server Worker (this adapter, thin session adapter)
+//	    ↓ shares SingletonProcessManager (one process for all sessions)
+//	OpenCode Server Process (independent HTTP server, lazy-started)
+//	    ↕ HTTP REST API + SSE
 //	Worker ↔ Server communication
 //
 // # Key Features
 //
 //   - Resume Support: Can reconnect to existing server sessions
-//   - Multi-session: Server process handles multiple sessions concurrently
+//   - Multi-session: Shared singleton server process handles all sessions
 //   - SSE Streaming: Real-time event stream via text/event-stream
 //   - Process Isolation: PGID-based process group for clean termination
+//   - Lazy Startup: Server process starts on first session, stops after idle drain
 //
 // # Protocol
 //
@@ -31,6 +32,7 @@ package opencodeserver
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -45,7 +47,6 @@ import (
 
 	"github.com/hrygo/hotplex/internal/worker"
 	"github.com/hrygo/hotplex/internal/worker/base"
-	"github.com/hrygo/hotplex/internal/worker/proc"
 	"github.com/hrygo/hotplex/pkg/aep"
 	"github.com/hrygo/hotplex/pkg/events"
 )
@@ -75,21 +76,8 @@ var openCodeSrvEnvWhitelist = []string{
 }
 
 const (
-	// defaultServePort is the default port for opencode serve HTTP server.
-	// Port 18789 is chosen to avoid conflicts with common development ports.
-	defaultServePort = 18789
-
 	// recvChannelSize is the buffer size for SSE event channel.
-	// This provides backpressure handling: when full, new events are silently dropped
-	// to prevent blocking the SSE reader goroutine.
 	recvChannelSize = 256
-
-	// serverReadyTimeout is the maximum time to wait for server startup.
-	// OpenCode Server typically starts within 1-2 seconds.
-	serverReadyTimeout = 10 * time.Second
-
-	// serverReadyPollInterval is the interval between health check polls.
-	serverReadyPollInterval = 100 * time.Millisecond
 
 	// httpClientTimeout is the timeout for HTTP client operations.
 	httpClientTimeout = 30 * time.Second
@@ -97,20 +85,16 @@ const (
 
 // Worker implements the OpenCode Server worker adapter.
 //
-// # Design Philosophy
-//
-// Unlike CLI-based workers that communicate via stdin/stdout, this adapter manages
-// a persistent HTTP server process (opencode serve). The server runs independently
-// and can handle multiple sessions concurrently.
+// Each Worker instance is a thin session adapter that does NOT own a process.
+// All Workers share a SingletonProcessManager that manages one `opencode serve`
+// process lazily started on first use.
 //
 // # Lifecycle
 //
-//  1. Start() launches `opencode serve` process
-//  2. waitForServer() polls /health until ready
-//  3. createSession() creates a new session via HTTP API
-//  4. readSSE() goroutine subscribes to SSE event stream
-//  5. Input() sends user messages via HTTP POST
-//  6. Terminate() gracefully shuts down (SIGTERM → 5s → SIGKILL)
+//  1. Start() acquires a ref from singleton, creates HTTP session, starts SSE reader
+//  2. Input() sends user messages via HTTP POST
+//  3. Terminate()/Kill() releases the ref and closes the SSE connection (not the process)
+//  4. Wait() reports exit code based on crash notification from singleton
 //
 // # Concurrency Model
 //
@@ -118,24 +102,21 @@ const (
 //   - Thread-safe: All public methods are safe for concurrent use
 //   - Goroutines: readSSE runs in separate goroutine, writes to recvCh
 //   - Backpressure: recvCh has 256 buffer, drops messages when full
-//
-// # Memory Safety
-//
-//   - No shared mutable state between goroutines except httpConn
-//   - httpConn protected by embedded BaseWorker.Mu
-//   - SSE reader goroutine exits when context cancelled or connection closes
 type Worker struct {
 	*base.BaseWorker
 
-	httpConn *conn
-	port     int
-	httpAddr string
-	client   *http.Client
-	cmd      *ServerCommander
+	singleton *SingletonProcessManager
+	httpConn  *conn
+	httpAddr  string
+	client    *http.Client
+	cmd       *ServerCommander
+	crashSub  <-chan struct{} // closed when singleton process crashes
+
+	// releaseOnce ensures singleton.Release() is called exactly once,
+	// regardless of which method triggers it (Terminate, Kill, or Wait).
+	releaseOnce sync.Once
 
 	// workerSessionID atomically stores the worker-internal session ID.
-	// This serves as a fallback when httpConn is not yet initialized,
-	// ensuring SetWorkerSessionID is never a silent no-op.
 	workerSessionID atomic.Value // string
 }
 
@@ -161,11 +142,10 @@ func (w *Worker) SetWorkerSessionID(id string) {
 }
 
 // New creates a new OpenCode Server worker instance.
-//
-// The worker is initialized but not started. Call Start() to launch the server.
 func New() *Worker {
 	return &Worker{
 		BaseWorker: base.NewBaseWorker(slog.Default(), nil),
+		singleton:  defaultSingleton,
 		client:     newHTTPClient(),
 	}
 }
@@ -183,112 +163,55 @@ func newHTTPClient() *http.Client {
 
 // ─── Capabilities ─────────────────────────────────────────────────────────────
 
-// Type returns the worker type identifier.
 func (w *Worker) Type() worker.WorkerType { return worker.TypeOpenCodeSrv }
-
-// SupportsResume indicates that OpenCode Server supports session resumption.
-// The server process stays alive between sessions, allowing reconnection.
-func (w *Worker) SupportsResume() bool { return true }
-
-// SupportsStreaming indicates that this worker supports real-time streaming via SSE.
+func (w *Worker) SupportsResume() bool    { return true }
 func (w *Worker) SupportsStreaming() bool { return true }
-
-// SupportsTools indicates that this worker can execute tool commands.
-func (w *Worker) SupportsTools() bool { return true }
-
-// EnvWhitelist returns the list of environment variables allowed to pass through.
-func (w *Worker) EnvWhitelist() []string { return openCodeSrvEnvWhitelist }
-
-// SessionStoreDir returns empty string as server doesn't use local session storage.
-// Session state is managed in-memory by the server process.
+func (w *Worker) SupportsTools() bool     { return true }
+func (w *Worker) EnvWhitelist() []string  { return openCodeSrvEnvWhitelist }
 func (w *Worker) SessionStoreDir() string { return "" }
-
-// MaxTurns returns 0 (unlimited) as turn limits are managed by the server.
-func (w *Worker) MaxTurns() int { return 0 }
-
-// Modalities returns the supported content modalities.
-func (w *Worker) Modalities() []string { return []string{"text", "code"} }
+func (w *Worker) MaxTurns() int           { return 0 }
+func (w *Worker) Modalities() []string    { return []string{"text", "code"} }
 
 // ─── Worker Lifecycle ─────────────────────────────────────────────────────────
 
-// Start launches the OpenCode Server process and creates a new session.
-//
-// # Startup Sequence
-//
-//  1. Start `opencode serve --port 18789` subprocess with PGID isolation
-//  2. Poll /health endpoint until server responds (timeout: 10s)
-//  3. POST /sessions to create new session → get session_id
-//  4. Initialize HTTP connection with 256-buffer recvCh for backpressure
-//  5. Launch readSSE goroutine to subscribe to event stream
-//
-// # Error Handling
-//
-//   - If server fails to start: kill process, clean up, return error
-//   - If health check times out: kill process, clean up, return error
-//   - If session creation fails: kill process, clean up, return error
-//
-// # Process Isolation
-//
-// Uses PGID (Process Group ID) for clean termination.
-// Ensures all child processes are terminated on shutdown.
-// See internal/worker/proc for termination protocol (SIGTERM → 5s → SIGKILL).
-//
-// # Concurrency
-//
-//   - Sets httpConn under lock to prevent race with Conn()
-//   - readSSE goroutine reads SSE and writes to recvCh
-//   - Backpressure: recvCh buffer 256, drops messages when full (non-blocking send)
+// Start acquires the singleton server, creates a new HTTP session, and starts
+// the SSE reader goroutine.
 func (w *Worker) Start(ctx context.Context, session worker.SessionInfo) error {
-	// Early validation: prevent double-start
+	if w.singleton == nil {
+		return fmt.Errorf("opencodeserver: singleton not initialized (call InitSingleton first)")
+	}
+
+	// Prevent double-start
 	w.Mu.Lock()
-	if w.Proc != nil {
+	if w.httpConn != nil {
 		w.Mu.Unlock()
 		return fmt.Errorf("opencodeserver: already started")
 	}
 	w.Mu.Unlock()
 
-	// Launch opencode serve subprocess
-	if err := w.startServerProcess(ctx, session); err != nil {
-		return err
+	// Acquire ref from singleton (starts process if first session)
+	httpAddr, client, crashSub, err := w.singleton.Acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("opencodeserver: acquire server: %w", err)
 	}
+	w.httpAddr = httpAddr
+	w.client = client
+	w.crashSub = crashSub
 
 	// Create new session via HTTP API
 	sessionID, err := w.createSession(ctx, session.ProjectDir)
 	if err != nil {
-		w.terminateProcess()
+		w.releaseOnce.Do(func() { w.singleton.Release() })
 		return fmt.Errorf("opencodeserver: create session: %w", err)
 	}
 
-	// Initialize HTTP connection with buffered channel for backpressure
-	w.initHTTPConn(session.UserID, sessionID, session.SystemPrompt)
+	w.initSessionConn(ctx, sessionID, session)
 
-	w.cmd = &ServerCommander{
-		client:    w.client,
-		baseURL:   w.httpAddr,
-		sessionID: sessionID,
-	}
-
-	// Record startup time
-	w.Mu.Lock()
-	w.StartTime = time.Now()
-	w.SetLastIO(w.StartTime)
-	w.Mu.Unlock()
-
-	// Start SSE reader goroutine (reads from server, writes to recvCh)
 	go w.readSSE(sessionID)
-
 	return nil
 }
 
 // Input sends a user message to the OpenCode server.
-//
-// This method constructs an AEP envelope containing the input data and sends it
-// via the HTTP connection. The server processes the input asynchronously and
-// sends responses via the SSE event stream.
-//
-// # Thread Safety
-//
-// Safe to call concurrently. Takes lock to access httpConn.
 func (w *Worker) Input(ctx context.Context, content string, metadata map[string]any) error {
 	w.Mu.Lock()
 	conn := w.httpConn
@@ -298,7 +221,6 @@ func (w *Worker) Input(ctx context.Context, content string, metadata map[string]
 		return fmt.Errorf("opencodeserver: worker not started")
 	}
 
-	// Route interaction responses to OpenCode REST API endpoints.
 	if metadata != nil {
 		if permResp, ok := metadata["permission_response"].(map[string]any); ok {
 			reqID, _ := permResp["request_id"].(string)
@@ -318,11 +240,10 @@ func (w *Worker) Input(ctx context.Context, content string, metadata map[string]
 		}
 	}
 
-	// Construct AEP envelope with input event
 	msg := events.NewEnvelope(
 		aep.NewID(),
 		conn.sessionID,
-		0, // seq will be set by gateway
+		0,
 		events.Input,
 		events.InputData{
 			Content:  content,
@@ -330,79 +251,99 @@ func (w *Worker) Input(ctx context.Context, content string, metadata map[string]
 		},
 	)
 
-	// Send via HTTP connection (POST /sessions/{id}/input)
 	if err := conn.Send(ctx, msg); err != nil {
 		return fmt.Errorf("opencodeserver: send input: %w", err)
 	}
 
-	// Update last I/O timestamp for health monitoring
 	w.SetLastIO(time.Now())
-
 	return nil
 }
 
-// Resume reconnects to an existing session on the OpenCode server.
-//
-// Unlike CLI workers that cannot resume, OpenCode Server maintains session state
-// in-memory, allowing reconnection if the gateway restarts.
-//
-// # Resume Sequence
-//
-//  1. Start `opencode serve` process (same as Start)
-//  2. Wait for server health check
-//  3. Reuse existing sessionID (from session parameter)
-//  4. Reconnect to SSE event stream
-//
-// # Limitations
-//
-//   - Server must have session in memory (restart loses sessions)
-//   - Project directory must match original session
-//   - No session migration between server instances
-//
-// # Thread Safety
-//
-// Safe to call concurrently. Takes lock to prevent double-resume.
+// Resume reconnects to an existing session on the shared OpenCode server.
 func (w *Worker) Resume(ctx context.Context, session worker.SessionInfo) error {
-	// Early validation: prevent double-resume
+	if w.singleton == nil {
+		return fmt.Errorf("opencodeserver: singleton not initialized (call InitSingleton first)")
+	}
+
 	w.Mu.Lock()
-	if w.Proc != nil {
+	if w.httpConn != nil {
 		w.Mu.Unlock()
 		return fmt.Errorf("opencodeserver: already started")
 	}
 	w.Mu.Unlock()
 
-	// Start server process (same as Start)
-	if err := w.startServerProcess(ctx, session); err != nil {
-		return err
+	httpAddr, client, crashSub, err := w.singleton.Acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("opencodeserver: acquire server: %w", err)
 	}
+	w.httpAddr = httpAddr
+	w.client = client
+	w.crashSub = crashSub
 
-	// Reuse existing session ID (session.SessionID provided by caller)
-	w.initHTTPConn(session.UserID, session.SessionID, session.SystemPrompt)
+	w.initSessionConn(ctx, session.SessionID, session)
 
-	w.cmd = &ServerCommander{
-		client:    w.client,
-		baseURL:   w.httpAddr,
-		sessionID: session.SessionID,
-	}
-
-	// Record resume time
-	w.Mu.Lock()
-	w.StartTime = time.Now()
-	w.SetLastIO(w.StartTime)
-	w.Mu.Unlock()
-
-	// Reconnect to SSE stream for existing session
 	go w.readSSE(session.SessionID)
-
 	return nil
 }
 
-// Conn returns the HTTP-based session connection for sending/receiving events.
-//
-// # Thread Safety
-//
-// Safe to call concurrently. Takes lock to access httpConn.
-// Returns nil if worker hasn't started yet.
+// Terminate closes the SSE connection and releases the singleton ref.
+// Does NOT kill the shared server process.
+func (w *Worker) Terminate(_ context.Context) error {
+	w.releaseOnce.Do(func() {
+		if w.singleton != nil {
+			w.singleton.Release()
+		}
+	})
+
+	w.Mu.Lock()
+	conn := w.httpConn
+	w.httpConn = nil
+	w.Mu.Unlock()
+
+	if conn != nil {
+		_ = conn.Close()
+	}
+	return nil
+}
+
+// Kill closes the SSE connection and releases the singleton ref.
+// Does NOT kill the shared server process.
+func (w *Worker) Kill() error {
+	w.releaseOnce.Do(func() {
+		if w.singleton != nil {
+			w.singleton.Release()
+		}
+	})
+
+	w.Mu.Lock()
+	conn := w.httpConn
+	w.httpConn = nil
+	w.Mu.Unlock()
+
+	if conn != nil {
+		_ = conn.Close()
+	}
+	return nil
+}
+
+// Wait reports exit code based on whether the singleton process crashed.
+// 0 = normal session end, 1 = process crashed.
+func (w *Worker) Wait() (int, error) {
+	if w.singleton == nil {
+		return 0, fmt.Errorf("opencodeserver: not started")
+	}
+
+	w.releaseOnce.Do(func() { w.singleton.Release() })
+
+	select {
+	case <-w.crashSub:
+		return 1, nil // process crashed
+	default:
+		return 0, nil // normal session end
+	}
+}
+
+// Conn returns the HTTP-based session connection.
 func (w *Worker) Conn() worker.SessionConn {
 	w.Mu.Lock()
 	defer w.Mu.Unlock()
@@ -410,33 +351,29 @@ func (w *Worker) Conn() worker.SessionConn {
 }
 
 // Health returns a snapshot of the worker's runtime health.
-//
-// Extends base.Health with HTTP-connection-specific information (session ID).
-//
-// # Thread Safety
-//
-// Safe to call concurrently.
 func (w *Worker) Health() worker.WorkerHealth {
-	health := w.BaseWorker.Health(worker.TypeOpenCodeSrv)
+	health := worker.WorkerHealth{
+		Type:    worker.TypeOpenCodeSrv,
+		Healthy: true,
+	}
+	if w.singleton != nil {
+		health.Running = w.singleton.IsRunning()
+		health.Healthy = w.singleton.IsRunning()
+	}
 
 	w.Mu.Lock()
 	if w.httpConn != nil {
 		health.SessionID = w.httpConn.sessionID
+	}
+	if !w.StartTime.IsZero() {
+		health.Uptime = time.Since(w.StartTime).Round(time.Second).String()
 	}
 	w.Mu.Unlock()
 
 	return health
 }
 
-// LastIO returns the time of last I/O activity, or zero time if never started.
-//
-// LastIO is updated on:
-//   - Successful input send
-//   - SSE event received (even if dropped due to backpressure)
-//
-// # Thread Safety
-//
-// Safe to call concurrently.
+// LastIO returns the time of last I/O activity.
 func (w *Worker) LastIO() time.Time {
 	w.Mu.Lock()
 	started := w.httpConn != nil
@@ -448,9 +385,6 @@ func (w *Worker) LastIO() time.Time {
 }
 
 // ResetContext clears the worker runtime context in-place via HTTP API.
-// OpenCode Server supports in-place context clearing, so we send a reset request
-// without terminating the server process. The Gateway layer has already called
-// sm.ClearContext() to clear SessionInfo.Context.
 func (w *Worker) ResetContext(ctx context.Context) error {
 	w.Mu.Lock()
 	sessionID := ""
@@ -483,8 +417,7 @@ func (w *Worker) ResetContext(ctx context.Context) error {
 	return nil
 }
 
-// InPlaceReset indicates that OpenCode Server resets context in-place via HTTP
-// without replacing the Conn or restarting the process.
+// InPlaceReset indicates context reset is in-place via HTTP, no process restart.
 func (w *Worker) InPlaceReset() bool { return true }
 
 func (w *Worker) SendControlRequest(ctx context.Context, subtype string, body map[string]any) (map[string]any, error) {
@@ -517,92 +450,21 @@ func (w *Worker) Rewind(ctx context.Context, targetID string) error {
 
 // ─── Internal Methods ─────────────────────────────────────────────────────────
 
-// startServerProcess launches the opencode serve subprocess.
-func (w *Worker) startServerProcess(ctx context.Context, session worker.SessionInfo) error {
-	// Build command arguments
-	args := []string{
-		"serve",
-		"--port", fmt.Sprintf("%d", defaultServePort),
-		"--dangerously-skip-permissions",
+func (w *Worker) applyPermissions(ctx context.Context, _ worker.SessionInfo) error {
+	w.Mu.Lock()
+	cmd := w.cmd
+	w.Mu.Unlock()
+
+	if cmd == nil {
+		return fmt.Errorf("commander not initialized")
 	}
 
-	// Build environment using shared base.BuildEnv
-	env := base.BuildEnv(session, openCodeSrvEnvWhitelist, "opencode-server")
-
-	// Create process manager
-	w.Proc = proc.New(proc.Opts{
-		Logger:       w.Log,
-		AllowedTools: session.AllowedTools,
+	_, err := cmd.SendControlRequest(ctx, "set_permission_mode", map[string]any{
+		"mode": "bypassPermissions",
 	})
-	w.Proc.SetPIDKey(session.SessionID)
-
-	// Start the opencode serve process
-	bgCtx := context.Background()
-	_, _, _, err := w.Proc.Start(bgCtx, "opencode", args, env, session.ProjectDir)
-	if err != nil {
-		w.Mu.Lock()
-		w.Proc = nil
-		w.Mu.Unlock()
-		return fmt.Errorf("opencodeserver: start process: %w", err)
-	}
-
-	// Configure server address
-	w.port = defaultServePort
-	w.httpAddr = fmt.Sprintf("http://localhost:%d", w.port)
-
-	// Wait for server to be ready
-	if err := w.waitForServer(ctx); err != nil {
-		w.terminateProcess()
-		return fmt.Errorf("opencodeserver: wait for server: %w", err)
-	}
-
-	return nil
+	return err
 }
 
-// waitForServer polls the /health endpoint until the server is ready.
-func (w *Worker) waitForServer(ctx context.Context) error {
-	ticker := time.NewTicker(serverReadyPollInterval)
-	defer ticker.Stop()
-
-	timeout := time.After(serverReadyTimeout)
-
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-timeout:
-			return fmt.Errorf("timeout waiting for server after %v", serverReadyTimeout)
-		case <-ticker.C:
-			// Poll /health endpoint
-			req, err := http.NewRequestWithContext(ctx, "GET", w.httpAddr+"/health", http.NoBody)
-			if err != nil {
-				continue // Retry on request creation error
-			}
-
-			resp, err := w.client.Do(req)
-			if err != nil {
-				continue // Retry on connection error
-			}
-			_ = resp.Body.Close()
-
-			if resp.StatusCode == http.StatusOK {
-				return nil // Server is ready
-			}
-		}
-	}
-}
-
-// terminateProcess gracefully terminates the server process.
-func (w *Worker) terminateProcess() {
-	if w.Proc != nil {
-		_ = w.Proc.Kill()
-		w.Mu.Lock()
-		w.Proc = nil
-		w.Mu.Unlock()
-	}
-}
-
-// createSession creates a new session via HTTP API.
 func (w *Worker) createSession(ctx context.Context, projectDir string) (string, error) {
 	reqBody := strings.NewReader(fmt.Sprintf(`{"project_dir": %q}`, projectDir))
 	req, err := http.NewRequestWithContext(ctx, "POST", w.httpAddr+"/session", reqBody)
@@ -632,7 +494,6 @@ func (w *Worker) createSession(ctx context.Context, projectDir string) (string, 
 	return result.ID, nil
 }
 
-// initHTTPConn creates and assigns the HTTP connection for a session.
 func (w *Worker) initHTTPConn(userID, sessionID, systemPrompt string) {
 	w.httpConn = &conn{
 		userID:       userID,
@@ -645,27 +506,23 @@ func (w *Worker) initHTTPConn(userID, sessionID, systemPrompt string) {
 	}
 }
 
-// readSSE subscribes to the Server-Sent Events stream for a session.
-//
-// This method runs in a goroutine and reads SSE events from the server.
-// Events are decoded from AEP format and forwarded to recvCh.
-//
-// # Backpressure Handling
-//
-// When recvCh is full (256 buffer), new events are silently dropped.
-// This prevents blocking the SSE reader and allows the system to degrade
-// gracefully under load.
-//
-// # Goroutine Lifecycle
-//
-//   - Started by Start() and Resume()
-//   - Exits on: HTTP response error, non-200 status, EOF, or conn closed
-//   - Does NOT close recvCh — conn.Close() is responsible for cleanup (uses sync.Once)
-func (w *Worker) readSSE(sessionID string) {
-	// Note: recvCh is closed by conn.Close(), not here, to avoid double-close.
-	// conn.Close uses sync.Once for thread-safe idempotent cleanup.
+func (w *Worker) initSessionConn(ctx context.Context, serverSessionID string, session worker.SessionInfo) {
+	w.initHTTPConn(session.UserID, serverSessionID, session.SystemPrompt)
+	w.cmd = &ServerCommander{
+		client:    w.client,
+		baseURL:   w.httpAddr,
+		sessionID: serverSessionID,
+	}
+	if err := w.applyPermissions(ctx, session); err != nil {
+		w.Log.Warn("opencodeserver: failed to set permissions", "error", err)
+	}
+	w.Mu.Lock()
+	w.StartTime = time.Now()
+	w.SetLastIO(w.StartTime)
+	w.Mu.Unlock()
+}
 
-	// Build SSE URL
+func (w *Worker) readSSE(sessionID string) {
 	url := fmt.Sprintf("%s/events?session_id=%s", w.httpAddr, sessionID)
 	req, err := http.NewRequest("GET", url, http.NoBody)
 	if err != nil {
@@ -675,7 +532,6 @@ func (w *Worker) readSSE(sessionID string) {
 	req.Header.Set("Accept", "text/event-stream")
 	req.Header.Set("Cache-Control", "no-cache")
 
-	// Connect to SSE endpoint
 	resp, err := w.client.Do(req)
 	if err != nil {
 		w.Log.Error("opencodeserver: SSE connect", "error", err)
@@ -691,7 +547,6 @@ func (w *Worker) readSSE(sessionID string) {
 		return
 	}
 
-	// Read SSE stream line by line
 	reader := bufio.NewReader(resp.Body)
 	for {
 		line, err := reader.ReadString('\n')
@@ -706,19 +561,16 @@ func (w *Worker) readSSE(sessionID string) {
 
 		line = strings.TrimSpace(line)
 		if line == "" {
-			continue // Skip empty lines
+			continue
 		}
 
-		// Parse SSE format: "data: {json}"
 		if !strings.HasPrefix(line, "data: ") {
-			continue // Skip non-data lines (e.g., event type, id)
+			continue
 		}
 		data := strings.TrimPrefix(line, "data: ")
 
-		// Decode AEP envelope
 		env, err := aep.DecodeLine([]byte(data))
 		if err != nil {
-			// Not AEP — try parsing as OpenCode bus event
 			var busEvent struct {
 				Type       string          `json:"type"`
 				Properties json.RawMessage `json:"properties"`
@@ -734,19 +586,13 @@ func (w *Worker) readSSE(sessionID string) {
 				}
 				continue
 			}
-			w.Log.Warn("opencodeserver: decode SSE data",
-				"error", err,
-				"data", data)
-			continue // Non-fatal: continue reading
+			w.Log.Warn("opencodeserver: decode SSE data", "error", err, "data", data)
+			continue
 		}
 
-		// Ensure session ID is set
 		env.SessionID = sessionID
-
-		// Update last I/O timestamp (SetLastIO uses atomic, no lock needed)
 		w.SetLastIO(time.Now())
 
-		// Get current connection and check if closed (single lock acquisition)
 		w.Mu.Lock()
 		conn := w.httpConn
 		closed := conn == nil
@@ -757,23 +603,17 @@ func (w *Worker) readSSE(sessionID string) {
 			return
 		}
 
-		// Forward event to recvCh with backpressure handling
 		select {
 		case conn.recvCh <- env:
-			// Successfully sent
 		default:
-			// Channel full, drop message (backpressure)
 			w.Log.Warn("opencodeserver: recv channel full, dropping message",
-				"event_type", env.Event.Type,
-				"event_id", env.ID)
+				"event_type", env.Event.Type, "event_id", env.ID)
 		}
 	}
 }
 
 // ─── OpenCode Bus Event Handlers ──────────────────────────────────────────────
 
-// handlePermissionAsked converts a permission.asked bus event to an AEP
-// PermissionRequest envelope and forwards it to the recv channel.
 func (w *Worker) handlePermissionAsked(sessionID string, props json.RawMessage) {
 	var data struct {
 		ID       string         `json:"id"`
@@ -800,8 +640,6 @@ func (w *Worker) handlePermissionAsked(sessionID string, props json.RawMessage) 
 	w.trySend(env)
 }
 
-// handleQuestionAsked converts a question.asked bus event to an AEP
-// QuestionRequest envelope and forwards it to the recv channel.
 func (w *Worker) handleQuestionAsked(sessionID string, props json.RawMessage) {
 	var data struct {
 		ID        string            `json:"id"`
@@ -842,7 +680,6 @@ func (w *Worker) trySend(env *events.Envelope) {
 	}
 }
 
-// httpPost sends a JSON POST request to the OpenCode server.
 func (w *Worker) httpPost(ctx context.Context, path string, payload any) error {
 	w.Mu.Lock()
 	addr := w.httpAddr
@@ -854,7 +691,7 @@ func (w *Worker) httpPost(ctx context.Context, path string, payload any) error {
 	}
 
 	url := addr + path
-	req, err := http.NewRequestWithContext(ctx, "POST", url, strings.NewReader(string(body)))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("opencodeserver: create request: %w", err)
 	}
@@ -875,8 +712,6 @@ func (w *Worker) httpPost(ctx context.Context, path string, payload any) error {
 	return nil
 }
 
-// answersToArrays converts a map[string]string to [][]string for OpenCode's
-// question reply API which expects answer values only.
 func answersToArrays(m map[string]string) [][]string {
 	result := make([][]string, 0, len(m))
 	for _, v := range m {
@@ -887,30 +722,20 @@ func answersToArrays(m map[string]string) [][]string {
 
 // ─── SessionConn Implementation ───────────────────────────────────────────────
 
-// conn implements the worker.SessionConn interface for HTTP-based communication.
 type conn struct {
 	userID       string
 	sessionID    string
 	httpAddr     string
 	client       *http.Client
-	recvCh       chan *events.Envelope // Buffered channel for SSE events
+	recvCh       chan *events.Envelope
 	log          *slog.Logger
-	systemPrompt string // Agent config system prompt — attached to every message (OCS has no cross-message persistence)
+	systemPrompt string
 
 	mu        sync.Mutex
 	closed    bool
-	closeOnce sync.Once // Prevent double-close panic on recvCh
+	closeOnce sync.Once
 }
 
-// Send posts an input message to the OpenCode server via /session/:id/message.
-//
-// The request body uses the PromptInput format with parts[] and optional system field.
-// IMPORTANT: The system field has no cross-message persistence in OCS — it must be
-// attached to every message, otherwise injected context is lost.
-//
-// # Thread Safety
-//
-// Safe to call concurrently. Returns error if connection is closed.
 func (c *conn) Send(ctx context.Context, msg *events.Envelope) error {
 	c.mu.Lock()
 	if c.closed {
@@ -919,7 +744,6 @@ func (c *conn) Send(ctx context.Context, msg *events.Envelope) error {
 	}
 	c.mu.Unlock()
 
-	// Extract text content from envelope
 	var content string
 	if msg.Event.Data != nil {
 		if data, ok := msg.Event.Data.(map[string]any); ok {
@@ -929,7 +753,6 @@ func (c *conn) Send(ctx context.Context, msg *events.Envelope) error {
 		}
 	}
 
-	// Build PromptInput request body
 	body := map[string]any{
 		"parts": []map[string]any{{"type": "text", "text": content}},
 	}
@@ -942,7 +765,6 @@ func (c *conn) Send(ctx context.Context, msg *events.Envelope) error {
 		return fmt.Errorf("opencodeserver: marshal input: %w", err)
 	}
 
-	// POST /session/:id/message (singular session prefix)
 	url := fmt.Sprintf("%s/session/%s/message", c.httpAddr, c.sessionID)
 	req, err := http.NewRequestWithContext(ctx, "POST", url, strings.NewReader(string(payload)))
 	if err != nil {
@@ -965,47 +787,27 @@ func (c *conn) Send(ctx context.Context, msg *events.Envelope) error {
 	return nil
 }
 
-// Recv returns the receive channel for SSE events.
-//
-// The channel is buffered (256). When full, new events are silently dropped.
-// The channel is closed when the connection is terminated or SSE stream ends.
-func (c *conn) Recv() <-chan *events.Envelope {
-	return c.recvCh
-}
+func (c *conn) Recv() <-chan *events.Envelope { return c.recvCh }
 
-// Close closes the connection and releases resources.
-//
-// Uses sync.Once to ensure idempotent behavior — safe to call multiple times.
-//
-// # Thread Safety
-//
-// Safe to call concurrently from multiple goroutines.
 func (c *conn) Close() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	c.closeOnce.Do(func() {
 		c.closed = true
-		close(c.recvCh) // Safe: sync.Once ensures single close
+		close(c.recvCh)
 	})
 
 	return nil
 }
 
-// UserID returns the user ID associated with this connection.
-func (c *conn) UserID() string { return c.userID }
-
-// SessionID returns the session ID associated with this connection.
+func (c *conn) UserID() string    { return c.userID }
 func (c *conn) SessionID() string { return c.sessionID }
 
 // ─── Init ────────────────────────────────────────────────────────────────────
 
 func init() {
-	// Register worker factory for OpenCode Server
 	worker.Register(worker.TypeOpenCodeSrv, func() (worker.Worker, error) {
-		return &Worker{
-			BaseWorker: base.NewBaseWorker(slog.Default(), nil),
-			client:     newHTTPClient(),
-		}, nil
+		return New(), nil
 	})
 }
