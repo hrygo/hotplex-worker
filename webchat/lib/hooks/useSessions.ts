@@ -17,7 +17,7 @@ import {
   deleteSession,
   type SessionInfo,
 } from '@/lib/api/sessions';
-import { workerType as defaultWorkerType } from '@/lib/config';
+import { workerType as defaultWorkerType, workDir as configWorkDir } from '@/lib/config';
 
 export interface UseSessionsOptions {
   /** Called when the active session changes (user selects or creates). */
@@ -111,7 +111,8 @@ export function useSessions({
       if (!initId && !savedId && filtered.length === 0 && !isCreating.current) {
         isCreating.current = true;
         try {
-          const { session_id } = await createSession({ workerType: DEFAULT_WORKER_TYPE, title: MAIN_SESSION_TITLE });
+          const effectiveWorkDir = configWorkDir || undefined;
+          const { session_id } = await createSession({ workerType: DEFAULT_WORKER_TYPE, title: MAIN_SESSION_TITLE, workDir: effectiveWorkDir });
           const now = new Date().toISOString();
           const newSession: SessionInfo = {
             id: session_id,
@@ -119,6 +120,7 @@ export function useSessions({
             worker_type: DEFAULT_WORKER_TYPE,
             state: 'created',
             title: MAIN_SESSION_TITLE,
+            work_dir: effectiveWorkDir,
             created_at: now,
             updated_at: now,
           };
@@ -152,11 +154,12 @@ export function useSessions({
 
   const createNewSession = useCallback(async (title: string, workerType?: string, workDir?: string) => {
     const wt = workerType || DEFAULT_WORKER_TYPE;
+    const effectiveWorkDir = workDir || configWorkDir || undefined;
     if (isCreating.current) return;
     isCreating.current = true;
     setIsLoading(true);
     try {
-      const { session_id } = await createSession({ workerType: wt, title, workDir });
+      const { session_id } = await createSession({ workerType: wt, title, workDir: effectiveWorkDir });
       const now = new Date().toISOString();
       const newSession: SessionInfo = {
         id: session_id,
@@ -164,7 +167,7 @@ export function useSessions({
         worker_type: wt,
         state: 'created',
         title,
-        work_dir: workDir || undefined,
+        work_dir: effectiveWorkDir,
         created_at: now,
         updated_at: now,
       };
