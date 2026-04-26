@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
+import { workDir as configWorkDir } from "@/lib/config";
 
 interface WorkerOption {
   id: string;
@@ -34,7 +35,7 @@ interface NewSessionModalProps {
 export function NewSessionModal({ onConfirm, onCancel, existingTitles = [] }: NewSessionModalProps) {
   const [title, setTitle] = useState("");
   const [selectedWorker, setSelectedWorker] = useState("claude_code");
-  const [workDir, setWorkDir] = useState("");
+  const [workDir, setWorkDir] = useState(configWorkDir);
 
   const trimmedTitle = title.trim();
   const isDuplicate = trimmedTitle.length > 0 && existingTitles.includes(trimmedTitle);
