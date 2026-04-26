@@ -4,7 +4,7 @@
 
 ## OVERVIEW
 
-HotPlex Worker Gateway — Go 1.26 unified access layer for AI Coding Agent sessions.
+HotPlex Gateway — Go 1.26 unified access layer for AI Coding Agent sessions.
 WebSocket gateway (AEP v1) abstracting Claude Code, OpenCode Server, Pi-mono protocol differences.
 Multi-language client SDKs (TS, Python, Java, Go) + AI SDK transport adapter + web chat UI + bidirectional messaging (Slack/Feishu).
 

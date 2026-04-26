@@ -1,8 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { formatRelativeTime, type SessionInfo } from '@/lib/api/sessions';
 import { BrandIcon, WORKER_DISPLAY, WorkerIcon } from '@/components/icons';
+
+function getDisplayTitle(session: SessionInfo): string {
+  return session.title || session.id.slice(0, 8);
+}
 
 function SessionRow({
   session,
@@ -16,7 +20,7 @@ function SessionRow({
   onDelete: () => void;
 }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const displayId = session.id.slice(0, 8);
+  const displayTitle = getDisplayTitle(session);
   const workerName = WORKER_DISPLAY[session.worker_type] ?? session.worker_type;
 
   // Path processing for workdir
@@ -54,7 +58,7 @@ function SessionRow({
             </span>
           </div>
           <span className="text-[9px] font-mono text-[var(--text-faint)] bg-[var(--bg-elevated)] px-1.5 py-0.5 rounded-md border border-[var(--border-subtle)]">
-            {displayId}
+            {displayTitle}
           </span>
         </div>
 
@@ -147,7 +151,7 @@ interface SessionPanelProps {
   activeSession: SessionInfo | null;
   isLoading: boolean;
   onSelect: (session: SessionInfo) => void;
-  onCreate: (workerType?: string, workDir?: string) => Promise<void>;
+  onCreate: () => void;
   onDelete: (id: string) => Promise<void>;
 }
 
@@ -161,9 +165,12 @@ export function SessionPanel({
 }: SessionPanelProps) {
   const [searchQuery, setSearchQuery] = useState('');
 
-  const filteredSessions = sessions
-    .filter(s => s.id.toLowerCase().includes(searchQuery.toLowerCase()))
-    .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+  const filteredSessions = useMemo(() =>
+    sessions
+      .filter(s => getDisplayTitle(s).toLowerCase().includes(searchQuery.toLowerCase()))
+      .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()),
+    [sessions, searchQuery]
+  );
 
   return (
     <div className="pc-sidebar flex flex-col h-full bg-[var(--bg-base)] border-r border-[var(--border-subtle)] w-[280px]">

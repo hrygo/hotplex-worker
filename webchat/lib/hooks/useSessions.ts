@@ -35,7 +35,7 @@ export interface UseSessionsReturn {
   openPanel: () => void;
   closePanel: () => void;
   selectSession: (session: SessionInfo) => void;
-  createNewSession: (workerType?: string, workDir?: string) => Promise<void>;
+  createNewSession: (title: string, workerType?: string, workDir?: string) => Promise<void>;
   removeSession: (id: string) => Promise<void>;
   refreshSessions: () => Promise<void>;
   handleSessionSelect: (id: string) => void;
@@ -60,9 +60,9 @@ export function useSessions({
   const STORAGE_KEY = 'hotplex_active_session_id';
   const DEFAULT_WORKER_TYPE = defaultWorkerType;
 
-  // Deterministic anchor session ID — ensures the first auto-created session
-  // maps to the same server-side key via DeriveSessionKey(userID, workerType, clientSessionID, workDir).
-  const MAIN_SESSION_ID = 'main';
+  // Deterministic anchor session title — ensures the first auto-created session
+  // maps to the same server-side key via DeriveSessionKey(userID, workerType, title, workDir).
+  const MAIN_SESSION_TITLE = 'main';
 
   const refreshSessions = useCallback(async () => {
     try {
@@ -111,7 +111,7 @@ export function useSessions({
       if (!initId && !savedId && filtered.length === 0 && !isCreating.current) {
         isCreating.current = true;
         try {
-          const { session_id } = await createSession({ workerType: DEFAULT_WORKER_TYPE, sessionId: MAIN_SESSION_ID });
+          const { session_id } = await createSession({ workerType: DEFAULT_WORKER_TYPE, title: MAIN_SESSION_TITLE });
           
           const { sessions: updatedList } = await listSessions(5, 0);
           const newSession = updatedList.find(s => s.id === session_id);
@@ -145,13 +145,13 @@ export function useSessions({
     setIsOpen(false);
   }, []);
 
-  const createNewSession = useCallback(async (workerType?: string, workDir?: string) => {
+  const createNewSession = useCallback(async (title: string, workerType?: string, workDir?: string) => {
     const wt = workerType || DEFAULT_WORKER_TYPE;
     if (isCreating.current) return;
     isCreating.current = true;
     setIsLoading(true);
     try {
-      const { session_id } = await createSession({ workerType: wt, workDir });
+      const { session_id } = await createSession({ workerType: wt, title, workDir });
 
       const { sessions: list } = await listSessions(20, 0);
       const filtered = list.filter(s => s.state !== 'deleted');

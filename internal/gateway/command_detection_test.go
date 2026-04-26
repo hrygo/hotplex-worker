@@ -57,7 +57,7 @@ func TestHandleInput_HelpCommand_QuestionMark(t *testing.T) {
 	handler, mgr, hub, _ := newHandlerWithRealStore(t)
 
 	const sid = "sess_help_q"
-	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "")
+	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "", "")
 	require.NoError(t, err)
 
 	// Join a WS conn so SendToSession routes to a real connection.
@@ -83,7 +83,7 @@ func TestHandleInput_HelpCommand_SlashHelp(t *testing.T) {
 	handler, mgr, hub, _ := newHandlerWithRealStore(t)
 
 	const sid = "sess_help_slash"
-	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "")
+	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "", "")
 	require.NoError(t, err)
 
 	clientConn, serverConn := newTestWSConnPair(t)
@@ -107,7 +107,7 @@ func TestHandleInput_HelpCommand_DollarHelp(t *testing.T) {
 	handler, mgr, hub, _ := newHandlerWithRealStore(t)
 
 	const sid = "sess_help_dollar"
-	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "")
+	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "", "")
 	require.NoError(t, err)
 
 	clientConn, serverConn := newTestWSConnPair(t)
@@ -127,7 +127,7 @@ func TestHandleInput_HelpCommand_DoesNotReachWorker(t *testing.T) {
 	handler, mgr, hub, _ := newHandlerWithRealStore(t)
 
 	const sid = "sess_help_no_worker"
-	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "")
+	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "", "")
 	require.NoError(t, err)
 	require.NoError(t, mgr.Transition(context.Background(), sid, events.StateRunning))
 
@@ -160,7 +160,7 @@ func TestHandleInput_ControlCommand_GC(t *testing.T) {
 	handler, mgr, hub, _ := newHandlerWithRealStore(t)
 
 	const sid = "sess_ctrl_gc"
-	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "")
+	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "", "")
 	require.NoError(t, err)
 	require.NoError(t, mgr.Transition(context.Background(), sid, events.StateRunning))
 
@@ -187,7 +187,7 @@ func TestHandleInput_ControlCommand_Reset(t *testing.T) {
 	handler, mgr, hub, _ := newHandlerWithRealStore(t)
 
 	const sid = "sess_ctrl_reset"
-	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "")
+	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "", "")
 	require.NoError(t, err)
 	require.NoError(t, mgr.Transition(context.Background(), sid, events.StateRunning))
 
@@ -215,7 +215,7 @@ func TestHandleInput_ControlCommand_DoesNotReachWorker(t *testing.T) {
 	handler, mgr, hub, _ := newHandlerWithRealStore(t)
 
 	const sid = "sess_ctrl_no_worker"
-	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "")
+	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "", "")
 	require.NoError(t, err)
 	require.NoError(t, mgr.Transition(context.Background(), sid, events.StateRunning))
 
@@ -241,7 +241,7 @@ func TestHandleInput_ControlCommand_NaturalLanguageGC(t *testing.T) {
 	handler, mgr, hub, _ := newHandlerWithRealStore(t)
 
 	const sid = "sess_ctrl_nl_gc"
-	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "")
+	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "", "")
 	require.NoError(t, err)
 	require.NoError(t, mgr.Transition(context.Background(), sid, events.StateRunning))
 
@@ -270,7 +270,7 @@ func TestHandleInput_WorkerCommand_Context(t *testing.T) {
 	handler, mgr, hub, _ := newHandlerWithRealStore(t)
 
 	const sid = "sess_wcmd_ctx"
-	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "")
+	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "", "")
 	require.NoError(t, err)
 	require.NoError(t, mgr.Transition(context.Background(), sid, events.StateRunning))
 
@@ -301,7 +301,7 @@ func TestHandleInput_WorkerCommand_Compact(t *testing.T) {
 	handler, mgr, hub, _ := newHandlerWithRealStore(t)
 
 	const sid = "sess_wcmd_compact"
-	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "")
+	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "", "")
 	require.NoError(t, err)
 	require.NoError(t, mgr.Transition(context.Background(), sid, events.StateRunning))
 
@@ -324,7 +324,7 @@ func TestHandleInput_WorkerCommand_DoesNotSendAsPlainInput(t *testing.T) {
 	handler, mgr, hub, _ := newHandlerWithRealStore(t)
 
 	const sid = "sess_wcmd_no_plain"
-	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "")
+	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "", "")
 	require.NoError(t, err)
 	require.NoError(t, mgr.Transition(context.Background(), sid, events.StateRunning))
 
@@ -350,7 +350,7 @@ func TestHandleInput_NormalText_PassesToWorker(t *testing.T) {
 	handler, mgr, hub, _ := newHandlerWithRealStore(t)
 
 	const sid = "sess_normal_text"
-	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "")
+	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "", "")
 	require.NoError(t, err)
 	require.NoError(t, mgr.Transition(context.Background(), sid, events.StateRunning))
 
@@ -375,7 +375,7 @@ func TestHandleInput_NormalText_LooksLikeCommandButIsNot(t *testing.T) {
 	handler, mgr, hub, _ := newHandlerWithRealStore(t)
 
 	const sid = "sess_normal_likecmd"
-	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "")
+	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "", "")
 	require.NoError(t, err)
 	require.NoError(t, mgr.Transition(context.Background(), sid, events.StateRunning))
 
@@ -402,7 +402,7 @@ func TestHandleInput_SlashPrefixNotInMaps_PassesToWorker(t *testing.T) {
 	handler, mgr, hub, _ := newHandlerWithRealStore(t)
 
 	const sid = "sess_slash_unknown"
-	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "")
+	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "", "")
 	require.NoError(t, err)
 	require.NoError(t, mgr.Transition(context.Background(), sid, events.StateRunning))
 
@@ -497,7 +497,7 @@ func TestHandleInput_HelpCommand_WithWhitespace(t *testing.T) {
 	handler, mgr, hub, _ := newHandlerWithRealStore(t)
 
 	const sid = "sess_help_ws"
-	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "")
+	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "", "")
 	require.NoError(t, err)
 
 	clientConn, serverConn := newTestWSConnPair(t)
@@ -518,7 +518,7 @@ func TestHandleInput_HelpCommand_FullWidthQuestionMark(t *testing.T) {
 	handler, mgr, hub, _ := newHandlerWithRealStore(t)
 
 	const sid = "sess_help_fwqm"
-	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "")
+	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "", "")
 	require.NoError(t, err)
 
 	clientConn, serverConn := newTestWSConnPair(t)
@@ -540,7 +540,7 @@ func TestHandle_FullDispatch_HelpCommand(t *testing.T) {
 	handler, mgr, hub, _ := newHandlerWithRealStore(t)
 
 	const sid = "sess_handle_help"
-	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "")
+	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "", "")
 	require.NoError(t, err)
 
 	clientConn, serverConn := newTestWSConnPair(t)

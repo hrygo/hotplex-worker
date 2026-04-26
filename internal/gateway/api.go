@@ -10,11 +10,11 @@ import (
 	"strings"
 
 	"github.com/hrygo/hotplex/internal/config"
+	"github.com/hrygo/hotplex/internal/messaging"
 	"github.com/hrygo/hotplex/internal/security"
 	"github.com/hrygo/hotplex/internal/session"
 	"github.com/hrygo/hotplex/internal/worker"
 
-	"github.com/hrygo/hotplex/pkg/aep"
 	"github.com/hrygo/hotplex/pkg/events"
 )
 
@@ -76,13 +76,19 @@ func (g *GatewayAPI) CreateSession(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	clientSessionID := r.URL.Query().Get("session_id")
+	title := strings.TrimSpace(r.URL.Query().Get("title"))
+	title = messaging.SanitizeText(title)
 	wt := worker.WorkerType(r.URL.Query().Get("worker_type"))
 	if wt == "" {
 		wt = worker.TypeClaudeCode
 	}
-	if clientSessionID == "" {
-		clientSessionID = aep.NewSessionID()
+	if title == "" {
+		http.Error(w, "title is required", http.StatusBadRequest)
+		return
+	}
+	if len(title) > 256 {
+		http.Error(w, "title too long (max 256 chars)", http.StatusBadRequest)
+		return
 	}
 
 	// Resolve work dir: use client-provided value or default from config.
@@ -100,7 +106,7 @@ func (g *GatewayAPI) CreateSession(w http.ResponseWriter, r *http.Request) {
 	// Derive session ID via UUIDv5 for consistency with WebSocket path.
 	// Both REST and WS use the auth userID ("anonymous" in dev mode, "api_user"
 	// with API keys) so they produce the same derived session ID.
-	id := session.DeriveSessionKey(userID, wt, clientSessionID, workDir)
+	id := session.DeriveSessionKey(userID, wt, title, workDir)
 
 	// Default userID after derivation — bridge expects non-empty.
 	if userID == "" {
@@ -118,7 +124,7 @@ func (g *GatewayAPI) CreateSession(w http.ResponseWriter, r *http.Request) {
 		_ = g.sm.DeletePhysical(r.Context(), id)
 	}
 
-	if err := g.bridge.StartSession(r.Context(), id, userID, botID, wt, nil, workDir, platformWebChat, nil); err != nil {
+	if err := g.bridge.StartSession(r.Context(), id, userID, botID, wt, nil, workDir, platformWebChat, nil, title); err != nil {
 		slog.Error("gateway: create session failed", "session_id", id, "worker_type", wt, "work_dir", workDir, "err", err)
 		http.Error(w, "failed to create session", http.StatusInternalServerError)
 		return
@@ -154,6 +160,13 @@ func (g *GatewayAPI) DeleteSession(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "session id required", http.StatusBadRequest)
 		return
 	}
+
+	// Gracefully terminate the worker through the state machine before deleting.
+	// Transition sends SIGTERM → wait → SIGKILL and releases pool quota.
+	if err := g.sm.Transition(r.Context(), id, events.StateTerminated); err != nil {
+		slog.Debug("gateway: pre-delete transition skipped", "session_id", id, "err", err)
+	}
+
 	if err := g.sm.DeletePhysical(r.Context(), id); err != nil {
 		http.Error(w, "failed to delete session", http.StatusInternalServerError)
 		return

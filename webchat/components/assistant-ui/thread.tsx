@@ -111,7 +111,7 @@ export function Thread({ skills }: { skills?: string[] }) {
           <Composer skills={skills} />
           <div className="mt-2 text-center">
             <p className="text-[10px] text-[var(--text-faint)] font-mono uppercase tracking-widest">
-              Shift + Enter for new line · Cmd + Enter to send
+              Enter to send · Shift + Enter for new line
             </p>
           </div>
         </div>
@@ -530,12 +530,7 @@ function Composer({ skills }: { skills?: string[] }) {
     const val = e.target.value;
     setLocalText(val);
     
-    // Show menu if starting with / or contains non-whitespace
-    if (val.startsWith("/") || (val.length > 0 && !val.includes(" "))) {
-      setMenuOpen(true);
-    } else {
-      setMenuOpen(false);
-    }
+    setMenuOpen(val.startsWith("/"));
     
     if (!composingRef.current) {
       aui.composer().setText(val);
@@ -575,6 +570,7 @@ function Composer({ skills }: { skills?: string[] }) {
             className="composer-input"
             rows={1}
             autoFocus
+            submitMode="enter"
             placeholder="Type a message or '/' for commands..."
             value={localText}
             onChange={handleChange}

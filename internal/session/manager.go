@@ -90,6 +90,9 @@ type SessionInfo struct {
 	PlatformKey map[string]string `json:"platform_key,omitempty"`
 	// WorkDir is the working directory for this session.
 	WorkDir string `json:"work_dir,omitempty"`
+	// Title is the user-facing session name. Used as DeriveSessionKey input for WebChat sessions.
+	// Empty for Slack/Feishu sessions (they use DerivePlatformSessionKey instead).
+	Title string `json:"title,omitempty"`
 }
 
 // NewManager creates a new session manager using the provided Store and optional MessageStore.
@@ -121,12 +124,12 @@ func NewManager(ctx context.Context, log *slog.Logger, cfg *config.Config, cfgSt
 }
 
 // Create creates a new session and persists it to SQLite.
-func (m *Manager) Create(ctx context.Context, id, userID string, workerType worker.WorkerType, allowedTools []string, workDir string) (*SessionInfo, error) {
-	return m.CreateWithBot(ctx, id, userID, "", workerType, allowedTools, "", nil, workDir)
+func (m *Manager) Create(ctx context.Context, id, userID string, workerType worker.WorkerType, allowedTools []string, workDir, title string) (*SessionInfo, error) {
+	return m.CreateWithBot(ctx, id, userID, "", workerType, allowedTools, "", nil, workDir, title)
 }
 
 // CreateWithBot creates a new session with explicit bot_id and persists it to SQLite.
-func (m *Manager) CreateWithBot(ctx context.Context, id, userID, botID string, workerType worker.WorkerType, allowedTools []string, platform string, platformKey map[string]string, workDir string) (*SessionInfo, error) {
+func (m *Manager) CreateWithBot(ctx context.Context, id, userID, botID string, workerType worker.WorkerType, allowedTools []string, platform string, platformKey map[string]string, workDir, title string) (*SessionInfo, error) {
 	now := time.Now()
 	info := &SessionInfo{
 		ID:           id,
@@ -141,6 +144,7 @@ func (m *Manager) CreateWithBot(ctx context.Context, id, userID, botID string, w
 		Platform:     platform,
 		PlatformKey:  platformKey,
 		WorkDir:      workDir,
+		Title:        title,
 	}
 
 	if err := m.store.Upsert(ctx, info); err != nil {

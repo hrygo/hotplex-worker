@@ -53,6 +53,7 @@ export default function ChatContainer() {
   const {
     activeSession,
     isLoading,
+    error: sessionError,
     selectSession,
     createNewSession,
     removeSession,
@@ -64,24 +65,15 @@ export default function ChatContainer() {
   const activeSessionId = activeSession?.id || null;
 
   // Handle NewSessionModal confirm
-  const handleModalConfirm = useCallback(async (wt: string, dir: string) => {
+  const handleModalConfirm = useCallback(async (title: string, wt: string, dir: string) => {
     setShowNewModal(false);
-    await createNewSession(wt, dir || undefined);
+    await createNewSession(title, wt, dir || undefined);
   }, [createNewSession]);
 
-  // Handle "New Chat" button — show modal instead of direct creation
+  // Handle "New Chat" button — show modal for session config
   const handleCreateNew = useCallback(async () => {
-    // If URL params are present, skip modal and create directly
-    if (urlWorker && urlDir) {
-      await createNewSession(urlWorker, urlDir);
-    } else if (workDir) {
-      // Default workDir from config — create directly with defaults
-      await createNewSession();
-    } else {
-      // No workDir configured — show modal for user input
-      setShowNewModal(true);
-    }
-  }, [createNewSession, urlWorker, urlDir]);
+    setShowNewModal(true);
+  }, []);
 
   return (
     <div className="flex h-screen overflow-hidden bg-[var(--bg-base)]">
@@ -139,9 +131,15 @@ export default function ChatContainer() {
             )}
 
             <div className="flex items-center gap-2">
+                {sessionError && (
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[rgba(244,63,94,0.1)] border border-[rgba(244,63,94,0.2)]">
+                    <div className="w-1.5 h-1.5 rounded-full bg-[var(--accent-coral)]" />
+                    <span className="text-[10px] font-bold text-[var(--accent-coral)]">{sessionError}</span>
+                  </div>
+                )}
                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[var(--bg-glass)] backdrop-blur-xl border border-[var(--border-default)]">
-                  <div className={`w-1.5 h-1.5 rounded-full ${isLoading ? 'bg-[var(--accent-gold)] animate-pulse' : 'bg-[var(--accent-emerald)] shadow-[0_0_8px_var(--accent-emerald)]'}`} />
-                  <span className="text-[10px] font-bold text-[var(--text-secondary)]">{isLoading ? 'PREPARING...' : 'GATEWAY ONLINE'}</span>
+                  <div className={`w-1.5 h-1.5 rounded-full ${isLoading ? 'bg-[var(--accent-gold)] animate-pulse' : sessionError ? 'bg-[var(--accent-coral)]' : 'bg-[var(--accent-emerald)] shadow-[0_0_8px_var(--accent-emerald)]'}`} />
+                  <span className="text-[10px] font-bold text-[var(--text-secondary)]">{isLoading ? 'PREPARING...' : sessionError ? 'ERROR' : 'GATEWAY ONLINE'}</span>
                </div>
             </div>
           </div>
@@ -189,6 +187,7 @@ export default function ChatContainer() {
         <NewSessionModal
           onConfirm={handleModalConfirm}
           onCancel={() => setShowNewModal(false)}
+          existingTitles={sessions.filter(s => s.title).map(s => s.title!)}
         />
       )}
     </div>

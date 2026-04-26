@@ -674,7 +674,7 @@ func (h *Handler) handlePassthroughCommand(ctx context.Context, env *events.Enve
 // SessionManager abstracts the session.Manager methods used by Bridge.
 // It allows Bridge to be tested without a real Manager instance.
 type SessionManager interface {
-	CreateWithBot(ctx context.Context, id, userID, botID string, wt worker.WorkerType, allowedTools []string, platform string, platformKey map[string]string, workDir string) (*session.SessionInfo, error)
+	CreateWithBot(ctx context.Context, id, userID, botID string, wt worker.WorkerType, allowedTools []string, platform string, platformKey map[string]string, workDir, title string) (*session.SessionInfo, error)
 	AttachWorker(id string, w worker.Worker) error
 	DetachWorker(id string)
 	DetachWorkerIf(id string, expected worker.Worker) bool

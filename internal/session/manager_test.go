@@ -146,7 +146,7 @@ func TestManager_Create(t *testing.T) {
 	require.NoError(t, err)
 	defer m.Close()
 
-	info, err := m.Create(ctx, "sess_new", "user1", worker.TypeClaudeCode, nil, "")
+	info, err := m.Create(ctx, "sess_new", "user1", worker.TypeClaudeCode, nil, "", "test-session")
 	require.NoError(t, err)
 	require.NotNil(t, info)
 	require.Equal(t, "sess_new", info.ID)

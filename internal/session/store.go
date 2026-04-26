@@ -113,7 +113,7 @@ func (s *SQLiteStore) Upsert(ctx context.Context, info *SessionInfo) error {
 
 	_, err := s.db.ExecContext(ctx, queries["sessions.upsert_session"],
 		info.ID, info.UserID, info.OwnerID, info.BotID, info.WorkerSessionID, info.WorkerType, string(info.State),
-		info.Platform, string(platformKeyJSON), info.WorkDir,
+		info.Platform, string(platformKeyJSON), info.WorkDir, info.Title,
 		info.CreatedAt, info.UpdatedAt, info.ExpiresAt, info.IdleExpiresAt,
 		isActive, string(ctxJSON),
 	)
@@ -130,7 +130,7 @@ func scanSession(sc rowScanner) (*SessionInfo, error) {
 
 	err := sc.Scan(
 		&info.ID, &info.UserID, &info.OwnerID, &info.WorkerSessionID, &info.WorkerType, &info.State, &info.BotID,
-		&info.Platform, &platformKeyStr, &info.WorkDir,
+		&info.Platform, &platformKeyStr, &info.WorkDir, &info.Title,
 		&createdAt, &updatedAt, &expiresAt, &idleExpiresAt, &ctxJSON,
 	)
 	if err != nil {

@@ -29,7 +29,7 @@ const platformWebChat = "webchat"
 // used by Conn (called once during the AEP init handshake).
 type SessionStarter interface {
 	StartSession(ctx context.Context, id, userID, botID string,
-		wt worker.WorkerType, allowedTools []string, workDir string, platform string, platformKey map[string]string) error
+		wt worker.WorkerType, allowedTools []string, workDir string, platform string, platformKey map[string]string, title string) error
 	ResumeSession(ctx context.Context, id string, workDir string) error
 	SwitchWorkDir(ctx context.Context, oldSessionID, newWorkDir string) (*SwitchWorkDirResult, error)
 }
@@ -309,7 +309,7 @@ func (c *Conn) performInit(handler *Handler) error {
 		// Session does not exist → create and start via SessionStarter.
 		if errors.Is(err, session.ErrSessionNotFound) {
 			if c.starter != nil {
-				if err := c.starter.StartSession(context.Background(), sessionID, c.userID, c.botID, initData.WorkerType, initData.Config.AllowedTools, workDir, platformWebChat, nil); err != nil {
+				if err := c.starter.StartSession(context.Background(), sessionID, c.userID, c.botID, initData.WorkerType, initData.Config.AllowedTools, workDir, platformWebChat, nil, ""); err != nil {
 					c.hub.InitThrottle.RecordFailure(sessionID)
 					c.sendInitError(events.ErrCodeInternalError, "failed to create session")
 					metrics.GatewayErrorsTotal.WithLabelValues(string(events.ErrCodeInternalError)).Inc()
@@ -324,7 +324,7 @@ func (c *Conn) performInit(handler *Handler) error {
 				}
 			} else {
 				// Test mode
-				si, err = handler.sm.CreateWithBot(context.Background(), sessionID, c.userID, c.botID, initData.WorkerType, initData.Config.AllowedTools, platformWebChat, nil, workDir)
+				si, err = handler.sm.CreateWithBot(context.Background(), sessionID, c.userID, c.botID, initData.WorkerType, initData.Config.AllowedTools, platformWebChat, nil, workDir, "")
 				if err != nil {
 					c.hub.InitThrottle.RecordFailure(sessionID)
 					c.sendInitError(events.ErrCodeInternalError, "failed to create session")
@@ -338,7 +338,7 @@ func (c *Conn) performInit(handler *Handler) error {
 		}
 	} else if si.State == events.StateCreated {
 		if c.starter != nil {
-			if err := c.starter.StartSession(context.Background(), sessionID, c.userID, c.botID, initData.WorkerType, initData.Config.AllowedTools, workDir, platformWebChat, nil); err != nil {
+			if err := c.starter.StartSession(context.Background(), sessionID, c.userID, c.botID, initData.WorkerType, initData.Config.AllowedTools, workDir, platformWebChat, nil, ""); err != nil {
 				c.hub.InitThrottle.RecordFailure(sessionID)
 				c.sendInitError(events.ErrCodeInternalError, "failed to start session")
 				return fmt.Errorf("start unstarted session: %w", err)
@@ -354,7 +354,7 @@ func (c *Conn) performInit(handler *Handler) error {
 		_ = handler.sm.DeletePhysical(context.Background(), sessionID)
 		if c.starter != nil {
 			if err := c.starter.StartSession(context.Background(), sessionID, c.userID, c.botID,
-				initData.WorkerType, initData.Config.AllowedTools, workDir, platformWebChat, nil); err != nil {
+				initData.WorkerType, initData.Config.AllowedTools, workDir, platformWebChat, nil, ""); err != nil {
 				c.hub.InitThrottle.RecordFailure(sessionID)
 				msg := fmt.Sprintf("failed to recreate deleted session: %v", err)
 				c.sendInitError(events.ErrCodeInternalError, msg)
@@ -380,7 +380,7 @@ func (c *Conn) performInit(handler *Handler) error {
 			resumeErr := c.starter.ResumeSession(context.Background(), sessionID, workDir)
 			if resumeErr != nil {
 				if err := c.starter.StartSession(context.Background(), sessionID, c.userID, c.botID,
-					initData.WorkerType, initData.Config.AllowedTools, workDir, platformWebChat, nil); err != nil {
+					initData.WorkerType, initData.Config.AllowedTools, workDir, platformWebChat, nil, ""); err != nil {
 					c.hub.InitThrottle.RecordFailure(sessionID)
 					msg := fmt.Sprintf("resume failed (%v), then start also failed (%v)", resumeErr, err)
 					c.sendInitError(events.ErrCodeInternalError, msg)

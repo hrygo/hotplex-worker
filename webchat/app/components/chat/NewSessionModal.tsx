@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { useState } from "react";
+import { motion } from "framer-motion";
 
 interface WorkerOption {
   id: string;
@@ -25,30 +25,24 @@ const WORKER_OPTIONS: WorkerOption[] = [
   },
 ];
 
-// TODO: derive from session history (useSessions workDir metadata)
-const RECENT_DIRS: string[] = [];
-
 interface NewSessionModalProps {
-  onConfirm: (workerType: string, workDir: string) => void;
+  onConfirm: (title: string, workerType: string, workDir: string) => void;
   onCancel: () => void;
+  existingTitles?: string[];
 }
 
-export function NewSessionModal({ onConfirm, onCancel }: NewSessionModalProps) {
+export function NewSessionModal({ onConfirm, onCancel, existingTitles = [] }: NewSessionModalProps) {
+  const [title, setTitle] = useState("");
   const [selectedWorker, setSelectedWorker] = useState("claude_code");
   const [workDir, setWorkDir] = useState("");
-  const [showRecent, setShowRecent] = useState(false);
-  const blurTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
-    return () => {
-      if (blurTimerRef.current) clearTimeout(blurTimerRef.current);
-    };
-  }, []);
+  const trimmedTitle = title.trim();
+  const isDuplicate = trimmedTitle.length > 0 && existingTitles.includes(trimmedTitle);
+  const canConfirm = trimmedTitle.length > 0;
 
   const handleConfirm = () => {
-    if (workDir.trim()) {
-      onConfirm(selectedWorker, workDir.trim());
-    }
+    if (!canConfirm) return;
+    onConfirm(trimmedTitle, selectedWorker, workDir.trim());
   };
 
   return (
@@ -79,6 +73,38 @@ export function NewSessionModal({ onConfirm, onCancel }: NewSessionModalProps) {
           <p className="text-sm text-[var(--text-muted)] mt-1">
             Configure your coding environment
           </p>
+        </div>
+
+        {/* Session Title */}
+        <div className="px-6 pb-4">
+          <label className="text-[10px] font-mono font-bold text-[var(--text-faint)] uppercase tracking-widest block mb-2">
+            Session Name
+          </label>
+          <input
+            id="session-title"
+            name="title"
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="e.g. HotPlex Bug Fix"
+            autoFocus
+            className={`w-full px-3 py-2.5 rounded-[var(--radius-md)] bg-[var(--bg-elevated)] border text-sm text-[var(--text-primary)] placeholder:text-[var(--text-faint)] focus:outline-none focus:ring-2 transition-all font-mono ${
+              isDuplicate
+                ? 'border-[var(--accent-gold)] focus:ring-[rgba(251,191,36,0.15)]'
+                : trimmedTitle.length > 0
+                  ? 'border-[var(--accent-emerald)] focus:ring-[rgba(16,185,129,0.15)]'
+                  : 'border-[var(--border-default)] focus:ring-[rgba(251,191,36,0.1)] focus:border-[var(--amber-border)]'
+            }`}
+            onKeyDown={(e) => e.key === 'Enter' && canConfirm && handleConfirm()}
+          />
+          {isDuplicate && (
+            <p className="text-[10px] text-[var(--accent-gold)] mt-1.5 flex items-center gap-1">
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              Will reuse existing session
+            </p>
+          )}
         </div>
 
         {/* Worker Selection */}
@@ -118,48 +144,15 @@ export function NewSessionModal({ onConfirm, onCancel }: NewSessionModalProps) {
           <label className="text-[10px] font-mono font-bold text-[var(--text-faint)] uppercase tracking-widest block mb-2">
             Working Directory
           </label>
-          <div className="relative">
-            <input
-              id="workdir-input"
-              name="workdir"
-              type="text"
-              value={workDir}
-              onChange={(e) => setWorkDir(e.target.value)}
-              placeholder="/path/to/your/project"
-              className="w-full px-3 py-2.5 rounded-[var(--radius-md)] bg-[var(--bg-elevated)] border border-[var(--border-default)] text-sm text-[var(--text-primary)] placeholder:text-[var(--text-faint)] focus:outline-none focus:border-[var(--amber-border)] focus:ring-2 focus:ring-[rgba(251,191,36,0.1)] transition-all font-mono"
-              autoFocus
-              onFocus={() => setShowRecent(true)}
-              onBlur={() => { blurTimerRef.current = setTimeout(() => setShowRecent(false), 200); }}
-            />
-
-            {/* Recent directories dropdown */}
-            <AnimatePresence>
-              {showRecent && (
-                <motion.div
-                  className="absolute top-full left-0 right-0 mt-1 rounded-[var(--radius-md)] bg-[var(--bg-surface)] border border-[var(--border-default)] shadow-[0_12px_32px_rgba(0,0,0,0.5)] z-10 overflow-hidden"
-                  initial={{ opacity: 0, y: -4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -4 }}
-                >
-                  <div className="px-3 py-1.5 text-[9px] font-mono font-bold text-[var(--text-faint)] uppercase tracking-widest">
-                    Recent
-                  </div>
-                  {RECENT_DIRS.map((dir) => (
-                    <button
-                      key={dir}
-                      onMouseDown={() => {
-                        setWorkDir(dir);
-                        setShowRecent(false);
-                      }}
-                      className="w-full px-3 py-2 text-left text-[12px] font-mono text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition-colors"
-                    >
-                      {dir}
-                    </button>
-                  ))}
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
+          <input
+            id="workdir-input"
+            name="workdir"
+            type="text"
+            value={workDir}
+            onChange={(e) => setWorkDir(e.target.value)}
+            placeholder="/path/to/your/project"
+            className="w-full px-3 py-2.5 rounded-[var(--radius-md)] bg-[var(--bg-elevated)] border border-[var(--border-default)] text-sm text-[var(--text-primary)] placeholder:text-[var(--text-faint)] focus:outline-none focus:border-[var(--amber-border)] focus:ring-2 focus:ring-[rgba(251,191,36,0.1)] transition-all font-mono"
+          />
         </div>
 
         {/* Actions */}
@@ -172,8 +165,8 @@ export function NewSessionModal({ onConfirm, onCancel }: NewSessionModalProps) {
           </button>
           <button
             onClick={handleConfirm}
-            disabled={!workDir.trim()}
-            className="px-6 py-2 rounded-[var(--radius-md)] bg-[var(--accent-gold)] text-black text-xs font-bold transition-all hover:bg-[var(--accent-gold-bright)] active:scale-[0.98] disabled:opacity-30 disabled:cursor-not-allowed shadow-[0_4px_16px_rgba(251,191,36,0.15)]"
+            disabled={!canConfirm}
+            className="px-6 py-2 rounded-[var(--radius-md)] bg-[var(--accent-gold)] text-black text-xs font-bold transition-all hover:bg-[var(--accent-gold-bright)] active:scale-[0.98] shadow-[0_4px_16px_rgba(251,191,36,0.15)] disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100"
           >
             Start Session
           </button>
