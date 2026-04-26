@@ -455,12 +455,7 @@ func (h *Handler) handleCD(ctx context.Context, env *events.Envelope) error {
 		if err != nil {
 			return h.sendErrorf(ctx, env, events.ErrCodeSessionNotFound, "session not found")
 		}
-		workDir := ""
-		if si.Context != nil {
-			if wd, ok := si.Context["work_dir"].(string); ok {
-				workDir = wd
-			}
-		}
+		workDir := si.WorkDir
 		msgEnv := events.NewEnvelope(
 			aep.NewID(), env.SessionID, h.hub.NextSeq(env.SessionID),
 			events.Message, events.MessageData{Content: workDir},

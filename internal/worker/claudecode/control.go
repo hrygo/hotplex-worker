@@ -7,9 +7,9 @@ import (
 	"io"
 	"log/slog"
 	"maps"
-	"strings"
 	"sync"
 
+	"github.com/hrygo/hotplex/internal/worker/base"
 	"github.com/hrygo/hotplex/pkg/aep"
 )
 
@@ -163,7 +163,7 @@ func (h *ControlHandler) SendControlRequest(ctx context.Context, subtype string,
 	_, err = h.stdin.Write(data)
 	h.mu.Unlock()
 	if err != nil {
-		if strings.Contains(err.Error(), "file already closed") || strings.Contains(err.Error(), "broken pipe") {
+		if base.IsDeadProcessError(err) {
 			return nil, fmt.Errorf("control: worker process is not running or stdin is closed")
 		}
 		return nil, fmt.Errorf("control: write request: %w", err)

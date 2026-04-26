@@ -175,7 +175,14 @@ func (c *Conn) ReadPump(handler *Handler) {
 			env.Seq = c.hub.NextSeq(c.sessionID)
 		}
 
-		// Route to handler with tracing span.
+		// Route to handler — skip tracing span for high-frequency pings.
+		if env.Event.Type == events.Ping {
+			if err := handler.Handle(context.Background(), env); err != nil {
+				c.log.Debug("gateway: handle ping error", "err", err, "session_id", c.sessionID)
+			}
+			continue
+		}
+
 		_, span := tracing.SpanFromContext(context.Background()).Start(context.Background(), "conn.recv")
 		span.SetAttributes(
 			attribute.String("session_id", c.sessionID),

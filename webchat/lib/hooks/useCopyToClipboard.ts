@@ -1,7 +1,8 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 
 export function useCopyToClipboard(resetDelay = 2000) {
   const [copied, setCopied] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const copy = useCallback(
     async (text: string) => {
@@ -15,8 +16,9 @@ export function useCopyToClipboard(resetDelay = 2000) {
         document.execCommand("copy");
         document.body.removeChild(textarea);
       }
+      if (timerRef.current) clearTimeout(timerRef.current);
       setCopied(true);
-      setTimeout(() => setCopied(false), resetDelay);
+      timerRef.current = setTimeout(() => setCopied(false), resetDelay);
     },
     [resetDelay],
   );

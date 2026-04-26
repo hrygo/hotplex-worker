@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"os"
 	"path/filepath"
 	"runtime/debug"
 	"strings"
@@ -677,9 +676,11 @@ func (b *Bridge) attemptResumeFallback(p fallbackParams) bool {
 // Uses CAS via crashedWorker to avoid detaching a worker that was already replaced
 // by a concurrent ResumeSession or attemptResumeFallback.
 func (b *Bridge) cleanupCrashedWorker(sessionID string, crashedWorker worker.Worker) {
-	acc := b.getOrInitAccum(sessionID)
+	acc := b.getAndDeleteAccum(sessionID)
+	if acc == nil {
+		acc = &sessionAccumulator{}
+	}
 	b.log.Debug("bridge: cleaning up crashed worker", "session_id", sessionID, "turn_count", acc.TurnCount)
-	b.deleteAccum(sessionID)
 	if b.sm == nil {
 		return
 	}
@@ -812,13 +813,6 @@ func (b *Bridge) SwitchWorkDir(ctx context.Context, oldSessionID, newWorkDir str
 	}
 
 	cleaned := filepath.Clean(newWorkDir)
-	info, err := os.Stat(cleaned)
-	if err != nil {
-		return nil, fmt.Errorf("switch-workdir: path %s: %w", cleaned, err)
-	}
-	if !info.IsDir() {
-		return nil, fmt.Errorf("switch-workdir: %s is not a directory", cleaned)
-	}
 	if err := security.ValidateWorkDir(cleaned); err != nil {
 		return nil, fmt.Errorf("switch-workdir: %w", err)
 	}
@@ -990,11 +984,14 @@ func (b *Bridge) getOrInitAccum(sessionID string) *sessionAccumulator {
 	return acc
 }
 
-// deleteAccum removes the accumulator for a session (called on cleanup).
-func (b *Bridge) deleteAccum(sessionID string) {
+// getAndDeleteAccum returns and removes the accumulator in a single lock acquisition.
+// Returns nil if no accumulator exists for the session.
+func (b *Bridge) getAndDeleteAccum(sessionID string) *sessionAccumulator {
 	b.accumMu.Lock()
+	defer b.accumMu.Unlock()
+	acc := b.accum[sessionID]
 	delete(b.accum, sessionID)
-	b.accumMu.Unlock()
+	return acc
 }
 
 // injectSessionStats merges the accumulator snapshot into DoneData.Stats["_session"].

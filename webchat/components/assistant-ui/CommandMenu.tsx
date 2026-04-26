@@ -51,7 +51,7 @@ export function CommandMenu({ inputValue, onSelect, isOpen, onClose, skills }: C
     if (isSlash) {
       if (cmd.type !== "slash") return false;
       if (!filterText) return true; // Show all slash commands if only '/' is typed
-      return cmd.key.toLowerCase().includes(inputValue.toLowerCase()) ||
+      return cmd.key.toLowerCase().includes(filterText) ||
              cmd.description.toLowerCase().includes(filterText);
     }
 

@@ -32,6 +32,7 @@ package opencodeserver
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -690,7 +691,7 @@ func (w *Worker) httpPost(ctx context.Context, path string, payload any) error {
 	}
 
 	url := addr + path
-	req, err := http.NewRequestWithContext(ctx, "POST", url, strings.NewReader(string(body)))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("opencodeserver: create request: %w", err)
 	}

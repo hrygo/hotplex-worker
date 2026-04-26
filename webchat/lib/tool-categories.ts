@@ -18,6 +18,11 @@ export const ToolName = {
   ReplaceFileContent: "replace_file_content",
   CreateFile: "create_file",
   ApplyDiff: "apply_diff",
+  Write: "write",
+  WriteToFile: "write_to_file",
+  MultiReplaceFileContent: "multi_replace_file_content",
+  Edit: "edit",
+  StrReplaceEditor: "str_replace_editor",
   // Search
   GrepSearch: "grep_search",
   ViewFile: "view_file",
@@ -39,7 +44,8 @@ const TERMINAL_TOOLS: ReadonlySet<string> = new Set([
 const FILE_TOOLS: ReadonlySet<string> = new Set([
   ToolName.EditFile, ToolName.WriteFile, ToolName.ReplaceFileContent,
   ToolName.CreateFile, ToolName.ApplyDiff,
-  "write", "write_to_file", "multi_replace_file_content", "edit", "str_replace_editor"
+  ToolName.Write, ToolName.WriteToFile, ToolName.MultiReplaceFileContent,
+  ToolName.Edit, ToolName.StrReplaceEditor,
 ]);
 
 const SEARCH_TOOLS: ReadonlySet<string> = new Set([

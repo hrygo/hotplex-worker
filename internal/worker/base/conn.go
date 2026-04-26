@@ -68,13 +68,22 @@ func (c *Conn) Send(ctx context.Context, msg *events.Envelope) error {
 
 	// Write NDJSON to stdin.
 	if err := aep.Encode(c.stdin, msg); err != nil {
-		if strings.Contains(err.Error(), "file already closed") || strings.Contains(err.Error(), "broken pipe") {
+		if IsDeadProcessError(err) {
 			return fmt.Errorf("base: worker process is not running or stdin is closed")
 		}
 		return fmt.Errorf("base: encode: %w", err)
 	}
 
 	return nil
+}
+
+// IsDeadProcessError checks if the error indicates the worker process is gone.
+func IsDeadProcessError(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	return strings.Contains(s, "file already closed") || strings.Contains(s, "broken pipe")
 }
 
 // WriteAll loops syscall.Write until all data is written, handling partial
@@ -126,7 +135,7 @@ func (c *Conn) SendUserMessage(ctx context.Context, content string) error {
 
 	err = WriteAll(int(c.stdin.Fd()), data)
 	if err != nil {
-		if strings.Contains(err.Error(), "file already closed") || strings.Contains(err.Error(), "broken pipe") {
+		if IsDeadProcessError(err) {
 			return fmt.Errorf("base: worker process is not running or stdin is closed")
 		}
 		return fmt.Errorf("base: write user message: %w", err)

@@ -82,12 +82,7 @@ interface HotPlexMessage {
  * Handles both old format (content: string) and new format (parts: MessagePart[]).
  */
 function convertToThreadMessage(message: HotPlexMessage): ThreadMessageLike {
-  // Support both old (content: string) and new (parts: MessagePart[]) message formats
-  const content = 'parts' in message && Array.isArray(message.parts)
-    ? message.parts
-    : typeof (message as unknown as { content?: unknown }).content === 'string'
-      ? [{ type: 'text' as const, text: (message as unknown as { content: string }).content }]
-      : [];
+  const content = message.parts;
 
   const role = (message.role as string) === 'user' ? 'user' : 'assistant';
 
@@ -309,8 +304,7 @@ export function useHotPlexRuntime({
       });
     };
 
-    const handleDone = (data: DoneData, env: Envelope) => {
-      console.log('HotPlexRuntimeAdapter: streaming done', data);
+    const handleDone = (data: DoneData, _env: Envelope) => {
 
       if (data?.stats) {
         recordTurn(data.stats);

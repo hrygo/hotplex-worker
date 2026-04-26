@@ -677,31 +677,19 @@ func stepAgentConfig() (StepResult, []string) {
 		return StepResult{Name: "agent_config", Status: "warn", Detail: "create dir: " + err.Error()}, nil
 	}
 
-	files := []struct {
-		name    string
-		content string
-	}{}
-
-	for _, t := range DefaultTemplates() {
-		files = append(files, struct {
-			name    string
-			content string
-		}{t.Name, t.Content})
-	}
-
 	var created []string
-	for _, f := range files {
-		path := filepath.Join(dir, f.name)
+	for _, t := range DefaultTemplates() {
+		path := filepath.Join(dir, t.Name)
 		fh, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 		if err != nil {
 			if os.IsExist(err) {
 				continue
 			}
-			return StepResult{Name: "agent_config", Status: "warn", Detail: "write " + f.name + ": " + err.Error()}, created
+			return StepResult{Name: "agent_config", Status: "warn", Detail: "write " + t.Name + ": " + err.Error()}, created
 		}
-		_, _ = fh.WriteString(f.content)
+		_, _ = fh.WriteString(t.Content)
 		_ = fh.Close()
-		created = append(created, f.name)
+		created = append(created, t.Name)
 	}
 
 	if len(created) == 0 {

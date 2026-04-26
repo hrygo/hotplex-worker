@@ -205,14 +205,17 @@ export function useSessions({
     }
   }, [sessions, selectSession]);
 
+  const openPanel = useCallback(() => setIsOpen(true), []);
+  const closePanel = useCallback(() => setIsOpen(false), []);
+
   return {
     sessions,
     activeSession,
     isLoading,
     error,
     isOpen,
-    openPanel: () => setIsOpen(true),
-    closePanel: () => setIsOpen(false),
+    openPanel,
+    closePanel,
     refreshSessions,
     createNewSession,
     removeSession,
