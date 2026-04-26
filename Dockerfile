@@ -55,7 +55,7 @@ ARG BUILD_TIME
 
 # Labels for metadata
 LABEL maintainer="HotPlex Team <support@hotplex.dev>"
-LABEL version="1.1.1"
+LABEL version="1.1.2"
 LABEL git.sha="${GIT_SHA}"
 LABEL build.time="${BUILD_TIME}"
 LABEL description="HotPlex Worker Gateway - AI Coding Agent access layer"
