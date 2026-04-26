@@ -29,39 +29,46 @@ function CodeBlock({ raw, lang, highlighted }: { raw: string; lang: string; high
   };
 
   return (
-    <div className="relative group/code my-6 rounded-[var(--radius-lg)] overflow-hidden border border-[var(--border-default)] bg-[#0c0c0f] shadow-[0_8px_32px_rgba(0,0,0,0.5)]">
+    <div className="relative group/code my-6 rounded-[var(--radius-lg)] overflow-hidden border border-[var(--border-default)] bg-[#050507] shadow-2xl transition-all duration-500 hover:border-[var(--border-bright)]">
       <div 
-        className={`flex items-center justify-between px-4 py-2 bg-[var(--bg-surface)] border-b border-[var(--border-subtle)] ${isExpandable ? "cursor-pointer hover:bg-[var(--bg-hover)]" : ""}`}
+        className={`flex items-center justify-between px-4 py-2.5 bg-[#0c0c0f] border-b border-[var(--border-subtle)] relative overflow-hidden ${isExpandable ? "cursor-pointer hover:bg-[var(--bg-hover)]" : ""}`}
         onClick={() => isExpandable && setIsExpanded(!isExpanded)}
       >
-        <div className="flex items-center gap-2">
+        {/* Subtle Header Shimmer */}
+        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/[0.02] to-transparent -translate-x-full group-hover/code:animate-shimmer pointer-events-none" />
+        
+        <div className="flex items-center gap-3 relative z-10">
+          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[var(--bg-elevated)] border border-[var(--border-subtle)]">
+            <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent-gold)] shadow-[0_0_8px_var(--accent-gold)]" />
+            <span className="text-[10px] font-mono font-bold tracking-[0.15em] text-[var(--text-primary)] uppercase">
+              {lang || "CODE"}
+            </span>
+          </div>
           {isExpandable && (
-            <svg 
-              className={`w-3 h-3 transition-transform duration-200 ${isExpanded ? "rotate-90" : ""}`} 
-              fill="none" stroke="currentColor" viewBox="0 0 24 24"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
-            </svg>
+            <span className="text-[10px] font-mono text-[var(--text-faint)] tracking-wider">
+              {lineCount} LINES {isExpanded ? "· CLICK TO COLLAPSE" : "· CLICK TO EXPAND"}
+            </span>
           )}
-          <span className="text-[10px] font-mono font-bold tracking-widest text-[var(--text-faint)] uppercase">
-            {lang || "code"} {isExpandable && `(${lineCount} lines)`}
-          </span>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 relative z-10">
           <button
             onClick={handleCopy}
-            className="text-[10px] font-mono font-bold tracking-wider text-[var(--text-muted)] hover:text-[var(--accent-gold)] transition-colors flex items-center gap-1.5"
+            className={`text-[10px] font-mono font-bold tracking-widest px-3 py-1 rounded-md border transition-all active:scale-95 flex items-center gap-2 ${
+              copied 
+                ? "bg-[rgba(16,185,129,0.1)] border-[var(--accent-emerald)] text-[var(--accent-emerald)]" 
+                : "bg-[var(--bg-elevated)] border-[var(--border-subtle)] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:border-[var(--border-bright)]"
+            }`}
           >
             {copied ? (
               <>
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
                 </svg>
                 COPIED
               </>
             ) : (
               <>
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 012-2v-8a2 2 0 01-2-2h-8a2 2 0 01-2 2v8a2 2 0 012 2z" />
                 </svg>
                 COPY
@@ -100,7 +107,7 @@ export function MarkdownText({ text }: { text: string }) {
   if (!text) return null;
 
   return (
-    <div className="prose prose-invert max-w-none">
+    <div className="prose prose-invert max-w-none prose-p:first:mt-0 prose-p:last:mb-0">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{

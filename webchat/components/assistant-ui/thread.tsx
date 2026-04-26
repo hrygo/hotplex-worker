@@ -7,7 +7,6 @@ import {
   ComposerPrimitive,
   MessagePrimitive,
   ActionBarPrimitive,
-  useMessage,
 } from "@assistant-ui/react";
 import { useAui, useAuiState } from "@assistant-ui/store";
 import { motion, AnimatePresence } from "framer-motion";
@@ -70,6 +69,62 @@ function extractSearchQuery(args: Record<string, any>): string | undefined {
 }
 
 /* ============================================================
+   Pre-Assistant Indicator — § Instant feedback before bot object exists
+   ============================================================ */
+function PreAssistantIndicator() {
+  const isRunning = useAuiState((s) => s.thread.isRunning);
+  const messages = useAuiState((s) => s.thread.messages);
+  const lastMessage = messages[messages.length - 1];
+  
+  // Show if thread is busy but no assistant message has appeared yet for the current turn
+  const isWaiting = isRunning && lastMessage?.role === 'user';
+
+  if (!isWaiting) return null;
+
+  return (
+    <motion.div
+      className="group msg-assistant flex items-center gap-6 mb-12 animate-fade-in"
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+    >
+      <div className="flex-shrink-0">
+        <div className="relative">
+          <div className="absolute inset-0 bg-[var(--accent-gold)] opacity-20 blur-md rounded-xl animate-pulse-subtle" />
+          <div className="w-10 h-10 rounded-xl glass-dark flex items-center justify-center border border-[var(--border-bright)] relative z-10 shadow-lg">
+            <BrandIcon size={30} />
+          </div>
+        </div>
+      </div>
+
+      <div className="msg-assistant-body active-session shadow-[0_0_50px_rgba(251,191,36,0.05)]">
+        <div className="flex items-center gap-4 py-4 px-2">
+          <div className="relative w-8 h-8 flex-shrink-0" style={{ perspective: '400px' }}>
+            <div className="absolute inset-0 bg-[var(--accent-gold)] opacity-20 blur-xl rounded-full animate-pulse-bloom" style={{ animationDuration: '3s' }} />
+            <svg className="absolute inset-[-4px] w-[calc(100%+8px)] h-[calc(100%+8px)] pointer-events-none" style={{ transform: 'rotateX(65deg) rotateY(0deg)', animation: 'rotateOrbit 4s linear infinite' }}>
+              <ellipse cx="50%" cy="50%" rx="12" ry="12" fill="none" stroke="var(--accent-gold)" strokeWidth="0.5" strokeDasharray="1 3" opacity="0.3" />
+              <circle r="1.5" fill="var(--accent-gold)">
+                <animateMotion dur="2s" repeatCount="indefinite" path="M -12,0 a 12,12 0 1,0 24,0 a 12,12 0 1,0 -24,0" />
+              </circle>
+            </svg>
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="w-1.5 h-1.5 rounded-full bg-[var(--accent-gold)] shadow-[0_0_8px_var(--accent-gold)] animate-quantum-wobble" />
+            </div>
+          </div>
+          <div className="flex flex-col gap-1">
+            <span className="text-[10px] font-mono text-[var(--accent-gold)] font-bold tracking-[0.2em] animate-pulse uppercase">
+              Quantum Thinking
+            </span>
+            <span className="text-[9px] font-mono text-[var(--text-faint)] uppercase tracking-wider">
+              Establishing Neural Link...
+            </span>
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+/* ============================================================
    Thread — Main conversation wrapper
    ============================================================ */
 export function Thread({ skills }: { skills?: string[] }) {
@@ -89,10 +144,13 @@ export function Thread({ skills }: { skills?: string[] }) {
 
           {/* Messages */}
           <ThreadPrimitive.Messages>
-            {({ message }) =>
+            {({ message }: { message: any }) =>
               message.role === "user" ? <UserMessage /> : <AssistantMessage />
             }
           </ThreadPrimitive.Messages>
+
+          {/* Instant Response Placeholder — § Removes the 10s black hole gap */}
+          <PreAssistantIndicator />
         </div>
       </ThreadPrimitive.Viewport>
 
@@ -142,35 +200,62 @@ const ICON_PATHS: Record<SuggestionIcon, string> = {
 function WelcomeScreen() {
   return (
     <motion.div
-      className="flex flex-col items-center justify-center py-24 text-center"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.6, ease: [0.2, 0.8, 0.2, 1] }}
+      className="flex flex-col items-center justify-center py-12 text-center"
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
     >
-      <div className="relative mb-8 flex items-center justify-center">
-        <div className="absolute inset-0 bg-[var(--accent-gold)] opacity-10 blur-3xl rounded-[var(--radius-full)] scale-[2]" />
+      <div className="relative mb-14 flex items-center justify-center scale-90 sm:scale-100" style={{ perspective: '1500px' }}>
+        {/* Deep Atmospheric Bloom */}
+        <div className="absolute inset-[-140px] bg-[var(--accent-gold)] rounded-full animate-pulse-bloom pointer-events-none" />
+        
+        {/* SVG Quantum Energy Field */}
+        <svg className="absolute inset-[-120px] w-[calc(100%+240px)] h-[calc(100%+240px)] pointer-events-none overflow-visible" style={{ transform: 'rotateX(65deg) rotateY(0deg)', animation: 'rotateOrbit 25s linear infinite' }}>
+          <defs>
+            <filter id="glow-lg">
+              <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+              <feMerge>
+                <feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/>
+              </feMerge>
+            </filter>
+          </defs>
 
-        {/* Orbital rings */}
-        <div className="absolute w-32 h-32 border border-[var(--accent-gold)] opacity-15 rounded-[var(--radius-full)] animate-[spin_10s_linear_infinite]" />
-        <div className="absolute w-40 h-40 border border-[var(--accent-emerald)] opacity-8 rounded-[var(--radius-full)] animate-[spin_15s_linear_infinite_reverse]" />
+          {/* Orbit 1 — High Density Trails */}
+          <ellipse cx="50%" cy="50%" rx="120" ry="120" fill="none" stroke="var(--accent-gold)" strokeWidth="0.5" strokeDasharray="5 15" opacity="0.2" />
+          {[0, 0.08, 0.16, 0.24].map((d) => (
+            <circle key={`e1-t-${d}`} r={3.5 - d * 6} fill="var(--accent-gold)" opacity={1 - d * 3} filter="url(#glow-lg)">
+              <animateMotion dur="8s" begin={`${d}s`} repeatCount="indefinite" path="M -120,0 a 120,120 0 1,0 240,0 a 120,120 0 1,0 -240,0" />
+            </circle>
+          ))}
 
-        {/* Orbiting particles */}
-        <div className="absolute w-full h-full animate-[orbit_4s_linear_infinite]">
-           <div className="w-2 h-2 rounded-[var(--radius-full)] bg-[var(--accent-gold)] blur-[1px]" />
+          {/* Orbit 2 — Violet Swarm */}
+          <ellipse cx="50%" cy="50%" rx="140" ry="140" fill="none" stroke="var(--accent-violet)" strokeWidth="0.5" strokeDasharray="3 12" opacity="0.15" />
+          {[0, 0.12, 0.24, 0.36].map((d) => (
+            <circle key={`e2-t-${d}`} r={3 - d * 5} fill="var(--accent-violet)" opacity={0.8 - d * 2} filter="url(#glow-lg)">
+              <animateMotion dur="12s" begin={`${d}s`} repeatCount="indefinite" path="M -140,0 a 140,140 0 1,0 280,0 a 140,140 0 1,0 -280,0" />
+            </circle>
+          ))}
+
+          {/* Background Ambient Cloud */}
+          {[100, 130, 160, 190, 220].map((r, i) => (
+            <circle key={`amb-${i}`} r="1.5" fill="white" opacity="0.1" filter="url(#glow-lg)">
+              <animateMotion dur={`${20 + i * 8}s`} begin={`${i * 3}s`} repeatCount="indefinite" path={`M -${r},0 a ${r},${r} 0 1,0 ${r*2},0 a ${r},${r} 0 1,0 -${r*2},0`} />
+            </circle>
+          ))}
+        </svg>
+
+        {/* Nucleus Logo with Magnetic Float */}
+        <div className="relative z-10 flex items-center justify-center animate-float animate-quantum-wobble">
+          <div className="absolute inset-0 bg-[var(--accent-gold)] opacity-30 blur-3xl rounded-full scale-150 animate-pulse-bloom transform-gpu" style={{ animationDuration: '3s' }} />
+          <BrandIcon size={120} className="relative z-20 drop-shadow-[0_0_40px_rgba(251,191,36,0.6)]" />
         </div>
-
-        <BrandIcon size={96} className="relative z-10 animate-float" />
       </div>
 
-      <h1 className="text-4xl font-display font-bold tracking-tight mb-3 text-gradient-gold">
-        How can I help you today?
+      <h1 className="text-3xl sm:text-4xl font-display font-bold tracking-tight mb-10 text-gradient-gold">
+        HotPlex Intelligence
       </h1>
-      <p className="text-lg text-[var(--text-muted)] mb-12 max-w-lg mx-auto">
-        Ask me anything about code, debugging, or software architecture.
-        Empowered by HotPlex Intelligence.
-      </p>
 
-      <div className="grid grid-cols-2 gap-3 w-full max-w-xl mx-auto">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full max-w-2xl mx-auto px-4">
         {SUGGESTIONS.map((s, i) => {
           const selfContained = s.icon === "code";
           return (
@@ -178,19 +263,24 @@ function WelcomeScreen() {
               key={s.prompt}
               prompt={s.prompt}
               {...(selfContained ? { send: true } : {})}
-              className="suggestion-card flex items-center gap-3"
+              className="suggestion-card flex items-center gap-4 p-5 rounded-2xl bg-gradient-to-b from-white/[0.03] to-transparent border border-white/[0.05] hover:border-[var(--border-gold)] transition-all duration-500 group backdrop-blur-md"
             >
               <motion.div
-                className="w-8 h-8 rounded-[var(--radius-sm)] bg-[var(--bg-elevated)] flex items-center justify-center text-[var(--accent-gold)]"
+                className="w-10 h-10 rounded-xl bg-[var(--bg-elevated)] flex items-center justify-center text-[var(--accent-gold)] group-hover:scale-110 transition-transform shadow-lg"
                 initial={{ opacity: 0, scale: 0.8 }}
                 animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: 0.1 + i * 0.05, duration: 0.3 }}
+                transition={{ delay: 0.2 + i * 0.1 }}
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d={ICON_PATHS[s.icon]} />
                 </svg>
               </motion.div>
-              <span className="font-medium">{s.prompt}</span>
+              <div className="text-left">
+                <span className="block text-[9px] font-mono text-[var(--text-faint)] uppercase tracking-[0.2em] mb-0.5 group-hover:text-[var(--accent-gold)] transition-colors">{s.icon}</span>
+                <span className="text-[15px] font-bold text-[var(--text-primary)] group-hover:translate-x-1 transition-transform block">
+                  {s.prompt}
+                </span>
+              </div>
             </ThreadPrimitive.Suggestion>
           );
         })}
@@ -203,28 +293,34 @@ function WelcomeScreen() {
    Assistant Message
    ============================================================ */
 function AssistantMessage() {
-  const message = useMessage();
+  const message = useAuiState((s) => s.message);
+  const isStreaming = message.status?.type === "running";
 
   return (
     <motion.div
-      className="group msg-assistant"
+      className="group msg-assistant flex items-center gap-6 mb-12"
       variants={messageVariants}
       initial="hidden"
       animate="visible"
     >
       <div className="flex-shrink-0">
-        <div className="w-9 h-9 rounded-[var(--radius-md)] glass-dark flex items-center justify-center">
-          <BrandIcon size={28} />
+        <div className="relative">
+          <div className="absolute inset-0 bg-[var(--accent-gold)] opacity-20 blur-md rounded-xl animate-pulse-subtle" />
+          <div className="w-10 h-10 rounded-xl glass-dark flex items-center justify-center border border-[var(--border-bright)] relative z-10 shadow-lg">
+            <BrandIcon size={30} />
+          </div>
         </div>
       </div>
 
-      <div className="msg-assistant-body pt-[5px]">
+      <div className={`msg-assistant-body relative transition-all duration-700 ${isStreaming ? "active-session shadow-[0_0_50px_rgba(251,191,36,0.05)]" : ""}`}>
+        {isStreaming && (
+          <div className="absolute -left-6 top-4 bottom-4 w-0.5 bg-gradient-to-b from-[var(--accent-gold)] via-[var(--accent-violet)] to-transparent opacity-30 animate-pulse" />
+        )}
         <MessagePrimitive.Parts>
-          {({ part }) => {
+          {({ part }: { part: any }) => {
             const p = part as Record<string, any>;
             if (!p || !p.type) return null;
-            const status = (message as Record<string, any>)?.status;
-            const isStreaming = status?.type === "running";
+            const isStreaming = message.status?.type === "running";
 
             if (p.type === "reasoning") {
               return <ReasoningBlock text={p.text} />;
@@ -296,17 +392,29 @@ function AssistantMessage() {
           }}
         </MessagePrimitive.Parts>
         
-        {/* Loading indicator when running but no parts yet */}
-        {(message as any).status?.type === "running" && (!message.content || message.content.length === 0) && (
-          <div className="flex items-center gap-2 py-2">
-            <motion.div 
-              className="w-2 h-2 rounded-full bg-[var(--accent-gold)]"
-              animate={{ opacity: [0.3, 1, 0.3] }}
-              transition={{ repeat: Infinity, duration: 1.5, ease: "easeInOut" }}
-            />
-            <span className="text-xs font-mono text-[var(--text-faint)] animate-pulse uppercase tracking-widest">
-              Thinking...
-            </span>
+        {/* Quantum Thinking — § Instant feedback without black hole effect */}
+        {message.status?.type === "running" && (!message.content || message.content.length === 0) && (
+          <div className="flex items-center gap-4 py-4 px-2 animate-fade-in">
+             <div className="relative w-8 h-8 flex-shrink-0" style={{ perspective: '400px' }}>
+                <div className="absolute inset-0 bg-[var(--accent-gold)] opacity-20 blur-xl rounded-full animate-pulse-bloom" style={{ animationDuration: '3s' }} />
+                <svg className="absolute inset-[-4px] w-[calc(100%+8px)] h-[calc(100%+8px)] pointer-events-none" style={{ transform: 'rotateX(65deg) rotateY(0deg)', animation: 'rotateOrbit 4s linear infinite' }}>
+                   <ellipse cx="50%" cy="50%" rx="12" ry="12" fill="none" stroke="var(--accent-gold)" strokeWidth="0.5" strokeDasharray="1 3" opacity="0.3" />
+                   <circle r="1.5" fill="var(--accent-gold)">
+                      <animateMotion dur="2s" repeatCount="indefinite" path="M -12,0 a 12,12 0 1,0 24,0 a 12,12 0 1,0 -24,0" />
+                   </circle>
+                </svg>
+                <div className="absolute inset-0 flex items-center justify-center">
+                   <div className="w-1.5 h-1.5 rounded-full bg-[var(--accent-gold)] shadow-[0_0_8px_var(--accent-gold)] animate-quantum-wobble" />
+                </div>
+             </div>
+             <div className="flex flex-col gap-1">
+                <span className="text-[10px] font-mono text-[var(--accent-gold)] font-bold tracking-[0.2em] animate-pulse uppercase">
+                   Quantum Thinking
+                </span>
+                <span className="text-[9px] font-mono text-[var(--text-faint)] uppercase tracking-wider">
+                   Initializing Neural Circuitry...
+                </span>
+             </div>
           </div>
         )}
 
@@ -324,17 +432,18 @@ function AssistantMessage() {
 function UserMessage() {
   return (
     <motion.div
-      className="group msg-user"
+      className="group msg-user flex flex-col items-end mb-12"
       variants={messageVariants}
       initial="hidden"
       animate="visible"
     >
-      <div className="msg-user-bubble">
+      <div className="msg-user-bubble bg-[var(--bg-elevated)] border border-[var(--border-default)] shadow-2xl relative overflow-hidden group-hover:border-[var(--border-bright)] transition-all duration-500">
+        <div className="absolute inset-0 bg-gradient-to-br from-white/[0.02] to-transparent pointer-events-none" />
         <MessagePrimitive.Content />
       </div>
 
-      <ActionBarPrimitive.Root className="flex items-center gap-3 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
-        <ActionBarPrimitive.Copy className="text-[10px] uppercase tracking-wider font-bold text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">
+      <ActionBarPrimitive.Root className="flex items-center gap-4 mt-3 opacity-0 group-hover:opacity-100 transition-all duration-300 translate-y-1 group-hover:translate-y-0">
+        <ActionBarPrimitive.Copy className="text-[10px] uppercase tracking-[0.2em] font-bold text-[var(--text-faint)] hover:text-[var(--text-primary)] transition-colors cursor-pointer">
           Copy
         </ActionBarPrimitive.Copy>
       </ActionBarPrimitive.Root>
@@ -398,37 +507,49 @@ function ReasoningBlock({ text }: { text: string }) {
    ============================================================ */
 function ToolCallBlock({ toolName, args, active }: { toolName: string; args: any; active?: boolean }) {
   return (
-    <div className={`tool-call-block ${active ? "animate-pulse-subtle border-[var(--accent-emerald)]" : ""}`}>
-      <div className="tool-header">
-        <svg
-          className={`w-3.5 h-3.5 ${active ? "animate-spin" : ""}`}
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-        </svg>
-        <span className={active ? "font-bold" : ""}>
-          {active ? "EXECUTING" : "CALLED"}: {toolName.toUpperCase()}
+    <div className={`tool-call-block group relative overflow-hidden ${active ? "active-tool border-[var(--accent-gold)]/30" : "border-white/[0.05]"}`}>
+      {active && (
+        <div className="absolute inset-0 bg-gradient-to-r from-[var(--accent-gold)]/5 to-transparent animate-pulse-bloom" style={{ animationDuration: '3s' }} />
+      )}
+      <div className="tool-header flex items-center gap-3 relative z-10">
+        <div className="relative w-5 h-5 flex items-center justify-center">
+           {active ? (
+             <>
+               <div className="absolute inset-0 bg-[var(--accent-gold)] opacity-20 blur-md rounded-full animate-pulse" />
+               <svg className="absolute inset-[-2px] w-[calc(100%+4px)] h-[calc(100%+4px)]" style={{ animation: 'rotateOrbit 3s linear infinite' }}>
+                 <circle cx="50%" cy="50%" r="8" fill="none" stroke="var(--accent-gold)" strokeWidth="1" strokeDasharray="1 4" opacity="0.4" />
+                 <circle r="1.2" fill="var(--accent-gold)">
+                   <animateMotion dur="1.5s" repeatCount="indefinite" path="M -8,0 a 8,8 0 1,0 16,0 a 8,8 0 1,0 -16,0" />
+                 </circle>
+               </svg>
+               <div className="w-1 h-1 rounded-full bg-[var(--accent-gold)] animate-quantum-wobble" />
+             </>
+           ) : (
+             <svg className="w-3.5 h-3.5 text-[var(--text-faint)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+             </svg>
+           )}
+        </div>
+        <span className={`text-[10px] font-mono tracking-widest uppercase ${active ? "text-[var(--accent-gold)] font-bold" : "text-[var(--text-muted)]"}`}>
+          {active ? "Quantum Executing" : "Task Completed"}: {toolName.toUpperCase()}
         </span>
-        {active && (
-          <motion.span
-            className="ml-auto flex gap-0.5"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-          >
-            {[0, 1, 2].map((i) => (
-              <motion.span
-                key={i}
-                className="w-1 h-1 rounded-full bg-[var(--accent-emerald)]"
-                animate={{ scale: [1, 1.5, 1], opacity: [0.5, 1, 0.5] }}
-                transition={{ repeat: Infinity, duration: 1, delay: i * 0.2 }}
-              />
-            ))}
-          </motion.span>
-        )}
       </div>
-      <div className="p-3 pt-0 font-mono text-[11px] text-[var(--text-muted)] opacity-70 break-all whitespace-pre-wrap">
+      
+      {active && (
+        <div className="mt-2 pl-8 flex flex-col gap-1.5">
+           <div className="h-1 w-full bg-white/[0.02] rounded-full overflow-hidden">
+              <motion.div 
+                className="h-full bg-gradient-to-r from-[var(--accent-gold)] to-[var(--accent-violet)]"
+                animate={{ x: ["-100%", "100%"] }}
+                transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
+              />
+           </div>
+           <span className="text-[9px] font-mono text-[var(--text-faint)] uppercase tracking-tighter opacity-60">
+              Processing Dimensional Data...
+           </span>
+        </div>
+      )}
+      <div className="p-3 pt-0 mt-3 font-mono text-[11px] text-[var(--text-muted)] opacity-70 break-all whitespace-pre-wrap border-t border-white/[0.03] pt-3">
         {Object.entries(args).map(([k, v]) => `${k}=${typeof v === 'string' ? v : JSON.stringify(v)}`).join('\n')}
       </div>
     </div>

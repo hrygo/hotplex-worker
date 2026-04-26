@@ -35,15 +35,19 @@ function SessionRow({
       tabIndex={0}
       onClick={onSelect}
       onKeyDown={(e) => e.key === 'Enter' && onSelect()}
-      className={`group relative mx-2 mb-2 p-3.5 rounded-2xl border transition-all duration-300 cursor-pointer overflow-hidden ${
+      className={`group relative mx-2 mb-2 p-4 rounded-[20px] border transition-all duration-500 cursor-pointer overflow-hidden ${
         isActive
-          ? 'bg-[var(--amber-light)] border-[var(--amber-border)] shadow-[0_8px_32px_rgba(251,191,36,0.12)]'
-          : 'bg-[var(--bg-surface)] border-[var(--border-subtle)] hover:bg-[var(--bg-hover)] hover:border-[var(--border-bright)]'
+          ? 'bg-[var(--bg-elevated)] border-[var(--amber-border)] shadow-[0_12px_40px_rgba(0,0,0,0.5)] scale-[1.02] z-10'
+          : 'bg-transparent border-transparent hover:bg-[var(--bg-hover)] hover:border-[var(--border-subtle)]'
       }`}
     >
-      {/* Active Indicator Glow */}
+      {/* Active Glow Effect */}
       {isActive && (
-        <div className="absolute -right-4 -top-4 w-24 h-24 bg-[var(--accent-gold)] opacity-[0.05] blur-2xl pointer-events-none" />
+        <div className="absolute inset-0 pointer-events-none">
+          <div className="absolute -right-12 -top-12 w-32 h-32 bg-[var(--accent-gold)] opacity-[0.08] blur-3xl" />
+          <div className="absolute -left-12 -bottom-12 w-32 h-32 bg-[var(--accent-blue)] opacity-[0.05] blur-3xl" />
+          <div className="absolute inset-0 bg-gradient-to-br from-[var(--amber-light)] to-transparent opacity-50" />
+        </div>
       )}
 
       <div className="flex flex-col gap-3">
@@ -175,14 +179,20 @@ export function SessionPanel({
   return (
     <div className="pc-sidebar flex flex-col h-full bg-[var(--bg-base)] border-r border-[var(--border-subtle)] w-[280px]">
       {/* Sidebar Header */}
-      <div className="px-5 py-6">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-9 h-9 rounded-xl glass-dark flex items-center justify-center">
-            <BrandIcon size={28} />
+      <div className="px-6 py-8">
+        <div className="flex items-center gap-4 mb-8">
+          <div className="relative">
+            <div className="absolute inset-0 bg-[var(--accent-gold)] opacity-20 blur-xl rounded-full animate-pulse-subtle" />
+            <div className="w-10 h-10 rounded-2xl glass-dark flex items-center justify-center relative z-10 border border-[var(--border-bright)]">
+              <BrandIcon size={30} />
+            </div>
           </div>
           <div>
-            <h2 className="text-sm font-display font-bold text-[var(--text-primary)]">HotPlex Sessions</h2>
-            <p className="text-[10px] font-mono text-[var(--text-faint)] uppercase tracking-widest">Gateway v1</p>
+            <h2 className="text-[15px] font-display font-bold text-[var(--text-primary)] tracking-tight">HotPlex</h2>
+            <div className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent-emerald)] shadow-[0_0_8px_var(--accent-emerald)]" />
+              <p className="text-[9px] font-mono text-[var(--text-faint)] uppercase tracking-[0.2em]">Core v1.26</p>
+            </div>
           </div>
         </div>
 
@@ -190,16 +200,17 @@ export function SessionPanel({
         <button
           onClick={() => onCreate()}
           disabled={isLoading}
-          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-[var(--accent-gold)] text-black hover:bg-[var(--accent-gold-bright)] active:scale-95 transition-all shadow-[0_4px_16px_rgba(251,191,36,0.15)] font-bold text-xs disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full group relative flex items-center justify-center gap-2.5 py-3 rounded-2xl bg-[var(--bg-elevated)] text-[var(--text-primary)] hover:scale-[1.02] active:scale-[0.98] transition-all duration-300 shadow-[0_8px_30px_rgba(0,0,0,0.3)] font-bold text-[13px] disabled:opacity-50 disabled:cursor-not-allowed overflow-hidden border border-[var(--border-default)] hover:border-[var(--border-gold)]"
         >
+          <div className="absolute inset-0 bg-gradient-to-r from-[var(--accent-gold)] to-[var(--accent-violet)] opacity-0 group-hover:opacity-[0.08] transition-opacity duration-500" />
           {isLoading ? (
-            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+            <div className="w-4 h-4 border-2 border-[var(--accent-gold)] border-t-transparent rounded-full animate-spin" />
           ) : (
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            <svg className="w-4 h-4 text-[var(--accent-gold)] transition-transform duration-500 group-hover:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
             </svg>
           )}
-          {isLoading ? 'Creating...' : 'New Chat'}
+          <span className="relative z-10">{isLoading ? 'Initializing...' : 'New Session'}</span>
         </button>
       </div>
 
