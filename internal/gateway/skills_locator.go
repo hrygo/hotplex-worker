@@ -132,13 +132,13 @@ func (l *FileSystemSkillsLocator) parseSkillFile(path string) (name, description
 		return "", "", false
 	}
 
-	frontmatterEnd := strings.Index(content[3:], "---")
-	if frontmatterEnd < 0 {
+	// Find closing --- (relative to content[3:] which skips the opening ---)
+	endIdx := strings.Index(content[3:], "---")
+	if endIdx < 0 {
 		return "", "", false
 	}
-	frontmatterEnd += 3 // account for the opening ---
-
-	fm := content[3:frontmatterEnd]
+	// endIdx is relative to content[3:], absolute position is endIdx+3
+	fm := content[:endIdx+3]
 	lines := strings.Split(fm, "\n")
 
 	var fmName, fmDesc string

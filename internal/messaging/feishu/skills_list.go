@@ -46,15 +46,11 @@ func (c *FeishuConn) sendSkillsList(ctx context.Context, env *events.Envelope) e
 		sb.WriteByte('\n')
 
 		for _, s := range batch {
-			icon := "\U0001F310" // 🌐 global
-			if s.Source == "project" {
-				icon = "\U0001F4C1" // 📁 project
-			}
 			desc := s.Description
-			if len([]rune(desc)) > 80 {
-				desc = string([]rune(desc)[:77]) + "..."
+			if len([]rune(desc)) > 120 {
+				desc = string([]rune(desc)[:117]) + "..."
 			}
-			fmt.Fprintf(&sb, "%s %s — %s\n", icon, s.Name, desc)
+			fmt.Fprintf(&sb, "*%s*\n%s\n\n", s.Name, desc)
 		}
 
 		if end < len(d.Skills) {
