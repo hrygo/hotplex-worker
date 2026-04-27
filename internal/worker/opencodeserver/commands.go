@@ -237,8 +237,14 @@ func (c *ServerCommander) lastKnownModel(ctx context.Context) (providerID, model
 		return "", ""
 	}
 	for i := len(messages) - 1; i >= 0; i-- {
-		if messages[i].Info.Role == "assistant" && messages[i].Info.Model != nil {
+		if messages[i].Info.Role != "assistant" {
+			continue
+		}
+		if messages[i].Info.Model != nil && (messages[i].Info.Model.ProviderID != "" || messages[i].Info.Model.ModelID != "") {
 			return messages[i].Info.Model.ProviderID, messages[i].Info.Model.ModelID
+		}
+		if messages[i].Info.ProviderID != "" || messages[i].Info.ModelID != "" {
+			return messages[i].Info.ProviderID, messages[i].Info.ModelID
 		}
 	}
 	return "", ""
@@ -246,18 +252,13 @@ func (c *ServerCommander) lastKnownModel(ctx context.Context) (providerID, model
 
 // lastAssistantMessageID returns the ID of the most recent assistant message.
 func (c *ServerCommander) lastAssistantMessageID(ctx context.Context) string {
-	var messages []struct {
-		ID   string `json:"id"`
-		Info struct {
-			Role string `json:"role"`
-		} `json:"info"`
-	}
+	var messages []openCodeMessage
 	if err := c.doGet(ctx, "/session/"+c.sessionID+"/message?limit=50", &messages); err != nil {
 		return ""
 	}
 	for i := len(messages) - 1; i >= 0; i-- {
 		if messages[i].Info.Role == "assistant" {
-			return messages[i].ID
+			return messages[i].Info.ID
 		}
 	}
 	return ""
@@ -271,7 +272,10 @@ var (
 
 type openCodeMessage struct {
 	Info struct {
-		Role   string `json:"role"`
+		ID         string `json:"id"`
+		Role       string `json:"role"`
+		ProviderID string `json:"providerID"`
+		ModelID    string `json:"modelID"`
 		Tokens *struct {
 			Input     int `json:"input"`
 			Output    int `json:"output"`

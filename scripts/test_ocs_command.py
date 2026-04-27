@@ -104,11 +104,37 @@ class OCSClient:
         return self._request("POST", f"/session/{session_id}/message", body, timeout=60)
 
     def compact(self, session_id: str) -> tuple[int, dict | None]:
-        """POST /session/{id}/summarize — compact conversation."""
-        return self._request("POST", f"/session/{session_id}/summarize", {"auto": False}, timeout=60)
+        """POST /session/{id}/summarize — compact conversation.
+
+        Simulates HotPlex ServerCommander: queries recent messages to find
+        the model used by the last assistant turn, then sends providerID+modelID.
+        """
+        pid, mid = "", ""
+        messages = self.list_messages(session_id, limit=50)
+        for msg in reversed(messages):
+            info = msg.get("info", {})
+            if info.get("role") == "assistant":
+                pid = info.get("providerID", "")
+                mid = info.get("modelID", "")
+                break
+        body: dict = {"auto": False}
+        if pid or mid:
+            body["providerID"] = pid
+            body["modelID"] = mid
+        return self._request("POST", f"/session/{session_id}/summarize", body, timeout=60)
 
     def rewind(self, session_id: str, message_id: str = "") -> tuple[int, dict | None]:
-        """POST /session/{id}/revert — rewind conversation."""
+        """POST /session/{id}/revert — rewind conversation.
+
+        Simulates HotPlex ServerCommander: when no message_id given, queries
+        recent messages to find the last assistant message ID.
+        """
+        if not message_id:
+            messages = self.list_messages(session_id, limit=50)
+            for msg in reversed(messages):
+                if msg.get("info", {}).get("role") == "assistant":
+                    message_id = msg.get("info", {}).get("id", "")
+                    break
         body = {"messageID": message_id} if message_id else {}
         return self._request("POST", f"/session/{session_id}/revert", body, timeout=30)
 
