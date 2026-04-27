@@ -8,22 +8,32 @@ interface SearchToolProps {
   toolName: string;
   query?: string;
   results?: Array<{ file: string; line?: number; text: string; match?: string }>;
-  status: "running" | "complete";
+  status: "running" | "complete" | "error";
+  onToggle?: () => void;
 }
 
-export function SearchTool({ toolName, query, results, status }: SearchToolProps) {
+export function SearchTool({ toolName, query, results, status, onToggle }: SearchToolProps) {
   return (
     <div className="rounded-[var(--radius-md)] overflow-hidden border border-[var(--border-default)] my-4 shadow-[0_8px_32px_rgba(0,0,0,0.5)]">
       {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-2 bg-[var(--bg-surface)] border-b border-[var(--border-subtle)]">
-        <svg className="w-3.5 h-3.5 text-[var(--accent-violet)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <div 
+        className={`flex items-center gap-2 px-3 py-2 bg-[var(--bg-surface)] border-b border-[var(--border-subtle)] ${onToggle ? "cursor-pointer hover:bg-[var(--bg-hover)] transition-colors" : ""}`}
+        onClick={onToggle}
+      >
+        <svg className="w-3.5 h-3.5 text-[var(--accent-gold)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
         </svg>
         <span className="text-[11px] font-mono text-[var(--text-secondary)]">
-          {toolName === ToolName.GrepSearch ? "grep" : toolName}
-          {query && <span className="text-[var(--accent-violet)] ml-1">"{query}"</span>}
+          {toolName} {query && <span className="text-[var(--accent-gold)] ml-1">"{query}"</span>}
         </span>
-        {status === "complete" && results && (
+        {onToggle && status !== "running" && (
+          <div className="ml-auto text-[var(--text-faint)]">
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+            </svg>
+          </div>
+        )}
+        {!onToggle && status === "complete" && results && (
           <span className="ml-auto text-[9px] font-mono text-[var(--text-faint)]">
             {results.length} result{results.length !== 1 ? "s" : ""}
           </span>

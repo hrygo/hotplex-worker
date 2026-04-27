@@ -321,7 +321,7 @@ const (
 // IsPassthrough returns true if the command is sent as a user message via Input.
 func (c WorkerStdioCommand) IsPassthrough() bool {
 	switch c {
-	case StdioCompact, StdioClear, StdioModel, StdioEffort, StdioRewind, StdioCommit:
+	case StdioCompact, StdioClear, StdioModel, StdioEffort, StdioRewind, StdioCommit, StdioSkills:
 		return true
 	default:
 		return false

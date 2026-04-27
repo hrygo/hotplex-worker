@@ -8,12 +8,13 @@ interface TerminalToolProps {
   command: string;
   stdout?: string;
   stderr?: string;
-  status: "running" | "complete";
+  status: "running" | "complete" | "error";
+  onToggle?: () => void;
 }
 
 const MAX_VISIBLE_LINES = 15;
 
-export function TerminalTool({ command, stdout, stderr, status }: TerminalToolProps) {
+export function TerminalTool({ command, stdout, stderr, status, onToggle }: TerminalToolProps) {
   const [expanded, setExpanded] = useState(false);
   const output = stderr || stdout || "";
   const lines = output.split("\n").filter(Boolean);
@@ -24,7 +25,10 @@ export function TerminalTool({ command, stdout, stderr, status }: TerminalToolPr
   return (
     <div className="rounded-[var(--radius-md)] overflow-hidden border border-[var(--border-default)] my-4 shadow-[0_8px_32px_rgba(0,0,0,0.5)]">
       {/* Terminal header */}
-      <div className="flex items-center gap-2 px-3 py-2 bg-[var(--bg-surface)] border-b border-[var(--border-subtle)]">
+      <div 
+        className={`flex items-center gap-2 px-3 py-2 bg-[var(--bg-surface)] border-b border-[var(--border-subtle)] ${onToggle ? "cursor-pointer hover:bg-[var(--bg-hover)] transition-colors" : ""}`}
+        onClick={onToggle}
+      >
         <div className="flex gap-1.5">
           <span className="w-2.5 h-2.5 rounded-full bg-[var(--accent-coral)] opacity-80" />
           <span className="w-2.5 h-2.5 rounded-full bg-[var(--accent-gold)] opacity-80" />
@@ -42,6 +46,13 @@ export function TerminalTool({ command, stdout, stderr, status }: TerminalToolPr
             <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent-emerald)]" />
             Executing...
           </motion.span>
+        )}
+        {onToggle && status !== "running" && (
+          <div className="ml-auto text-[var(--text-faint)]">
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+            </svg>
+          </div>
         )}
       </div>
 

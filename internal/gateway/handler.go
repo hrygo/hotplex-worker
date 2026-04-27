@@ -169,9 +169,10 @@ func (h *Handler) handleInput(ctx context.Context, env *events.Envelope) error {
 	w := h.sm.GetWorker(env.SessionID)
 	if w != nil {
 		if h.log.Enabled(ctx, slog.LevelDebug) {
-			preview := content
-			if len(preview) > 20 {
-				preview = preview[:20] + "..."
+			runes := []rune(content)
+			preview := string(runes)
+			if len(runes) > 32 {
+				preview = string(runes[:32]) + "..."
 			}
 			h.log.Debug("gateway: delivering input to worker", "session_id", env.SessionID, "content_len", len(content), "preview", preview)
 		}

@@ -33,29 +33,24 @@ export const ToolName = {
   AskPermission: "ask_permission",
   Confirm: "confirm",
   Elicitation: "elicitation",
-  // Tasks
-  TodoWrite: "TodoWrite",
 } as const;
 
-export type ToolCategory = "terminal" | "file-write" | "file-read" | "search" | "list" | "task" | "permission" | "default";
+export type ToolCategory = "terminal" | "file" | "search" | "list" | "permission" | "default";
 
 const TERMINAL_TOOLS: ReadonlySet<string> = new Set([
   ToolName.RunCommand, ToolName.Bash, ToolName.ExecuteCommand, ToolName.Shell,
 ]);
 
-const FILE_WRITE_TOOLS: ReadonlySet<string> = new Set([
+const FILE_TOOLS: ReadonlySet<string> = new Set([
   ToolName.EditFile, ToolName.WriteFile, ToolName.ReplaceFileContent,
   ToolName.CreateFile, ToolName.ApplyDiff,
   ToolName.Write, ToolName.WriteToFile, ToolName.MultiReplaceFileContent,
   ToolName.Edit, ToolName.StrReplaceEditor,
 ]);
 
-const FILE_READ_TOOLS: ReadonlySet<string> = new Set([
-  ToolName.ViewFile, ToolName.ReadFile,
-]);
-
 const SEARCH_TOOLS: ReadonlySet<string> = new Set([
-  ToolName.GrepSearch, ToolName.SearchFiles,
+  ToolName.GrepSearch, ToolName.ViewFile, ToolName.SearchFiles,
+  ToolName.ReadFile,
 ]);
 
 const LIST_TOOLS: ReadonlySet<string> = new Set([
@@ -66,18 +61,12 @@ const PERMISSION_TOOLS: ReadonlySet<string> = new Set([
   ToolName.AskPermission, ToolName.Confirm, ToolName.Elicitation,
 ]);
 
-const TASK_TOOLS: ReadonlySet<string> = new Set([
-  "todowrite",
-]);
-
 export function getToolCategory(name: string): ToolCategory {
   const lowerName = name?.toLowerCase()?.trim() || "";
   if (TERMINAL_TOOLS.has(lowerName)) return "terminal";
-  if (FILE_WRITE_TOOLS.has(lowerName)) return "file-write";
-  if (FILE_READ_TOOLS.has(lowerName)) return "file-read";
+  if (FILE_TOOLS.has(lowerName)) return "file";
   if (SEARCH_TOOLS.has(lowerName)) return "search";
   if (LIST_TOOLS.has(lowerName)) return "list";
-  if (TASK_TOOLS.has(lowerName)) return "task";
   if (PERMISSION_TOOLS.has(lowerName)) return "permission";
   return "default";
 }

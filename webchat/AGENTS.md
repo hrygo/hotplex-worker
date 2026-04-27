@@ -1,56 +1,43 @@
-# HotPlex Web Chat
+# HotPlex Web Chat (Hybrid Architecture v5)
 
 ## OVERVIEW
-Next.js 15 App Router web chat UI using Vercel AI SDK `useChat` hook + `@hotplex/ai-sdk-transport` for AEP v1 WebSocket communication with HotPlex Gateway.
+Next.js 15 App Router web chat UI. This version implements a **Hybrid Architecture**: combining the visual stability of the original **Industrial Dark Theme** with the advanced **Execution-Path Logic** from the v2 workbench.
+
+## DESIGN PHILOSOPHY
+- **Visual Continuity**: Retains the deep charcoal (#050506) and glassmorphism aesthetic preferred for long coding sessions.
+- **Smart Collapsing (Functional Regression)**: Automatically compresses completed, non-last tool calls into compact tabs to maintain high information density.
+- **Execution Path logic**: Uses a refined tool-routing engine (`getToolCategory`) to render specialized GenUI components.
 
 ## STRUCTURE
 ```
-app/
-  layout.tsx            # Root layout, global CSS
-  page.tsx              # Main page, renders ChatContainer
-  api/chat/route.ts     # Server-side: createHotPlexHandler → streaming Response
-  components/
-    chat/
-      ChatContainer.tsx # Main chat component: useChat hook + message list + input
-      MessageList.tsx   # Scrollable message list
-      MessageBubble.tsx # Single message rendering (user/assistant)
-      MessageContent.tsx # Markdown rendering with react-markdown
-      CodeBlock.tsx     # Syntax-highlighted code blocks (highlight.js)
-      ChatInput.tsx     # Input form with send button
-      ThinkingIndicator.tsx # Loading/thinking animation
-      ErrorMessage.tsx  # Error display component
-    ui/
-      CopyButton.tsx    # Clipboard copy button
+webchat/
+  app/
+    globals.css         # Original Industrial Dark Theme variables
+  components/assistant-ui/
+    thread.tsx          # Hybrid Hub: Dark UI + Smart Tool Collapsing Logic
+    tools/              # Enhanced Functional Components
+      CompactToolTab.tsx # Logic for tool compression
+      TerminalTool.tsx   # Advanced CLI output with auto-truncation
+      FileDiffTool.tsx   # Robust diff and content parsing
+      PermissionCard.tsx # Standardized authorization UX
+  lib/
+    tool-categories.ts   # Functional tool mapping
 ```
+
+## KEY FEATURES (回归功能)
+- **Smart Execution Path**: Automated state-driven tool collapsing (only the active/last tool stays expanded).
+- **Reasoning Duration**: Thinking blocks now include estimated duration and support manual expansion.
+- **Safe State Transitions**: Powered by Framer Motion to ensure smooth UI swaps between tool execution and results.
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |------|----------|-------|
-| Change chat behavior | `app/components/chat/ChatContainer.tsx` | useChat hook config, message handling |
-| API route | `app/api/chat/route.ts` | createHotPlexHandler from ai-sdk-transport/server |
-| Styling | `app/globals.css` | Tailwind CSS v4 |
-| Message rendering | `app/components/chat/MessageContent.tsx` | react-markdown + rehype-highlight + remark-gfm |
+| **UI Styling** | `app/globals.css` | Industrial Dark tokens and bubble styles |
+| **Execution Logic** | `components/assistant-ui/thread.tsx` | Message list & Tool collapsing logic |
+| **Tool Components** | `components/assistant-ui/tools/` | Re-introduced functional toolsets |
 
-## KEY PATTERNS
-
-**Data flow**
-```
-Browser (useChat) → POST /api/chat → createHotPlexHandler → WS to Gateway → AEP events → AI SDK stream → Response
-```
-
-**Dependencies**
-- `@hotplex/ai-sdk-transport`: linked via `file:../packages/ai-sdk-transport`
-- `ai` + `@ai-sdk/react`: Vercel AI SDK core + React hooks
-- `next` 15 + `react` 19 + `tailwindcss` 4
-
-**Environment config**
-- `HOTPLEX_WS_URL` — Gateway WebSocket URL (default ws://localhost:8888)
-- `HOTPLEX_WORKER_TYPE` — Worker type (default claude_code)
-- `HOTPLEX_AUTH_TOKEN` — Optional auth token
-
-## COMMANDS
-```bash
-pnpm install          # Install deps (resolves ai-sdk-transport from ../packages)
-pnpm dev              # Start dev server (default :3000)
-pnpm build            # Production build
-```
+## CONVENTIONS
+- **Deprecation Policy**: **Strictly NO use of `useMessage` hook.** Always pass the `message` object as a prop from the loop.
+- **Action UI**: Avoid `ActionBarPrimitive`; implement custom action buttons using standard components for better control and styling.
+- **Functional Stability**: Maintain the current Dark UI; focus all enhancements on state handling and tool interactivity.
+- **Tool Keys**: Always use `toolCallId` for motion keys to prevent jitter during streaming.

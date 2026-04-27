@@ -14,21 +14,32 @@ interface ListToolProps {
   toolName: string;
   path?: string;
   items?: ListItem[];
-  status: "running" | "complete";
+  status: "running" | "complete" | "error";
+  onToggle?: () => void;
 }
 
-export function ListTool({ toolName, path, items, status }: ListToolProps) {
+export function ListTool({ toolName, path, items, status, onToggle }: ListToolProps) {
   return (
     <div className="rounded-[var(--radius-md)] overflow-hidden border border-[var(--border-default)] my-4 shadow-[0_8px_32px_rgba(0,0,0,0.5)]">
       {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-2 bg-[var(--bg-surface)] border-b border-[var(--border-subtle)]">
+      <div 
+        className={`flex items-center gap-2 px-3 py-2 bg-[var(--bg-surface)] border-b border-[var(--border-subtle)] ${onToggle ? "cursor-pointer hover:bg-[var(--bg-hover)] transition-colors" : ""}`}
+        onClick={onToggle}
+      >
         <svg className="w-3.5 h-3.5 text-[var(--accent-gold)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
         </svg>
         <span className="text-[11px] font-mono text-[var(--text-secondary)]">
           {toolName} {path && <span className="text-[var(--accent-gold)] ml-1">{path}</span>}
         </span>
-        {status === "complete" && items && (
+        {onToggle && status !== "running" && (
+          <div className="ml-auto text-[var(--text-faint)]">
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+            </svg>
+          </div>
+        )}
+        {!onToggle && status === "complete" && items && (
           <span className="ml-auto text-[9px] font-mono text-[var(--text-faint)]">
             {items.length} item{items.length !== 1 ? "s" : ""}
           </span>

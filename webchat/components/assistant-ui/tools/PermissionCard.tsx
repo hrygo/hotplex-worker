@@ -8,9 +8,10 @@ interface PermissionCardProps {
   args?: Record<string, any>;
   status: "running" | "complete";
   onRespond?: (approved: boolean) => void;
+  onToggle?: () => void;
 }
 
-export function PermissionCard({ toolName, args, status, onRespond }: PermissionCardProps) {
+export function PermissionCard({ toolName, args, status, onRespond, onToggle }: PermissionCardProps) {
   const isElicitation = toolName === ToolName.Elicitation;
   const isPermission = toolName === ToolName.AskPermission || toolName === ToolName.Confirm;
   const title = isElicitation
@@ -30,7 +31,10 @@ export function PermissionCard({ toolName, args, status, onRespond }: Permission
       transition={{ type: "spring" as const, stiffness: 260, damping: 20 }}
     >
       {/* Header */}
-      <div className="flex items-center gap-2 px-4 py-3 bg-[rgba(251,191,36,0.06)] border-b border-[rgba(251,191,36,0.12)]">
+      <div 
+        className={`flex items-center gap-2 px-4 py-3 bg-[rgba(251,191,36,0.06)] border-b border-[rgba(251,191,36,0.12)] ${onToggle ? "cursor-pointer hover:bg-[rgba(251,191,36,0.1)] transition-colors" : ""}`}
+        onClick={onToggle}
+      >
         <div className="w-7 h-7 rounded-[var(--radius-sm)] bg-[rgba(251,191,36,0.1)] flex items-center justify-center">
           <svg className="w-4 h-4 text-[var(--accent-gold)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
@@ -39,6 +43,13 @@ export function PermissionCard({ toolName, args, status, onRespond }: Permission
         <span className="text-[11px] font-display font-bold text-[var(--accent-gold)] uppercase tracking-wider">
           {title}
         </span>
+        {onToggle && status === "complete" && (
+          <div className="ml-auto text-[var(--text-faint)]">
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+            </svg>
+          </div>
+        )}
       </div>
 
       {/* Body */}
