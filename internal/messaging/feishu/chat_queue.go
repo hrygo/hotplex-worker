@@ -91,8 +91,12 @@ func (q *ChatQueue) runWorker(chatID string, w *chatWorker) {
 			w.cancel = cancel
 			w.mu.Unlock()
 
-			if err := task(ctx); err != nil && ctx.Err() == nil && q.log != nil {
-				q.log.Warn("feishu: chat queue task error", "chat_id", chatID, "err", err)
+			if err := task(ctx); err != nil && q.log != nil {
+				if ctx.Err() != nil {
+					q.log.Warn("feishu: chat queue task timed out", "chat_id", chatID, "err", err)
+				} else {
+					q.log.Warn("feishu: chat queue task error", "chat_id", chatID, "err", err)
+				}
 			}
 			cancel()
 
