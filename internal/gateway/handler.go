@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"runtime/debug"
 	"strings"
+	"time"
 
 	"github.com/hrygo/hotplex/internal/config"
 	"github.com/hrygo/hotplex/internal/messaging"
@@ -572,9 +573,14 @@ func (h *Handler) handleWorkerCommand(ctx context.Context, env *events.Envelope)
 		return h.sendErrorf(ctx, env, events.ErrCodeNotSupported, "worker type does not support control requests")
 	}
 
+	// Control requests need an independent timeout so they don't block for
+	// the full caller context (e.g. Feishu chatQueue's 10-minute deadline).
+	ctrlCtx, ctrlCancel := context.WithTimeout(ctx, 60*time.Second)
+	defer ctrlCancel()
+
 	switch cmd {
 	case events.StdioContextUsage, events.StdioSkills:
-		resp, err := cr.SendControlRequest(ctx, "get_context_usage", nil)
+		resp, err := cr.SendControlRequest(ctrlCtx, "get_context_usage", nil)
 		if err != nil {
 			code := events.ErrCodeInternalError
 			if strings.Contains(err.Error(), "not running") || strings.Contains(err.Error(), "closed") {
@@ -591,7 +597,7 @@ func (h *Handler) handleWorkerCommand(ctx context.Context, env *events.Envelope)
 		return h.hub.SendToSession(ctx, respEnv)
 
 	case events.StdioMCPStatus:
-		resp, err := cr.SendControlRequest(ctx, "mcp_status", nil)
+		resp, err := cr.SendControlRequest(ctrlCtx, "mcp_status", nil)
 		if err != nil {
 			code := events.ErrCodeInternalError
 			if strings.Contains(err.Error(), "not running") || strings.Contains(err.Error(), "closed") {
@@ -615,7 +621,7 @@ func (h *Handler) handleWorkerCommand(ctx context.Context, env *events.Envelope)
 		if modelName == "" {
 			return h.sendErrorf(ctx, env, events.ErrCodeInvalidMessage, "model name required")
 		}
-		_, err := cr.SendControlRequest(ctx, "set_model", map[string]any{"model": modelName})
+		_, err := cr.SendControlRequest(ctrlCtx, "set_model", map[string]any{"model": modelName})
 		if err != nil {
 			code := events.ErrCodeInternalError
 			if strings.Contains(err.Error(), "not running") || strings.Contains(err.Error(), "closed") {
@@ -632,7 +638,7 @@ func (h *Handler) handleWorkerCommand(ctx context.Context, env *events.Envelope)
 		if mode == "" {
 			return h.sendErrorf(ctx, env, events.ErrCodeInvalidMessage, "permission mode required")
 		}
-		_, err := cr.SendControlRequest(ctx, "set_permission_mode", map[string]any{"mode": mode})
+		_, err := cr.SendControlRequest(ctrlCtx, "set_permission_mode", map[string]any{"mode": mode})
 		if err != nil {
 			code := events.ErrCodeInternalError
 			if strings.Contains(err.Error(), "not running") || strings.Contains(err.Error(), "closed") {
