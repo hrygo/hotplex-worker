@@ -18,6 +18,8 @@ import { PermissionCard } from "./tools/PermissionCard";
 import { BrandIcon } from "@/components/icons";
 import { getToolCategory } from "@/lib/tool-categories";
 import { CommandMenu } from "./CommandMenu";
+import { ListTool } from "./tools/ListTool";
+import { TodoTool } from "./tools/TodoTool";
 
 /* ============================================================
    Animation variants
@@ -61,6 +63,7 @@ function extractFileContent(args: Record<string, any>, result: any): string | un
   const fromArgs = args?.content || args?.code || args?.CodeContent || args?.ReplacementContent;
   if (fromArgs) return fromArgs;
   if (typeof result === "string") return result;
+  if (typeof result === "object") return result?.content || result?.output || result?.text;
   return undefined;
 }
 
@@ -83,11 +86,11 @@ function PreAssistantIndicator() {
 
   return (
     <motion.div
-      className="group msg-assistant flex items-center gap-6 mb-12 animate-fade-in"
+      className="group msg-assistant flex items-start gap-6 mb-12 animate-fade-in"
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
     >
-      <div className="flex-shrink-0">
+      <div className="flex-shrink-0" style={{ transform: 'translateY(0.5rem)' }}>
         <div className="relative">
           <div className="absolute inset-0 bg-[var(--accent-gold)] opacity-20 blur-md rounded-xl animate-pulse-subtle" />
           <div className="w-10 h-10 rounded-xl glass-dark flex items-center justify-center border border-[var(--border-bright)] relative z-10 shadow-lg">
@@ -296,14 +299,28 @@ function AssistantMessage() {
   const message = useAuiState((s) => s.message);
   const isStreaming = message.status?.type === "running";
 
+  // Optimized lifecycle: check if message is effectively empty to avoid layout shifts
+  const isEffectivelyEmpty = !message.content || message.content.length === 0 || 
+    message.content.every(p => (p.type === "text" || p.type === "reasoning") && !(p as any).text?.trim());
+
+  const firstPart = message.content?.[0] as any;
+  const isReasoning = firstPart?.type === "reasoning";
+  const isPlaceholder = isEffectivelyEmpty;
+  
+  // Offsets calculated to align 40px avatar center with first line center:
+  // - Reasoning header center (~35px height) needs ~-2.4px (-0.15rem)
+  // - Markdown line center (~26px height) needs ~-7px (-0.43rem)
+  // - Streaming indicator center (~56px height) needs ~8px (0.5rem)
+  const avatarOffset = isPlaceholder ? "0.5rem" : (isReasoning ? "-0.15rem" : "-0.43rem");
+
   return (
     <motion.div
-      className="group msg-assistant flex items-center gap-6 mb-12"
+      className="group msg-assistant flex items-start gap-6 mb-12"
       variants={messageVariants}
       initial="hidden"
       animate="visible"
     >
-      <div className="flex-shrink-0">
+      <div className="flex-shrink-0" style={{ transform: `translateY(${avatarOffset})` }}>
         <div className="relative">
           <div className="absolute inset-0 bg-[var(--accent-gold)] opacity-20 blur-md rounded-xl animate-pulse-subtle" />
           <div className="w-10 h-10 rounded-xl glass-dark flex items-center justify-center border border-[var(--border-bright)] relative z-10 shadow-lg">
@@ -334,7 +351,9 @@ function AssistantMessage() {
             }
             if (p.type === "tool-call") {
               const category = getToolCategory(p.toolName);
-              const hasResult = p.result !== undefined;
+              const isMessageDone = message.status?.type !== "running" && message.status?.type !== "requires-action";
+              const isComplete = p.status?.type === "complete" || p.status?.type === "error" || isMessageDone;
+              const hasResult = p.result !== undefined || isComplete;
               const args = p.args ?? {};
               const motionWrap = (el: React.ReactNode) => (
                 <motion.div key={p.toolCallId} variants={toolCardVariants} initial="hidden" animate="visible">
@@ -354,7 +373,8 @@ function AssistantMessage() {
                     />
                   );
                 }
-                case "file":
+                case "file-write":
+                case "file-read":
                   return motionWrap(
                     <FileDiffTool
                       toolName={p.toolName}
@@ -372,6 +392,22 @@ function AssistantMessage() {
                       status={hasResult ? "complete" : "running"}
                     />
                   );
+                case "list":
+                  return motionWrap(
+                    <ListTool
+                      toolName={p.toolName}
+                      path={args?.path || args?.directory_path || args?.DirectoryPath}
+                      items={hasResult && Array.isArray(p.result) ? p.result : undefined}
+                      status={hasResult ? "complete" : "running"}
+                    />
+                  );
+                case "task":
+                  return motionWrap(
+                    <TodoTool
+                      todo={args?.todo || args?.todos || args?.text || args?.content}
+                      status={hasResult ? "complete" : "running"}
+                    />
+                  );
                 case "permission":
                   return motionWrap(
                     <PermissionCard
@@ -384,7 +420,7 @@ function AssistantMessage() {
                   return motionWrap(
                     hasResult
                       ? <ToolResultBlock toolName={p.toolName} result={p.result} />
-                      : <ToolCallBlock toolName={p.toolName} args={args} active={isStreaming} />
+                      : <ToolCallBlock toolName={p.toolName} args={args} active={true} />
                   );
               }
             }
@@ -393,7 +429,7 @@ function AssistantMessage() {
         </MessagePrimitive.Parts>
         
         {/* Quantum Thinking — § Instant feedback without black hole effect */}
-        {message.status?.type === "running" && (!message.content || message.content.length === 0) && (
+        {message.status?.type === "running" && isEffectivelyEmpty && (
           <div className="flex items-center gap-4 py-4 px-2 animate-fade-in">
              <div className="relative w-8 h-8 flex-shrink-0" style={{ perspective: '400px' }}>
                 <div className="absolute inset-0 bg-[var(--accent-gold)] opacity-20 blur-xl rounded-full animate-pulse-bloom" style={{ animationDuration: '3s' }} />
