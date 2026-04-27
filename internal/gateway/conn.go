@@ -376,10 +376,12 @@ func (c *Conn) performInit(handler *Handler) error {
 		}
 	} else if w := handler.sm.GetWorker(sessionID); w != nil {
 		// Fast reconnect: worker still alive, skip terminate+resume cycle.
-		if err := handler.sm.Transition(context.Background(), sessionID, events.StateRunning); err != nil {
-			c.log.Debug("gateway: idle→running on fast reconnect", "session_id", sessionID, "err", err)
-		} else {
-			si.State = events.StateRunning
+		if si.State != events.StateRunning {
+			if err := handler.sm.Transition(context.Background(), sessionID, events.StateRunning); err != nil {
+				c.log.Warn("gateway: fast reconnect transition failed", "session_id", sessionID, "from", si.State, "err", err)
+			} else {
+				si.State = events.StateRunning
+			}
 		}
 	} else if si.State == events.StateIdle || si.State == events.StateTerminated ||
 		(si.State == events.StateRunning) {
