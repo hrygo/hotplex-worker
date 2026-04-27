@@ -210,6 +210,11 @@ func TestServerCommanderCompact(t *testing.T) {
 	t.Parallel()
 	called := false
 	c, _ := newTestCommander(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode([]any{})
+			return
+		}
 		require.Equal(t, http.MethodPost, r.Method)
 		require.Contains(t, r.URL.Path, "/session/sess-test-123/summarize")
 		called = true
@@ -352,14 +357,10 @@ func TestServerCommanderRewind(t *testing.T) {
 			},
 		},
 		{
-			name: "without target ID", targetID: "", wantNoMsgID: true,
+			name: "without target ID resolves last assistant message", targetID: "", wantMsgID: "msg-asst-999",
 			checkReq: func(t *testing.T, r *http.Request) {
 				require.Equal(t, http.MethodPost, r.Method)
 				require.Contains(t, r.URL.Path, "/session/sess-test-123/revert")
-				body, _ := io.ReadAll(r.Body)
-				var reqBody map[string]any
-				json.Unmarshal(body, &reqBody)
-				require.NotContains(t, reqBody, "messageID")
 			},
 		},
 	}
@@ -369,6 +370,14 @@ func TestServerCommanderRewind(t *testing.T) {
 			t.Parallel()
 			var capturedBody map[string]any
 			c, _ := newTestCommander(t, func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodGet {
+					w.WriteHeader(http.StatusOK)
+					_ = json.NewEncoder(w).Encode([]any{
+						map[string]any{"id": "msg-user-1", "info": map[string]any{"role": "user"}},
+						map[string]any{"id": "msg-asst-999", "info": map[string]any{"role": "assistant"}},
+					})
+					return
+				}
 				tt.checkReq(t, r)
 				body, _ := io.ReadAll(r.Body)
 				json.Unmarshal(body, &capturedBody)

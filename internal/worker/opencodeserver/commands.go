@@ -47,6 +47,12 @@ func (c *ServerCommander) Compact(ctx context.Context, args map[string]any) erro
 	if c.pendingModel != nil {
 		reqBody["providerID"] = c.pendingModel.ProviderID
 		reqBody["modelID"] = c.pendingModel.ModelID
+	} else {
+		pid, mid := c.lastKnownModel(ctx)
+		if pid != "" || mid != "" {
+			reqBody["providerID"] = pid
+			reqBody["modelID"] = mid
+		}
 	}
 	var result bool
 	if err := c.doPost(ctx, "/session/"+c.sessionID+"/summarize", reqBody, &result); err != nil {
@@ -72,6 +78,9 @@ func (c *ServerCommander) Clear(ctx context.Context) error {
 
 // Rewind implements WorkerCommander — POST /session/{id}/revert.
 func (c *ServerCommander) Rewind(ctx context.Context, targetID string) error {
+	if targetID == "" {
+		targetID = c.lastAssistantMessageID(ctx)
+	}
 	reqBody := map[string]any{}
 	if targetID != "" {
 		reqBody["messageID"] = targetID
@@ -219,6 +228,39 @@ func (c *ServerCommander) doRequest(ctx context.Context, method, path string, bo
 		return json.NewDecoder(resp.Body).Decode(result)
 	}
 	return nil
+}
+
+// lastKnownModel scans recent messages for the model used by the last assistant turn.
+func (c *ServerCommander) lastKnownModel(ctx context.Context) (providerID, modelID string) {
+	var messages []openCodeMessage
+	if err := c.doGet(ctx, "/session/"+c.sessionID+"/message?limit=50", &messages); err != nil {
+		return "", ""
+	}
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Info.Role == "assistant" && messages[i].Info.Model != nil {
+			return messages[i].Info.Model.ProviderID, messages[i].Info.Model.ModelID
+		}
+	}
+	return "", ""
+}
+
+// lastAssistantMessageID returns the ID of the most recent assistant message.
+func (c *ServerCommander) lastAssistantMessageID(ctx context.Context) string {
+	var messages []struct {
+		ID   string `json:"id"`
+		Info struct {
+			Role string `json:"role"`
+		} `json:"info"`
+	}
+	if err := c.doGet(ctx, "/session/"+c.sessionID+"/message?limit=50", &messages); err != nil {
+		return ""
+	}
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Info.Role == "assistant" {
+			return messages[i].ID
+		}
+	}
+	return ""
 }
 
 // Compile-time interface checks.

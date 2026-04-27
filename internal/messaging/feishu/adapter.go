@@ -706,6 +706,11 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		mErr := c.sendMCPStatus(ctx, env)
 		c.clearProcessingReaction(ctx, rid)
 		return mErr
+	case events.SkillsList:
+		rid := c.setProcessingReaction(ctx)
+		slErr := c.sendSkillsList(ctx, env)
+		c.clearProcessingReaction(ctx, rid)
+		return slErr
 	}
 
 	// Cancel pending interactions on done/error.

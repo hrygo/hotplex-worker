@@ -37,6 +37,7 @@ const (
 	Pong                Kind = "pong"
 	Control             Kind = "control"
 	ContextUsage        Kind = "context_usage"  // Worker context usage report (S→C)
+	SkillsList          Kind = "skills_list"    // Gateway-originated skill list (S→C)
 	MCPStatus           Kind = "mcp_status"     // Worker MCP server status (S→C)
 	WorkerCmd           Kind = "worker_command" // Gateway → Worker stdio command trigger (C→S)
 )
@@ -371,6 +372,19 @@ type MCPStatusData struct {
 type MCPServerInfo struct {
 	Name   string `json:"name"`
 	Status string `json:"status"`
+}
+
+// SkillsListData carries discovered skills to the client.
+type SkillsListData struct {
+	Skills []SkillEntry `json:"skills"`
+	Total  int          `json:"total"`
+}
+
+// SkillEntry describes a single skill with name, description and source.
+type SkillEntry struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Source      string `json:"source"`
 }
 
 // SessionState represents the state of a session.

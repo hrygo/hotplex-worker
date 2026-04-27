@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"runtime/debug"
 	"strings"
 	"time"
@@ -24,12 +25,25 @@ import (
 // Handler processes incoming messages from a client connection.
 // It coordinates between the hub, session manager, and pool.
 type Handler struct {
-	log          *slog.Logger
-	hub          *Hub
-	sm           *session.Manager
-	jwtValidator *security.JWTValidator
-	bridge       *Bridge // set via SetBridge; nil during tests
-	convStore    session.ConversationStore
+	log           *slog.Logger
+	hub           *Hub
+	sm            *session.Manager
+	jwtValidator  *security.JWTValidator
+	bridge        *Bridge // set via SetBridge; nil during tests
+	convStore     session.ConversationStore
+	skillsLocator SkillsLocator
+}
+
+// SkillsLocator discovers skills from the filesystem.
+type SkillsLocator interface {
+	List(ctx context.Context, homeDir, workDir string) ([]Skill, error)
+}
+
+// Skill is a minimal skill entry for the handler to use.
+type Skill = struct {
+	Name        string
+	Description string
+	Source      string
 }
 
 // NewHandler creates a new message handler.
@@ -48,6 +62,9 @@ func (h *Handler) SetBridge(b *Bridge) { h.bridge = b }
 
 // SetConvStore injects the conversation store for turn-level persistence.
 func (h *Handler) SetConvStore(cs session.ConversationStore) { h.convStore = cs }
+
+// SetSkillsLocator injects the skill locator for /skills commands.
+func (h *Handler) SetSkillsLocator(loc SkillsLocator) { h.skillsLocator = loc }
 
 // Handle processes an incoming envelope from a client.
 func (h *Handler) Handle(ctx context.Context, env *events.Envelope) (err error) {
@@ -579,7 +596,10 @@ func (h *Handler) handleWorkerCommand(ctx context.Context, env *events.Envelope)
 	defer ctrlCancel()
 
 	switch cmd {
-	case events.StdioContextUsage, events.StdioSkills:
+	case events.StdioSkills:
+		return h.handleSkillsList(ctx, env)
+
+	case events.StdioContextUsage:
 		resp, err := cr.SendControlRequest(ctrlCtx, "get_context_usage", nil)
 		if err != nil {
 			code := events.ErrCodeInternalError
@@ -660,19 +680,22 @@ func (h *Handler) handlePassthroughCommand(ctx context.Context, env *events.Enve
 			if err := commander.Compact(ctx, nil); err != nil {
 				return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "compact: %v", err)
 			}
+			h.sendCommandFeedback(ctx, env.SessionID, "✅ 对话历史已压缩")
 			return nil
 		case events.StdioClear:
 			if err := commander.Clear(ctx); err != nil {
 				return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "clear: %v", err)
 			}
+			h.sendCommandFeedback(ctx, env.SessionID, "✅ 会话已清空，新会话已创建")
 			return nil
 		case events.StdioRewind:
 			if err := commander.Rewind(ctx, ""); err != nil {
 				return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "rewind: %v", err)
 			}
+			h.sendCommandFeedback(ctx, env.SessionID, "✅ 已回退到上一轮对话")
 			return nil
-		case events.StdioEffort:
-			return h.sendErrorf(ctx, env, events.ErrCodeNotSupported, "effort not supported by this worker type")
+		case events.StdioEffort, events.StdioCommit:
+			return h.sendErrorf(ctx, env, events.ErrCodeNotSupported, "%s not supported by this worker type", cmd)
 		}
 	}
 
@@ -684,6 +707,48 @@ func (h *Handler) handlePassthroughCommand(ctx context.Context, env *events.Enve
 		return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "%s: %v", cmd, err)
 	}
 	return nil
+}
+
+func (h *Handler) sendCommandFeedback(ctx context.Context, sessionID string, msg string) {
+	env := events.NewEnvelope(
+		aep.NewID(), sessionID, h.hub.NextSeq(sessionID),
+		events.Message, events.MessageData{Content: msg},
+	)
+	_ = h.hub.SendToSession(ctx, env)
+}
+
+func (h *Handler) handleSkillsList(ctx context.Context, env *events.Envelope) error {
+	if h.skillsLocator == nil {
+		return h.sendErrorf(ctx, env, events.ErrCodeNotSupported, "skills listing not available")
+	}
+
+	si, err := h.sm.Get(env.SessionID)
+	if err != nil {
+		return h.sendErrorf(ctx, env, events.ErrCodeSessionNotFound, "session not found")
+	}
+
+	homeDir, _ := os.UserHomeDir()
+	skills, err := h.skillsLocator.List(ctx, homeDir, si.WorkDir)
+	if err != nil {
+		return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "skills: %v", err)
+	}
+
+	entries := make([]events.SkillEntry, len(skills))
+	for i, s := range skills {
+		entries[i] = events.SkillEntry{
+			Name:        s.Name,
+			Description: s.Description,
+			Source:      s.Source,
+		}
+	}
+
+	data := events.SkillsListData{Skills: entries, Total: len(entries)}
+	respEnv := events.NewEnvelope(
+		aep.NewID(), env.SessionID,
+		h.hub.NextSeq(env.SessionID),
+		events.SkillsList, data,
+	)
+	return h.hub.SendToSession(ctx, respEnv)
 }
 
 // ─── Bridge ─────────────────────────────────────────────────────────────────

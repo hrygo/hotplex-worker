@@ -753,6 +753,11 @@ func (c *SlackConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		mErr := c.sendMCPStatus(ctx, env)
 		c.clearStatus(ctx)
 		return mErr
+	case events.SkillsList:
+		c.notifyStatus(ctx, "Loading skills...")
+		slErr := c.sendSkillsList(ctx, env)
+		c.clearStatus(ctx)
+		return slErr
 	}
 
 	text, ok := extractResponseText(env)
