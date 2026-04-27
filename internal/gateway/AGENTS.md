@@ -19,10 +19,13 @@ testutil/       # WebSocket mock helpers for tests
 |------|----------|-------|
 | Broadcast hub | `hub.go:68` | Hub struct, Run() goroutine, seq gen |
 | Connection pumps | `conn.go:35` | Conn struct, ReadPump/WritePump goroutines |
-| Event dispatch | `handler.go` | Handler: handleInput, handlePing, handleControl |
+| Event dispatch | `handler.go` | Handler: handleInput, handlePing, handleControl, handleWorkerCommand, handleSkillsList |
+| Passthrough feedback | `handler.go` | `handlePassthroughCommand`: sends message AEP after WorkerCommander ops; rejects /effort, /commit |
+| Fast reconnect | `conn.go:377` | Skips Transition when session already running with live worker |
 | Session lifecycle | `bridge.go` | Bridge: StartSession, ResumeSession, forwardEvents, InputRecoverer |
 | LLM auto-retry | `llm_retry.go` | LLMRetryController: retryable patterns, per-session backoff |
-| HTTP session API | `api.go` | GatewayAPI: ListSessions, GetSession, TerminateSession |
+| HTTP session API | `api.go` | GatewayAPI: ListSessions, GetSession, TerminateSession, CreateSession |
+| Skills listing | `handler.go:720` | `handleSkillsList`: discovers skills via skills.Locator |
 | Init handshake | `init.go` | 30s timeout, first frame must be "init" |
 | Heartbeat | `heartbeat.go:12` | Missed ping tracking |
 
@@ -66,6 +69,16 @@ testutil/       # WebSocket mock helpers for tests
 - 30s timeout from first connection
 - First frame must be type="init"
 - InitError returned on validation failure
+
+**Passthrough command dispatch (handler.go)**
+- `WorkerCommander` interface: Compact/Clear/Rewind → HTTP REST to OCS
+- Non-WorkerCommander: `/model`, `/effort`, `/commit` → fall through to `w.Input()`
+- `/effort` and `/commit` return `NOT_SUPPORTED` for WorkerCommander path
+- `sendCommandFeedback()` sends visible `message` AEP after success
+
+**Fast reconnect guard (conn.go)**
+- When WebSocket reconnects with live worker: skip `Transition(running)` if already `running`
+- Avoids invalid `running→running` state machine error
 
 ## ANTI-PATTERNS
 - ❌ Skip heartbeat stop on connection close

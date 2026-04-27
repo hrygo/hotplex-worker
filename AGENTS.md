@@ -1,6 +1,6 @@
 # PROJECT KNOWLEDGE BASE
 
-**Last updated:** 2026-04-25 · **Commit:** fcedf5cd · **Branch:** feat/28-premium-ux-sdk-integration
+**Last updated:** 2026-04-27 · **Commit:** 1138929a · **Branch:** main
 
 ## OVERVIEW
 
@@ -54,7 +54,7 @@ cmd/hotplex/version.go       (~46 lines)  version subcommand
 **Gateway** (WebSocket)
 - `gateway/hub.go`     WS broadcast hub: conn registry, session routing, seq gen
 - `gateway/conn.go`    Single WS connection: read/write pumps, heartbeat
-- `gateway/handler.go`  AEP event dispatch (input, ping, control)
+- `gateway/handler.go`  AEP event dispatch (input, ping, control, worker commands, skills listing) + passthrough feedback
 - `gateway/bridge.go`  Session ↔ worker lifecycle orchestration + LLM retry + agent config injection
 - `gateway/llm_retry.go`  LLMRetryController: exponential backoff on retryable errors
 - `gateway/api.go`     GatewayAPI: HTTP session endpoints (list/get/terminate/create with idempotency)
@@ -103,6 +103,7 @@ cmd/hotplex/version.go       (~46 lines)  version subcommand
 
 **Support**
 - `security/`   JWT (ES256), SSRF, command whitelist, env isolation, path safety
+- `skills/`     Skills discovery: locator + scanner for project/user/plugin skill directories
 - `metrics/`    Prometheus counters/gauges/histograms
 - `tracing/`    OpenTelemetry setup (idempotent)
 
@@ -130,6 +131,7 @@ configs/  config.yaml, config-dev.yaml, env.example
 - Add diagnostic check → `internal/cli/checkers/` — implement `Checker` interface, register in `DefaultRegistry`
 - New cobra subcommand → `cmd/hotplex/<name>.go` — register in `main.go` root cmd
 - New admin endpoint → `internal/admin/handlers.go` — follow `Handle*` pattern, check scopes
+- Add skill discovery source → `internal/skills/scanner.go` — extend scan functions for new directories
 
 **CLI self-service** (see `internal/cli/AGENTS.md` and `cmd/hotplex/AGENTS.md`)
 - Modify onboard wizard → `internal/cli/onboard/wizard.go` — interactive prompts and templates
@@ -167,7 +169,7 @@ configs/  config.yaml, config-dev.yaml, env.example
 **Gateway** (`internal/gateway/`)
 - `Hub` → `hub.go:68` — WS broadcast hub, conn registry, session routing, seq gen
 - `Conn` → `conn.go:35` — single WS connection, read/write pumps, heartbeat
-- `Handler` → `handler.go` — AEP event dispatch (input, ping, control, /cd workdir switch) + panic recovery
+- `Handler` → `handler.go` — AEP event dispatch (input, ping, control, /cd workdir switch, worker commands, skills listing, passthrough feedback) + panic recovery
 - `Bridge` → `bridge.go` — session ↔ worker lifecycle, StartPlatformSession, fresh start fallback, InputRecoverer, LLM retry integration, agent config injection, SwitchWorkDir
 - `LLMRetryController` → `llm_retry.go` — retryable error pattern detection, per-session attempt tracking, exponential backoff
 - `GatewayAPI` → `api.go` — HTTP session endpoints: ListSessions, GetSession, TerminateSession, CreateSession (idempotent with DeletePhysical fallback)
@@ -288,6 +290,8 @@ configs/  config.yaml, config-dev.yaml, env.example
 - **Webchat session stickiness**: Deterministic "main" session ID via DeriveSessionKey + localStorage persistence for active session across page reloads; auto-creates first session when none exist
 - **OCS singleton process**: All OpenCode Server sessions share one lazily-started `opencode serve` process managed by `SingletonProcessManager`; ref-counted with 30m idle drain; Workers are thin adapters that acquire/release refs; Terminate/Kill only close SSE connections, never the shared process; crash detected via `monitorProcess` goroutine, new `crashCh` created per lifecycle
 - **Switch-workdir**: `/cd <path>` (WebSocket control) or `POST /api/sessions/{id}/cd` (REST) terminates old worker, derives new session ID via PlatformContext with new workDir, starts fresh session on the same singleton process; security validated via `config.ExpandAndAbs` + `security.ValidateWorkDir`
+- **Passthrough command feedback**: `handlePassthroughCommand` sends visible `message` AEP events after WorkerCommander ops (compact/clear/rewind) succeed; unsupported commands (/effort, /commit) return explicit `NOT_SUPPORTED`; OCS `Compact` auto-resolves model from message history when no `pendingModel`; OCS `Rewind` auto-resolves last assistant messageID when no targetID
+- **Fast reconnect state guard**: `conn.go` skips `Transition(running)` when session already in `running` state on WebSocket reconnect with live worker — avoids invalid `running→running` transition error
 
 ## COMMANDS
 
