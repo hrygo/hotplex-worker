@@ -348,8 +348,9 @@ type PoolConfig struct {
 
 // AgentConfig holds agent personality/context configuration settings.
 type AgentConfig struct {
-	Enabled   bool   `mapstructure:"enabled"`    // enable agent config loading
-	ConfigDir string `mapstructure:"config_dir"` // default: ~/.hotplex/agent-configs/
+	Enabled        bool          `mapstructure:"enabled"`          // enable agent config loading
+	ConfigDir      string        `mapstructure:"config_dir"`       // default: ~/.hotplex/agent-configs/
+	SkillsCacheTTL time.Duration `mapstructure:"skills_cache_ttl"` // TTL for skills list cache, default 24h
 }
 
 // ─── Defaults ────────────────────────────────────────────────────────────────
@@ -458,8 +459,9 @@ func Default() *Config {
 			},
 		},
 		AgentConfig: AgentConfig{
-			Enabled:   true,
-			ConfigDir: filepath.Join(HotplexHome(), "agent-configs"),
+			Enabled:        true,
+			ConfigDir:      filepath.Join(HotplexHome(), "agent-configs"),
+			SkillsCacheTTL: 24 * time.Hour,
 		},
 	}
 }

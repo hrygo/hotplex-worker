@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
 	"runtime/debug"
 	"strings"
 	"time"
@@ -727,8 +726,7 @@ func (h *Handler) handleSkillsList(ctx context.Context, env *events.Envelope) er
 		return h.sendErrorf(ctx, env, events.ErrCodeSessionNotFound, "session not found")
 	}
 
-	homeDir, _ := os.UserHomeDir()
-	skills, err := h.skillsLocator.List(ctx, homeDir, si.WorkDir)
+	skills, err := h.skillsLocator.List(ctx, "", si.WorkDir)
 	if err != nil {
 		return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "skills: %v", err)
 	}

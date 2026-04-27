@@ -5,9 +5,14 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 
 	"github.com/hrygo/hotplex/internal/config"
+)
+
+// Source labels for skills.
+const (
+	skillSourceLocal   = "local"
+	skillSourceProject = "project"
 )
 
 // FileSystemSkillsLocator discovers skills from Claude Code skills directories:
@@ -18,16 +23,11 @@ import (
 //
 // Duplicate names are filtered (first wins). Skills are discovered from
 // SKILL.md files within each skill directory.
-type FileSystemSkillsLocator struct {
-	mu   sync.RWMutex
-	seen map[string]bool // deduplication
-}
+type FileSystemSkillsLocator struct{}
 
 // NewFileSystemSkillsLocator creates a new skills locator.
 func NewFileSystemSkillsLocator(cfg *config.Config) *FileSystemSkillsLocator {
-	return &FileSystemSkillsLocator{
-		seen: make(map[string]bool),
-	}
+	return &FileSystemSkillsLocator{}
 }
 
 // List returns all skills discovered from standard skills directories.
@@ -36,41 +36,47 @@ func (l *FileSystemSkillsLocator) List(ctx context.Context, homeDir, workDir str
 		homeDir, _ = os.UserHomeDir()
 	}
 
-	var dirs []string
-
-	// User-level directories
-	userAgents := filepath.Join(homeDir, ".agents", "skills")
-	userClaude := filepath.Join(homeDir, ".claude", "skills")
-	dirs = append(dirs, userAgents, userClaude)
-
-	// Project-level directories
-	if workDir != "" {
-		projAgents := filepath.Join(workDir, ".agents", "skills")
-		projClaude := filepath.Join(workDir, ".claude", "skills")
-		dirs = append(dirs, projAgents, projClaude)
-		// Also check current working dir (hotplex repo root)
-		cwd, _ := os.Getwd()
-		if cwd != "" && cwd != workDir {
-			dirs = append(dirs, filepath.Join(cwd, ".agents", "skills"))
-			dirs = append(dirs, filepath.Join(cwd, ".claude", "skills"))
-		}
-	}
-
-	l.mu.Lock()
-	defer l.mu.Unlock()
-
-	// Reset seen map for each scan
-	l.seen = make(map[string]bool)
+	dirs := l.buildDirs(homeDir, workDir)
+	seen := make(map[string]bool)
 
 	var skills []Skill
 	for _, dir := range dirs {
-		l.scanDir(dir, &skills)
+		l.scanDir(dir, &skills, seen)
 	}
 	return skills, nil
 }
 
-// scanDir recursively scans a skills directory, skipping symlinks.
-func (l *FileSystemSkillsLocator) scanDir(dir string, skills *[]Skill) {
+// buildDirs returns the list of directories to scan.
+func (l *FileSystemSkillsLocator) buildDirs(homeDir, workDir string) []string {
+	var dirs []string
+
+	// User-level directories
+	dirs = append(dirs,
+		filepath.Join(homeDir, ".agents", "skills"),
+		filepath.Join(homeDir, ".claude", "skills"),
+	)
+
+	// Project-level directories
+	if workDir != "" {
+		dirs = append(dirs,
+			filepath.Join(workDir, ".agents", "skills"),
+			filepath.Join(workDir, ".claude", "skills"),
+		)
+	}
+
+	// Also check current working dir (hotplex repo root)
+	if cwd, _ := os.Getwd(); cwd != "" && cwd != workDir {
+		dirs = append(dirs,
+			filepath.Join(cwd, ".agents", "skills"),
+			filepath.Join(cwd, ".claude", "skills"),
+		)
+	}
+
+	return dirs
+}
+
+// scanDir scans a skills directory, skipping symlinks.
+func (l *FileSystemSkillsLocator) scanDir(dir string, skills *[]Skill, seen map[string]bool) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return
@@ -81,7 +87,6 @@ func (l *FileSystemSkillsLocator) scanDir(dir string, skills *[]Skill) {
 		if entry.Type()&os.ModeSymlink != 0 {
 			continue
 		}
-
 		if !entry.IsDir() {
 			continue
 		}
@@ -90,25 +95,25 @@ func (l *FileSystemSkillsLocator) scanDir(dir string, skills *[]Skill) {
 
 		// Try SKILL.md first, then README.md
 		skillPath := filepath.Join(skillDir, "SKILL.md")
-		if _, err := os.Stat(skillPath); os.IsNotExist(err) {
+		name, desc, ok := parseSkillFile(skillPath)
+		if !ok {
 			skillPath = filepath.Join(skillDir, "README.md")
+			name, desc, ok = parseSkillFile(skillPath)
 		}
-
-		name, desc, ok := l.parseSkillFile(skillPath)
 		if !ok {
 			continue
 		}
 
-		// Deduplicate by name
-		if l.seen[name] {
+		// Deduplicate by name (first wins)
+		if seen[name] {
 			continue
 		}
-		l.seen[name] = true
+		seen[name] = true
 
-		// Determine source label
-		source := "local"
-		if strings.Contains(skillDir, "/.agents/") || strings.Contains(skillDir, "\\.agents\\") {
-			source = "project"
+		// Determine source
+		source := skillSourceLocal
+		if strings.Contains(skillDir, string(filepath.Separator)+".agents"+string(filepath.Separator)) {
+			source = skillSourceProject
 		}
 
 		*skills = append(*skills, Skill{
@@ -120,7 +125,14 @@ func (l *FileSystemSkillsLocator) scanDir(dir string, skills *[]Skill) {
 }
 
 // parseSkillFile reads a SKILL.md or README.md and extracts name + description.
-func (l *FileSystemSkillsLocator) parseSkillFile(path string) (name, description string, ok bool) {
+// Panics are recovered by the caller.
+func parseSkillFile(path string) (name, description string, ok bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			ok = false
+		}
+	}()
+
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return "", "", false
@@ -132,25 +144,19 @@ func (l *FileSystemSkillsLocator) parseSkillFile(path string) (name, description
 		return "", "", false
 	}
 
-	// Find closing --- (relative to content[3:] which skips the opening ---)
 	endIdx := strings.Index(content[3:], "---")
 	if endIdx < 0 {
 		return "", "", false
 	}
-	// endIdx is relative to content[3:], absolute position is endIdx+3
-	fm := content[:endIdx+3]
-	lines := strings.Split(fm, "\n")
 
+	fm := content[:endIdx+3]
 	var fmName, fmDesc string
-	for _, line := range lines {
+	for _, line := range strings.Split(fm, "\n") {
 		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "name:") {
-			fmName = strings.TrimPrefix(line, "name:")
-			fmName = strings.Trim(fmName, " \t\"")
-		}
-		if strings.HasPrefix(line, "description:") {
-			fmDesc = strings.TrimPrefix(line, "description:")
-			fmDesc = strings.Trim(fmDesc, " \t\"")
+		if after, ok := strings.CutPrefix(line, "name:"); ok {
+			fmName = strings.Trim(after, " \t\"")
+		} else if after, ok := strings.CutPrefix(line, "description:"); ok {
+			fmDesc = strings.Trim(after, " \t\"")
 		}
 	}
 
@@ -158,9 +164,10 @@ func (l *FileSystemSkillsLocator) parseSkillFile(path string) (name, description
 		return "", "", false
 	}
 
-	// Truncate description to reasonable length
-	if len(fmDesc) > 120 {
-		fmDesc = fmDesc[:117] + "..."
+	// Truncate to reasonable length using rune count for Unicode safety
+	if len([]rune(fmDesc)) > 120 {
+		runes := []rune(fmDesc)
+		fmDesc = string(runes[:117]) + "..."
 	}
 
 	return fmName, fmDesc, true
