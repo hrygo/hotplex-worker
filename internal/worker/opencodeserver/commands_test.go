@@ -373,8 +373,8 @@ func TestServerCommanderRewind(t *testing.T) {
 				if r.Method == http.MethodGet {
 					w.WriteHeader(http.StatusOK)
 					_ = json.NewEncoder(w).Encode([]any{
-						map[string]any{"id": "msg-user-1", "info": map[string]any{"role": "user"}},
-						map[string]any{"id": "msg-asst-999", "info": map[string]any{"role": "assistant"}},
+						map[string]any{"info": map[string]any{"id": "msg-user-1", "role": "user"}},
+						map[string]any{"info": map[string]any{"id": "msg-asst-999", "role": "assistant"}},
 					})
 					return
 				}
