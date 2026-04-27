@@ -1015,6 +1015,11 @@ func (b *Bridge) autoRetry(ctx context.Context, w worker.Worker, sessionID strin
 	b.retryCancelMu.Lock()
 	b.retryCancel[sessionID] = cancelCh
 	b.retryCancelMu.Unlock()
+	defer func() {
+		b.retryCancelMu.Lock()
+		delete(b.retryCancel, sessionID)
+		b.retryCancelMu.Unlock()
+	}()
 
 	// Wait with backoff, respecting cancellation.
 	timer := time.NewTimer(delay)
@@ -1033,11 +1038,6 @@ func (b *Bridge) autoRetry(ctx context.Context, w worker.Worker, sessionID strin
 	if err := w.Input(ctx, b.retryCtrl.RetryInput(), nil); err != nil {
 		b.log.Warn("bridge: auto-retry input failed", "session_id", sessionID, "err", err)
 	}
-
-	// Clean up cancel channel.
-	b.retryCancelMu.Lock()
-	delete(b.retryCancel, sessionID)
-	b.retryCancelMu.Unlock()
 }
 
 // extractMessageContent extracts text content from a message or message_delta event.

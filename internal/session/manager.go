@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -255,7 +256,7 @@ func (m *Manager) transitionState(ctx context.Context, ms *managedSession, from,
 	}
 
 	if m.StateNotifier != nil {
-		go m.StateNotifier(context.Background(), ms.info.ID, to, "")
+		go m.StateNotifier(ctx, ms.info.ID, to, "")
 	}
 	if (to == events.StateTerminated || to == events.StateDeleted) && m.OnTerminate != nil {
 		go m.OnTerminate(ms.info.ID)
@@ -483,7 +484,7 @@ func (m *Manager) Delete(ctx context.Context, id string) error {
 	m.mu.Unlock()
 
 	if m.StateNotifier != nil {
-		go m.StateNotifier(context.Background(), id, events.StateDeleted, "session deleted")
+		go m.StateNotifier(ctx, id, events.StateDeleted, "session deleted")
 	}
 	if m.OnTerminate != nil {
 		go m.OnTerminate(id)
@@ -727,7 +728,12 @@ func (m *Manager) Close() error {
 // ─── GC ─────────────────────────────────────────────────────────────────────
 
 func (m *Manager) runGC(ctx context.Context) {
-	defer close(m.gcDone)
+	defer func() {
+		if r := recover(); r != nil {
+			m.log.Error("session: runGC panic", "panic", r, "stack", string(debug.Stack()))
+		}
+		close(m.gcDone)
+	}()
 	ticker := time.NewTicker(m.cfg.Session.GCScanInterval)
 	defer ticker.Stop()
 
@@ -782,11 +788,16 @@ func (m *Manager) gc(ctx context.Context) {
 	m.mu.RUnlock()
 
 	for i, id := range runningSessions {
-		w := runningWorkers[i]
-		if w != nil {
-			// LastIO() is now part of the Worker interface — direct call, no type assertion needed
+		func(id string, w worker.Worker) {
+			defer func() {
+				if r := recover(); r != nil {
+					m.log.Error("session: zombie GC check panic", "session_id", id, "panic", r)
+				}
+			}()
+			if w == nil {
+				return
+			}
 			lastIO := w.LastIO()
-			// Default zombie IO timeout (overridden by config worker.execution_timeout)
 			timeout := 30 * time.Minute
 			if m.cfg.Worker.ExecutionTimeout > 0 {
 				timeout = m.cfg.Worker.ExecutionTimeout
@@ -798,7 +809,7 @@ func (m *Manager) gc(ctx context.Context) {
 					m.log.Warn("session: zombie GC transition error", "err", err)
 				}
 			}
-		}
+		}(id, runningWorkers[i])
 	}
 
 	// 1+2. Terminate sessions past max_lifetime and IDLE sessions past idle_timeout.

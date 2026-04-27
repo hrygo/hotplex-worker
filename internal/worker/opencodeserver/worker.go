@@ -40,6 +40,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -523,6 +524,12 @@ func (w *Worker) initSessionConn(ctx context.Context, serverSessionID string, se
 }
 
 func (w *Worker) readSSE(sessionID string) {
+	defer func() {
+		if r := recover(); r != nil {
+			w.Log.Error("opencodeserver: readSSE panic", "session_id", sessionID, "panic", r, "stack", string(debug.Stack()))
+		}
+	}()
+
 	url := fmt.Sprintf("%s/events?session_id=%s", w.httpAddr, sessionID)
 	req, err := http.NewRequest("GET", url, http.NoBody)
 	if err != nil {
@@ -594,17 +601,20 @@ func (w *Worker) readSSE(sessionID string) {
 		w.SetLastIO(time.Now())
 
 		w.Mu.Lock()
-		conn := w.httpConn
-		closed := conn == nil
+		ch := w.httpConn
+		var recvCh chan *events.Envelope
+		if ch != nil {
+			recvCh = ch.recvCh
+		}
 		w.Mu.Unlock()
 
-		if closed {
+		if recvCh == nil {
 			w.Log.Debug("opencodeserver: connection closed, stopping SSE reader")
 			return
 		}
 
 		select {
-		case conn.recvCh <- env:
+		case recvCh <- env:
 		default:
 			w.Log.Warn("opencodeserver: recv channel full, dropping message",
 				"event_type", env.Event.Type, "event_id", env.ID)

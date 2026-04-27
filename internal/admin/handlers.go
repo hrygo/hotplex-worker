@@ -2,6 +2,7 @@ package admin
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"strconv"
 	"time"
@@ -13,7 +14,10 @@ func (a *AdminAPI) HandleStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	total, _, _ := a.sm.Stats()
-	sessions, _ := a.sm.List(r.Context(), "", "", 0, 0)
+	sessions, err := a.sm.List(r.Context(), "", "", 0, 0)
+	if err != nil {
+		a.log.Warn("admin: failed to list sessions", "err", err)
+	}
 
 	byType := make(map[string]map[string]any)
 	for _, si := range sessions {
@@ -163,7 +167,7 @@ func (a *AdminAPI) HandleConfigValidate(w http.ResponseWriter, r *http.Request) 
 			MaxSize int `json:"max_size"`
 		} `json:"pool"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&body); err != nil {
 		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -228,7 +232,7 @@ func (a *AdminAPI) HandleConfigRollback(w http.ResponseWriter, r *http.Request) 
 	var body struct {
 		Version int `json:"version"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&body); err != nil {
 		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -263,7 +267,10 @@ func (a *AdminAPI) HandleDebugSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	snap, _ := a.sm.DebugSnapshot(id)
+	snap, dbgErr := a.sm.DebugSnapshot(id)
+	if !dbgErr {
+		a.log.Warn("admin: failed to get debug snapshot", "session_id", id)
+	}
 
 	siMap, _ := si.(map[string]any)
 	respondJSON(w, map[string]any{

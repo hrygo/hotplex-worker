@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -163,16 +164,20 @@ func (s *SQLiteMessageStore) Append(ctx context.Context, sessionID string, seq i
 	}:
 		return nil
 	default:
-		// Channel full — log and drop to avoid blocking the event stream.
 		s.log.Warn("session store: write channel full, dropping event",
 			"session_id", sessionID, "seq", seq)
-		return nil
+		return fmt.Errorf("session store: write channel full for session %s", sessionID)
 	}
 }
 
 // runWriter is the background goroutine that batches writes and flushes them.
 func (s *SQLiteMessageStore) runWriter() {
-	defer s.closeWg.Done()
+	defer func() {
+		if r := recover(); r != nil {
+			s.log.Error("session store: runWriter panic", "panic", r, "stack", string(debug.Stack()))
+		}
+		s.closeWg.Done()
+	}()
 
 	ticker := time.NewTicker(batchFlushInterval)
 	defer ticker.Stop()
@@ -222,14 +227,20 @@ func (s *SQLiteMessageStore) flushBatch(batch []*writeReq) {
 		return
 	}
 
+	var hasInsertErr bool
 	for _, req := range batch {
 		id := fmt.Sprintf("evt_%s_%d", req.sessionID, req.seq)
 		if _, execErr := stmt.Exec(id, req.sessionID, req.seq, req.eventType, string(req.payload)); execErr != nil {
 			s.log.Warn("session store: batch insert", "err", execErr, "session_id", req.sessionID)
+			hasInsertErr = true
 		}
 	}
 	_ = stmt.Close()
 
+	if hasInsertErr {
+		_ = tx.Rollback()
+		return
+	}
 	if err := tx.Commit(); err != nil {
 		_ = tx.Rollback()
 		s.log.Error("session store: batch tx commit", "err", err)

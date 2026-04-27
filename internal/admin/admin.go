@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"runtime/debug"
 	"time"
 
 	"github.com/hrygo/hotplex/internal/config"
@@ -109,6 +110,18 @@ func (a *AdminAPI) Mux() *http.ServeMux {
 
 func (a *AdminAPI) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if rv := recover(); rv != nil {
+				a.log.Error("admin: panic recovered",
+					"error", rv,
+					"path", r.URL.Path,
+					"method", r.Method,
+					"stack", string(debug.Stack()),
+				)
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+			}
+		}()
+
 		if a.rateLimiter != nil {
 			if !a.rateLimiter.Allow() {
 				http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)

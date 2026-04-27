@@ -186,16 +186,22 @@ func (v *JWTValidator) GenerateTokenWithJTI(userID string, scopes []string, ttl,
 		Scopes: scopes,
 	}
 	var method jwt.SigningMethod
-	switch v.secret.(type) {
+	var signingKey any
+	switch secret := v.secret.(type) {
 	case *ecdsa.PrivateKey:
 		method = jwt.SigningMethodES256
+		signingKey = secret
 	case []byte:
-		method = jwt.SigningMethodHS256
+		// SECURITY: Derive ECDSA P-256 key from the raw secret to enforce
+		// ES256-only signing, consistent with GenerateTokenWithClaims and
+		// the project's ES256-only policy (no HS256).
+		signingKey = deriveECDSAP256Key(secret)
+		method = jwt.SigningMethodES256
 	default:
 		return "", "", errors.New("security: GenerateTokenWithJTI: invalid secret type")
 	}
 	token := jwt.NewWithClaims(method, claims)
-	signed, err := token.SignedString(v.secret)
+	signed, err := token.SignedString(signingKey)
 	if err != nil {
 		return "", "", err
 	}
@@ -218,6 +224,13 @@ func (v *JWTValidator) RevokeToken(jti string, ttl time.Duration) {
 // IsRevoked checks if a jti is currently revoked.
 func (v *JWTValidator) IsRevoked(jti string) bool {
 	return v.blacklist.isRevoked(jti)
+}
+
+// Stop terminates the JTI blacklist sweep goroutine. Call during gateway shutdown.
+func (v *JWTValidator) Stop() {
+	if v.blacklist != nil {
+		v.blacklist.Stop()
+	}
 }
 
 // ValidateAPIKey performs constant-time comparison of an API key.

@@ -8,8 +8,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/golang-jwt/jwt/v5"
-
 	"github.com/hrygo/hotplex/internal/config"
 	"github.com/hrygo/hotplex/pkg/events"
 )
@@ -91,9 +89,11 @@ func (a *Authenticator) ReloadKeys(cfg *config.SecurityConfig) {
 // botIDFromRequest extracts the BotID claim from a JWT Bearer token in the Authorization header.
 // Returns "" if no token is present or if extraction fails (fail-open; botID mismatch is
 // enforced later by performInit).
-// Note: we parse without verifying the signature here because the HTTP-layer auth (API key)
-// is the primary gate; the JWT is used only for botID tagging. Full JWT validation with
-// signature verification happens later in performInit.
+//
+// SECURITY: The token signature is verified via ES256 before extracting the botID claim.
+// If signature verification fails (e.g. token expired, wrong algorithm), the botID is
+// not extracted and the request proceeds with an empty botID. botID mismatch is still
+// enforced later by performInit as a defense-in-depth measure.
 func (a *Authenticator) botIDFromRequest(r *http.Request) string {
 	if a.jwtValidator == nil {
 		return ""
@@ -106,14 +106,11 @@ func (a *Authenticator) botIDFromRequest(r *http.Request) string {
 	if tokenString == "" {
 		return ""
 	}
-	// Parse without signature verification — we only read the claims here.
-	// The actual JWT validation (ES256 verification) happens in performInit.
-	token, _, err := jwt.NewParser().ParseUnverified(tokenString, &JWTClaims{})
+	// SECURITY: Verify the token signature before extracting botID.
+	// We use the same ES256 validation as the full JWT check, but silently
+	// ignore errors (fail-open) since the API key is the primary auth gate.
+	claims, err := a.jwtValidator.Validate(tokenString)
 	if err != nil {
-		return ""
-	}
-	claims, ok := token.Claims.(*JWTClaims)
-	if !ok {
 		return ""
 	}
 	return claims.BotID

@@ -362,6 +362,10 @@ func runGateway(configPath string, devMode bool) (err error) {
 	bridge.Shutdown()
 	opencodeserver.ShutdownSingleton(shutdownCtx)
 
+	if jwtValidator != nil {
+		jwtValidator.Stop()
+	}
+
 	cleanupWG.Wait()
 	pidTracker.RemoveAll()
 

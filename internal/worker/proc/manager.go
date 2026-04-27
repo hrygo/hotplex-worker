@@ -207,12 +207,14 @@ func (m *Manager) Terminate(ctx context.Context, sig syscall.Signal, gracePeriod
 		close(done)
 	}()
 
+	timer := time.NewTimer(gracePeriod)
+	defer timer.Stop()
 	select {
 	case <-done:
 		m.captureExitCode()
 		m.untrackPID(pidKey)
 		return nil
-	case <-time.After(gracePeriod):
+	case <-timer.C:
 		m.log.Warn("proc: graceful shutdown timeout, sending SIGKILL", "pgid", pgid)
 		return m.Kill()
 	case <-ctx.Done():
@@ -375,6 +377,11 @@ func (m *Manager) ReadLine() (string, error) {
 
 // drainStderr drains the stderr pipe in the background.
 func (m *Manager) drainStderr() {
+	defer func() {
+		if r := recover(); r != nil {
+			m.log.Error("proc: drainStderr panic", "panic", r)
+		}
+	}()
 	buf := make([]byte, 4096)
 	for {
 		n, err := m.stderr.Read(buf)

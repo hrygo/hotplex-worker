@@ -24,6 +24,7 @@ type ChatQueue struct {
 	log     *slog.Logger
 	mu      sync.Mutex
 	workers map[string]*chatWorker
+	wg      sync.WaitGroup // track worker goroutines for graceful shutdown
 }
 
 type chatWorker struct {
@@ -54,6 +55,7 @@ func (q *ChatQueue) Enqueue(chatID string, task func(ctx context.Context) error)
 	q.mu.Unlock()
 
 	if !exists {
+		q.wg.Add(1)
 		go q.runWorker(chatID, w)
 	}
 
@@ -69,6 +71,8 @@ func (q *ChatQueue) Enqueue(chatID string, task func(ctx context.Context) error)
 // It exits when: (1) the channel is closed (via Close), or (2) idle timeout
 // elapses with no new tasks. On exit, it removes itself from the workers map.
 func (q *ChatQueue) runWorker(chatID string, w *chatWorker) {
+	defer q.wg.Done()
+
 	idleTimer := time.NewTimer(chatIdleTimeout)
 	defer idleTimer.Stop()
 
@@ -143,4 +147,5 @@ func (q *ChatQueue) Close() {
 	for _, w := range workers {
 		close(w.tasks)
 	}
+	q.wg.Wait() // wait for all workers to finish
 }

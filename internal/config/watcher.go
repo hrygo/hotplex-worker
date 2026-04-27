@@ -70,6 +70,10 @@ type Watcher struct {
 	mu     sync.Mutex
 	closed bool
 
+	// callbackSem limits concurrent onChange/onStatic callback goroutines
+	// to prevent unbounded goroutine spawning under rapid config changes.
+	callbackSem chan struct{}
+
 	// Audit log of all changes.
 	muAudit sync.Mutex
 	audit   []ConfigChange
@@ -108,6 +112,7 @@ func NewWatcher(log *slog.Logger, path string, sp SecretsProvider, store *Config
 		debounce:      500 * time.Millisecond,
 		onChange:      onChange,
 		onStatic:      onStatic,
+		callbackSem:   make(chan struct{}, 4),
 		audit:         make([]ConfigChange, 0, 64),
 		maxHistoryLen: 64,
 	}
@@ -162,6 +167,9 @@ func (w *Watcher) run(ctx context.Context) {
 			debounceTimer = time.NewTimer(w.debounce)
 			select {
 			case <-ctx.Done():
+				if debounceTimer != nil {
+					debounceTimer.Stop()
+				}
 				return
 			case <-debounceTimer.C:
 				w.reload()
@@ -244,13 +252,22 @@ func (w *Watcher) reload() {
 		w.store.Swap(newCfg)
 	}
 
-	// Legacy callback notifications.
+	// Legacy callback notifications (bounded by callbackSem).
 	if hasHot && w.onChange != nil {
-		go w.onChange(newCfg)
+		go func() {
+			w.callbackSem <- struct{}{}
+			defer func() { <-w.callbackSem }()
+			w.onChange(newCfg)
+		}()
 	}
 	for _, c := range changes {
 		if !c.Hot && hasStatic && w.onStatic != nil {
-			go w.onStatic(c.Field)
+			c := c
+			go func() {
+				w.callbackSem <- struct{}{}
+				defer func() { <-w.callbackSem }()
+				w.onStatic(c.Field)
+			}()
 		}
 	}
 }

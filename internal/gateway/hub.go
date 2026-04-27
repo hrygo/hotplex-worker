@@ -42,7 +42,7 @@ func isDroppable(kind events.Kind) bool {
 // broadcastQueueSize returns the broadcast channel buffer size from config.
 // A value of 0 means unbounded (not recommended for production).
 func broadcastQueueSize(cfg *config.Config) int {
-	if cfg.Gateway.BroadcastQueueSize <= 0 {
+	if cfg.Gateway.BroadcastQueueSize < 1 {
 		return 256 // default
 	}
 	return cfg.Gateway.BroadcastQueueSize

@@ -132,11 +132,11 @@ func ValidateURL(targetURL string) error {
 }
 
 // ValidateURLDoubleResolve performs the standard ValidateURL check and then
-// re-resolves the hostname after a 100 ms delay to detect DNS rebinding attacks.
+// re-resolves the hostname after a 1 second delay to detect DNS rebinding attacks.
 // If the second resolution returns a different (blocked) IP, the URL is rejected.
 //
 // Use this for high-sensitivity environments where an attacker might control DNS.
-// Note: the 100 ms sleep adds latency and a DNS round-trip to every call.
+// Note: the 1 second sleep adds latency and a DNS round-trip to every call.
 func ValidateURLDoubleResolve(targetURL string) error {
 	if err := ValidateURL(targetURL); err != nil {
 		return err
@@ -145,7 +145,7 @@ func ValidateURLDoubleResolve(targetURL string) error {
 	// Brief delay to increase the probability that a DNS cache entry expires
 	// between the two lookups (only effective if the attacker controls the
 	// authoritative nameserver and the TTL is very short).
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(1 * time.Second)
 
 	u, err := url.Parse(targetURL)
 	if err != nil {
