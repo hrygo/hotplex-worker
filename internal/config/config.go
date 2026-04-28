@@ -277,15 +277,15 @@ type WorkerConfig struct {
 	PIDDir           string               `mapstructure:"pid_dir"`
 	AutoRetry        AutoRetryConfig      `mapstructure:"auto_retry"`
 	OpenCodeServer   OpenCodeServerConfig `mapstructure:"opencode_server"`
-		ClaudeCode       ClaudeCodeConfig     `mapstructure:"claude_code"`
-	}
+	ClaudeCode       ClaudeCodeConfig     `mapstructure:"claude_code"`
+}
 
-	// ClaudeCodeConfig holds Claude Code worker startup settings.
-	type ClaudeCodeConfig struct {
-		Command string `mapstructure:"command"` // binary + optional subcommand, e.g. "claude" or "ccr code"
-	}
+// ClaudeCodeConfig holds Claude Code worker startup settings.
+type ClaudeCodeConfig struct {
+	Command string `mapstructure:"command"` // binary + optional subcommand, e.g. "claude" or "ccr code"
+}
 
-	// OpenCodeServerConfig holds OpenCode Server singleton process settings.
+// OpenCodeServerConfig holds OpenCode Server singleton process settings.
 type OpenCodeServerConfig struct {
 	IdleDrainPeriod   time.Duration `mapstructure:"idle_drain_period"`
 	ReadyTimeout      time.Duration `mapstructure:"ready_timeout"`

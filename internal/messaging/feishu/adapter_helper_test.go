@@ -18,7 +18,6 @@ import (
 	"github.com/hrygo/hotplex/pkg/events"
 )
 
-
 func TestControlFeedbackMessageCN(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -36,7 +35,6 @@ func TestControlFeedbackMessageCN(t *testing.T) {
 		})
 	}
 }
-
 
 func TestExtractTextFromContent(t *testing.T) {
 	t.Parallel()
@@ -60,7 +58,6 @@ func TestExtractTextFromContent(t *testing.T) {
 		})
 	}
 }
-
 
 func TestBuildCardContent(t *testing.T) {
 	t.Parallel()
@@ -101,7 +98,6 @@ func TestBuildCardContent_EscapeHTML(t *testing.T) {
 	require.Equal(t, "<test> & \"quotes\"", el["content"])
 }
 
-
 func TestIsMessageExpired(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -120,7 +116,6 @@ func TestIsMessageExpired(t *testing.T) {
 		})
 	}
 }
-
 
 func TestExtractChatID(t *testing.T) {
 	t.Parallel()
@@ -145,7 +140,6 @@ func TestExtractChatID(t *testing.T) {
 	}
 }
 
-
 func TestAdapter_Setters(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
@@ -160,7 +154,6 @@ func TestAdapter_Setters(t *testing.T) {
 	require.Nil(t, a.transcriber)
 }
 
-
 func TestNewFeishuConn(t *testing.T) {
 	t.Parallel()
 	adapter := newTestAdapter(t)
@@ -169,7 +162,6 @@ func TestNewFeishuConn(t *testing.T) {
 	require.Equal(t, "chat123", conn.chatID)
 	require.Same(t, adapter, conn.adapter)
 }
-
 
 func TestFeishuConn_EnableStreaming(t *testing.T) {
 	t.Parallel()
@@ -194,7 +186,6 @@ func TestFeishuConn_SetTypingReactionID(t *testing.T) {
 	conn.SetTypingReactionID("")
 }
 
-
 func TestPtrStr(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -215,7 +206,6 @@ func TestPtrStr(t *testing.T) {
 }
 
 func strPtr(s string) *string { return &s }
-
 
 func TestFeishuConn_CycleReaction_NoOp(t *testing.T) {
 	t.Parallel()
@@ -241,7 +231,6 @@ func TestFeishuConn_CycleReaction_SameEmojiDedup(t *testing.T) {
 	// Same emoji → early return, no API calls made.
 	conn.cycleReaction(context.Background(), "TOOL_USE")
 }
-
 
 func TestSaveMediaBytes(t *testing.T) {
 	t.Parallel()
@@ -291,7 +280,6 @@ func TestSaveMediaBytes(t *testing.T) {
 		})
 	}
 }
-
 
 func TestIsBotMentioned(t *testing.T) {
 	t.Parallel()
@@ -347,7 +335,6 @@ func TestIsBotMentioned(t *testing.T) {
 	}
 }
 
-
 func TestAudioToPCM_Success(t *testing.T) {
 	t.Parallel()
 	if _, err := exec.LookPath("ffmpeg"); err != nil {
@@ -396,7 +383,6 @@ func le16(b []byte, v uint16) {
 	b[1] = byte(v >> 8)
 }
 
-
 var discardLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
 
 func newTestAdapter(t *testing.T) *Adapter {
@@ -418,7 +404,6 @@ func newTestConn(adapter *Adapter, replyToMsgID string) *FeishuConn {
 	conn.replyToMsgID = replyToMsgID
 	return conn
 }
-
 
 func TestFeishuConn_SendContextUsage(t *testing.T) {
 	t.Parallel()
@@ -499,7 +484,6 @@ func TestFeishuConn_SendContextUsage(t *testing.T) {
 		})
 	}
 }
-
 
 func TestFeishuConn_SendMCPStatus(t *testing.T) {
 	t.Parallel()

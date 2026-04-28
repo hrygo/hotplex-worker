@@ -11,7 +11,6 @@ import (
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 )
 
-
 func TestHandleMessage_NilEvent(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)

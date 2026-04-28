@@ -7,7 +7,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-
 func TestConvertMessage_TextWithMentions(t *testing.T) {
 	t.Parallel()
 	text, ok, medias := ConvertMessage("text", `{"text":"hello @user"}`, nil, "bot1", "msg1")
@@ -72,7 +71,6 @@ func TestConvertMessage_Sticker_WithKey(t *testing.T) {
 	require.Equal(t, "sticker", medias[0].Type)
 }
 
-
 func TestConvertPost_WithLink(t *testing.T) {
 	t.Parallel()
 	raw := `{"content":[[{"tag":"a","text":"click","href":"https://example.com"}]]}`
@@ -98,7 +96,6 @@ func TestConvertPost_WithTitle(t *testing.T) {
 	require.Contains(t, text, "body")
 }
 
-
 func TestConvertPostElement_LinkNoHref(t *testing.T) {
 	t.Parallel()
 	elem := postElement{Tag: "a", Text: "plain"}
@@ -110,7 +107,6 @@ func TestConvertPostElement_UnknownTag(t *testing.T) {
 	elem := postElement{Tag: "custom"}
 	require.Equal(t, "", convertPostElement(elem, nil, ""))
 }
-
 
 func TestBuildMediaPrompt_TranscriptionOnly(t *testing.T) {
 	t.Parallel()
@@ -153,7 +149,6 @@ func TestBuildMediaPrompt_NoUserText(t *testing.T) {
 	require.NotContains(t, result, "用户的文字内容")
 }
 
-
 func TestBuildInteractionCard_NoFooter(t *testing.T) {
 	t.Parallel()
 	result := buildInteractionCard("body text", "")
@@ -166,7 +161,6 @@ func TestBuildInteractionCard_NoFooter(t *testing.T) {
 	elements := body["elements"].([]any)
 	require.Len(t, elements, 1)
 }
-
 
 func TestStripInvalidImageKeys_NoImageSyntax(t *testing.T) {
 	t.Parallel()

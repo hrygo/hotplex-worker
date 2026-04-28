@@ -8,7 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-
 func TestStreamingCardController_Write(t *testing.T) {
 	t.Parallel()
 	c := newTestStreamingCtrl()
@@ -96,7 +95,6 @@ func TestStreamingCardController_Write_SecondWriteAfterExpiry(t *testing.T) {
 	require.Error(t, err)
 }
 
-
 func TestStreamingCardController_Flush_Unchanged(t *testing.T) {
 	t.Parallel()
 	limiter := NewFeishuRateLimiter()
@@ -148,7 +146,6 @@ func TestStreamingCardController_Flush_WithLimiter_CardKitDegraded(t *testing.T)
 	require.NoError(t, err)
 }
 
-
 func TestStreamingCardController_Expired_ZeroStartTime(t *testing.T) {
 	t.Parallel()
 	c := newTestStreamingCtrl()
@@ -184,7 +181,6 @@ func TestStreamingCardController_Expired_JustUnderTTL(t *testing.T) {
 	require.False(t, c.Expired())
 }
 
-
 func TestStreamingCardController_MsgID_Set(t *testing.T) {
 	t.Parallel()
 	c := newTestStreamingCtrl()
@@ -195,7 +191,6 @@ func TestStreamingCardController_MsgID_Set(t *testing.T) {
 
 	require.Equal(t, "msg_abc", c.MsgID())
 }
-
 
 func TestStreamingCardController_Close_WithBufferContent(t *testing.T) {
 	t.Parallel()
@@ -277,8 +272,8 @@ func TestStreamingCardController_Close_StreamingActive_NoCardID(t *testing.T) {
 
 	c.mu.Lock()
 	c.streamingActive = true
-	c.cardID = ""   // no cardID → can't disable streaming
-	c.msgID = ""    // no msgID → no IM patch
+	c.cardID = "" // no cardID → can't disable streaming
+	c.msgID = ""  // no msgID → no IM patch
 	c.cardKitOK = false
 	c.buf.WriteString("content")
 	c.mu.Unlock()
@@ -290,7 +285,6 @@ func TestStreamingCardController_Close_StreamingActive_NoCardID(t *testing.T) {
 	require.False(t, c.streamingActive)
 	c.mu.Unlock()
 }
-
 
 func TestStreamingCardController_Abort_FromStreaming(t *testing.T) {
 	t.Parallel()
@@ -312,8 +306,8 @@ func TestStreamingCardController_Abort_NoCardID_NoStreaming(t *testing.T) {
 	require.True(t, c.transition(PhaseStreaming))
 
 	c.mu.Lock()
-	c.cardID = ""       // no cardID → disableStreaming skipped
-	c.msgID = ""        // no msgID → sendAbortMessage skipped
+	c.cardID = "" // no cardID → disableStreaming skipped
+	c.msgID = ""  // no msgID → sendAbortMessage skipped
 	c.streamingActive = false
 	c.mu.Unlock()
 
@@ -338,7 +332,6 @@ func TestStreamingCardController_Abort_NoStreamingActive_NoMsgID(t *testing.T) {
 	require.NoError(t, err)
 }
 
-
 func TestStreamingCardController_EnsureCard_InvalidPhase(t *testing.T) {
 	t.Parallel()
 	c := newTestStreamingCtrl()
@@ -350,7 +343,6 @@ func TestStreamingCardController_EnsureCard_InvalidPhase(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "cannot transition")
 }
-
 
 func TestStreamingCardController_ConcurrentClose(t *testing.T) {
 	t.Parallel()
@@ -377,7 +369,6 @@ func TestStreamingCardController_ConcurrentClose(t *testing.T) {
 	require.Equal(t, 5, successCount)
 }
 
-
 func TestStreamingCardController_WriteThenFlush(t *testing.T) {
 	t.Parallel()
 	limiter := NewFeishuRateLimiter()
@@ -395,7 +386,6 @@ func TestStreamingCardController_WriteThenFlush(t *testing.T) {
 	err := c.Flush(context.Background())
 	require.NoError(t, err)
 }
-
 
 func TestStreamingCardController_Flush_CardKitDegraded_NoCardID(t *testing.T) {
 	t.Parallel()
@@ -431,7 +421,6 @@ func TestStreamingCardController_Flush_IMPatchNoMsgID(t *testing.T) {
 	require.NoError(t, err)
 }
 
-
 func TestStreamingCardController_EnsureCard_TransitionFail(t *testing.T) {
 	t.Parallel()
 	limiter := NewFeishuRateLimiter()
@@ -446,7 +435,6 @@ func TestStreamingCardController_EnsureCard_TransitionFail(t *testing.T) {
 	require.Contains(t, err.Error(), "cannot transition")
 }
 
-
 func TestStreamingCardController_Close_NoContent(t *testing.T) {
 	t.Parallel()
 	c := newTestStreamingCtrl()
@@ -454,7 +442,6 @@ func TestStreamingCardController_Close_NoContent(t *testing.T) {
 	err := c.Close(context.Background())
 	require.NoError(t, err)
 }
-
 
 func TestStreamingCardController_Abort_NotStreaming(t *testing.T) {
 	t.Parallel()
@@ -464,7 +451,6 @@ func TestStreamingCardController_Abort_NotStreaming(t *testing.T) {
 	err := c.Abort(context.Background())
 	require.NoError(t, err)
 }
-
 
 func TestStreamingCardController_Transition_FromCompleted(t *testing.T) {
 	t.Parallel()

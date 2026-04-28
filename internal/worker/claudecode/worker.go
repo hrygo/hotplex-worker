@@ -161,11 +161,14 @@ func (w *Worker) startLocked(_ context.Context, session worker.SessionInfo, resu
 	w.Proc.SetPIDKey(session.SessionID)
 
 	// Split command into binary + optional prefix args (e.g. "ccr code" → binary="ccr", prefix=["code"]).
-	parts := commandParts.Load().([]string)
+	parts, _ := commandParts.Load().([]string)
+	if parts == nil {
+		parts = []string{"claude"}
+	}
 	binary := parts[0]
-	prefix := make([]string, len(parts)-1)
-	copy(prefix, parts[1:])
-	fullArgs := append(prefix, args...)
+	fullArgs := make([]string, 0, len(parts)-1+len(args))
+	fullArgs = append(fullArgs, parts[1:]...)
+	fullArgs = append(fullArgs, args...)
 
 	bgCtx := context.Background()
 	stdin, _, _, err := w.Proc.Start(bgCtx, binary, fullArgs, base.BuildEnv(session, claudeCodeEnvWhitelist, "claude-code"), session.ProjectDir)

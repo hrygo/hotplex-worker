@@ -11,7 +11,6 @@ import (
 	"github.com/hrygo/hotplex/pkg/events"
 )
 
-
 func TestAdapterFlow_HandleTextMessage_NilBridge(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
@@ -41,7 +40,6 @@ func TestAdapterFlow_HandleTextMessage_WithInteractionConsumed(t *testing.T) {
 	err := a.handleTextMessage(context.Background(), "msg1", "ch1", "p2p", "user1", "允许", "", "")
 	require.NoError(t, err)
 }
-
 
 func TestAdapterFlow_WriteCtx_DoneEvent_WithStreamCtrl(t *testing.T) {
 	t.Parallel()
@@ -204,7 +202,6 @@ func TestAdapterFlow_WriteCtx_SkillsListEvent_NilClient(t *testing.T) {
 	require.Contains(t, err.Error(), "lark client not initialized")
 }
 
-
 func TestAdapterFlow_WriteCtx_MessageDelta_NoStreamingCtrl(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
@@ -234,7 +231,6 @@ func TestAdapterFlow_WriteCtx_MessageDelta_NoStreamingCtrl(t *testing.T) {
 		_ = conn.WriteCtx(context.Background(), env)
 	})
 }
-
 
 func TestAdapterFlow_FeishuConn_Close_WithStreamCtrl(t *testing.T) {
 	t.Parallel()
@@ -273,7 +269,6 @@ func TestAdapterFlow_FeishuConn_Close_WithReactionIDs(t *testing.T) {
 	conn.mu.RUnlock()
 }
 
-
 func TestAdapterFlow_ClearProcessingReaction_EmptyRID(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
@@ -304,7 +299,6 @@ func TestAdapterFlow_ClearProcessingReaction_NilClient(t *testing.T) {
 	conn.clearProcessingReaction(context.Background(), "rid123")
 }
 
-
 func TestAdapterFlow_SetProcessingReaction_EmptyMsgID(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
@@ -326,7 +320,6 @@ func TestAdapterFlow_SetProcessingReaction_NilClient(t *testing.T) {
 	rid := conn.setProcessingReaction(context.Background())
 	require.Empty(t, rid)
 }
-
 
 func TestAdapterFlow_CycleReaction_EmptyPlatformMsgID(t *testing.T) {
 	t.Parallel()
@@ -350,7 +343,6 @@ func TestAdapterFlow_CycleReaction_DifferentEmoji_NilClient(t *testing.T) {
 	conn.cycleReaction(context.Background(), "THINKING")
 }
 
-
 func TestAdapterFlow_SendTextMessage_NilClient(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
@@ -367,7 +359,6 @@ func TestAdapterFlow_ReplyMessage_NilClient(t *testing.T) {
 	require.Contains(t, err.Error(), "lark client not initialized")
 }
 
-
 func TestAdapterFlow_DedupCleanupLoop_Exit(t *testing.T) {
 	t.Parallel()
 	a := &Adapter{
@@ -380,7 +371,6 @@ func TestAdapterFlow_DedupCleanupLoop_Exit(t *testing.T) {
 	close(a.dedupDone)
 	a.dedupWg.Wait()
 }
-
 
 func TestAdapterFlow_Close_WithConnections(t *testing.T) {
 	t.Parallel()
@@ -398,7 +388,6 @@ func TestAdapterFlow_Close_WithConnections(t *testing.T) {
 	a.mu.RUnlock()
 	require.False(t, exists)
 }
-
 
 func TestAdapterFlow_Start_AlreadyStarted(t *testing.T) {
 	t.Parallel()
@@ -418,7 +407,6 @@ func TestAdapterFlow_Start_NoCredentials(t *testing.T) {
 	require.Contains(t, err.Error(), "appID and appSecret required")
 }
 
-
 func TestAdapterFlow_HandleTextControlCommand_NilBridge(t *testing.T) {
 	t.Parallel()
 	// controlFeedbackMessageCN covers all action branches.
@@ -432,7 +420,6 @@ func TestAdapterFlow_HandleTextWorkerCommand_NilBridge(t *testing.T) {
 	// The function is covered indirectly via handleMessage integration.
 }
 
-
 func TestAdapterFlow_WriteCtx_NilEnvelope(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
@@ -442,7 +429,6 @@ func TestAdapterFlow_WriteCtx_NilEnvelope(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "nil envelope")
 }
-
 
 func TestAdapterFlow_WriteCtx_PermissionRequest_ExtractFail(t *testing.T) {
 	t.Parallel()
@@ -498,7 +484,6 @@ func TestAdapterFlow_WriteCtx_ElicitationRequest_ExtractFail(t *testing.T) {
 	require.Error(t, err)
 }
 
-
 func TestAdapterFlow_WriteCtx_Done_NoStreamCtrl(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
@@ -536,7 +521,6 @@ func TestAdapterFlow_WriteCtx_Error_NoStreamCtrl(t *testing.T) {
 	err := conn.WriteCtx(context.Background(), env)
 	require.NoError(t, err)
 }
-
 
 func TestAdapterFlow_WriteCtx_MessageDelta_StaticPath(t *testing.T) {
 	t.Parallel()
@@ -586,7 +570,6 @@ func TestAdapterFlow_WriteCtx_Message_StaticPath_NoReplyTo(t *testing.T) {
 	require.Contains(t, err.Error(), "lark client not initialized")
 }
 
-
 func TestAdapterFlow_WriteCtx_RawEvent_WithText(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
@@ -610,7 +593,6 @@ func TestAdapterFlow_WriteCtx_RawEvent_WithText(t *testing.T) {
 	err := conn.WriteCtx(context.Background(), env)
 	require.Error(t, err)
 }
-
 
 func TestAdapterFlow_WriteCtx_Done_WithReactionCleanup(t *testing.T) {
 	t.Parallel()
@@ -670,7 +652,6 @@ func TestAdapterFlow_WriteCtx_Error_WithReactionCleanup(t *testing.T) {
 	conn.mu.RUnlock()
 }
 
-
 func TestAdapterFlow_RegisterInteraction(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
@@ -680,7 +661,6 @@ func TestAdapterFlow_RegisterInteraction(t *testing.T) {
 	a.registerInteraction("req-1", "sess-ri", events.PermissionRequest, conn)
 	require.Equal(t, 1, a.interactions.Len())
 }
-
 
 func TestAdapterFlow_WriteCtx_StreamCtrl_WriteFlush(t *testing.T) {
 	t.Parallel()
@@ -721,7 +701,6 @@ func TestAdapterFlow_RemoveReaction_EmptyReactionID_NilClient(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "lark client not initialized")
 }
-
 
 func TestAdapterFlow_RegisterInteraction_CallbackConsumed(t *testing.T) {
 	t.Parallel()

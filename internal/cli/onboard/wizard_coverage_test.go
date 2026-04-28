@@ -120,13 +120,13 @@ func TestHasEnvValue(t *testing.T) {
 
 func TestDisplayExistingConfig(t *testing.T) {
 	ec := &ExistingConfig{
-		ConfigPath:   "/tmp/config.yaml",
-		EnvPath:      "/tmp/.env",
-		ConfigExists: true,
-		SlackEnabled: true,
-		SlackCreds:   true,
+		ConfigPath:    "/tmp/config.yaml",
+		EnvPath:       "/tmp/.env",
+		ConfigExists:  true,
+		SlackEnabled:  true,
+		SlackCreds:    true,
 		FeishuEnabled: true,
-		FeishuCreds:  false,
+		FeishuCreds:   false,
 	}
 	require.NotPanics(t, func() { displayExistingConfig(ec) })
 

@@ -13,7 +13,6 @@ import (
 	"github.com/hrygo/hotplex/pkg/events"
 )
 
-
 func TestCheckPendingInteraction_QuestionResponse(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
@@ -144,10 +143,10 @@ func TestCheckPendingInteraction_NotPermissionText(t *testing.T) {
 	conn.mu.Unlock()
 
 	a.interactions.Register(&messaging.PendingInteraction{
-		ID:        "perm-np",
-		SessionID: "sess-np",
-		Type:      events.PermissionRequest,
-		Timeout:   5 * time.Minute,
+		ID:           "perm-np",
+		SessionID:    "sess-np",
+		Type:         events.PermissionRequest,
+		Timeout:      5 * time.Minute,
 		SendResponse: func(metadata map[string]any) {},
 	})
 
@@ -166,17 +165,16 @@ func TestCheckPendingInteraction_NoMatchingSession(t *testing.T) {
 	conn.mu.Unlock()
 
 	a.interactions.Register(&messaging.PendingInteraction{
-		ID:        "perm-nm",
-		SessionID: "sess-different",
-		Type:      events.PermissionRequest,
-		Timeout:   5 * time.Minute,
+		ID:           "perm-nm",
+		SessionID:    "sess-different",
+		Type:         events.PermissionRequest,
+		Timeout:      5 * time.Minute,
 		SendResponse: func(metadata map[string]any) {},
 	})
 
 	consumed := a.checkPendingInteraction(context.Background(), "allow", conn)
 	require.False(t, consumed)
 }
-
 
 func TestChatQueue_TaskExecution(t *testing.T) {
 	t.Parallel()
@@ -215,7 +213,6 @@ func TestChatQueue_AbortNonexistentChat(t *testing.T) {
 	require.NotPanics(t, func() { q.Abort("nonexistent") })
 }
 
-
 func TestCheckPendingInteraction_ElicitationDecline_CN(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
@@ -244,7 +241,6 @@ func TestCheckPendingInteraction_ElicitationDecline_CN(t *testing.T) {
 	er := capturedMetadata["elicitation_response"].(map[string]any)
 	require.Equal(t, "decline", er["action"])
 }
-
 
 func TestCheckPendingInteraction_PermissionAllow_Variants(t *testing.T) {
 	t.Parallel()
