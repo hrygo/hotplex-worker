@@ -239,4 +239,119 @@ func TestExtractSessionStats(t *testing.T) {
 		}
 		require.Nil(t, extractSessionStats(env))
 	})
+
+	t.Run("cloned envelope map string any", func(t *testing.T) {
+		// Simulates Event.Data after events.Clone JSON round-trip.
+		env := &events.Envelope{
+			Event: events.Event{
+				Type: events.Done,
+				Data: map[string]any{
+					"success": true,
+					"stats": map[string]any{
+						"_session": map[string]any{
+							"turn_count": 3,
+						},
+					},
+				},
+			},
+		}
+		ss := extractSessionStats(env)
+		require.NotNil(t, ss)
+		// JSON unmarshal converts all numbers to float64.
+		require.Equal(t, float64(3), ss["turn_count"])
+	})
+}
+
+func TestAsDoneData(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name   string
+		data   any
+		wantOK bool
+		wantDD events.DoneData
+	}{
+		{
+			name:   "typed struct",
+			data:   events.DoneData{Success: true, Stats: map[string]any{"total_cost_usd": float64(0.042)}},
+			wantOK: true,
+			wantDD: events.DoneData{Success: true, Stats: map[string]any{"total_cost_usd": float64(0.042)}},
+		},
+		{
+			name: "map from Clone",
+			data: map[string]any{
+				"success": true,
+				"stats":   map[string]any{"total_cost_usd": float64(0.042)},
+			},
+			wantOK: true,
+			wantDD: events.DoneData{Success: true, Stats: map[string]any{"total_cost_usd": float64(0.042)}},
+		},
+		{
+			name:   "nil",
+			data:   nil,
+			wantOK: false,
+		},
+		{
+			name:   "wrong type",
+			data:   "not done data",
+			wantOK: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			dd, ok := asDoneData(tt.data)
+			require.Equal(t, tt.wantOK, ok)
+			if ok {
+				require.Equal(t, tt.wantDD.Success, dd.Success)
+			}
+		})
+	}
+}
+
+func TestAsToolCallData(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name   string
+		data   any
+		wantOK bool
+		want   events.ToolCallData
+	}{
+		{
+			name:   "typed struct",
+			data:   events.ToolCallData{ID: "tc1", Name: "Read", Input: map[string]any{"path": "/tmp/x"}},
+			wantOK: true,
+			want:   events.ToolCallData{ID: "tc1", Name: "Read", Input: map[string]any{"path": "/tmp/x"}},
+		},
+		{
+			name: "map from Clone",
+			data: map[string]any{
+				"id":    "tc2",
+				"name":  "Bash",
+				"input": map[string]any{"cmd": "ls"},
+			},
+			wantOK: true,
+			want:   events.ToolCallData{ID: "tc2", Name: "Bash", Input: map[string]any{"cmd": "ls"}},
+		},
+		{
+			name:   "nil",
+			data:   nil,
+			wantOK: false,
+		},
+		{
+			name:   "wrong type",
+			data:   42,
+			wantOK: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			tc, ok := asToolCallData(tt.data)
+			require.Equal(t, tt.wantOK, ok)
+			if ok {
+				require.Equal(t, tt.want.ID, tc.ID)
+				require.Equal(t, tt.want.Name, tc.Name)
+			}
+		})
+	}
 }

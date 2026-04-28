@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"path/filepath"
@@ -384,7 +385,7 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 		case events.ToolCall:
 			acc := b.getOrInitAccum(sessionID)
 			acc.ToolCallCount++
-			if tc, ok := env.Event.Data.(events.ToolCallData); ok {
+			if tc, ok := asToolCallData(env.Event.Data); ok {
 				if acc.ToolNames == nil {
 					acc.ToolNames = make(map[string]int)
 				}
@@ -395,7 +396,7 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 				turnTimer.Stop()
 			}
 			acc := b.getOrInitAccum(sessionID)
-			if dd, ok := env.Event.Data.(events.DoneData); ok {
+			if dd, ok := asDoneData(env.Event.Data); ok {
 				acc.mergePerTurnStats(dd)
 			}
 			acc.TurnCount++
@@ -476,7 +477,7 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 
 		// Record assistant response to conversation store after retry decision.
 		if env.Event.Type == events.Done && b.convStore != nil {
-			dd, _ := env.Event.Data.(events.DoneData)
+			dd, _ := asDoneData(env.Event.Data)
 			acc := b.getOrInitAccum(sessionID)
 			acc.computePerTurnDeltas()
 			success := dd.Success
@@ -1082,8 +1083,9 @@ func (b *Bridge) getOrInitAccum(sessionID string) *sessionAccumulator {
 }
 
 // injectSessionStats merges the accumulator snapshot into DoneData.Stats["_session"].
+// Handles both typed DoneData and map[string]any (from events.Clone JSON round-tripping).
 func (b *Bridge) injectSessionStats(env *events.Envelope, acc *sessionAccumulator) {
-	dd, ok := env.Event.Data.(events.DoneData)
+	dd, ok := asDoneData(env.Event.Data)
 	if !ok {
 		return
 	}
@@ -1091,7 +1093,15 @@ func (b *Bridge) injectSessionStats(env *events.Envelope, acc *sessionAccumulato
 		dd.Stats = make(map[string]any)
 	}
 	dd.Stats["_session"] = acc.snapshot()
-	env.Event.Data = dd
+
+	// Write back: preserve the original representation (map stays map, struct stays struct).
+	switch env.Event.Data.(type) {
+	case map[string]any:
+		raw, _ := json.Marshal(dd)
+		_ = json.Unmarshal(raw, &env.Event.Data)
+	default:
+		env.Event.Data = dd
+	}
 }
 
 // sanitizeLastInput filters control-like text from lastInput before re-delivery
