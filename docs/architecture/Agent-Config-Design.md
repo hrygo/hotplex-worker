@@ -28,8 +28,8 @@ Agent Config 是 Agent 的**可配置人格层**，而 `META-COGNITION.md` 是 A
 | **位置** | `~/.hotplex/agent-configs/` (用户可编辑) | `internal/agentconfig/` (代码库内) |
 | **可配置性** | 用户可编辑 SOUL/AGENTS/SKILLS/USER/MEMORY | 不可配置，内置硬编码 |
 | **注入方式** | `BuildSystemPrompt()` 组装为 `<directives>`/`<context>` | `go:embed` 在 init 时计算 |
-| **内容类型** | 人格(B)、规则(B)、工具(B)、用户(C)、记忆(C) | 身份、系统架构、状态机、自愈规则、控制命令 |
-| **用途** | 用户定制 Agent 行为 | Agent 自我认知与故障自愈 |
+| **内容类型** | 人格(B)、规则(B)、工具(B)、用户(C)、记忆(C) | 身份、系统架构、状态机、配置架构、控制命令 |
+| **用途** | 用户定制 Agent 行为 | Agent 自我认知 |
 
 两者通过 `BuildSystemPrompt()` **合并注入**到 Worker 的 System Prompt：
 - `SOUL.md/AGENTS.md/SKILLS.md` 内容注入到 `<directives>`（B 通道，高优先级）
@@ -188,7 +188,7 @@ Apply these capabilities when relevant.
 Reference material to inform your responses.
 
 <hotplex>
-Agent self-identity, operating constraints, and self-healing rules.
+Agent self-identity, operating constraints, and key operational rules.
 [internal/agentconfig/META-COGNITION.md — go:embed, C-channel]
 </hotplex>
 
@@ -311,7 +311,7 @@ Step 1: 加载设定文件 (共享)
 
 Step 2: 元认知加载 (init 时 go:embed)
   internal/agentconfig/
-  ├── META-COGNITION.md → 元认知核心 (身份/架构/状态机/自愈/命令)
+  ├── META-COGNITION.md → 元认知核心 (身份/架构/状态机/配置架构/控制命令)
   └── prompt.go 在 init() 时通过 go:embed 读取，注入到 `<context>` 顶部 (C 通道)
 
 Step 3: Worker 路由 (Bridge 层)

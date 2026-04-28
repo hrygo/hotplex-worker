@@ -143,7 +143,7 @@ configs/  config.yaml, config-dev.yaml, env.example
 **Modify existing**
 - Agent config files → `internal/agentconfig/loader.go` — file loading, size limits, frontmatter stripping; `prompt.go` for unified system prompt assembly (nested XML: `<directives>` + `<context>` groups with per-section behavioral directives)
 - Agent config directory → `~/.hotplex/agent-configs/` — place SOUL.md, AGENTS.md, SKILLS.md (B-channel) + USER.md, MEMORY.md (C-channel); platform variants like SOUL.slack.md
-- Meta-Cognition Core → `internal/agentconfig/META-COGNITION.md` — 6-section structured doc: identity constraints, system architecture, session state machine, self-healing/LLM retry rules, agent config injection, control commands; serves as the agent's "brain" for self-reference
+- Meta-Cognition Core → `internal/agentconfig/META-COGNITION.md` — 5-section self-model: identity, system architecture, session lifecycle, agent config architecture, control commands; serves as the agent's "brain" for self-reference
 - Session lifecycle → `internal/session/manager.go` — state machine + `TransitionWithInput` atomicity + `DeletePhysical` for forced removal
 - Session key derivation → `internal/session/key.go` — UUIDv5 deterministic session IDs + platform context
 - WebSocket protocol → `internal/gateway/conn.go` — ReadPump/WritePump + Handler dispatch
@@ -293,7 +293,7 @@ configs/  config.yaml, config-dev.yaml, env.example
 - **Switch-workdir**: `/cd <path>` (WebSocket control) or `POST /api/sessions/{id}/cd` (REST) terminates old worker, derives new session ID via PlatformContext with new workDir, starts fresh session on the same singleton process; security validated via `config.ExpandAndAbs` + `security.ValidateWorkDir`
 - **Passthrough command feedback**: `handlePassthroughCommand` sends visible `message` AEP events after WorkerCommander ops (compact/clear/rewind) succeed; unsupported commands (/effort, /commit) return explicit `NOT_SUPPORTED`; OCS `Compact` auto-resolves model from message history when no `pendingModel`; OCS `Rewind` auto-resolves last assistant messageID when no targetID
 - **Fast reconnect state guard**: `conn.go` skips `Transition(running)` when session already in `running` state on WebSocket reconnect with live worker — avoids invalid `running→running` transition error
-- **Meta-Cognition Core**: `internal/agentconfig/META-COGNITION.md` — 6-section agent self-model: (0) identity & constraints (AEP v1, Gateway-托管), (1) system architecture (data flow + component map), (2) session state machine (5 states + transition rules), (3) self-healing rules (LLM retry, 3-layer kill, IM Patch fallback), (4) agent config injection (B/C channels), (5) control command triggers; injected as C-channel (`<hotplex>`) in `<context>`, serves as the agent's "brain" for self-reference and autonomous recovery
+- **Meta-Cognition Core**: `internal/agentconfig/META-COGNITION.md` — 5-section agent self-model: identity (AEP v1, Gateway-托管), system architecture, session lifecycle, agent config architecture (B/C channels), control commands; injected as C-channel (`<hotplex>`) in `<context>`, serves as the agent's "brain" for self-reference
 
 ## COMMANDS
 
