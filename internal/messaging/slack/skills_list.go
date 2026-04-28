@@ -2,58 +2,84 @@ package slack
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
 	"github.com/slack-go/slack"
 
+	"github.com/hrygo/hotplex/internal/messaging"
 	"github.com/hrygo/hotplex/pkg/events"
 )
 
 func (c *SlackConn) sendSkillsList(ctx context.Context, env *events.Envelope) error {
-	if c.adapter == nil || c.adapter.client == nil {
-		return fmt.Errorf("slack: client not initialized")
+	d, err := messaging.ExtractSkillsListData(env)
+	if err != nil {
+		return err
 	}
-
-	var d events.SkillsListData
-	switch v := env.Event.Data.(type) {
-	case events.SkillsListData:
-		d = v
-	case map[string]any:
-		raw, _ := json.Marshal(v)
-		_ = json.Unmarshal(raw, &d)
-	default:
-		return nil
-	}
-
 	if len(d.Skills) == 0 {
-		return c.postSkillsMessage(ctx, "⚡ No skills found.", nil)
+		return c.postSkillsMessage(ctx, messaging.FormatEmptySkillsMsg(d.Filter), nil)
 	}
 
-	plainText := fmt.Sprintf("*⚡ Skills (%d)*", d.Total)
-	var blocks []slack.Block
+	groups := messaging.GroupSkillsBySource(d.Skills)
+	pages := messaging.PaginateSkillGroups(groups, messaging.SkillsPerPage)
 
-	header := slack.NewTextBlockObject(slack.PlainTextType, plainText, false, false)
-	blocks = append(blocks, slack.NewSectionBlock(header, nil, nil))
+	for i, page := range pages {
+		var blocks []slack.Block
 
-	var sb strings.Builder
-	for _, s := range d.Skills {
-		desc := s.Description
-		if len([]rune(desc)) > 120 {
-			desc = string([]rune(desc)[:117]) + "..."
+		header := messaging.SkillsHeader(d, i+1, len(pages))
+		blocks = append(blocks, slack.NewSectionBlock(
+			slack.NewTextBlockObject(slack.PlainTextType, header, false, false), nil, nil))
+
+		for _, g := range page {
+			emoji := messaging.SourceEmoji(g.Source)
+
+			var sb strings.Builder
+			fmt.Fprintf(&sb, "*%s %s (%d)*\n", emoji, g.Source, len(g.Entries))
+			for _, s := range g.Entries {
+				desc := messaging.TruncateDesc(s.Description)
+				fmt.Fprintf(&sb, "• %s — %s\n", s.Name, desc)
+			}
+			blocks = append(blocks, slack.NewSectionBlock(
+				slack.NewTextBlockObject(slack.MarkdownType, sb.String(), false, false), nil, nil))
+
+			if len(blocks) >= messaging.SkillsBlockSoftLimit {
+				break
+			}
 		}
-		fmt.Fprintf(&sb, "*%s*\n%s\n\n", s.Name, desc)
+
+		if len(blocks) > messaging.SkillsBlockHardLimit {
+			blocks = blocks[:messaging.SkillsBlockHardLimit]
+		}
+
+		fallback := header + "\n" + formatSkillsPlainText(page)
+		if err := c.postSkillsMessage(ctx, fallback, blocks); err != nil {
+			return err
+		}
 	}
 
-	body := slack.NewTextBlockObject(slack.MarkdownType, sb.String(), false, false)
-	blocks = append(blocks, slack.NewSectionBlock(body, nil, nil))
+	return nil
+}
 
-	if len(blocks) > 50 {
-		blocks = blocks[:50]
+func (c *SlackConn) postSkillsMessageFallback(ctx context.Context, env *events.Envelope) error {
+	d, err := messaging.ExtractSkillsListData(env)
+	if err != nil {
+		return err
+	}
+	if len(d.Skills) == 0 {
+		return c.postSkillsMessage(ctx, messaging.FormatEmptySkillsMsg(d.Filter), nil)
 	}
 
-	return c.postSkillsMessage(ctx, plainText+"\n"+sb.String(), blocks)
+	groups := messaging.GroupSkillsBySource(d.Skills)
+	pages := messaging.PaginateSkillGroups(groups, messaging.SkillsPerPage)
+
+	for i, page := range pages {
+		header := messaging.SkillsHeader(d, i+1, len(pages))
+		text := header + "\n" + formatSkillsPlainText(page)
+		if err := c.postSkillsMessage(ctx, text, nil); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (c *SlackConn) postSkillsMessage(ctx context.Context, fallback string, blocks []slack.Block) error {
@@ -68,31 +94,15 @@ func (c *SlackConn) postSkillsMessage(ctx context.Context, fallback string, bloc
 	return err
 }
 
-func (c *SlackConn) postSkillsMessageFallback(ctx context.Context, env *events.Envelope) error {
-	var d events.SkillsListData
-	switch v := env.Event.Data.(type) {
-	case events.SkillsListData:
-		d = v
-	case map[string]any:
-		raw, _ := json.Marshal(v)
-		_ = json.Unmarshal(raw, &d)
-	default:
-		return nil
-	}
-
-	if len(d.Skills) == 0 {
-		return c.postSkillsMessage(ctx, "⚡ No skills found.", nil)
-	}
-
+func formatSkillsPlainText(page []messaging.SkillGroup) string {
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "*⚡ Skills (%d)*\n\n", d.Total)
-	for _, s := range d.Skills {
-		desc := s.Description
-		if len([]rune(desc)) > 120 {
-			desc = string([]rune(desc)[:117]) + "..."
+	for _, g := range page {
+		emoji := messaging.SourceEmoji(g.Source)
+		fmt.Fprintf(&sb, "\n*%s %s (%d)*\n", emoji, g.Source, len(g.Entries))
+		for _, s := range g.Entries {
+			desc := messaging.TruncateDesc(s.Description)
+			fmt.Fprintf(&sb, "• %s — %s\n", s.Name, desc)
 		}
-		fmt.Fprintf(&sb, "*%s*\n%s\n\n", s.Name, desc)
 	}
-
-	return c.postSkillsMessage(ctx, sb.String(), nil)
+	return sb.String()
 }

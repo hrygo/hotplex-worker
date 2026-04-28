@@ -172,7 +172,8 @@ func TestFeishuConn_SendSkillsList_UnsupportedData(t *testing.T) {
 	}
 
 	err := conn.sendSkillsList(context.Background(), env)
-	require.NoError(t, err, "unsupported data type should return nil")
+	require.Error(t, err, "unsupported data type should return error")
+	require.Contains(t, err.Error(), "unexpected skills data type")
 }
 
 func TestFeishuConn_SendSkillsText_WithReplyTo(t *testing.T) {

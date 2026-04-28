@@ -46,7 +46,7 @@ function PreAssistantIndicator() {
 
   return (
     <motion.div
-      className="group msg-assistant flex items-center gap-6 mb-12"
+      className="group msg-assistant flex items-start gap-6 mb-12"
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
     >
@@ -60,8 +60,8 @@ function PreAssistantIndicator() {
       </div>
 
       <div className="msg-assistant-body active-session shadow-[0_0_50px_rgba(251,191,36,0.05)]">
-        <div className="flex items-center gap-4 py-4 px-2">
-          <div className="relative w-8 h-8 flex-shrink-0" style={{ perspective: '400px' }}>
+        <div className="flex items-start gap-4 px-2">
+          <div className="relative w-8 h-8 flex-shrink-0 mt-1" style={{ perspective: '400px' }}>
             <div className="absolute inset-0 bg-[var(--accent-gold)] opacity-20 blur-xl rounded-full animate-pulse-bloom" style={{ animationDuration: '3s' }} />
             <svg className="absolute inset-[-4px] w-[calc(100%+8px)] h-[calc(100%+8px)] pointer-events-none" style={{ transform: 'rotateX(65deg) rotateY(0deg)', animation: 'rotateOrbit 4s linear infinite' }}>
               <ellipse cx="50%" cy="50%" rx="12" ry="12" fill="none" stroke="var(--accent-gold)" strokeWidth="0.5" strokeDasharray="1 3" opacity="0.3" />
@@ -75,10 +75,10 @@ function PreAssistantIndicator() {
           </div>
           <div className="flex flex-col gap-1">
             <span className="text-[10px] font-mono text-[var(--accent-gold)] font-bold tracking-[0.2em] animate-pulse uppercase">
-              Quantum Thinking
+              Thinking
             </span>
             <span className="text-[9px] font-mono text-[var(--text-faint)] uppercase tracking-wider">
-              Establishing Neural Link...
+              Preparing response...
             </span>
           </div>
         </div>
@@ -90,6 +90,43 @@ function PreAssistantIndicator() {
 /* ============================================================
    Assistant Message - Enhanced with Functional Regression
    ============================================================ */
+function CopyButton({ message }: { message: any }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    let text = "";
+    if (typeof message.content === 'string') {
+      text = message.content;
+    } else if (Array.isArray(message.content)) {
+      text = message.content.map((p: any) => p.text || "").filter(Boolean).join("\n\n");
+    }
+    
+    if (text) {
+      navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  return (
+    <button onClick={handleCopy} className={`copy-btn ${copied ? 'copy-btn-success' : ''}`}>
+      <AnimatePresence mode="wait">
+        {copied ? (
+          <motion.div key="check" initial={{ scale: 0.5, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.5, opacity: 0 }} className="flex items-center gap-1.5">
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+            <span>Copied</span>
+          </motion.div>
+        ) : (
+          <motion.div key="copy" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex items-center gap-1.5">
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" /></svg>
+            <span>Copy</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </button>
+  );
+}
+
 function AssistantMessage({ message }: { message: any }) {
   const [expandedTools, setExpandedTools] = useState<Record<string, boolean>>({});
 
@@ -101,7 +138,10 @@ function AssistantMessage({ message }: { message: any }) {
         </div>
       </div>
 
-      <div className="msg-assistant-body pt-[4px]">
+      <div className="msg-assistant-body relative">
+        <div className="message-actions" style={{ right: '4px', top: '-14px' }}>
+          <CopyButton message={message} />
+        </div>
         <MessagePrimitive.Parts>
           {({ part }) => {
             const p = part as Record<string, any>;
@@ -155,12 +195,6 @@ function AssistantMessage({ message }: { message: any }) {
             return null;
           }}
         </MessagePrimitive.Parts>
-        
-        <div className="flex items-center gap-2 mt-4 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button className="text-[10px] uppercase tracking-wider font-bold text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors px-2 py-1 rounded-[var(--radius-xs)] hover:bg-[var(--bg-hover)]">
-            Copy
-          </button>
-        </div>
       </div>
     </motion.div>
   );
@@ -179,14 +213,14 @@ function ReasoningBlock({ text }: { text: string }) {
   return (
     <div className="reasoning-block">
       <div className="reasoning-header" onClick={() => setExpanded(!expanded)}>
-        <motion.svg className="w-3.5 h-3.5" animate={{ rotate: expanded ? 90 : 0 }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></motion.svg>
-        <span className="font-semibold uppercase text-[10px] tracking-wider">Thought</span>
-        <span className="opacity-50 text-[10px] ml-1">~{estimatedSeconds}s</span>
+        <motion.svg className="w-3.5 h-3.5" animate={{ rotate: expanded ? 90 : 0 }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" /></motion.svg>
+        <span>THOUGHT</span>
+        <span className="opacity-40 font-mono text-[9px] ml-auto tracking-normal">~{estimatedSeconds}s</span>
       </div>
       <AnimatePresence>
         {expanded && (
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-            <div className="p-3 pt-0 text-[var(--text-muted)] text-sm whitespace-pre-wrap font-mono leading-relaxed">{text}</div>
+            <div className="reasoning-content">{text}</div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -196,12 +230,19 @@ function ReasoningBlock({ text }: { text: string }) {
 
 function UserMessage({ message }: { message: any }) {
   return (
-    <motion.div className="group msg-user" variants={messageVariants} initial="hidden" animate="visible">
-      <div className="msg-user-bubble"><MessagePrimitive.Content /></div>
-      <div className="flex items-center gap-3 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
-        <button className="text-[10px] uppercase tracking-wider font-bold text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">
-          Copy
-        </button>
+    <motion.div className="group flex items-start justify-end gap-4 mb-8" variants={messageVariants} initial="hidden" animate="visible">
+      <div className="flex flex-col items-end max-w-[85%] relative">
+        <div className="message-actions" style={{ right: '4px', top: '-14px' }}>
+          <CopyButton message={message} />
+        </div>
+        <div className="msg-user-bubble w-full"><MessagePrimitive.Content /></div>
+      </div>
+      <div className="flex-shrink-0 mt-0.5">
+        <div className="w-9 h-9 rounded-full glass-dark flex items-center justify-center border border-[var(--border-subtle)]">
+          <svg className="w-5 h-5 text-[var(--text-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+          </svg>
+        </div>
       </div>
     </motion.div>
   );
@@ -230,9 +271,17 @@ function WelcomeScreen() {
   );
 }
 
-export function Thread({ skills }: { skills?: string[] }) {
+interface ThreadProps {
+  skills?: string[];
+  hasMore?: boolean;
+  onLoadHistory?: () => Promise<{ hasMore: boolean }>;
+}
+
+export function Thread({ skills, hasMore, onLoadHistory }: ThreadProps) {
   const [localText, setLocalText] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [historyHasMore, setHistoryHasMore] = useState(hasMore);
   const aui = useAui();
   const text = useAuiState((s) => s.composer.text);
   const isRunning = useAuiState((s) => s.thread.isRunning);
@@ -261,11 +310,40 @@ export function Thread({ skills }: { skills?: string[] }) {
     setMenuOpen(false);
   }, [aui]);
 
+  const handleLoadEarlier = useCallback(async () => {
+    if (!onLoadHistory || loadingHistory) return;
+    setLoadingHistory(true);
+    try {
+      const result = await onLoadHistory();
+      setHistoryHasMore(result.hasMore);
+    } finally {
+      setLoadingHistory(false);
+    }
+  }, [onLoadHistory, loadingHistory]);
+
   return (
     <ThreadPrimitive.Root className="flex flex-col h-full relative overflow-hidden bg-[var(--bg-base)]">
       <ThreadPrimitive.Viewport className="thread-viewport relative px-4 py-8">
         <div className="max-w-5xl mx-auto w-full">
           <ThreadPrimitive.Empty><WelcomeScreen /></ThreadPrimitive.Empty>
+          {historyHasMore && (
+            <div className="flex justify-center py-4 mb-4">
+              <button
+                onClick={handleLoadEarlier}
+                disabled={loadingHistory}
+                className="px-4 py-2 text-[11px] font-mono uppercase tracking-wider font-bold text-[var(--text-muted)] hover:text-[var(--text-primary)] bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-full hover:bg-[var(--bg-hover)] transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loadingHistory ? (
+                  <span className="flex items-center gap-2">
+                    <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none">
+                      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="31.4 31.4" strokeLinecap="round" />
+                    </svg>
+                    Loading...
+                  </span>
+                ) : "Load earlier messages"}
+              </button>
+            </div>
+          )}
           <ThreadPrimitive.Messages>
             {({ message }) =>
               message.role === "user" ? <UserMessage message={message} /> : <AssistantMessage message={message} />

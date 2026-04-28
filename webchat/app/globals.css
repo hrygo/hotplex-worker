@@ -39,9 +39,9 @@
   --accent-blue:        #3b82f6;
 
   /* Typography */
-  --font-display: 'Outfit', system-ui, sans-serif;
-  --font-body:    'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --font-mono:    'JetBrains Mono', 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --font-display: var(--font-outfit), system-ui, sans-serif;
+  --font-body:    var(--font-inter), system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono:    var(--font-jetbrains), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
   /* Radius */
   --radius-xs:   4px;
@@ -288,13 +288,6 @@ body {
 /* ============================================================
    Messages
    ============================================================ */
-.msg-user {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  margin-bottom: 2rem;
-}
-
 .msg-user-bubble {
   max-width: 85%;
   padding: 0.875rem 1.25rem;
@@ -490,15 +483,37 @@ body {
 }
 
 .reasoning-header {
-  padding: 7px 0.75rem;
+  padding: 0 0.875rem;
   display: flex;
+  height: 32px;
   align-items: center;
-  gap: 0.5rem;
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
+  justify-content: flex-start;
+  gap: 0.625rem;
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
   color: var(--accent-gold);
   cursor: pointer;
   user-select: none;
+  opacity: 0.9;
+  transition: opacity 0.2s ease;
+}
+
+.reasoning-header:hover {
+  opacity: 1;
+}
+
+.reasoning-content {
+  padding: 0.25rem 1rem 1.25rem 1.125rem;
+  font-family: var(--font-mono);
+  font-size: 0.71875rem;
+  line-height: 1.75;
+  letter-spacing: 0.01em;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  opacity: 0.8;
 }
 
 .tool-call-block {
@@ -522,6 +537,15 @@ body {
 /* ============================================================
    Markdown Styling — Dark optimized
    ============================================================ */
+.prose > :first-child {
+  margin-top: 0 !important;
+}
+
+.prose p {
+  margin-top: 1.25em;
+  margin-bottom: 1.25em;
+}
+
 .prose pre {
   background: #0c0c0f !important;
   border: 1px solid var(--border-default);
@@ -605,6 +629,64 @@ body {
   color: var(--accent-gold);
 }
 .panel-icon-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Message Actions - Floating Tool */
+.message-actions {
+  position: absolute;
+  top: -10px;
+  right: 0px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  z-index: 30;
+  opacity: 0;
+  transform: translateY(6px);
+  transition: all 0.2s cubic-bezier(0.2, 0, 0, 1);
+  pointer-events: none;
+}
+
+.group:hover .message-actions {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.copy-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  background: rgba(24, 24, 27, 0.8);
+  backdrop-filter: blur(12px) saturate(180%);
+  color: var(--text-muted);
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+
+.copy-btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-bright);
+  color: var(--text-primary);
+  transform: scale(1.02);
+}
+
+.copy-btn:active {
+  transform: scale(0.95);
+}
+
+.copy-btn-success {
+  border-color: rgba(52, 211, 153, 0.4);
+  background: rgba(52, 211, 153, 0.1);
+  color: var(--accent-emerald) !important;
+}
 
 /* Delete button */
 .session-delete-btn {
