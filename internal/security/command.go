@@ -15,6 +15,22 @@ var AllowedCommands = map[string]bool{
 	// Add other allowed worker binaries here.
 }
 
+// RegisterCommand adds a binary name to the allowed commands whitelist.
+// Validates the name for path separators, dangerous characters, and empty strings.
+func RegisterCommand(name string) error {
+	if name == "" {
+		return fmt.Errorf("security: empty command name")
+	}
+	if strings.Contains(name, "/") || strings.Contains(name, "\\") {
+		return fmt.Errorf("security: command name %q must not contain path separators", name)
+	}
+	if ContainsDangerousChars(name) {
+		return fmt.Errorf("security: command name %q contains dangerous characters", name)
+	}
+	AllowedCommands[name] = true
+	return nil
+}
+
 // ValidateCommand checks that the command name is in the allowed list.
 // Returns nil if valid, or an error describing why it was rejected.
 func ValidateCommand(name string) error {

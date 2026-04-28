@@ -277,9 +277,15 @@ type WorkerConfig struct {
 	PIDDir           string               `mapstructure:"pid_dir"`
 	AutoRetry        AutoRetryConfig      `mapstructure:"auto_retry"`
 	OpenCodeServer   OpenCodeServerConfig `mapstructure:"opencode_server"`
-}
+		ClaudeCode       ClaudeCodeConfig     `mapstructure:"claude_code"`
+	}
 
-// OpenCodeServerConfig holds OpenCode Server singleton process settings.
+	// ClaudeCodeConfig holds Claude Code worker startup settings.
+	type ClaudeCodeConfig struct {
+		Command string `mapstructure:"command"` // binary + optional subcommand, e.g. "claude" or "ccr code"
+	}
+
+	// OpenCodeServerConfig holds OpenCode Server singleton process settings.
 type OpenCodeServerConfig struct {
 	IdleDrainPeriod   time.Duration `mapstructure:"idle_drain_period"`
 	ReadyTimeout      time.Duration `mapstructure:"ready_timeout"`
@@ -398,6 +404,9 @@ func Default() *Config {
 				ReadyTimeout:      10 * time.Second,
 				ReadyPollInterval: 200 * time.Millisecond,
 				HTTPTimeout:       30 * time.Second,
+			},
+			ClaudeCode: ClaudeCodeConfig{
+				Command: "claude",
 			},
 		},
 		Security: SecurityConfig{

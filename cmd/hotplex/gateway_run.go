@@ -25,6 +25,7 @@ import (
 	"github.com/hrygo/hotplex/internal/session"
 	"github.com/hrygo/hotplex/internal/tracing"
 	"github.com/hrygo/hotplex/internal/worker/opencodeserver"
+	"github.com/hrygo/hotplex/internal/worker/claudecode"
 	"github.com/hrygo/hotplex/internal/worker/proc"
 	"github.com/hrygo/hotplex/pkg/aep"
 	"github.com/hrygo/hotplex/pkg/events"
@@ -271,6 +272,9 @@ func runGateway(configPath string, devMode bool) (err error) {
 	// Initialize OpenCode Server singleton process manager.
 	opencodeserver.InitSingleton(log, cfg.Worker.OpenCodeServer)
 
+	// Initialize Claude Code worker with configured command.
+	claudecode.InitConfig(cfg.Worker.ClaudeCode)
+
 	cfgStore.RegisterFunc(func(prev, next *config.Config) {
 		if !reflect.DeepEqual(prev.Worker.AutoRetry, next.Worker.AutoRetry) {
 			retryCtrl.UpdateConfig(next.Worker.AutoRetry)
@@ -280,6 +284,12 @@ func runGateway(configPath string, devMode bool) (err error) {
 	cfgStore.RegisterFunc(func(prev, next *config.Config) {
 		if !reflect.DeepEqual(prev.Security.APIKeys, next.Security.APIKeys) {
 			auth.ReloadKeys(&next.Security)
+		}
+	})
+
+	cfgStore.RegisterFunc(func(prev, next *config.Config) {
+		if prev.Worker.ClaudeCode.Command != next.Worker.ClaudeCode.Command {
+			claudecode.InitConfig(next.Worker.ClaudeCode)
 		}
 	})
 
