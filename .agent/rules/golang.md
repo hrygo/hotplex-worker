@@ -9,6 +9,7 @@ paths:
 > 通用标准 → 见 `linting.md` | 测试规范 → 见 `testing.md`
 > AEP 协议 → 见 `aep.md` | Session 管理 → 见 `session.md`
 > 安全 → 见 `security.md` | 进程管理 → 见 `worker-proc.md`
+> 可观测性 → 见 `metrics.md` | Agent Config → 见 `agentconfig.md`
 
 ---
 
@@ -65,7 +66,12 @@ type PlatformConn interface {
 }
 ```
 
-**4 步初始化**（缺一不可）：SetHub → SetSM → SetHandler → SetBridge → Start
+**5 步初始化**（缺一不可）：
+1. `SetHub` — 注入 WS hub（广播路由）
+2. `SetSM` — 注入 SessionManager（状态机）
+3. `SetHandler` — 注入消息处理器（AEP dispatch）
+4. `SetBridge` — 注入 MessagingBridge（session 生命周期）
+5. `Start` — 启动连接（后台 goroutine）
 
 ---
 
@@ -79,6 +85,110 @@ type SessionManagerProvider interface { ... }
 
 // cmd/hotplex/main.go — 适配器桥接具体类型
 ```
+
+---
+
+## atomic.Value / sync.Once 模式
+
+**无锁全局单例**（推荐用于懒初始化单例进程）：
+```go
+// ✅ atomic.Pointer：并发安全的指针替换
+var singleton atomic.Pointer[SingletonProcessManager]
+
+func GetSingleton() *SingletonProcessManager {
+    p := singleton.Load()
+    if p != nil {
+        return p
+    }
+    // 初始化 + CAS 替换
+    sm := newSMP()
+    if !singleton.CompareAndSwap(nil, &sm) {
+        return singleton.Load()
+    }
+    return &sm
+}
+
+// ✅ sync.Once：简单单次初始化
+var initOnce sync.Once
+func Init() { initOnce.Do(func() { /* ... */ }) }
+
+// ✅ atomic.Value：任意类型（比 Pointer 更灵活）
+var v atomic.Value
+v.Store(someData)
+data := v.Load().(Type)
+```
+
+**OCS Worker 中的 session ID 隔离**：
+```go
+workerSessionID atomic.Value // 存储 string，无锁 Get/Set
+
+func (w *Worker) SetWorkerSessionID(id string) {
+    w.workerSessionID.Store(id)
+}
+func (w *Worker) GetWorkerSessionID() string {
+    return w.workerSessionID.Load().(string)
+}
+```
+
+**禁止**：对带 sync.Mutex 的类型用 atomic 操作替代锁；atomic 只适用于简单读/写/交换。
+
+---
+
+## go:embed 模式
+
+编译时嵌入静态资源：
+```go
+import "embed"
+
+//go:embed META-COGNITION.md
+var metaCognitionFS embed.FS
+
+func LoadMetaCognition() (string, error) {
+    data, err := metaCognitionFS.ReadFile("META-COGNITION.md")
+    if err != nil {
+        return "", err
+    }
+    return string(data), nil
+}
+```
+
+**规则**：
+- `//go:embed` 注释和文件路径之间有**严格空格**
+- 只 embed 不含敏感信息的静态配置文本
+- 搭配 `strings.TrimSpace` / frontmatter 剥离使用
+
+---
+
+## 全局单例进程管理模式（OCS）
+
+```go
+// singleton.go — SingletonProcessManager
+type SingletonProcessManager struct {
+    mu        sync.Mutex
+    refCount  int
+    proc      *proc.Manager
+    crashCh   chan struct{}      // 每次 lifecycle 新建
+    drainCh   chan struct{}
+    drainTimer *time.Timer
+    httpServer *http.Server
+}
+
+func (sm *SingletonProcessManager) Acquire(ctx context.Context) error { ... }
+func (sm *SingletonProcessManager) Release()                         { ... }
+```
+
+**Worker 持有引用，不直接管理进程**：
+```go
+type Worker struct {
+    *base.BaseWorker
+    ref     *SingletonProcessManager
+    session atomic.Value  // 当前 worker session ID（隔离）
+    closeOnce sync.Once
+}
+```
+- `Start/Resume` → `Acquire` + 创建 SSE 连接
+- `Terminate/Kill` → 仅释放引用 + 关闭 SSE，不杀进程
+- `crashCh` 每生命周期新建，确保隔离
 
 ---
 
@@ -141,9 +251,11 @@ func (l sdkLogger) Error(msg string)  { l.slog.Error(msg) }
 ## Context 传播规范
 
 - **函数参数**：`ctx context.Context` 必须作为第一个参数
-- **禁止**：请求处理路径中使用 `context.Background()`
+- **禁止**：请求处理路径中使用 `context.Background()`（单元测试除外）
 - **禁止**：存储 ctx 在 struct 字段中 — 沿调用链传递
 - **超时**：外部请求 30s，Worker 生命周期绑定请求 ctx
+- **衍生**：子任务用 `context.WithTimeout` / `context.WithCancel` 创建
+- **otel 链路**：入口处 `ctx, span := otel.Tracer("hotplex-gateway").Start(ctx, "...")`，结束时 `defer span.End()`
 
 ---
 
@@ -160,6 +272,37 @@ func (sm *Manager) GetSession(id string) (*ManagedSession, error) {
     return ms, nil
 }
 ```
+
+---
+
+## SwitchWorkDir 模式
+
+工作目录切换（跨 WebSocket 和 REST）：
+
+```go
+// bridge.go — handleSwitchWorkDir
+// 1. 安全验证工作目录（ExpandAndAbs + ValidateWorkDir 必须同时使用）
+workDir, err := cfg.ExpandAndAbs(req.Path)
+if err != nil {
+    return fmt.Errorf("expand work dir: %w", err)
+}
+if err := security.ValidateWorkDir(workDir); err != nil {
+    return fmt.Errorf("unsafe work dir: %w", err)
+}
+
+// 2. 派生新 session key（使用新的 workDir）
+newKey := DeriveSessionKey(platformCtx.WithWorkDir(workDir))
+
+// 3. 终止旧 worker（不删 session 记录）
+ms.Terminate(ctx)
+
+// 4. 在新 key 下启动 session
+si, err := sm.GetOrCreate(ctx, newKey, workerType, req.OwnerID)
+
+// 5. 注入最后输入并 resume（同一 OCS singleton 进程）
+```
+
+**安全组合**：`config.ExpandAndAbs` + `security.ValidateWorkDir` 必须同时使用，防止路径穿越。
 
 ---
 

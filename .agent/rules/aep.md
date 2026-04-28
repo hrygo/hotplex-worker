@@ -108,6 +108,26 @@ ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 
 **交互超时**：默认 5 分钟自动拒绝 (auto-deny)，通过 `InteractionManager` 管理
 
+## Passthrough 命令反馈
+
+Worker Commander 操作（compact/clear/rewind）成功后，发送可见 `message` 事件：
+
+```go
+// handler.go — handlePassthroughCommand
+// ✅ 成功后：发送可见消息给客户端
+msg := buildMessageEvent("✅ 会话已压缩", env.SessionID, seq)
+return h.sendToConn(ctx, env.SessionID, msg)
+
+// ❌ 不支持命令：返回 NOT_SUPPORTED，不发事件
+if err == ErrCommandNotSupported {
+    return &AppError{Code: "NOT_SUPPORTED", Message: "/effort not supported"}
+}
+```
+
+**OCS 特有**：Compact/Rewind 可自动从消息历史推断缺失参数（model、messageID），无需客户端传参。
+
+---
+
 ## Control 事件
 
 - C→S: `terminate` / `delete` / `gc` / `reset` / `park` / `restart`

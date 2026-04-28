@@ -88,6 +88,23 @@ CREATED → RUNNING → IDLE → TERMINATED → DELETED
 - 所有资源已释放
 - 管理员操作或 GC 触发
 
+## Fast Reconnect 优化（conn.go）
+
+WebSocket 重连时，若 worker 仍然存活，跳过 terminate + resume 周期：
+
+```go
+// conn.go — performTransition
+if ms.info.State == RUNNING && ms.worker != nil {
+    // Worker 存活，直接复用，跳过 running→running 非法转换
+    return nil
+}
+return ms.sm.Transition(target)
+```
+
+**原理**：重连时 session 可能已是 `RUNNING` 状态，`Transition` 拒绝 `running→running`，但 worker 实际还活着，直接复用即可。
+
+---
+
 ### 合法转换规则
 ```go
 var ValidTransitions = map[State][]State{
@@ -205,6 +222,27 @@ scanInterval := cfg.Session.GCScanInterval // 默认 60s
 | session expires_at ≤ now（max_lifetime） | → TERMINATED（max_lifetime） |
 | RUNNING session LastIO() > execution_timeout | → TERMINATED（zombie, 默认 30 分钟） |
 | TERMINATED session updated_at ≤ now - retention_period | → DELETE FROM sessions |
+
+## DeletePhysical 幂等删除
+
+绕过状态机强制删除，用于 API idempotent session 创建：
+
+```go
+// api.go — CreateSession
+// 若前一个 session 处于 DELETED 状态，先物理删除再创建
+if prevSession != nil && prevSession.State == DELETED {
+    if err := sm.DeletePhysical(ctx, id); err != nil {
+        return nil, fmt.Errorf("clean deleted session: %w", err)
+    }
+}
+```
+
+**规则**：
+- `DeletePhysical` 跳过所有状态检查，直接从 DB 和内存 map 删除
+- 仅限 API 层用于 idempotent 保障；业务逻辑用 `Transition(DELETED)`
+- 幂等性：`DeletePhysical` 对已不存在的 session 返回 `nil`
+
+---
 
 ### GC goroutine shutdown
 ```go

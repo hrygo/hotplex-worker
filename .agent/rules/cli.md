@@ -1,6 +1,7 @@
 ---
 paths:
   - "**/cli/**/*.go"
+  - "cmd/hotplex/*.go"
 ---
 
 # CLI 自服务规范

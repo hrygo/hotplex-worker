@@ -135,6 +135,25 @@ var AllowedBaseDirs = []string{
 }
 ```
 
+## ValidateWorkDir（SwitchWorkDir 专用）
+
+SwitchWorkDir 必须**同时使用**以下两个安全函数：
+
+```go
+// 1. ExpandAndAbs：展开环境变量 + 转绝对路径
+workDir, err := cfg.ExpandAndAbs(req.Path)
+if err != nil {
+    return fmt.Errorf("expand work dir: %w", err)
+}
+
+// 2. ValidateWorkDir：验证路径安全性（返回 error，非 bool）
+if err := security.ValidateWorkDir(workDir); err != nil {
+    return fmt.Errorf("unsafe work dir: %w", err)
+}
+```
+
+**禁止**：只用其中一个。`ExpandAndAbs` 处理 `$VAR` 和相对路径，`ValidateWorkDir` 做安全边界检查，两者缺一不可。
+
 ---
 
 ## SSRF 防护
