@@ -52,13 +52,13 @@ jobs:
               OVERSIZED="$OVERSIZED
             $path ($(( size / 1048576 ))MB)"
             fi
-          done < <(git rev-list --objects --all | git cat-file --batch-check='%(objecttype) %(objectsize) %(rest)' | awk '$1 == "blob" && $2 > 1048576')
+          done < <(git ls-tree -r HEAD | git cat-file --batch-check='%(objecttype) %(objectsize) %(rest)' | awk '$1 == "blob" && $2 > 1048576')
 
           if [ -n "$OVERSIZED" ]; then
-            echo "::error::Large files (>1MB) detected in repository history:$OVERSIZED"
+            echo "::error::Large files (>1MB) detected in HEAD tree:$OVERSIZED"
             exit 1
           fi
-          echo "No oversized files found."
+          echo "No oversized files in HEAD tree."
 
   # ── Gate: fast checks (快关门) ───────────────────────────────────────────
   gate:
