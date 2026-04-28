@@ -288,13 +288,6 @@ body {
 /* ============================================================
    Messages
    ============================================================ */
-.msg-user {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  margin-bottom: 2rem;
-}
-
 .msg-user-bubble {
   max-width: 85%;
   padding: 0.875rem 1.25rem;
@@ -490,9 +483,11 @@ body {
 }
 
 .reasoning-header {
-  padding: 7px 0.75rem;
+  padding: 0 0.75rem 7px 0.75rem;
   display: flex;
+  height: 28px;
   align-items: center;
+  justify-content: center;
   gap: 0.5rem;
   font-family: var(--font-mono);
   font-size: 0.75rem;
@@ -522,6 +517,15 @@ body {
 /* ============================================================
    Markdown Styling — Dark optimized
    ============================================================ */
+.prose > :first-child {
+  margin-top: 0 !important;
+}
+
+.prose p {
+  margin-top: 1.25em;
+  margin-bottom: 1.25em;
+}
+
 .prose pre {
   background: #0c0c0f !important;
   border: 1px solid var(--border-default);

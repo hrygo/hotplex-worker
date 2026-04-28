@@ -46,7 +46,7 @@ function PreAssistantIndicator() {
 
   return (
     <motion.div
-      className="group msg-assistant flex items-center gap-6 mb-12"
+      className="group msg-assistant flex items-start gap-6 mb-12"
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
     >
@@ -60,8 +60,8 @@ function PreAssistantIndicator() {
       </div>
 
       <div className="msg-assistant-body active-session shadow-[0_0_50px_rgba(251,191,36,0.05)]">
-        <div className="flex items-center gap-4 py-4 px-2">
-          <div className="relative w-8 h-8 flex-shrink-0" style={{ perspective: '400px' }}>
+        <div className="flex items-start gap-4 px-2">
+          <div className="relative w-8 h-8 flex-shrink-0 mt-1" style={{ perspective: '400px' }}>
             <div className="absolute inset-0 bg-[var(--accent-gold)] opacity-20 blur-xl rounded-full animate-pulse-bloom" style={{ animationDuration: '3s' }} />
             <svg className="absolute inset-[-4px] w-[calc(100%+8px)] h-[calc(100%+8px)] pointer-events-none" style={{ transform: 'rotateX(65deg) rotateY(0deg)', animation: 'rotateOrbit 4s linear infinite' }}>
               <ellipse cx="50%" cy="50%" rx="12" ry="12" fill="none" stroke="var(--accent-gold)" strokeWidth="0.5" strokeDasharray="1 3" opacity="0.3" />
@@ -75,10 +75,10 @@ function PreAssistantIndicator() {
           </div>
           <div className="flex flex-col gap-1">
             <span className="text-[10px] font-mono text-[var(--accent-gold)] font-bold tracking-[0.2em] animate-pulse uppercase">
-              Quantum Thinking
+              Thinking
             </span>
             <span className="text-[9px] font-mono text-[var(--text-faint)] uppercase tracking-wider">
-              Establishing Neural Link...
+              Preparing response...
             </span>
           </div>
         </div>
@@ -101,7 +101,7 @@ function AssistantMessage({ message }: { message: any }) {
         </div>
       </div>
 
-      <div className="msg-assistant-body pt-[4px]">
+      <div className="msg-assistant-body">
         <MessagePrimitive.Parts>
           {({ part }) => {
             const p = part as Record<string, any>;
@@ -196,12 +196,21 @@ function ReasoningBlock({ text }: { text: string }) {
 
 function UserMessage({ message }: { message: any }) {
   return (
-    <motion.div className="group msg-user" variants={messageVariants} initial="hidden" animate="visible">
-      <div className="msg-user-bubble"><MessagePrimitive.Content /></div>
-      <div className="flex items-center gap-3 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
-        <button className="text-[10px] uppercase tracking-wider font-bold text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">
-          Copy
-        </button>
+    <motion.div className="group flex items-start justify-end gap-4 mb-8" variants={messageVariants} initial="hidden" animate="visible">
+      <div className="flex flex-col items-end max-w-[85%]">
+        <div className="msg-user-bubble w-full"><MessagePrimitive.Content /></div>
+        <div className="flex items-center gap-3 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button className="text-[10px] uppercase tracking-wider font-bold text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">
+            Copy
+          </button>
+        </div>
+      </div>
+      <div className="flex-shrink-0 mt-0.5">
+        <div className="w-9 h-9 rounded-full glass-dark flex items-center justify-center border border-[var(--border-subtle)]">
+          <svg className="w-5 h-5 text-[var(--text-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+          </svg>
+        </div>
       </div>
     </motion.div>
   );

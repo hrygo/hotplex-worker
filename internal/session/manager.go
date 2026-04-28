@@ -35,7 +35,6 @@ var (
 type Manager struct {
 	log      *slog.Logger
 	store    Store
-	msgStore MessageStore // EVT-004: optional event persistence; nil is safe
 	cfg      *config.Config
 	cfgStore *config.ConfigStore // hot-reloadable config; nil = use static cfg
 	pool     *PoolManager
@@ -96,9 +95,9 @@ type SessionInfo struct {
 	Title string `json:"title,omitempty"`
 }
 
-// NewManager creates a new session manager using the provided Store and optional MessageStore.
+// NewManager creates a new session manager using the provided Store.
 // cfgStore is optional; when non-nil, GC and state transitions read the latest config dynamically.
-func NewManager(ctx context.Context, log *slog.Logger, cfg *config.Config, cfgStore *config.ConfigStore, store Store, msgStore MessageStore) (*Manager, error) {
+func NewManager(ctx context.Context, log *slog.Logger, cfg *config.Config, cfgStore *config.ConfigStore, store Store) (*Manager, error) {
 	if log == nil {
 		log = slog.Default()
 	}
@@ -106,7 +105,6 @@ func NewManager(ctx context.Context, log *slog.Logger, cfg *config.Config, cfgSt
 	m := &Manager{
 		log:      log.With("component", "session"),
 		store:    store,
-		msgStore: msgStore,
 		cfg:      cfg,
 		cfgStore: cfgStore,
 		pool:     NewPoolManager(log, cfg.Pool.MaxSize, cfg.Pool.MaxIdlePerUser, cfg.Pool.MaxMemoryPerUser),
@@ -120,7 +118,7 @@ func NewManager(ctx context.Context, log *slog.Logger, cfg *config.Config, cfgSt
 	m.gcDone = make(chan struct{})
 	go m.runGC(gcCtx)
 
-	m.log.Info("session: manager initialized", "msg_store", msgStore != nil)
+	m.log.Info("session: manager initialized")
 	return m, nil
 }
 
@@ -608,11 +606,6 @@ func (m *Manager) DebugSnapshot(id string) (DebugSessionSnapshot, bool) {
 	return snap, true
 }
 
-// MessageStore returns the configured MessageStore (may be nil).
-func (m *Manager) MessageStore() MessageStore {
-	return m.msgStore
-}
-
 // Lock acquires the per-session mutex for exclusive access.
 // The caller MUST call Unlock when done.
 func (m *Manager) Lock(id string) (release func(), err error) {
@@ -703,7 +696,7 @@ func (m *Manager) WorkerHealthStatuses() []worker.WorkerHealth {
 }
 
 // Close shuts down the manager and cancels the GC goroutine.
-// It also terminates all actively tracked worker processes and closes the MessageStore.
+// It also terminates all actively tracked worker processes.
 func (m *Manager) Close() error {
 	m.gcStop()
 	<-m.gcDone
@@ -730,11 +723,6 @@ func (m *Manager) Close() error {
 
 	if err := m.store.Close(); err != nil {
 		return err
-	}
-	if m.msgStore != nil {
-		if err := m.msgStore.Close(); err != nil {
-			return err
-		}
 	}
 	return nil
 }

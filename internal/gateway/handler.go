@@ -596,7 +596,7 @@ func (h *Handler) handleWorkerCommand(ctx context.Context, env *events.Envelope)
 
 	switch cmd {
 	case events.StdioSkills:
-		return h.handleSkillsList(ctx, env)
+		return h.handleSkillsList(ctx, env, args)
 
 	case events.StdioContextUsage:
 		resp, err := cr.SendControlRequest(ctrlCtx, "get_context_usage", nil)
@@ -716,7 +716,7 @@ func (h *Handler) sendCommandFeedback(ctx context.Context, sessionID, msg string
 	_ = h.hub.SendToSession(ctx, env)
 }
 
-func (h *Handler) handleSkillsList(ctx context.Context, env *events.Envelope) error {
+func (h *Handler) handleSkillsList(ctx context.Context, env *events.Envelope, filter string) error {
 	if h.skillsLocator == nil {
 		return h.sendErrorf(ctx, env, events.ErrCodeNotSupported, "skills listing not available")
 	}
@@ -731,6 +731,19 @@ func (h *Handler) handleSkillsList(ctx context.Context, env *events.Envelope) er
 		return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "skills: %v", err)
 	}
 
+	filter = strings.TrimSpace(filter)
+	if filter != "" {
+		filtered := make([]Skill, 0, len(skills))
+		lower := strings.ToLower(filter)
+		for _, s := range skills {
+			if strings.Contains(strings.ToLower(s.Name), lower) ||
+				strings.Contains(strings.ToLower(s.Description), lower) {
+				filtered = append(filtered, s)
+			}
+		}
+		skills = filtered
+	}
+
 	entries := make([]events.SkillEntry, len(skills))
 	for i, s := range skills {
 		entries[i] = events.SkillEntry{
@@ -740,7 +753,7 @@ func (h *Handler) handleSkillsList(ctx context.Context, env *events.Envelope) er
 		}
 	}
 
-	data := events.SkillsListData{Skills: entries, Total: len(entries)}
+	data := events.SkillsListData{Skills: entries, Total: len(entries), Filter: filter}
 	respEnv := events.NewEnvelope(
 		aep.NewID(), env.SessionID,
 		h.hub.NextSeq(env.SessionID),

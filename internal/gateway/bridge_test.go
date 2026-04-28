@@ -22,7 +22,7 @@ func TestNewBridge(t *testing.T) {
 	log := slog.Default()
 	hub := newTestHub(t)
 	sm := new(mockBridgeSM)
-	b := NewBridge(log, hub, sm, nil)
+	b := NewBridge(log, hub, sm)
 
 	require.NotNil(t, b)
 	assert.Same(t, sm, b.sm)
@@ -79,6 +79,12 @@ func (*fakeConvStoreForBridge) DeleteBySession(ctx context.Context, sessionID st
 func (*fakeConvStoreForBridge) DeleteExpired(ctx context.Context, cutoff time.Time) (int64, error) {
 	return 0, nil
 }
+func (*fakeConvStoreForBridge) SessionStats(ctx context.Context, sessionID string) (*session.SessionStats, error) {
+	return nil, nil
+}
+func (*fakeConvStoreForBridge) MaxSeqBySession(ctx context.Context) (map[string]int64, error) {
+	return nil, nil
+}
 func (*fakeConvStoreForBridge) Close() error { return nil }
 
 func TestBridge_SetAgentConfigDir(t *testing.T) {
@@ -111,7 +117,7 @@ func TestBridge_Shutdown(t *testing.T) {
 	log := slog.Default()
 	hub := newTestHub(t)
 	sm := new(mockBridgeSM)
-	b := NewBridge(log, hub, sm, nil)
+	b := NewBridge(log, hub, sm)
 
 	b.Shutdown()
 	assert.True(t, b.closed.Load())
@@ -125,7 +131,7 @@ func TestBridge_Shutdown_RejectNewSession(t *testing.T) {
 	log := slog.Default()
 	hub := newTestHub(t)
 	sm := new(mockBridgeSM)
-	b := NewBridge(log, hub, sm, nil)
+	b := NewBridge(log, hub, sm)
 
 	b.Shutdown()
 
@@ -281,7 +287,7 @@ func TestInjectSessionStats(t *testing.T) {
 	log := slog.Default()
 	sm := new(mockBridgeSM)
 	hub := newTestHub(t)
-	b := NewBridge(log, hub, sm, nil)
+	b := NewBridge(log, hub, sm)
 
 	acc := b.getOrInitAccum("sess-1")
 	acc.ToolCallCount = 4
@@ -306,7 +312,7 @@ func TestInjectSessionStats_NonDoneData(t *testing.T) {
 	log := slog.Default()
 	sm := new(mockBridgeSM)
 	hub := newTestHub(t)
-	b := NewBridge(log, hub, sm, nil)
+	b := NewBridge(log, hub, sm)
 
 	acc := b.getOrInitAccum("sess-1")
 	env := &events.Envelope{

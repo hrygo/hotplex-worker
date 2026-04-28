@@ -378,6 +378,7 @@ type MCPServerInfo struct {
 type SkillsListData struct {
 	Skills []SkillEntry `json:"skills"`
 	Total  int          `json:"total"`
+	Filter string       `json:"filter,omitempty"`
 }
 
 // SkillEntry describes a single skill with name, description and source.
