@@ -661,6 +661,30 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		return nil
 	}
 
+	// Handle error events: clean up streaming card so it doesn't remain stale
+	// (e.g., TURN_TIMEOUT sent by bridge.go timeout handler before worker exits).
+	if env.Event.Type == events.Error {
+		c.mu.Lock()
+		streamCtrl := c.streamCtrl
+		typingRid := c.typingRid
+		toolRid := c.toolRid
+		platformMsgID := c.platformMsgID
+		if typingRid != "" {
+			_ = c.adapter.RemoveTypingIndicator(ctx, platformMsgID, typingRid)
+			c.typingRid = ""
+		}
+		if toolRid != "" {
+			_ = c.adapter.removeReaction(ctx, platformMsgID, toolRid)
+			c.toolRid = ""
+			c.toolEmoji = ""
+		}
+		c.mu.Unlock()
+		if streamCtrl != nil && streamCtrl.IsCreated() {
+			_ = streamCtrl.Close(ctx)
+		}
+		// Don't return here — let it fall through to extractResponseText below.
+	}
+
 	// Handle tool_call: update reaction to timeline emoji.
 	if env.Event.Type == events.ToolCall {
 		c.mu.RLock()

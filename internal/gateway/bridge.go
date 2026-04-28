@@ -450,7 +450,7 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 		// (e.g., "No conversation found"), not transient LLM errors. The resume
 		// fallback mechanism handles these cases with its own retry logic.
 		if env.Event.Type == events.Done && b.retryCtrl != nil && (!opts.resumed || turnText.Len() > 0) {
-			if shouldRetry, attempt := b.retryCtrl.ShouldRetry(sessionID, turnText.String(), lastError); shouldRetry {
+			if shouldRetry, attempt := b.retryCtrl.ShouldRetry(sessionID, lastError); shouldRetry {
 				// Suppress buffered error — user sees the notify message instead of raw LLM error.
 				pendingError = nil
 				b.autoRetry(context.Background(), w, sessionID, attempt)
@@ -762,10 +762,10 @@ func (b *Bridge) attemptResumeFallback(p fallbackParams) bool {
 // Uses CAS via crashedWorker to avoid detaching a worker that was already replaced
 // by a concurrent ResumeSession or attemptResumeFallback.
 func (b *Bridge) cleanupCrashedWorker(sessionID string, crashedWorker worker.Worker) {
-	acc := b.getAndDeleteAccum(sessionID)
-	if acc == nil {
-		acc = &sessionAccumulator{}
-	}
+	// Read turn_count without deleting — the accumulator is cleaned up when the
+	// session is physically deleted, not here. This avoids reading TurnCount=0
+	// after resetPerTurn() has already cleared it at done.
+	acc := b.getOrInitAccum(sessionID)
 	b.log.Debug("bridge: cleaning up crashed worker", "session_id", sessionID, "turn_count", acc.TurnCount)
 	if b.sm == nil {
 		return
@@ -1067,16 +1067,6 @@ func (b *Bridge) getOrInitAccum(sessionID string) *sessionAccumulator {
 	}
 	acc := &sessionAccumulator{StartedAt: time.Now()}
 	b.accum[sessionID] = acc
-	return acc
-}
-
-// getAndDeleteAccum returns and removes the accumulator in a single lock acquisition.
-// Returns nil if no accumulator exists for the session.
-func (b *Bridge) getAndDeleteAccum(sessionID string) *sessionAccumulator {
-	b.accumMu.Lock()
-	defer b.accumMu.Unlock()
-	acc := b.accum[sessionID]
-	delete(b.accum, sessionID)
 	return acc
 }
 
