@@ -107,7 +107,7 @@ func main() {
 }
 ```
 
-## 🧱 Architecture
+## 🏛️ Architecture
 
 HotPlex sits between frontend clients and backend AI coding agents, featuring a built-in meta-cognition core that abstracts protocol differences into a unified AEP v1 WebSocket layer.
 
