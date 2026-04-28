@@ -191,21 +191,28 @@ func TestBuildSystemPrompt(t *testing.T) {
 		require.Contains(t, prompt, "Memory data")
 	})
 
-	t.Run("B-channel only omits context group", func(t *testing.T) {
+	t.Run("B-channel only still includes hotplex metacognition", func(t *testing.T) {
 		cfg := &AgentConfigs{Agents: "Rules only"}
 		prompt := BuildSystemPrompt(cfg)
 		require.Contains(t, prompt, "<directives>")
 		require.Contains(t, prompt, "<rules>")
 		require.NotContains(t, prompt, "<persona>")
-		require.NotContains(t, prompt, "<context>")
+		// hotplex metacognition is always injected into <context> regardless of user config
+		require.Contains(t, prompt, "<context>")
+		require.Contains(t, prompt, "<hotplex>")
+		require.NotContains(t, prompt, "<user>")
+		require.NotContains(t, prompt, "<memory>")
 	})
 
-	t.Run("C-channel only omits directives group", func(t *testing.T) {
+	t.Run("C-channel includes hotplex metacognition + user content", func(t *testing.T) {
 		cfg := &AgentConfigs{User: "User only", Memory: "Memory only"}
 		prompt := BuildSystemPrompt(cfg)
 		require.Contains(t, prompt, "<context>")
+		require.Contains(t, prompt, "<hotplex>")
 		require.Contains(t, prompt, "<user>")
+		require.Contains(t, prompt, "User only")
 		require.Contains(t, prompt, "<memory>")
+		require.Contains(t, prompt, "Memory only")
 		require.NotContains(t, prompt, "<directives>")
 		require.NotContains(t, prompt, "<persona>")
 	})
