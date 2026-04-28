@@ -1,0 +1,31 @@
+# Binary files - no diff, no text normalization
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+*.otf binary
+*.mp3 binary
+*.mp4 binary
+*.wav binary
+*.ogg binary
+*.zip binary
+*.tar binary
+*.gz binary
+*.db binary
+*.sqlite binary
+*.onnx binary
+
+# Prevent root-level executables from being committed
+/hotplex export-ignore linguist-generated
+/hotplex-* export-ignore
+
+# Go build output
+bin/ export-ignore
+
+# Auto-generated files
+webchat/tsconfig.tsbuildinfo linguist-generated

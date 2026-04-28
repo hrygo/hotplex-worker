@@ -12,6 +12,48 @@ NC='\033[0m'
 
 printf "${YELLOW}🚀 Running pre-push validation...${NC}\n"
 
+# 0. Block large files (>1MB) anywhere in the tree
+# Scans ALL commits being pushed, not just working tree
+REMOTE_REF="$1"
+LOCAL_REF="$2"
+
+# Find the range of commits being pushed
+RANGE=""
+if [ -n "$LOCAL_REF" ] && [ "$LOCAL_REF" != "0000000000000000000000000000000000000000" ]; then
+    # Get merge base between local and remote
+    MERGE_BASE=$(git merge-base "$LOCAL_REF" "$REMOTE_REF" 2>/dev/null || echo "")
+    if [ -n "$MERGE_BASE" ]; then
+        RANGE="$MERGE_BASE..$LOCAL_REF"
+    else
+        # New branch - check all commits
+        RANGE="$LOCAL_REF"
+    fi
+fi
+
+if [ -n "$RANGE" ]; then
+    MAX_BLOB_SIZE=1048576  # 1MB
+    OVERSIZED=""
+    # List all blobs in the push range and check sizes
+    while IFS= read -r blob_info; do
+        size=$(echo "$blob_info" | awk '{print $3}')
+        path=$(echo "$blob_info" | awk '{print $4}')
+        if [ -n "$size" ] && [ "$size" -gt "$MAX_BLOB_SIZE" ] 2>/dev/null; then
+            # Allow known binary asset directories
+            case "$path" in
+                assets/*|docs/asserts/*|docs/channels/*/guides/*) continue ;;
+            esac
+            OVERSIZED="$OVERSIZED\n  $path ($(( size / 1048576 ))MB)"
+        fi
+    done < <(git rev-list --objects "$RANGE" 2>/dev/null | git cat-file --batch-check='%(objecttype) %(objectsize) %(rest)' 2>/dev/null | awk '$1 == "blob" && $2 > 1048576 {print $0}')
+
+    if [ -n "$OVERSIZED" ]; then
+        printf "${RED}❌ Push blocked: files >1MB detected in push range:${NC}\n"
+        printf "$OVERSIZED\n"
+        printf "${YELLOW}Move to .gitignore, use Git LFS, or reduce file size.${NC}\n"
+        exit 1
+    fi
+fi
+
 # 1. Build validation
 printf "🔹 Verifying build...\n"
 if ! make build > /dev/null 2>&1; then

@@ -29,8 +29,40 @@ permissions:
   pull-requests: write
 
 jobs:
+  # ── Guard: block large files (大门) ─────────────────────────────────────
+  large-file-guard:
+    name: Large File Guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Scan for files >1MB
+        run: |
+          OVERSIZED=""
+          while IFS= read -r blob_info; do
+            size=$(echo "$blob_info" | awk '{print $2}')
+            path=$(echo "$blob_info" | awk '{print $3}')
+            case "$path" in
+              assets/*|docs/asserts/*|docs/channels/*/guides/*) continue ;;
+            esac
+            if [ "$size" -gt 1048576 ] 2>/dev/null; then
+              OVERSIZED="$OVERSIZED
+            $path ($(( size / 1048576 ))MB)"
+            fi
+          done < <(git rev-list --objects --all | git cat-file --batch-check='%(objecttype) %(objectsize) %(rest)' | awk '$1 == "blob" && $2 > 1048576')
+
+          if [ -n "$OVERSIZED" ]; then
+            echo "::error::Large files (>1MB) detected in repository history:$OVERSIZED"
+            exit 1
+          fi
+          echo "No oversized files found."
+
   # ── Gate: fast checks (快关门) ───────────────────────────────────────────
   gate:
+    needs: [large-file-guard]
     name: Gate
     runs-on: ubuntu-latest
     timeout-minutes: 10
