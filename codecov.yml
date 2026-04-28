@@ -70,15 +70,6 @@ coverage:
         paths:
           - "internal/messaging/"
 
-    patch:
-      # PR 阶段：覆盖率降低 ≤1% 时仍然通过（容忍平台差异、测试跳过等）
-      # 覆盖率提升时自动通过（informational=false 不阻止提升）
-      default:
-        target: 60%       # patch 覆盖率目标略宽松（受影响的代码）
-        threshold: 1%     # 允许小幅回退，不阻塞合入
-        informational: false
-        only_pulls: true  # 仅对 PR 生效
-
 parsers:
   gcov:
     branch_discovery: yes

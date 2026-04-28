@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -119,24 +118,9 @@ func newTestAuth(t *testing.T) *security.Authenticator {
 	return security.NewAuthenticator(&config.SecurityConfig{}, nil)
 }
 
-type mockHistoryStore struct {
-	mock.Mock
-}
-
-func (m *mockHistoryStore) GetBySession(ctx context.Context, sessionID string, limit, offset int) ([]*session.ConversationRecord, error) {
-	args := m.Called(ctx, sessionID, limit, offset)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).([]*session.ConversationRecord), args.Error(1)
-}
-
-func newTestAPI(t *testing.T, sm *mockAPISM, bridge *mockAPIBridge, histStore HistoryStore) *GatewayAPI {
+func newTestAPI(t *testing.T, sm *mockAPISM, bridge *mockAPIBridge) *GatewayAPI {
 	t.Helper()
-	if histStore == nil {
-		histStore = &mockHistoryStore{}
-	}
-	return NewGatewayAPI(newTestAuth(t), sm, bridge, config.NewConfigStore(&config.Config{}, nil), histStore)
+	return NewGatewayAPI(newTestAuth(t), sm, bridge, config.NewConfigStore(&config.Config{}, nil))
 }
 
 func authedReq(method, target string, body io.Reader) *http.Request {
@@ -151,7 +135,6 @@ func setupMux(api *GatewayAPI) *http.ServeMux {
 	mux.HandleFunc("GET /api/sessions", api.ListSessions)
 	mux.HandleFunc("POST /api/sessions", api.CreateSession)
 	mux.HandleFunc("GET /api/sessions/{id}", api.GetSession)
-	mux.HandleFunc("GET /api/sessions/{id}/history", api.GetHistory)
 	mux.HandleFunc("DELETE /api/sessions/{id}", api.DeleteSession)
 	mux.HandleFunc("POST /api/sessions/{id}/cd", api.SwitchWorkDir)
 	return mux
@@ -163,7 +146,7 @@ func TestCreateSession_TitlePreferred(t *testing.T) {
 	t.Parallel()
 	sm := new(mockAPISM)
 	bridge := new(mockAPIBridge)
-	api := newTestAPI(t, sm, bridge, nil)
+	api := newTestAPI(t, sm, bridge)
 
 	// Get returns not found → no idempotency path
 	sm.On("Get", mock.Anything).Return(nil, session.ErrSessionNotFound)
@@ -184,7 +167,7 @@ func TestCreateSession_SessionIDOnlyRejected(t *testing.T) {
 	t.Parallel()
 	sm := new(mockAPISM)
 	bridge := new(mockAPIBridge)
-	api := newTestAPI(t, sm, bridge, nil)
+	api := newTestAPI(t, sm, bridge)
 
 	// session_id alone without title is rejected
 	w := httptest.NewRecorder()
@@ -198,7 +181,7 @@ func TestCreateSession_MissingTitleAndSessionID(t *testing.T) {
 	t.Parallel()
 	sm := new(mockAPISM)
 	bridge := new(mockAPIBridge)
-	api := newTestAPI(t, sm, bridge, nil)
+	api := newTestAPI(t, sm, bridge)
 
 	w := httptest.NewRecorder()
 	api.CreateSession(w, authedReq("POST", "/api/sessions", nil))
@@ -211,7 +194,7 @@ func TestCreateSession_IdempotentActiveSession(t *testing.T) {
 	t.Parallel()
 	sm := new(mockAPISM)
 	bridge := new(mockAPIBridge)
-	api := newTestAPI(t, sm, bridge, nil)
+	api := newTestAPI(t, sm, bridge)
 
 	active := &session.SessionInfo{ID: "existing-id", State: events.StateRunning}
 	sm.On("Get", mock.Anything).Return(active, nil)
@@ -228,7 +211,7 @@ func TestCreateSession_DeletedSessionRecreated(t *testing.T) {
 	t.Parallel()
 	sm := new(mockAPISM)
 	bridge := new(mockAPIBridge)
-	api := newTestAPI(t, sm, bridge, nil)
+	api := newTestAPI(t, sm, bridge)
 
 	deleted := &session.SessionInfo{ID: "deleted-id", State: events.StateDeleted}
 	sm.On("Get", mock.Anything).Return(deleted, nil)
@@ -248,7 +231,7 @@ func TestCreateSession_BridgeError(t *testing.T) {
 	t.Parallel()
 	sm := new(mockAPISM)
 	bridge := new(mockAPIBridge)
-	api := newTestAPI(t, sm, bridge, nil)
+	api := newTestAPI(t, sm, bridge)
 
 	sm.On("Get", mock.Anything).Return(nil, session.ErrSessionNotFound)
 	bridge.On("StartSession", mock.Anything, mock.Anything, mock.Anything, mock.Anything,
@@ -270,7 +253,7 @@ func TestDeleteSession_GracefulTermination(t *testing.T) {
 	t.Parallel()
 	sm := new(mockAPISM)
 	bridge := new(mockAPIBridge)
-	api := newTestAPI(t, sm, bridge, nil)
+	api := newTestAPI(t, sm, bridge)
 
 	sm.On("Transition", mock.Anything, "sess-1", events.StateTerminated).Return(nil)
 	sm.On("DeletePhysical", mock.Anything, "sess-1").Return(nil)
@@ -288,7 +271,7 @@ func TestDeleteSession_TransitionFailsStillDeletes(t *testing.T) {
 	t.Parallel()
 	sm := new(mockAPISM)
 	bridge := new(mockAPIBridge)
-	api := newTestAPI(t, sm, bridge, nil)
+	api := newTestAPI(t, sm, bridge)
 
 	sm.On("Transition", mock.Anything, "sess-2", events.StateTerminated).Return(errTestBridge)
 	sm.On("DeletePhysical", mock.Anything, "sess-2").Return(nil)
@@ -306,7 +289,7 @@ func TestDeleteSession_MissingID(t *testing.T) {
 	t.Parallel()
 	sm := new(mockAPISM)
 	bridge := new(mockAPIBridge)
-	api := newTestAPI(t, sm, bridge, nil)
+	api := newTestAPI(t, sm, bridge)
 
 	mux := setupMux(api)
 	w := httptest.NewRecorder()
@@ -322,7 +305,7 @@ func TestListSessions(t *testing.T) {
 	t.Parallel()
 	sm := new(mockAPISM)
 	bridge := new(mockAPIBridge)
-	api := newTestAPI(t, sm, bridge, nil)
+	api := newTestAPI(t, sm, bridge)
 
 	now := time.Now()
 	sessions := []*session.SessionInfo{
@@ -345,7 +328,7 @@ func TestListSessions_Unauthorized(t *testing.T) {
 	t.Parallel()
 	sm := new(mockAPISM)
 	bridge := new(mockAPIBridge)
-	api := newTestAPI(t, sm, bridge, nil)
+	api := newTestAPI(t, sm, bridge)
 
 	w := httptest.NewRecorder()
 	api.ListSessions(w, httptest.NewRequest("GET", "/api/sessions", nil))
@@ -360,7 +343,7 @@ func TestGetSession(t *testing.T) {
 	t.Parallel()
 	sm := new(mockAPISM)
 	bridge := new(mockAPIBridge)
-	api := newTestAPI(t, sm, bridge, nil)
+	api := newTestAPI(t, sm, bridge)
 
 	si := &session.SessionInfo{ID: "sess-x", State: events.StateRunning, Title: "my session"}
 	sm.On("Get", "sess-x").Return(si, nil)
@@ -380,7 +363,7 @@ func TestGetSession_NotFound(t *testing.T) {
 	t.Parallel()
 	sm := new(mockAPISM)
 	bridge := new(mockAPIBridge)
-	api := newTestAPI(t, sm, bridge, nil)
+	api := newTestAPI(t, sm, bridge)
 
 	sm.On("Get", "no-such").Return(nil, session.ErrSessionNotFound)
 
@@ -397,7 +380,7 @@ func TestSwitchWorkDir_Success(t *testing.T) {
 	t.Parallel()
 	sm := new(mockAPISM)
 	bridge := new(mockAPIBridge)
-	api := newTestAPI(t, sm, bridge, nil)
+	api := newTestAPI(t, sm, bridge)
 
 	si := &session.SessionInfo{ID: "sess-cd", State: events.StateRunning, UserID: "anonymous"}
 	sm.On("Get", "sess-cd").Return(si, nil)
@@ -421,7 +404,7 @@ func TestSwitchWorkDir_EmptyBody(t *testing.T) {
 	t.Parallel()
 	sm := new(mockAPISM)
 	bridge := new(mockAPIBridge)
-	api := newTestAPI(t, sm, bridge, nil)
+	api := newTestAPI(t, sm, bridge)
 
 	mux := setupMux(api)
 	w := httptest.NewRecorder()
@@ -436,7 +419,7 @@ func TestSwitchWorkDir_SessionNotFound(t *testing.T) {
 	t.Parallel()
 	sm := new(mockAPISM)
 	bridge := new(mockAPIBridge)
-	api := newTestAPI(t, sm, bridge, nil)
+	api := newTestAPI(t, sm, bridge)
 
 	sm.On("Get", "no-sess").Return(nil, session.ErrSessionNotFound)
 
@@ -446,289 +429,4 @@ func TestSwitchWorkDir_SessionNotFound(t *testing.T) {
 	mux.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusNotFound, w.Code)
-}
-
-func TestGetHistory(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name       string
-		sessionID  string
-		query      string
-		setupMocks func(*mockAPISM, *mockHistoryStore)
-		wantCode   int
-		wantBody   func(t *testing.T, body map[string]any)
-	}{
-		{
-			name:      "unauthorized",
-			sessionID: "sess1",
-			query:     "",
-			setupMocks: func(sm *mockAPISM, hs *mockHistoryStore) {
-				// No auth header → 401, mocks not called
-			},
-			wantCode: http.StatusUnauthorized,
-		},
-		{
-			name:      "session not found",
-			sessionID: "nonexistent",
-			query:     "",
-			setupMocks: func(sm *mockAPISM, hs *mockHistoryStore) {
-				sm.On("Get", "nonexistent").Return(nil, session.ErrSessionNotFound)
-			},
-			wantCode: http.StatusNotFound,
-		},
-		{
-			name:      "happy path",
-			sessionID: "sess1",
-			query:     "",
-			setupMocks: func(sm *mockAPISM, hs *mockHistoryStore) {
-				sm.On("Get", "sess1").Return(&session.SessionInfo{
-					ID:     "sess1",
-					UserID: "anonymous",
-					State:  events.StateIdle,
-				}, nil)
-				hs.On("GetBySession", mock.Anything, "sess1", 51, 0).Return([]*session.ConversationRecord{
-					{ID: "t1", SessionID: "sess1", Seq: 1, Role: "user", Content: "hello"},
-					{ID: "t2", SessionID: "sess1", Seq: 2, Role: "assistant", Content: "world"},
-				}, nil)
-			},
-			wantCode: http.StatusOK,
-			wantBody: func(t *testing.T, body map[string]any) {
-				turns, ok := body["turns"].([]any)
-				require.True(t, ok, "turns should be an array")
-				require.Len(t, turns, 2)
-				hasMore, ok := body["has_more"].(bool)
-				require.True(t, ok)
-				require.False(t, hasMore)
-			},
-		},
-		{
-			name:      "has_more detection",
-			sessionID: "sess1",
-			query:     "limit=2&offset=0",
-			setupMocks: func(sm *mockAPISM, hs *mockHistoryStore) {
-				sm.On("Get", "sess1").Return(&session.SessionInfo{
-					ID:     "sess1",
-					UserID: "anonymous",
-					State:  events.StateIdle,
-				}, nil)
-				// Return 3 records (limit+1=3) to trigger has_more
-				hs.On("GetBySession", mock.Anything, "sess1", 3, 0).Return([]*session.ConversationRecord{
-					{ID: "t1", SessionID: "sess1", Seq: 1, Role: "user", Content: "a"},
-					{ID: "t2", SessionID: "sess1", Seq: 2, Role: "assistant", Content: "b"},
-					{ID: "t3", SessionID: "sess1", Seq: 3, Role: "user", Content: "c"},
-				}, nil)
-			},
-			wantCode: http.StatusOK,
-			wantBody: func(t *testing.T, body map[string]any) {
-				turns, ok := body["turns"].([]any)
-				require.True(t, ok)
-				require.Len(t, turns, 2, "should return only limit records, not limit+1")
-				hasMore, ok := body["has_more"].(bool)
-				require.True(t, ok)
-				require.True(t, hasMore, "has_more should be true when extra record exists")
-			},
-		},
-		{
-			name:      "ownership check",
-			sessionID: "sess_other",
-			query:     "",
-			setupMocks: func(sm *mockAPISM, hs *mockHistoryStore) {
-				sm.On("Get", "sess_other").Return(&session.SessionInfo{
-					ID:     "sess_other",
-					UserID: "different_user", // Not "anonymous"
-					State:  events.StateIdle,
-				}, nil)
-			},
-			wantCode: http.StatusForbidden,
-		},
-		{
-			name:      "custom limit and offset",
-			sessionID: "sess1",
-			query:     "limit=10&offset=5",
-			setupMocks: func(sm *mockAPISM, hs *mockHistoryStore) {
-				sm.On("Get", "sess1").Return(&session.SessionInfo{
-					ID:     "sess1",
-					UserID: "anonymous",
-					State:  events.StateIdle,
-				}, nil)
-				hs.On("GetBySession", mock.Anything, "sess1", 11, 5).Return([]*session.ConversationRecord{
-					{ID: "t6", SessionID: "sess1", Seq: 6, Role: "user", Content: "hello6"},
-					{ID: "t7", SessionID: "sess1", Seq: 7, Role: "assistant", Content: "world7"},
-				}, nil)
-			},
-			wantCode: http.StatusOK,
-			wantBody: func(t *testing.T, body map[string]any) {
-				turns, ok := body["turns"].([]any)
-				require.True(t, ok)
-				require.Len(t, turns, 2)
-				hasMore, ok := body["has_more"].(bool)
-				require.True(t, ok)
-				require.False(t, hasMore)
-			},
-		},
-		{
-			name:      "history store error",
-			sessionID: "sess1",
-			query:     "",
-			setupMocks: func(sm *mockAPISM, hs *mockHistoryStore) {
-				sm.On("Get", "sess1").Return(&session.SessionInfo{
-					ID:     "sess1",
-					UserID: "anonymous",
-					State:  events.StateIdle,
-				}, nil)
-				hs.On("GetBySession", mock.Anything, "sess1", 51, 0).Return(([]*session.ConversationRecord)(nil), errors.New("database error"))
-			},
-			wantCode: http.StatusInternalServerError,
-		},
-		{
-			name:      "invalid limit parameter",
-			sessionID: "sess1",
-			query:     "limit=abc&offset=0",
-			setupMocks: func(sm *mockAPISM, hs *mockHistoryStore) {
-				sm.On("Get", "sess1").Return(&session.SessionInfo{
-					ID:     "sess1",
-					UserID: "anonymous",
-					State:  events.StateIdle,
-				}, nil)
-				// Should use default limit (50) + 1 = 51
-				hs.On("GetBySession", mock.Anything, "sess1", 51, 0).Return([]*session.ConversationRecord{
-					{ID: "t1", SessionID: "sess1", Seq: 1, Role: "user", Content: "test"},
-				}, nil)
-			},
-			wantCode: http.StatusOK,
-			wantBody: func(t *testing.T, body map[string]any) {
-				turns, ok := body["turns"].([]any)
-				require.True(t, ok)
-				require.Len(t, turns, 1)
-			},
-		},
-		{
-			name:      "negative limit uses default",
-			sessionID: "sess1",
-			query:     "limit=-5&offset=0",
-			setupMocks: func(sm *mockAPISM, hs *mockHistoryStore) {
-				sm.On("Get", "sess1").Return(&session.SessionInfo{
-					ID:     "sess1",
-					UserID: "anonymous",
-					State:  events.StateIdle,
-				}, nil)
-				hs.On("GetBySession", mock.Anything, "sess1", 51, 0).Return([]*session.ConversationRecord{
-					{ID: "t1", SessionID: "sess1", Seq: 1, Role: "user", Content: "test"},
-				}, nil)
-			},
-			wantCode: http.StatusOK,
-			wantBody: func(t *testing.T, body map[string]any) {
-				turns, ok := body["turns"].([]any)
-				require.True(t, ok)
-				require.Len(t, turns, 1)
-			},
-		},
-		{
-			name:      "max limit enforced",
-			sessionID: "sess1",
-			query:     "limit=300&offset=0",
-			setupMocks: func(sm *mockAPISM, hs *mockHistoryStore) {
-				sm.On("Get", "sess1").Return(&session.SessionInfo{
-					ID:     "sess1",
-					UserID: "anonymous",
-					State:  events.StateIdle,
-				}, nil)
-				// Max limit is 200, so should request 201 records (limit+1)
-				hs.On("GetBySession", mock.Anything, "sess1", 201, 0).Return([]*session.ConversationRecord{
-					{ID: "t1", SessionID: "sess1", Seq: 1, Role: "user", Content: "test"},
-				}, nil)
-			},
-			wantCode: http.StatusOK,
-			wantBody: func(t *testing.T, body map[string]any) {
-				turns, ok := body["turns"].([]any)
-				require.True(t, ok)
-				require.Len(t, turns, 1)
-			},
-		},
-		{
-			name:      "invalid offset uses default",
-			sessionID: "sess1",
-			query:     "limit=10&offset=xyz",
-			setupMocks: func(sm *mockAPISM, hs *mockHistoryStore) {
-				sm.On("Get", "sess1").Return(&session.SessionInfo{
-					ID:     "sess1",
-					UserID: "anonymous",
-					State:  events.StateIdle,
-				}, nil)
-				// Should use default offset (0)
-				hs.On("GetBySession", mock.Anything, "sess1", 11, 0).Return([]*session.ConversationRecord{
-					{ID: "t1", SessionID: "sess1", Seq: 1, Role: "user", Content: "test"},
-				}, nil)
-			},
-			wantCode: http.StatusOK,
-			wantBody: func(t *testing.T, body map[string]any) {
-				turns, ok := body["turns"].([]any)
-				require.True(t, ok)
-				require.Len(t, turns, 1)
-			},
-		},
-		{
-			name:      "negative offset uses default",
-			sessionID: "sess1",
-			query:     "limit=10&offset=-5",
-			setupMocks: func(sm *mockAPISM, hs *mockHistoryStore) {
-				sm.On("Get", "sess1").Return(&session.SessionInfo{
-					ID:     "sess1",
-					UserID: "anonymous",
-					State:  events.StateIdle,
-				}, nil)
-				// Should use default offset (0)
-				hs.On("GetBySession", mock.Anything, "sess1", 11, 0).Return([]*session.ConversationRecord{
-					{ID: "t1", SessionID: "sess1", Seq: 1, Role: "user", Content: "test"},
-				}, nil)
-			},
-			wantCode: http.StatusOK,
-			wantBody: func(t *testing.T, body map[string]any) {
-				turns, ok := body["turns"].([]any)
-				require.True(t, ok)
-				require.Len(t, turns, 1)
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			sm := new(mockAPISM)
-			hs := new(mockHistoryStore)
-			tt.setupMocks(sm, hs)
-
-			api := newTestAPI(t, sm, nil, hs)
-			mux := setupMux(api)
-
-			var url string
-			if tt.query != "" {
-				url = fmt.Sprintf("/api/sessions/%s/history?%s", tt.sessionID, tt.query)
-			} else {
-				url = fmt.Sprintf("/api/sessions/%s/history", tt.sessionID)
-			}
-
-			w := httptest.NewRecorder()
-			var req *http.Request
-			if tt.name == "unauthorized" {
-				req = httptest.NewRequest("GET", url, nil)
-			} else {
-				req = authedReq("GET", url, nil)
-			}
-			mux.ServeHTTP(w, req)
-
-			require.Equal(t, tt.wantCode, w.Code)
-
-			if tt.wantBody != nil && w.Code == http.StatusOK {
-				var body map[string]any
-				err := json.NewDecoder(w.Body).Decode(&body)
-				require.NoError(t, err)
-				tt.wantBody(t, body)
-			}
-
-			sm.AssertExpectations(t)
-			hs.AssertExpectations(t)
-		})
-	}
 }

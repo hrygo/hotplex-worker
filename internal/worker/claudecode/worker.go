@@ -14,6 +14,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/hrygo/hotplex/internal/config"
+	"github.com/hrygo/hotplex/internal/security"
 	"github.com/hrygo/hotplex/internal/worker"
 	"github.com/hrygo/hotplex/internal/worker/base"
 	"github.com/hrygo/hotplex/internal/worker/proc"
@@ -23,6 +25,27 @@ import (
 
 // Compile-time interface compliance checks.
 var _ worker.Worker = (*Worker)(nil)
+
+// commandParts stores the space-split command (binary + optional prefix args).
+// Thread-safe via atomic.Value. Default: ["claude"].
+var commandParts atomic.Value // []string
+
+func init() {
+	commandParts.Store([]string{"claude"})
+}
+
+// InitConfig applies Claude Code worker configuration.
+func InitConfig(cfg config.ClaudeCodeConfig) {
+	cmd := cfg.Command
+	if cmd == "" {
+		cmd = "claude"
+	}
+	parts := strings.Fields(cmd)
+	commandParts.Store(parts)
+	if err := security.RegisterCommand(parts[0]); err != nil {
+		slog.Error("claudecode: failed to register command", "command", parts[0], "err", err)
+	}
+}
 
 // Env whitelist for Claude Code worker.
 var claudeCodeEnvWhitelist = []string{
@@ -137,8 +160,18 @@ func (w *Worker) startLocked(_ context.Context, session worker.SessionInfo, resu
 	})
 	w.Proc.SetPIDKey(session.SessionID)
 
+	// Split command into binary + optional prefix args (e.g. "ccr code" → binary="ccr", prefix=["code"]).
+	parts, _ := commandParts.Load().([]string)
+	if parts == nil {
+		parts = []string{"claude"}
+	}
+	binary := parts[0]
+	fullArgs := make([]string, 0, len(parts)-1+len(args))
+	fullArgs = append(fullArgs, parts[1:]...)
+	fullArgs = append(fullArgs, args...)
+
 	bgCtx := context.Background()
-	stdin, _, _, err := w.Proc.Start(bgCtx, "claude", args, base.BuildEnv(session, claudeCodeEnvWhitelist, "claude-code"), session.ProjectDir)
+	stdin, _, _, err := w.Proc.Start(bgCtx, binary, fullArgs, base.BuildEnv(session, claudeCodeEnvWhitelist, "claude-code"), session.ProjectDir)
 	if err != nil {
 		w.Proc = nil
 		return fmt.Errorf("claudecode: start: %w", err)

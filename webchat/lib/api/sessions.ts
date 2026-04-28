@@ -71,47 +71,6 @@ export async function deleteSession(id: string): Promise<void> {
   if (!res.ok) throw new Error(`deleteSession failed: ${res.status}`);
 }
 
-// -- Session History API --
-
-export interface ConversationTurn {
-  id: string;
-  session_id: string;
-  seq: number;
-  role: string;
-  content: string;
-  platform: string;
-  user_id: string;
-  model: string;
-  success: number | null;
-  source: string;
-  tools_json: string | null;
-  tool_call_count: number;
-  tokens_in: number;
-  tokens_out: number;
-  duration_ms: number;
-  cost_usd: number;
-  metadata_json: string | null;
-  created_at: string;
-}
-
-export interface HistoryResponse {
-  turns: ConversationTurn[];
-  has_more: boolean;
-}
-
-export async function getSessionHistory(
-  sessionId: string,
-  limit = 50,
-  offset = 0,
-): Promise<HistoryResponse> {
-  const res = await fetch(
-    `${BASE}/api/sessions/${sessionId}/history?${AUTH}&limit=${limit}&offset=${offset}`,
-    { headers: { 'Content-Type': 'application/json' } },
-  );
-  if (!res.ok) throw new Error(`getSessionHistory failed: ${res.status}`);
-  return res.json();
-}
-
 export function formatRelativeTime(dateStr: string): string {
   const date = new Date(dateStr);
   const now = new Date();

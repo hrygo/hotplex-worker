@@ -617,7 +617,7 @@ func TestBotIDIsolation_CreateMismatch(t *testing.T) {
 	h1 := newTestHub(t, func(cfg *config.Config) {
 		cfg.Worker.DefaultWorkDir = safeTestWorkDir
 	})
-	mgr1, err := session.NewManager(context.Background(), slog.Default(), cfg, nil, store1)
+	mgr1, err := session.NewManager(context.Background(), slog.Default(), cfg, nil, store1, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { mgr1.Close() })
 
@@ -682,7 +682,7 @@ func TestBotIDIsolation_CreateMismatch(t *testing.T) {
 	h2 := newTestHub(t, func(cfg *config.Config) {
 		cfg.Worker.DefaultWorkDir = safeTestWorkDir
 	})
-	mgr2, err := session.NewManager(context.Background(), slog.Default(), cfg2, nil, store2)
+	mgr2, err := session.NewManager(context.Background(), slog.Default(), cfg2, nil, store2, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { mgr2.Close() })
 
@@ -757,7 +757,7 @@ func TestBotIDIsolation_MatchAllowed(t *testing.T) {
 	hubForTest := newTestHub(t, func(cfg *config.Config) {
 		cfg.Worker.DefaultWorkDir = safeTestWorkDir
 	})
-	mgr, err := session.NewManager(context.Background(), slog.Default(), cfg, nil, store)
+	mgr, err := session.NewManager(context.Background(), slog.Default(), cfg, nil, store, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { mgr.Close() })
 
@@ -820,7 +820,7 @@ func TestBotIDIsolation_EmptyBotIDAllowed(t *testing.T) {
 	h := newTestHub(t, func(cfg *config.Config) {
 		cfg.Worker.DefaultWorkDir = safeTestWorkDir
 	})
-	mgr, err := session.NewManager(context.Background(), slog.Default(), cfg, nil, store)
+	mgr, err := session.NewManager(context.Background(), slog.Default(), cfg, nil, store, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { mgr.Close() })
 
@@ -895,7 +895,7 @@ func TestBotIDIsolation_NewSessionStoresBotID(t *testing.T) {
 	h := newTestHub(t, func(cfg *config.Config) {
 		cfg.Worker.DefaultWorkDir = safeTestWorkDir
 	})
-	mgr, err := session.NewManager(context.Background(), slog.Default(), cfg, nil, store)
+	mgr, err := session.NewManager(context.Background(), slog.Default(), cfg, nil, store, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { mgr.Close() })
 
@@ -1097,7 +1097,7 @@ func TestBridge_ForwardEvents_NormalEvent(t *testing.T) {
 	t.Cleanup(cancel)
 
 	// Call forwardEvents directly (no goroutine).
-	b := NewBridge(slog.Default(), h, nil)
+	b := NewBridge(slog.Default(), h, nil, nil)
 	done := make(chan struct{})
 	go func() {
 		b.forwardEvents(fw, "sess_fwd", forwardOpts{})
@@ -1144,7 +1144,7 @@ func TestBridge_ForwardEvents_DoneWithDroppedFlag(t *testing.T) {
 	_, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	b := NewBridge(slog.Default(), h, nil)
+	b := NewBridge(slog.Default(), h, nil, nil)
 	done := make(chan struct{})
 	go func() {
 		b.forwardEvents(fw, "sess_drop", forwardOpts{})
@@ -1182,7 +1182,7 @@ func TestBridge_ForwardEvents_CrashExitCode(t *testing.T) {
 	_, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	b := NewBridge(slog.Default(), h, nil)
+	b := NewBridge(slog.Default(), h, nil, nil)
 	done := make(chan struct{})
 	go func() {
 		b.forwardEvents(fw, "sess_crash", forwardOpts{})
@@ -1198,6 +1198,90 @@ func TestBridge_ForwardEvents_CrashExitCode(t *testing.T) {
 	require.Contains(t, string(data), `"crash_exit_code":1`)
 
 	<-done
+}
+
+// TestBridge_ForwardEvents_MessageStoreAppend verifies that a Done event
+// triggers an Append call on msgStore.
+func TestBridge_ForwardEvents_MessageStoreAppend(t *testing.T) {
+	t.Parallel()
+
+	ch := make(chan *events.Envelope, 1)
+	doneEnv := events.NewEnvelope(aep.NewID(), "", 0, events.Done, events.DoneData{Success: true})
+	ch <- doneEnv
+	close(ch)
+
+	fw := &mockBridgeWorker{
+		workerType: worker.TypeClaudeCode,
+		conn:       &fakeWorkerConn{ch: ch},
+	}
+
+	// fakeMsgStore is defined in hub_test.go and is safe to reuse.
+	ms := &fakeMsgStore{}
+
+	h := newTestHub(t)
+	conn, server := newTestWSConnPair(t)
+	defer conn.Close()
+	defer server.Close()
+	c := newConn(h, conn, "sess_append", nil)
+	h.JoinSession("sess_append", c)
+
+	_, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	b := NewBridge(slog.Default(), h, nil, ms)
+	done := make(chan struct{})
+	go func() {
+		b.forwardEvents(fw, "sess_append", forwardOpts{})
+		close(done)
+	}()
+
+	// Drain the done event from WebSocket.
+	_ = server.SetReadDeadline(time.Now().Add(2 * time.Second))
+	_, _, err := server.ReadMessage()
+	require.NoError(t, err)
+
+	<-done
+}
+
+// TestBridge_ForwardEvents_NilMsgStore verifies that a nil msgStore does not
+// cause a panic when forwardEvents processes a Done event.
+func TestBridge_ForwardEvents_NilMsgStore(t *testing.T) {
+	t.Parallel()
+
+	ch := make(chan *events.Envelope, 1)
+	doneEnv := events.NewEnvelope(aep.NewID(), "", 0, events.Done, events.DoneData{Success: true})
+	ch <- doneEnv
+	close(ch)
+
+	fw := &mockBridgeWorker{
+		workerType: worker.TypeClaudeCode,
+		conn:       &fakeWorkerConn{ch: ch},
+	}
+
+	h := newTestHub(t)
+	conn, server := newTestWSConnPair(t)
+	defer conn.Close()
+	defer server.Close()
+	c := newConn(h, conn, "sess_nilms", nil)
+	h.JoinSession("sess_nilms", c)
+
+	_, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	// Bridge with nil msgStore — must not panic.
+	b := NewBridge(slog.Default(), h, nil, nil)
+	require.NotPanics(t, func() {
+		done := make(chan struct{})
+		go func() {
+			b.forwardEvents(fw, "sess_nilms", forwardOpts{})
+			close(done)
+		}()
+		// Drain the event.
+		_ = server.SetReadDeadline(time.Now().Add(2 * time.Second))
+		_, _, err := server.ReadMessage()
+		require.NoError(t, err)
+		<-done
+	})
 }
 
 // ─── Bridge StartSession / ResumeSession tests ─────────────────────────────────
@@ -1229,7 +1313,7 @@ func TestBridge_StartSession_Success(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	b := NewBridge(slog.Default(), h, sm)
+	b := NewBridge(slog.Default(), h, sm, nil)
 	// Inject the worker factory via a test helper - since wf is a field,
 	// we replace it after construction (field injection for tests).
 	b.wf = wf
@@ -1250,7 +1334,7 @@ func TestBridge_StartSession_CreateFails(t *testing.T) {
 		Return(nil, errors.New("create failed"))
 
 	h := newTestHub(t)
-	b := NewBridge(slog.Default(), h, sm)
+	b := NewBridge(slog.Default(), h, sm, nil)
 	// Inject a worker factory that would fail if Start were called.
 	b.wf = &failingWorkerFactory{}
 
@@ -1307,7 +1391,7 @@ func TestBridge_ResumeSession_Success(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	b := NewBridge(slog.Default(), h, sm)
+	b := NewBridge(slog.Default(), h, sm, nil)
 	b.wf = wf
 
 	err := b.ResumeSession(ctx, "sess_resume", "")
@@ -1338,7 +1422,7 @@ func TestBridge_ResumeSession_DeletedSession(t *testing.T) {
 	sm.On("Get", "sess_deleted").Return(sessionInfo, nil)
 
 	h := newTestHub(t)
-	b := NewBridge(slog.Default(), h, sm)
+	b := NewBridge(slog.Default(), h, sm, nil)
 
 	err := b.ResumeSession(context.Background(), "sess_deleted", "")
 	require.Error(t, err)
@@ -1387,7 +1471,7 @@ func TestBridge_ResumeSession_NoopWorker(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	b := NewBridge(slog.Default(), h, sm)
+	b := NewBridge(slog.Default(), h, sm, nil)
 	// Use the default factory (defaultWorkerFactory) so real noop workers are created.
 	// b.wf is already defaultWorkerFactory{} from NewBridge.
 

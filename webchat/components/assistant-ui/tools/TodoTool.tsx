@@ -41,8 +41,8 @@ export function TodoTool({ todo, status }: TodoToolProps) {
               </svg>
             </div>
             <div>
-              <h3 className="text-[13px] font-bold text-[var(--text-primary)] tracking-tight">Tasks</h3>
-              <p className="text-[10px] font-mono text-[var(--text-faint)] uppercase tracking-wider">{status === "running" ? "Processing" : "Completed"}</p>
+              <h3 className="text-[13px] font-bold text-[var(--text-primary)] tracking-tight">Mission Checklist</h3>
+              <p className="text-[10px] font-mono text-[var(--text-faint)] uppercase tracking-wider">Operational Status Update</p>
             </div>
           </div>
           <div className="text-right">
@@ -72,7 +72,7 @@ export function TodoTool({ todo, status }: TodoToolProps) {
       {/* Task List */}
       <div className="p-2 max-h-[300px] overflow-y-auto">
         {status === "running" && tasks.length === 0 ? (
-          <ToolLoadingSkeleton color="var(--accent-violet)" label="Loading tasks..." />
+          <ToolLoadingSkeleton color="var(--accent-violet)" label="Retrieving latest tasks..." />
         ) : (
           <div className="grid grid-cols-1 gap-1">
             {tasks.map((task, i) => (
@@ -116,7 +116,7 @@ export function TodoTool({ todo, status }: TodoToolProps) {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
              </div>
-             <p className="text-[11px] font-mono text-[var(--text-faint)] uppercase tracking-widest">No tasks</p>
+             <p className="text-[11px] font-mono text-[var(--text-faint)] uppercase tracking-widest">No active tasks recorded</p>
           </div>
         )}
       </div>
@@ -129,7 +129,7 @@ export function TodoTool({ todo, status }: TodoToolProps) {
            ))}
         </div>
         <span className="text-[9px] font-mono text-[var(--text-faint)] uppercase tracking-widest">
-           {status === "running" ? "Processing..." : "Done"}
+           {status === "running" ? "Updating Neural Buffer..." : "Sync Complete"}
         </span>
       </div>
     </div>

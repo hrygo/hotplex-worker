@@ -18,8 +18,6 @@ import (
 	"github.com/hrygo/hotplex/pkg/events"
 )
 
-// ─── controlFeedbackMessageCN ─────────────────────────────────────────────────
-
 func TestControlFeedbackMessageCN(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -37,8 +35,6 @@ func TestControlFeedbackMessageCN(t *testing.T) {
 		})
 	}
 }
-
-// ─── extractTextFromContent ──────────────────────────────────────────────────
 
 func TestExtractTextFromContent(t *testing.T) {
 	t.Parallel()
@@ -62,8 +58,6 @@ func TestExtractTextFromContent(t *testing.T) {
 		})
 	}
 }
-
-// ─── buildCardContent ────────────────────────────────────────────────────────
 
 func TestBuildCardContent(t *testing.T) {
 	t.Parallel()
@@ -104,8 +98,6 @@ func TestBuildCardContent_EscapeHTML(t *testing.T) {
 	require.Equal(t, "<test> & \"quotes\"", el["content"])
 }
 
-// ─── IsMessageExpired ──────────────────────────────────────────────────────────
-
 func TestIsMessageExpired(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -124,8 +116,6 @@ func TestIsMessageExpired(t *testing.T) {
 		})
 	}
 }
-
-// ─── ExtractChatID ─────────────────────────────────────────────────────────────
 
 func TestExtractChatID(t *testing.T) {
 	t.Parallel()
@@ -150,11 +140,9 @@ func TestExtractChatID(t *testing.T) {
 	}
 }
 
-// ─── Adapter setters ─────────────────────────────────────────────────────────
-
 func TestAdapter_Setters(t *testing.T) {
 	t.Parallel()
-	a := &Adapter{log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	a := newTestAdapter(t)
 
 	a.SetBridge(nil)
 	require.Nil(t, a.bridge)
@@ -166,58 +154,37 @@ func TestAdapter_Setters(t *testing.T) {
 	require.Nil(t, a.transcriber)
 }
 
-// ─── NewFeishuConn ────────────────────────────────────────────────────────────
-
 func TestNewFeishuConn(t *testing.T) {
 	t.Parallel()
-	adapter := &Adapter{
-		log:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		dedup:       NewDedup(100, time.Hour),
-		activeConns: make(map[string]*FeishuConn),
-		dedupDone:   make(chan struct{}),
-	}
+	adapter := newTestAdapter(t)
 	conn := NewFeishuConn(adapter, "chat123", "")
 
 	require.Equal(t, "chat123", conn.chatID)
 	require.Same(t, adapter, conn.adapter)
 }
 
-// ─── FeishuConn EnableStreaming / SetTypingReactionID ────────────────────────
-
 func TestFeishuConn_EnableStreaming(t *testing.T) {
 	t.Parallel()
-	adapter := &Adapter{
-		log:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		dedup:       NewDedup(100, time.Hour),
-		activeConns: make(map[string]*FeishuConn),
-		dedupDone:   make(chan struct{}),
-	}
+	adapter := newTestAdapter(t)
 	conn := NewFeishuConn(adapter, "chat123", "")
 
 	// nil controller should not panic
 	conn.EnableStreaming(nil)
 
-	ctrl := NewStreamingCardController(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	ctrl := newTestStreamingCtrl()
 	conn.EnableStreaming(ctrl)
 	conn.EnableStreaming(nil) // reset
 }
 
 func TestFeishuConn_SetTypingReactionID(t *testing.T) {
 	t.Parallel()
-	adapter := &Adapter{
-		log:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		dedup:       NewDedup(100, time.Hour),
-		activeConns: make(map[string]*FeishuConn),
-		dedupDone:   make(chan struct{}),
-	}
+	adapter := newTestAdapter(t)
 	conn := NewFeishuConn(adapter, "chat123", "")
 
 	// Set and clear should not panic
 	conn.SetTypingReactionID("msg123")
 	conn.SetTypingReactionID("")
 }
-
-// ─── ptrStr ───────────────────────────────────────────────────────────────────
 
 func TestPtrStr(t *testing.T) {
 	t.Parallel()
@@ -240,16 +207,9 @@ func TestPtrStr(t *testing.T) {
 
 func strPtr(s string) *string { return &s }
 
-// ─── FeishuConn cycleReaction ─────────────────────────────────────────────────
-
 func TestFeishuConn_CycleReaction_NoOp(t *testing.T) {
 	t.Parallel()
-	adapter := &Adapter{
-		log:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		dedup:       NewDedup(100, time.Hour),
-		activeConns: make(map[string]*FeishuConn),
-		dedupDone:   make(chan struct{}),
-	}
+	adapter := newTestAdapter(t)
 	conn := NewFeishuConn(adapter, "chat123", "")
 
 	// cycleReaction with no existing state should not panic
@@ -258,12 +218,7 @@ func TestFeishuConn_CycleReaction_NoOp(t *testing.T) {
 
 func TestFeishuConn_CycleReaction_SameEmojiDedup(t *testing.T) {
 	t.Parallel()
-	adapter := &Adapter{
-		log:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		dedup:       NewDedup(100, time.Hour),
-		activeConns: make(map[string]*FeishuConn),
-		dedupDone:   make(chan struct{}),
-	}
+	adapter := newTestAdapter(t)
 	conn := NewFeishuConn(adapter, "chat123", "")
 
 	// Set platformMsgID so the early return (platformMsgID=="") is skipped,
@@ -277,13 +232,9 @@ func TestFeishuConn_CycleReaction_SameEmojiDedup(t *testing.T) {
 	conn.cycleReaction(context.Background(), "TOOL_USE")
 }
 
-// ─── saveMediaBytes ─────────────────────────────────────────────────────────
-
 func TestSaveMediaBytes(t *testing.T) {
 	t.Parallel()
-	adapter := &Adapter{
-		log: slog.New(slog.NewTextHandler(io.Discard, nil)),
-	}
+	adapter := newTestAdapter(t)
 
 	tests := []struct {
 		name      string
@@ -329,8 +280,6 @@ func TestSaveMediaBytes(t *testing.T) {
 		})
 	}
 }
-
-// ─── isBotMentioned ─────────────────────────────────────────────────────────
 
 func TestIsBotMentioned(t *testing.T) {
 	t.Parallel()
@@ -386,8 +335,6 @@ func TestIsBotMentioned(t *testing.T) {
 	}
 }
 
-// ─── audioToPCM ──────────────────────────────────────────────────────────────
-
 func TestAudioToPCM_Success(t *testing.T) {
 	t.Parallel()
 	if _, err := exec.LookPath("ffmpeg"); err != nil {
@@ -436,13 +383,7 @@ func le16(b []byte, v uint16) {
 	b[1] = byte(v >> 8)
 }
 
-// ─── test helpers ─────────────────────────────────────────────────────────────
-
 var discardLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
-
-func newTestStreamingCtrl() *StreamingCardController {
-	return NewStreamingCardController(nil, nil, discardLogger)
-}
 
 func newTestAdapter(t *testing.T) *Adapter {
 	t.Helper()
@@ -454,13 +395,15 @@ func newTestAdapter(t *testing.T) *Adapter {
 	}
 }
 
+func newTestStreamingCtrl() *StreamingCardController {
+	return NewStreamingCardController(nil, nil, discardLogger)
+}
+
 func newTestConn(adapter *Adapter, replyToMsgID string) *FeishuConn {
 	conn := NewFeishuConn(adapter, "chat123", "")
 	conn.replyToMsgID = replyToMsgID
 	return conn
 }
-
-// ─── FeishuConn sendContextUsage ───────────────────────────────────────────────
 
 func TestFeishuConn_SendContextUsage(t *testing.T) {
 	t.Parallel()
@@ -541,8 +484,6 @@ func TestFeishuConn_SendContextUsage(t *testing.T) {
 		})
 	}
 }
-
-// ─── FeishuConn sendMCPStatus ──────────────────────────────────────────────────
 
 func TestFeishuConn_SendMCPStatus(t *testing.T) {
 	t.Parallel()

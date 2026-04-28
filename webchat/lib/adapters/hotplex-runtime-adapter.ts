@@ -23,9 +23,6 @@ import type {
   ToolCallData,
   ToolResultData,
 } from '@/lib/ai-sdk-transport';
-import { saveMessages, loadMessages, clearMessages, type CacheableMessage } from '@/lib/cache/message-cache';
-import { getSessionHistory, type HistoryResponse } from '@/lib/api/sessions';
-import { conversationTurnsToMessages as historyTurnsToMessages, type HotPlexMessage as HistoryMessage } from '@/lib/utils/turn-replay';
 
 // ThreadSuggestion shape — matches @assistant-ui/core ThreadSuggestion
 type ThreadSuggestion = { title: string; label: string; prompt: string };
@@ -65,13 +62,7 @@ interface ToolCallPart {
   isError?: boolean;
 }
 
-interface ToolSummaryPart {
-  type: 'tool-summary';
-  toolNames: string[];
-  count: number;
-}
-
-type MessagePart = TextPart | ReasoningPart | ToolCallPart | ToolSummaryPart;
+type MessagePart = TextPart | ReasoningPart | ToolCallPart;
 
 // Internal message format for our store
 interface HotPlexMessage {
@@ -91,15 +82,7 @@ interface HotPlexMessage {
  * Handles both old format (content: string) and new format (parts: MessagePart[]).
  */
 function convertToThreadMessage(message: HotPlexMessage): ThreadMessageLike {
-  // Convert message parts to assistant-ui compatible format
-  const content = message.parts.map(part => {
-    if (part.type === 'tool-summary') {
-      // Convert tool-summary to text for assistant-ui compatibility
-      const toolList = part.toolNames.join(', ');
-      return { type: 'text' as const, text: `🔧 Used tools: ${toolList}` };
-    }
-    return part;
-  });
+  const content = message.parts;
 
   const role = (message.role as string) === 'user' ? 'user' : 'assistant';
 
@@ -147,12 +130,7 @@ export function useHotPlexRuntime({
   // State
   const [messages, setMessages] = useState<HotPlexMessage[]>([]);
   const [isRunning, setIsRunning] = useState(false);
-  const [hasMore, setHasMore] = useState(false);
   const clientRef = useRef<BrowserHotPlexClient | null>(null);
-  
-  // History loading state
-  const historyOffsetRef = useRef(0);
-  const loadingRef = useRef(false);
 
   // Welcome suggestions — shown when thread is empty (stable reference)
   const suggestions: readonly ThreadSuggestion[] = useMemo(() => [
@@ -181,38 +159,6 @@ export function useHotPlexRuntime({
     onMetricsChange?.(sessionMetrics);
   }, [sessionMetrics, onMetricsChange]);
 
-  // Debounced cache save on message changes
-  useEffect(() => {
-    if (!sessionId || messages.length === 0) return;
-    
-    const timer = setTimeout(() => {
-      const cacheable: CacheableMessage[] = messages.map(m => ({
-        ...m,
-        createdAt: m.createdAt instanceof Date ? m.createdAt.toISOString() : String(m.createdAt),
-        parts: m.parts.map(p => {
-          if (p.type === 'text') {
-            return { type: p.type, text: p.text };
-          }
-          if (p.type === 'reasoning') {
-            return { type: p.type, text: p.text };
-          }
-          if (p.type === 'tool-summary') {
-            return { type: p.type, toolNames: p.toolNames, count: p.count };
-          }
-          if (p.type === 'tool-call') {
-            // Store tool-call as simplified text representation
-            return { type: 'text', text: `🔧 ${p.toolName}` };
-          }
-          // Fallback for unknown part types
-          return { type: 'text', text: '' };
-        })
-      }));
-      saveMessages(sessionId, cacheable);
-    }, 200);
-    
-    return () => clearTimeout(timer);
-  }, [sessionId, messages]);
-
   // Initialize WebSocket client
   useEffect(() => {
     if (!sessionId) {
@@ -221,40 +167,6 @@ export function useHotPlexRuntime({
     }
 
     skillsFetchedRef.current = false;
-    
-    // Load cached messages for this session
-    const cached = loadMessages(sessionId);
-    if (cached && cached.length > 0) {
-      // Convert CacheableMessage[] to HotPlexMessage[]
-      setMessages(cached.map(m => ({
-        ...m,
-        createdAt: new Date(m.createdAt),
-        parts: m.parts.map(p => {
-          // Convert CacheablePart to MessagePart based on properties
-          if (p.type === 'text' && p.text !== undefined) {
-            return { type: 'text' as const, text: p.text };
-          }
-          if (p.type === 'tool-summary' && p.toolNames !== undefined && p.count !== undefined) {
-            return { type: 'tool-summary' as const, toolNames: p.toolNames, count: p.count };
-          }
-          if (p.type === 'reasoning' && p.text !== undefined) {
-            return { type: 'reasoning' as const, text: p.text };
-          }
-          if (p.type === 'tool-call' && p.text !== undefined) {
-            // This is a simplified representation - tool-call details may not be fully cached
-            // Return a placeholder text part
-            return { type: 'text' as const, text: `🔧 ${p.text}` };
-          }
-          // Fallback to text if unknown type
-          return { type: 'text' as const, text: p.text || '' };
-        })
-      })));
-    }
-    
-    // Reset history loading state
-    historyOffsetRef.current = 0;
-    setHasMore(false);
-    loadingRef.current = false;
 
     const initConfig: InitConfig = {};
     const effectiveWorkDir = overrideWorkDir || workDir;
@@ -413,33 +325,6 @@ export function useHotPlexRuntime({
 
       pendingReasoningRef.current = '';
       setIsRunning(false);
-
-      // Immediate cache save on turn completion
-      setMessages((prev) => {
-        const cacheable: CacheableMessage[] = prev.map(m => ({
-          ...m,
-          createdAt: m.createdAt instanceof Date ? m.createdAt.toISOString() : String(m.createdAt),
-          parts: m.parts.map(p => {
-            if (p.type === 'text') {
-              return { type: p.type, text: p.text };
-            }
-            if (p.type === 'reasoning') {
-              return { type: p.type, text: p.text };
-            }
-            if (p.type === 'tool-summary') {
-              return { type: p.type, toolNames: p.toolNames, count: p.count };
-            }
-            if (p.type === 'tool-call') {
-              // Store tool-call as simplified text representation
-              return { type: 'text', text: `🔧 ${p.toolName}` };
-            }
-            // Fallback for unknown part types
-            return { type: 'text', text: '' };
-          })
-        }));
-        saveMessages(sessionId, cacheable);
-        return prev;
-      });
 
       // Fetch skills after the first turn completes (worker conversation is now active)
       if (!skillsFetchedRef.current) {
@@ -732,41 +617,6 @@ export function useHotPlexRuntime({
     setIsRunning(false);
   }, []);
 
-  // Handler for loading conversation history
-  const handleLoadHistory = useCallback(async (): Promise<{ hasMore: boolean }> => {
-    if (!sessionId || loadingRef.current) return { hasMore };
-    
-    loadingRef.current = true;
-    try {
-      const response: HistoryResponse = await getSessionHistory(sessionId, 50, historyOffsetRef.current);
-      
-      if (response.turns.length === 0) {
-        setHasMore(false);
-        return { hasMore: false };
-      }
-      
-      // Convert turns to history messages
-      const historyMessages = historyTurnsToMessages(response.turns);
-      
-      // Merge: prepend non-duplicate messages
-      setMessages((prev) => {
-        const existingIds = new Set(prev.map(m => m.id));
-        const newMessages = historyMessages.filter((m: HistoryMessage) => !existingIds.has(m.id));
-        if (newMessages.length === 0) return prev;
-        return [...newMessages as HotPlexMessage[], ...prev];
-      });
-      
-      historyOffsetRef.current += response.turns.length;
-      setHasMore(response.has_more);
-      return { hasMore: response.has_more };
-    } catch (err) {
-      console.error('HotPlexRuntimeAdapter: loadHistory failed', err);
-      return { hasMore: false };
-    } finally {
-      loadingRef.current = false;
-    }
-  }, [sessionId, hasMore]);
-
   // Memoized thread messages conversion (spec §7.1)
   // Filter out malformed messages and guard against undefined roles to prevent
   // assistant-ui's internal converter from crashing with "Unknown message role".
@@ -788,12 +638,10 @@ export function useHotPlexRuntime({
     edit: true,
   }), []);
 
-  // Stable extras reference — now includes history state
+  // Stable extras reference — only changes when metrics change
   const extras = useMemo(() => ({
     metrics: sessionMetrics,
-    hasMore,
-    onLoadHistory: handleLoadHistory,
-  }), [sessionMetrics, hasMore, handleLoadHistory]);
+  }), [sessionMetrics]);
 
   // Return ExternalStoreAdapter — memoized to prevent unnecessary setAdapter calls
   return useMemo(() => ({

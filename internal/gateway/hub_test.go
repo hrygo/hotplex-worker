@@ -15,6 +15,7 @@ import (
 
 	"github.com/hrygo/hotplex/internal/config"
 	"github.com/hrygo/hotplex/internal/security"
+	"github.com/hrygo/hotplex/internal/session"
 	"github.com/hrygo/hotplex/internal/worker"
 	"github.com/hrygo/hotplex/pkg/aep"
 	"github.com/hrygo/hotplex/pkg/events"
@@ -909,7 +910,7 @@ func TestPCEntry_RouteMessage_LazyEncode(t *testing.T) {
 func TestBridge_NewBridge(t *testing.T) {
 	t.Parallel()
 	h := newTestHub(t)
-	b := NewBridge(slog.Default(), h, nil)
+	b := NewBridge(slog.Default(), h, nil, nil)
 	require.NotNil(t, b)
 	require.Equal(t, h, b.hub)
 }
@@ -954,6 +955,31 @@ func (f *fakeWorker) LastIO() time.Time                                   { retu
 func (f *fakeWorker) ResetContext(context.Context) error                  { return nil }
 
 var _ worker.Worker = (*fakeWorker)(nil)
+var _ session.MessageStore = (*fakeMsgStore)(nil)
+
+// fakeMsgStore is a minimal session.MessageStore for Bridge tests.
+type fakeMsgStore struct{}
+
+func (*fakeMsgStore) Append(ctx context.Context, sessionID string, seq int64, eventType string, payload []byte) error {
+	return nil
+}
+func (*fakeMsgStore) GetBySession(ctx context.Context, sessionID string, fromSeq int64) ([]*session.EventRecord, error) {
+	return nil, nil
+}
+func (*fakeMsgStore) Query(ctx context.Context, sessionID string, fromSeq int64) ([]*events.Envelope, error) {
+	return nil, nil
+}
+func (*fakeMsgStore) GetOwner(ctx context.Context, sessionID string) (string, error) {
+	return "", nil
+}
+func (*fakeMsgStore) SessionStats(ctx context.Context, sessionID string) (*session.SessionStats, error) {
+	return nil, session.ErrNotImplemented
+}
+func (*fakeMsgStore) Close() error { return nil }
+
+var _ session.MessageStore = (*fakeMsgStore)(nil)
+
+// ─── Bridge forwarding tests ───────────────────────────────────────────────────
 
 // ─── HandleHTTP tests ─────────────────────────────────────────────────────────
 
@@ -968,7 +994,7 @@ func TestHub_HandleHTTP_Success(t *testing.T) {
 	auth := security.NewAuthenticator(&cfg.Security, nil)
 	h := newTestHub(t)
 	handler := NewHandler(slog.Default(), h, nil, nil)
-	bridge := NewBridge(slog.Default(), h, nil)
+	bridge := NewBridge(slog.Default(), h, nil, nil)
 
 	serveHandler := h.HandleHTTP(auth, nil, handler, bridge)
 	server := httptest.NewServer(serveHandler)
@@ -997,7 +1023,7 @@ func TestHub_HandleHTTP_Unauthorized(t *testing.T) {
 	auth := security.NewAuthenticator(&cfg.Security, nil)
 	h := newTestHub(t)
 	handler := NewHandler(slog.Default(), h, nil, nil)
-	bridge := NewBridge(slog.Default(), h, nil)
+	bridge := NewBridge(slog.Default(), h, nil, nil)
 
 	serveHandler := h.HandleHTTP(auth, nil, handler, bridge)
 	server := httptest.NewServer(serveHandler)
@@ -1020,7 +1046,7 @@ func TestHub_HandleHTTP_WithSessionID(t *testing.T) {
 	auth := security.NewAuthenticator(&cfg.Security, nil)
 	h := newTestHub(t)
 	handler := NewHandler(slog.Default(), h, nil, nil)
-	bridge := NewBridge(slog.Default(), h, nil)
+	bridge := NewBridge(slog.Default(), h, nil, nil)
 
 	serveHandler := h.HandleHTTP(auth, nil, handler, bridge)
 	server := httptest.NewServer(serveHandler)
@@ -1052,7 +1078,7 @@ func TestHub_HandleHTTP_GeneratesSessionID(t *testing.T) {
 	auth := security.NewAuthenticator(&cfg.Security, nil)
 	h := newTestHub(t)
 	handler := NewHandler(slog.Default(), h, nil, nil)
-	bridge := NewBridge(slog.Default(), h, nil)
+	bridge := NewBridge(slog.Default(), h, nil, nil)
 
 	serveHandler := h.HandleHTTP(auth, nil, handler, bridge)
 	server := httptest.NewServer(serveHandler)
@@ -1085,7 +1111,7 @@ func TestHub_HandleHTTP_RejectsInvalidAPIKey(t *testing.T) {
 	auth := security.NewAuthenticator(&cfg.Security, nil)
 	h := newTestHub(t)
 	handler := NewHandler(slog.Default(), h, nil, nil)
-	bridge := NewBridge(slog.Default(), h, nil)
+	bridge := NewBridge(slog.Default(), h, nil, nil)
 
 	serveHandler := h.HandleHTTP(auth, nil, handler, bridge)
 	server := httptest.NewServer(serveHandler)

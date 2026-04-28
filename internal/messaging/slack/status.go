@@ -41,13 +41,10 @@ var StatusEmojiMap = map[StatusType]string{
 }
 
 // StatusTextMap maps StatusType to human-readable status text.
-// Slack prepends the app name, so these should read as a continuation:
-// e.g. "HotPlex Thinking..." or "HotPlex Reading handler.go".
 var StatusTextMap = map[StatusType]string{
 	StatusInitializing: "Initializing...",
 	StatusThinking:     "Thinking...",
-	StatusToolUse:      "Using tool...",
-	StatusToolResult:   "Completed",
+	StatusToolResult:   "Tool completed",
 	StatusAnswering:    "Composing response...",
 	StatusStepFinish:   "Step complete",
 }
@@ -224,9 +221,7 @@ func aepEventToStatus(env *events.Envelope) (StatusType, string) {
 	}
 }
 
-// extractToolCallStatus formats a compact, tool-specific status for the Slack
-// Assistant status bar. Known tools get an action-verb format ("Reading main.go");
-// unknown tools fall back to a generic format with primary parameter.
+// extractToolCallStatus formats "ToolName(key=val, key=val)" truncated to 50 chars.
 func extractToolCallStatus(env *events.Envelope) string {
 	name := "tool"
 	var input map[string]any
@@ -252,74 +247,6 @@ func extractToolCallStatus(env *events.Envelope) string {
 		return truncateWithSuffix(name, 50)
 	}
 
-	return formatToolCall(name, input)
-}
-
-// formatToolCall produces tool-specific status text. Each known tool maps to a
-// concise action phrase; MCP tools and unknown tools use generic formatting.
-func formatToolCall(name string, input map[string]any) string {
-	sv := func(key string) string {
-		v, _ := input[key].(string)
-		return v
-	}
-
-	switch name {
-	case "Read":
-		if p := shortenPaths(sv("file_path")); p != "" {
-			return truncateWithSuffix("Reading "+p, 50)
-		}
-	case "Edit":
-		if p := shortenPaths(sv("file_path")); p != "" {
-			return truncateWithSuffix("Editing "+p, 50)
-		}
-	case "Write":
-		if p := shortenPaths(sv("file_path")); p != "" {
-			return truncateWithSuffix("Writing "+p, 50)
-		}
-	case "Bash":
-		if cmd := shortenPaths(sv("command")); cmd != "" {
-			return truncateWithSuffix("Running "+cmd, 50)
-		}
-	case "Grep":
-		if p := sv("pattern"); p != "" {
-			return truncateWithSuffix("Searching \""+p+"\"", 50)
-		}
-	case "Glob":
-		if p := sv("pattern"); p != "" {
-			return truncateWithSuffix("Finding "+p, 50)
-		}
-	case "WebSearch":
-		if q := sv("query"); q != "" {
-			return truncateWithSuffix("Searching: "+q, 50)
-		}
-	case "WebFetch":
-		if u := shortenPaths(sv("url")); u != "" {
-			return truncateWithSuffix("Fetching "+u, 50)
-		}
-	case "Agent":
-		return "Delegating task..."
-	}
-
-	// MCP tools: mcp__server__tool → "server:tool primary_param"
-	if strings.HasPrefix(name, "mcp__") {
-		parts := strings.SplitN(name, "__", 3)
-		if len(parts) == 3 {
-			return formatGenericToolCall(parts[1]+":"+parts[2], input)
-		}
-	}
-
-	return formatGenericToolCall(name, input)
-}
-
-// formatGenericToolCall formats unknown tools as "Name primary_value" or
-// "Name(key=val, ...)" as fallback.
-func formatGenericToolCall(name string, input map[string]any) string {
-	for _, key := range []string{"file_path", "command", "pattern", "query", "url", "description"} {
-		if v, ok := input[key].(string); ok && v != "" {
-			return truncateWithSuffix(name+" "+shortenPaths(v), 50)
-		}
-	}
-
 	parts := make([]string, 0, len(input))
 	keys := make([]string, 0, len(input))
 	for k := range input {
@@ -333,28 +260,48 @@ func formatGenericToolCall(name string, input map[string]any) string {
 	return truncateWithSuffix(name+"("+body+")", 50)
 }
 
-// extractToolResultStatus formats tool result status. Shows error details when
-// available; successful results just show "Completed" since raw output is noise
-// in the compact status bar.
+// extractToolResultStatus formats tool result preview truncated to 50 chars.
 func extractToolResultStatus(env *events.Envelope) string {
 	if env.Event.Data == nil {
-		return "Completed"
+		return "Tool completed"
 	}
 
 	if data, ok := env.Event.Data.(*events.ToolResultData); ok {
 		if data.Error != "" {
-			return truncateWithSuffix("Error: "+shortenPaths(data.Error), 50)
+			return truncateWithSuffix(shortenPaths("Error: "+data.Error), 50)
 		}
-		return "Completed"
+		if data.Output != nil {
+			return truncateWithSuffix(shortenPaths(limitedSprintf(data.Output, 200)), 50)
+		}
+		return "Tool completed"
 	}
 
 	if m, ok := env.Event.Data.(map[string]any); ok {
 		if errStr, ok := m["error"].(string); ok && errStr != "" {
-			return truncateWithSuffix("Error: "+shortenPaths(errStr), 50)
+			return truncateWithSuffix(shortenPaths("Error: "+errStr), 50)
+		}
+		if output, ok := m["output"]; ok && output != nil {
+			return truncateWithSuffix(shortenPaths(limitedSprintf(output, 200)), 50)
 		}
 	}
 
-	return "Completed"
+	return "Tool completed"
+}
+
+// limitedSprintf converts v to string, capping output to maxBytes to avoid
+// allocating arbitrarily large strings from tool output before truncation.
+func limitedSprintf(v any, maxBytes int) string {
+	if s, ok := v.(string); ok {
+		if len(s) > maxBytes {
+			return s[:maxBytes]
+		}
+		return s
+	}
+	s := fmt.Sprintf("%v", v)
+	if len(s) > maxBytes {
+		return s[:maxBytes]
+	}
+	return s
 }
 
 // shortenPaths replaces workDir with "$WK" then homeDir with "~" in s.

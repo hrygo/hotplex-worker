@@ -53,7 +53,7 @@ type ConfigWatcherProvider interface {
 	Rollback(version int) (*config.Config, int, error)
 }
 
-type ConvStoreProvider interface {
+type MessageStoreProvider interface {
 	SessionStats(ctx context.Context, sessionID string) (any, error)
 }
 
@@ -67,7 +67,7 @@ type AdminAPI struct {
 	log           *slog.Logger
 	cfg           ConfigProvider
 	sm            SessionManagerProvider
-	convStore     ConvStoreProvider
+	msgStore      MessageStoreProvider
 	hub           HubProvider
 	bridge        BridgeProvider
 	configWatcher ConfigWatcherProvider
@@ -81,7 +81,7 @@ type Deps struct {
 	Log           *slog.Logger
 	Config        ConfigProvider
 	SessionMgr    SessionManagerProvider
-	ConvStore     ConvStoreProvider
+	MsgStore      MessageStoreProvider
 	Hub           HubProvider
 	Bridge        BridgeProvider
 	ConfigWatcher ConfigWatcherProvider
@@ -94,7 +94,7 @@ func New(deps Deps) *AdminAPI {
 		log:           deps.Log,
 		cfg:           deps.Config,
 		sm:            deps.SessionMgr,
-		convStore:     deps.ConvStore,
+		msgStore:      deps.MsgStore,
 		hub:           deps.Hub,
 		bridge:        deps.Bridge,
 		configWatcher: deps.ConfigWatcher,

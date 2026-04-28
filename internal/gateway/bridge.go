@@ -36,6 +36,7 @@ type Bridge struct {
 	log       *slog.Logger
 	hub       *Hub
 	sm        SessionManager
+	msgStore  session.MessageStore      // EVT-004: optional; nil means event persistence disabled
 	convStore session.ConversationStore // optional; nil means conversation logging disabled
 	wf        WorkerFactory
 	retryCtrl *LLMRetryController
@@ -52,12 +53,13 @@ type Bridge struct {
 	accumMu sync.Mutex
 }
 
-// NewBridge creates a new bridge.
-func NewBridge(log *slog.Logger, hub *Hub, sm SessionManager) *Bridge {
+// NewBridge creates a new bridge. msgStore may be nil (event persistence disabled).
+func NewBridge(log *slog.Logger, hub *Hub, sm SessionManager, msgStore session.MessageStore) *Bridge {
 	return &Bridge{
 		log:         log.With("component", "bridge"),
 		hub:         hub,
 		sm:          sm,
+		msgStore:    msgStore,
 		wf:          defaultWorkerFactory{},
 		retryCancel: make(map[string]chan struct{}),
 		accum:       make(map[string]*sessionAccumulator),
@@ -441,31 +443,44 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 			pendingError = nil
 		}
 
-		// Determine retry eligibility before writing conversation record.
-		// Skip for resumed workers with no output — these are resume failures
-		// (e.g., "No conversation found"), not transient LLM errors. The resume
-		// fallback mechanism handles these cases with its own retry logic.
-		canRetry := env.Event.Type == events.Done && b.retryCtrl != nil && (!opts.resumed || turnText.Len() > 0)
-		shouldRetry := false
-		var retryAttempt int
-		if canRetry {
-			if sr, att := b.retryCtrl.ShouldRetry(sessionID, lastError); sr {
-				shouldRetry = true
-				retryAttempt = att
+		// EVT-004: append to MessageStore on done events (end of each turn).
+		if b.msgStore != nil && env.Event.Type == events.Done {
+			payload, _ := aep.EncodeJSON(env)
+			if err := b.msgStore.Append(context.Background(), env.SessionID, env.Seq, string(env.Event.Type), payload); err != nil {
+				b.log.Warn("bridge: msgstore append", "err", err, "session_id", sessionID)
 			}
 		}
 
-		// Record assistant response to conversation store (always, even when retrying).
+		// LLM retry: check after Done is forwarded and persisted.
+		// Skip for resumed workers with no output — these are resume failures
+		// (e.g., "No conversation found"), not transient LLM errors. The resume
+		// fallback mechanism handles these cases with its own retry logic.
+		if env.Event.Type == events.Done && b.retryCtrl != nil && (!opts.resumed || turnText.Len() > 0) {
+			if shouldRetry, attempt := b.retryCtrl.ShouldRetry(sessionID, lastError); shouldRetry {
+				// Suppress buffered error — user sees the notify message instead of raw LLM error.
+				pendingError = nil
+				b.autoRetry(context.Background(), w, sessionID, attempt)
+				turnText.Reset()
+				lastError = nil
+				continue
+			}
+			// No retry — flush buffered error event to client.
+			if pendingError != nil {
+				if err := b.hub.SendToSession(context.Background(), pendingError); err != nil {
+					b.log.Warn("bridge: forward buffered error failed", "err", err, "session_id", sessionID, "worker_type", workerType)
+				}
+				pendingError = nil
+			}
+			b.retryCtrl.RecordSuccess(sessionID)
+			lastError = nil
+		}
+
+		// Record assistant response to conversation store after retry decision.
 		if env.Event.Type == events.Done && b.convStore != nil {
 			dd, _ := asDoneData(env.Event.Data)
 			acc := b.getOrInitAccum(sessionID)
 			acc.computePerTurnDeltas()
 			success := dd.Success
-			source := session.SourceNormal
-			if shouldRetry {
-				source = session.SourceRetry
-				success = false
-			}
 			_ = b.convStore.Append(context.Background(), &session.ConversationRecord{
 				SessionID:     sessionID,
 				Seq:           env.Seq,
@@ -475,7 +490,7 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 				UserID:        sessOwner,
 				Model:         acc.ModelName,
 				Success:       &success,
-				Source:        source,
+				Source:        session.SourceNormal,
 				Tools:         acc.ToolNames,
 				ToolCallCount: acc.ToolCallCount,
 				TokensIn:      acc.PerTurnInput,
@@ -484,27 +499,6 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 				CostUSD:       acc.PerTurnCost,
 			})
 			acc.resetPerTurn()
-		}
-
-		// Act on retry decision after conversation record is persisted.
-		if shouldRetry {
-			pendingError = nil
-			b.autoRetry(context.Background(), w, sessionID, retryAttempt)
-			turnText.Reset()
-			lastError = nil
-			continue
-		}
-
-		// No retry — flush buffered error event to client.
-		if canRetry {
-			if pendingError != nil {
-				if err := b.hub.SendToSession(context.Background(), pendingError); err != nil {
-					b.log.Warn("bridge: forward buffered error failed", "err", err, "session_id", sessionID, "worker_type", workerType)
-				}
-				pendingError = nil
-			}
-			b.retryCtrl.RecordSuccess(sessionID)
-			lastError = nil
 		}
 
 		if env.Event.Type == events.Done {

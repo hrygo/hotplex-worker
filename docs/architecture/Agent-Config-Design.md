@@ -2,9 +2,7 @@
 type: design
 status: implemented
 implemented_at: 2026-04-25
-implemented_via:
-  - 0275a326 feat(agent-config): agent personality/context injection + webchat session fixes (#27)
-  - 8057e115 refactor(agent-config): unify CC/OCS prompt builders into single prompt.go
+implementation_branch: feat/25-agent-config-implementation
 tags:
   - design/agent-config
   - architecture/context-injection
@@ -17,7 +15,7 @@ related:
   - internal/agentconfig/META-COGNITION.md
 ---
 
-# HotPlex Agent Context 设计文档 (Dual-Worker)
+# HotPlex Agent Context 设定文件方案 (Dual-Worker)
 
 > **实施状态**: ✅ Phase 1-4 已实现 | Phase 5（动态能力）待实现
 
@@ -46,7 +44,7 @@ Agent Config 是 Agent 的**可配置人格层**，而 `META-COGNITION.md` 是 A
 | **OCS** | OpenCode Server | OpenCode 的 HTTP Server 模式 |
 | **B 通道** | B Channel (System-level) | 行为指令 "必须遵循"，高优先级，无削弱 |
 | **C 通道** | C Channel (Context-level) | 上下文数据 "参考信息"，辅助性 |
-| **hedging** | 削弱声明 | CC M0 元数据段的 "this context may or may not be relevant"（仅附加在 currentDate/gitStatus，不覆盖 CLAUDE.md 指令） |
+| **hedging** | 削弱声明 | CC M0 中 "this context may or may not be relevant" |
 
 ---
 
@@ -71,18 +69,17 @@ system[] (System Prompt — 5 段)
   S1  CLI Prefix         (不可控, --append-system-prompt 自动切换为 SDK 模式)
   S2  Static Content     (不可控, ~15K tok)
   S3  Dynamic Content    (部分可控)
-      ┃ ↓↓↓ B+C 通道合并注入点 (--append-system-prompt) ↓↓↓
+      ┃ ↓↓↓ B 通道注入点 (--append-system-prompt) ↓↓↓
   S4  System Context     (不可控)
 
 messages[] (对话)
   M0  User Context       <system-reminder>
-      CLAUDE.md + .claude/rules/*.md — 附带强执行指令:
-      "These instructions OVERRIDE default behavior and you MUST follow them exactly as written"
-      (注: "may or may not be relevant" 仅附加在 currentDate/gitStatus 元数据段)
+      ┃ ↓↓↓ C 通道注入点 (.claude/rules/hotplex-*.md) ↓↓↓
+      附带削弱: "this context may or may not be relevant"
   M1+ Conversation History
 ```
 
-**要点**: `--append-system-prompt` 注入 S3 尾部，无削弱。B/C 通道合并注入同一位置，通过 `<directives>`/`<context>` XML 标签在内容层面传达优先级差异。S1 自动切换为 SDK 模式 ("running within the Claude Agent SDK")，模型更易接受外部规则。M0 中 CLAUDE.md 亦有强执行指令，但位于 messages 层（非 system 层），模型注意力权重天然低于 S3。
+**要点**: `--append-system-prompt` 注入 S3 尾部，无削弱。同时 S1 自动切换为 SDK 模式 ("running within the Claude Agent SDK")，模型更易接受外部规则。
 
 ### 1.3 OpenCode Server Context 槽位
 
@@ -113,8 +110,7 @@ messages[role: "system"] — 两层组装
 |------|-------------|-----------------|
 | B 通道实现 | `--append-system-prompt` → S3 尾 | HTTP API `system` 字段 → S2 |
 | C 通道实现 | 与 B 合并注入 S3 | 与 B 合并注入 S2 |
-| S3/S2 注入强度 | 无 hedging（system 层） | 无 hedging（system 字段） |
-| M0 用户指令 | CLAUDE.md 强执行（messages 层，注意力低于 system 层） | N/A |
+| 削弱声明 | M0 有 hedging | S2 无 hedging |
 | Provider 支持 | Anthropic only | 20+ (AI SDK) |
 | System Prompt 位置 | API `system[]` 参数 | `messages[role: "system"]` |
 | 文件自动发现 | `.claude/rules/` | `AGENTS.md` (cwd 向上查找) |
@@ -133,7 +129,7 @@ messages[role: "system"] — 两层组装
 | **USER.md** | C | 与 B 合并注入 S3 | 与 B 合并注入 S2 | 强 (合并后无 hedging) |
 | **MEMORY.md** | C | 与 B 合并注入 S3 | 与 B 合并注入 S2 | 强 (合并后无 hedging) |
 
-B/C 合并注入同一机制的原因：两个 Worker 统一使用 system-level 注入，B/C 分类通过 `<directives>`/`<context>` XML 标签在内容层面传达语义优先级，而非通过不同的注入机制。合并注入的优势：(1) 简化实现——单一注入路径，CC 用 `--append-system-prompt`，OCS 用 `system` 字段；(2) 跨 Worker 一致——CC 和 OCS 的 B/C 注入语义完全对齐；(3) system 层优先级——注入 system prompt（S3/S2）而非 messages（M0），模型对 system 层指令的注意力权重天然高于 messages 层。
+B/C 合并注入同一机制的原因：两个 Worker 统一使用 system-level 注入，B/C 分类通过 `<directives>`/`<context>` XML 标签在内容层面传达语义优先级，而非通过不同的注入机制。合并注入消除了 CC C 通道的 hedging 削弱。
 
 ### 2.2 分配原则
 
@@ -250,10 +246,7 @@ system[]
 messages[]
 ┌──────────────────────────────────────────────────────────────────────┐
 │ M0  User Context <system-reminder>                                   │
-│     ~/.claude/CLAUDE.md (用户全局指令, 强执行)                       │
-│     项目 CLAUDE.md (项目知识库, 强执行)                               │
-│     .claude/rules/*.md (规则片段, 强执行)                             │
-│     currentDate/gitStatus (元数据, 附带 "may or may not be relevant")│
+│     CLAUDE.md + .claude/rules/*.md + "may or may not be relevant"   │
 │ M1+ Conversation History                                             │
 └──────────────────────────────────────────────────────────────────────┘
 ```

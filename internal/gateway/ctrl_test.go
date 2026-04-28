@@ -109,7 +109,7 @@ func newHandlerWithRealStore(t *testing.T) (*Handler, *session.Manager, *Hub, fu
 	cfg.DB.Path = tmpPath
 	store, err := session.NewSQLiteStore(context.Background(), cfg)
 	require.NoError(t, err)
-	mgr, err := session.NewManager(context.Background(), slog.Default(), cfg, nil, store)
+	mgr, err := session.NewManager(context.Background(), slog.Default(), cfg, nil, store, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		mgr.Close()
@@ -126,7 +126,7 @@ func newHandlerWithMockStore(t *testing.T, store *mockStore) (*Handler, *Hub) {
 	h := newCtrlHub(t)
 	cfg := config.Default()
 	store.On("Close").Return(nil)
-	mgr, err := session.NewManager(context.Background(), slog.Default(), cfg, nil, store)
+	mgr, err := session.NewManager(context.Background(), slog.Default(), cfg, nil, store, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { mgr.Close() })
 	return NewHandler(slog.Default(), h, mgr, nil), h

@@ -99,7 +99,6 @@ var workerSlashCommandsWithArgs = map[string]bool{
 	"/model":  true,
 	"/perm":   true,
 	"/effort": true,
-	"/skills": true,
 }
 
 // workerSlashMap maps slash-form strings to worker stdio commands.

@@ -34,7 +34,7 @@ func setupRoutes(
 		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
 
-	gatewayAPI := gateway.NewGatewayAPI(auth, sm, bridge, deps.ConfigStore, deps.ConvStore)
+	gatewayAPI := gateway.NewGatewayAPI(auth, sm, bridge, deps.ConfigStore)
 
 	// withCORS wraps a handler to inject CORS headers.
 	withCORS := func(h http.HandlerFunc) http.HandlerFunc {
@@ -55,11 +55,9 @@ func setupRoutes(
 	mux.HandleFunc("GET /api/sessions/{id}", withCORS(gatewayAPI.GetSession))
 	mux.HandleFunc("DELETE /api/sessions/{id}", withCORS(gatewayAPI.DeleteSession))
 	mux.HandleFunc("POST /api/sessions/{id}/cd", withCORS(gatewayAPI.SwitchWorkDir))
-	mux.HandleFunc("GET /api/sessions/{id}/history", withCORS(gatewayAPI.GetHistory))
 	mux.HandleFunc("OPTIONS /api/sessions", withCORS(func(w http.ResponseWriter, r *http.Request) {}))
 	mux.HandleFunc("OPTIONS /api/sessions/", withCORS(func(w http.ResponseWriter, r *http.Request) {}))
 	mux.HandleFunc("OPTIONS /api/sessions/{id}", withCORS(func(w http.ResponseWriter, r *http.Request) {}))
-	mux.HandleFunc("OPTIONS /api/sessions/{id}/history", withCORS(func(w http.ResponseWriter, r *http.Request) {}))
 
 	mux.HandleFunc("GET /admin/health/ready", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -75,13 +73,13 @@ func setupRoutes(
 	bridgeAdapter := &bridgeAdapter{bridge: bridge}
 	configAdapter := &configAdapter{cfgStore: deps.ConfigStore}
 	configWatcherAdapter := &configWatcherAdapter{watcher: configWatcher}
-	convStoreAdapter := &convStoreAdapter{cs: deps.ConvStore}
+	msgStoreAdapter := &msgStoreAdapter{ms: deps.MsgStore}
 
 	adminAPI := admin.New(admin.Deps{
 		Log:           log,
 		Config:        configAdapter,
 		SessionMgr:    sessionAdapter,
-		ConvStore:     convStoreAdapter,
+		MsgStore:      msgStoreAdapter,
 		Hub:           hubAdapter,
 		Bridge:        bridgeAdapter,
 		ConfigWatcher: configWatcherAdapter,
@@ -191,12 +189,12 @@ func (a *hubAdapter) NextSeqPeek(sessionID string) int64 {
 	return a.hub.NextSeqPeek(sessionID)
 }
 
-type convStoreAdapter struct {
-	cs session.ConversationStore
+type msgStoreAdapter struct {
+	ms session.MessageStore
 }
 
-func (a *convStoreAdapter) SessionStats(ctx context.Context, sessionID string) (any, error) {
-	return a.cs.SessionStats(ctx, sessionID)
+func (a *msgStoreAdapter) SessionStats(ctx context.Context, sessionID string) (any, error) {
+	return a.ms.SessionStats(ctx, sessionID)
 }
 
 type bridgeAdapter struct {

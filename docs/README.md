@@ -38,10 +38,6 @@ status: active
 | [[security/SSRF-Protection]] | SSRF 防护 | URL 验证、IP 阻断、DNS 重绑定防护 |
 | **[操作手册 (Manuals)]** | | |
 | [[STT-Setup]] | STT 安装手册 | 飞书 STT 云端配置、本地模型安装、ONNX 修补 |
-| [[channels/slack/slack-integration-guide_zh]] | Slack 接入手册 (ZH) | 零基础 Slack App 接入保姆级教程与核心配置清单 |
-| [[channels/slack/slack-integration-guide]] | Slack Setup (EN) | Zero to Hero! Beginner's Guide & App Manifest |
-| [[channels/feishu/feishu-integration-guide_zh]] | 飞书接入手册 (ZH) | 零基础飞书应用接入、WebSocket 配置与权限导入 |
-| [[channels/feishu/feishu-integration-guide]] | Feishu Setup (EN) | Step-by-step guide for Lark integration & Scope JSON |
 | [[User-Manual]] | 用户手册 | 快速开始、安装构建、CLI 参数与操作指南 |
 | [[management/Config-Reference]] | 配置参考手册 | 完整 YAML 字段说明与环境变量映射表 |
 | [[Disaster-Recovery]] | 灾难恢复手册 | 故障切换、备份恢复与容灾预案 |

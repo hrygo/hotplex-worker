@@ -22,6 +22,8 @@
   <a href="https://github.com/hrygo/hotplex/stargazers"><img src="https://img.shields.io/github/stars/hrygo/hotplex?style=flat-square" alt="Stars"></a>
 </p>
 
+---
+
 
 ## ✨ Highlights
 
@@ -105,29 +107,27 @@ func main() {
 }
 ```
 
-## 🏗️ Architecture
+## 🧱 Architecture
 
 HotPlex sits between frontend clients and backend AI coding agents, featuring a built-in meta-cognition core that abstracts protocol differences into a unified AEP v1 WebSocket layer.
 
 ```
-┌─────────────┐   ┌─────────────┐   ┌─────────────┐
-│   Web UI    │   │    Slack    │   │   Feishu    │
-└──────┬──────┘   └──────┬──────┘   └──────┬──────┘
-       │                 │                 │
-       └─────────────────┼─────────────────┘
-                         │
-                WebSocket / AEP v1
-                         │
-               ┌─────────┴─────────┐
-               │      HotPlex      │  Session · Auth · Retry · Config
-               │      Gateway      │  Metrics · Tracing · Admin API
-               └─────────┬─────────┘
-                         │
-       ┌─────────────────┼─────────────────┐
-       │                 │                 │
-┌──────┴──────┐   ┌──────┴──────┐   ┌──────┴──────┐
-│ Claude Code │   │   OpenCode  │   │   Pi-mono   │
-└─────────────┘   └─────────────┘   └─────────────┘
+┌──────────┐   ┌──────────┐   ┌──────────┐
+│  Web UI  │   │  Slack   │   │  Feishu  │
+└────┬─────┘   └────┬─────┘   └────┬─────┘
+     │              │              │
+     └──────────────┼──────────────┘
+                    │  WebSocket / AEP v1
+              ┌─────┴─────┐
+              │  HotPlex  │  Session · Auth · Retry · Config
+              │  Gateway  │  Metrics · Tracing · Admin API
+              └─────┬─────┘
+     ┌──────────────┼──────────────┐
+     │              │              │
+┌────┴─────┐  ┌────┴──────┐  ┌───┴───────┐
+│  Claude  │  │  OpenCode │  │  Pi-mono  │
+│  Code    │  │  Server   │  │           │
+└──────────┘  └───────────┘  └───────────┘
 ```
 
 ## 🔗 SDKs & Libraries
@@ -155,13 +155,13 @@ HotPlex sits between frontend clients and backend AI coding agents, featuring a 
 
 ## 📖 Documentation
 
-| Area                | Guide                                                                                                                                                                                                                                                           |
-| :------------------ | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Getting Started** | [Quick Start](docs/User-Manual.md) · [Slack Setup](docs/channels/slack/slack-integration-guide.md) · [Feishu Setup](docs/channels/feishu/feishu-integration-guide.md) · [Reference Manual](docs/Reference-Manual.md) · [Whitepaper](docs/Product-Whitepaper.md) |
-| **Protocol**        | [AEP v1 Specification](docs/architecture/AEP-v1-Protocol.md)                                                                                                                                                                                                    |
-| **Architecture**    | [Gateway Design](docs/architecture/Worker-Gateway-Design.md) · [Agent Config Design](docs/architecture/Agent-Config-Design.md) · [Meta-Cognition Design](internal/agentconfig/META-COGNITION.md)                                                                |
-| **Security**        | [Authentication](docs/security/Security-Authentication.md) · [SSRF Protection](docs/security/SSRF-Protection.md)                                                                                                                                                |
-| **Operations**      | [Admin API](docs/management/Admin-API-Design.md) · [Observability](docs/management/Observability-Design.md) · [Testing](docs/testing/Testing-Strategy.md)                                                                                                       |
+| Area                | Guide                                                                                                                                                     |
+| :------------------ | :-------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Getting Started** | [Quick Start](docs/User-Manual.md) · [Reference Manual](docs/Reference-Manual.md) · [Whitepaper](docs/Product-Whitepaper.md)                              |
+| **Protocol**        | [AEP v1 Specification](docs/architecture/AEP-v1-Protocol.md)                                                                                              |
+| **Architecture**    | [Gateway Design](docs/architecture/Worker-Gateway-Design.md) · [Agent Config Design](docs/architecture/Agent-Config-Design.md) · [Meta-Cognition Design](internal/agentconfig/META-COGNITION.md) |
+| **Security**        | [Authentication](docs/security/Security-Authentication.md) · [SSRF Protection](docs/security/SSRF-Protection.md)                                          |
+| **Operations**      | [Admin API](docs/management/Admin-API-Design.md) · [Observability](docs/management/Observability-Design.md) · [Testing](docs/testing/Testing-Strategy.md) |
 
 ## 👥 Contributing
 

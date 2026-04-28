@@ -1,7 +1,6 @@
 package gateway
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -20,20 +19,14 @@ import (
 )
 
 type GatewayAPI struct {
-	auth      *security.Authenticator
-	sm        SessionManager
-	bridge    SessionStarter
-	cfgStore  *config.ConfigStore
-	histStore HistoryStore
+	auth     *security.Authenticator
+	sm       SessionManager
+	bridge   SessionStarter
+	cfgStore *config.ConfigStore
 }
 
-// HistoryStore provides conversation turn history for the session history API.
-type HistoryStore interface {
-	GetBySession(ctx context.Context, sessionID string, limit, offset int) ([]*session.ConversationRecord, error)
-}
-
-func NewGatewayAPI(auth *security.Authenticator, sm SessionManager, bridge SessionStarter, cfgStore *config.ConfigStore, histStore HistoryStore) *GatewayAPI {
-	return &GatewayAPI{auth: auth, sm: sm, bridge: bridge, cfgStore: cfgStore, histStore: histStore}
+func NewGatewayAPI(auth *security.Authenticator, sm SessionManager, bridge SessionStarter, cfgStore *config.ConfigStore) *GatewayAPI {
+	return &GatewayAPI{auth: auth, sm: sm, bridge: bridge, cfgStore: cfgStore}
 }
 
 func respondJSON(w http.ResponseWriter, v any) {
@@ -244,66 +237,5 @@ func (g *GatewayAPI) SwitchWorkDir(w http.ResponseWriter, r *http.Request) {
 		"old_session_id": result.OldSessionID,
 		"new_session_id": result.NewSessionID,
 		"work_dir":       result.WorkDir,
-	})
-}
-
-func (g *GatewayAPI) GetHistory(w http.ResponseWriter, r *http.Request) {
-	userID, _, err := g.auth.AuthenticateRequest(r)
-	if err != nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	id := r.PathValue("id")
-	if id == "" {
-		http.Error(w, "session id required", http.StatusBadRequest)
-		return
-	}
-
-	// Ownership check via session store
-	si, err := g.sm.Get(id)
-	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-	if si.UserID != userID {
-		http.Error(w, "ownership required", http.StatusForbidden)
-		return
-	}
-
-	// Parse pagination params
-	limit := 50
-	if l := r.URL.Query().Get("limit"); l != "" {
-		if v, parseErr := strconv.Atoi(l); parseErr == nil && v > 0 {
-			limit = v
-		}
-	}
-	if limit > 200 {
-		limit = 200
-	}
-
-	offset := 0
-	if o := r.URL.Query().Get("offset"); o != "" {
-		if v, parseErr := strconv.Atoi(o); parseErr == nil && v >= 0 {
-			offset = v
-		}
-	}
-
-	// Fetch limit+1 to detect has_more
-	records, err := g.histStore.GetBySession(r.Context(), id, limit+1, offset)
-	if err != nil {
-		slog.Error("gateway: history query failed", "session_id", id, "err", err)
-		http.Error(w, "failed to query history", http.StatusInternalServerError)
-		return
-	}
-
-	hasMore := len(records) > limit
-	if hasMore {
-		records = records[:limit]
-	}
-
-	respondJSON(w, map[string]any{
-		"turns":    records,
-		"has_more": hasMore,
 	})
 }

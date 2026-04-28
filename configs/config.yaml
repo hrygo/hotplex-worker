@@ -89,6 +89,8 @@ worker:
     max_delay: 120s
     retry_input: "继续"
     notify_user: true
+  claude_code:
+    command: claude  # Binary + optional subcommand, e.g. "ccr code"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # LOGGING

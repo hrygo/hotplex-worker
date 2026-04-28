@@ -3,34 +3,19 @@ package slack
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/socketmode"
 
-	"github.com/hrygo/hotplex/internal/messaging"
 	"github.com/hrygo/hotplex/pkg/aep"
 	"github.com/hrygo/hotplex/pkg/events"
 )
 
 const (
-	CommandGC      = "/gc"
-	CommandPark    = "/park"
-	CommandReset   = "/reset"
-	CommandNew     = "/new"
-	CommandCD      = "/cd"
-	CommandContext = "/context"
-	CommandSkills  = "/skills"
-	CommandMCP     = "/mcp"
-	CommandModel   = "/model"
-	CommandPerm    = "/perm"
-	CommandCompact = "/compact"
-	CommandClear   = "/clear"
-	CommandEffort  = "/effort"
-	CommandRewind  = "/rewind"
-	CommandCommit  = "/commit"
+	CommandReset      = "/reset"
+	CommandDisconnect = "/dc"
 
 	slashCooldown      = 5 * time.Second
 	slashSweepInterval = 5 * time.Minute
@@ -139,46 +124,14 @@ func (a *Adapter) handleSlashCommandEvent(ctx context.Context, evt socketmode.Ev
 	}
 
 	switch cmd.Command {
-	case CommandGC, CommandPark:
-		a.handleControlCommand(ctx, cmd, events.ControlActionGC,
-			cmd.Command, "💤 Sleeping session...", "❌ Failed to sleep. No active conversation.")
-	case CommandReset, CommandNew:
+	case CommandReset:
 		a.handleControlCommand(ctx, cmd, events.ControlActionReset,
-			cmd.Command, "🔄 Resetting context...", "❌ Failed to reset. No active conversation.")
-	case CommandCD:
-		if strings.TrimSpace(cmd.Text) == "" {
-			a.sendEphemeralOrPost(ctx, cmd.ChannelID, "", cmd.UserID, "📋 Usage: `/cd <path>`\nExample: `/cd ~/projects/my-app`")
-			return
-		}
-		a.forwardAsText(ctx, cmd, cmd.Command+" "+cmd.Text)
-	case CommandModel:
-		if strings.TrimSpace(cmd.Text) == "" {
-			a.sendEphemeralOrPost(ctx, cmd.ChannelID, "", cmd.UserID, "📋 Usage: `/model <name>`\nExample: `/model claude-sonnet-4-6`")
-			return
-		}
-		a.forwardAsText(ctx, cmd, cmd.Command+" "+cmd.Text)
-	case CommandPerm:
-		if strings.TrimSpace(cmd.Text) == "" {
-			a.sendEphemeralOrPost(ctx, cmd.ChannelID, "", cmd.UserID, "📋 Usage: `/perm <mode>`\nModes: `default`, `bypassPermissions`")
-			return
-		}
-		a.forwardAsText(ctx, cmd, cmd.Command+" "+cmd.Text)
-	case CommandEffort:
-		if strings.TrimSpace(cmd.Text) == "" {
-			a.sendEphemeralOrPost(ctx, cmd.ChannelID, "", cmd.UserID, "📋 Usage: `/effort <level>`\nLevels: `low`, `medium`, `high`")
-			return
-		}
-		a.forwardAsText(ctx, cmd, cmd.Command+" "+cmd.Text)
+			"/reset", "🔄 Resetting context...", "❌ Failed to reset. No active conversation found.")
+	case CommandDisconnect:
+		a.handleControlCommand(ctx, cmd, events.ControlActionTerminate,
+			"/dc", "👋 Disconnecting. Context preserved for next message.", "❌ Failed to disconnect. No active conversation.")
 	default:
-		text := cmd.Command
-		if cmd.Text != "" {
-			text += " " + cmd.Text
-		}
-		if messaging.ParseControlCommand(text) != nil || messaging.ParseWorkerCommand(text) != nil {
-			a.forwardAsText(ctx, cmd, text)
-		} else {
-			a.sendEphemeralOrPost(ctx, cmd.ChannelID, "", cmd.UserID, fmt.Sprintf("Unknown command: %s", cmd.Command))
-		}
+		a.sendEphemeralOrPost(ctx, cmd.ChannelID, "", cmd.UserID, fmt.Sprintf("Unknown command: %s", cmd.Command))
 	}
 }
 
@@ -226,30 +179,6 @@ func (a *Adapter) sendEphemeralOrPost(ctx context.Context, channelID, threadTS, 
 		opts = append(opts, slack.MsgOptionTS(threadTS))
 	}
 	_, _, _ = a.client.PostMessageContext(ctx, channelID, opts...)
-}
-
-func (a *Adapter) forwardAsText(ctx context.Context, cmd slack.SlashCommand, text string) {
-	sessionID := a.deriveSessionIDFromCommand(cmd)
-
-	envelope := a.bridge.MakeSlackEnvelope(cmd.TeamID, cmd.ChannelID, "", cmd.UserID, text)
-	if envelope == nil {
-		a.log.Warn("slack: failed to create envelope for forwarded command", "command", text)
-		return
-	}
-
-	conn := a.GetOrCreateConn(cmd.ChannelID, "")
-	if conn == nil {
-		a.log.Warn("slack: adapter closed, dropping forwarded command", "command", text)
-		return
-	}
-
-	if err := a.bridge.Handle(ctx, envelope, conn); err != nil {
-		a.log.Error("slack: forwarded command failed", "command", text, "session_id", sessionID, "err", err)
-		a.sendEphemeralOrPost(ctx, cmd.ChannelID, "", cmd.UserID, fmt.Sprintf("❌ Failed to execute: %s", text))
-		return
-	}
-
-	a.log.Info("slack: forwarded command", "command", text, "session_id", sessionID, "user", cmd.UserID)
 }
 
 func (a *Adapter) deriveSessionIDFromCommand(cmd slack.SlashCommand) string {

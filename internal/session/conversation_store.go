@@ -16,17 +16,10 @@ import (
 var ErrConvNotFound = errors.New("conversation store: no records found")
 
 const (
-	writeChanCap       = 1024 // buffered channel capacity
-	batchFlushInterval = 100 * time.Millisecond
-	batchMaxSize       = 50 // flush when batch reaches this size
-)
-
-const (
 	RoleUser      = "user"
 	RoleAssistant = "assistant"
 
 	SourceNormal     = "normal"
-	SourceRetry      = "retry"
 	SourceCrash      = "crash"
 	SourceTimeout    = "timeout"
 	SourceFreshStart = "fresh_start"
@@ -58,8 +51,6 @@ type ConversationRecord struct {
 type ConversationStore interface {
 	Append(ctx context.Context, rec *ConversationRecord) error
 	GetBySession(ctx context.Context, sessionID string, limit, offset int) ([]*ConversationRecord, error)
-	SessionStats(ctx context.Context, sessionID string) (*SessionStats, error)
-	MaxSeqBySession(ctx context.Context) (map[string]int64, error)
 	DeleteBySession(ctx context.Context, sessionID string) error
 	DeleteExpired(ctx context.Context, cutoff time.Time) (int64, error)
 	Close() error
@@ -175,116 +166,6 @@ func (s *SQLiteConversationStore) GetBySession(ctx context.Context, sessionID st
 		return nil, ErrConvNotFound
 	}
 	return records, nil
-}
-
-func (s *SQLiteConversationStore) SessionStats(ctx context.Context, sessionID string) (*SessionStats, error) {
-	if _, ok := ctx.Deadline(); !ok {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-	}
-
-	rows, err := s.db.QueryContext(ctx, queries["conversation.session_stats"], sessionID)
-	if err != nil {
-		return nil, fmt.Errorf("conversation store: session stats: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-
-	stats := &SessionStats{
-		SessionID:       sessionID,
-		TotalUsage:      make(map[string]float64),
-		TotalModelUsage: make(map[string]map[string]float64),
-	}
-
-	for rows.Next() {
-		var seq int64
-		var role string
-		var success sql.NullInt64
-		var durationMs int64
-		var costUSD float64
-		var tokensIn, tokensOut int64
-		var model string
-		var toolsJSON sql.NullString
-		var source string
-		var createdAt string
-
-		if err := rows.Scan(&seq, &role, &success, &durationMs, &costUSD, &tokensIn, &tokensOut, &model, &toolsJSON, &source, &createdAt); err != nil {
-			s.log.Warn("conversation store: session stats scan error", "session_id", sessionID, "error", err)
-			continue
-		}
-
-		ts := TurnStats{
-			Seq:        seq,
-			CreatedAt:  createdAt,
-			DurationMs: durationMs,
-			CostUSD:    costUSD,
-		}
-
-		if success.Valid {
-			ts.Success = success.Int64 == 1
-		}
-		if toolsJSON.Valid && toolsJSON.String != "" {
-			var names []string
-			if _ = json.Unmarshal([]byte(toolsJSON.String), &names); len(names) > 0 {
-				ts.Usage = map[string]any{"tool_count": float64(len(names))}
-			}
-		}
-
-		stats.TotalTurns++
-		if ts.Success {
-			stats.SuccessTurns++
-		} else {
-			stats.FailedTurns++
-		}
-		if source == SourceCrash || source == SourceTimeout {
-			stats.DroppedTurns++
-			ts.Dropped = true
-		}
-		stats.TotalDurationMs += durationMs
-		stats.TotalCostUSD += costUSD
-		stats.TotalUsage["tokens_in"] += float64(tokensIn)
-		stats.TotalUsage["tokens_out"] += float64(tokensOut)
-		if model != "" {
-			if stats.TotalModelUsage[model] == nil {
-				stats.TotalModelUsage[model] = make(map[string]float64)
-			}
-			stats.TotalModelUsage[model]["tokens_in"] += float64(tokensIn)
-			stats.TotalModelUsage[model]["tokens_out"] += float64(tokensOut)
-			stats.TotalModelUsage[model]["cost_usd"] += costUSD
-		}
-		stats.Turns = append(stats.Turns, ts)
-	}
-
-	if stats.TotalTurns == 0 {
-		return nil, ErrConvNotFound
-	}
-	return stats, rows.Err()
-}
-
-func (s *SQLiteConversationStore) MaxSeqBySession(ctx context.Context) (map[string]int64, error) {
-	if _, ok := ctx.Deadline(); !ok {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-	}
-
-	rows, err := s.db.QueryContext(ctx, queries["conversation.max_seq_by_session"])
-	if err != nil {
-		return nil, fmt.Errorf("conversation store: max seq by session: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-
-	result := make(map[string]int64)
-	for rows.Next() {
-		var sid string
-		var maxSeq int64
-		if err := rows.Scan(&sid, &maxSeq); err != nil {
-			s.log.Warn("conversation store: max seq scan error", "error", err)
-			continue
-		}
-		result[sid] = maxSeq
-	}
-	return result, rows.Err()
 }
 
 func (s *SQLiteConversationStore) DeleteBySession(ctx context.Context, sessionID string) error {

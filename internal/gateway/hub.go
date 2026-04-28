@@ -611,31 +611,6 @@ func (g *SeqGen) Remove(sessionID string) {
 	g.mu.Unlock()
 }
 
-// Init seeds the sequence counter for a session.
-// Uses max(current, startSeq) to never decrease an existing counter.
-func (g *SeqGen) Init(sessionID string, startSeq int64) {
-	g.mu.Lock()
-	if startSeq > g.seq[sessionID] {
-		g.seq[sessionID] = startSeq
-	}
-	g.mu.Unlock()
-}
-
-// InitAll seeds multiple session counters atomically.
-// Holds the lock for the entire batch to prevent interleaving with Next().
-func (g *SeqGen) InitAll(seeds map[string]int64) {
-	g.mu.Lock()
-	for sid, seq := range seeds {
-		if seq > g.seq[sid] {
-			g.seq[sid] = seq
-		}
-	}
-	g.mu.Unlock()
-}
-
-// SeqGen returns the sequence generator for startup initialization only.
-func (h *Hub) SeqGen() *SeqGen { return h.seqGen }
-
 // pcEntry wraps a PlatformConn with an async writeLoop goroutine and delta
 // coalescing. It satisfies the SessionWriter interface.
 //

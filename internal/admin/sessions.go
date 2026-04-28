@@ -174,13 +174,13 @@ func (a *AdminAPI) HandleSessionStats(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "insufficient scope: need session:read", http.StatusForbidden)
 		return
 	}
-	if a.convStore == nil {
+	if a.msgStore == nil {
 		http.Error(w, "event store not enabled", http.StatusServiceUnavailable)
 		return
 	}
 
 	id := r.PathValue("id")
-	stats, err := a.convStore.SessionStats(r.Context(), id)
+	stats, err := a.msgStore.SessionStats(r.Context(), id)
 	if err != nil {
 		if r.Context().Err() != nil {
 			http.Error(w, "request cancelled", http.StatusServiceUnavailable)

@@ -152,7 +152,7 @@ func TestManager_Create(t *testing.T) {
 		Return(nil)
 	store.On("Close").Return(nil)
 
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 	defer m.Close()
 
@@ -175,7 +175,7 @@ func TestManager_Get(t *testing.T) {
 	store.Test(t)
 
 	store.On("Close").Return(nil)
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 	defer m.Close()
 
@@ -218,7 +218,7 @@ func TestManager_Get_NotFound(t *testing.T) {
 	store.On("Get", ctx, "sess_missing").Return(nil, ErrSessionNotFound)
 	store.On("Close").Return(nil)
 
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 	defer m.Close()
 
@@ -235,7 +235,7 @@ func TestManager_Transition(t *testing.T) {
 	store.Test(t)
 
 	store.On("Close").Return(nil)
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 	defer m.Close()
 
@@ -271,7 +271,7 @@ func TestManager_Transition_Invalid(t *testing.T) {
 	store.Test(t)
 
 	store.On("Close").Return(nil)
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 	defer m.Close()
 
@@ -305,7 +305,7 @@ func TestManager_Transition_NotFound(t *testing.T) {
 	store.On("Get", ctx, "sess_ghost").Return(nil, ErrSessionNotFound)
 	store.On("Close").Return(nil)
 
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 	defer m.Close()
 
@@ -322,7 +322,7 @@ func TestManager_TransitionWithInput_Atomic(t *testing.T) {
 	store.Test(t)
 
 	store.On("Close").Return(nil)
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 	defer m.Close()
 
@@ -354,7 +354,7 @@ func TestManager_TransitionWithInput_InvalidTransition(t *testing.T) {
 	store.Test(t)
 
 	store.On("Close").Return(nil)
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 	defer m.Close()
 
@@ -383,7 +383,7 @@ func TestSessionBusy_RejectWhenNotActive(t *testing.T) {
 	store.Test(t)
 
 	store.On("Close").Return(nil)
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 	defer m.Close()
 
@@ -416,7 +416,7 @@ func TestManager_Delete(t *testing.T) {
 	store.Test(t)
 
 	store.On("Close").Return(nil)
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 	defer m.Close()
 
@@ -453,7 +453,7 @@ func TestManager_DeletePhysical(t *testing.T) {
 	store.Test(t)
 
 	store.On("Close").Return(nil)
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 	defer m.Close()
 
@@ -511,7 +511,7 @@ func TestManager_ValidateOwnership(t *testing.T) {
 	store.Test(t)
 
 	store.On("Close").Return(nil)
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 	defer m.Close()
 
@@ -551,7 +551,7 @@ func TestManager_ValidateOwnership_NotFound(t *testing.T) {
 	store.On("Get", ctx, "sess_missing").Return(nil, ErrSessionNotFound)
 	store.On("Close").Return(nil)
 
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 	defer m.Close()
 
@@ -568,7 +568,7 @@ func TestManager_Lock(t *testing.T) {
 	store.Test(t)
 
 	store.On("Close").Return(nil)
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 	defer m.Close()
 
@@ -602,7 +602,7 @@ func TestManager_Lock_NotFound(t *testing.T) {
 	store.On("Get", ctx, "sess_ghost_lock").Return(nil, ErrSessionNotFound)
 	store.On("Close").Return(nil)
 
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 	defer m.Close()
 
@@ -619,7 +619,7 @@ func TestManager_List(t *testing.T) {
 	store.Test(t)
 
 	store.On("Close").Return(nil)
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 	defer m.Close()
 
@@ -643,7 +643,7 @@ func TestManager_ListActive(t *testing.T) {
 	store.Test(t)
 
 	store.On("Close").Return(nil)
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 	defer m.Close()
 
@@ -674,7 +674,7 @@ func TestManager_Stats(t *testing.T) {
 	store.Test(t)
 
 	store.On("Close").Return(nil)
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 	defer m.Close()
 
@@ -820,7 +820,7 @@ func TestManager_AttachWorker_Success(t *testing.T) {
 	store.Test(t)
 
 	store.On("Close").Return(nil)
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 	defer m.Close()
 
@@ -858,7 +858,7 @@ func TestManager_AttachWorker_PoolExhausted(t *testing.T) {
 	// Global pool size = 1
 	cfg.Pool.MaxSize = 1
 	store.On("Close").Return(nil)
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 	defer m.Close()
 
@@ -911,7 +911,7 @@ func TestManager_AttachWorker_UserQuotaExceeded(t *testing.T) {
 	// Per-user limit = 1
 	cfg.Pool.MaxIdlePerUser = 1
 	store.On("Close").Return(nil)
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 	defer m.Close()
 
@@ -962,7 +962,7 @@ func TestManager_AttachWorker_MemoryExceeded_Rollback(t *testing.T) {
 	// 1 GB per user, 512 MB per worker → max 2
 	cfg.Pool.MaxMemoryPerUser = 512 * 1024 * 1024
 	store.On("Close").Return(nil)
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 	defer m.Close()
 
@@ -1006,7 +1006,7 @@ func TestManager_AttachWorker_AlreadyAttached(t *testing.T) {
 	store.Test(t)
 
 	store.On("Close").Return(nil)
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 	defer m.Close()
 
@@ -1049,7 +1049,7 @@ func TestManager_AttachWorker_NotFound(t *testing.T) {
 
 	store.On("Get", ctx, "sess_missing").Return(nil, ErrSessionNotFound)
 	store.On("Close").Return(nil)
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 	defer m.Close()
 
@@ -1070,7 +1070,7 @@ func TestManager_DetachWorker_WithWorker(t *testing.T) {
 	store.Test(t)
 
 	store.On("Close").Return(nil)
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 	defer m.Close()
 
@@ -1109,7 +1109,7 @@ func TestManager_DetachWorker_NoWorker(t *testing.T) {
 	store.Test(t)
 
 	store.On("Close").Return(nil)
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 	defer m.Close()
 
@@ -1142,7 +1142,7 @@ func TestManager_DetachWorker_NotFound(t *testing.T) {
 
 	store.On("Get", ctx, "sess_ghost_detach").Return(nil, ErrSessionNotFound)
 	store.On("Close").Return(nil)
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 	defer m.Close()
 
@@ -1162,7 +1162,7 @@ func TestManager_GetWorker_NotFound(t *testing.T) {
 
 	store.On("Get", ctx, "sess_ghost_worker").Return(nil, ErrSessionNotFound)
 	store.On("Close").Return(nil)
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 	defer m.Close()
 
@@ -1180,7 +1180,7 @@ func TestManager_DebugSnapshot_WithWorker(t *testing.T) {
 	store.Test(t)
 
 	store.On("Close").Return(nil)
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 	defer m.Close()
 
@@ -1216,7 +1216,7 @@ func TestManager_DebugSnapshot_NoWorker(t *testing.T) {
 	store.Test(t)
 
 	store.On("Close").Return(nil)
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 	defer m.Close()
 
@@ -1248,7 +1248,7 @@ func TestManager_DebugSnapshot_NotFound(t *testing.T) {
 
 	store.On("Get", ctx, "sess_ghost_debug").Return(nil, ErrSessionNotFound)
 	store.On("Close").Return(nil)
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 	defer m.Close()
 
@@ -1267,7 +1267,7 @@ func TestManager_ReleaseWorkerQuota(t *testing.T) {
 	store.Test(t)
 
 	store.On("Close").Return(nil)
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 	defer m.Close()
 
@@ -1306,7 +1306,7 @@ func TestManager_TransitionTerminated_NilsWorker(t *testing.T) {
 	store.On("Upsert", mock.Anything, mock.AnythingOfType("*session.SessionInfo")).Return(nil)
 	store.On("Close").Return(nil)
 
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 	defer m.Close()
 
@@ -1358,7 +1358,7 @@ func TestManager_WorkerHealthStatuses(t *testing.T) {
 	store.Test(t)
 
 	store.On("Close").Return(nil)
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 	defer m.Close()
 
@@ -1392,7 +1392,7 @@ func TestManager_WorkerHealthStatuses_NoWorkers(t *testing.T) {
 	store.Test(t)
 
 	store.On("Close").Return(nil)
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 	defer m.Close()
 
@@ -1411,7 +1411,7 @@ func TestManager_GC_ZombieDetection(t *testing.T) {
 	store.Test(t)
 
 	store.On("Close").Return(nil)
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 
 	// Simulate zombie: worker lastIO was 10 min ago (beyond timeout)
@@ -1458,7 +1458,7 @@ func TestManager_GC_NoZombieWhenRecentIO(t *testing.T) {
 	store.Test(t)
 
 	store.On("Close").Return(nil)
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 
 	now := time.Now()
@@ -1509,7 +1509,7 @@ func TestManager_GC_ExpiredMaxLifetime(t *testing.T) {
 	store.On("DeleteTerminated", mock.Anything, mock.AnythingOfType("time.Time")).
 		Return(nil)
 	store.On("Close").Return(nil)
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 
 	seed := &SessionInfo{
@@ -1551,7 +1551,7 @@ func TestManager_GC_ExpiredIdleTimeout(t *testing.T) {
 	store.On("DeleteTerminated", mock.Anything, mock.AnythingOfType("time.Time")).
 		Return(nil)
 	store.On("Close").Return(nil)
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 
 	seed := &SessionInfo{
@@ -1593,7 +1593,7 @@ func TestManager_GC_NoRetentionCleanup(t *testing.T) {
 	// removed so that TERMINATED records serve as "resume decision flags".
 	store.On("Close").Return(nil)
 
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 
 	m.gc(ctx)
@@ -1614,7 +1614,7 @@ func TestManager_GC_TerminatedSessionPreserved(t *testing.T) {
 	store.On("DeleteExpiredEvents", mock.Anything, mock.AnythingOfType("time.Time")).Return(int64(0), nil)
 	store.On("Close").Return(nil)
 
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 
 	// Seed a TERMINATED session with UpdatedAt old enough to be past retention.
@@ -1664,7 +1664,7 @@ func TestManager_GC_TerminatedSession_DBError_NoImpact(t *testing.T) {
 	store.On("DeleteExpiredEvents", mock.Anything, mock.AnythingOfType("time.Time")).Return(int64(0), nil)
 	store.On("Close").Return(nil)
 
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 
 	// Seed a TERMINATED session.
@@ -1708,7 +1708,7 @@ func TestManager_GC_NoPanicOnStoreErrors(t *testing.T) {
 	// DeleteTerminated no longer called — retention cleanup removed.
 	store.On("Close").Return(nil)
 
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 
 	// gc should not panic even on store errors
@@ -1726,7 +1726,7 @@ func TestManager_ClearContext_Success(t *testing.T) {
 	store.Test(t)
 	store.On("Close").Return(nil)
 
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 	defer m.Close()
 
@@ -1766,7 +1766,7 @@ func TestManager_ClearContext_NotFound(t *testing.T) {
 	store.On("Get", ctx, "sess_missing_clear").Return(nil, ErrSessionNotFound)
 	store.On("Close").Return(nil)
 
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 	defer m.Close()
 
@@ -1791,7 +1791,7 @@ func TestManager_ClearContext_UpdatesTimestamp(t *testing.T) {
 	store.Test(t)
 	store.On("Close").Return(nil)
 
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 	defer m.Close()
 
@@ -1838,7 +1838,7 @@ func TestManager_RepairRunningSessions_Success(t *testing.T) {
 	store.On("Upsert", ctx, mock.AnythingOfType("*session.SessionInfo")).Return(nil)
 	store.On("Close").Return(nil)
 
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 	defer m.Close()
 
@@ -1879,7 +1879,7 @@ func TestManager_RepairRunningSessions_Empty(t *testing.T) {
 		Return([]string(nil), nil)
 	store.On("Close").Return(nil)
 
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 	defer m.Close()
 
@@ -1900,7 +1900,7 @@ func TestManager_RepairRunningSessions_StoreError(t *testing.T) {
 		Return([]string(nil), errors.New("db error"))
 	store.On("Close").Return(nil)
 
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 	defer m.Close()
 
@@ -1922,7 +1922,7 @@ func TestManager_RepairRunningSessions_PartialFailure(t *testing.T) {
 	store.On("Upsert", ctx, mock.AnythingOfType("*session.SessionInfo")).Return(nil)
 	store.On("Close").Return(nil)
 
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 	defer m.Close()
 
@@ -1963,7 +1963,7 @@ func TestManager_DetachWorkerIf_CAS_Success(t *testing.T) {
 	store.Test(t)
 
 	store.On("Close").Return(nil)
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 	defer m.Close()
 
@@ -2003,7 +2003,7 @@ func TestManager_DetachWorkerIf_CAS_Mismatch(t *testing.T) {
 	store.Test(t)
 
 	store.On("Close").Return(nil)
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 	defer m.Close()
 
@@ -2053,7 +2053,7 @@ func TestManager_DetachWorkerIf_NotFound(t *testing.T) {
 
 	store.On("Get", ctx, "sess_ghost_cas").Return(nil, ErrSessionNotFound)
 	store.On("Close").Return(nil)
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 	defer m.Close()
 
@@ -2070,7 +2070,7 @@ func TestManager_ClearContext_PreservesOtherFields(t *testing.T) {
 	store.Test(t)
 	store.On("Close").Return(nil)
 
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 	defer m.Close()
 
@@ -2119,7 +2119,7 @@ func TestManager_UpdateWorkerSessionID(t *testing.T) {
 	store.Test(t)
 
 	store.On("Close").Return(nil)
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 	defer m.Close()
 
@@ -2155,7 +2155,7 @@ func TestManager_UpdateWorkerSessionID_SameValue_NoUpsert(t *testing.T) {
 	store.Test(t)
 
 	store.On("Close").Return(nil)
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 	defer m.Close()
 
@@ -2189,7 +2189,7 @@ func TestManager_UpdateWorkerSessionID_NotFound(t *testing.T) {
 	store.On("Get", ctx, "ghost").Return(nil, ErrSessionNotFound)
 	store.On("Close").Return(nil)
 
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 	defer m.Close()
 
@@ -2205,6 +2205,24 @@ func TestManager_UpdateWorkerSessionID_NilManager(t *testing.T) {
 	require.True(t, errors.Is(err, ErrSessionNotFound))
 }
 
+// ─── MessageStore() accessor tests ───────────────────────────────────────────
+
+func TestManager_MessageStore_Nil(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	cfg := config.Default()
+	store := new(mockStore)
+	store.Test(t)
+
+	store.On("Close").Return(nil)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
+	require.NoError(t, err)
+	defer m.Close()
+
+	require.Nil(t, m.MessageStore())
+}
+
 // ─── ResetGCInterval tests ───────────────────────────────────────────────────
 
 func TestManager_ResetGCInterval(t *testing.T) {
@@ -2214,7 +2232,7 @@ func TestManager_ResetGCInterval(t *testing.T) {
 	store.Test(t)
 
 	store.On("Close").Return(nil)
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 	defer m.Close()
 
@@ -2237,7 +2255,7 @@ func TestManager_Pool(t *testing.T) {
 	store.Test(t)
 
 	store.On("Close").Return(nil)
-	m, err := NewManager(ctx, nil, cfg, nil, store)
+	m, err := NewManager(ctx, nil, cfg, nil, store, nil)
 	require.NoError(t, err)
 	defer m.Close()
 

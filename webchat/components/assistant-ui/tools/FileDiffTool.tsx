@@ -39,7 +39,7 @@ export function FileDiffTool({ toolName, filePath, content, status, onToggle }: 
                animate={{ opacity: [0.5, 1, 0.5] }}
                transition={{ repeat: Infinity, duration: 1.5 }}
              >
-               Editing...
+               Writing...
              </motion.span>
           )}
           {onToggle && status !== "running" && (

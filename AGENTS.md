@@ -1,6 +1,6 @@
-# CLAUDE.md
+# PROJECT KNOWLEDGE BASE
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+**Last updated:** 2026-04-27 · **Commit:** 1138929a · **Branch:** main
 
 ## OVERVIEW
 
@@ -47,6 +47,7 @@ cmd/hotplex/version.go       (~46 lines)  version subcommand
 
 **Core**
 - `admin/`      Admin API: handlers, middleware, rate-limit, log buffer
+- `aep/`        AEP v1 codec: JSON envelope encode/decode/validate
 - `config/`     Viper config + file watcher + hot-reload
 - `agentconfig/` Agent personality/context loader: B-channel (SOUL/AGENTS/SKILLS in `<directives>`) + C-channel (`META-COGNITION.md`/USER/MEMORY in `<context>`); `META-COGNITION.md` (5-section self-model, go:embed at init)
 
@@ -109,12 +110,12 @@ cmd/hotplex/version.go       (~46 lines)  version subcommand
 ### pkg/
 - `events/`   Envelope, Event, SessionState, all data structs
 - `events/helpers.go`  Shared mapper helpers for event data extraction
-- `aep/`      AEP v1 codec: JSON envelope encode/decode/validate (imported by both gateway and client)
+- `aep/`      AEP v1 codec
 
 ### Top-level
 ```
-client/    Go client SDK (standalone module via `replace` directive in go.mod, typed events)
-webchat/  Next.js web chat UI + AI SDK transport adapter (pnpm, connects to gateway WS)
+client/    Go client SDK (standalone module, typed events)
+webchat/  Next.js web chat UI + AI SDK transport
 examples/  TS / Python / Java client SDKs
 docs/     Architecture, specs, security, testing, management
 scripts/  Build/validation scripts
@@ -301,9 +302,9 @@ All build/test/lint operations MUST use `make` targets. Do NOT use raw `go build
 ```bash
 make build                    # Build gateway binary (output: bin/hotplex-<os>-<arch>)
 make test                     # Run tests with -race (timeout 15m)
-make test-short               # Quick test pass (-short, timeout 5m)
-make lint                     # golangci-lint v2
-make coverage                 # Coverage report (excludes worker/proc, worker/pi, cmd/hotplex)
+make test-short               # Quick test pass (-short)
+make lint                     # golangci-lint
+make coverage                 # Coverage report
 make check                    # Full CI workflow: quality + build
 make quality                  # fmt + lint + test (no build)
 make fmt                      # Format code (gofmt + goimports)
@@ -324,48 +325,10 @@ make gateway-stop             # Stop gateway
 make gateway-status           # Check gateway status
 make gateway-logs             # Tail gateway logs
 
-# Webchat (requires pnpm)
+# Webchat
 make webchat-dev              # Start webchat dev server
 make webchat-stop             # Stop webchat dev server
 ```
-
-## CI/CD
-
-GitHub Actions (`.github/workflows/ci.yml`): 4-job pipeline — gate (vet + build + lint) → test (race + coverage) → coverage-check (per-package thresholds) → build verification. Go 1.26, golangci-lint v2.11.4.
-
-Coverage exclusions: `internal/worker/proc`, `internal/worker/pi`, `cmd/hotplex` excluded from `make coverage` and CI coverage checks.
-
-## KEY DEPENDENCIES
-
-| Dependency | Purpose |
-|:-----------|:--------|
-| `gorilla/websocket` | WebSocket server (gateway conn) |
-| `spf13/cobra` + `spf13/viper` | CLI framework + config management |
-| `mattn/go-sqlite3` | SQLite persistence (CGO, WAL mode required) |
-| `larksuite/oapi-sdk-go` | Feishu/Lark event processing |
-| `slack-go/slack` | Slack Socket Mode |
-| `golang-jwt/jwt` (v5) | ES256 JWT auth |
-| `prometheus/client_golang` | Metrics exposition |
-| `opentelemetry` | Distributed tracing |
-| `stretchr/testify` | Test assertions (require, not t.Fatal) |
-
-`client/` is a separate Go module linked via `replace` directive in root `go.mod`.
-
-## CONFIGURATION
-
-Files: `configs/config.yaml` (base), `config-dev.yaml` (dev overrides), `env.example` (env template).
-Hot-reload: file watcher on config path, live config reference update with rollback.
-Key config groups: `gateway` (addr, origins), `admin` (addr, scopes), `db` (SQLite path), `log` (level, format), `agent_config` (config_dir), `worker` (types, timeouts), `slack` / `feishu` (messaging adapters).
-
-## WEBCHAT
-
-Next.js app in `webchat/`. Connects to gateway via WebSocket (AEP v1) through AI SDK transport adapter.
-Dev: `make webchat-dev` or `cd webchat && pnpm dev`. Prerequisite: `pnpm install`.
-
-## DEPLOYMENT
-
-Docker: `Dockerfile` (multi-stage build), `docker-compose.yml` (dev), `docker-compose.prod.yml` (prod).
-Quick start: `docker compose up -d`.
 
 ## NOTES
 
@@ -374,7 +337,7 @@ Quick start: `docker compose up -d`.
 - `.claude` is symlinked to `.agent` — both directories exist
 - No `api/` directory — project uses JSON over WebSocket, not protobuf
 - Project targets POSIX only (PGID isolation requires `syscall.SysProcAttr{Setpgid: true}`)
-- `client/` is a standalone Go module — import as `github.com/hrygo/hotplex/client`, linked via `go.mod` replace directive
+- Largest files: `feishu/adapter.go` (1228), `slack/adapter.go` (1208), `opencodeserver/worker.go` (1011), `bridge.go` (860), `hub.go` (816), `manager.go` (825), `config.go` (783)
 - STT scripts (`scripts/stt_server.py`, `scripts/fix_onnx_model.py`) are also deployed to `~/.agents/skills/audio-transcribe/scripts/` for Claude Code skill use
 - STT model: `~/.cache/modelscope/hub/models/iic/SenseVoiceSmall` (~900MB), ONNX FP32 non-quantized
 - Zombie IO timeout default: 30 minutes (configurable via `worker.execution_timeout`); worker idle timeout default: 60 minutes (configurable via `worker.idle_timeout`)
@@ -386,4 +349,3 @@ Quick start: `docker compose up -d`.
 - `internal/gateway/api.go` provides REST session management alongside the WebSocket gateway
 - Agent config files live in `~/.hotplex/agent-configs/` (configurable via `agent_config.config_dir`): SOUL.md, AGENTS.md, SKILLS.md (B-channel), USER.md, MEMORY.md (C-channel); platform variants like SOUL.slack.md auto-appended
 - `DeletePhysical` in session.Manager bypasses state machine for forced removal — used when recreating sessions that were soft-deleted
-- `.agent/rules/*.md` contains path-scoped coding rules (golang, testing, security, session, aep, worker-proc, agentconfig, linting, cli, metrics) — automatically injected by file path match
