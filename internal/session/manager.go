@@ -672,6 +672,20 @@ func (m *Manager) Stats() (totalWorkers, maxWorkers, uniqueUsers int) {
 	return total, max, users
 }
 
+// ResetExpiry updates ExpiresAt to now + retentionPeriod for active sessions.
+// Called after resume so a reactivated session isn't immediately killed by GC max_lifetime.
+func (m *Manager) ResetExpiry(ctx context.Context, id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	ms, ok := m.sessions[id]
+	if !ok {
+		return ErrSessionNotFound
+	}
+	ms.info.ExpiresAt = ptr(time.Now().Add(m.cfg.Session.RetentionPeriod))
+	ms.info.UpdatedAt = time.Now()
+	return m.store.Upsert(ctx, &ms.info)
+}
+
 // WorkerHealthStatuses returns a snapshot of health for all active worker processes.
 func (m *Manager) WorkerHealthStatuses() []worker.WorkerHealth {
 	m.mu.RLock()

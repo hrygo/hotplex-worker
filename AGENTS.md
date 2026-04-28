@@ -49,7 +49,7 @@ cmd/hotplex/version.go       (~46 lines)  version subcommand
 - `admin/`      Admin API: handlers, middleware, rate-limit, log buffer
 - `aep/`        AEP v1 codec: JSON envelope encode/decode/validate
 - `config/`     Viper config + file watcher + hot-reload
-- `agentconfig/` Agent personality/context loader: B-channel (system prompt) + C-channel (rules injection)
+- `agentconfig/` Agent personality/context loader: B-channel (SOUL/AGENTS/SKILLS in `<directives>`) + C-channel (`META-COGNITION.md`/USER/MEMORY in `<context>`); `META-COGNITION.md` (5-section self-model, go:embed at init)
 
 **Gateway** (WebSocket)
 - `gateway/hub.go`     WS broadcast hub: conn registry, session routing, seq gen
@@ -143,6 +143,7 @@ configs/  config.yaml, config-dev.yaml, env.example
 **Modify existing**
 - Agent config files → `internal/agentconfig/loader.go` — file loading, size limits, frontmatter stripping; `prompt.go` for unified system prompt assembly (nested XML: `<directives>` + `<context>` groups with per-section behavioral directives)
 - Agent config directory → `~/.hotplex/agent-configs/` — place SOUL.md, AGENTS.md, SKILLS.md (B-channel) + USER.md, MEMORY.md (C-channel); platform variants like SOUL.slack.md
+- Meta-Cognition Core → `internal/agentconfig/META-COGNITION.md` — 5-section self-model: identity, system architecture, session lifecycle, agent config architecture, control commands; serves as the agent's "brain" for self-reference
 - Session lifecycle → `internal/session/manager.go` — state machine + `TransitionWithInput` atomicity + `DeletePhysical` for forced removal
 - Session key derivation → `internal/session/key.go` — UUIDv5 deterministic session IDs + platform context
 - WebSocket protocol → `internal/gateway/conn.go` — ReadPump/WritePump + Handler dispatch
@@ -217,8 +218,8 @@ configs/  config.yaml, config-dev.yaml, env.example
 
 **Agent Config** (`internal/agentconfig/`)
 - `AgentConfigs` → `loader.go` — holds loaded content: Soul/Agents/Skills (B-channel) + User/Memory (C-channel)
-- `Load` → `loader.go` — reads config dir, appends platform variants (e.g. SOUL.slack.md), strips YAML frontmatter, enforces size limits (12K/file, 60K total)
-- `BuildSystemPrompt` → `prompt.go` — assembles unified B+C system prompt with nested XML tags (`<directives>/<context>`) for both CC and OCS
+- `Load` → `loader.go` — reads config dir, appends platform variants (e.g. SOUL.slack.md), strips YAML frontmatter, enforces size limits (8K/file, 40K total)
+- `BuildSystemPrompt` → `prompt.go` — assembles unified B+C system prompt with nested XML tags (`<directives>/<context>`) for both CC and OCS; computed at init via go:embed from `META-COGNITION.md`
 
 **Core**
 - `Envelope` → `pkg/events/events.go:73` — AEP v1 envelope (id, version, seq, session_id, event)
@@ -286,12 +287,13 @@ configs/  config.yaml, config-dev.yaml, env.example
 - **LLM auto-retry**: LLMRetryController detects retryable errors via regex patterns (429/5xx/network), exponential backoff (initial 2s, max 60s), per-session attempt counter
 - **Deterministic session IDs**: DeriveSessionKey uses UUIDv5 (SHA-1 namespace+name) for cross-environment consistency; PlatformContext for platform-specific key derivation
 - **Per-user memory tracking**: PoolManager tracks estimated memory per user (512MB/worker) alongside session count quotas
-- **Agent config unified prompt**: B+C channels merged into single `BuildSystemPrompt` with nested XML tags (`<agent-configuration>` → `<directives>` + `<context>`); each section has a 1-line behavioral directive; both CC (`--append-system-prompt`) and OCS (`system` field) use identical structure injected via `bridge.injectAgentConfig`; no file-based injection, no hedging
+- **Agent config unified prompt**: B+C channels merged into single `BuildSystemPrompt` with nested XML tags (`<agent-configuration>` → `<directives>` + `<context>`); B-channel (SOUL.md/AGENTS.md/SKILLS.md) in `<directives>` = high priority, no hedging; C-channel (`META-COGNITION.md` in `<hotplex>` + USER.md/MEMORY.md) in `<context>` = background reference; `META-COGNITION.md` computed at init via go:embed; injected identically for CC (`--append-system-prompt`) and OCS (`system` field)
 - **Webchat session stickiness**: Deterministic "main" session ID via DeriveSessionKey + localStorage persistence for active session across page reloads; auto-creates first session when none exist
 - **OCS singleton process**: All OpenCode Server sessions share one lazily-started `opencode serve` process managed by `SingletonProcessManager`; ref-counted with 30m idle drain; Workers are thin adapters that acquire/release refs; Terminate/Kill only close SSE connections, never the shared process; crash detected via `monitorProcess` goroutine, new `crashCh` created per lifecycle
 - **Switch-workdir**: `/cd <path>` (WebSocket control) or `POST /api/sessions/{id}/cd` (REST) terminates old worker, derives new session ID via PlatformContext with new workDir, starts fresh session on the same singleton process; security validated via `config.ExpandAndAbs` + `security.ValidateWorkDir`
 - **Passthrough command feedback**: `handlePassthroughCommand` sends visible `message` AEP events after WorkerCommander ops (compact/clear/rewind) succeed; unsupported commands (/effort, /commit) return explicit `NOT_SUPPORTED`; OCS `Compact` auto-resolves model from message history when no `pendingModel`; OCS `Rewind` auto-resolves last assistant messageID when no targetID
 - **Fast reconnect state guard**: `conn.go` skips `Transition(running)` when session already in `running` state on WebSocket reconnect with live worker — avoids invalid `running→running` transition error
+- **Meta-Cognition Core**: `internal/agentconfig/META-COGNITION.md` — 5-section agent self-model: identity (AEP v1, Gateway-托管), system architecture, session lifecycle, agent config architecture (B/C channels), control commands; injected as C-channel (`<hotplex>`) in `<context>`, serves as the agent's "brain" for self-reference
 
 ## COMMANDS
 

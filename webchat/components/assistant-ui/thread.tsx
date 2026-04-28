@@ -101,7 +101,7 @@ function AssistantMessage({ message }: { message: any }) {
         </div>
       </div>
 
-      <div className="msg-assistant-body pt-[5px]">
+      <div className="msg-assistant-body pt-[4px]">
         <MessagePrimitive.Parts>
           {({ part }) => {
             const p = part as Record<string, any>;

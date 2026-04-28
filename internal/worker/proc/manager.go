@@ -313,6 +313,9 @@ func (m *Manager) captureExitCodeLocked() {
 	if m.cmd == nil || m.cmd.ProcessState == nil {
 		return
 	}
+	if m.exited {
+		return // already captured + logged (e.g., Terminate goroutine + bridge Wait both call this)
+	}
 	m.exited = true
 	if ws, ok := m.cmd.ProcessState.Sys().(syscall.WaitStatus); ok {
 		m.exitCode = ws.ExitStatus()

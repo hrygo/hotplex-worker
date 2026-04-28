@@ -1010,6 +1010,11 @@ func (m *mockBridgeSM) UpdateWorkerSessionID(ctx context.Context, id, workerSess
 	return args.Error(0)
 }
 
+func (m *mockBridgeSM) ResetExpiry(ctx context.Context, id string) error {
+	args := m.Called(ctx, id)
+	return args.Error(0)
+}
+
 var _ SessionManager = (*mockBridgeSM)(nil)
 
 // mockBridgeWorker is a configurable fake Worker for Bridge tests.
@@ -1366,6 +1371,7 @@ func TestBridge_ResumeSession_Success(t *testing.T) {
 	sm.On("GetWorker", "sess_resume").Return(nil) // P1: no stale worker
 	sm.On("AttachWorker", "sess_resume", mock.Anything).Return(nil)
 	sm.On("Transition", mock.Anything, "sess_resume", events.StateRunning).Return(nil)
+	sm.On("ResetExpiry", mock.Anything, "sess_resume").Return(nil)
 
 	// Mock noop worker: Resume returns nil (after SetConn is called).
 	mockW := &mockBridgeWorker{
@@ -1451,6 +1457,7 @@ func TestBridge_ResumeSession_NoopWorker(t *testing.T) {
 	sm.On("GetWorker", "sess_noop").Return(nil)                                      // P1: no stale worker
 	sm.On("Transition", mock.Anything, "sess_noop", events.StateRunning).Return(nil) // StateIdle → Running
 	sm.On("AttachWorker", "sess_noop", mock.Anything).Return(nil)
+	sm.On("ResetExpiry", mock.Anything, "sess_noop").Return(nil)
 
 	// Use the default worker factory so Bridge calls worker.NewWorker(testNoopType),
 	// which returns a real noop worker (registered in init above).

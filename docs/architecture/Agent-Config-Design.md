@@ -8,17 +8,33 @@ tags:
   - architecture/context-injection
   - worker/claude-code
   - worker/opencode-server
+  - meta-cognition
 related:
   - Claude-Code-Context-Analysis.md
   - OpenCode-Server-Context-Analysis.md
+  - internal/agentconfig/META-COGNITION.md
 ---
 
 # HotPlex Agent Context 设定文件方案 (Dual-Worker)
 
-> **实施状态**: ✅ Phase 1-4 已实现 (`feat/25-agent-config-implementation`)
-> 实现包: `internal/agentconfig/` — `AgentConfig{Enabled, ConfigDir}`
-> 大小限制: 8K/文件、40K/总计。平台变体采用追加模式。
-> Phase 5（动态能力）待后续版本实现。
+> **实施状态**: ✅ Phase 1-4 已实现 | Phase 5（动态能力）待实现
+
+### 元认知与 Agent Config 的关系
+
+Agent Config 是 Agent 的**可配置人格层**，而 `META-COGNITION.md` 是 Agent 的**不可配置元认知层**。
+
+| 维度 | Agent Config | META-COGNITION.md |
+|------|--------------|-------------------|
+| **位置** | `~/.hotplex/agent-configs/` (用户可编辑) | `internal/agentconfig/` (代码库内) |
+| **可配置性** | 用户可编辑 SOUL/AGENTS/SKILLS/USER/MEMORY | 不可配置，内置硬编码 |
+| **注入方式** | `BuildSystemPrompt()` 组装为 `<directives>`/`<context>` | `go:embed` 在 init 时计算 |
+| **内容类型** | 人格(B)、规则(B)、工具(B)、用户(C)、记忆(C) | 身份、系统架构、状态机、配置架构、控制命令 |
+| **用途** | 用户定制 Agent 行为 | Agent 自我认知 |
+
+两者通过 `BuildSystemPrompt()` **合并注入**到 Worker 的 System Prompt：
+- `SOUL.md/AGENTS.md/SKILLS.md` 内容注入到 `<directives>`（B 通道，高优先级）
+- `META-COGNITION.md` 内容注入到 `<context>` 顶部（C 通道，Agent 自我认知）
+- `USER.md/MEMORY.md` 内容注入到 `<context>` 底部（用户上下文）
 
 ### 术语对照
 
@@ -171,6 +187,11 @@ Apply these capabilities when relevant.
 <context>
 Reference material to inform your responses.
 
+<hotplex>
+Agent self-identity, operating constraints, and key operational rules.
+[internal/agentconfig/META-COGNITION.md — go:embed, C-channel]
+</hotplex>
+
 <user>
 Tailor responses to this user's preferences and expertise.
 [USER.md]
@@ -188,9 +209,10 @@ Recall relevant past context when applicable.
 
 设计要点：
 - `<directives>` (B 通道) 与 `<context>` (C 通道) 传达优先级
+- `<hotplex>` 位于 `<context>` 顶部，为 Agent 提供自我认知基础（C 通道，参考性）
 - 每段附 1 行行为指令
 - 空组省略 — 仅有 B 内容时不输出 `<context>` wrapper
-- 组装逻辑: `internal/agentconfig.BuildSystemPrompt()`
+- 组装逻辑: `internal/agentconfig/prompt.go` → `BuildSystemPrompt()`
 
 ---
 
@@ -213,6 +235,7 @@ system[]
 │     <skills>   ← SKILLS.md (~1K tok)                                 │
 │     </directives>                                                    │
 │     <context>                                                        │
+│     <hotplex> ← META-COGNITION.md (go:embed, ~3K tok, C-channel)   │
 │     <user>     ← USER.md                                             │
 │     <memory>   ← MEMORY.md                                           │
 │     </context>                                                       │
@@ -242,6 +265,7 @@ messages[role: "system"] — 两层组装
 │     <persona> / <rules> / <skills>                                   │
 │     </directives>                                                    │
 │     <context>                                                        │
+│     <hotplex> ← META-COGNITION.md (go:embed, ~3K tok, C-channel)   │
 │     <user> / <memory>                                                │
 │     </context>                                                       │
 │ S3  Last User System (同 cycle 内 lastUser 不变; 跨消息需每条带 system)│
@@ -285,9 +309,14 @@ Step 1: 加载设定文件 (共享)
   · 大小限制: 8K/文件, 40K/总计
   · 文件不存在 → 跳过
 
-Step 2: Worker 路由 (Bridge 层)
+Step 2: 元认知加载 (init 时 go:embed)
+  internal/agentconfig/
+  ├── META-COGNITION.md → 元认知核心 (身份/架构/状态机/配置架构/控制命令)
+  └── prompt.go 在 init() 时通过 go:embed 读取，注入到 `<context>` 顶部 (C 通道)
+
+Step 3: Worker 路由 (Bridge 层)
   configs := agentconfig.Load(configDir, platform)
-  prompt  := agentconfig.BuildSystemPrompt(configs)
+  prompt  := agentconfig.BuildSystemPrompt(configs)  // 内含 META-COGNITION.md
   sessionInfo.SystemPrompt = prompt
 
 Step 3a: Claude Code Worker
@@ -468,3 +497,5 @@ Phase 5: 动态能力 (待实现)
 6. **平台适配** — `SOUL.slack.md` / `SOUL.feishu.md` 追加模式（非替换）
 7. **安全边界** — 8K/文件, 40K/总计；frontmatter 剥离；CC 子 Agent 全量继承 (upstream-blocked)；OCS 子 Agent 天然隔离
 8. **OCS 消息级注入** — S2 无 hedging，同 cycle 内持续生效，跨消息需每条带 `system` 字段
+9. **元认知与 Agent Config 分离** — `META-COGNITION.md` (不可配置) 定义 Agent 自我认知，属于 C 通道；`~/.hotplex/agent-configs/` (可配置) 定义用户偏好；两者合并注入，`<hotplex>` 位于 `<context>` 顶部
+10. **元认知 go:embed 惰性计算** — `META-COGNITION.md` 内容在 `init()` 时通过 `go:embed` 读取，避免运行时文件 IO；Agent Config 文件在会话启动时 `Load()` 读取

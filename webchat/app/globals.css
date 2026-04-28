@@ -313,6 +313,7 @@ body {
   display: flex;
   gap: 1.25rem;
   margin-bottom: 2.5rem;
+  align-items: flex-start;
 }
 
 .msg-assistant-body {
@@ -483,13 +484,13 @@ body {
 .reasoning-block {
   background: rgba(251, 191, 36, 0.05);
   border: 1px solid rgba(251, 191, 36, 0.12);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   margin-bottom: 1rem;
   overflow: hidden;
 }
 
 .reasoning-header {
-  padding: 0.5rem 0.75rem;
+  padding: 7px 0.75rem;
   display: flex;
   align-items: center;
   gap: 0.5rem;

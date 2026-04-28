@@ -49,22 +49,24 @@ func NewLLMRetryController(cfg config.AutoRetryConfig, log *slog.Logger) *LLMRet
 	}
 }
 
-// ShouldRetry checks if the turn text or error event matches a retryable pattern.
-// Returns (shouldRetry, currentAttempt). currentAttempt starts at 1.
-func (c *LLMRetryController) ShouldRetry(sessionID, turnText string, errData *events.ErrorData) (bool, int) {
+// ShouldRetry checks if the error event matches a retryable pattern.
+// The turnText parameter is accepted for backwards compatibility but is not used
+// for matching — only actual Error events (errData) should trigger retries.
+// Matching on accumulated output would cause false positives since Claude Code
+// output may legitimately contain strings like "500" or "INTERNAL_ERROR"
+// (e.g., in code comments, JSON data, error messages).
+func (c *LLMRetryController) ShouldRetry(sessionID string, errData *events.ErrorData) (bool, int) {
 	if !c.config.Enabled {
 		return false, 0
 	}
+	if errData == nil {
+		return false, 0
+	}
 
-	// Build error text from both Error event and accumulated output.
-	text := turnText
-	if errData != nil {
-		if errData.Message != "" {
-			text += "\n" + errData.Message
-		}
-		if errData.Code != "" {
-			text += "\n" + string(errData.Code)
-		}
+	// Match only against the actual error event — code and message.
+	text := errData.Message
+	if errData.Code != "" {
+		text += "\n" + string(errData.Code)
 	}
 
 	matched := false

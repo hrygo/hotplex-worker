@@ -167,6 +167,9 @@ func runGateway(configPath string, devMode bool) (err error) {
 		log.Info("gateway: session terminated", "session_id", sessionID)
 	}
 
+	// Wait for orphan process cleanup to finish before repairing sessions.
+	cleanupWG.Wait()
+
 	// Repair sessions orphaned by previous gateway crash/restart.
 	// Sessions stuck in RUNNING state have no live worker — their processes
 	// were killed by CleanupOrphans above. Transition them to TERMINATED so

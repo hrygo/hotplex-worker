@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
@@ -836,4 +837,36 @@ func TestWorker_ResetContext_Noop(t *testing.T) {
 	w := noopworker.NewWorker()
 	err := w.ResetContext(context.Background())
 	require.NoError(t, err)
+}
+
+// ─── Handler setter tests ───────────────────────────────────────────────────────
+
+func TestHandler_SetBridge(t *testing.T) {
+	h := &Handler{}
+	assert.Nil(t, h.bridge)
+
+	h.SetBridge(&Bridge{})
+	assert.NotNil(t, h.bridge)
+}
+
+func TestHandler_SetConvStore(t *testing.T) {
+	h := &Handler{}
+	assert.Nil(t, h.convStore)
+
+	h.SetConvStore(&fakeConvStoreForBridge{})
+	assert.NotNil(t, h.convStore)
+}
+
+func TestHandler_SetSkillsLocator(t *testing.T) {
+	h := &Handler{}
+	assert.Nil(t, h.skillsLocator)
+
+	h.SetSkillsLocator(&fakeSkillsLocator{})
+	assert.NotNil(t, h.skillsLocator)
+}
+
+type fakeSkillsLocator struct{}
+
+func (*fakeSkillsLocator) List(ctx context.Context, homeDir, workDir string) ([]Skill, error) {
+	return nil, nil
 }
