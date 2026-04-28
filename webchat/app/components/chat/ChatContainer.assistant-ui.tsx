@@ -34,9 +34,17 @@ function ChatInterface({
   });
   const runtime = useExternalStoreRuntime(adapter);
 
+  type AdapterExtras = {
+    hasMore?: boolean;
+    onLoadHistory?: () => Promise<{ hasMore: boolean }>;
+  };
+  const extras = adapter.extras as AdapterExtras | undefined;
+  const hasMore = extras?.hasMore ?? false;
+  const onLoadHistory = extras?.onLoadHistory;
+
   return (
     <AssistantRuntimeProvider runtime={runtime}>
-      <Thread skills={skills} />
+      <Thread skills={skills} hasMore={hasMore} onLoadHistory={onLoadHistory} />
     </AssistantRuntimeProvider>
   );
 }

@@ -239,9 +239,17 @@ function WelcomeScreen() {
   );
 }
 
-export function Thread({ skills }: { skills?: string[] }) {
+interface ThreadProps {
+  skills?: string[];
+  hasMore?: boolean;
+  onLoadHistory?: () => Promise<{ hasMore: boolean }>;
+}
+
+export function Thread({ skills, hasMore, onLoadHistory }: ThreadProps) {
   const [localText, setLocalText] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [historyHasMore, setHistoryHasMore] = useState(hasMore);
   const aui = useAui();
   const text = useAuiState((s) => s.composer.text);
   const isRunning = useAuiState((s) => s.thread.isRunning);
@@ -270,11 +278,40 @@ export function Thread({ skills }: { skills?: string[] }) {
     setMenuOpen(false);
   }, [aui]);
 
+  const handleLoadEarlier = useCallback(async () => {
+    if (!onLoadHistory || loadingHistory) return;
+    setLoadingHistory(true);
+    try {
+      const result = await onLoadHistory();
+      setHistoryHasMore(result.hasMore);
+    } finally {
+      setLoadingHistory(false);
+    }
+  }, [onLoadHistory, loadingHistory]);
+
   return (
     <ThreadPrimitive.Root className="flex flex-col h-full relative overflow-hidden bg-[var(--bg-base)]">
       <ThreadPrimitive.Viewport className="thread-viewport relative px-4 py-8">
         <div className="max-w-5xl mx-auto w-full">
           <ThreadPrimitive.Empty><WelcomeScreen /></ThreadPrimitive.Empty>
+          {historyHasMore && (
+            <div className="flex justify-center py-4 mb-4">
+              <button
+                onClick={handleLoadEarlier}
+                disabled={loadingHistory}
+                className="px-4 py-2 text-[11px] font-mono uppercase tracking-wider font-bold text-[var(--text-muted)] hover:text-[var(--text-primary)] bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-full hover:bg-[var(--bg-hover)] transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loadingHistory ? (
+                  <span className="flex items-center gap-2">
+                    <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none">
+                      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="31.4 31.4" strokeLinecap="round" />
+                    </svg>
+                    Loading...
+                  </span>
+                ) : "Load earlier messages"}
+              </button>
+            </div>
+          )}
           <ThreadPrimitive.Messages>
             {({ message }) =>
               message.role === "user" ? <UserMessage message={message} /> : <AssistantMessage message={message} />

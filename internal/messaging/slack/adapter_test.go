@@ -213,7 +213,7 @@ func TestAepEventToStatus_ToolResult(t *testing.T) {
 	}
 	status, text := aepEventToStatus(env)
 	require.Equal(t, StatusToolResult, status)
-	require.Equal(t, "Tool completed", text)
+	require.Equal(t, "Completed", text)
 }
 
 func TestAepEventToStatus_MessageDelta(t *testing.T) {
@@ -244,9 +244,9 @@ func TestExtractToolCallStatus(t *testing.T) {
 			"search_web",
 		},
 		{
-			"typed name with input",
+			"read file",
 			&events.Envelope{Event: events.Event{Type: events.ToolCall, Data: &events.ToolCallData{Name: "Read", Input: map[string]any{"file_path": "/src/main.go"}}}},
-			"Read(file_path=/src/main.go)",
+			"Reading /src/main.go",
 		},
 		{
 			"map data",
@@ -259,14 +259,44 @@ func TestExtractToolCallStatus(t *testing.T) {
 			"tool",
 		},
 		{
-			"long value truncated",
+			"bash command",
 			&events.Envelope{Event: events.Event{Type: events.ToolCall, Data: &events.ToolCallData{Name: "Bash", Input: map[string]any{"command": "go test -race -count=1 -timeout 15m ./internal/..."}}}},
-			"Bash(command=go test -race -co...)",
+			"Running go test -race -count=1 -timeout 15m ./i...",
 		},
 		{
-			"multiple params",
+			"grep pattern",
 			&events.Envelope{Event: events.Event{Type: events.ToolCall, Data: &events.ToolCallData{Name: "Grep", Input: map[string]any{"pattern": "aepEventToStatus", "glob": "*.go"}}}},
-			"Grep(glob=*.go, pattern=aepEventToStatus)",
+			"Searching \"aepEventToStatus\"",
+		},
+		{
+			"edit file",
+			&events.Envelope{Event: events.Event{Type: events.ToolCall, Data: &events.ToolCallData{Name: "Edit", Input: map[string]any{"file_path": "internal/gateway/handler.go", "old_string": "foo", "new_string": "bar"}}}},
+			"Editing internal/gateway/handler.go",
+		},
+		{
+			"glob pattern",
+			&events.Envelope{Event: events.Event{Type: events.ToolCall, Data: &events.ToolCallData{Name: "Glob", Input: map[string]any{"pattern": "**/*.go"}}}},
+			"Finding **/*.go",
+		},
+		{
+			"agent delegation",
+			&events.Envelope{Event: events.Event{Type: events.ToolCall, Data: &events.ToolCallData{Name: "Agent", Input: map[string]any{"prompt": "research something"}}}},
+			"Delegating task...",
+		},
+		{
+			"web search",
+			&events.Envelope{Event: events.Event{Type: events.ToolCall, Data: &events.ToolCallData{Name: "WebSearch", Input: map[string]any{"query": "slack API docs"}}}},
+			"Searching: slack API docs",
+		},
+		{
+			"unknown tool with file_path",
+			&events.Envelope{Event: events.Event{Type: events.ToolCall, Data: &events.ToolCallData{Name: "CustomTool", Input: map[string]any{"file_path": "/app/config.yaml"}}}},
+			"CustomTool /app/config.yaml",
+		},
+		{
+			"unknown tool generic params",
+			&events.Envelope{Event: events.Event{Type: events.ToolCall, Data: &events.ToolCallData{Name: "MyTool", Input: map[string]any{"foo": "bar", "baz": "qux"}}}},
+			"MyTool(baz=qux, foo=bar)",
 		},
 	}
 
@@ -289,11 +319,11 @@ func TestExtractToolResultStatus(t *testing.T) {
 		env  *events.Envelope
 		want string
 	}{
-		{"nil data", &events.Envelope{Event: events.Event{Type: events.ToolResult}}, "Tool completed"},
+		{"nil data", &events.Envelope{Event: events.Event{Type: events.ToolResult}}, "Completed"},
 		{"error", &events.Envelope{Event: events.Event{Type: events.ToolResult, Data: &events.ToolResultData{Error: "file not found"}}}, "Error: file not found"},
-		{"output string", &events.Envelope{Event: events.Event{Type: events.ToolResult, Data: &events.ToolResultData{Output: "ok"}}}, "ok"},
+		{"success with output", &events.Envelope{Event: events.Event{Type: events.ToolResult, Data: &events.ToolResultData{Output: "ok"}}}, "Completed"},
 		{"map error", &events.Envelope{Event: events.Event{Type: events.ToolResult, Data: map[string]any{"error": "timeout"}}}, "Error: timeout"},
-		{"map output", &events.Envelope{Event: events.Event{Type: events.ToolResult, Data: map[string]any{"output": 42}}}, "42"},
+		{"map no error", &events.Envelope{Event: events.Event{Type: events.ToolResult, Data: map[string]any{"output": 42}}}, "Completed"},
 	}
 
 	for _, tt := range tests {

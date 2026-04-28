@@ -2,59 +2,38 @@ package feishu
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
+	"github.com/hrygo/hotplex/internal/messaging"
 	"github.com/hrygo/hotplex/pkg/events"
 )
 
 func (c *FeishuConn) sendSkillsList(ctx context.Context, env *events.Envelope) error {
-	var d events.SkillsListData
-	switch v := env.Event.Data.(type) {
-	case events.SkillsListData:
-		d = v
-	case map[string]any:
-		raw, _ := json.Marshal(v)
-		_ = json.Unmarshal(raw, &d)
-	default:
-		return nil
+	d, err := messaging.ExtractSkillsListData(env)
+	if err != nil {
+		return err
 	}
-
 	if len(d.Skills) == 0 {
-		return c.sendSkillsText(ctx, "⚡ No skills found.")
+		return c.sendSkillsText(ctx, messaging.FormatEmptySkillsMsg(d.Filter))
 	}
 
-	// Batch: max 20 skills per message to stay within Feishu message size limits.
-	const batchSize = 20
-	for i := 0; i < len(d.Skills); i += batchSize {
-		end := i + batchSize
-		if end > len(d.Skills) {
-			end = len(d.Skills)
-		}
-		batch := d.Skills[i:end]
+	groups := messaging.GroupSkillsBySource(d.Skills)
+	pages := messaging.PaginateSkillGroups(groups, messaging.SkillsPerPage)
+
+	for i, page := range pages {
+		header := messaging.SkillsHeader(d, i+1, len(pages))
 
 		var sb strings.Builder
-		if i == 0 {
-			fmt.Fprintf(&sb, "⚡ Skills (%d)", d.Total)
-		}
-		partNum := i/batchSize + 1
-		totalParts := (len(d.Skills) + batchSize - 1) / batchSize
-		if totalParts > 1 {
-			fmt.Fprintf(&sb, " — Part %d/%d", partNum, totalParts)
-		}
+		sb.WriteString(header)
 		sb.WriteByte('\n')
 
-		for _, s := range batch {
-			desc := s.Description
-			if len([]rune(desc)) > 120 {
-				desc = string([]rune(desc)[:117]) + "..."
+		for _, g := range page {
+			for _, s := range g.Entries {
+				desc := messaging.TruncateDesc(s.Description)
+				emoji := messaging.SourceEmoji(s.Source)
+				fmt.Fprintf(&sb, "%s *%s* — %s\n", emoji, s.Name, desc)
 			}
-			fmt.Fprintf(&sb, "*%s*\n%s\n\n", s.Name, desc)
-		}
-
-		if end < len(d.Skills) {
-			sb.WriteString("…")
 		}
 
 		if err := c.sendSkillsText(ctx, sb.String()); err != nil {
