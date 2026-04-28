@@ -152,7 +152,7 @@ func printStartupBanner(out *os.File, info BuildInfo, s RuntimeStatus, configPat
 			if a.Started {
 				parts = append(parts, fmt.Sprintf("%s %s", a.Name, green("✓")))
 			} else {
-				parts = append(parts, fmt.Sprintf("%s %s", a.Name, red("✗")))
+				parts = append(parts, red(fmt.Sprintf("%s ✗", a.Name)))
 			}
 		}
 		lines = append(lines, pad("Adapters", strings.Join(parts, "  ")))

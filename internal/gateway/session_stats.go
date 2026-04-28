@@ -141,7 +141,7 @@ func (a *sessionAccumulator) snapshot() map[string]any {
 
 // extractSessionStats extracts the _session map from a Done envelope.
 func extractSessionStats(env *events.Envelope) map[string]any {
-	dd, ok := env.Event.Data.(events.DoneData)
+	dd, ok := asDoneData(env.Event.Data)
 	if !ok {
 		return nil
 	}
@@ -157,6 +157,39 @@ func extractSessionStats(env *events.Envelope) map[string]any {
 		return nil
 	}
 	return m
+}
+
+// asDoneData extracts DoneData from Event.Data, handling both the original typed
+// struct and the map[string]any produced by events.Clone JSON round-tripping.
+// Required because Clone uses json.Unmarshal which loses concrete struct types.
+func asDoneData(data any) (events.DoneData, bool) {
+	switch v := data.(type) {
+	case events.DoneData:
+		return v, true
+	case map[string]any:
+		var dd events.DoneData
+		raw, _ := json.Marshal(v)
+		_ = json.Unmarshal(raw, &dd)
+		return dd, true
+	default:
+		return events.DoneData{}, false
+	}
+}
+
+// asToolCallData extracts ToolCallData from Event.Data, handling both the original
+// typed struct and the map[string]any produced by events.Clone JSON round-tripping.
+func asToolCallData(data any) (events.ToolCallData, bool) {
+	switch v := data.(type) {
+	case events.ToolCallData:
+		return v, true
+	case map[string]any:
+		var tc events.ToolCallData
+		raw, _ := json.Marshal(v)
+		_ = json.Unmarshal(raw, &tc)
+		return tc, true
+	default:
+		return events.ToolCallData{}, false
+	}
 }
 
 // toInt64 converts any numeric value to int64.

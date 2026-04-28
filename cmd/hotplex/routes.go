@@ -173,6 +173,10 @@ func (a *sessionManagerAdapter) DeletePhysical(ctx context.Context, id string) e
 	return a.sm.DeletePhysical(ctx, id)
 }
 
+func (a *sessionManagerAdapter) ResetExpiry(ctx context.Context, id string) error {
+	return a.sm.ResetExpiry(ctx, id)
+}
+
 type hubAdapter struct {
 	hub *gateway.Hub
 }

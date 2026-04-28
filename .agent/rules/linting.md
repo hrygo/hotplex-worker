@@ -1,3 +1,8 @@
+---
+paths:
+  - "**/*.go"
+---
+
 # golangci-lint 配置规范
 
 > 基于 v1.64.8 + 最佳实践，配置文件 `.golangci.yml`
@@ -20,6 +25,7 @@
 | unparam | 风格 | 未使用的参数/返回值 |
 | errorlint | 正确性 | 错误包装/比较最佳实践 |
 | gocritic | 诊断+风格 | 代码改进建议 |
+| lll | 格式 | 行长限制（默认 120 字符） |
 
 ## 已禁用的检查
 
@@ -49,6 +55,20 @@
 // Best-effort 清理操作：用 _ = 显式忽略
 _ = resp.Body.Close()
 _ = rows.Close()             // defer 中用：defer func() { _ = rows.Close() }()
+
+// HTTP 响应体（必须在 defer 中关闭）
+resp, err := httpClient.Do(req)
+if err != nil {
+    return nil, err
+}
+defer func() { _ = resp.Body.Close() }()
+
+// exec.Command：验证命令白名单后，通常忽略 Start 错误
+cmd := exec.CommandContext(ctx, binary, args...)
+if err := cmd.Start(); err != nil {
+    return fmt.Errorf("start worker: %w", err)
+}
+go func() { _ = cmd.Wait() }() // Wait 的错误不关键（由 exitCode 捕获）
 
 // 真正需要处理的错误：添加错误处理
 if err := json.Unmarshal(data, &v); err != nil {

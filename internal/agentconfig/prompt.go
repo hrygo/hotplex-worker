@@ -1,9 +1,21 @@
 package agentconfig
 
 import (
+	_ "embed"
 	"fmt"
 	"strings"
 )
+
+//go:embed META-COGNITION.md
+var embeddedMetacognition string
+
+var hotplexMetacognition string // computed once at init
+
+func init() {
+	if embeddedMetacognition != "" {
+		hotplexMetacognition = "<hotplex>\n" + embeddedMetacognition + "\n</hotplex>"
+	}
+}
 
 // BuildSystemPrompt assembles the full agent context (B+C channels) into a single
 // system prompt. Used by both Claude Code (--append-system-prompt) and OpenCode
@@ -38,13 +50,17 @@ func BuildSystemPrompt(configs *AgentConfigs) string {
 			))
 		}
 		groups = append(groups, "<directives>\nCore behavioral parameters — follow unless overridden by explicit user instructions.\n\n"+
-			strings.Join(b, "\n\n")+
+			joinLines(b)+
 			"\n\n</directives>")
 	}
 
-	// C-channel: reference context.
-	if configs.User != "" || configs.Memory != "" {
+	// C-channel: reference context. HotPlex metacognition is first, followed by user-defined content.
+	hotplex := buildHotplexMetacognition()
+	if configs.User != "" || configs.Memory != "" || hotplex != "" {
 		var c []string
+		if hotplex != "" {
+			c = append(c, hotplex)
+		}
 		if configs.User != "" {
 			c = append(c, fmt.Sprintf(
 				"<user>\nTailor responses to this user's preferences and expertise.\n\n%s\n</user>",
@@ -58,7 +74,7 @@ func BuildSystemPrompt(configs *AgentConfigs) string {
 			))
 		}
 		groups = append(groups, "<context>\nReference material to inform your responses.\n\n"+
-			strings.Join(c, "\n\n")+
+			joinLines(c)+
 			"\n\n</context>")
 	}
 
@@ -67,6 +83,30 @@ func BuildSystemPrompt(configs *AgentConfigs) string {
 	}
 
 	return "<agent-configuration>\n\n" +
-		strings.Join(groups, "\n\n") +
+		joinLines(groups) +
 		"\n\n</agent-configuration>"
 }
+
+func joinLines(parts []string) string {
+	if len(parts) == 0 {
+		return ""
+	}
+	if len(parts) == 1 {
+		return parts[0]
+	}
+	b := new(strings.Builder)
+	n := (len(parts) - 1) * 2 // "\n\n" separators
+	for _, p := range parts {
+		n += len(p)
+	}
+	b.Grow(n)
+	for i, p := range parts {
+		if i > 0 {
+			b.WriteString("\n\n")
+		}
+		b.WriteString(p)
+	}
+	return b.String()
+}
+
+func buildHotplexMetacognition() string { return hotplexMetacognition }

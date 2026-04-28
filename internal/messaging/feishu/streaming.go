@@ -29,6 +29,14 @@ const (
 	PhaseCreationFailed
 )
 
+// cardRateLimitCodes: Feishu CardKit rate limit error codes.
+// See: https://open.feishu.cn/document/server-docs/im-v1/message-content-description/create_card_api
+var cardRateLimitCodes = []string{"230020"}
+
+// cardTableLimitCodes: Feishu CardKit table/markdown limit error codes.
+// 230099 = table element limit exceeded, 11310 = card content limit.
+var cardTableLimitCodes = []string{"230099", "11310"}
+
 var phaseTransitions = map[CardPhase]map[CardPhase]bool{
 	PhaseIdle:           {PhaseCreating: true},
 	PhaseCreating:       {PhaseStreaming: true, PhaseCreationFailed: true, PhaseTerminated: true, PhaseCompleted: true},
@@ -246,27 +254,29 @@ func (c *StreamingCardController) Flush(ctx context.Context) error {
 
 	if c.cardKitOK && c.limiter.AllowCardKit(c.cardID) {
 		if err := c.flushCardKitWithRetry(ctx, content, seq); err != nil {
-			if isCardRateLimitError(err) {
-				c.log.Debug("feishu: cardkit rate limited, skipping frame")
-				c.mu.Lock()
-				c.failedFlushes++
-				c.mu.Unlock()
-				return nil
-			}
-			if isCardTableLimitError(err) {
-				c.log.Warn("feishu: cardkit table limit exceeded, disabling streaming")
-				c.cardKitOK = false
-				c.mu.Lock()
-				c.failedFlushes++
-				c.mu.Unlock()
-				return nil
-			}
-			c.log.Warn("feishu: cardkit flush failed, falling back to IM patch",
-				"err", err)
-			c.cardKitOK = false
+			// failedFlushes tracks all CardKit failures including rate-limit silent drops.
+			// It is used for integrity checks and logging; rate-limit drops do NOT
+			// count toward bytesFlushed, so content may appear incomplete to users.
 			c.mu.Lock()
 			c.failedFlushes++
-			c.mu.Unlock()
+			switch {
+			case isCardRateLimitError(err):
+				c.log.Debug("feishu: cardkit rate limited, skipping frame",
+					"failed_flushes", c.failedFlushes)
+				c.mu.Unlock()
+				return nil
+			case isCardTableLimitError(err):
+				c.log.Warn("feishu: cardkit table limit exceeded, disabling streaming",
+					"failed_flushes", c.failedFlushes)
+				c.cardKitOK = false
+				c.mu.Unlock()
+				return nil
+			default:
+				c.log.Warn("feishu: cardkit flush failed, falling back to IM patch",
+					"err", err, "failed_flushes", c.failedFlushes)
+				c.cardKitOK = false
+				c.mu.Unlock()
+			}
 		} else {
 			c.mu.Lock()
 			c.lastFlushed = content
@@ -349,11 +359,18 @@ func (c *StreamingCardController) Close(ctx context.Context) error {
 		seq := int(c.sequence.Add(1))
 
 		if err := c.flushCardKit(ctx, content, seq); err != nil {
-			c.log.Warn("feishu: final cardkit flush failed", "err", err)
+			c.log.Warn("feishu: final cardkit flush failed, attempting IM patch fallback",
+				"err", err)
+			// Only attempt IM patch fallback if we have a msgID.
+			// This avoids a double-write when both CardKit and IM patch are attempted.
+			if c.msgID != "" {
+				_ = c.flushIMPatchWithConfig(ctx, content)
+			}
 		}
-	} else if !c.cardKitOK && c.msgID != "" {
-		// CardKit degraded: use IM Patch with final config (streaming_mode=false + summary)
-		// to ensure the card renders correctly without stale streaming state.
+	} else if c.msgID != "" {
+		// CardKit never available or permanently degraded: use IM Patch with final
+		// config (streaming_mode=false + summary) to ensure the card renders
+		// correctly without stale streaming state.
 		c.log.Debug("feishu: cardkit degraded, using IM patch with final config")
 		_ = c.flushIMPatchWithConfig(ctx, content)
 	}
@@ -607,20 +624,28 @@ func (c *StreamingCardController) flushCardKit(ctx context.Context, content stri
 	return nil
 }
 
-// flushCardKitWithRetry attempts to flush to CardKit with a single retry on transient failure.
+// flushCardKitWithRetry attempts to flush to CardKit with exponential backoff
+// (50ms → 100ms → 200ms) for transient network issues.
 func (c *StreamingCardController) flushCardKitWithRetry(ctx context.Context, content string, seq int) error {
-	err := c.flushCardKit(ctx, content, seq)
-	if err == nil {
-		return nil
+	var lastErr error
+	for attempt := range 3 {
+		if err := c.flushCardKit(ctx, content, seq); err == nil {
+			return nil
+		} else {
+			lastErr = err
+		}
+		if attempt < 2 {
+			backoff := time.Duration(50<<attempt) * time.Millisecond // 50, 100, 200ms
+			c.log.Debug("feishu: cardkit flush failed, retrying",
+				"attempt", attempt+1, "backoff", backoff, "err", lastErr)
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(backoff):
+			}
+		}
 	}
-	// Single retry with 50ms backoff for transient network issues.
-	c.log.Debug("feishu: cardkit flush failed, retrying", "err", err)
-	select {
-	case <-time.After(50 * time.Millisecond):
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-	return c.flushCardKit(ctx, content, seq)
+	return lastErr
 }
 
 func (c *StreamingCardController) flushIMPatch(ctx context.Context, content string) error {
@@ -763,12 +788,24 @@ func isCardRateLimitError(err error) bool {
 	if err == nil {
 		return false
 	}
-	return strings.Contains(err.Error(), "230020")
+	msg := err.Error()
+	for _, code := range cardRateLimitCodes {
+		if strings.Contains(msg, code) {
+			return true
+		}
+	}
+	return false
 }
 
 func isCardTableLimitError(err error) bool {
 	if err == nil {
 		return false
 	}
-	return strings.Contains(err.Error(), "230099") || strings.Contains(err.Error(), "11310")
+	msg := err.Error()
+	for _, code := range cardTableLimitCodes {
+		if strings.Contains(msg, code) {
+			return true
+		}
+	}
+	return false
 }

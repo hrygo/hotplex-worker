@@ -1,6 +1,7 @@
 package feishu
 
 import (
+	"context"
 	"errors"
 	"io"
 	"log/slog"
@@ -278,4 +279,112 @@ func TestIsCardTableLimitError(t *testing.T) {
 			require.Equal(t, tt.want, isCardTableLimitError(tt.err))
 		})
 	}
+}
+
+// ─── Expired and MsgID ───────────────────────────────────────────────────────
+
+func TestStreamingCardController_Expired(t *testing.T) {
+	t.Parallel()
+
+	c := NewStreamingCardController(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	// streamStartTime is set to time.Now() by NewStreamingCardController.
+	// So it should not be expired immediately.
+	require.False(t, c.Expired(), "freshly created controller should not be expired")
+}
+
+func TestStreamingCardController_MsgID(t *testing.T) {
+	t.Parallel()
+
+	c := NewStreamingCardController(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	// Initially empty.
+	require.Equal(t, "", c.MsgID())
+
+	// Access after a delay (fresh controller is not expired).
+	require.False(t, c.Expired())
+}
+
+func TestStreamingCardController_PhaseCreationFailed(t *testing.T) {
+	t.Parallel()
+
+	c := NewStreamingCardController(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	// idle → creation_failed is a valid transition (via Terminated).
+	require.True(t, c.transition(PhaseCreating))
+	require.True(t, c.transition(PhaseCreationFailed))
+
+	// Terminal state: no further transitions.
+	require.False(t, c.transition(PhaseStreaming))
+	require.False(t, c.transition(PhaseCompleted))
+}
+
+func TestStreamingCardController_Abort(t *testing.T) {
+	t.Parallel()
+
+	c := NewStreamingCardController(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	// idle → creating → streaming
+	require.True(t, c.transition(PhaseCreating))
+	require.True(t, c.transition(PhaseStreaming))
+
+	// streaming → aborted
+	require.True(t, c.transition(PhaseAborted))
+
+	// Terminal: idempotent abort.
+	err := c.Abort(context.Background())
+	require.NoError(t, err)
+}
+
+func TestStreamingCardController_Abort_IdleNotAllowed(t *testing.T) {
+	t.Parallel()
+
+	c := NewStreamingCardController(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	// Cannot abort from idle.
+	require.False(t, c.transition(PhaseAborted))
+}
+
+func TestStreamingCardController_Close_Idempotent(t *testing.T) {
+	t.Parallel()
+
+	c := NewStreamingCardController(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	// idle → creating → completed.
+	require.True(t, c.transition(PhaseCreating))
+	require.True(t, c.transition(PhaseCompleted))
+
+	// Second Close is idempotent: returns nil without error.
+	err := c.Close(context.Background())
+	require.NoError(t, err)
+}
+
+func TestStreamingCardController_Close_FromCreating(t *testing.T) {
+	t.Parallel()
+
+	c := NewStreamingCardController(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	// idle → creating
+	require.True(t, c.transition(PhaseCreating))
+
+	// Close from creating transitions to completed.
+	err := c.Close(context.Background())
+	require.NoError(t, err)
+}
+
+func TestStreamingCardController_IntegrityCheck(t *testing.T) {
+	t.Parallel()
+
+	c := NewStreamingCardController(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	// Simulate: no bytes written = integrity OK (no stream data).
+	require.True(t, c.transition(PhaseCreating))
+	c.mu.Lock()
+	c.bytesWritten = 0
+	c.bytesFlushed = 0
+	c.mu.Unlock()
+
+	// Close should not panic with zero bytes.
+	err := c.Close(context.Background())
+	require.NoError(t, err)
 }

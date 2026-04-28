@@ -60,3 +60,50 @@ defer func() {
     }
 }()
 ```
+
+## OCS SingletonProcessManager 特有模式
+
+OCS Worker 共享一个全局 `opencode serve` 进程，Worker 是轻量 adapter：
+
+```go
+// singleton.go — 全局单例（有 atomic.Pointer 保护）
+var singleton atomic.Pointer[SingletonProcessManager]
+
+func GetSingleton() *SingletonProcessManager {
+    p := singleton.Load()
+    if p != nil {
+        return p
+    }
+    sm := newSingletonProcessManager()
+    if !singleton.CompareAndSwap(nil, &sm) {
+        return singleton.Load()
+    }
+    return &sm
+}
+```
+
+**进程生命周期**：
+- 懒启动：第一个 `Acquire` 时才 fork `opencode serve`
+- 引用计数：`Acquire` +1，`Release` -1
+- 空闲排空：`idle_drain_period`（默认 30m）无引用 → 杀进程
+- 崩溃检测：`monitorProcess` goroutine 检测退出，重置 singleton → 新进程
+
+**Worker vs Manager 职责划分**：
+| 操作 | Worker | SingletonProcessManager |
+|------|--------|------------------------|
+| fork/kill 进程 | ❌ | ✅ |
+| SSE 连接管理 | ✅ | ❌ |
+| 引用计数 | ❌ | ✅ |
+| 崩溃检测 | ❌ | ✅ |
+
+**crashCh 隔离**：每次 Acquire→Release 生命周期新建 `crashCh`，防止旧 Worker 收到过期崩溃信号。
+
+**Nil pointer 防护**：`Kill` 前必须检查 `proc != nil`：
+```go
+func (sm *SingletonProcessManager) killLocked() {
+    if sm.proc == nil {  // nil check required
+        return
+    }
+    sm.proc.Kill()
+}
+```

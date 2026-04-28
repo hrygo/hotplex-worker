@@ -15,6 +15,7 @@ import (
 	"github.com/slack-go/slack/slackevents"
 	"github.com/stretchr/testify/require"
 
+	"github.com/hrygo/hotplex/internal/messaging"
 	"github.com/hrygo/hotplex/pkg/events"
 )
 
@@ -1903,4 +1904,65 @@ func TestShortenPaths(t *testing.T) {
 	workDir = homeDir + "/projects/myapp"
 	require.Equal(t, "$WK/main.go", shortenPaths(homeDir+"/projects/myapp/main.go"))
 	require.Equal(t, "~/other/file.go", shortenPaths(homeDir+"/other/file.go"))
+}
+
+// ---------------------------------------------------------------------------
+// Adapter setter methods
+// ---------------------------------------------------------------------------
+
+func TestAdapter_SetGate(t *testing.T) {
+	t.Parallel()
+
+	a := &Adapter{}
+	g := &Gate{}
+	a.SetGate(g)
+	require.Same(t, g, a.gate)
+}
+
+func TestAdapter_SetAssistantEnabled(t *testing.T) {
+	t.Parallel()
+
+	a := &Adapter{}
+	enabled := false
+	a.SetAssistantEnabled(&enabled)
+	require.Same(t, &enabled, a.assistantEnabled)
+
+	enabled2 := true
+	a.SetAssistantEnabled(&enabled2)
+	require.Same(t, &enabled2, a.assistantEnabled)
+}
+
+func TestAdapter_SetReconnectDelays(t *testing.T) {
+	t.Parallel()
+
+	a := &Adapter{}
+	a.SetReconnectDelays(5*time.Second, 60*time.Second)
+	require.Equal(t, 5*time.Second, a.backoffBaseDelay)
+	require.Equal(t, 60*time.Second, a.backoffMaxDelay)
+
+	a.SetReconnectDelays(0, 0)
+	require.Equal(t, time.Duration(0), a.backoffBaseDelay)
+	require.Equal(t, time.Duration(0), a.backoffMaxDelay)
+}
+
+func TestAdapter_SetTranscriber(t *testing.T) {
+	t.Parallel()
+
+	a := &Adapter{}
+	fakeTS := &fakeTranscriberForTest{}
+	a.SetTranscriber(fakeTS)
+	require.Same(t, fakeTS, a.transcriber)
+}
+
+type fakeTranscriberForTest struct{}
+
+func (*fakeTranscriberForTest) Transcribe(ctx context.Context, audioData []byte) (string, error) {
+	return "", nil
+}
+func (*fakeTranscriberForTest) RequiresDisk() bool { return false }
+
+func TestAdapter_Platform(t *testing.T) {
+	t.Parallel()
+	a := &Adapter{}
+	require.Equal(t, messaging.PlatformSlack, a.Platform())
 }

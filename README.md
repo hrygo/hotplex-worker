@@ -24,23 +24,14 @@
 
 ---
 
-## 🧭 Table of Contents
-
-- [Highlights](#-highlights)
-- [Quick Start](#-quick-start)
-- [Architecture](#-architecture)
-- [SDKs & Libraries](#-sdks--libraries)
-- [Configuration](#-configuration)
-- [Documentation](#-documentation)
-- [Contributing](#-contributing)
-- [License](#-license)
 
 ## ✨ Highlights
 
 - 🌐 **Unified WebSocket interface** — 23+ AEP v1 event types for streaming, permissions, and MCP Elicitation
 - 🔌 **Multi-channel bridge** — bidirectional support for Slack (Socket Mode) and Feishu (WebSocket)
 - 🤖 **Agent config injection** — personality, rules, and memory auto-injected via B/C dual-channel XML system
-- 🛡️ **Production-hardened** — 5-state session lifecycle, JWT ES256 auth, SSRF protection, crash recovery
+- 🧠 **Built-in Meta-Cognition** — 5-state machine, intelligent LLM retry, and 3-layer self-healing for environment awareness
+- 🛡️ **Production-hardened** — JWT ES256 auth, SSRF protection, orphan process cleanup, and physical isolation
 - 📊 **Full observability** — Prometheus metrics, OpenTelemetry tracing, structured JSON logging
 - 🛠️ **Self-contained CLI** — `onboard`, `doctor`, `security`, `status` in a single binary
 - 🌍 **Multi-language SDKs** — Go, TypeScript, Python, Java clients ready to use
@@ -78,11 +69,11 @@ hotplex onboard --non-interactive --enable-slack --enable-feishu
 make dev
 ```
 
-| Service | Address |
-|:---|:---|
+| Service             | Address                  |
+| :------------------ | :----------------------- |
 | Gateway (WebSocket) | `ws://localhost:8888/ws` |
-| Admin API | `http://localhost:9999` |
-| Web Chat UI | `http://localhost:3000` |
+| Admin API           | `http://localhost:9999`  |
+| Web Chat UI         | `http://localhost:3000`  |
 
 ### Connect with Go SDK
 
@@ -118,9 +109,7 @@ func main() {
 
 ## 🧱 Architecture
 
-HotPlex sits between frontend clients and backend AI coding agents, abstracting protocol differences into a unified AEP v1 WebSocket layer.
-
-![Architecture](assets/architecture.svg)
+HotPlex sits between frontend clients and backend AI coding agents, featuring a built-in meta-cognition core that abstracts protocol differences into a unified AEP v1 WebSocket layer.
 
 ```
 ┌──────────┐   ┌──────────┐   ┌──────────┐
@@ -143,36 +132,36 @@ HotPlex sits between frontend clients and backend AI coding agents, abstracting 
 
 ## 🔗 SDKs & Libraries
 
-| Language | Path | Features |
-|:---:|:---|:---|
-| **Go** | [`client/`](client/) | Full-featured, channel-based events, production-grade |
-| **TypeScript** | [`examples/typescript-client/`](examples/typescript-client/) | Streaming, multi-turn chat, React compatible |
-| **Python** | [`examples/python-client/`](examples/python-client/) | Asyncio, session resume, CLI ready |
-| **Java** | [`examples/java-client/`](examples/java-client/) | Enterprise AEP v1 implementation |
+|    Language    | Path                                                         | Features                                              |
+| :------------: | :----------------------------------------------------------- | :---------------------------------------------------- |
+|     **Go**     | [`client/`](client/)                                         | Full-featured, channel-based events, production-grade |
+| **TypeScript** | [`examples/typescript-client/`](examples/typescript-client/) | Streaming, multi-turn chat, React compatible          |
+|   **Python**   | [`examples/python-client/`](examples/python-client/)         | Asyncio, session resume, CLI ready                    |
+|    **Java**    | [`examples/java-client/`](examples/java-client/)             | Enterprise AEP v1 implementation                      |
 
 ## 🛠️ Configuration
 
-| Key | Default | Description |
-|:---|:---|:---|
-| `agent_config.enabled` | `true` | Enable agent personality/context injection |
-| `agent_config.config_dir` | `~/.hotplex/agent-configs/` | Config files directory (SOUL.md, AGENTS.md, etc.) |
-| `gateway.addr` | `:8888` | WebSocket gateway address |
-| `admin.addr` | `:9999` | Admin API address |
-| `db.path` | `~/.hotplex/data/hotplex.db` | SQLite database path |
-| `log.level` | `info` | Log level: debug, info, warn, error |
+| Key                       | Default                      | Description                                       |
+| :------------------------ | :--------------------------- | :------------------------------------------------ |
+| `agent_config.enabled`    | `true`                       | Enable agent personality/context injection        |
+| `agent_config.config_dir` | `~/.hotplex/agent-configs/`  | Config files directory (SOUL.md, AGENTS.md, etc.) |
+| `gateway.addr`            | `:8888`                      | WebSocket gateway address                         |
+| `admin.addr`              | `:9999`                      | Admin API address                                 |
+| `db.path`                 | `~/.hotplex/data/hotplex.db` | SQLite database path                              |
+| `log.level`               | `info`                       | Log level: debug, info, warn, error               |
 
 > [!TIP]
 > See [Config Reference](docs/management/Config-Reference.md) for the full list of environment variables and YAML settings.
 
 ## 📖 Documentation
 
-| Area | Guide |
-|:---|:---|
-| **Getting Started** | [Quick Start](docs/User-Manual.md) · [Reference Manual](docs/Reference-Manual.md) · [Whitepaper](docs/Product-Whitepaper.md) |
-| **Protocol** | [AEP v1 Specification](docs/architecture/AEP-v1-Protocol.md) |
-| **Architecture** | [Gateway Design](docs/architecture/Worker-Gateway-Design.md) · [Agent Config Design](docs/architecture/Agent-Config-Design.md) |
-| **Security** | [Authentication](docs/security/Security-Authentication.md) · [SSRF Protection](docs/security/SSRF-Protection.md) |
-| **Operations** | [Admin API](docs/management/Admin-API-Design.md) · [Observability](docs/management/Observability-Design.md) · [Testing](docs/testing/Testing-Strategy.md) |
+| Area                | Guide                                                                                                                                                     |
+| :------------------ | :-------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Getting Started** | [Quick Start](docs/User-Manual.md) · [Reference Manual](docs/Reference-Manual.md) · [Whitepaper](docs/Product-Whitepaper.md)                              |
+| **Protocol**        | [AEP v1 Specification](docs/architecture/AEP-v1-Protocol.md)                                                                                              |
+| **Architecture**    | [Gateway Design](docs/architecture/Worker-Gateway-Design.md) · [Agent Config Design](docs/architecture/Agent-Config-Design.md) · [Meta-Cognition Design](internal/agentconfig/META-COGNITION.md) |
+| **Security**        | [Authentication](docs/security/Security-Authentication.md) · [SSRF Protection](docs/security/SSRF-Protection.md)                                          |
+| **Operations**      | [Admin API](docs/management/Admin-API-Design.md) · [Observability](docs/management/Observability-Design.md) · [Testing](docs/testing/Testing-Strategy.md) |
 
 ## 👥 Contributing
 

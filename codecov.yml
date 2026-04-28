@@ -6,52 +6,78 @@ coverage:
   round: down
   range: "40...100"
 
+  # 容忍 PR 阶段的小幅波动，主干阶段严格执行
+  # PR: 允许覆盖率降低 1~2%（测试跳过、平台差异等合理波动）
+  # Main: 覆盖率不允许降低，threshold: 0%
+  coverage_changes:
+    # PR（非 main）：允许小幅度回退（threshold > 0）
+    if_not_branch_is: main
+    threshold: 1.5%  # PR 阶段容忍 ±1.5%
+    # Main：不允许覆盖率降低
+    if_branch_is: main
+    informational: false
+
   status:
     project:
-      # Overall project floor (informational, CI uses per-package gates)
       default:
+        # 整体覆盖率门禁
+        # informational=false 时，threshold 控制允许的降低幅度
+        # PR: threshold=1.5% 允许小降；main: informational=true 由 codecov bot 兜底
         target: 50%
-        threshold: 5%
+        threshold: 1.5%
+        informational: false
       # 1. Security core - highest standard
       security:
         target: 85%
+        threshold: 1%
         paths:
           - "internal/security/"
       # 2. Core engine (Gateway)
       engine:
         target: 75%
+        threshold: 1.5%
         paths:
           - "internal/gateway/"
       # 3. Protocol (AEP codec + events)
       protocol:
         target: 85%
+        threshold: 1%
         paths:
           - "pkg/aep/"
           - "pkg/events/"
       # 4. Config
       config:
         target: 70%
+        threshold: 1.5%
         paths:
           - "internal/config/"
       # 5. Session management
       session:
         target: 70%
+        threshold: 1.5%
         paths:
           - "internal/session/"
       # 6. Worker adapters
       worker:
         target: 60%
+        threshold: 2%
         paths:
           - "internal/worker/"
       # 7. Messaging adapters (cloud APIs, subprocess STT)
       messaging:
         target: 50%
+        threshold: 2%
         paths:
           - "internal/messaging/"
 
     patch:
+      # PR 阶段：覆盖率降低 ≤1% 时仍然通过（容忍平台差异、测试跳过等）
+      # 覆盖率提升时自动通过（informational=false 不阻止提升）
       default:
-        informational: true
+        target: 60%       # patch 覆盖率目标略宽松（受影响的代码）
+        threshold: 1%     # 允许小幅回退，不阻塞合入
+        informational: false
+        only_pulls: true  # 仅对 PR 生效
 
 parsers:
   gcov:

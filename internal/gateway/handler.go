@@ -765,6 +765,9 @@ type SessionManager interface {
 	DeletePhysical(ctx context.Context, id string) error
 	List(ctx context.Context, userID, platform string, limit, offset int) ([]*session.SessionInfo, error)
 	UpdateWorkerSessionID(ctx context.Context, id, workerSessionID string) error
+	// ResetExpiry updates ExpiresAt to now + retentionPeriod for active sessions.
+	// Called after resume so a reactivated session isn't immediately killed by GC max_lifetime.
+	ResetExpiry(ctx context.Context, id string) error
 }
 
 // WorkerFactory creates worker instances. Production code uses defaultWorkerFactory.

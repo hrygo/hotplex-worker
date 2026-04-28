@@ -146,7 +146,7 @@ func (w *Worker) SetWorkerSessionID(id string) {
 func New() *Worker {
 	return &Worker{
 		BaseWorker: base.NewBaseWorker(slog.Default(), nil),
-		singleton:  defaultSingleton,
+		singleton:  singleton.Load(),
 		client:     newHTTPClient(),
 	}
 }

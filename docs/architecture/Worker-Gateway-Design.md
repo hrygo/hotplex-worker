@@ -1026,7 +1026,8 @@ forwardEvents 循环:
   → Done 事件到达:
       ├─ hub.SendToSession(done)     // Done 先发给用户
       ├─ msgStore.Append(done)       // 持久化
-      ├─ llmRetry.ShouldRetry(turnText, lastError)?
+      ├─ llmRetry.ShouldRetry(sessionID, lastError)?
+            // 仅匹配 Error event（lastError），不使用 turnText
       │    ├─ No → RecordSuccess, reset
       │    └─ Yes → autoRetry():
       │         ├─ notifyUser? → hub.SendToSession(synthetic Message)
@@ -1041,7 +1042,7 @@ forwardEvents 循环:
 
 **取消机制**：用户发新消息时，`handler.handleInput` → `bridge.CancelRetry(sessionID)` 关闭 `cancelCh`，`autoRetry` 立即退出，无需等待退避完成。
 
-**错误匹配**：在 Turn 完成时（Done 事件），将累积的 `turnText` + `ErrorData.Message/Code` 与正则模式匹配。内置模式：
+**错误匹配**：在 Turn 完成时（Done 事件），仅根据 `ErrorData.Message/Code`（即真实的 LLM error event）与正则模式匹配。**不使用** `turnText` 进行匹配——因为 Claude Code 的正常输出中可能包含 "500"、"INTERNAL_ERROR" 等字符串（如代码注释、JSON 数据），扫描输出文本会导致误判。内置模式：
 
 | 模式 | 匹配内容 |
 |------|---------|
@@ -1050,6 +1051,7 @@ forwardEvents 循环:
 | `(?i)API Error.*reject` | API 拒绝 |
 | `(?i)(network\|connection.*reset\|ECONNREFUSED\|timeout\|request failed)` | 网络错误 |
 | `(?i)(500\|502\|503\|server error)` | 服务端错误 |
+| `(?i)(INTERNAL_ERROR\|internal error)` | LLM 内部错误 |
 
 **指数退避**：`baseDelay × 2^(attempt-1) ± 25% jitter`，最大 `maxDelay`（默认 5s × 2^n，最大 120s）。
 
