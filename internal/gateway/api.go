@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -19,15 +20,22 @@ import (
 )
 
 type GatewayAPI struct {
-	auth     *security.Authenticator
-	sm       SessionManager
-	bridge   SessionStarter
-	cfgStore *config.ConfigStore
-	log      *slog.Logger
+	auth      *security.Authenticator
+	sm        SessionManager
+	bridge    SessionStarter
+	cfgStore  *config.ConfigStore
+	convStore ConversationStoreReader
+	log       *slog.Logger
 }
 
-func NewGatewayAPI(log *slog.Logger, auth *security.Authenticator, sm SessionManager, bridge SessionStarter, cfgStore *config.ConfigStore) *GatewayAPI {
-	return &GatewayAPI{auth: auth, sm: sm, bridge: bridge, cfgStore: cfgStore, log: log.With("component", "api")}
+// ConversationStoreReader defines the subset of ConversationStore needed by the history API.
+type ConversationStoreReader interface {
+	GetBySession(ctx context.Context, sessionID string, limit, offset int) ([]*session.ConversationRecord, error)
+	GetBySessionBefore(ctx context.Context, sessionID string, beforeSeq int64, limit int) ([]*session.ConversationRecord, error)
+}
+
+func NewGatewayAPI(log *slog.Logger, auth *security.Authenticator, sm SessionManager, bridge SessionStarter, cfgStore *config.ConfigStore, convStore ConversationStoreReader) *GatewayAPI {
+	return &GatewayAPI{auth: auth, sm: sm, bridge: bridge, cfgStore: cfgStore, convStore: convStore, log: log.With("component", "api")}
 }
 
 func respondJSON(w http.ResponseWriter, v any) {
@@ -239,4 +247,72 @@ func (g *GatewayAPI) SwitchWorkDir(w http.ResponseWriter, r *http.Request) {
 		"new_session_id": result.NewSessionID,
 		"work_dir":       result.WorkDir,
 	})
+}
+
+func (g *GatewayAPI) GetHistory(w http.ResponseWriter, r *http.Request) {
+	userID, _, err := g.auth.AuthenticateRequest(r)
+	if err != nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	id := r.PathValue("id")
+	if id == "" {
+		http.Error(w, "session id required", http.StatusBadRequest)
+		return
+	}
+
+	si, err := g.sm.Get(id)
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	if si.UserID != userID {
+		http.Error(w, "ownership required", http.StatusForbidden)
+		return
+	}
+
+	limit := 50
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if v, err := strconv.Atoi(l); err == nil && v > 0 && v <= 200 {
+			limit = v
+		}
+	}
+
+	beforeSeq := int64(0)
+	if bs := r.URL.Query().Get("before_seq"); bs != "" {
+		if v, err := strconv.ParseInt(bs, 10, 64); err == nil && v > 0 {
+			beforeSeq = v
+		}
+	}
+
+	if g.convStore == nil {
+		respondJSON(w, map[string]any{"records": []any{}, "has_more": false})
+		return
+	}
+
+	fetchLimit := limit + 1
+	var records []*session.ConversationRecord
+
+	if beforeSeq > 0 {
+		records, err = g.convStore.GetBySessionBefore(r.Context(), id, beforeSeq, fetchLimit)
+	} else {
+		records, err = g.convStore.GetBySession(r.Context(), id, fetchLimit, 0)
+	}
+
+	if err != nil {
+		if errors.Is(err, session.ErrConvNotFound) {
+			respondJSON(w, map[string]any{"records": []any{}, "has_more": false})
+			return
+		}
+		g.log.Error("gateway: get history failed", "session_id", id, "err", err)
+		http.Error(w, "failed to get history", http.StatusInternalServerError)
+		return
+	}
+
+	hasMore := len(records) > limit
+	if hasMore {
+		records = records[:limit]
+	}
+
+	respondJSON(w, map[string]any{"records": records, "has_more": hasMore})
 }
