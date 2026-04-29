@@ -54,7 +54,24 @@ if [ -n "$RANGE" ]; then
     fi
 fi
 
-# 1. Build validation
+# 1. Format check (gofmt + goimports)
+# Catches formatting drift from rebase conflict resolution or manual edits.
+printf "🔹 Checking formatting...\n"
+make fmt > /dev/null 2>&1
+if ! git diff --quiet; then
+    printf "${RED}❌ make fmt modified files. Stage and commit the changes, then push again.${NC}\n"
+    git diff --name-only
+    exit 1
+fi
+
+# 2. Lint (golangci-lint including gofmt, goimports, staticcheck, etc.)
+printf "🔹 Running linter...\n"
+if ! make lint; then
+    printf "${RED}❌ Lint failed! Fix the issues before pushing.${NC}\n"
+    exit 1
+fi
+
+# 3. Build validation
 printf "🔹 Verifying build...\n"
 if ! make build > /dev/null 2>&1; then
     printf "${RED}❌ Build failed! Fix compilation errors before pushing.${NC}\n"
@@ -62,7 +79,7 @@ if ! make build > /dev/null 2>&1; then
     exit 1
 fi
 
-# 2. Fast unit tests
+# 4. Fast unit tests
 printf "🔹 Running tests...\n"
 if ! make test-short > /dev/null 2>&1; then
     printf "${RED}❌ Tests failed! Push aborted.${NC}\n"
