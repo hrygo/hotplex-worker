@@ -43,7 +43,7 @@ export interface ConversationRecord {
   platform: string;
   user_id: string;
   model: string;
-  success: number | null;
+  success: boolean | null;
   source: string;
   tools_json: string | null;
   tool_call_count: number;

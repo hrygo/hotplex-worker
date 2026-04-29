@@ -192,6 +192,16 @@ function AssistantMessage({ message }: { message: any }) {
                 </div>
               );
             }
+            if (p.type === "tool-summary") {
+              const names = p.toolNames || [];
+              return (
+                <div className="flex items-center gap-1.5 px-2 py-1 mt-2 rounded-md bg-[var(--bg-elevated)] border border-[var(--border-subtle)] text-[11px] text-[var(--text-secondary)]">
+                  <span className="text-[var(--accent)]">🔧</span>
+                  <span>{names.join(', ')}</span>
+                  {p.count > 1 && <span className="text-[var(--text-tertiary)]">×{p.count}</span>}
+                </div>
+              );
+            }
             return null;
           }}
         </MessagePrimitive.Parts>
