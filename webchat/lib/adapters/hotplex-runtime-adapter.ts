@@ -12,6 +12,9 @@ import type { InitConfig, ContextUsageData } from '@/lib/ai-sdk-transport/client
 import { WorkerStdioCommand } from '@/lib/ai-sdk-transport/client/constants';
 import { wsUrl, workerType, apiKey, workDir, allowedTools } from '@/lib/config';
 import { useMetrics } from '@/lib/hooks/useMetrics';
+import { getSessionHistory, type ConversationRecord } from '@/lib/api/sessions';
+import { saveMessages, loadMessages, clearMessages, type CacheableMessage } from '@/lib/cache/message-cache';
+import { conversationTurnsToMessages } from '@/lib/utils/turn-replay';
 import type {
   Envelope,
   MessageDeltaData,
@@ -107,6 +110,76 @@ function convertToThreadMessage(message: HotPlexMessage): ThreadMessageLike {
 }
 
 // ============================================================================
+// History Conversion Helpers
+// ============================================================================
+
+// Convert runtime HotPlexMessage to CacheableMessage for LocalStorage
+function toCacheable(msg: HotPlexMessage): CacheableMessage {
+  return {
+    id: msg.id,
+    role: msg.role,
+    parts: msg.parts.filter((p): p is TextPart | ReasoningPart =>
+      p.type === 'text' || p.type === 'reasoning'
+    ).map(p => ({
+      type: p.type,
+      text: p.text,
+    })),
+    createdAt: msg.createdAt.toISOString(),
+    status: msg.status,
+  };
+}
+
+// Convert CacheableMessage from LocalStorage back to HotPlexMessage
+function fromCacheable(msg: CacheableMessage): HotPlexMessage {
+  return {
+    id: msg.id,
+    role: msg.role as 'user' | 'assistant',
+    parts: (msg.parts || []).map(p => ({
+      type: p.type as 'text',
+      text: p.text || '',
+    })),
+    createdAt: new Date(msg.createdAt),
+    status: msg.status,
+  };
+}
+
+// Convert ConversationRecord[] from API to HotPlexMessage[]
+function historyToMessages(records: ConversationRecord[]): HotPlexMessage[] {
+  const turns = records.map(r => ({
+    id: r.id,
+    session_id: r.session_id,
+    seq: r.seq,
+    role: r.role,
+    content: r.content,
+    platform: r.platform,
+    user_id: r.user_id,
+    model: r.model,
+    success: r.success,
+    source: r.source,
+    tools_json: r.tools_json,
+    tool_call_count: r.tool_call_count,
+    tokens_in: r.tokens_in,
+    tokens_out: r.tokens_out,
+    duration_ms: r.duration_ms,
+    cost_usd: r.cost_usd,
+    metadata_json: r.metadata_json,
+    created_at: r.created_at,
+  }));
+  return conversationTurnsToMessages(turns).map(m => ({
+    id: m.id,
+    role: m.role as 'user' | 'assistant',
+    parts: m.parts
+      .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
+      .map(p => ({
+        type: 'text' as const,
+        text: p.text,
+      })),
+    createdAt: m.createdAt,
+    status: 'complete' as const,
+  }));
+}
+
+// ============================================================================
 // HotPlex Runtime Adapter Hook
 // ============================================================================
 
@@ -130,7 +203,11 @@ export function useHotPlexRuntime({
   // State
   const [messages, setMessages] = useState<HotPlexMessage[]>([]);
   const [isRunning, setIsRunning] = useState(false);
+  const [historyHasMore, setHistoryHasMore] = useState(true);
   const clientRef = useRef<BrowserHotPlexClient | null>(null);
+  const historyLoadingRef = useRef(false);
+  const sessionIdRef = useRef(sessionId);
+  sessionIdRef.current = sessionId;
 
   // Welcome suggestions — shown when thread is empty (stable reference)
   const suggestions: readonly ThreadSuggestion[] = useMemo(() => [
@@ -158,6 +235,50 @@ export function useHotPlexRuntime({
   useEffect(() => {
     onMetricsChange?.(sessionMetrics);
   }, [sessionMetrics, onMetricsChange]);
+
+  // Persist messages to LocalStorage on change
+  useEffect(() => {
+    if (sessionId && messages.length > 0) {
+      saveMessages(sessionId, messages.filter(m => m.status !== 'streaming').map(toCacheable));
+    }
+  }, [sessionId, messages]);
+
+  // Load history on session switch
+  useEffect(() => {
+    if (!sessionId) return;
+    sessionIdRef.current = sessionId;
+    setHistoryHasMore(true);
+
+    // L2: Load from LocalStorage first for instant restore
+    const cached = loadMessages(sessionId);
+    if (cached && cached.length > 0) {
+      setMessages(cached.map(fromCacheable));
+    }
+
+    // Then fetch authoritative history from server
+    getSessionHistory(sessionId, { limit: 50 })
+      .then(res => {
+        if (res.records.length > 0) {
+          const serverMessages = historyToMessages(res.records);
+          setMessages(prev => {
+            // Merge: server messages first, then any live messages not in server data
+            const serverIds = new Set(serverMessages.map(m => m.id));
+            const liveOnly = prev.filter(m => !serverIds.has(m.id));
+            return [...serverMessages, ...liveOnly];
+          });
+          // Save merged state to cache
+          setMessages(current => {
+            saveMessages(sessionId, current.filter(m => m.status !== 'streaming').map(toCacheable));
+            return current;
+          });
+        }
+        setHistoryHasMore(res.has_more);
+      })
+      .catch(err => {
+        console.warn('HotPlexRuntimeAdapter: failed to load history', err);
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]);
 
   // Initialize WebSocket client
   useEffect(() => {
@@ -492,6 +613,7 @@ export function useHotPlexRuntime({
       pendingReasoningRef.current = '';
       client.disconnect();
       clientRef.current = null;
+      clearMessages(sessionId);
     };
   }, [sessionId]);
 
@@ -617,6 +739,38 @@ export function useHotPlexRuntime({
     setIsRunning(false);
   }, []);
 
+  // Handler for loading earlier messages (cursor-based pagination)
+  const handleLoadHistory = useCallback(async (): Promise<{ hasMore: boolean }> => {
+    const sid = sessionIdRef.current;
+    if (!sid || historyLoadingRef.current) return { hasMore: false };
+    historyLoadingRef.current = true;
+
+    try {
+      // Get the smallest seq from current messages as cursor
+      const minSeq = messages.reduce((min, m) => {
+        const seq = parseInt(m.id.split('_').pop() || '0', 10);
+        return seq > 0 && (min === 0 || seq < min) ? seq : min;
+      }, 0);
+
+      const res = await getSessionHistory(sid, { beforeSeq: minSeq || undefined, limit: 50 });
+      if (res.records.length > 0) {
+        const olderMessages = historyToMessages(res.records);
+        setMessages(prev => {
+          const existingIds = new Set(prev.map(m => m.id));
+          const newOnly = olderMessages.filter(m => !existingIds.has(m.id));
+          return [...newOnly, ...prev];
+        });
+      }
+      setHistoryHasMore(res.has_more);
+      return { hasMore: res.has_more };
+    } catch (err) {
+      console.warn('HotPlexRuntimeAdapter: failed to load earlier messages', err);
+      return { hasMore: false };
+    } finally {
+      historyLoadingRef.current = false;
+    }
+  }, [messages]);
+
   // Memoized thread messages conversion (spec §7.1)
   // Filter out malformed messages and guard against undefined roles to prevent
   // assistant-ui's internal converter from crashing with "Unknown message role".
@@ -638,10 +792,12 @@ export function useHotPlexRuntime({
     edit: true,
   }), []);
 
-  // Stable extras reference — only changes when metrics change
+  // Stable extras reference — only changes when metrics or history state change
   const extras = useMemo(() => ({
     metrics: sessionMetrics,
-  }), [sessionMetrics]);
+    hasMore: historyHasMore,
+    onLoadHistory: handleLoadHistory,
+  }), [sessionMetrics, historyHasMore, handleLoadHistory]);
 
   // Return ExternalStoreAdapter — memoized to prevent unnecessary setAdapter calls
   return useMemo(() => ({
