@@ -109,21 +109,51 @@ function CopyButton({ message }: { message: any }) {
   };
 
   return (
-    <button onClick={handleCopy} className={`copy-btn ${copied ? 'copy-btn-success' : ''}`}>
-      <AnimatePresence mode="wait">
+    <motion.button 
+      onClick={handleCopy} 
+      whileTap={{ scale: 0.95 }}
+      className={`copy-btn group/copy relative ${copied ? 'copy-btn-success' : ''}`}
+    >
+      <AnimatePresence mode="wait" initial={false}>
         {copied ? (
-          <motion.div key="check" initial={{ scale: 0.5, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.5, opacity: 0 }} className="flex items-center gap-1.5">
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
-            <span>Copied</span>
+          <motion.div 
+            key="check" 
+            initial={{ y: 5, opacity: 0 }} 
+            animate={{ y: 0, opacity: 1 }} 
+            exit={{ y: -5, opacity: 0 }} 
+            className="flex items-center gap-1.5"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+            </svg>
+            <span className="font-mono">COPIED</span>
           </motion.div>
         ) : (
-          <motion.div key="copy" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex items-center gap-1.5">
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" /></svg>
-            <span>Copy</span>
+          <motion.div 
+            key="copy" 
+            initial={{ y: 5, opacity: 0 }} 
+            animate={{ y: 0, opacity: 1 }} 
+            exit={{ y: -5, opacity: 0 }} 
+            className="flex items-center gap-1.5"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
+            </svg>
+            <span className="font-mono">COPY</span>
           </motion.div>
         )}
       </AnimatePresence>
-    </button>
+      
+      {/* Shimmer effect on success */}
+      {copied && (
+        <motion.div 
+          className="copy-btn-shimmer"
+          initial={{ x: '-100%' }}
+          animate={{ x: '100%' }}
+          transition={{ duration: 0.5, ease: "linear" }}
+        />
+      )}
+    </motion.button>
   );
 }
 
@@ -138,10 +168,7 @@ function AssistantMessage({ message }: { message: any }) {
         </div>
       </div>
 
-      <div className="msg-assistant-body relative">
-        <div className="message-actions" style={{ right: '4px', top: '-14px' }}>
-          <CopyButton message={message} />
-        </div>
+      <div className="msg-assistant-body relative group/msg">
         <MessagePrimitive.Parts>
           {({ part }) => {
             const p = part as Record<string, any>;
@@ -205,6 +232,9 @@ function AssistantMessage({ message }: { message: any }) {
             return null;
           }}
         </MessagePrimitive.Parts>
+        <div className="absolute bottom-2 right-2 z-10 opacity-0 group-hover/msg:opacity-100 translate-y-2 group-hover/msg:translate-y-0 transition-all duration-300">
+          <CopyButton message={message} />
+        </div>
       </div>
     </motion.div>
   );
@@ -241,11 +271,8 @@ function ReasoningBlock({ text }: { text: string }) {
 function UserMessage({ message }: { message: any }) {
   return (
     <motion.div className="group flex items-start justify-end gap-4 mb-8" variants={messageVariants} initial="hidden" animate="visible">
-      <div className="flex flex-col items-end max-w-[85%] relative">
-        <div className="message-actions" style={{ right: '4px', top: '-14px' }}>
-          <CopyButton message={message} />
-        </div>
-        <div className="msg-user-bubble w-full">
+      <div className="relative max-w-[85%] group/msg">
+        <div className="msg-user-bubble w-fit ml-auto relative">
           <MessagePrimitive.Parts>
             {({ part }) => {
               const p = part as Record<string, any>;
@@ -253,6 +280,9 @@ function UserMessage({ message }: { message: any }) {
               return null;
             }}
           </MessagePrimitive.Parts>
+          <div className="absolute bottom-2 right-2 z-10 opacity-0 group-hover/msg:opacity-100 translate-y-2 group-hover/msg:translate-y-0 transition-all duration-300">
+            <CopyButton message={message} />
+          </div>
         </div>
       </div>
       <div className="flex-shrink-0 mt-0.5">
@@ -382,6 +412,14 @@ export function Thread({ skills, hasMore, onLoadHistory }: ThreadProps) {
           <AnimatePresence>
             {menuOpen && <CommandMenu isOpen={menuOpen} inputValue={localText} onSelect={handleSelectCommand} onClose={() => setMenuOpen(false)} skills={skills} />}
           </AnimatePresence>
+          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 z-20">
+            <ThreadPrimitive.ScrollToBottom className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[var(--bg-surface)] border border-[var(--border-bright)] shadow-xl text-[var(--accent-gold)] hover:bg-[var(--bg-hover)] hover:border-[var(--accent-gold)] transition-all active:scale-95 group/scroll">
+              <svg className="w-3.5 h-3.5 animate-bounce-subtle" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+              </svg>
+              <span className="text-[10px] font-bold uppercase tracking-widest">Latest Messages</span>
+            </ThreadPrimitive.ScrollToBottom>
+          </div>
           <ComposerPrimitive.Root className="composer-root">
             <div className="composer-input-row">
               <ComposerPrimitive.Input 
