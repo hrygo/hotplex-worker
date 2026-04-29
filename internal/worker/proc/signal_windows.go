@@ -3,6 +3,7 @@
 package proc
 
 import (
+	"errors"
 	"fmt"
 	"os/exec"
 
@@ -21,9 +22,10 @@ func GracefulTerminate(pgid int) error {
 	return windows.GenerateConsoleCtrlEvent(windows.CTRL_BREAK_EVENT, uint32(pgid))
 }
 
-// ForceKill terminates the process and its descendants via TerminateProcess.
+// ForceKill terminates the process via TerminateProcess.
+// NOTE: Only kills the target process, not its children. Unix kills the entire process group.
+// A Job Object with JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE would be needed for full tree cleanup.
 func ForceKill(pgid int) error {
-	// Open with PROCESS_TERMINATE to call TerminateProcess.
 	handle, err := windows.OpenProcess(windows.PROCESS_TERMINATE, false, uint32(pgid))
 	if err != nil {
 		return fmt.Errorf("open process %d for termination: %w", pgid, err)
@@ -38,7 +40,7 @@ func IsProcessAlive(pid int) error {
 	if err != nil {
 		return fmt.Errorf("process %d not found: %w", pid, err)
 	}
-	_ = windows.CloseHandle(handle)
+	defer windows.CloseHandle(handle)
 	return nil
 }
 
@@ -52,23 +54,9 @@ func IsProcessNotExist(err error) bool {
 	if err == nil {
 		return false
 	}
-	return isWindowsError(err, windows.ERROR_INVALID_PARAMETER)
+	return errors.Is(err, windows.ERROR_INVALID_PARAMETER) ||
+		errors.Is(err, errNoSuchProcess)
 }
 
-// isWindowsError checks if err wraps the specified Windows error code.
-func isWindowsError(err error, target error) bool {
-	for ; err != nil; err = unwrap(err) {
-		if err == target {
-			return true
-		}
-	}
-	return false
-}
-
-func unwrap(err error) error {
-	type unwrapper interface{ Unwrap() error }
-	if u, ok := err.(unwrapper); ok {
-		return u.Unwrap()
-	}
-	return nil
-}
+// errNoSuchProcess is ERROR_NO_SUCH_PROCESS (Win32 error code 3).
+var errNoSuchProcess = windows.Errno(3)
