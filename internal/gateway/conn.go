@@ -105,7 +105,7 @@ func (c *Conn) ReadPump(handler *Handler) {
 		// can be routed through Hub.Run while the conn is still in h.sessions.
 		// If we unregister first, routeMessage finds no connections and the
 		// state event is silently dropped.
-		if c.sessionID != "" {
+		if c.sessionID != "" && handler.sm != nil {
 			if si, getErr := handler.sm.Get(c.sessionID); getErr == nil && si != nil && si.State == events.StateRunning {
 				if err := handler.sm.Transition(context.Background(), c.sessionID, events.StateIdle); err != nil {
 					c.log.Debug("gateway: conn close transition to idle", "session_id", c.sessionID, "err", err)
