@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"path/filepath"
 	"runtime/debug"
 	"strings"
 	"sync"
@@ -13,6 +12,7 @@ import (
 	"time"
 
 	"github.com/hrygo/hotplex/internal/agentconfig"
+	"github.com/hrygo/hotplex/internal/config"
 	"github.com/hrygo/hotplex/internal/messaging"
 	"github.com/hrygo/hotplex/internal/metrics"
 	"github.com/hrygo/hotplex/internal/security"
@@ -160,7 +160,14 @@ func (b *Bridge) resumeWithOpts(ctx context.Context, id, workDir string, opts fo
 		return session.ErrSessionNotFound
 	}
 
+	// Capture pending input before terminating so it can be re-delivered to the new worker.
+	// This prevents input loss when ResumeSession is called concurrently (e.g., a
+	// second user message arrives while attemptResumeFallback is starting a fresh worker).
+	var pendingInput string
 	if existing := b.sm.GetWorker(id); existing != nil {
+		if ir, ok := existing.(worker.InputRecoverer); ok {
+			pendingInput = ir.LastInput()
+		}
 		_ = existing.Terminate(context.Background())
 		b.sm.DetachWorker(id)
 	}
@@ -203,6 +210,19 @@ func (b *Bridge) resumeWithOpts(ctx context.Context, id, workDir string, opts fo
 	// Refresh ExpiresAt so a reactivated session isn't immediately killed by GC max_lifetime.
 	if err := b.sm.ResetExpiry(ctx, id); err != nil {
 		b.log.Warn("bridge: resume reset expiry failed", "session_id", id, "err", err)
+	}
+
+	// Re-deliver pending input that was captured before the old worker was terminated.
+	// This covers the case where a concurrent message triggered ResumeSession while
+	// attemptResumeFallback was starting a fresh worker — the fresh worker's buffered
+	// input would otherwise be lost when the old worker is terminated here.
+	if pendingInput != "" {
+		b.log.Info("bridge: re-delivering pending input to resumed worker",
+			"session_id", id, "content_len", len(pendingInput))
+		if err := w.Input(ctx, pendingInput, nil); err != nil {
+			b.log.Warn("bridge: pending input re-delivery failed",
+				"session_id", id, "err", err)
+		}
 	}
 
 	// Notify client of current state.
@@ -549,7 +569,7 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 		}) {
 			return // new forwardEvents goroutine took over
 		}
-		// Fallback already cleaned up (DetachWorker + Transition); skip redundant cleanup below.
+		// Fallback already expanded up (DetachWorker + Transition); skip redundant cleanup below.
 	}
 
 	// During shutdown, skip crash detection — workers are SIGTERM'd by design.
@@ -756,7 +776,7 @@ func (b *Bridge) attemptResumeFallback(p fallbackParams) bool {
 // Uses CAS via crashedWorker to avoid detaching a worker that was already replaced
 // by a concurrent ResumeSession or attemptResumeFallback.
 func (b *Bridge) cleanupCrashedWorker(sessionID string, crashedWorker worker.Worker) {
-	// Read turn_count without deleting — the accumulator is cleaned up when the
+	// Read turn_count without deleting — the accumulator is expanded up when the
 	// session is physically deleted, not here. This avoids reading TurnCount=0
 	// after resetPerTurn() has already cleared it at done.
 	acc := b.getOrInitAccum(sessionID)
@@ -898,8 +918,11 @@ func (b *Bridge) SwitchWorkDir(ctx context.Context, oldSessionID, newWorkDir str
 		return nil, fmt.Errorf("switch-workdir: session not active (state: %s)", si.State)
 	}
 
-	cleaned := filepath.Clean(newWorkDir)
-	if err := security.ValidateWorkDir(cleaned); err != nil {
+	expanded, err := config.ExpandAndAbs(newWorkDir)
+	if err != nil {
+		return nil, fmt.Errorf("switch-workdir: expand work dir: %w", err)
+	}
+	if err := security.ValidateWorkDir(expanded); err != nil {
 		return nil, fmt.Errorf("switch-workdir: %w", err)
 	}
 
@@ -916,7 +939,7 @@ func (b *Bridge) SwitchWorkDir(ctx context.Context, oldSessionID, newWorkDir str
 
 	var newID string
 	if si.Platform != "" && len(si.PlatformKey) > 0 {
-		pc := session.PlatformContext{Platform: si.Platform, WorkDir: cleaned}
+		pc := session.PlatformContext{Platform: si.Platform, WorkDir: expanded}
 		for k, v := range si.PlatformKey {
 			switch k {
 			case "team_id":
@@ -936,20 +959,20 @@ func (b *Bridge) SwitchWorkDir(ctx context.Context, oldSessionID, newWorkDir str
 		newID = aep.NewSessionID()
 	}
 
-	if err := b.StartSession(ctx, newID, si.UserID, si.BotID, si.WorkerType, si.AllowedTools, cleaned, si.Platform, si.PlatformKey, si.Title); err != nil {
+	if err := b.StartSession(ctx, newID, si.UserID, si.BotID, si.WorkerType, si.AllowedTools, expanded, si.Platform, si.PlatformKey, si.Title); err != nil {
 		return nil, fmt.Errorf("switch-workdir: start session: %w", err)
 	}
 
 	b.log.Info("switch-workdir: session switched",
 		"old_session_id", oldSessionID,
 		"new_session_id", newID,
-		"work_dir", cleaned,
+		"work_dir", expanded,
 	)
 
 	return &SwitchWorkDirResult{
 		OldSessionID: oldSessionID,
 		NewSessionID: newID,
-		WorkDir:      cleaned,
+		WorkDir:      expanded,
 	}, nil
 }
 
@@ -970,8 +993,11 @@ func (b *Bridge) SwitchWorkDirInPlace(ctx context.Context, sessionID, newWorkDir
 		return "", fmt.Errorf("switch-workdir-inplace: session not active (state: %s)", si.State)
 	}
 
-	cleaned := filepath.Clean(newWorkDir)
-	if err := security.ValidateWorkDir(cleaned); err != nil {
+	expanded, err := config.ExpandAndAbs(newWorkDir)
+	if err != nil {
+		return "", fmt.Errorf("switch-workdir-inplace: expand work dir: %w", err)
+	}
+	if err := security.ValidateWorkDir(expanded); err != nil {
 		return "", fmt.Errorf("switch-workdir-inplace: %w", err)
 	}
 
@@ -982,7 +1008,7 @@ func (b *Bridge) SwitchWorkDirInPlace(ctx context.Context, sessionID, newWorkDir
 		b.sm.DetachWorker(sessionID)
 	}
 
-	if err := b.sm.UpdateWorkDir(ctx, sessionID, cleaned); err != nil {
+	if err := b.sm.UpdateWorkDir(ctx, sessionID, expanded); err != nil {
 		return "", fmt.Errorf("switch-workdir-inplace: update workdir: %w", err)
 	}
 
@@ -999,7 +1025,7 @@ func (b *Bridge) SwitchWorkDirInPlace(ctx context.Context, sessionID, newWorkDir
 	workerInfo := worker.SessionInfo{
 		SessionID:       sessionID,
 		UserID:          si.UserID,
-		ProjectDir:      cleaned,
+		ProjectDir:      expanded,
 		AllowedTools:    si.AllowedTools,
 		WorkerSessionID: si.WorkerSessionID,
 	}
@@ -1024,15 +1050,15 @@ func (b *Bridge) SwitchWorkDirInPlace(ctx context.Context, sessionID, newWorkDir
 	b.fwdWg.Add(1)
 	go func() {
 		defer b.fwdWg.Done()
-		b.forwardEvents(w, sessionID, forwardOpts{workDir: cleaned})
+		b.forwardEvents(w, sessionID, forwardOpts{workDir: expanded})
 	}()
 
 	b.log.Info("switch-workdir-inplace: switched",
 		"session_id", sessionID,
-		"work_dir", cleaned,
+		"work_dir", expanded,
 	)
 
-	return cleaned, nil
+	return expanded, nil
 }
 
 // isWorkerInUseError checks if the worker rejected the session because its
