@@ -10,9 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
-	"runtime"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/hrygo/hotplex/internal/security"
@@ -95,9 +93,7 @@ func (m *Manager) Start(ctx context.Context, name string, args, env []string, di
 		}
 	}
 
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setpgid: true, // create new process group
-	}
+	SetSysProcAttr(cmd)
 
 	// Create pipes for stdio.
 	// os.Pipe returns (r, w, err) where r=read-end, w=write-end.
@@ -148,18 +144,9 @@ func (m *Manager) Start(ctx context.Context, name string, args, env []string, di
 	// Write PID file if tracker is configured.
 	m.trackPID()
 
-	// Limit process virtual address space (RLIMIT_AS) to 512 MB.
-	// This prevents runaway worker processes from exhausting the gateway's memory.
-	// P3: RLIMIT_AS is not reliably supported on macOS — skip silently.
-	if runtime.GOOS != "darwin" && cmd.Process != nil {
-		const memLimit = 512 * 1024 * 1024 // 512 MB
-		if err := syscall.Setrlimit(syscall.RLIMIT_AS, &syscall.Rlimit{
-			Cur: memLimit,
-			Max: memLimit,
-		}); err != nil {
-			m.log.Warn("proc: setrlimit RLIMIT_AS failed", "err", err)
-			// Non-fatal: log and continue.
-		}
+	// Limit process virtual address space to 512 MB (platform-specific).
+	if cmd.Process != nil {
+		setMemoryLimit(cmd.Process.Pid, m.log)
 	}
 
 	// Set up bufio.Scanner for line-by-line stdout parsing.
@@ -182,9 +169,9 @@ func (m *Manager) Start(ctx context.Context, name string, args, env []string, di
 	return m.stdin, m.stdout, m.stderr, nil
 }
 
-// Terminate sends SIGTERM to the process group and waits for graceful shutdown.
-// After the grace period, it escalates to SIGKILL.
-func (m *Manager) Terminate(ctx context.Context, sig syscall.Signal, gracePeriod time.Duration) error {
+// Terminate gracefully stops the process group and waits for shutdown.
+// After the grace period, it escalates to force kill.
+func (m *Manager) Terminate(ctx context.Context, gracePeriod time.Duration) error {
 	m.mu.Lock()
 	if !m.started || m.exited {
 		m.mu.Unlock()
@@ -194,10 +181,10 @@ func (m *Manager) Terminate(ctx context.Context, sig syscall.Signal, gracePeriod
 	pidKey := m.pidKey
 	m.mu.Unlock()
 
-	// Send signal to the entire process group.
+	// Send graceful termination to the entire process group.
 	if pgid > 0 {
-		_ = syscall.Kill(-pgid, sig)
-		m.log.Info("proc: sent SIGTERM", "pgid", pgid)
+		_ = GracefulTerminate(pgid)
+		m.log.Info("proc: sent graceful termination", "pgid", pgid)
 	}
 
 	// Wait for exit with deadline.
@@ -215,14 +202,14 @@ func (m *Manager) Terminate(ctx context.Context, sig syscall.Signal, gracePeriod
 		m.untrackPID(pidKey)
 		return nil
 	case <-timer.C:
-		m.log.Warn("proc: graceful shutdown timeout, sending SIGKILL", "pgid", pgid)
+		m.log.Warn("proc: graceful shutdown timeout, force killing", "pgid", pgid)
 		return m.Kill()
 	case <-ctx.Done():
 		return ctx.Err()
 	}
 }
 
-// Kill sends SIGKILL to the entire process group.
+// Kill force-kills the entire process group.
 func (m *Manager) Kill() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -232,8 +219,8 @@ func (m *Manager) Kill() error {
 	}
 
 	if m.pgid > 0 {
-		_ = syscall.Kill(-m.pgid, syscall.SIGKILL)
-		m.log.Info("proc: sent SIGKILL", "pgid", m.pgid)
+		_ = ForceKill(m.pgid)
+		m.log.Info("proc: force killed", "pgid", m.pgid)
 	}
 	_ = m.cmd.Wait()
 	m.captureExitCodeLocked()
@@ -314,20 +301,11 @@ func (m *Manager) captureExitCodeLocked() {
 		return
 	}
 	if m.exited {
-		return // already captured + logged (e.g., Terminate goroutine + bridge Wait both call this)
+		return
 	}
 	m.exited = true
-	if ws, ok := m.cmd.ProcessState.Sys().(syscall.WaitStatus); ok {
-		m.exitCode = ws.ExitStatus()
-		if ws.Signaled() {
-			m.log.Info("proc: exited", "exit_code", m.exitCode, "signal", ws.Signal(), "signaled", true)
-		} else {
-			m.log.Info("proc: exited", "exit_code", m.exitCode)
-		}
-	} else {
-		m.exitCode = -1
-		m.log.Info("proc: exited", "exit_code", m.exitCode, "note", "non-POSIX wait status")
-	}
+	m.exitCode = m.cmd.ProcessState.ExitCode()
+	m.log.Info("proc: exited", "exit_code", m.exitCode)
 }
 
 // ReadLine reads the next line from the worker process stdout.

@@ -22,6 +22,7 @@ import (
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	"github.com/larksuite/oapi-sdk-go/v3/ws"
 
+	"github.com/hrygo/hotplex/internal/config"
 	"github.com/hrygo/hotplex/internal/messaging"
 	"github.com/hrygo/hotplex/internal/messaging/stt"
 	"github.com/hrygo/hotplex/pkg/aep"
@@ -1208,7 +1209,7 @@ func (a *Adapter) fetchMediaBytes(ctx context.Context, media *MediaInfo) ([]byte
 
 // saveMediaBytes writes media data to disk and returns the file path.
 func (a *Adapter) saveMediaBytes(data []byte, media *MediaInfo, ext string) (string, error) {
-	mediaDir := "/tmp/hotplex/media/" + media.Type + "s"
+	mediaDir := filepath.Join(config.TempBaseDir(), "media", media.Type+"s")
 	if err := os.MkdirAll(mediaDir, 0o755); err != nil {
 		return "", fmt.Errorf("feishu: create media dir: %w", err)
 	}

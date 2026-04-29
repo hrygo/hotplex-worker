@@ -683,7 +683,7 @@ func ExpandAndAbs(p string) (string, error) {
 func HotplexHome() string {
 	home, err := os.UserHomeDir()
 	if err != nil || home == "" {
-		return "/tmp/hotplex"
+		return hotplexFallbackDir()
 	}
 	return filepath.Join(home, ".hotplex")
 }

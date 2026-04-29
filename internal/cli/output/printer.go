@@ -3,8 +3,6 @@ package output
 import (
 	"fmt"
 	"io"
-	"os"
-	"syscall"
 
 	"github.com/hrygo/hotplex/internal/cli"
 )
@@ -82,16 +80,4 @@ func PrintSummary(out io.Writer, pass, warn, fail, fixable int) {
 	}
 
 	_, _ = fmt.Fprintln(out, summary)
-}
-
-func isTTY(w io.Writer) bool {
-	f, ok := w.(*os.File)
-	if !ok {
-		return false
-	}
-	var st syscall.Stat_t
-	if err := syscall.Fstat(int(f.Fd()), &st); err != nil {
-		return false
-	}
-	return st.Mode&syscall.S_IFMT == syscall.S_IFCHR
 }

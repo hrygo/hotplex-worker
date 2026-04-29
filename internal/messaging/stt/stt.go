@@ -15,9 +15,9 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 
+	"github.com/hrygo/hotplex/internal/config"
 	"github.com/hrygo/hotplex/internal/worker/proc"
 )
 
@@ -55,7 +55,7 @@ func NewLocalSTT(cmdTemplate string, log *slog.Logger) *LocalSTT {
 func (s *LocalSTT) RequiresDisk() bool { return true }
 
 func (s *LocalSTT) Transcribe(ctx context.Context, audioData []byte) (string, error) {
-	tmpDir := "/tmp/hotplex/media/stt_tmp"
+	tmpDir := filepath.Join(config.TempBaseDir(), "media", "stt_tmp")
 	if err := os.MkdirAll(tmpDir, 0o755); err != nil {
 		return "", fmt.Errorf("local stt: mkdir: %w", err)
 	}
@@ -179,7 +179,7 @@ func (s *PersistentSTT) Transcribe(ctx context.Context, audioData []byte) (strin
 	}
 
 	// Write audio to temp file.
-	tmpDir := "/tmp/hotplex/media/stt_tmp"
+	tmpDir := filepath.Join(config.TempBaseDir(), "media", "stt_tmp")
 	if err := os.MkdirAll(tmpDir, 0o755); err != nil {
 		return "", fmt.Errorf("persistent stt: mkdir: %w", err)
 	}
@@ -229,7 +229,7 @@ func (s *PersistentSTT) Close(ctx context.Context) error {
 // start launches the subprocess with PGID isolation.
 func (s *PersistentSTT) start(_ context.Context) error {
 	cmd := exec.Command(s.cmdParts[0], s.cmdParts[1:]...)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	proc.SetSysProcAttr(cmd)
 
 	// Create pipes for stdio.
 	stdinR, stdinW, err := os.Pipe()
@@ -306,7 +306,7 @@ func (s *PersistentSTT) terminate(ctx context.Context) {
 
 	// Send SIGTERM to process group.
 	if s.pgid > 0 {
-		_ = syscall.Kill(-s.pgid, syscall.SIGTERM)
+		_ = proc.GracefulTerminate(s.pgid)
 		s.log.Info("persistent stt: sent SIGTERM", "pgid", s.pgid)
 	}
 
@@ -320,12 +320,12 @@ func (s *PersistentSTT) terminate(ctx context.Context) {
 	case <-time.After(5 * time.Second):
 		s.log.Warn("persistent stt: graceful timeout, sending SIGKILL", "pgid", s.pgid)
 		if s.pgid > 0 {
-			_ = syscall.Kill(-s.pgid, syscall.SIGKILL)
+			_ = proc.ForceKill(s.pgid)
 		}
 		<-done
 	case <-ctx.Done():
 		if s.pgid > 0 {
-			_ = syscall.Kill(-s.pgid, syscall.SIGKILL)
+			_ = proc.ForceKill(s.pgid)
 		}
 		<-done
 	}
@@ -351,7 +351,7 @@ func (s *PersistentSTT) kill() {
 		s.cancel = nil
 	}
 	if s.pgid > 0 {
-		_ = syscall.Kill(-s.pgid, syscall.SIGKILL)
+		_ = proc.ForceKill(s.pgid)
 	}
 	if s.cmd != nil {
 		_ = s.cmd.Wait()

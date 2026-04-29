@@ -111,7 +111,7 @@ func NewSQLiteConversationStore(ctx context.Context, cfg *config.Config) (*SQLit
 		return nil, err
 	}
 
-	db, err := sql.Open("sqlite3", cfg.DB.Path+"?_txlock=immediate")
+	db, err := sql.Open("sqlite", cfg.DB.Path+"?_txlock=immediate")
 	if err != nil {
 		return nil, fmt.Errorf("conversation store: open db: %w", err)
 	}

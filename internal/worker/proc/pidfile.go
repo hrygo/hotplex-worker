@@ -11,7 +11,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 )
 
@@ -275,25 +274,25 @@ func (t *Tracker) cleanupSingle(ctx context.Context, match string) CleanupResult
 	result.PGID = pgid
 
 	// Check process existence (PID recycling defense).
-	if err := syscall.Kill(pgid, syscall.Signal(0)); err != nil {
-		if errors.Is(err, syscall.ESRCH) {
+	if err := IsProcessAlive(pgid); err != nil {
+		if IsProcessNotExist(err) {
 			t.log.Info("pidfile: stale PID file, process not found", "pgid", pgid)
 			_ = os.Remove(match)
 			return result
 		}
-		t.log.Warn("pidfile: kill(0) error", "pgid", pgid, "err", err)
+		t.log.Warn("pidfile: process check error", "pgid", pgid, "err", err)
 		result.Err = fmt.Errorf("pidfile: check process %d: %w", pgid, err)
 		_ = os.Remove(match)
 		return result
 	}
 
 	// Verify PGID is still the process group leader (PID recycled).
-	if err := syscall.Kill(-pgid, syscall.Signal(0)); err != nil {
-		if errors.Is(err, syscall.ESRCH) {
+	if err := IsProcessGroupAlive(pgid); err != nil {
+		if IsProcessNotExist(err) {
 			t.log.Warn("pidfile: PID recycled, not a process group leader", "pgid", pgid)
 			return result
 		}
-		t.log.Warn("pidfile: kill(-pgid, 0) error", "pgid", pgid, "err", err)
+		t.log.Warn("pidfile: group check error", "pgid", pgid, "err", err)
 		result.Err = fmt.Errorf("pidfile: check pgid %d: %w", pgid, err)
 		_ = os.Remove(match)
 		return result
@@ -301,9 +300,9 @@ func (t *Tracker) cleanupSingle(ctx context.Context, match string) CleanupResult
 
 	t.log.Warn("pidfile: confirmed orphan, killing", "pgid", pgid)
 
-	// Send SIGTERM to entire process group.
-	if err := syscall.Kill(-pgid, syscall.SIGTERM); err != nil && !errors.Is(err, syscall.ESRCH) {
-		t.log.Warn("pidfile: SIGTERM failed", "pgid", pgid, "err", err)
+	// Graceful terminate.
+	if err := GracefulTerminate(pgid); err != nil {
+		t.log.Warn("pidfile: graceful terminate failed", "pgid", pgid, "err", err)
 	}
 
 	// Wait for graceful shutdown.
@@ -312,8 +311,8 @@ func (t *Tracker) cleanupSingle(ctx context.Context, match string) CleanupResult
 
 	select {
 	case <-graceTimer.C:
-		if err := syscall.Kill(-pgid, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
-			t.log.Warn("pidfile: SIGKILL failed", "pgid", pgid, "err", err)
+		if err := ForceKill(pgid); err != nil {
+			t.log.Warn("pidfile: force kill failed", "pgid", pgid, "err", err)
 		}
 		result.Killed = true
 	case <-ctx.Done():

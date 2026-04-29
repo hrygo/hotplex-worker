@@ -6,50 +6,12 @@ import (
 	"strings"
 )
 
-// AllowedBaseDirs is the set of permitted base directories for session work dirs.
-var AllowedBaseDirs = map[string]bool{
-	"/var/hotplex/projects": true,
-	"/tmp/hotplex":          true,
-}
-
 // ValidateBaseDir checks that the base directory is in the allowed list.
 func ValidateBaseDir(baseDir string) error {
 	if !AllowedBaseDirs[baseDir] {
 		return fmt.Errorf("security: base directory %q not in whitelist", baseDir)
 	}
 	return nil
-}
-
-// ForbiddenWorkDirs are system directories that must never be used as session work dirs.
-// Both exact matches and sub-paths are rejected.
-//
-// Sources:
-//   - Linux FHS 3.0: /bin, /sbin, /usr, /etc, /boot, /lib, /root, /srv
-//   - macOS SIP:     /System, /usr, /bin, /sbin
-//   - systemd:       /run (ProtectSystem), /home (ProtectHome)
-//   - POSIX virtual: /dev, /proc, /sys
-//
-// Notable exclusions:
-//   - /opt: widely used for user software (Homebrew, third-party tools)
-//   - /var: allowed; hotplex workspace uses /var/hotplex/projects
-//   - /tmp: allowed; hotplex default uses /tmp/hotplex/workspace
-//   - /snap, /flatpak: package-managed app dirs, not system-critical
-var ForbiddenWorkDirs = []string{
-	"/bin",    // FHS: essential user binaries
-	"/sbin",   // FHS: essential system binaries
-	"/usr",    // FHS: system-wide read-only programs & libraries
-	"/etc",    // FHS: system configuration
-	"/boot",   // FHS: kernel & bootloader
-	"/lib",    // FHS: shared libraries
-	"/lib64",  // FHS: 64-bit shared libraries
-	"/root",   // FHS: superuser home (systemd ProtectHome)
-	"/home",   // FHS: user homes (systemd ProtectHome)
-	"/System", // macOS SIP: system files
-	"/dev",    // POSIX: device files
-	"/proc",   // Linux: process & kernel info
-	"/sys",    // Linux: kernel objects
-	"/run",    // FHS: runtime data (PID files, sockets, locks)
-	"/srv",    // FHS: service data
 }
 
 // ValidateWorkDir validates that a work directory is safe for worker execution.

@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"strings"
 
+	"github.com/hrygo/hotplex/internal/config"
 	"github.com/hrygo/hotplex/internal/session"
 	"github.com/hrygo/hotplex/internal/worker"
 	"github.com/hrygo/hotplex/pkg/aep"
@@ -13,7 +15,7 @@ import (
 )
 
 // DefaultWorkerWorkDir is the fallback working directory when workDir is not configured.
-const DefaultWorkerWorkDir = "/tmp/hotplex/workspace"
+var DefaultWorkerWorkDir = filepath.Join(config.TempBaseDir(), "workspace")
 
 // Bridge orchestrates platform messages and gateway sessions.
 // It is the counterpart of gateway.Bridge for messaging platforms.

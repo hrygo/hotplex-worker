@@ -6,10 +6,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"runtime"
 	"strings"
 	"sync"
-	"syscall"
 
 	"github.com/hrygo/hotplex/pkg/aep"
 	"github.com/hrygo/hotplex/pkg/events"
@@ -84,28 +82,6 @@ func IsDeadProcessError(err error) bool {
 	}
 	s := err.Error()
 	return strings.Contains(s, "file already closed") || strings.Contains(s, "broken pipe")
-}
-
-// WriteAll loops syscall.Write until all data is written, handling partial
-// writes and EAGAIN (non-blocking pipe on macOS). Go's stdlib File.Write does
-// not retry EAGAIN for syscall-backed files, so we must use raw syscall.
-func WriteAll(fd int, data []byte) error {
-	n := 0
-	for n < len(data) {
-		nn, err := syscall.Write(fd, data[n:])
-		if err != nil {
-			if err == syscall.EAGAIN {
-				runtime.Gosched()
-				continue
-			}
-			return err
-		}
-		if nn == 0 {
-			return fmt.Errorf("writeAll: zero write")
-		}
-		n += nn
-	}
-	return nil
 }
 
 func (c *Conn) SendUserMessage(ctx context.Context, content string) error {

@@ -48,7 +48,7 @@ CYAN   := \033[36m
 # PHONY
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: all help quickstart check-tools build run
+.PHONY: all help quickstart check-tools build build-windows run
 .PHONY: dev dev-start dev-stop dev-status dev-logs dev-reset
 .PHONY: gateway-start gateway-stop gateway-status gateway-logs
 .PHONY: webchat-dev webchat-stop
@@ -96,6 +96,16 @@ build:
 	@go build $(BUILD_OPTS) -ldflags="$(LDFLAGS)" \
 		-o $(BUILD_DIR)/$(BINARY_NAME)-$(GOOS)-$(GOARCH) $(MAIN_PATH)
 	@echo "  $(GREEN)✓$(RESET) $(BUILD_DIR)/$(BINARY_NAME)-$(GOOS)-$(GOARCH)"
+
+build-windows:
+	@echo "$(CYAN)Cross-compiling for Windows...$(RESET)"
+	@mkdir -p $(BUILD_DIR)
+	@CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build $(BUILD_OPTS) -ldflags="$(LDFLAGS)" \
+		-o $(BUILD_DIR)/$(BINARY_NAME)-windows-amd64.exe $(MAIN_PATH)
+	@CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build $(BUILD_OPTS) -ldflags="$(LDFLAGS)" \
+		-o $(BUILD_DIR)/$(BINARY_NAME)-windows-arm64.exe $(MAIN_PATH)
+	@echo "  $(GREEN)✓$(RESET) $(BUILD_DIR)/$(BINARY_NAME)-windows-amd64.exe"
+	@echo "  $(GREEN)✓$(RESET) $(BUILD_DIR)/$(BINARY_NAME)-windows-arm64.exe"
 
 run: build
 	@./$(BUILD_DIR)/$(BINARY_NAME)-$(GOOS)-$(GOARCH) \
@@ -237,7 +247,8 @@ help:
 	@printf "    $(CYAN)make %-15s$(RESET)  %s\n" "webchat-stop"  "Stop webchat"
 	@echo ""
 	@echo "  $(BOLD)🔧 Build"
-	@printf "    $(CYAN)make %-15s$(RESET)  %s\n" "build"   "Build binary"
+	@printf "    $(CYAN)make %-15s$(RESET)  %s\n" "build"          "Build binary"
+	@printf "    $(CYAN)make %-15s$(RESET)  %s\n" "build-windows"  "Cross-compile for Windows"
 	@printf "    $(CYAN)make %-15s$(RESET)  %s\n" "run"     "Build and run (foreground)"
 	@echo ""
 	@echo "  $(BOLD)🧪 Test & Quality"

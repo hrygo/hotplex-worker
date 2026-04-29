@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"github.com/hrygo/hotplex/internal/config"
@@ -68,7 +67,7 @@ func (w *BaseWorker) Terminate(ctx context.Context) error {
 		return nil
 	}
 
-	if err := proc.Terminate(ctx, syscall.SIGTERM, gracefulShutdownTimeout); err != nil {
+	if err := proc.Terminate(ctx, gracefulShutdownTimeout); err != nil {
 		return fmt.Errorf("base: terminate: %w", err)
 	}
 

@@ -8,10 +8,12 @@ import (
 	"strings"
 
 	"github.com/slack-go/slack"
+
+	"github.com/hrygo/hotplex/internal/config"
 )
 
 // MediaPathPrefix is the base path for downloaded Slack media files.
-const MediaPathPrefix = "/tmp/hotplex/media/slack"
+var MediaPathPrefix = filepath.Join(config.TempBaseDir(), "media", "slack")
 
 // ImageExtensions lists file extensions recognized as images by block rendering.
 var ImageExtensions = []string{".png", ".jpg", ".jpeg", ".gif", ".webp"}

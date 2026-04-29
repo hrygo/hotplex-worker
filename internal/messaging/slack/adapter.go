@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/hrygo/hotplex/internal/config"
 	"github.com/hrygo/hotplex/internal/messaging"
 	"github.com/hrygo/hotplex/internal/messaging/stt"
 	"github.com/hrygo/hotplex/pkg/aep"
@@ -25,11 +26,12 @@ import (
 	"github.com/slack-go/slack/socketmode"
 )
 
+var mediaPathPrefix = filepath.Join(config.TempBaseDir(), "media", "slack")
+
 const (
 	messageExpiry    = 30 * time.Minute
 	dedupMaxEntries  = 5000
 	dedupTTL         = 30 * time.Minute
-	mediaPathPrefix  = "/tmp/hotplex/media/slack"
 	mediaCleanupInt  = 6 * time.Hour
 	mediaTTL         = 24 * time.Hour
 	maxMessageLength = 3800            // Slack limit is ~4000
