@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/hrygo/hotplex/internal/config"
 )
 
 // ─── Command whitelist ────────────────────────────────────────────────────────
@@ -204,7 +206,7 @@ func TestValidateBaseDir(t *testing.T) {
 		wantErr bool
 	}{
 		{"var hotplex projects allowed", "/var/hotplex/projects", false},
-		{"tmp hotplex allowed", "/tmp/hotplex", false},
+		{"tmp hotplex allowed", config.TempBaseDir(), false},
 		{"home rejected", "/home/user", true},
 		{"root rejected", "/", true},
 		{"empty rejected", "", true},

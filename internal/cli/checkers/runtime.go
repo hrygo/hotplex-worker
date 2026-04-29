@@ -221,8 +221,9 @@ func (c dataDirWritableChecker) Check(ctx context.Context) cli.Diagnostic {
 }
 
 func init() {
+	home, _ := os.UserHomeDir()
 	cli.DefaultRegistry.Register(diskSpaceChecker{})
 	cli.DefaultRegistry.Register(portAvailableChecker{})
-	cli.DefaultRegistry.Register(orphanPIDsChecker{pidDir: filepath.Join(os.ExpandEnv("$HOME"), ".hotplex", ".pids")})
-	cli.DefaultRegistry.Register(dataDirWritableChecker{dataDir: filepath.Join(os.ExpandEnv("$HOME"), ".hotplex", "data")})
+	cli.DefaultRegistry.Register(orphanPIDsChecker{pidDir: filepath.Join(home, ".hotplex", ".pids")})
+	cli.DefaultRegistry.Register(dataDirWritableChecker{dataDir: filepath.Join(home, ".hotplex", "data")})
 }

@@ -54,9 +54,5 @@ func IsProcessNotExist(err error) bool {
 	if err == nil {
 		return false
 	}
-	return errors.Is(err, windows.ERROR_INVALID_PARAMETER) ||
-		errors.Is(err, errNoSuchProcess)
+	return errors.Is(err, windows.ERROR_INVALID_PARAMETER)
 }
-
-// errNoSuchProcess is ERROR_NO_SUCH_PROCESS (Win32 error code 3).
-var errNoSuchProcess = windows.Errno(3)

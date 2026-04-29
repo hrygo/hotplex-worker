@@ -79,7 +79,7 @@ func (t *Tracker) EnsureDir() error {
 }
 
 func validateKey(key string) error {
-	if key == "" || key == "." || strings.Contains(key, "/") {
+	if key == "" || key == "." || strings.ContainsAny(key, "/\\") {
 		return fmt.Errorf("%w: %q", ErrInvalidKey, key)
 	}
 	return nil
