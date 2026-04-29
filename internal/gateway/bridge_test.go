@@ -39,7 +39,6 @@ func TestBridge_SetWorkerFactory(t *testing.T) {
 	assert.Same(t, wf, b.wf)
 }
 
-
 // ─── Test Shutdown ────────────────────────────────────────────────────────────
 
 func TestBridge_Shutdown(t *testing.T) {
