@@ -16,7 +16,7 @@ import (
 
 func TestExtractResponseText_NilEnvelope(t *testing.T) {
 	t.Parallel()
-	_, ok := extractResponseText(nil)
+	_, ok := messaging.ExtractResponseText(nil)
 	require.False(t, ok)
 }
 
@@ -28,7 +28,7 @@ func TestExtractResponseText_StringData(t *testing.T) {
 			Data: "hello world",
 		},
 	}
-	text, ok := extractResponseText(env)
+	text, ok := messaging.ExtractResponseText(env)
 	require.True(t, ok)
 	require.Equal(t, "hello world", text)
 }
@@ -43,7 +43,7 @@ func TestExtractResponseText_MessageDeltaData(t *testing.T) {
 			},
 		},
 	}
-	text, ok := extractResponseText(env)
+	text, ok := messaging.ExtractResponseText(env)
 	require.True(t, ok)
 	require.Equal(t, "streaming content", text)
 }
@@ -58,7 +58,7 @@ func TestExtractResponseText_MapData(t *testing.T) {
 			},
 		},
 	}
-	text, ok := extractResponseText(env)
+	text, ok := messaging.ExtractResponseText(env)
 	require.True(t, ok)
 	require.Equal(t, "map content", text)
 }
@@ -71,7 +71,7 @@ func TestExtractResponseText_DoneEvent(t *testing.T) {
 			Data: events.DoneData{Success: true},
 		},
 	}
-	_, ok := extractResponseText(env)
+	_, ok := messaging.ExtractResponseText(env)
 	require.False(t, ok)
 }
 
@@ -87,7 +87,7 @@ func TestExtractResponseText_RawData(t *testing.T) {
 			},
 		},
 	}
-	text, ok := extractResponseText(env)
+	text, ok := messaging.ExtractResponseText(env)
 	require.True(t, ok)
 	require.Equal(t, "raw text", text)
 }
@@ -175,7 +175,7 @@ func TestIsAbortCommand(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			require.Equal(t, tt.want, IsAbortCommand(tt.input))
+			require.Equal(t, tt.want, messaging.IsAbortCommand(tt.input))
 		})
 	}
 }

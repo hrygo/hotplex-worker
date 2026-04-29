@@ -700,7 +700,7 @@ func (c *SlackConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		c.adapter.Interactions.CancelAll(env.SessionID)
 		c.closeStreamWriter()
 		if env.Event.Type == events.Error {
-			if errMsg := extractErrorMessage(env); errMsg != "" {
+			if errMsg := messaging.ExtractErrorMessage(env); errMsg != "" {
 				// Async: PostMessage is synchronous HTTP and must not block Hub broadcast.
 				go func() { _ = c.writeWithPostMessage(ctx, FormatMrkdwn(errPrefix+errMsg), false) }()
 			}
@@ -742,7 +742,7 @@ func (c *SlackConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		return c.postSkillsMessageFallback(ctx, env)
 	}
 
-	text, ok := extractResponseText(env)
+	text, ok := messaging.ExtractResponseText(env)
 	if !ok {
 		return nil
 	}
@@ -946,54 +946,6 @@ func (c *SlackConn) Close() error {
 	c.clearStatus(context.Background())
 
 	return nil
-}
-
-// extractResponseText extracts text content from an AEP event for Slack output.
-func extractResponseText(env *events.Envelope) (string, bool) {
-	switch env.Event.Type {
-	case "text", events.MessageDelta:
-		// Try MessageDeltaData
-		if d, ok := env.Event.Data.(events.MessageDeltaData); ok {
-			return d.Content, d.Content != ""
-		}
-		// Try map[string]any (JSON-decoded)
-		if m, ok := env.Event.Data.(map[string]any); ok {
-			if text, ok := m["content"].(string); ok {
-				return text, true
-			}
-			if text, ok := m["text"].(string); ok {
-				return text, true
-			}
-		}
-		// Try string data directly
-		if text, ok := env.Event.Data.(string); ok {
-			return text, true
-		}
-	case "done":
-		return "", false
-	case "raw":
-		if d, ok := env.Event.Data.(events.RawData); ok {
-			if m, ok := d.Raw.(map[string]any); ok {
-				if text, ok := m["text"].(string); ok {
-					return text, true
-				}
-			}
-		}
-	}
-	return "", false
-}
-
-// extractErrorMessage tries ErrorData then map[string]any fallback.
-func extractErrorMessage(env *events.Envelope) string {
-	if d, ok := env.Event.Data.(events.ErrorData); ok {
-		return d.Message
-	}
-	if m, ok := env.Event.Data.(map[string]any); ok {
-		if msg, ok := m["message"].(string); ok {
-			return msg
-		}
-	}
-	return ""
 }
 
 func (a *Adapter) cleanupMedia(ctx context.Context) {

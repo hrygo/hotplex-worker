@@ -181,7 +181,7 @@ func TestIsAbortCommand(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, IsAbortCommand(tt.input))
+			require.Equal(t, tt.want, messaging.IsAbortCommand(tt.input))
 		})
 	}
 }
@@ -1083,7 +1083,7 @@ func TestSlackConn_ExtractResponseText_MessageDelta(t *testing.T) {
 		},
 	}
 
-	text, ok := extractResponseText(env)
+	text, ok := messaging.ExtractResponseText(env)
 	require.True(t, ok)
 	require.Equal(t, "hello world", text)
 }
@@ -1098,7 +1098,7 @@ func TestSlackConn_ExtractResponseText_TextEvent(t *testing.T) {
 		},
 	}
 
-	text, ok := extractResponseText(env)
+	text, ok := messaging.ExtractResponseText(env)
 	require.True(t, ok)
 	require.Equal(t, "plain text content", text)
 }
@@ -1113,7 +1113,7 @@ func TestSlackConn_ExtractResponseText_DoneEvent(t *testing.T) {
 		},
 	}
 
-	text, ok := extractResponseText(env)
+	text, ok := messaging.ExtractResponseText(env)
 	require.False(t, ok)
 	require.Empty(t, text)
 }
@@ -1191,7 +1191,7 @@ func TestAC11_DeltaEventsUseStreaming(t *testing.T) {
 		},
 	}
 
-	text, ok := extractResponseText(env)
+	text, ok := messaging.ExtractResponseText(env)
 	require.True(t, ok, "AC-1.1: Should extract text from delta event")
 	require.Equal(t, "delta content", text)
 }
@@ -1335,7 +1335,7 @@ func TestChunkContent_Integration(t *testing.T) {
 	}
 }
 
-// --- extractErrorMessage: P0 fix verification ---
+// --- messaging.ExtractErrorMessage: P0 fix verification ---
 
 func TestExtractErrorMessage_TypedErrorData(t *testing.T) {
 	t.Parallel()
@@ -1346,7 +1346,7 @@ func TestExtractErrorMessage_TypedErrorData(t *testing.T) {
 			Data: events.ErrorData{Code: events.ErrCodeSessionNotFound, Message: "session not found"},
 		},
 	}
-	require.Equal(t, "session not found", extractErrorMessage(env))
+	require.Equal(t, "session not found", messaging.ExtractErrorMessage(env))
 }
 
 func TestExtractErrorMessage_MapData(t *testing.T) {
@@ -1358,7 +1358,7 @@ func TestExtractErrorMessage_MapData(t *testing.T) {
 			Data: map[string]any{"message": "something went wrong", "code": "INTERNAL_ERROR"},
 		},
 	}
-	require.Equal(t, "something went wrong", extractErrorMessage(env))
+	require.Equal(t, "something went wrong", messaging.ExtractErrorMessage(env))
 }
 
 func TestExtractErrorMessage_NilData(t *testing.T) {
@@ -1367,7 +1367,7 @@ func TestExtractErrorMessage_NilData(t *testing.T) {
 	env := &events.Envelope{
 		Event: events.Event{Type: events.Error},
 	}
-	require.Equal(t, "", extractErrorMessage(env))
+	require.Equal(t, "", messaging.ExtractErrorMessage(env))
 }
 
 func TestExtractErrorMessage_EmptyMessage(t *testing.T) {
@@ -1379,7 +1379,7 @@ func TestExtractErrorMessage_EmptyMessage(t *testing.T) {
 			Data: events.ErrorData{Code: events.ErrCodeInternalError, Message: ""},
 		},
 	}
-	require.Equal(t, "", extractErrorMessage(env))
+	require.Equal(t, "", messaging.ExtractErrorMessage(env))
 }
 
 // ---------------------------------------------------------------------------

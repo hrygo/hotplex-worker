@@ -627,7 +627,7 @@ func TestE2E_ExtractResponseText_MessageTypes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			text, ok := extractResponseText(&events.Envelope{Event: tt.event})
+			text, ok := messaging.ExtractResponseText(&events.Envelope{Event: tt.event})
 			require.Equal(t, tt.wantText, text)
 			require.Equal(t, tt.wantOK, ok)
 		})

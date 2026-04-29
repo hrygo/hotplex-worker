@@ -5,32 +5,25 @@ import (
 	"sync"
 )
 
-// abortTriggers is a set of normalized trigger words for abort detection.
 // Source: OpenClaw abort-detect.ts (core triggers, covering English/Chinese/Japanese/Russian).
 var abortTriggers = map[string]bool{
-	// English
 	"stop": true, "abort": true, "halt": true, "cancel": true,
 	"wait": true, "exit": true, "interrupt": true,
 	"please stop": true, "stop please": true,
-	// Chinese
 	"停止": true, "取消": true, "中断": true, "等一下": true,
 	"别说了": true, "停下来": true,
-	// Japanese
 	"やめて": true, "止めて": true,
-	// Russian
 	"стоп": true,
 }
 
 var abortTriggersMu sync.RWMutex
 
-// RegisterAbortTrigger adds a custom abort trigger word.
 func RegisterAbortTrigger(word string) {
 	abortTriggersMu.Lock()
 	abortTriggers[word] = true
 	abortTriggersMu.Unlock()
 }
 
-// IsAbortCommand checks if the message text is an abort command.
 // Normalization: trim → lowercase → strip trailing punctuation.
 func IsAbortCommand(text string) bool {
 	t := strings.TrimSpace(strings.ToLower(text))
@@ -41,27 +34,23 @@ func IsAbortCommand(text string) bool {
 	return ok
 }
 
-// CommandAction indicates what command was detected in a message.
 type CommandAction int
 
 const (
-	CmdNone        CommandAction = iota // no command detected
-	CmdAbort                            // abort/stop command
-	CmdHelp                             // help command
-	CmdControl                          // control command (/gc, /reset, /cd, $休眠, etc.)
-	CmdWorker                           // worker command (/context, /mcp, /model, /perm)
-	CmdPassthrough                      // passthrough worker command → forward to worker
+	CmdNone CommandAction = iota
+	CmdAbort
+	CmdHelp
+	CmdControl
+	CmdWorker
+	CmdPassthrough
 )
 
-// CommandResult holds the detected command details.
 type CommandResult struct {
 	Action  CommandAction
 	Control *ControlCommandResult
 	Worker  *WorkerCommandResult
 }
 
-// DetectCommand checks for commands in the message text.
-// Returns the detected command type and any associated result data.
 func DetectCommand(text string) CommandResult {
 	if IsAbortCommand(text) {
 		return CommandResult{Action: CmdAbort}

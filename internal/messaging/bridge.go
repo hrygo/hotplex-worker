@@ -125,7 +125,7 @@ func (b *Bridge) MakeEnvelope(userID, text string, pctx session.PlatformContext)
 // MakeSlackEnvelope converts a Slack message to an AEP input envelope.
 func (b *Bridge) MakeSlackEnvelope(teamID, channelID, threadTS, userID, text string) *events.Envelope {
 	return b.MakeEnvelope(userID, text, session.PlatformContext{
-		Platform:  "slack",
+		Platform:  string(PlatformSlack),
 		TeamID:    teamID,
 		ChannelID: channelID,
 		ThreadTS:  threadTS,
@@ -137,7 +137,7 @@ func (b *Bridge) MakeSlackEnvelope(teamID, channelID, threadTS, userID, text str
 // MakeFeishuEnvelope converts a Feishu message to an AEP input envelope.
 func (b *Bridge) MakeFeishuEnvelope(chatID, threadTS, userID, text string) *events.Envelope {
 	return b.MakeEnvelope(userID, text, session.PlatformContext{
-		Platform: "feishu",
+		Platform: string(PlatformFeishu),
 		ChatID:   chatID,
 		ThreadTS: threadTS,
 		UserID:   userID,

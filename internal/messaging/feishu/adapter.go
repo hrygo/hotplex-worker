@@ -667,7 +667,7 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		return slErr
 	}
 
-	text, ok := extractResponseText(env)
+	text, ok := messaging.ExtractResponseText(env)
 	if !ok {
 		return nil
 	}
