@@ -15,10 +15,10 @@ import (
 
 func TestAdapter_ConfigureWith_ReconnectDelays(t *testing.T) {
 	t.Parallel()
-	a := &Adapter{log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	a := &Adapter{PlatformAdapter: messaging.PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil))}}
 
-	require.Equal(t, time.Duration(0), a.backoffBaseDelay)
-	require.Equal(t, time.Duration(0), a.backoffMaxDelay)
+	require.Equal(t, time.Duration(0), a.BackoffBaseDelay)
+	require.Equal(t, time.Duration(0), a.BackoffMaxDelay)
 
 	err := a.ConfigureWith(messaging.AdapterConfig{
 		Extras: map[string]any{
@@ -27,8 +27,8 @@ func TestAdapter_ConfigureWith_ReconnectDelays(t *testing.T) {
 		},
 	})
 	require.NoError(t, err)
-	require.Equal(t, 2*time.Second, a.backoffBaseDelay)
-	require.Equal(t, 60*time.Second, a.backoffMaxDelay)
+	require.Equal(t, 2*time.Second, a.BackoffBaseDelay)
+	require.Equal(t, 60*time.Second, a.BackoffMaxDelay)
 }
 
 func TestAdapter_GetOrCreateConn_SameKeyReturnsSame(t *testing.T) {
@@ -107,11 +107,12 @@ func TestFeishuConn_Close_NilStreamCtrl(t *testing.T) {
 func TestFeishuConn_Close_NilLarkClient(t *testing.T) {
 	t.Parallel()
 	a := &Adapter{
-		log:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		dedup:       messaging.NewDedup(100, time.Hour),
+		PlatformAdapter: messaging.PlatformAdapter{
+			Log:          slog.New(slog.NewTextHandler(io.Discard, nil)),
+			Dedup:        messaging.NewDedup(100, time.Hour),
+			Interactions: messaging.NewInteractionManager(slog.New(slog.NewTextHandler(io.Discard, nil))),
+		},
 		activeConns: make(map[string]*FeishuConn),
-
-		interactions: messaging.NewInteractionManager(slog.New(slog.NewTextHandler(io.Discard, nil))),
 	}
 
 	conn := NewFeishuConn(a, "chat_close", "")
@@ -127,7 +128,7 @@ func TestFeishuConn_Close_NilLarkClient(t *testing.T) {
 
 func TestAdapter_HandleTextMessage_NilBridge(t *testing.T) {
 	t.Parallel()
-	a := &Adapter{log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	a := &Adapter{PlatformAdapter: messaging.PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil))}}
 	err := a.HandleTextMessage(context.Background(), "msg1", "ch1", "team1", "thread1", "user1", "hello")
 	require.NoError(t, err)
 }
@@ -135,11 +136,12 @@ func TestAdapter_HandleTextMessage_NilBridge(t *testing.T) {
 func TestFeishuConn_WriteCtx_PermissionRequest_NilClient(t *testing.T) {
 	t.Parallel()
 	a := &Adapter{
-		log:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		dedup:       messaging.NewDedup(100, time.Hour),
+		PlatformAdapter: messaging.PlatformAdapter{
+			Log:          slog.New(slog.NewTextHandler(io.Discard, nil)),
+			Dedup:        messaging.NewDedup(100, time.Hour),
+			Interactions: messaging.NewInteractionManager(slog.New(slog.NewTextHandler(io.Discard, nil))),
+		},
 		activeConns: make(map[string]*FeishuConn),
-
-		interactions: messaging.NewInteractionManager(slog.New(slog.NewTextHandler(io.Discard, nil))),
 	}
 
 	conn := NewFeishuConn(a, "chat123", "")
@@ -167,11 +169,12 @@ func TestFeishuConn_WriteCtx_PermissionRequest_NilClient(t *testing.T) {
 func TestFeishuConn_WriteCtx_QuestionRequest_NilClient(t *testing.T) {
 	t.Parallel()
 	a := &Adapter{
-		log:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		dedup:       messaging.NewDedup(100, time.Hour),
+		PlatformAdapter: messaging.PlatformAdapter{
+			Log:          slog.New(slog.NewTextHandler(io.Discard, nil)),
+			Dedup:        messaging.NewDedup(100, time.Hour),
+			Interactions: messaging.NewInteractionManager(slog.New(slog.NewTextHandler(io.Discard, nil))),
+		},
 		activeConns: make(map[string]*FeishuConn),
-
-		interactions: messaging.NewInteractionManager(slog.New(slog.NewTextHandler(io.Discard, nil))),
 	}
 
 	conn := NewFeishuConn(a, "chat123", "")
@@ -197,11 +200,12 @@ func TestFeishuConn_WriteCtx_QuestionRequest_NilClient(t *testing.T) {
 func TestFeishuConn_WriteCtx_ElicitationRequest_NilClient(t *testing.T) {
 	t.Parallel()
 	a := &Adapter{
-		log:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		dedup:       messaging.NewDedup(100, time.Hour),
+		PlatformAdapter: messaging.PlatformAdapter{
+			Log:          slog.New(slog.NewTextHandler(io.Discard, nil)),
+			Dedup:        messaging.NewDedup(100, time.Hour),
+			Interactions: messaging.NewInteractionManager(slog.New(slog.NewTextHandler(io.Discard, nil))),
+		},
 		activeConns: make(map[string]*FeishuConn),
-
-		interactions: messaging.NewInteractionManager(slog.New(slog.NewTextHandler(io.Discard, nil))),
 	}
 
 	conn := NewFeishuConn(a, "chat123", "")

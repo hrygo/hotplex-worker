@@ -14,7 +14,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	lark "github.com/larksuite/oapi-sdk-go/v3"
@@ -30,33 +29,24 @@ import (
 
 func init() {
 	messaging.Register(messaging.PlatformFeishu, func(log *slog.Logger) messaging.PlatformAdapterInterface {
-		return &Adapter{log: log.With("channel", "feishu")}
+		return &Adapter{PlatformAdapter: messaging.PlatformAdapter{Log: log.With("channel", "feishu")}}
 	})
 }
 
 type Adapter struct {
 	messaging.PlatformAdapter
 
-	log         *slog.Logger
 	appID       string
 	appSecret   string
 	wsClient    *ws.Client
 	larkClient  *lark.Client
-	bridge      *messaging.Bridge
 	botOpenID   string
 	transcriber Transcriber
 
-	backoffBaseDelay time.Duration
-	backoffMaxDelay  time.Duration
-
-	mu           sync.RWMutex
-	dedup        *messaging.Dedup
-	activeConns  map[string]*FeishuConn
-	gate         *messaging.Gate
-	chatQueue    *ChatQueue
-	interactions *messaging.InteractionManager
-	rateLimiter  *FeishuRateLimiter
-	started      atomic.Bool
+	mu          sync.RWMutex
+	activeConns map[string]*FeishuConn
+	chatQueue   *ChatQueue
+	rateLimiter *FeishuRateLimiter
 }
 
 func (a *Adapter) Platform() messaging.PlatformType { return messaging.PlatformFeishu }
@@ -65,27 +55,14 @@ func (a *Adapter) ConfigureWith(config messaging.AdapterConfig) error {
 	// Call base to set hub/sm/handler/bridge.
 	_ = a.PlatformAdapter.ConfigureWith(config)
 
+	// Shared adapter state (gate, backoff delays).
+	a.ConfigureShared(config)
+
 	// Feishu-specific: credentials.
 	a.appID = config.ExtrasString("app_id")
 	a.appSecret = config.ExtrasString("app_secret")
 
-	// Bridge reference.
-	if config.Bridge != nil {
-		a.bridge = config.Bridge
-	}
-
-	// Access control.
-	if config.Gate != nil {
-		a.gate = config.Gate
-	}
-
 	// Platform-specific extras.
-	if bd := config.ExtrasDuration("reconnect_base_delay"); bd > 0 {
-		a.backoffBaseDelay = bd
-	}
-	if md := config.ExtrasDuration("reconnect_max_delay"); md > 0 {
-		a.backoffMaxDelay = md
-	}
 	if t, ok := config.Extras["transcriber"].(Transcriber); ok && t != nil {
 		a.transcriber = t
 	}
@@ -94,31 +71,29 @@ func (a *Adapter) ConfigureWith(config messaging.AdapterConfig) error {
 }
 
 func (a *Adapter) Start(ctx context.Context) error {
-	if !a.started.CompareAndSwap(false, true) {
-		a.log.Warn("feishu: adapter already started, skipping")
+	if !a.StartGuard() {
+		a.Log.Warn("feishu: adapter already started, skipping")
 		return nil
 	}
 	if a.appID == "" || a.appSecret == "" {
 		return fmt.Errorf("feishu: appID and appSecret required")
 	}
 
-	a.dedup = messaging.NewDedup(0, 0) // uses shared defaults: 5000 entries, 12h TTL
+	a.InitSharedState()
 	a.activeConns = make(map[string]*FeishuConn)
-	a.interactions = messaging.NewInteractionManager(a.log)
-	a.chatQueue = NewChatQueue(a.log)
+	a.chatQueue = NewChatQueue(a.Log)
 	a.rateLimiter = NewFeishuRateLimiter()
 	a.rateLimiter.Start()
-	a.dedup.StartCleanup()
 
 	a.larkClient = lark.NewClient(a.appID, a.appSecret,
-		lark.WithLogger(SlogLogger{Logger: a.log}),
+		lark.WithLogger(SlogLogger{Logger: a.Log}),
 	)
 
 	if err := a.fetchBotOpenID(ctx); err != nil {
-		a.log.Warn("feishu: failed to fetch bot open_id, mention detection disabled", "err", err)
+		a.Log.Warn("feishu: failed to fetch bot open_id, mention detection disabled", "err", err)
 	}
 
-	a.log.Info("feishu: starting WebSocket connection")
+	a.Log.Info("feishu: starting WebSocket connection")
 	go a.runWebSocket(ctx)
 
 	return nil
@@ -129,7 +104,7 @@ func (a *Adapter) newEventHandler() *dispatcher.EventDispatcher {
 		OnP2MessageReceiveV1(func(ctx context.Context, event *larkim.P2MessageReceiveV1) (err error) {
 			defer func() {
 				if r := recover(); r != nil {
-					a.log.Error("feishu: panic in message handler", "panic", r, "stack", string(debug.Stack()))
+					a.Log.Error("feishu: panic in message handler", "panic", r, "stack", string(debug.Stack()))
 					err = fmt.Errorf("feishu handler panic: %v", r)
 				}
 			}()
@@ -147,11 +122,11 @@ func (a *Adapter) newEventHandler() *dispatcher.EventDispatcher {
 }
 
 func (a *Adapter) runWebSocket(ctx context.Context) {
-	baseDelay := a.backoffBaseDelay
+	baseDelay := a.BackoffBaseDelay
 	if baseDelay <= 0 {
 		baseDelay = 2 * time.Second
 	}
-	maxDelay := a.backoffMaxDelay
+	maxDelay := a.BackoffMaxDelay
 	if maxDelay <= 0 {
 		maxDelay = 60 * time.Second
 	}
@@ -168,20 +143,20 @@ func (a *Adapter) runWebSocket(ctx context.Context) {
 		client := ws.NewClient(a.appID, a.appSecret,
 			ws.WithEventHandler(a.newEventHandler()),
 			ws.WithAutoReconnect(true),
-			ws.WithLogger(SlogLogger{Logger: a.log}),
+			ws.WithLogger(SlogLogger{Logger: a.Log}),
 		)
 		a.mu.Lock()
 		a.wsClient = client
 		a.mu.Unlock()
 
-		a.log.Info("feishu: starting WebSocket connection", "attempt", attempt)
+		a.Log.Info("feishu: starting WebSocket connection", "attempt", attempt)
 
 		if err := client.Start(ctx); err != nil {
 			select {
 			case <-ctx.Done():
 				return
 			case <-time.After(backoff.Next()):
-				a.log.Warn("feishu: WebSocket disconnected, reconnecting...",
+				a.Log.Warn("feishu: WebSocket disconnected, reconnecting...",
 					"err", err, "attempt", attempt)
 				attempt++
 				continue
@@ -190,7 +165,7 @@ func (a *Adapter) runWebSocket(ctx context.Context) {
 
 		backoff.Reset()
 		attempt = 1
-		a.log.Info("feishu: WebSocket closed cleanly, reconnecting...")
+		a.Log.Info("feishu: WebSocket closed cleanly, reconnecting...")
 		select {
 		case <-ctx.Done():
 			return
@@ -232,7 +207,7 @@ func (a *Adapter) fetchBotOpenID(ctx context.Context) error {
 		return fmt.Errorf("bot open_id is empty")
 	}
 	a.botOpenID = result.Bot.OpenID
-	a.log.Info("feishu: bot identity resolved", "open_id", a.botOpenID)
+	a.Log.Info("feishu: bot identity resolved", "open_id", a.botOpenID)
 	return nil
 }
 
@@ -265,7 +240,7 @@ func (a *Adapter) handleMessage(ctx context.Context, event *larkim.P2MessageRece
 		return nil
 	}
 	a.mu.RLock()
-	dedup := a.dedup
+	dedup := a.Dedup
 	a.mu.RUnlock()
 	if dedup == nil {
 		return nil // adapter is closing
@@ -291,7 +266,7 @@ func (a *Adapter) handleMessage(ctx context.Context, event *larkim.P2MessageRece
 			if m.Type == "audio" && a.transcriber != nil {
 				data, ext, fetchErr := a.fetchMediaBytes(ctx, m)
 				if fetchErr != nil {
-					a.log.Warn("feishu: audio fetch failed", "key", m.Key, "err", fetchErr)
+					a.Log.Warn("feishu: audio fetch failed", "key", m.Key, "err", fetchErr)
 					continue
 				}
 				transcription, sttErr := a.transcriber.Transcribe(ctx, data)
@@ -302,12 +277,12 @@ func (a *Adapter) handleMessage(ctx context.Context, event *larkim.P2MessageRece
 						continue
 					}
 				} else if sttErr != nil {
-					a.log.Warn("feishu: stt failed, saving audio to disk", "err", sttErr)
+					a.Log.Warn("feishu: stt failed, saving audio to disk", "err", sttErr)
 				}
 				// Local/fallback mode or STT failure: save to disk for the worker.
 				path, saveErr := a.saveMediaBytes(data, m, ext)
 				if saveErr != nil {
-					a.log.Warn("feishu: audio save failed", "err", saveErr)
+					a.Log.Warn("feishu: audio save failed", "err", saveErr)
 					continue
 				}
 				paths = append(paths, path)
@@ -316,7 +291,7 @@ func (a *Adapter) handleMessage(ctx context.Context, event *larkim.P2MessageRece
 			// Non-audio or no STT: download to disk.
 			path, err := a.downloadMedia(ctx, m)
 			if err != nil {
-				a.log.Warn("feishu: media download failed", "type", m.Type, "key", m.Key, "err", err)
+				a.Log.Warn("feishu: media download failed", "type", m.Type, "key", m.Key, "err", err)
 				continue
 			}
 			if path != "" {
@@ -346,10 +321,10 @@ func (a *Adapter) handleMessage(ctx context.Context, event *larkim.P2MessageRece
 
 	// Step 7: Access control.
 	botMentioned := isBotMentioned(msg.Mentions, a.botOpenID)
-	if a.gate != nil {
-		result := a.gate.Check(chatType == "p2p", userID, botMentioned)
+	if a.Gate != nil {
+		result := a.Gate.Check(chatType == "p2p", userID, botMentioned)
 		if !result.Allowed {
-			a.log.Debug("feishu: gate rejected", "reason", result.Reason, "chat", chatID, "user", userID)
+			a.Log.Debug("feishu: gate rejected", "reason", result.Reason, "chat", chatID, "user", userID)
 			return nil
 		}
 	}
@@ -390,7 +365,7 @@ func (a *Adapter) handleMessage(ctx context.Context, event *larkim.P2MessageRece
 			return nil
 		}
 
-		a.log.Debug("feishu: handling message",
+		a.Log.Debug("feishu: handling message",
 			"chat_type", chatType,
 			"chat", chatID,
 			"user", userID,
@@ -415,11 +390,11 @@ func isBotMentioned(mentions []*larkim.MentionEvent, botOpenID string) bool {
 }
 
 func (a *Adapter) handleTextMessage(ctx context.Context, platformMsgID, channelID, chatType, userID, text, threadKey, replyToMsgID string) error {
-	if a.bridge == nil {
+	if a.Bridge() == nil {
 		return nil
 	}
 
-	envelope := a.bridge.MakeFeishuEnvelope(channelID, threadKey, userID, text)
+	envelope := a.Bridge().MakeFeishuEnvelope(channelID, threadKey, userID, text)
 	if envelope == nil {
 		return fmt.Errorf("feishu: failed to build envelope")
 	}
@@ -459,22 +434,22 @@ func (a *Adapter) handleTextMessage(ctx context.Context, platformMsgID, channelI
 		if rid, err := a.AddTypingIndicator(ctx, platformMsgID); err == nil && rid != "" {
 			conn.SetTypingReactionID(rid)
 		} else if err != nil {
-			a.log.Debug("feishu: typing indicator failed (non-fatal)", "err", err)
+			a.Log.Debug("feishu: typing indicator failed (non-fatal)", "err", err)
 		}
 	}
 
 	// Prepare streaming controller (card is lazily created on first content).
 	if a.larkClient != nil && a.rateLimiter != nil {
-		ctrl := NewStreamingCardController(a.larkClient, a.rateLimiter, a.log)
+		ctrl := NewStreamingCardController(a.larkClient, a.rateLimiter, a.Log)
 		conn.EnableStreaming(ctrl)
 	}
 
-	err := a.bridge.Handle(ctx, envelope, conn)
+	err := a.Bridge().Handle(ctx, envelope, conn)
 	if err != nil && conn != nil {
 		notifyErr := a.sendTextMessage(context.Background(), channelID,
 			"抱歉，处理您的请求时遇到问题，请稍后重试。")
 		if notifyErr != nil {
-			a.log.Warn("feishu: failed to send error notification",
+			a.Log.Warn("feishu: failed to send error notification",
 				"chat", channelID, "original_err", err, "notify_err", notifyErr)
 		}
 	}
@@ -500,14 +475,14 @@ func (a *Adapter) GetOrCreateConn(chatID, threadKey string) *FeishuConn {
 }
 
 func (a *Adapter) Close(ctx context.Context) error {
-	if a.log != nil {
-		a.log.Info("feishu: adapter closing")
+	if a.Log != nil {
+		a.Log.Info("feishu: adapter closing")
 	}
 
 	// Shut down persistent STT subprocess if present.
 	if closer, ok := a.transcriber.(stt.Closer); ok {
 		if err := closer.Close(ctx); err != nil {
-			a.log.Warn("feishu: transcriber close", "err", err)
+			a.Log.Warn("feishu: transcriber close", "err", err)
 		}
 	}
 
@@ -525,10 +500,7 @@ func (a *Adapter) Close(ctx context.Context) error {
 		conns = append(conns, conn)
 	}
 	a.activeConns = nil
-	if a.dedup != nil {
-		a.dedup.Close()
-		a.dedup = nil
-	}
+	a.CloseSharedState()
 	if a.rateLimiter != nil {
 		a.rateLimiter.Stop()
 		a.rateLimiter = nil
@@ -587,7 +559,7 @@ func (c *FeishuConn) setProcessingReaction(ctx context.Context) string {
 	}
 	rid, err := c.adapter.addReaction(ctx, msgID, "THINKING")
 	if err != nil {
-		c.adapter.log.Debug("feishu: processing reaction failed (non-fatal)", "err", err)
+		c.adapter.Log.Debug("feishu: processing reaction failed (non-fatal)", "err", err)
 	}
 	return rid
 }
@@ -637,7 +609,7 @@ func (c *FeishuConn) cycleReaction(ctx context.Context, emoji string) {
 		c.toolEmoji = emoji
 		c.mu.Unlock()
 	} else if err != nil {
-		c.adapter.log.Debug("feishu: tool reaction failed (non-fatal)", "err", err)
+		c.adapter.Log.Debug("feishu: tool reaction failed (non-fatal)", "err", err)
 	}
 }
 
@@ -754,7 +726,7 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 
 	// Cancel pending interactions on done/error.
 	if env.Event.Type == events.Done || env.Event.Type == events.Error {
-		c.adapter.interactions.CancelAll(env.SessionID)
+		c.adapter.Interactions.CancelAll(env.SessionID)
 	}
 
 	text, ok := extractResponseText(env)
@@ -773,7 +745,7 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 	chatType := c.chatType
 	c.mu.Unlock()
 
-	c.adapter.log.Debug("feishu: WriteCtx sending",
+	c.adapter.Log.Debug("feishu: WriteCtx sending",
 		"event_type", env.Event.Type,
 		"chat", chatID,
 		"reply_to", replyToMsgID,
@@ -789,10 +761,10 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 			defer abortCancel()
 			_ = streamCtrl.Abort(abortCtx)
 		}()
-		c.adapter.log.Info("feishu: streaming card rotated",
+		c.adapter.Log.Info("feishu: streaming card rotated",
 			"old_msg_id", oldMsgID)
 
-		newCtrl := NewStreamingCardController(c.adapter.larkClient, c.adapter.rateLimiter, c.adapter.log)
+		newCtrl := NewStreamingCardController(c.adapter.larkClient, c.adapter.rateLimiter, c.adapter.Log)
 		c.mu.Lock()
 		c.streamCtrl = newCtrl
 		if oldMsgID != "" {
@@ -807,7 +779,7 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		// Lazy-init: create card on first content arrival.
 		if !streamCtrl.IsCreated() {
 			if err := streamCtrl.EnsureCard(ctx, chatID, chatType, replyToMsgID, text); err != nil {
-				c.adapter.log.Warn("feishu: streaming card init failed, falling back to static", "err", err)
+				c.adapter.Log.Warn("feishu: streaming card init failed, falling back to static", "err", err)
 				c.mu.Lock()
 				c.streamCtrl = nil
 				c.mu.Unlock()
@@ -818,7 +790,7 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 			// Subsequent content: write + flush.
 			if err := streamCtrl.Write(text); err != nil {
 				// Streaming failed — close and fall back to static delivery.
-				c.adapter.log.Warn("feishu: streaming write failed, falling back to static", "err", err)
+				c.adapter.Log.Warn("feishu: streaming write failed, falling back to static", "err", err)
 				_ = streamCtrl.Abort(context.Background())
 				c.mu.Lock()
 				c.streamCtrl = nil
@@ -962,9 +934,9 @@ var _ messaging.PlatformConn = (*FeishuConn)(nil)
 // handleTextControlCommand sends a control event derived from a text message
 // through the bridge, then sends feedback via card message.
 func (a *Adapter) handleTextControlCommand(ctx context.Context, chatID, userID, threadKey, platformMsgID string, result *messaging.ControlCommandResult) {
-	envelope := a.bridge.MakeFeishuEnvelope(chatID, threadKey, userID, "")
+	envelope := a.Bridge().MakeFeishuEnvelope(chatID, threadKey, userID, "")
 	if envelope == nil {
-		a.log.Warn("feishu: text control command failed to derive session", "action", result.Label)
+		a.Log.Warn("feishu: text control command failed to derive session", "action", result.Label)
 		return
 	}
 
@@ -985,20 +957,20 @@ func (a *Adapter) handleTextControlCommand(ctx context.Context, chatID, userID, 
 	}
 
 	conn := a.GetOrCreateConn(chatID, threadKey)
-	if err := a.bridge.Handle(ctx, ctrlEnv, conn); err != nil {
-		a.log.Warn("feishu: text control command failed", "action", result.Label, "err", err)
+	if err := a.Bridge().Handle(ctx, ctrlEnv, conn); err != nil {
+		a.Log.Warn("feishu: text control command failed", "action", result.Label, "err", err)
 		_ = a.replyMessage(ctx, threadKey, fmt.Sprintf("❌ 执行 %s 失败。", result.Label), false)
 		return
 	}
 
-	a.log.Info("feishu: text control command sent", "action", result.Label, "user", userID, "session_id", envelope.SessionID)
+	a.Log.Info("feishu: text control command sent", "action", result.Label, "user", userID, "session_id", envelope.SessionID)
 
 	// Reset/GC kills the worker without a guaranteed done event, so stale
 	// pending interactions (permission/question/elicitation) may survive.
 	// Cancel them now to prevent the next user message from being consumed
 	// by checkPendingInteraction as a response to a dead interaction.
 	if result.Action == events.ControlActionReset || result.Action == events.ControlActionGC {
-		a.interactions.CancelAll(envelope.SessionID)
+		a.Interactions.CancelAll(envelope.SessionID)
 		// Abort any active streaming card — GC/Reset kills the worker without a
 		// done event, so the card would otherwise remain in streaming state.
 		conn.mu.RLock()
@@ -1017,9 +989,9 @@ func (a *Adapter) handleTextControlCommand(ctx context.Context, chatID, userID, 
 }
 
 func (a *Adapter) handleTextWorkerCommand(ctx context.Context, chatID, chatType, userID, threadKey, platformMsgID, replyToMsgID string, result *messaging.WorkerCommandResult) {
-	envelope := a.bridge.MakeFeishuEnvelope(chatID, threadKey, userID, "")
+	envelope := a.Bridge().MakeFeishuEnvelope(chatID, threadKey, userID, "")
 	if envelope == nil {
-		a.log.Warn("feishu: worker command failed to derive session", "command", result.Label)
+		a.Log.Warn("feishu: worker command failed to derive session", "command", result.Label)
 		return
 	}
 
@@ -1048,8 +1020,8 @@ func (a *Adapter) handleTextWorkerCommand(ctx context.Context, chatID, chatType,
 	conn.startedAt = time.Now()
 	conn.mu.Unlock()
 
-	if err := a.bridge.Handle(ctx, cmdEnv, conn); err != nil {
-		a.log.Warn("feishu: worker command failed", "command", result.Label, "err", err)
+	if err := a.Bridge().Handle(ctx, cmdEnv, conn); err != nil {
+		a.Log.Warn("feishu: worker command failed", "command", result.Label, "err", err)
 		if platformMsgID != "" {
 			_ = a.replyMessage(ctx, platformMsgID, fmt.Sprintf("❌ 执行 %s 失败。", result.Label), false)
 		} else {
@@ -1058,7 +1030,7 @@ func (a *Adapter) handleTextWorkerCommand(ctx context.Context, chatID, chatType,
 		return
 	}
 
-	a.log.Info("feishu: worker command sent", "command", result.Label, "user", userID, "session_id", envelope.SessionID)
+	a.Log.Info("feishu: worker command sent", "command", result.Label, "user", userID, "session_id", envelope.SessionID)
 }
 
 func controlFeedbackMessageCN(action events.ControlAction) string {
@@ -1084,7 +1056,7 @@ func (a *Adapter) sendTextMessage(ctx context.Context, chatID, text string) erro
 	if len(preview) > 200 {
 		preview = preview[:200] + "..."
 	}
-	a.log.Debug("feishu: sending card message", "chat", chatID, "content_len", len(cardJSON), "content_preview", preview)
+	a.Log.Debug("feishu: sending card message", "chat", chatID, "content_len", len(cardJSON), "content_preview", preview)
 
 	body := larkim.NewCreateMessageReqBodyBuilder().
 		ReceiveId(chatID).
@@ -1105,7 +1077,7 @@ func (a *Adapter) sendTextMessage(ctx context.Context, chatID, text string) erro
 		return fmt.Errorf("feishu: send message failed: code=%d msg=%s", resp.Code, resp.Msg)
 	}
 
-	a.log.Debug("feishu: message sent", "chat", chatID)
+	a.Log.Debug("feishu: message sent", "chat", chatID)
 	return nil
 }
 
@@ -1120,7 +1092,7 @@ func (a *Adapter) replyMessage(ctx context.Context, messageID, content string, r
 	if len(preview) > 200 {
 		preview = preview[:200] + "..."
 	}
-	a.log.Debug("feishu: sending reply card", "msg_id", messageID, "content_len", len(cardJSON), "content_preview", preview)
+	a.Log.Debug("feishu: sending reply card", "msg_id", messageID, "content_len", len(cardJSON), "content_preview", preview)
 	body := larkim.NewReplyMessageReqBodyBuilder().
 		MsgType(larkim.MsgTypeInteractive).
 		Content(cardJSON).
@@ -1139,7 +1111,7 @@ func (a *Adapter) replyMessage(ctx context.Context, messageID, content string, r
 	if !resp.Success() {
 		return fmt.Errorf("feishu: reply message failed: code=%d msg=%s", resp.Code, resp.Msg)
 	}
-	a.log.Debug("feishu: reply message sent", "msg_id", messageID, "content_len", len(content))
+	a.Log.Debug("feishu: reply message sent", "msg_id", messageID, "content_len", len(content))
 	return nil
 }
 
@@ -1202,7 +1174,7 @@ func (a *Adapter) fetchMediaBytes(ctx context.Context, media *MediaInfo) ([]byte
 		return nil, "", fmt.Errorf("feishu: file too large: %d > %d bytes", len(data), mediaMaxSize)
 	}
 
-	a.log.Debug("feishu: media fetched", "type", media.Type, "key", media.Key, "size", len(data))
+	a.Log.Debug("feishu: media fetched", "type", media.Type, "key", media.Key, "size", len(data))
 	return data, ext, nil
 }
 
@@ -1223,7 +1195,7 @@ func (a *Adapter) saveMediaBytes(data []byte, media *MediaInfo, ext string) (str
 		return "", fmt.Errorf("feishu: write file: %w", err)
 	}
 
-	a.log.Debug("feishu: media saved", "type", media.Type, "key", media.Key, "path", filePath)
+	a.Log.Debug("feishu: media saved", "type", media.Type, "key", media.Key, "path", filePath)
 	return filePath, nil
 }
 

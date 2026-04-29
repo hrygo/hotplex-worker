@@ -153,8 +153,8 @@ func TestAdapter_ConfigureWith_Fields(t *testing.T) {
 		},
 	})
 	require.NoError(t, err)
-	require.Nil(t, a.bridge)
-	require.Nil(t, a.gate)
+	require.Nil(t, a.Bridge())
+	require.Nil(t, a.Gate)
 	require.Nil(t, a.transcriber)
 }
 
@@ -392,8 +392,10 @@ var discardLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
 func newTestAdapter(t *testing.T) *Adapter {
 	t.Helper()
 	return &Adapter{
-		log:         discardLogger,
-		dedup:       messaging.NewDedup(100, time.Hour),
+		PlatformAdapter: messaging.PlatformAdapter{
+			Log:   discardLogger,
+			Dedup: messaging.NewDedup(100, time.Hour),
+		},
 		activeConns: make(map[string]*FeishuConn),
 	}
 }
