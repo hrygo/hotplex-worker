@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
@@ -409,4 +410,85 @@ func TestPoolUpdateLimits(t *testing.T) {
 	total, max, _ := pool.Stats()
 	require.Equal(t, 1, total)
 	require.Equal(t, 20, max)
+}
+
+// ─── ConversationStore: GetBySessionBefore ─────────────────────────────────────
+
+func TestConversationStore_GetBySessionBefore(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, convStore := helperStoreWithConv(t)
+
+	// Seed 5 records with seq 1-5 for session "sess-1"
+	for i := 1; i <= 5; i++ {
+		rec := &ConversationRecord{
+			ID:        fmt.Sprintf("conv_%d", i),
+			SessionID: "sess-1",
+			Seq:       int64(i),
+			Role:      RoleUser,
+			Content:   fmt.Sprintf("msg %d", i),
+			Platform:  "webchat",
+			UserID:    "user-1",
+			Source:    SourceNormal,
+		}
+		require.NoError(t, convStore.Append(ctx, rec))
+	}
+	// Wait for async writer to flush
+	time.Sleep(200 * time.Millisecond)
+
+	tests := []struct {
+		name      string
+		beforeSeq int64
+		limit     int
+		wantCount int
+		wantSeqs  []int64
+	}{
+		{"returns records before cursor", 4, 10, 3, []int64{3, 2, 1}},
+		{"respects limit", 6, 2, 2, []int64{5, 4}},
+		{"no records before cursor when seq=1", 1, 10, 0, nil},
+		{"all records when beforeSeq > max", 100, 10, 5, []int64{5, 4, 3, 2, 1}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			records, err := convStore.GetBySessionBefore(ctx, "sess-1", tt.beforeSeq, tt.limit)
+			if tt.wantCount == 0 {
+				require.ErrorIs(t, err, ErrConvNotFound)
+				return
+			}
+			require.NoError(t, err)
+			require.Len(t, records, tt.wantCount)
+			for i, wantSeq := range tt.wantSeqs {
+				require.Equal(t, wantSeq, records[i].Seq)
+			}
+		})
+	}
+}
+
+func TestConversationStore_GetBySessionBefore_SessionIsolation(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, convStore := helperStoreWithConv(t)
+
+	// Seed records for two sessions
+	for _, sid := range []string{"sess-a", "sess-b"} {
+		rec := &ConversationRecord{
+			ID:        fmt.Sprintf("conv_%s_1", sid),
+			SessionID: sid,
+			Seq:       1,
+			Role:      RoleUser,
+			Content:   "hello",
+			Platform:  "webchat",
+			UserID:    "user-1",
+			Source:    SourceNormal,
+		}
+		require.NoError(t, convStore.Append(ctx, rec))
+	}
+	time.Sleep(200 * time.Millisecond)
+
+	records, err := convStore.GetBySessionBefore(ctx, "sess-a", 100, 10)
+	require.NoError(t, err)
+	require.Len(t, records, 1)
+	require.Equal(t, "sess-a", records[0].SessionID)
 }

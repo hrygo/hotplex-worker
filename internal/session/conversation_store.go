@@ -81,6 +81,7 @@ type ConversationSessionStats struct {
 type ConversationStore interface {
 	Append(ctx context.Context, rec *ConversationRecord) error
 	GetBySession(ctx context.Context, sessionID string, limit, offset int) ([]*ConversationRecord, error)
+	GetBySessionBefore(ctx context.Context, sessionID string, beforeSeq int64, limit int) ([]*ConversationRecord, error)
 	DeleteBySession(ctx context.Context, sessionID string) error
 	DeleteExpired(ctx context.Context, cutoff time.Time) (int64, error)
 	SessionStats(ctx context.Context, sessionID string) (*ConversationSessionStats, error)
@@ -162,6 +163,53 @@ func (s *SQLiteConversationStore) GetBySession(ctx context.Context, sessionID st
 	rows, err := s.db.QueryContext(ctx, queries["conversation.get_by_session"], sessionID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("conversation store: get by session: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var records []*ConversationRecord
+	for rows.Next() {
+		var r ConversationRecord
+		var success sql.NullInt64
+		var toolsJSON, metaJSON sql.NullString
+
+		if err := rows.Scan(
+			&r.ID, &r.SessionID, &r.Seq, &r.Role, &r.Content,
+			&r.Platform, &r.UserID, &r.Model, &success, &r.Source,
+			&toolsJSON, &r.ToolCallCount,
+			&r.TokensIn, &r.TokensOut, &r.DurationMs, &r.CostUSD,
+			&metaJSON, &r.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("conversation store: scan: %w", err)
+		}
+
+		if success.Valid {
+			s := success.Int64 == 1
+			r.Success = &s
+		}
+		if toolsJSON.Valid && toolsJSON.String != "" {
+			_ = json.Unmarshal([]byte(toolsJSON.String), &r.Tools)
+		}
+		if metaJSON.Valid && metaJSON.String != "" {
+			_ = json.Unmarshal([]byte(metaJSON.String), &r.Metadata)
+		}
+		records = append(records, &r)
+	}
+	if len(records) == 0 {
+		return nil, ErrConvNotFound
+	}
+	return records, nil
+}
+
+func (s *SQLiteConversationStore) GetBySessionBefore(ctx context.Context, sessionID string, beforeSeq int64, limit int) ([]*ConversationRecord, error) {
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+	}
+
+	rows, err := s.db.QueryContext(ctx, queries["conversation.get_before_seq"], sessionID, beforeSeq, limit)
+	if err != nil {
+		return nil, fmt.Errorf("conversation store: get by session before: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
