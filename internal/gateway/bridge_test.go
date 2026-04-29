@@ -82,6 +82,9 @@ func (*fakeConvStoreForBridge) DeleteExpired(ctx context.Context, cutoff time.Ti
 func (*fakeConvStoreForBridge) SessionStats(ctx context.Context, sessionID string) (*session.ConversationSessionStats, error) {
 	return nil, nil
 }
+func (*fakeConvStoreForBridge) GetBySessionBefore(ctx context.Context, sessionID string, beforeSeq int64, limit int) ([]*session.ConversationRecord, error) {
+	return nil, nil
+}
 func (*fakeConvStoreForBridge) Close() error { return nil }
 
 func TestBridge_SetAgentConfigDir(t *testing.T) {

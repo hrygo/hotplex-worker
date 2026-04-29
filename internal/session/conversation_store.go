@@ -81,6 +81,7 @@ type ConversationSessionStats struct {
 type ConversationStore interface {
 	Append(ctx context.Context, rec *ConversationRecord) error
 	GetBySession(ctx context.Context, sessionID string, limit, offset int) ([]*ConversationRecord, error)
+	GetBySessionBefore(ctx context.Context, sessionID string, beforeSeq int64, limit int) ([]*ConversationRecord, error)
 	DeleteBySession(ctx context.Context, sessionID string) error
 	DeleteExpired(ctx context.Context, cutoff time.Time) (int64, error)
 	SessionStats(ctx context.Context, sessionID string) (*ConversationSessionStats, error)
@@ -152,19 +153,9 @@ func (s *SQLiteConversationStore) Append(_ context.Context, rec *ConversationRec
 	}
 }
 
-func (s *SQLiteConversationStore) GetBySession(ctx context.Context, sessionID string, limit, offset int) ([]*ConversationRecord, error) {
-	if _, ok := ctx.Deadline(); !ok {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-	}
-
-	rows, err := s.db.QueryContext(ctx, queries["conversation.get_by_session"], sessionID, limit, offset)
-	if err != nil {
-		return nil, fmt.Errorf("conversation store: get by session: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-
+// scanConversationRows scans all conversation rows from a query result into records.
+// Returns ErrConvNotFound if no rows matched.
+func scanConversationRows(rows *sql.Rows) ([]*ConversationRecord, error) {
 	var records []*ConversationRecord
 	for rows.Next() {
 		var r ConversationRecord
@@ -197,6 +188,38 @@ func (s *SQLiteConversationStore) GetBySession(ctx context.Context, sessionID st
 		return nil, ErrConvNotFound
 	}
 	return records, nil
+}
+
+func (s *SQLiteConversationStore) GetBySession(ctx context.Context, sessionID string, limit, offset int) ([]*ConversationRecord, error) {
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+	}
+
+	rows, err := s.db.QueryContext(ctx, queries["conversation.get_by_session"], sessionID, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("conversation store: get by session: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	return scanConversationRows(rows)
+}
+
+func (s *SQLiteConversationStore) GetBySessionBefore(ctx context.Context, sessionID string, beforeSeq int64, limit int) ([]*ConversationRecord, error) {
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+	}
+
+	rows, err := s.db.QueryContext(ctx, queries["conversation.get_before_seq"], sessionID, beforeSeq, limit)
+	if err != nil {
+		return nil, fmt.Errorf("conversation store: get by session before: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	return scanConversationRows(rows)
 }
 
 func (s *SQLiteConversationStore) DeleteBySession(ctx context.Context, sessionID string) error {
