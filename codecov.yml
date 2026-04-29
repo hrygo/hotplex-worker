@@ -6,9 +6,7 @@ coverage:
   round: down
   range: "40...100"
 
-  # 容忍 PR 阶段的小幅波动，主干阶段严格执行
-  # PR: 允许覆盖率降低 1~2%（测试跳过、平台差异等合理波动）
-  # Main: 覆盖率不允许降低，threshold: 0%
+  # 所有路径统一允许 ±1% 浮动
   status:
     project:
       default:
