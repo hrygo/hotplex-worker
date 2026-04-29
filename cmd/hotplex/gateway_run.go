@@ -231,29 +231,38 @@ func runGateway(configPath string, devMode bool) (err error) {
 
 	auth := security.NewAuthenticator(&cfg.Security, jwtValidator)
 
-	handler := gateway.NewHandler(log, hub, sm, jwtValidator)
-	bridge := gateway.NewBridge(log, hub, sm)
-	handler.SetBridge(bridge)
-	handler.SetSkillsLocator(gateway.NewSkillsCache(
-		gateway.NewFileSystemSkillsLocator(cfg),
-		cfg.AgentConfig.SkillsCacheTTL,
-	))
-	if convStore != nil {
-		handler.SetConvStore(convStore)
-		bridge.SetConvStore(convStore)
+	retryCtrl := gateway.NewLLMRetryController(cfg.Worker.AutoRetry, log)
+
+	agentConfigDir := ""
+	if cfg.AgentConfig.Enabled {
+		agentConfigDir = cfg.AgentConfig.ConfigDir
 	}
 
-	retryCtrl := gateway.NewLLMRetryController(cfg.Worker.AutoRetry, log)
-	bridge.SetRetryController(retryCtrl)
+	bridge := gateway.NewBridge(gateway.BridgeDeps{
+		Log:            log,
+		Hub:            hub,
+		SM:             sm,
+		ConvStore:      convStore,
+		RetryCtrl:      retryCtrl,
+		AgentConfigDir: agentConfigDir,
+		TurnTimeout:    cfg.Worker.TurnTimeout,
+	})
+
+	handler := gateway.NewHandler(gateway.HandlerDeps{
+		Log:          log,
+		Hub:          hub,
+		SM:           sm,
+		JWTValidator: jwtValidator,
+		Bridge:       bridge,
+		ConvStore:    convStore,
+		SkillsLocator: gateway.NewSkillsCache(
+			gateway.NewFileSystemSkillsLocator(cfg),
+			cfg.AgentConfig.SkillsCacheTTL,
+		),
+	})
+
 	if cfg.Worker.AutoRetry.Enabled {
 		log.Info("gateway: LLM auto-retry enabled", "max_retries", cfg.Worker.AutoRetry.MaxRetries, "base_delay", cfg.Worker.AutoRetry.BaseDelay)
-	}
-
-	if cfg.AgentConfig.Enabled {
-		bridge.SetAgentConfigDir(cfg.AgentConfig.ConfigDir)
-	}
-	if cfg.Worker.TurnTimeout > 0 {
-		bridge.SetTurnTimeout(cfg.Worker.TurnTimeout)
 	}
 
 	// Initialize OpenCode Server singleton process manager.

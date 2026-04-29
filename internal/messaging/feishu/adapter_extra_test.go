@@ -13,14 +13,20 @@ import (
 	"github.com/hrygo/hotplex/pkg/events"
 )
 
-func TestAdapter_SetReconnectDelays(t *testing.T) {
+func TestAdapter_ConfigureWith_ReconnectDelays(t *testing.T) {
 	t.Parallel()
 	a := &Adapter{log: slog.New(slog.NewTextHandler(io.Discard, nil))}
 
 	require.Equal(t, time.Duration(0), a.backoffBaseDelay)
 	require.Equal(t, time.Duration(0), a.backoffMaxDelay)
 
-	a.SetReconnectDelays(2*time.Second, 60*time.Second)
+	err := a.ConfigureWith(messaging.AdapterConfig{
+		Extras: map[string]any{
+			"reconnect_base_delay": 2 * time.Second,
+			"reconnect_max_delay":  60 * time.Second,
+		},
+	})
+	require.NoError(t, err)
 	require.Equal(t, 2*time.Second, a.backoffBaseDelay)
 	require.Equal(t, 60*time.Second, a.backoffMaxDelay)
 }

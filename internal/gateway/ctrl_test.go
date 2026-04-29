@@ -116,7 +116,7 @@ func newHandlerWithRealStore(t *testing.T) (*Handler, *session.Manager, *Hub, fu
 		store.Close()
 		cleanup()
 	})
-	return NewHandler(slog.Default(), h, mgr, nil), mgr, h, cleanup
+	return NewHandler(HandlerDeps{Log: slog.Default(), Hub: h, SM: mgr}), mgr, h, cleanup
 }
 
 // ─── Mock-store Handler Factory (for tests that stub store methods) ───────────
@@ -129,7 +129,7 @@ func newHandlerWithMockStore(t *testing.T, store *mockStore) (*Handler, *Hub) {
 	mgr, err := session.NewManager(context.Background(), slog.Default(), cfg, nil, store)
 	require.NoError(t, err)
 	t.Cleanup(func() { mgr.Close() })
-	return NewHandler(slog.Default(), h, mgr, nil), h
+	return NewHandler(HandlerDeps{Log: slog.Default(), Hub: h, SM: mgr}), h
 }
 
 // ─── Envelope Helpers ─────────────────────────────────────────────────────────

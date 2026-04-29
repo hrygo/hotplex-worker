@@ -28,7 +28,7 @@ type Handler struct {
 	hub           *Hub
 	sm            *session.Manager
 	jwtValidator  *security.JWTValidator
-	bridge        *Bridge // set via SetBridge; nil during tests
+	bridge        *Bridge
 	convStore     session.ConversationStore
 	skillsLocator SkillsLocator
 }
@@ -46,24 +46,17 @@ type Skill = struct {
 }
 
 // NewHandler creates a new message handler.
-func NewHandler(log *slog.Logger, hub *Hub, sm *session.Manager, jwtValidator *security.JWTValidator) *Handler {
+func NewHandler(deps HandlerDeps) *Handler {
 	return &Handler{
-		log:          log.With("component", "handler"),
-		hub:          hub,
-		sm:           sm,
-		jwtValidator: jwtValidator,
+		log:           deps.Log.With("component", "handler"),
+		hub:           deps.Hub,
+		sm:            deps.SM,
+		jwtValidator:  deps.JWTValidator,
+		bridge:        deps.Bridge,
+		convStore:     deps.ConvStore,
+		skillsLocator: deps.SkillsLocator,
 	}
 }
-
-// SetBridge injects the Bridge for lifecycle operations (reset).
-// Must be called after NewHandler and NewBridge.
-func (h *Handler) SetBridge(b *Bridge) { h.bridge = b }
-
-// SetConvStore injects the conversation store for turn-level persistence.
-func (h *Handler) SetConvStore(cs session.ConversationStore) { h.convStore = cs }
-
-// SetSkillsLocator injects the skill locator for /skills commands.
-func (h *Handler) SetSkillsLocator(loc SkillsLocator) { h.skillsLocator = loc }
 
 // Handle processes an incoming envelope from a client.
 func (h *Handler) Handle(ctx context.Context, env *events.Envelope) (err error) {

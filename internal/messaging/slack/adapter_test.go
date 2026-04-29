@@ -2010,51 +2010,63 @@ func TestShortenPaths(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Adapter setter methods
+// Adapter ConfigureWith
 // ---------------------------------------------------------------------------
 
-func TestAdapter_SetGate(t *testing.T) {
+func TestAdapter_ConfigureWith(t *testing.T) {
 	t.Parallel()
 
+	enabled := true
+	fakeTS := &fakeTranscriberForTest{}
+
+	acfg := messaging.AdapterConfig{
+		Extras: map[string]any{
+			"bot_token":            "xoxb-test",
+			"app_token":            "xapp-test",
+			"assistant_enabled":    &enabled,
+			"reconnect_base_delay": 5 * time.Second,
+			"reconnect_max_delay":  60 * time.Second,
+			"transcriber":          fakeTS,
+		},
+	}
+
 	a := &Adapter{}
+	err := a.ConfigureWith(acfg)
+	require.NoError(t, err)
+	require.Equal(t, "xoxb-test", a.botToken)
+	require.Equal(t, "xapp-test", a.appToken)
+	require.Same(t, &enabled, a.assistantEnabled)
+	require.Equal(t, 5*time.Second, a.backoffBaseDelay)
+	require.Equal(t, 60*time.Second, a.backoffMaxDelay)
+	require.Same(t, fakeTS, a.transcriber)
+}
+
+// Gate is set via AdapterConfig.Gate.
+func TestAdapter_ConfigureWith_Gate(t *testing.T) {
+	t.Parallel()
+
 	g := &messaging.Gate{}
-	a.SetGate(g)
+	a := &Adapter{}
+	err := a.ConfigureWith(messaging.AdapterConfig{Gate: g})
+	require.NoError(t, err)
 	require.Same(t, g, a.gate)
 }
 
-func TestAdapter_SetAssistantEnabled(t *testing.T) {
-	t.Parallel()
+func TestAdapter_ConfigureWith_BridgeSetsWorkDir(t *testing.T) {
+	origWorkDir := workDir
+	t.Cleanup(func() { workDir = origWorkDir })
+
+	testBridge := messaging.NewBridge(
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+		messaging.PlatformSlack,
+		nil, nil, nil, nil, "claude_code", "/tmp/hotplex/workspace",
+	)
 
 	a := &Adapter{}
-	enabled := false
-	a.SetAssistantEnabled(&enabled)
-	require.Same(t, &enabled, a.assistantEnabled)
-
-	enabled2 := true
-	a.SetAssistantEnabled(&enabled2)
-	require.Same(t, &enabled2, a.assistantEnabled)
-}
-
-func TestAdapter_SetReconnectDelays(t *testing.T) {
-	t.Parallel()
-
-	a := &Adapter{}
-	a.SetReconnectDelays(5*time.Second, 60*time.Second)
-	require.Equal(t, 5*time.Second, a.backoffBaseDelay)
-	require.Equal(t, 60*time.Second, a.backoffMaxDelay)
-
-	a.SetReconnectDelays(0, 0)
-	require.Equal(t, time.Duration(0), a.backoffBaseDelay)
-	require.Equal(t, time.Duration(0), a.backoffMaxDelay)
-}
-
-func TestAdapter_SetTranscriber(t *testing.T) {
-	t.Parallel()
-
-	a := &Adapter{}
-	fakeTS := &fakeTranscriberForTest{}
-	a.SetTranscriber(fakeTS)
-	require.Same(t, fakeTS, a.transcriber)
+	err := a.ConfigureWith(messaging.AdapterConfig{Bridge: testBridge})
+	require.NoError(t, err)
+	require.Same(t, testBridge, a.bridge)
+	require.Equal(t, "/tmp/hotplex/workspace", workDir)
 }
 
 type fakeTranscriberForTest struct{}

@@ -64,6 +64,9 @@ type PlatformAdapterInterface interface {
 
 	// Close gracefully terminates the platform connection.
 	Close(ctx context.Context) error
+
+	// ConfigureWith applies a unified configuration to the adapter.
+	ConfigureWith(config AdapterConfig) error
 }
 
 // AdapterBuilder creates a new adapter instance.
@@ -140,14 +143,11 @@ type SessionStarter interface {
 	StartPlatformSession(ctx context.Context, sessionID, ownerID, workerType, workDir, platform string, platformKey map[string]string) error
 }
 
-// SetHub injects the gateway Hub. Called by main.go during wiring.
-func (a *PlatformAdapter) SetHub(hub HubInterface) { a.hub = hub }
-
-// SetSessionManager injects the session manager. Called by main.go during wiring.
-func (a *PlatformAdapter) SetSessionManager(sm SessionManager) { a.sm = sm }
-
-// SetHandler injects the gateway Handler. Called by main.go during wiring.
-func (a *PlatformAdapter) SetHandler(h HandlerInterface) { a.handler = h }
-
-// SetBridge injects the messaging Bridge. Called by main.go during wiring.
-func (a *PlatformAdapter) SetBridge(b *Bridge) { a.bridge = b }
+// ConfigureWith sets the common adapter dependencies from config.
+func (a *PlatformAdapter) ConfigureWith(config AdapterConfig) error {
+	a.hub = config.Hub
+	a.sm = config.SM
+	a.handler = config.Handler
+	a.bridge = config.Bridge
+	return nil
+}
