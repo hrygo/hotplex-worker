@@ -44,7 +44,7 @@ type Adapter struct {
 	transcriber Transcriber
 
 	mu          sync.RWMutex
-	activeConns map[string]*FeishuConn
+	connPool    *messaging.ConnPool[*FeishuConn]
 	chatQueue   *ChatQueue
 	rateLimiter *FeishuRateLimiter
 }
@@ -80,7 +80,14 @@ func (a *Adapter) Start(ctx context.Context) error {
 	}
 
 	a.InitSharedState()
-	a.activeConns = make(map[string]*FeishuConn)
+	a.connPool = messaging.NewConnPool[*FeishuConn](func(key string) *FeishuConn {
+		parts := strings.SplitN(key, "#", 2)
+		threadKey := ""
+		if len(parts) > 1 {
+			threadKey = parts[1]
+		}
+		return NewFeishuConn(a, parts[0], threadKey)
+	})
 	a.chatQueue = NewChatQueue(a.Log)
 	a.rateLimiter = NewFeishuRateLimiter()
 	a.rateLimiter.Start()
@@ -211,6 +218,49 @@ func (a *Adapter) fetchBotOpenID(ctx context.Context) error {
 	return nil
 }
 
+// processMediaAttachments downloads media files and runs STT on audio,
+// returning file paths and transcriptions to be appended to the message text.
+func (a *Adapter) processMediaAttachments(ctx context.Context, medias []*MediaInfo) (paths, transcriptions []string) {
+	for _, m := range medias {
+		// Audio + STT: try transcription, conditionally skip disk write.
+		if m.Type == "audio" && a.transcriber != nil {
+			data, ext, fetchErr := a.fetchMediaBytes(ctx, m)
+			if fetchErr != nil {
+				a.Log.Warn("feishu: audio fetch failed", "key", m.Key, "err", fetchErr)
+				continue
+			}
+			transcription, sttErr := a.transcriber.Transcribe(ctx, data)
+			if sttErr == nil && transcription != "" {
+				transcriptions = append(transcriptions, transcription)
+				// Pure cloud STT: skip disk write entirely.
+				if !a.transcriber.RequiresDisk() {
+					continue
+				}
+			} else if sttErr != nil {
+				a.Log.Warn("feishu: stt failed, saving audio to disk", "err", sttErr)
+			}
+			// Local/fallback mode or STT failure: save to disk for the worker.
+			path, saveErr := a.saveMediaBytes(data, m, ext)
+			if saveErr != nil {
+				a.Log.Warn("feishu: audio save failed", "err", saveErr)
+				continue
+			}
+			paths = append(paths, path)
+			continue
+		}
+		// Non-audio or no STT: download to disk.
+		path, err := a.downloadMedia(ctx, m)
+		if err != nil {
+			a.Log.Warn("feishu: media download failed", "type", m.Type, "key", m.Key, "err", err)
+			continue
+		}
+		if path != "" {
+			paths = append(paths, path)
+		}
+	}
+	return
+}
+
 func (a *Adapter) handleMessage(ctx context.Context, event *larkim.P2MessageReceiveV1) error {
 	if event.Event == nil || event.Event.Message == nil {
 		return nil
@@ -259,45 +309,7 @@ func (a *Adapter) handleMessage(ctx context.Context, event *larkim.P2MessageRece
 
 	// Download media to local files and build structured prompt.
 	if len(medias) > 0 {
-		var paths []string
-		var transcriptions []string
-		for _, m := range medias {
-			// Audio + STT: try transcription, conditionally skip disk write.
-			if m.Type == "audio" && a.transcriber != nil {
-				data, ext, fetchErr := a.fetchMediaBytes(ctx, m)
-				if fetchErr != nil {
-					a.Log.Warn("feishu: audio fetch failed", "key", m.Key, "err", fetchErr)
-					continue
-				}
-				transcription, sttErr := a.transcriber.Transcribe(ctx, data)
-				if sttErr == nil && transcription != "" {
-					transcriptions = append(transcriptions, transcription)
-					// Pure cloud STT: skip disk write entirely.
-					if !a.transcriber.RequiresDisk() {
-						continue
-					}
-				} else if sttErr != nil {
-					a.Log.Warn("feishu: stt failed, saving audio to disk", "err", sttErr)
-				}
-				// Local/fallback mode or STT failure: save to disk for the worker.
-				path, saveErr := a.saveMediaBytes(data, m, ext)
-				if saveErr != nil {
-					a.Log.Warn("feishu: audio save failed", "err", saveErr)
-					continue
-				}
-				paths = append(paths, path)
-				continue
-			}
-			// Non-audio or no STT: download to disk.
-			path, err := a.downloadMedia(ctx, m)
-			if err != nil {
-				a.Log.Warn("feishu: media download failed", "type", m.Type, "key", m.Key, "err", err)
-				continue
-			}
-			if path != "" {
-				paths = append(paths, path)
-			}
-		}
+		paths, transcriptions := a.processMediaAttachments(ctx, medias)
 		if len(paths) > 0 || len(transcriptions) > 0 {
 			text = BuildMediaPrompt(text, paths, medias, transcriptions)
 		}
@@ -330,7 +342,7 @@ func (a *Adapter) handleMessage(ctx context.Context, event *larkim.P2MessageRece
 	}
 
 	// Step 8: Abort fast-path.
-	if IsAbortCommand(text) {
+	if messaging.IsAbortCommand(text) {
 		a.chatQueue.Abort(chatID)
 		return nil
 	}
@@ -344,24 +356,16 @@ func (a *Adapter) handleMessage(ctx context.Context, event *larkim.P2MessageRece
 	}
 
 	return a.chatQueue.Enqueue(chatID, func(qtx context.Context) error {
-		// Help command - reply directly without involving the worker.
-		if messaging.IsHelpCommand(text) {
+		cmd := messaging.DetectCommand(text)
+		switch cmd.Action {
+		case messaging.CmdHelp:
 			_ = a.replyMessage(qtx, messageID, messaging.HelpText(), false)
 			return nil
-		}
-
-		// Control command detection (natural language + /command).
-		if result := messaging.ParseControlCommand(text); result != nil {
-			a.handleTextControlCommand(qtx, chatID, userID, threadKey, messageID, result)
+		case messaging.CmdControl:
+			a.handleTextControlCommand(qtx, chatID, userID, threadKey, messageID, cmd.Control)
 			return nil
-		}
-
-		// Worker command detection (slash + $ natural language).
-		// Only intercept structured commands (context, mcp, model, perm).
-		// Passthrough commands (compact, clear, rewind, effort, commit)
-		// fall through to normal input — they aren't supported in stream-json mode.
-		if cmdResult := messaging.ParseWorkerCommand(text); cmdResult != nil && !cmdResult.Command.IsPassthrough() {
-			a.handleTextWorkerCommand(qtx, chatID, chatType, userID, threadKey, messageID, replyToMsgID, cmdResult)
+		case messaging.CmdWorker:
+			a.handleTextWorkerCommand(qtx, chatID, chatType, userID, threadKey, messageID, replyToMsgID, cmd.Worker)
 			return nil
 		}
 
@@ -462,16 +466,7 @@ func (a *Adapter) HandleTextMessage(ctx context.Context, platformMsgID, channelI
 
 func (a *Adapter) GetOrCreateConn(chatID, threadKey string) *FeishuConn {
 	key := chatID + "#" + threadKey
-	a.mu.Lock()
-	defer a.mu.Unlock()
-
-	if conn, ok := a.activeConns[key]; ok {
-		return conn
-	}
-
-	conn := NewFeishuConn(a, chatID, threadKey)
-	a.activeConns[key] = conn
-	return conn
+	return a.connPool.GetOrCreate(key)
 }
 
 func (a *Adapter) Close(ctx context.Context) error {
@@ -491,15 +486,10 @@ func (a *Adapter) Close(ctx context.Context) error {
 		a.chatQueue.Close()
 	}
 
-	a.mu.Lock()
+	// Drain conn pool — ConnPool manages its own lock, no deadlock with FeishuConn.Close().
+	conns := a.connPool.ClearAndClose()
 
-	// Collect conns, clear map, then close outside lock to avoid deadlock.
-	// FeishuConn.Close() acquires a.mu, so we must not hold it during conn.Close().
-	var conns []*FeishuConn
-	for _, conn := range a.activeConns {
-		conns = append(conns, conn)
-	}
-	a.activeConns = nil
+	a.mu.Lock()
 	a.CloseSharedState()
 	if a.rateLimiter != nil {
 		a.rateLimiter.Stop()
@@ -624,74 +614,31 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		c.mu.Unlock()
 	}
 
-	// Handle done event before extractResponseText (which returns false for done).
-	if env.Event.Type == events.Done {
-		c.mu.Lock()
-		streamCtrl := c.streamCtrl
-		typingRid := c.typingRid
-		toolRid := c.toolRid
-		platformMsgID := c.platformMsgID
-		if typingRid != "" {
-			_ = c.adapter.RemoveTypingIndicator(ctx, platformMsgID, typingRid)
-			c.typingRid = ""
+	switch env.Event.Type {
+	case events.Done:
+		streamCtrl := c.clearActiveIndicators(ctx)
+		if c.adapter.Interactions != nil {
+			c.adapter.Interactions.CancelAll(env.SessionID)
 		}
-		if toolRid != "" {
-			_ = c.adapter.removeReaction(ctx, platformMsgID, toolRid)
-			c.toolRid = ""
-			c.toolEmoji = ""
-		}
-		c.mu.Unlock()
-
 		if streamCtrl != nil && streamCtrl.IsCreated() {
 			return streamCtrl.Close(ctx)
 		}
 		return nil
-	}
-
-	// Handle error events: clean up streaming card so it doesn't remain stale
-	// (e.g., TURN_TIMEOUT sent by bridge.go timeout handler before worker exits).
-	if env.Event.Type == events.Error {
-		c.mu.Lock()
-		streamCtrl := c.streamCtrl
-		typingRid := c.typingRid
-		toolRid := c.toolRid
-		platformMsgID := c.platformMsgID
-		if typingRid != "" {
-			_ = c.adapter.RemoveTypingIndicator(ctx, platformMsgID, typingRid)
-			c.typingRid = ""
+	case events.Error:
+		streamCtrl := c.clearActiveIndicators(ctx)
+		if c.adapter.Interactions != nil {
+			c.adapter.Interactions.CancelAll(env.SessionID)
 		}
-		if toolRid != "" {
-			_ = c.adapter.removeReaction(ctx, platformMsgID, toolRid)
-			c.toolRid = ""
-			c.toolEmoji = ""
-		}
-		c.mu.Unlock()
 		if streamCtrl != nil && streamCtrl.IsCreated() {
 			_ = streamCtrl.Close(ctx)
 		}
-		// Don't return here — let it fall through to extractResponseText below.
-	}
-
-	// Handle tool_call: update reaction to timeline emoji.
-	if env.Event.Type == events.ToolCall {
+		// Fall through to extract error text for notification.
+	case events.ToolCall, events.ToolResult:
 		c.mu.RLock()
 		elapsed := time.Since(c.startedAt)
 		c.mu.RUnlock()
 		c.cycleReaction(ctx, timelineEmoji(elapsed))
 		return nil
-	}
-
-	// Handle tool_result: update reaction to timeline emoji.
-	if env.Event.Type == events.ToolResult {
-		c.mu.RLock()
-		elapsed := time.Since(c.startedAt)
-		c.mu.RUnlock()
-		c.cycleReaction(ctx, timelineEmoji(elapsed))
-		return nil
-	}
-
-	// Handle interaction request events.
-	switch env.Event.Type {
 	case events.PermissionRequest:
 		rid := c.setProcessingReaction(ctx)
 		pErr := c.sendPermissionRequest(ctx, env)
@@ -724,11 +671,6 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		return slErr
 	}
 
-	// Cancel pending interactions on done/error.
-	if env.Event.Type == events.Done || env.Event.Type == events.Error {
-		c.adapter.Interactions.CancelAll(env.SessionID)
-	}
-
 	text, ok := extractResponseText(env)
 	if !ok {
 		return nil
@@ -738,6 +680,58 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 	}
 	text = StripInvalidImageKeys(text)
 
+	return c.writeContent(ctx, env, text)
+}
+
+func (c *FeishuConn) Close() error {
+	c.mu.Lock()
+	streamCtrl := c.streamCtrl
+	typingRid := c.typingRid
+	toolRid := c.toolRid
+	platformMsgID := c.platformMsgID
+	c.streamCtrl = nil
+	c.typingRid = ""
+	c.toolRid = ""
+	c.mu.Unlock()
+
+	// Best-effort cleanup: Abort uses Background since this Close path is
+	// called during shutdown (no deadline needed for graceful teardown).
+	if streamCtrl != nil {
+		_ = streamCtrl.Abort(context.Background())
+	}
+	if typingRid != "" && c.adapter.larkClient != nil {
+		_ = c.adapter.RemoveTypingIndicator(context.Background(), platformMsgID, typingRid)
+	}
+	if toolRid != "" && c.adapter.larkClient != nil {
+		_ = c.adapter.removeReaction(context.Background(), platformMsgID, toolRid)
+	}
+	c.adapter.connPool.Delete(c.chatID + "#" + c.threadKey)
+	return nil
+}
+
+// clearActiveIndicators removes typing indicators and tool reactions,
+// returning the stream controller for caller cleanup.
+func (c *FeishuConn) clearActiveIndicators(ctx context.Context) *StreamingCardController {
+	c.mu.Lock()
+	streamCtrl := c.streamCtrl
+	typingRid := c.typingRid
+	toolRid := c.toolRid
+	platformMsgID := c.platformMsgID
+	if typingRid != "" {
+		_ = c.adapter.RemoveTypingIndicator(ctx, platformMsgID, typingRid)
+		c.typingRid = ""
+	}
+	if toolRid != "" {
+		_ = c.adapter.removeReaction(ctx, platformMsgID, toolRid)
+		c.toolRid = ""
+		c.toolEmoji = ""
+	}
+	c.mu.Unlock()
+	return streamCtrl
+}
+
+// writeContent delivers text content via streaming card or static fallback.
+func (c *FeishuConn) writeContent(ctx context.Context, env *events.Envelope, text string) error {
 	c.mu.Lock()
 	chatID := c.chatID
 	replyToMsgID := c.replyToMsgID
@@ -805,34 +799,6 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		return c.adapter.replyMessage(ctx, replyToMsgID, OptimizeMarkdownStyle(SanitizeForCard(text)), false)
 	}
 	return c.adapter.sendTextMessage(ctx, chatID, OptimizeMarkdownStyle(SanitizeForCard(text)))
-}
-
-func (c *FeishuConn) Close() error {
-	c.mu.Lock()
-	streamCtrl := c.streamCtrl
-	typingRid := c.typingRid
-	toolRid := c.toolRid
-	platformMsgID := c.platformMsgID
-	c.streamCtrl = nil
-	c.typingRid = ""
-	c.toolRid = ""
-	c.mu.Unlock()
-
-	// Best-effort cleanup: Abort uses Background since this Close path is
-	// called during shutdown (no deadline needed for graceful teardown).
-	if streamCtrl != nil {
-		_ = streamCtrl.Abort(context.Background())
-	}
-	if typingRid != "" && c.adapter.larkClient != nil {
-		_ = c.adapter.RemoveTypingIndicator(context.Background(), platformMsgID, typingRid)
-	}
-	if toolRid != "" && c.adapter.larkClient != nil {
-		_ = c.adapter.removeReaction(context.Background(), platformMsgID, toolRid)
-	}
-	c.adapter.mu.Lock()
-	delete(c.adapter.activeConns, c.chatID+"#"+c.threadKey)
-	c.adapter.mu.Unlock()
-	return nil
 }
 
 func (c *FeishuConn) sendContextUsage(ctx context.Context, env *events.Envelope) error {

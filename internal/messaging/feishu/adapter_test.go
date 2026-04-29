@@ -94,7 +94,7 @@ func TestExtractResponseText_RawData(t *testing.T) {
 
 func TestFeishuConn_WriteCtx_NilEnvelope(t *testing.T) {
 	t.Parallel()
-	adapter := &Adapter{PlatformAdapter: messaging.PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil)), Dedup: messaging.NewDedup(100, 12*time.Hour)}, activeConns: make(map[string]*FeishuConn)}
+	adapter := &Adapter{PlatformAdapter: messaging.PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil)), Dedup: messaging.NewDedup(100, 12*time.Hour)}, connPool: messaging.NewConnPool[*FeishuConn](nil)}
 	conn := NewFeishuConn(adapter, "test_chat", "")
 
 	err := conn.WriteCtx(context.Background(), nil)
@@ -132,10 +132,10 @@ func TestAdapter_Close(t *testing.T) {
 			Log:   slog.New(slog.NewTextHandler(io.Discard, nil)),
 			Dedup: messaging.NewDedup(100, 12*60*60*1e9),
 		},
-		activeConns: make(map[string]*FeishuConn),
+		connPool: messaging.NewConnPool[*FeishuConn](nil),
 	}
 	require.NoError(t, a.Close(context.Background()))
-	require.Nil(t, a.activeConns)
+	require.True(t, a.connPool.IsClosed())
 	require.Nil(t, a.Dedup)
 }
 
@@ -302,7 +302,7 @@ func TestAdapter_DoubleStartGuard(t *testing.T) {
 			Log:   slog.New(slog.NewTextHandler(io.Discard, nil)),
 			Dedup: messaging.NewDedup(100, 12*60*60*1e9),
 		},
-		activeConns: make(map[string]*FeishuConn),
+		connPool: messaging.NewConnPool[*FeishuConn](nil),
 	}
 
 	// First call: fails due to missing credentials (guard passes, validation fails)
@@ -323,7 +323,7 @@ func TestAdapter_CloseAfterSingleStart(t *testing.T) {
 			Log:   slog.New(slog.NewTextHandler(io.Discard, nil)),
 			Dedup: messaging.NewDedup(100, 12*60*60*1e9),
 		},
-		activeConns: make(map[string]*FeishuConn),
+		connPool: messaging.NewConnPool[*FeishuConn](nil),
 	}
 
 	// Start fails (no credentials), but guard is set

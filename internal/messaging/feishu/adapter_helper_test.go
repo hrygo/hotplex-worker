@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -391,13 +392,21 @@ var discardLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
 
 func newTestAdapter(t *testing.T) *Adapter {
 	t.Helper()
-	return &Adapter{
+	a := &Adapter{
 		PlatformAdapter: messaging.PlatformAdapter{
 			Log:   discardLogger,
 			Dedup: messaging.NewDedup(100, time.Hour),
 		},
-		activeConns: make(map[string]*FeishuConn),
 	}
+	a.connPool = messaging.NewConnPool[*FeishuConn](func(key string) *FeishuConn {
+		parts := strings.SplitN(key, "#", 2)
+		threadKey := ""
+		if len(parts) > 1 {
+			threadKey = parts[1]
+		}
+		return NewFeishuConn(a, parts[0], threadKey)
+	})
+	return a
 }
 
 func newTestStreamingCtrl() *StreamingCardController {

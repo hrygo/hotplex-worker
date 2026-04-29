@@ -367,7 +367,7 @@ func TestAdapterFlow_DedupCleanupLoop_Exit(t *testing.T) {
 			Log:   discardLogger,
 			Dedup: messaging.NewDedup(10, time.Millisecond),
 		},
-		activeConns: make(map[string]*FeishuConn),
+		connPool: messaging.NewConnPool[*FeishuConn](nil),
 	}
 	a.Dedup.StartCleanup()
 	a.Dedup.Close() // should not panic
@@ -384,10 +384,7 @@ func TestAdapterFlow_Close_WithConnections(t *testing.T) {
 	err := a.Close(context.Background())
 	require.NoError(t, err)
 
-	a.mu.RLock()
-	_, exists := a.activeConns["chat_cleanup#"]
-	a.mu.RUnlock()
-	require.False(t, exists)
+	require.Nil(t, a.connPool.Get("chat_cleanup#"))
 }
 
 func TestAdapterFlow_Start_AlreadyStarted(t *testing.T) {

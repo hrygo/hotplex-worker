@@ -71,7 +71,7 @@ type Adapter struct {
 	rateLimiter   *ChannelRateLimiter
 	slashLimiter  *SlashRateLimiter
 	activeStreams map[string]*NativeStreamingWriter // messageTS -> writer
-	activeConns   map[string]*SlackConn             // "channelID#threadTS" -> conn
+	connPool      *messaging.ConnPool[*SlackConn]   // "channelID#threadTS" -> conn
 }
 
 func (a *Adapter) Platform() messaging.PlatformType { return messaging.PlatformSlack }
@@ -131,7 +131,14 @@ func (a *Adapter) Start(ctx context.Context) error {
 	a.statusMgr = NewStatusManager(a, a.Log)
 	a.Interactions = messaging.NewInteractionManager(a.Log)
 	a.activeStreams = make(map[string]*NativeStreamingWriter)
-	a.activeConns = make(map[string]*SlackConn)
+	a.connPool = messaging.NewConnPool[*SlackConn](func(key string) *SlackConn {
+		parts := strings.SplitN(key, "#", 2)
+		threadTS := ""
+		if len(parts) > 1 {
+			threadTS = parts[1]
+		}
+		return NewSlackConn(a, parts[0], threadTS)
+	})
 
 	a.Log.Info("slack: starting Socket Mode", "bot_id", a.botID)
 
@@ -360,13 +367,12 @@ func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsA
 		"text_len", len(text),
 	)
 
-	if IsAbortCommand(text) {
+	cmd := messaging.DetectCommand(text)
+	switch cmd.Action {
+	case messaging.CmdAbort:
 		a.Log.Info("slack: abort command received", "channel", channelID)
 		return
-	}
-
-	// Help command - reply directly without involving the worker.
-	if messaging.IsHelpCommand(text) {
+	case messaging.CmdHelp:
 		_ = a.SetStatus(ctx, channelID, threadTS, StatusThinking, "Loading help...")
 		opts := []slack.MsgOption{
 			slack.MsgOptionText(messaging.HelpText(), false),
@@ -377,24 +383,15 @@ func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsA
 		_, _, _ = a.client.PostMessageContext(ctx, channelID, opts...)
 		_ = a.ClearStatus(ctx, channelID, threadTS)
 		return
-	}
-
-	// Control command detection (natural language + /command in text).
-	if result := messaging.ParseControlCommand(text); result != nil {
+	case messaging.CmdControl:
 		conn := a.GetOrCreateConn(channelID, threadTS)
 		if conn != nil {
 			conn.handlerMu.Lock()
 			defer conn.handlerMu.Unlock()
 		}
-		a.handleTextControlCommand(ctx, teamID, channelID, threadTS, userID, result)
+		a.handleTextControlCommand(ctx, teamID, channelID, threadTS, userID, cmd.Control)
 		return
-	}
-
-	// Worker command detection (slash + $ natural language).
-	// Only intercept structured commands (context, mcp, model, perm).
-	// Passthrough commands (compact, clear, rewind, effort, commit)
-	// fall through to normal input — they aren't supported in stream-json mode.
-	if cmdResult := messaging.ParseWorkerCommand(text); cmdResult != nil && !cmdResult.Command.IsPassthrough() {
+	case messaging.CmdWorker:
 		conn := a.GetOrCreateConn(channelID, threadTS)
 		if conn != nil {
 			conn.messageTS = msgEvent.TimeStamp
@@ -402,9 +399,9 @@ func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsA
 			defer conn.handlerMu.Unlock()
 		}
 		if a.isAssistantCapable.Load() && threadTS != "" {
-			_ = a.SetAssistantStatus(ctx, channelID, threadTS, "Processing "+cmdResult.Label+"...")
+			_ = a.SetAssistantStatus(ctx, channelID, threadTS, "Processing "+cmd.Worker.Label+"...")
 		}
-		a.handleTextWorkerCommand(ctx, teamID, channelID, threadTS, userID, cmdResult)
+		a.handleTextWorkerCommand(ctx, teamID, channelID, threadTS, userID, cmd.Worker)
 		return
 	}
 
@@ -423,17 +420,7 @@ func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsA
 // across multiple messages in the same thread, so Hub.Shutdown can close it.
 func (a *Adapter) GetOrCreateConn(channelID, threadTS string) *SlackConn {
 	key := channelID + "#" + threadTS
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.IsClosed() {
-		return nil
-	}
-	if c, ok := a.activeConns[key]; ok {
-		return c
-	}
-	c := NewSlackConn(a, channelID, threadTS)
-	a.activeConns[key] = c
-	return c
+	return a.connPool.GetOrCreate(key)
 }
 
 func (a *Adapter) HandleTextMessage(ctx context.Context, platformMsgID, channelID, teamID, threadTS, userID, text string) error {
@@ -492,15 +479,9 @@ func (a *Adapter) Close(ctx context.Context) error {
 	for k := range a.activeStreams {
 		delete(a.activeStreams, k)
 	}
-	conns := make([]*SlackConn, 0, len(a.activeConns))
-	for _, c := range a.activeConns {
-		conns = append(conns, c)
-	}
-	for k := range a.activeConns {
-		delete(a.activeConns, k)
-	}
 	a.mu.Unlock()
 
+	conns := a.connPool.ClearAndClose()
 	for _, c := range conns {
 		_ = c.Close()
 	}
@@ -958,9 +939,7 @@ func (c *SlackConn) closeStreamWriter() {
 // Close removes the conn from the adapter registry and cleans up the stream writer.
 func (c *SlackConn) Close() error {
 	key := c.channelID + "#" + c.threadTS
-	c.adapter.mu.Lock()
-	delete(c.adapter.activeConns, key)
-	c.adapter.mu.Unlock()
+	c.adapter.connPool.Delete(key)
 
 	c.closeStreamWriter()
 

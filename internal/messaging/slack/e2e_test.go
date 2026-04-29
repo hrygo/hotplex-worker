@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -36,8 +37,15 @@ func newTestAdapter(t *testing.T) *Adapter {
 		userCache:     NewUserCache(nil),
 		rateLimiter:   NewChannelRateLimiter(ctx),
 		activeStreams: make(map[string]*NativeStreamingWriter),
-		activeConns:   make(map[string]*SlackConn),
 	}
+	a.connPool = messaging.NewConnPool[*SlackConn](func(key string) *SlackConn {
+		parts := strings.SplitN(key, "#", 2)
+		threadTS := ""
+		if len(parts) > 1 {
+			threadTS = parts[1]
+		}
+		return NewSlackConn(a, parts[0], threadTS)
+	})
 	// StatusManager needs the adapter pointer; set after struct creation.
 	a.statusMgr = NewStatusManager(a, slog.Default())
 	t.Cleanup(func() { _ = a.Close(ctx) })
@@ -561,17 +569,11 @@ func TestE2E_SlackConn_CloseRemovesFromRegistry(t *testing.T) {
 	require.NotNil(t, conn)
 
 	key := "C123#456.789"
-	a.mu.RLock()
-	_, exists := a.activeConns[key]
-	a.mu.RUnlock()
-	require.True(t, exists, "conn should be registered")
+	require.NotNil(t, a.connPool.Get(key), "conn should be registered")
 
 	require.NoError(t, conn.Close())
 
-	a.mu.RLock()
-	_, exists = a.activeConns[key]
-	a.mu.RUnlock()
-	require.False(t, exists, "conn should be removed after Close")
+	require.Nil(t, a.connPool.Get(key), "conn should be removed after Close")
 }
 
 func TestE2E_SlackConn_GetOrCreateIsIdempotent(t *testing.T) {
@@ -738,7 +740,7 @@ func TestE2E_AuthTestFailureReturnsError(t *testing.T) {
 		botToken:      "xoxb-invalid",
 		appToken:      "xapp-invalid",
 		activeStreams: make(map[string]*NativeStreamingWriter),
-		activeConns:   make(map[string]*SlackConn),
+		connPool:      messaging.NewConnPool[*SlackConn](nil),
 	}
 
 	err := a.Start(context.Background())

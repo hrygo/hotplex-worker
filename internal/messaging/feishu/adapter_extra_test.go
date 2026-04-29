@@ -38,7 +38,7 @@ func TestAdapter_GetOrCreateConn_SameKeyReturnsSame(t *testing.T) {
 	conn1 := a.GetOrCreateConn("chat123", "thread1")
 	conn2 := a.GetOrCreateConn("chat123", "thread1")
 	require.Same(t, conn1, conn2)
-	require.Len(t, a.activeConns, 1)
+	require.Equal(t, 1, a.connPool.Len())
 }
 
 func TestAdapter_GetOrCreateConn_DifferentKeyReturnsDifferent(t *testing.T) {
@@ -51,7 +51,7 @@ func TestAdapter_GetOrCreateConn_DifferentKeyReturnsDifferent(t *testing.T) {
 	require.NotSame(t, conn1, conn2)
 	require.NotSame(t, conn1, conn3)
 	require.NotSame(t, conn2, conn3)
-	require.Len(t, a.activeConns, 3)
+	require.Equal(t, 3, a.connPool.Len())
 }
 
 func TestAdapter_GetOrCreateConn_ThreadKeyPassedThrough(t *testing.T) {
@@ -87,10 +87,7 @@ func TestFeishuConn_Close_ClearsFields(t *testing.T) {
 	require.Empty(t, conn.toolEmoji)
 	conn.mu.RUnlock()
 
-	a.mu.RLock()
-	_, exists := a.activeConns["chat123#"]
-	a.mu.RUnlock()
-	require.False(t, exists)
+	require.Nil(t, a.connPool.Get("chat123#"))
 }
 
 func TestFeishuConn_Close_NilStreamCtrl(t *testing.T) {
@@ -112,7 +109,7 @@ func TestFeishuConn_Close_NilLarkClient(t *testing.T) {
 			Dedup:        messaging.NewDedup(100, time.Hour),
 			Interactions: messaging.NewInteractionManager(slog.New(slog.NewTextHandler(io.Discard, nil))),
 		},
-		activeConns: make(map[string]*FeishuConn),
+		connPool: messaging.NewConnPool[*FeishuConn](nil),
 	}
 
 	conn := NewFeishuConn(a, "chat_close", "")
@@ -141,7 +138,7 @@ func TestFeishuConn_WriteCtx_PermissionRequest_NilClient(t *testing.T) {
 			Dedup:        messaging.NewDedup(100, time.Hour),
 			Interactions: messaging.NewInteractionManager(slog.New(slog.NewTextHandler(io.Discard, nil))),
 		},
-		activeConns: make(map[string]*FeishuConn),
+		connPool: messaging.NewConnPool[*FeishuConn](nil),
 	}
 
 	conn := NewFeishuConn(a, "chat123", "")
@@ -174,7 +171,7 @@ func TestFeishuConn_WriteCtx_QuestionRequest_NilClient(t *testing.T) {
 			Dedup:        messaging.NewDedup(100, time.Hour),
 			Interactions: messaging.NewInteractionManager(slog.New(slog.NewTextHandler(io.Discard, nil))),
 		},
-		activeConns: make(map[string]*FeishuConn),
+		connPool: messaging.NewConnPool[*FeishuConn](nil),
 	}
 
 	conn := NewFeishuConn(a, "chat123", "")
@@ -205,7 +202,7 @@ func TestFeishuConn_WriteCtx_ElicitationRequest_NilClient(t *testing.T) {
 			Dedup:        messaging.NewDedup(100, time.Hour),
 			Interactions: messaging.NewInteractionManager(slog.New(slog.NewTextHandler(io.Discard, nil))),
 		},
-		activeConns: make(map[string]*FeishuConn),
+		connPool: messaging.NewConnPool[*FeishuConn](nil),
 	}
 
 	conn := NewFeishuConn(a, "chat123", "")

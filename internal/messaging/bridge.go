@@ -99,10 +99,32 @@ func (b *Bridge) makeEnvelope(sessionID, ownerID, text string, metadata map[stri
 	}
 }
 
+// MakeEnvelope creates an AEP input envelope from a platform context.
+// session ID is derived via UUIDv5 from the platform context fields.
+func (b *Bridge) MakeEnvelope(userID, text string, pctx session.PlatformContext) *events.Envelope {
+	sessionID := session.DerivePlatformSessionKey(userID, worker.WorkerType(b.workerType), pctx)
+	md := map[string]any{"platform": pctx.Platform}
+	if pctx.TeamID != "" {
+		md["team_id"] = pctx.TeamID
+	}
+	if pctx.ChannelID != "" {
+		md["channel_id"] = pctx.ChannelID
+	}
+	if pctx.ChatID != "" {
+		md["chat_id"] = pctx.ChatID
+	}
+	if pctx.ThreadTS != "" {
+		md["thread_ts"] = pctx.ThreadTS
+	}
+	if pctx.UserID != "" {
+		md["user_id"] = pctx.UserID
+	}
+	return b.makeEnvelope(sessionID, userID, text, md)
+}
+
 // MakeSlackEnvelope converts a Slack message to an AEP input envelope.
-// session ID is derived via UUIDv5: ownerID + workerType + platform + teamID + channelID + threadTS + userID + workDir.
 func (b *Bridge) MakeSlackEnvelope(teamID, channelID, threadTS, userID, text string) *events.Envelope {
-	sessionID := session.DerivePlatformSessionKey(userID, worker.WorkerType(b.workerType), session.PlatformContext{
+	return b.MakeEnvelope(userID, text, session.PlatformContext{
 		Platform:  "slack",
 		TeamID:    teamID,
 		ChannelID: channelID,
@@ -110,30 +132,16 @@ func (b *Bridge) MakeSlackEnvelope(teamID, channelID, threadTS, userID, text str
 		UserID:    userID,
 		WorkDir:   b.workDir,
 	})
-	return b.makeEnvelope(sessionID, userID, text, map[string]any{
-		"platform":   string(PlatformSlack),
-		"team_id":    teamID,
-		"channel_id": channelID,
-		"thread_ts":  threadTS,
-		"user_id":    userID,
-	})
 }
 
 // MakeFeishuEnvelope converts a Feishu message to an AEP input envelope.
-// session ID is derived via UUIDv5: ownerID + workerType + platform + chatID + threadTS + userID + workDir.
 func (b *Bridge) MakeFeishuEnvelope(chatID, threadTS, userID, text string) *events.Envelope {
-	sessionID := session.DerivePlatformSessionKey(userID, worker.WorkerType(b.workerType), session.PlatformContext{
+	return b.MakeEnvelope(userID, text, session.PlatformContext{
 		Platform: "feishu",
 		ChatID:   chatID,
 		ThreadTS: threadTS,
 		UserID:   userID,
 		WorkDir:  b.workDir,
-	})
-	return b.makeEnvelope(sessionID, userID, text, map[string]any{
-		"platform":  string(PlatformFeishu),
-		"chat_id":   chatID,
-		"thread_ts": threadTS,
-		"user_id":   userID,
 	})
 }
 

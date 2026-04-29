@@ -633,7 +633,7 @@ func TestAssistantAPIEnabled_ControlsProbe(t *testing.T) {
 	a := &Adapter{
 		PlatformAdapter: messaging.PlatformAdapter{Log: slog.Default()},
 		activeStreams:   make(map[string]*NativeStreamingWriter),
-		activeConns:     make(map[string]*SlackConn),
+		connPool:        messaging.NewConnPool[*SlackConn](nil),
 	}
 
 	// Default (nil) → enabled
@@ -662,7 +662,7 @@ func TestHandleCapabilityError_Degrades(t *testing.T) {
 	a := &Adapter{
 		PlatformAdapter: messaging.PlatformAdapter{Log: slog.Default()},
 		activeStreams:   make(map[string]*NativeStreamingWriter),
-		activeConns:     make(map[string]*SlackConn),
+		connPool:        messaging.NewConnPool[*SlackConn](nil),
 	}
 
 	// Set to capable
@@ -856,7 +856,7 @@ func TestAdapter_DoubleStartGuard(t *testing.T) {
 	a := &Adapter{
 		PlatformAdapter: messaging.PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil))},
 		activeStreams:   make(map[string]*NativeStreamingWriter),
-		activeConns:     make(map[string]*SlackConn),
+		connPool:        messaging.NewConnPool[*SlackConn](nil),
 	}
 
 	// First call: fails due to missing tokens (guard passes, validation fails)
@@ -877,7 +877,7 @@ func TestAdapter_DoubleStartGuard_WithTokens(t *testing.T) {
 		botToken:        "xoxb-fake",
 		appToken:        "xapp-fake",
 		activeStreams:   make(map[string]*NativeStreamingWriter),
-		activeConns:     make(map[string]*SlackConn),
+		connPool:        messaging.NewConnPool[*SlackConn](nil),
 	}
 
 	// First call: fails at auth test (guard passes, Slack API fails)
@@ -895,7 +895,7 @@ func TestAdapter_CloseAfterSingleStart(t *testing.T) {
 	a := &Adapter{
 		PlatformAdapter: messaging.PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil))},
 		activeStreams:   make(map[string]*NativeStreamingWriter),
-		activeConns:     make(map[string]*SlackConn),
+		connPool:        messaging.NewConnPool[*SlackConn](nil),
 	}
 
 	// Start fails (no tokens), but guard is set
@@ -1001,7 +1001,7 @@ func TestSlackConn_Close_CleansUpStreamWriter(t *testing.T) {
 
 	adapter := &Adapter{
 		PlatformAdapter: messaging.PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil))},
-		activeConns:     make(map[string]*SlackConn),
+		connPool:        messaging.NewConnPool[*SlackConn](nil),
 		activeStreams:   make(map[string]*NativeStreamingWriter),
 	}
 
@@ -1498,7 +1498,7 @@ func testAdapter() *Adapter {
 		PlatformAdapter: messaging.PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil))},
 		client:          slack.New("x-test-token"),
 		activeStreams:   make(map[string]*NativeStreamingWriter),
-		activeConns:     make(map[string]*SlackConn),
+		connPool:        messaging.NewConnPool[*SlackConn](nil),
 	}
 }
 
@@ -1580,7 +1580,7 @@ func TestSlackConn_SendContextUsage(t *testing.T) {
 		{
 			name: "nil client",
 			conn: &SlackConn{
-				adapter:   &Adapter{PlatformAdapter: messaging.PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil))}, client: nil, activeStreams: make(map[string]*NativeStreamingWriter), activeConns: make(map[string]*SlackConn)},
+				adapter:   &Adapter{PlatformAdapter: messaging.PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil))}, client: nil, activeStreams: make(map[string]*NativeStreamingWriter), connPool: messaging.NewConnPool[*SlackConn](nil)},
 				channelID: "C123", threadTS: "123.456",
 			},
 			env:     &events.Envelope{Event: events.Event{Type: events.ContextUsage, Data: events.ContextUsageData{TotalTokens: 100, MaxTokens: 200, Percentage: 50}}},
@@ -1674,7 +1674,7 @@ func TestSlackConn_SendMCPStatus(t *testing.T) {
 		{
 			name: "nil client",
 			conn: &SlackConn{
-				adapter:   &Adapter{PlatformAdapter: messaging.PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil))}, client: nil, activeStreams: make(map[string]*NativeStreamingWriter), activeConns: make(map[string]*SlackConn)},
+				adapter:   &Adapter{PlatformAdapter: messaging.PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil))}, client: nil, activeStreams: make(map[string]*NativeStreamingWriter), connPool: messaging.NewConnPool[*SlackConn](nil)},
 				channelID: "C123", threadTS: "123.456",
 			},
 			env:     &events.Envelope{Event: events.Event{Type: events.MCPStatus, Data: events.MCPStatusData{Servers: []events.MCPServerInfo{{Name: "fs", Status: "connected"}}}}},
