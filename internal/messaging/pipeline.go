@@ -3,7 +3,6 @@ package messaging
 import (
 	"strings"
 	"sync"
-	"time"
 )
 
 // abortTriggers is a set of normalized trigger words for abort detection.
@@ -22,7 +21,6 @@ var abortTriggers = map[string]bool{
 	"стоп": true,
 }
 
-// abortTriggersMu protects abortTriggers for concurrent access.
 var abortTriggersMu sync.RWMutex
 
 // RegisterAbortTrigger adds a custom abort trigger word.
@@ -36,25 +34,11 @@ func RegisterAbortTrigger(word string) {
 // Normalization: trim → lowercase → strip trailing punctuation.
 func IsAbortCommand(text string) bool {
 	t := strings.TrimSpace(strings.ToLower(text))
-	t = strings.TrimRight(t, ".!?…,，。;；:：\"')]")
+	t = trimTrailingPunct(t)
 	abortTriggersMu.RLock()
 	ok := abortTriggers[t]
 	abortTriggersMu.RUnlock()
 	return ok
-}
-
-// ParsedMessage is the normalized representation of a platform message,
-// produced by adapter-specific parsing and consumed by the shared pipeline.
-type ParsedMessage struct {
-	PlatformMsgID string
-	ChannelID     string // Slack: channelID, Feishu: chatID
-	ThreadKey     string // Slack: threadTS, Feishu: threadKey
-	UserID        string
-	TeamID        string // Slack-only, empty for Feishu
-	Text          string // raw text, before sanitization
-	ChatType      string // normalized: "im", "mpim", "group", "channel", "p2p"
-	BotMentioned  bool
-	CreateTime    time.Time
 }
 
 // CommandAction indicates what command was detected in a message.
@@ -95,23 +79,4 @@ func DetectCommand(text string) CommandResult {
 		return CommandResult{Action: CmdWorker, Worker: wc}
 	}
 	return CommandResult{Action: CmdNone}
-}
-
-// ValidateMessage performs shared validation: text sanitization + access control gate.
-// Mutates msg.Text (sanitizes in place). Returns false if the message is rejected.
-func (a *PlatformAdapter) ValidateMessage(msg *ParsedMessage) bool {
-	msg.Text = SanitizeText(msg.Text)
-
-	if a.Gate != nil {
-		isDM := msg.ChatType == "im" || msg.ChatType == "p2p"
-		result := a.Gate.Check(isDM, msg.UserID, msg.BotMentioned)
-		if !result.Allowed {
-			a.Log.Debug("gate rejected message",
-				"reason", result.Reason,
-				"user", msg.UserID,
-				"channel", msg.ChannelID)
-			return false
-		}
-	}
-	return true
 }

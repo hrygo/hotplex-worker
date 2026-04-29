@@ -617,18 +617,14 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 	switch env.Event.Type {
 	case events.Done:
 		streamCtrl := c.clearActiveIndicators(ctx)
-		if c.adapter.Interactions != nil {
-			c.adapter.Interactions.CancelAll(env.SessionID)
-		}
+		c.adapter.Interactions.CancelAll(env.SessionID)
 		if streamCtrl != nil && streamCtrl.IsCreated() {
 			return streamCtrl.Close(ctx)
 		}
 		return nil
 	case events.Error:
 		streamCtrl := c.clearActiveIndicators(ctx)
-		if c.adapter.Interactions != nil {
-			c.adapter.Interactions.CancelAll(env.SessionID)
-		}
+		c.adapter.Interactions.CancelAll(env.SessionID)
 		if streamCtrl != nil && streamCtrl.IsCreated() {
 			_ = streamCtrl.Close(ctx)
 		}
