@@ -65,7 +65,13 @@ interface ToolCallPart {
   isError?: boolean;
 }
 
-type MessagePart = TextPart | ReasoningPart | ToolCallPart;
+interface ToolSummaryPart {
+  type: 'tool-summary';
+  toolNames: string[];
+  count: number;
+}
+
+type MessagePart = TextPart | ReasoningPart | ToolCallPart | ToolSummaryPart;
 
 // Internal message format for our store
 interface HotPlexMessage {
@@ -118,11 +124,13 @@ function toCacheable(msg: HotPlexMessage): CacheableMessage {
   return {
     id: msg.id,
     role: msg.role,
-    parts: msg.parts.filter((p): p is TextPart | ReasoningPart =>
-      p.type === 'text' || p.type === 'reasoning'
+    parts: msg.parts.filter((p): p is TextPart | ReasoningPart | ToolSummaryPart =>
+      p.type === 'text' || p.type === 'reasoning' || p.type === 'tool-summary'
     ).map(p => ({
       type: p.type,
-      text: p.text,
+      text: 'text' in p ? p.text : undefined,
+      toolNames: 'toolNames' in p ? p.toolNames : undefined,
+      count: 'count' in p ? p.count : undefined,
     })),
     createdAt: msg.createdAt.toISOString(),
     status: msg.status,
@@ -134,10 +142,12 @@ function fromCacheable(msg: CacheableMessage): HotPlexMessage {
   return {
     id: msg.id,
     role: msg.role as 'user' | 'assistant',
-    parts: (msg.parts || []).map(p => ({
-      type: p.type as 'text',
-      text: p.text || '',
-    })),
+    parts: (msg.parts || []).map(p => {
+      if (p.type === 'tool-summary') {
+        return { type: 'tool-summary' as const, toolNames: (p as any).toolNames || [], count: (p as any).count || 0 };
+      }
+      return { type: 'text' as const, text: p.text || '' };
+    }),
     createdAt: new Date(msg.createdAt),
     status: msg.status,
   };
@@ -168,12 +178,15 @@ function historyToMessages(records: ConversationRecord[]): HotPlexMessage[] {
   return conversationTurnsToMessages(turns).map(m => ({
     id: m.id,
     role: m.role as 'user' | 'assistant',
-    parts: m.parts
-      .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
-      .map(p => ({
-        type: 'text' as const,
-        text: p.text,
-      })),
+    parts: (m.parts || []).map(p => {
+      if (p.type === 'tool-summary') {
+        return { type: 'tool-summary' as const, toolNames: p.toolNames, count: p.count };
+      }
+      if (p.type === 'text') {
+        return { type: 'text' as const, text: p.text || '' };
+      }
+      return null;
+    }).filter((p): p is TextPart | ToolSummaryPart => p !== null),
     createdAt: m.createdAt,
     status: 'complete' as const,
   }));
