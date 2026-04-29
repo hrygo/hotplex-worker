@@ -284,6 +284,7 @@ configs/  config.yaml, config-dev.yaml, env.example
 - **Feishu streaming card 4-layer defense**: TTL guard → integrity check → retry with backoff → IM Patch fallback for degraded CardKit
 - **Slack message pipeline**: chunker (split long messages) → dedup (TTL-based duplicate filter) → format (markdown conversion) → rate limiter → send
 - **Slack streaming**: SlackStreamingWriter with 150ms flush interval, 20-rune threshold, max 3 append retries, 10min TTL
+- **Slack tool status**: `toolStatusFormatters` registry maps tool names to specialized display formatters (TodoWrite → `📋 Fixing auth bug`, Read → `📖 Reading main.go`, etc.); unregistered tools fallback to `Name(key=val)` generic format; `LogOnceUnregistered` logs unknown tool names once-per-name at DEBUG level for continuous evolution; see `internal/messaging/slack/AGENTS.md` for formatter addition flow
 - **LLM auto-retry**: LLMRetryController detects retryable errors via regex patterns (429/5xx/network), exponential backoff (initial 2s, max 60s), per-session attempt counter
 - **Deterministic session IDs**: DeriveSessionKey uses UUIDv5 (SHA-1 namespace+name) for cross-environment consistency; PlatformContext for platform-specific key derivation
 - **Per-user memory tracking**: PoolManager tracks estimated memory per user (512MB/worker) alongside session count quotas

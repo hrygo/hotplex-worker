@@ -23,6 +23,10 @@ const (
 	SourceCrash      = "crash"
 	SourceTimeout    = "timeout"
 	SourceFreshStart = "fresh_start"
+
+	writeChanCap       = 1024
+	batchFlushInterval = 100 * time.Millisecond
+	batchMaxSize       = 50
 )
 
 // ConversationRecord represents a single row in the conversation table.
@@ -47,12 +51,39 @@ type ConversationRecord struct {
 	CreatedAt     time.Time
 }
 
+// ConversationTurnStats holds statistics for a single turn.
+type ConversationTurnStats struct {
+	Seq        int64   `json:"seq"`
+	Success    bool    `json:"success"`
+	DurationMs int64   `json:"duration_ms"`
+	CostUSD    float64 `json:"cost_usd"`
+	TokensIn   int64   `json:"tokens_in"`
+	TokensOut  int64   `json:"tokens_out"`
+	Model      string  `json:"model"`
+	Source     string  `json:"source"`
+	CreatedAt  string  `json:"created_at"`
+}
+
+// ConversationSessionStats holds aggregated statistics across all turns of a session.
+type ConversationSessionStats struct {
+	SessionID    string                  `json:"session_id"`
+	TotalTurns   int                     `json:"total_turns"`
+	SuccessTurns int                     `json:"success_turns"`
+	FailedTurns  int                     `json:"failed_turns"`
+	TotalDurMs   int64                   `json:"total_duration_ms"`
+	TotalCostUSD float64                 `json:"total_cost_usd"`
+	TotalTokIn   int64                   `json:"total_tokens_in"`
+	TotalTokOut  int64                   `json:"total_tokens_out"`
+	Turns        []ConversationTurnStats `json:"turns"`
+}
+
 // ConversationStore defines the interface for conversation turn persistence.
 type ConversationStore interface {
 	Append(ctx context.Context, rec *ConversationRecord) error
 	GetBySession(ctx context.Context, sessionID string, limit, offset int) ([]*ConversationRecord, error)
 	DeleteBySession(ctx context.Context, sessionID string) error
 	DeleteExpired(ctx context.Context, cutoff time.Time) (int64, error)
+	SessionStats(ctx context.Context, sessionID string) (*ConversationSessionStats, error)
 	Close() error
 }
 
@@ -192,6 +223,50 @@ func (s *SQLiteConversationStore) DeleteExpired(ctx context.Context, cutoff time
 		return 0, fmt.Errorf("conversation store: delete expired: %w", err)
 	}
 	return res.RowsAffected()
+}
+
+func (s *SQLiteConversationStore) SessionStats(ctx context.Context, sessionID string) (*ConversationSessionStats, error) {
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+	}
+
+	rows, err := s.db.QueryContext(ctx, queries["conversation.session_stats"], sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("conversation store: session stats: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	stats := &ConversationSessionStats{SessionID: sessionID}
+	for rows.Next() {
+		var ts ConversationTurnStats
+		var role, toolsJSON string
+		var success sql.NullInt64
+		if err := rows.Scan(&ts.Seq, &role, &success, &ts.DurationMs, &ts.CostUSD,
+			&ts.TokensIn, &ts.TokensOut, &ts.Model, &toolsJSON, &ts.Source, &ts.CreatedAt); err != nil {
+			s.log.Warn("conversation store: session stats scan row", "session_id", sessionID, "err", err)
+			continue
+		}
+		if success.Valid && success.Int64 == 1 {
+			ts.Success = true
+		}
+		stats.TotalTurns++
+		if ts.Success {
+			stats.SuccessTurns++
+		} else {
+			stats.FailedTurns++
+		}
+		stats.TotalDurMs += ts.DurationMs
+		stats.TotalCostUSD += ts.CostUSD
+		stats.TotalTokIn += ts.TokensIn
+		stats.TotalTokOut += ts.TokensOut
+		stats.Turns = append(stats.Turns, ts)
+	}
+	if stats.TotalTurns == 0 {
+		return nil, ErrConvNotFound
+	}
+	return stats, rows.Err()
 }
 
 func (s *SQLiteConversationStore) Close() error {

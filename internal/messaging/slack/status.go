@@ -72,6 +72,8 @@ type StatusManager struct {
 	emojiOnly   atomic.Bool
 	emojiState  map[string]string
 	threadState map[string]*threadState
+	// unregLogged tracks tool names already logged as unregistered (once-per-name dedup).
+	unregLogged sync.Map
 }
 
 // NewStatusManager creates a new status manager.
@@ -88,6 +90,14 @@ func NewStatusManager(adapter *Adapter, logger *slog.Logger) *StatusManager {
 // Called once after probe determines the workspace lacks Assistant API.
 func (m *StatusManager) SetEmojiOnly(emojiOnly bool) {
 	m.emojiOnly.Store(emojiOnly)
+}
+
+// LogOnceUnregistered logs a debug message the first time an unregistered tool name is seen.
+func (m *StatusManager) LogOnceUnregistered(name string) {
+	if _, loaded := m.unregLogged.LoadOrStore(name, true); loaded {
+		return
+	}
+	m.logger.Debug("slack: unregistered tool in status formatter, consider adding to toolStatusFormatters", "tool", name)
 }
 
 // Notify sends a status update. Skips if text is identical to the last sent
@@ -221,7 +231,47 @@ func aepEventToStatus(env *events.Envelope) (StatusType, string) {
 	}
 }
 
-// extractToolCallStatus formats "ToolName(key=val, key=val)" truncated to 50 chars.
+// toolStatusFormatter produces a human-readable status string from tool input.
+type toolStatusFormatter func(input map[string]any) string
+
+// toolStatusFormatters maps tool names to specialized status formatters.
+// Unregistered tools fall through to the generic key=value format.
+var toolStatusFormatters = map[string]toolStatusFormatter{
+	"TodoWrite":    formatTodoWriteStatus,
+	"Read":         formatFileToolStatus("📖 Reading", "file_path"),
+	"Edit":         formatFileToolStatus("✏️ Editing", "file_path"),
+	"Write":        formatFileToolStatus("📝 Writing", "file_path"),
+	"NotebookEdit": formatFileToolStatus("📓 Editing", "notebook_path"),
+	"Bash":         formatBashStatus,
+	"Grep":         formatGrepStatus,
+	"Glob":         formatGlobStatus,
+	"Agent":        formatAgentStatus,
+	"WebSearch":    formatSimpleToolStatus("🌐 Searching", "query"),
+	"WebFetch":     formatSimpleToolStatus("🌐 Fetching", "url"),
+	"LSP":          formatLSPStatus,
+}
+
+// statusTextLimit is the max rune length for tool status text.
+const statusTextLimit = 80
+
+// toolNameFromEnvelope extracts the tool name from a ToolCall envelope.
+func toolNameFromEnvelope(env *events.Envelope) string {
+	if env.Event.Data == nil {
+		return ""
+	}
+	if data, ok := env.Event.Data.(*events.ToolCallData); ok {
+		return data.Name
+	}
+	if m, ok := env.Event.Data.(map[string]any); ok {
+		if n, ok := m["name"].(string); ok {
+			return n
+		}
+	}
+	return ""
+}
+
+// extractToolCallStatus formats tool call info into a human-readable status string.
+// Registered tools get specialized formatters; others use generic "Name(key=val)" format.
 func extractToolCallStatus(env *events.Envelope) string {
 	name := "tool"
 	var input map[string]any
@@ -243,8 +293,12 @@ func extractToolCallStatus(env *events.Envelope) string {
 		}
 	}
 
+	if fn, ok := toolStatusFormatters[name]; ok && input != nil {
+		return truncateWithSuffix(fn(input), statusTextLimit)
+	}
+
 	if len(input) == 0 {
-		return truncateWithSuffix(name, 50)
+		return truncateWithSuffix(name, statusTextLimit)
 	}
 
 	parts := make([]string, 0, len(input))
@@ -254,13 +308,199 @@ func extractToolCallStatus(env *events.Envelope) string {
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
-		parts = append(parts, k+"="+truncateWithSuffix(shortenPaths(fmt.Sprintf("%v", input[k])), 20))
+		parts = append(parts, k+"="+truncateWithSuffix(shortenPaths(fmt.Sprintf("%v", input[k])), 30))
 	}
 	body := strings.Join(parts, ", ")
-	return truncateWithSuffix(name+"("+body+")", 50)
+	return truncateWithSuffix(name+"("+body+")", statusTextLimit)
 }
 
-// extractToolResultStatus formats tool result preview truncated to 50 chars.
+// --- Tool-specific formatters ---
+
+// formatTodoWriteStatus shows task progress from TodoWrite input.
+// Prioritizes the in_progress task; falls back to summary stats.
+func formatTodoWriteStatus(input map[string]any) string {
+	raw, ok := input["todos"]
+	if !ok {
+		return "📋 Updating tasks..."
+	}
+
+	type todoItem struct {
+		content    string
+		activeForm string
+		status     string
+	}
+
+	var todos []todoItem
+	if v, ok := raw.([]any); ok {
+		for _, item := range v {
+			m, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			t := todoItem{}
+			if c, ok := m["content"].(string); ok {
+				t.content = c
+			}
+			if a, ok := m["activeForm"].(string); ok {
+				t.activeForm = a
+			}
+			if s, ok := m["status"].(string); ok {
+				t.status = s
+			}
+			todos = append(todos, t)
+		}
+	}
+
+	if len(todos) == 0 {
+		return "📋 Updating tasks..."
+	}
+
+	var inProgress []string
+	var completed, pending int
+	for _, t := range todos {
+		switch t.status {
+		case "completed":
+			completed++
+		case "in_progress":
+			label := t.activeForm
+			if label == "" {
+				label = t.content
+			}
+			if label != "" {
+				inProgress = append(inProgress, label)
+			}
+		default:
+			pending++
+		}
+	}
+
+	if len(inProgress) > 0 {
+		return "📋 " + inProgress[0]
+	}
+
+	return fmt.Sprintf("📋 %d tasks (%d done · %d pending)", len(todos), completed, pending)
+}
+
+// formatFileToolStatus returns a formatter for file-based tools (Read/Edit/Write).
+func formatFileToolStatus(prefix, key string) toolStatusFormatter {
+	return func(input map[string]any) string {
+		path, _ := input[key].(string)
+		if path == "" {
+			return prefix + "..."
+		}
+		return prefix + " " + extractFileName(shortenPaths(path))
+	}
+}
+
+// formatSimpleToolStatus returns a formatter that shows prefix + value of one key.
+func formatSimpleToolStatus(prefix, key string) toolStatusFormatter {
+	return func(input map[string]any) string {
+		val, _ := input[key].(string)
+		if val == "" {
+			return prefix + "..."
+		}
+		return prefix + " " + val
+	}
+}
+
+// formatBashStatus shows the command being executed.
+func formatBashStatus(input map[string]any) string {
+	cmd, _ := input["command"].(string)
+	if cmd == "" {
+		return "⏳ Running command..."
+	}
+	return "⏳ " + shortenPaths(cmd)
+}
+
+// formatGrepStatus shows the search pattern.
+func formatGrepStatus(input map[string]any) string {
+	pattern, _ := input["pattern"].(string)
+	if pattern == "" {
+		return "🔍 Searching..."
+	}
+	path, _ := input["path"].(string)
+	if path != "" {
+		return "🔍 " + pattern + " in " + extractFileName(shortenPaths(path))
+	}
+	return "🔍 " + pattern
+}
+
+// formatGlobStatus shows the glob pattern.
+func formatGlobStatus(input map[string]any) string {
+	pattern, _ := input["pattern"].(string)
+	if pattern == "" {
+		return "📂 Finding files..."
+	}
+	return "📂 " + pattern
+}
+
+// formatAgentStatus shows the agent description or type.
+func formatAgentStatus(input map[string]any) string {
+	desc, _ := input["description"].(string)
+	if desc != "" {
+		return "🤖 " + desc
+	}
+	subagent, _ := input["subagent_type"].(string)
+	if subagent != "" {
+		return "🤖 " + subagent
+	}
+	return "🤖 Spawning agent..."
+}
+
+// formatLSPStatus shows the LSP operation and target.
+func formatLSPStatus(input map[string]any) string {
+	op, _ := input["operation"].(string)
+	filePath, _ := input["filePath"].(string)
+	name := lspOpLabel(op)
+	if filePath != "" {
+		return name + " " + extractFileName(shortenPaths(filePath))
+	}
+	return name
+}
+
+// lspOpLabel maps LSP operations to human-readable labels.
+func lspOpLabel(op string) string {
+	switch op {
+	case "hover":
+		return "🔎 Hover"
+	case "goToDefinition":
+		return "🔎 Go to def"
+	case "findReferences":
+		return "🔎 Find refs"
+	case "documentSymbol":
+		return "🔎 Symbols"
+	case "workspaceSymbol":
+		return "🔎 Workspace search"
+	case "goToImplementation":
+		return "🔎 Go to impl"
+	case "prepareCallHierarchy":
+		return "🔎 Call hierarchy"
+	case "incomingCalls":
+		return "🔎 Incoming calls"
+	case "outgoingCalls":
+		return "🔎 Outgoing calls"
+	default:
+		return "🔎 LSP"
+	}
+}
+
+// extractFileName returns the last path component from a file path.
+func extractFileName(path string) string {
+	if path == "" {
+		return ""
+	}
+	// Handle both / and \ separators for robustness
+	path = strings.ReplaceAll(path, `\`, "/")
+	parts := strings.Split(path, "/")
+	for i := len(parts) - 1; i >= 0; i-- {
+		if parts[i] != "" {
+			return parts[i]
+		}
+	}
+	return path
+}
+
+// extractToolResultStatus formats tool result preview truncated to statusTextLimit chars.
 func extractToolResultStatus(env *events.Envelope) string {
 	if env.Event.Data == nil {
 		return "Tool completed"
@@ -268,20 +508,20 @@ func extractToolResultStatus(env *events.Envelope) string {
 
 	if data, ok := env.Event.Data.(*events.ToolResultData); ok {
 		if data.Error != "" {
-			return truncateWithSuffix(shortenPaths("Error: "+data.Error), 50)
+			return truncateWithSuffix(shortenPaths("Error: "+data.Error), statusTextLimit)
 		}
 		if data.Output != nil {
-			return truncateWithSuffix(shortenPaths(limitedSprintf(data.Output, 200)), 50)
+			return truncateWithSuffix(shortenPaths(limitedSprintf(data.Output, 200)), statusTextLimit)
 		}
 		return "Tool completed"
 	}
 
 	if m, ok := env.Event.Data.(map[string]any); ok {
 		if errStr, ok := m["error"].(string); ok && errStr != "" {
-			return truncateWithSuffix(shortenPaths("Error: "+errStr), 50)
+			return truncateWithSuffix(shortenPaths("Error: "+errStr), statusTextLimit)
 		}
 		if output, ok := m["output"]; ok && output != nil {
-			return truncateWithSuffix(shortenPaths(limitedSprintf(output, 200)), 50)
+			return truncateWithSuffix(shortenPaths(limitedSprintf(output, 200)), statusTextLimit)
 		}
 	}
 

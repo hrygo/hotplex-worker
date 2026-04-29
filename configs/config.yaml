@@ -59,8 +59,6 @@ session:
   retention_period: 168h
   gc_scan_interval: 1m
   max_concurrent: 1000
-  event_store_enabled: true
-  event_store_type: "sqlite"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # POOL

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/hrygo/hotplex/internal/config"
+	"github.com/hrygo/hotplex/internal/session"
 	"github.com/hrygo/hotplex/internal/worker"
 	"github.com/hrygo/hotplex/pkg/events"
 )
@@ -53,8 +54,8 @@ type ConfigWatcherProvider interface {
 	Rollback(version int) (*config.Config, int, error)
 }
 
-type MessageStoreProvider interface {
-	SessionStats(ctx context.Context, sessionID string) (any, error)
+type ConvStoreProvider interface {
+	SessionStats(ctx context.Context, sessionID string) (*session.ConversationSessionStats, error)
 }
 
 type DebugSessionSnapshot struct {
@@ -67,7 +68,7 @@ type AdminAPI struct {
 	log           *slog.Logger
 	cfg           ConfigProvider
 	sm            SessionManagerProvider
-	msgStore      MessageStoreProvider
+	convStore     ConvStoreProvider
 	hub           HubProvider
 	bridge        BridgeProvider
 	configWatcher ConfigWatcherProvider
@@ -81,7 +82,7 @@ type Deps struct {
 	Log           *slog.Logger
 	Config        ConfigProvider
 	SessionMgr    SessionManagerProvider
-	MsgStore      MessageStoreProvider
+	ConvStore     ConvStoreProvider
 	Hub           HubProvider
 	Bridge        BridgeProvider
 	ConfigWatcher ConfigWatcherProvider
@@ -94,7 +95,7 @@ func New(deps Deps) *AdminAPI {
 		log:           deps.Log,
 		cfg:           deps.Config,
 		sm:            deps.SessionMgr,
-		msgStore:      deps.MsgStore,
+		convStore:     deps.ConvStore,
 		hub:           deps.Hub,
 		bridge:        deps.Bridge,
 		configWatcher: deps.ConfigWatcher,

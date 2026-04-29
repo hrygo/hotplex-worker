@@ -272,11 +272,6 @@ func (m *mockStore) DeletePhysical(ctx context.Context, id string) error {
 	return args.Error(0)
 }
 
-func (m *mockStore) DeleteExpiredEvents(ctx context.Context, cutoff time.Time) (int64, error) {
-	args := m.Called(ctx, cutoff)
-	return args.Get(0).(int64), args.Error(1)
-}
-
 func (m *mockStore) Compact(ctx context.Context, threshold float64) error {
 	args := m.Called(ctx, threshold)
 	return args.Error(0)
@@ -341,7 +336,7 @@ func setupTestGateway(t *testing.T) *testGateway {
 	// Return not-found for all store lookups (Manager holds sessions in memory after Create).
 	store.On("Get", mock.Anything, mock.AnythingOfType("string")).Return(nil, session.ErrSessionNotFound)
 
-	sm, err := session.NewManager(ctx, log, cfg, nil, store, nil)
+	sm, err := session.NewManager(ctx, log, cfg, nil, store)
 	require.NoError(t, err)
 
 	hub := gateway.NewHub(log, config.NewConfigStore(cfg, nil))
@@ -355,7 +350,7 @@ func setupTestGateway(t *testing.T) *testGateway {
 	}
 
 	handler := gateway.NewHandler(log, hub, sm, jwtValidator)
-	bridge := gateway.NewBridge(log, hub, sm, nil)
+	bridge := gateway.NewBridge(log, hub, sm)
 	bridge.SetWorkerFactory(testWorkerFactory{})
 
 	auth := security.NewAuthenticator(&cfg.Security, jwtValidator)

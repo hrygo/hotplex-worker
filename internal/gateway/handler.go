@@ -504,7 +504,8 @@ func (h *Handler) handleCD(ctx context.Context, env *events.Envelope) error {
 	path = expanded
 
 	// Validate ownership.
-	if _, err := h.validateOwner(ctx, env); err != nil {
+	si, err := h.validateOwner(ctx, env)
+	if err != nil {
 		if errors.Is(err, session.ErrSessionNotFound) {
 			return h.sendErrorf(ctx, env, events.ErrCodeSessionNotFound, "session not found")
 		}
@@ -515,6 +516,24 @@ func (h *Handler) handleCD(ctx context.Context, env *events.Envelope) error {
 	if h.bridge == nil {
 		return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "cd not available")
 	}
+
+	// Platform sessions (Slack/Feishu) use in-place switch to keep the same
+	// session ID, so the platform conn stays valid and subsequent messages
+	// route correctly. WebSocket/REST sessions create a new session.
+	if si.Platform != "" {
+		workDir, err := h.bridge.SwitchWorkDirInPlace(ctx, env.SessionID, path)
+		if err != nil {
+			return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "切换失败：%v", err)
+		}
+		msg := fmt.Sprintf("已切换到 %s", workDir)
+		msgEnv := events.NewEnvelope(
+			aep.NewID(), env.SessionID, h.hub.NextSeq(env.SessionID),
+			events.Message, events.MessageData{Content: msg},
+		)
+		_ = h.hub.SendToSession(ctx, msgEnv)
+		return nil
+	}
+
 	result, err := h.bridge.SwitchWorkDir(ctx, env.SessionID, path)
 	if err != nil {
 		return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "切换失败：%v", err)
@@ -781,6 +800,8 @@ type SessionManager interface {
 	// ResetExpiry updates ExpiresAt to now + retentionPeriod for active sessions.
 	// Called after resume so a reactivated session isn't immediately killed by GC max_lifetime.
 	ResetExpiry(ctx context.Context, id string) error
+	// UpdateWorkDir updates the workDir for a session in memory and DB.
+	UpdateWorkDir(ctx context.Context, id, workDir string) error
 }
 
 // WorkerFactory creates worker instances. Production code uses defaultWorkerFactory.

@@ -261,7 +261,6 @@ type DBConfig struct {
 	WALMode         bool          `mapstructure:"wal_mode"`
 	BusyTimeout     time.Duration `mapstructure:"busy_timeout"`
 	MaxOpenConns    int           `mapstructure:"max_open_conns"`
-	EventRetention  time.Duration `mapstructure:"event_retention"`
 	VacuumThreshold float64       `mapstructure:"vacuum_threshold"`
 }
 
@@ -337,11 +336,9 @@ type SecurityConfig struct {
 
 // SessionConfig holds session lifecycle settings.
 type SessionConfig struct {
-	RetentionPeriod   time.Duration `mapstructure:"retention_period"`
-	GCScanInterval    time.Duration `mapstructure:"gc_scan_interval"`
-	MaxConcurrent     int           `mapstructure:"max_concurrent"`
-	EventStoreEnabled bool          `mapstructure:"event_store_enabled"`
-	EventStoreType    string        `mapstructure:"event_store_type"` // "sqlite" (default), or custom registered type
+	RetentionPeriod time.Duration `mapstructure:"retention_period"`
+	GCScanInterval  time.Duration `mapstructure:"gc_scan_interval"`
+	MaxConcurrent   int           `mapstructure:"max_concurrent"`
 }
 
 // PoolConfig holds session pool settings.
@@ -386,7 +383,6 @@ func Default() *Config {
 			WALMode:         true,
 			BusyTimeout:     5 * time.Second,
 			MaxOpenConns:    2,
-			EventRetention:  30 * 24 * time.Hour,
 			VacuumThreshold: 0.2,
 		},
 		Worker: WorkerConfig{
@@ -416,10 +412,9 @@ func Default() *Config {
 			AllowedOrigins: []string{"*"},
 		},
 		Session: SessionConfig{
-			RetentionPeriod:   7 * 24 * time.Hour,
-			GCScanInterval:    1 * time.Minute,
-			MaxConcurrent:     1000,
-			EventStoreEnabled: true,
+			RetentionPeriod: 7 * 24 * time.Hour,
+			GCScanInterval:  1 * time.Minute,
+			MaxConcurrent:   1000,
 		},
 		Pool: PoolConfig{
 			MinSize:          0,

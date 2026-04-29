@@ -1,84 +1,73 @@
 # Slack Adapter
 
-## OVERVIEW
-Slack platform adapter using Socket Mode for real-time messaging. Handles streaming output, message chunking, dedup, slash commands, interaction blocks, rate limiting, and image blocks.
+Socket Mode 平台适配器：流式消息、交互管理、状态展示、STT 语音转写。
 
-## STRUCTURE
-```
-slack/
-  adapter.go          # Adapter struct, lifecycle, session mgmt (1208 lines)
-  stream.go           # SlackStreamingWriter: 150ms flush, 20-rune threshold, 3 retries (362 lines)
-  interaction.go      # Permission/Q&A/elicitation block handling (445 lines)
-  slash_command.go    # Slash command handlers (/gc, /reset, /park, /new) (182 lines)
-  status.go           # Session status indicators (222 lines)
-  chunker.go          # Long message splitting (Slack ~4000 char limit)
-  dedup.go            # TTL-based message deduplication
-  validator.go        # Input validation + sanitization
-  converter.go        # Slack msg → AEP event extraction
-  format.go           # Markdown → Slack mrkdwn conversion
-  backoff.go          # Exponential backoff for Slack API retries
-  gate.go             # Gate: concurrent session limiter per user (118 lines)
-  rate_limiter.go     # Per-user rate limiter
-  image_blocks.go     # Image block construction for file sharing (111 lines)
-  mention.go          # @mention extraction
-  typing.go           # Typing indicator
-  abort.go            # Session abort handling
-  events.go           # Socket Mode event type constants
-```
+## 核心文件
 
-## WHERE TO LOOK
-| Task | Location | Notes |
-|------|----------|-------|
-| Message lifecycle | `adapter.go` | `handleMessage()` → parse event → dispatch |
-| Text message handling | `adapter.go` | `handleTextMessage()` → Bridge.Handle → session start |
-| Connection management | `adapter.go` | `GetOrCreateConn()` — dedup + activeConns map |
-| Streaming output | `stream.go` | `SlackStreamingWriter`: 150ms flush, 20-rune threshold, 10min TTL |
-| Slash commands | `slash_command.go` | /gc, /reset, /park, /new handlers |
-| Interaction blocks | `interaction.go` | Permission/Q&A/elicitation via Slack Block Kit |
-| Session status | `status.go` | Visual status indicators in Slack |
-| Image/file blocks | `image_blocks.go` | Construct Slack image blocks for file sharing |
-| Message chunking | `chunker.go` | Split long messages under Slack ~4000 char limit |
-| Dedup | `dedup.go` | TTL-based duplicate message filter |
-| Rate limiting | `rate_limiter.go` | Per-user token bucket |
-| Session gate | `gate.go` | Concurrent session limiter per user |
-| Backoff | `backoff.go` | Exponential backoff for API rate limit responses |
+| 文件 | 职责 |
+|------|------|
+| `adapter.go` | Adapter + SlackConn：Socket Mode 事件循环、WriteCtx 事件分发、流式写入 |
+| `status.go` | StatusManager：AI 处理状态展示（Assistant API + emoji fallback）、工具状态格式化 |
+| `interaction.go` | Permission/Q&A/Elicitation 交互卡片 |
+| `validator.go` | 消息验证、去重、截断、格式转换 |
+| `streaming.go` | SlackStreamingWriter：150ms flush、20-rune 阈值、append 重试 |
+| `format.go` | CommonMark → Slack mrkdwn 转换 |
+| `dedup.go` | TTL-based 消息去重 |
+| `gate.go` | DM/channel 访问控制 |
+| `backoff.go` | 指数退避重连策略 |
+| `user_cache.go` | 用户信息缓存 |
+| `slash.go` | Slash 命令处理 |
+| `image.go` | 图片上传/URL 处理 |
 
-## KEY PATTERNS
+## 状态展示系统
 
-**Socket Mode event flow**
-```
-Slack Socket Mode → socketmode.Client → handleMessage() → handleTextMessage()
-  → Bridge.Handle() → StartPlatformSession → Join → forwardEvents
-  → SlackConn.WriteCtx() → chat.postMessage/update
+### 双通道架构
+
+- **Assistant API**（付费 workspace）：`SetAssistantThreadsStatus` 原生状态文本
+- **Emoji fallback**（免费 workspace）：reaction emoji 替代
+
+启动时异步 probe 检测能力，`StatusManager.SetEmojiOnly` 一次性切换。
+
+### 工具状态格式化
+
+`status.go` 中的 `toolStatusFormatters` 注册表为常用工具提供定制化展示：
+
+```go
+// 注册表查找 → 专用 formatter → fallback 通用格式
+var toolStatusFormatters = map[string]toolStatusFormatter{
+    "TodoWrite": ...,   // 📋 Fixing auth bug / 📋 3 tasks (1 done · 2 pending)
+    "Read":     ...,    // 📖 Reading main.go
+    "Edit":     ...,    // ✏️ Editing main.go
+    "Write":    ...,    // 📝 Writing new.go
+    "Bash":     ...,    // ⏳ make test-short
+    "Grep":     ...,    // 🔍 pattern in path
+    "Glob":     ...,    // 📂 **/*.go
+    "Agent":    ...,    // 🤖 description
+    "LSP":      ...,    // 🔎 Go to def main.go
+    ...
+}
 ```
 
-**SlackStreamingWriter (`stream.go`)**
-- 150ms flush interval for responsive streaming
-- 20-rune threshold for immediate flush
-- Max 3 append retries with 50ms backoff
-- 10min TTL guard against stale streams
-- maxAppendSize 3000 (Slack ~4000 limit with safety margin)
+未注册工具自动 fallback 到 `Name(key=val)` 通用格式，截断到 `statusTextLimit`（80 rune）。
 
-**Message pipeline**
+### 持续进化机制
+
+`StatusManager.LogOnceUnregistered` 对每个未注册工具名仅 log 一次（`sync.Map` 去重）：
+
 ```
-worker output → chunker (split long messages) → dedup (TTL duplicate filter) → format (mrkdwn) → rate limiter → send
+DEBUG slack: unregistered tool in status formatter, consider adding to toolStatusFormatters tool=<name>
 ```
 
-**Interaction blocks (`interaction.go`)**
-- Permission request: Block Kit with approve/deny buttons
-- Q&A: structured blocks with answer prompts
-- Elicitation: MCP elicitation via Block Kit
-- 5min auto-deny timeout via InteractionManager
+**新增 formatter 流程：**
 
-**Slash commands (`slash_command.go`)**
-- `/gc` — archive session, terminate worker
-- `/reset` — clear context, fresh start
-- `/park` — idle session, keep for resume
-- `/new` — create fresh session
+1. 在日志中观察高频出现的未注册工具名
+2. 在 `toolStatusFormatters` 中添加条目
+3. 实现对应的 `formatXxxStatus` 函数
+4. 在 `adapter_test.go` 的 `TestExtractToolCallStatus` 中添加测试用例
+5. `make test-short && make lint` 验证
 
-## ANTI-PATTERNS
-- ❌ Send messages exceeding ~4000 chars — use chunker
-- ❌ Skip dedup on message sends — causes duplicate output
-- ❌ Ignore Slack rate limits — use backoff + rate limiter
-- ❌ Block on streaming write — use non-blocking with retry
-- ❌ Skip status indicator update on state change
+### 速率控制
+
+- 状态更新最小间隔：3s（`statusMinInterval`）
+- 文本去重：相同文本跳过
+- 过期线程状态清理：1h TTL（`threadStateTTL`）
