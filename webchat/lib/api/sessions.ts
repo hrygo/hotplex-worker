@@ -34,6 +34,32 @@ export interface ListSessionsResponse {
   offset: number;
 }
 
+export interface ConversationRecord {
+  id: string;
+  session_id: string;
+  seq: number;
+  role: string;
+  content: string;
+  platform: string;
+  user_id: string;
+  model: string;
+  success: number | null;
+  source: string;
+  tools_json: string | null;
+  tool_call_count: number;
+  tokens_in: number;
+  tokens_out: number;
+  duration_ms: number;
+  cost_usd: number;
+  metadata_json: string | null;
+  created_at: string;
+}
+
+export interface GetHistoryResponse {
+  records: ConversationRecord[];
+  has_more: boolean;
+}
+
 export async function listSessions(limit = 20, offset = 0): Promise<ListSessionsResponse> {
   const res = await fetch(
     `${BASE}/api/sessions?${AUTH}&limit=${limit}&offset=${offset}`,
@@ -69,6 +95,20 @@ export async function deleteSession(id: string): Promise<void> {
     { method: 'DELETE' }
   );
   if (!res.ok) throw new Error(`deleteSession failed: ${res.status}`);
+}
+
+export async function getSessionHistory(
+  sessionId: string,
+  options?: { beforeSeq?: number; limit?: number }
+): Promise<GetHistoryResponse> {
+  const limit = options?.limit ?? 50;
+  let url = `${BASE}/api/sessions/${sessionId}/history?${AUTH}&limit=${limit}`;
+  if (options?.beforeSeq) {
+    url += `&before_seq=${options.beforeSeq}`;
+  }
+  const res = await fetch(url, { headers: { 'Content-Type': 'application/json' } });
+  if (!res.ok) throw new Error(`getSessionHistory failed: ${res.status}`);
+  return res.json();
 }
 
 export function formatRelativeTime(dateStr: string): string {
