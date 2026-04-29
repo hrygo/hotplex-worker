@@ -138,7 +138,7 @@ func TestTruncate_NegativeMaxLen(t *testing.T) {
 func TestAdapter_SendTextMessage_NilClient(t *testing.T) {
 	t.Parallel()
 	a := &Adapter{
-		log: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		PlatformAdapter: messaging.PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil))},
 	}
 	err := a.sendTextMessage(context.Background(), "chat123", "hello")
 	require.Error(t, err)
@@ -150,7 +150,7 @@ func TestAdapter_SendTextMessage_NilClient(t *testing.T) {
 func TestAdapter_SendCardMessage_NilClient(t *testing.T) {
 	t.Parallel()
 	a := &Adapter{
-		log: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		PlatformAdapter: messaging.PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil))},
 	}
 	err := a.sendCardMessage(context.Background(), "chat123", `{"schema":"2.0"}`)
 	require.Error(t, err)
@@ -162,8 +162,10 @@ func TestAdapter_SendCardMessage_NilClient(t *testing.T) {
 func TestCheckPendingInteraction_NoInteractions(t *testing.T) {
 	t.Parallel()
 	a := &Adapter{
-		log:          slog.New(slog.NewTextHandler(io.Discard, nil)),
-		interactions: messaging.NewInteractionManager(slog.New(slog.NewTextHandler(io.Discard, nil))),
+		PlatformAdapter: messaging.PlatformAdapter{
+			Log:          slog.New(slog.NewTextHandler(io.Discard, nil)),
+			Interactions: messaging.NewInteractionManager(slog.New(slog.NewTextHandler(io.Discard, nil))),
+		},
 	}
 	conn := &FeishuConn{chatID: "chat123", adapter: a}
 

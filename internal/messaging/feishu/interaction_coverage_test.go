@@ -16,7 +16,7 @@ import (
 func TestCheckPendingInteraction_QuestionResponse(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
-	a.interactions = messaging.NewInteractionManager(discardLogger)
+	a.Interactions = messaging.NewInteractionManager(discardLogger)
 	a.rateLimiter = NewFeishuRateLimiter()
 	t.Cleanup(func() { a.rateLimiter.Stop() })
 
@@ -26,7 +26,7 @@ func TestCheckPendingInteraction_QuestionResponse(t *testing.T) {
 	conn.mu.Unlock()
 
 	var capturedMetadata map[string]any
-	a.interactions.Register(&messaging.PendingInteraction{
+	a.Interactions.Register(&messaging.PendingInteraction{
 		ID:        "q-1",
 		SessionID: "sess-qr",
 		Type:      events.QuestionRequest,
@@ -47,7 +47,7 @@ func TestCheckPendingInteraction_QuestionResponse(t *testing.T) {
 func TestCheckPendingInteraction_ElicitationAccept(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
-	a.interactions = messaging.NewInteractionManager(discardLogger)
+	a.Interactions = messaging.NewInteractionManager(discardLogger)
 	a.rateLimiter = NewFeishuRateLimiter()
 	t.Cleanup(func() { a.rateLimiter.Stop() })
 
@@ -57,7 +57,7 @@ func TestCheckPendingInteraction_ElicitationAccept(t *testing.T) {
 	conn.mu.Unlock()
 
 	var capturedMetadata map[string]any
-	a.interactions.Register(&messaging.PendingInteraction{
+	a.Interactions.Register(&messaging.PendingInteraction{
 		ID:        "el-1",
 		SessionID: "sess-el",
 		Type:      events.ElicitationRequest,
@@ -76,7 +76,7 @@ func TestCheckPendingInteraction_ElicitationAccept(t *testing.T) {
 func TestCheckPendingInteraction_ElicitationDecline(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
-	a.interactions = messaging.NewInteractionManager(discardLogger)
+	a.Interactions = messaging.NewInteractionManager(discardLogger)
 	a.rateLimiter = NewFeishuRateLimiter()
 	t.Cleanup(func() { a.rateLimiter.Stop() })
 
@@ -86,7 +86,7 @@ func TestCheckPendingInteraction_ElicitationDecline(t *testing.T) {
 	conn.mu.Unlock()
 
 	var capturedMetadata map[string]any
-	a.interactions.Register(&messaging.PendingInteraction{
+	a.Interactions.Register(&messaging.PendingInteraction{
 		ID:        "el-2",
 		SessionID: "sess-el2",
 		Type:      events.ElicitationRequest,
@@ -105,7 +105,7 @@ func TestCheckPendingInteraction_ElicitationDecline(t *testing.T) {
 func TestCheckPendingInteraction_PermissionDeny(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
-	a.interactions = messaging.NewInteractionManager(discardLogger)
+	a.Interactions = messaging.NewInteractionManager(discardLogger)
 	a.rateLimiter = NewFeishuRateLimiter()
 	t.Cleanup(func() { a.rateLimiter.Stop() })
 
@@ -115,7 +115,7 @@ func TestCheckPendingInteraction_PermissionDeny(t *testing.T) {
 	conn.mu.Unlock()
 
 	var capturedMetadata map[string]any
-	a.interactions.Register(&messaging.PendingInteraction{
+	a.Interactions.Register(&messaging.PendingInteraction{
 		ID:        "perm-deny",
 		SessionID: "sess-deny",
 		Type:      events.PermissionRequest,
@@ -135,14 +135,14 @@ func TestCheckPendingInteraction_PermissionDeny(t *testing.T) {
 func TestCheckPendingInteraction_NotPermissionText(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
-	a.interactions = messaging.NewInteractionManager(discardLogger)
+	a.Interactions = messaging.NewInteractionManager(discardLogger)
 
 	conn := a.GetOrCreateConn("chat_np", "")
 	conn.mu.Lock()
 	conn.sessionID = "sess-np"
 	conn.mu.Unlock()
 
-	a.interactions.Register(&messaging.PendingInteraction{
+	a.Interactions.Register(&messaging.PendingInteraction{
 		ID:           "perm-np",
 		SessionID:    "sess-np",
 		Type:         events.PermissionRequest,
@@ -157,14 +157,14 @@ func TestCheckPendingInteraction_NotPermissionText(t *testing.T) {
 func TestCheckPendingInteraction_NoMatchingSession(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
-	a.interactions = messaging.NewInteractionManager(discardLogger)
+	a.Interactions = messaging.NewInteractionManager(discardLogger)
 
 	conn := a.GetOrCreateConn("chat_nomatch", "")
 	conn.mu.Lock()
 	conn.sessionID = "sess-other"
 	conn.mu.Unlock()
 
-	a.interactions.Register(&messaging.PendingInteraction{
+	a.Interactions.Register(&messaging.PendingInteraction{
 		ID:           "perm-nm",
 		SessionID:    "sess-different",
 		Type:         events.PermissionRequest,
@@ -216,7 +216,7 @@ func TestChatQueue_AbortNonexistentChat(t *testing.T) {
 func TestCheckPendingInteraction_ElicitationDecline_CN(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
-	a.interactions = messaging.NewInteractionManager(discardLogger)
+	a.Interactions = messaging.NewInteractionManager(discardLogger)
 	a.rateLimiter = NewFeishuRateLimiter()
 	t.Cleanup(func() { a.rateLimiter.Stop() })
 
@@ -226,7 +226,7 @@ func TestCheckPendingInteraction_ElicitationDecline_CN(t *testing.T) {
 	conn.mu.Unlock()
 
 	var capturedMetadata map[string]any
-	a.interactions.Register(&messaging.PendingInteraction{
+	a.Interactions.Register(&messaging.PendingInteraction{
 		ID:        "el-cn",
 		SessionID: "sess-el-cn",
 		Type:      events.ElicitationRequest,
@@ -257,7 +257,7 @@ func TestCheckPendingInteraction_PermissionAllow_Variants(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			a := newTestAdapter(t)
-			a.interactions = messaging.NewInteractionManager(discardLogger)
+			a.Interactions = messaging.NewInteractionManager(discardLogger)
 			a.rateLimiter = NewFeishuRateLimiter()
 			t.Cleanup(func() { a.rateLimiter.Stop() })
 
@@ -267,7 +267,7 @@ func TestCheckPendingInteraction_PermissionAllow_Variants(t *testing.T) {
 			conn.mu.Unlock()
 
 			var capturedMetadata map[string]any
-			a.interactions.Register(&messaging.PendingInteraction{
+			a.Interactions.Register(&messaging.PendingInteraction{
 				ID:        "perm-" + tt.name,
 				SessionID: "sess-" + tt.name,
 				Type:      events.PermissionRequest,
