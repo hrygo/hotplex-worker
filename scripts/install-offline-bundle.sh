@@ -16,8 +16,6 @@
 #
 set -euo pipefail
 
-# ── Colors ──────────────────────────────────────────────────────────────────
-
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -29,13 +27,9 @@ info()  { echo -e "${GREEN}[INFO]${NC} $1"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
 die()   { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 
-# ── Defaults ────────────────────────────────────────────────────────────────
-
 PREFIX="$HOME/.opencode"
 SKIP_OMO=false
 SKIP_ENV=false
-
-# ── Args ────────────────────────────────────────────────────────────────────
 
 need_arg() {
     [[ $# -lt 2 || "$2" == --* ]] && { echo -e "${RED}error: $1 requires an argument${NC}"; exit 1; }
@@ -51,14 +45,16 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# ── Resolve bundle directory ────────────────────────────────────────────────
-
 BUNDLE_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 [[ -f "$BUNDLE_DIR/versions.env" ]] || die "versions.env not found. Run this script from the bundle directory."
 
 # shellcheck source=/dev/null
 source "$BUNDLE_DIR/versions.env"
+
+# OpenCode global config directory (Stage 2 loading: ~/.config/opencode/)
+XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+OPENCODE_CONFIG_DIR="${XDG_CONFIG_HOME}/opencode"
 
 echo ""
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -73,12 +69,11 @@ echo ""
 
 # ── 1. Install OpenCode binary ──────────────────────────────────────────────
 
-info "[1/3] Installing OpenCode binary..."
+info "[1/4] Installing OpenCode binary..."
 
 INSTALL_BIN="${PREFIX}/bin"
 mkdir -p "$INSTALL_BIN"
 
-# Find and extract OpenCode archive
 OPENCODE_ARCHIVE=""
 for ext in .tar.gz .zip; do
     candidate="${BUNDLE_DIR}/opencode${ext}"
@@ -103,67 +98,69 @@ case "$OPENCODE_ARCHIVE" in
         ;;
 esac
 
-# Find the opencode binary in extracted directory
 OPENCODE_BIN=$(find "$EXTRACT_DIR" -name "opencode" -o -name "opencode.exe" | head -1)
 [[ -z "$OPENCODE_BIN" ]] && die "opencode binary not found in archive."
 
 cp "$OPENCODE_BIN" "${INSTALL_BIN}/opencode"
 chmod +x "${INSTALL_BIN}/opencode"
 
-# Verify
 INSTALLED_VER=$("${INSTALL_BIN}/opencode" --version 2>/dev/null || echo "unknown")
 info "  ✓ OpenCode ${INSTALLED_VER} installed to ${INSTALL_BIN}/opencode"
 
 # ── 2. Install Oh My OpenAgent ─────────────────────────────────────────────
 
 if [[ "$SKIP_OMO" != true ]]; then
-    info "[2/3] Installing Oh My OpenAgent..."
+    info "[2/4] Installing Oh My OpenAgent..."
 
     OMO_DIR="${PREFIX}/plugins/oh-my-opencode"
     mkdir -p "$OMO_DIR"
 
-    # Find main OMO npm package
     OMO_TGZ=$(find "$BUNDLE_DIR" -maxdepth 1 -name "oh-my-opencode-[0-9]*.tgz" ! -name "oh-my-opencode-*-*" | head -1)
 
     if [[ -n "$OMO_TGZ" ]]; then
-        # Extract npm package to plugin directory
         tar -xzf "$OMO_TGZ" -C "$OMO_DIR" --strip-components=1
 
-        # Find and extract platform-specific native binary
-        # Determine current system platform
-        DETECTED_OS=$(uname -s | tr '[:upper:]' '[:lower:]')
-        DETECTED_ARCH=$(uname -m)
-        case "$DETECTED_ARCH" in
-            x86_64)       DETECTED_ARCH="x64" ;;
-            aarch64|arm64) DETECTED_ARCH="arm64" ;;
+        # Detect current platform for native binary
+        local_os=$(uname -s | tr '[:upper:]' '[:lower:]')
+        local_arch=$(uname -m)
+        case "$local_arch" in
+            x86_64)       local_arch="x64" ;;
+            aarch64|arm64) local_arch="arm64" ;;
         esac
 
-        # Check for musl
-        DETECTED_MUSL=""
-        if [[ "$DETECTED_OS" == "linux" ]]; then
-            if [[ -f /etc/alpine-release ]] || ldd --version 2>&1 | grep -qi musl; then
-                DETECTED_MUSL="-musl"
+        # musl detection
+        local_musl=""
+        if [[ "$local_os" == "linux" ]]; then
+            if [[ -f /etc/alpine-release ]] || { command -v ldd &>/dev/null && ldd --version 2>&1 | grep -qi musl; }; then
+                local_musl="-musl"
             fi
         fi
 
-        PLATFORM_TGZ=$(find "$BUNDLE_DIR" -maxdepth 1 \
-            -name "oh-my-opencode-${DETECTED_OS}-${DETECTED_ARCH}${DETECTED_MUSL}-*.tgz" | head -1)
-
-        # Fallback: try without musl suffix
-        if [[ -z "$PLATFORM_TGZ" && -n "$DETECTED_MUSL" ]]; then
-            PLATFORM_TGZ=$(find "$BUNDLE_DIR" -maxdepth 1 \
-                -name "oh-my-opencode-${DETECTED_OS}-${DETECTED_ARCH}-*.tgz" | head -1)
+        # Find matching platform tgz (try musl first, then glibc fallback)
+        PLAT_TGZ=""
+        if [[ -n "$local_musl" ]]; then
+            PLAT_TGZ=$(find "$BUNDLE_DIR" -maxdepth 1 \
+                -name "oh-my-opencode-${local_os}-${local_arch}${local_musl}-*.tgz" | head -1)
+        fi
+        if [[ -z "$PLAT_TGZ" ]]; then
+            PLAT_TGZ=$(find "$BUNDLE_DIR" -maxdepth 1 \
+                -name "oh-my-opencode-${local_os}-${local_arch}-*.tgz" ! -name "*-musl-*" ! -name "*-baseline-*" | head -1)
+        fi
+        # baseline fallback
+        if [[ -z "$PLAT_TGZ" && "$local_arch" == "x64" ]]; then
+            PLAT_TGZ=$(find "$BUNDLE_DIR" -maxdepth 1 \
+                -name "oh-my-opencode-${local_os}-${local_arch}-baseline-*.tgz" | head -1)
         fi
 
-        if [[ -n "$PLATFORM_TGZ" ]]; then
-            # Extract platform binary into node_modules alongside the plugin
-            PLAT_DIR="${OMO_DIR}/node_modules/oh-my-opencode-${DETECTED_OS}-${DETECTED_ARCH}${DETECTED_MUSL}"
+        if [[ -n "$PLAT_TGZ" ]]; then
+            PLAT_PKG_NAME=$(basename "$PLAT_TGZ" | sed 's/-[0-9].*\.tgz$//')
+            PLAT_DIR="${OMO_DIR}/node_modules/${PLAT_PKG_NAME}"
             mkdir -p "$PLAT_DIR"
-            tar -xzf "$PLATFORM_TGZ" -C "$PLAT_DIR" --strip-components=1
-            info "  ✓ Platform binary: $(basename "$PLATFORM_TGZ")"
+            tar -xzf "$PLAT_TGZ" -C "$PLAT_DIR" --strip-components=1
+            info "  ✓ Platform binary: $(basename "$PLAT_TGZ")"
         else
-            warn "  No platform binary found for ${DETECTED_OS}-${DETECTED_ARCH}${DETECTED_MUSL}"
-            warn "  OMO CLI features may not work, but plugin will load"
+            warn "  No platform binary for ${local_os}-${local_arch}${local_musl}"
+            warn "  OMO CLI features may not work, but plugin will still load"
         fi
 
         info "  ✓ Oh My OpenAgent installed to ${OMO_DIR}"
@@ -171,14 +168,75 @@ if [[ "$SKIP_OMO" != true ]]; then
         warn "  OMO npm package not found in bundle, skipping"
     fi
 else
-    info "[2/3] Skipping OMO (--skip-omo)"
+    info "[2/4] Skipping OMO (--skip-omo)"
 fi
 
-# ── 3. Setup PATH and environment ──────────────────────────────────────────
+# ── 3. Register OMO plugin in OpenCode config ───────────────────────────────
 
-info "[3/3] Configuring environment..."
+if [[ "$SKIP_OMO" != true && -n "${OMO_DIR:-}" && -d "$OMO_DIR" ]]; then
+    info "[3/4] Registering OMO plugin in OpenCode config..."
 
-# Add to PATH in shell config
+    mkdir -p "$OPENCODE_CONFIG_DIR"
+    OPENCODE_JSON="${OPENCODE_CONFIG_DIR}/opencode.json"
+
+    # Build the plugin source path relative to config dir
+    # Plugin system resolves relative paths against the config file's directory
+    # ~/.config/opencode/ → ../../.opencode/plugins/oh-my-opencode
+    RELATIVE_PLUGIN_PATH="$(realpath --relative-to="$OPENCODE_CONFIG_DIR" "$OMO_DIR" 2>/dev/null || \
+        python3 -c "import os.path; print(os.path.relpath('$OMO_DIR', '$OPENCODE_CONFIG_DIR'))" 2>/dev/null || \
+        echo "$OMO_DIR")"
+
+    # Merge plugin entry into existing opencode.json or create new
+    if [[ -f "$OPENCODE_JSON" ]]; then
+        # Check if plugin already registered
+        if grep -q "oh-my-opencode" "$OPENCODE_JSON" 2>/dev/null; then
+            info "  Plugin already registered in ${OPENCODE_JSON}"
+        else
+            # Append plugins array to existing config using python (JSONC-safe)
+            python3 -c "
+import json, re, sys
+path = '$OPENCODE_JSON'
+with open(path, 'r') as f:
+    content = f.read()
+# Strip comments for parsing (JSONC)
+stripped = re.sub(r'//.*?\n|/\*.*?\*/', '', content, flags=re.DOTALL)
+try:
+    data = json.loads(stripped)
+except json.JSONDecodeError:
+    data = {}
+if 'plugins' not in data:
+    data['plugins'] = []
+data['plugins'].append({
+    'source': '$RELATIVE_PLUGIN_PATH',
+    'type': 'server'
+})
+with open(path, 'w') as f:
+    json.dump(data, f, indent=2, ensure_ascii=False)
+    f.write('\n')
+" 2>/dev/null && info "  ✓ Plugin registered in ${OPENCODE_JSON}" || \
+            warn "  Could not auto-register plugin. Add manually to ${OPENCODE_JSON}"
+        fi
+    else
+        cat > "$OPENCODE_JSON" << EOF
+{
+  "plugins": [
+    {
+      "source": "${RELATIVE_PLUGIN_PATH}",
+      "type": "server"
+    }
+  ]
+}
+EOF
+        info "  ✓ Created ${OPENCODE_JSON} with plugin registration"
+    fi
+else
+    info "[3/4] Skipping plugin registration (--skip-omo or no OMO installed)"
+fi
+
+# ── 4. Setup PATH and environment ──────────────────────────────────────────
+
+info "[4/4] Configuring environment..."
+
 SHELL_RC=""
 CURRENT_SHELL=$(basename "${SHELL:-bash}")
 case "$CURRENT_SHELL" in
@@ -203,10 +261,8 @@ else
     fi
 fi
 
-# Export PATH for current session
 export PATH="${INSTALL_BIN}:${PATH}"
 
-# Setup offline environment variables
 if [[ "$SKIP_ENV" != true ]]; then
     ENV_FILE="${PREFIX}/env-offline.sh"
 
@@ -215,7 +271,6 @@ if [[ "$SKIP_ENV" != true ]]; then
         chmod +x "$ENV_FILE"
     fi
 
-    # Also write into shell rc (idempotent)
     ENV_LINE="[ -f \"${ENV_FILE}\" ] && source \"${ENV_FILE}\""
     if [[ -f "$SHELL_RC" ]] && ! grep -qF "env-offline.sh" "$SHELL_RC" 2>/dev/null; then
         if [[ -w "$SHELL_RC" ]] || [[ -w "$(dirname "$SHELL_RC")" ]]; then
@@ -223,7 +278,6 @@ if [[ "$SKIP_ENV" != true ]]; then
         fi
     fi
 
-    # Source for current session
     # shellcheck source=/dev/null
     [[ -f "$ENV_FILE" ]] && source "$ENV_FILE"
 
@@ -243,21 +297,21 @@ echo -e "  ${CYAN}1.${NC} Reload shell:"
 echo -e "     ${DIM}source ${SHELL_RC}${NC}"
 echo ""
 echo -e "  ${CYAN}2.${NC} Configure internal LLM endpoint:"
-echo -e "     ${DIM}mkdir -p ${PREFIX}"
-echo -e "     ${DIM}cat > ${PREFIX}/opencode.json << 'EOF'"
-echo -e '     {'
-echo -e '       "provider": {'
-echo -e '         "my-vllm": {'
-echo -e '           "npm": "@ai-sdk/openai-compatible",'
-echo -e '           "options": { "baseURL": "http://YOUR_LLM_HOST:PORT/v1" }'
-echo -e '         }'
-echo -e '       },'
-echo -e '       "model": { "default": "my-vllm/YOUR_MODEL_NAME" }'
-echo -e '     }'
-echo -e '     EOF'"${NC}"
+echo -e "     ${DIM}mkdir -p ${OPENCODE_CONFIG_DIR}"
+echo -e "     ${DIM}Edit ${OPENCODE_JSON} and add:${NC}"
+echo ""
+echo -e "     ${DIM}\"provider\": {"
+echo -e "       \"my-vllm\": {"
+echo -e "         \"npm\": \"@ai-sdk/openai-compatible\","
+echo -e "         \"options\": { \"baseURL\": \"http://YOUR_LLM_HOST:PORT/v1\" }"
+echo -e "       }"
+echo -e "     },"
+echo -e "     \"model\": { \"default\": \"my-vllm/YOUR_MODEL_NAME\" }${NC}"
 echo ""
 echo -e "  ${CYAN}3.${NC} Start:"
 echo -e "     ${DIM}cd /your/project && opencode${NC}"
 echo ""
-echo -e "  ${DIM}Docs: https://github.com/hrygo/hotplex${NC}"
+echo -e "  ${DIM}Configs loaded from:${NC}"
+echo -e "  ${DIM}  Global:  ${OPENCODE_JSON}${NC}"
+echo -e "  ${DIM}  Project: .opencode/opencode.json (per-project)${NC}"
 echo ""

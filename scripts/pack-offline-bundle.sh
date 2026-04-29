@@ -189,8 +189,15 @@ declare -A PLATFORM_MAP=(
 
 pack_omo_platform() {
     local pkg_name="$1"
-    echo -e "  ${DIM}Packing ${pkg_name}...${NC}"
-    npm pack "${pkg_name}@${OMO_VERSION}" --pack-destination="$OUTPUT_DIR" 2>/dev/null || true
+    echo -e "  ${DIM}Packing ${pkg_name}@${OMO_VERSION}...${NC}"
+    if ! npm pack "${pkg_name}@${OMO_VERSION}" --pack-destination="$OUTPUT_DIR" 2>/dev/null; then
+        local fallback_ver
+        fallback_ver=$(npm view "${pkg_name}" version 2>/dev/null || echo "")
+        if [[ -n "$fallback_ver" && "$fallback_ver" != "$OMO_VERSION" ]]; then
+            echo -e "  ${DIM}  Version ${OMO_VERSION} not found, falling back to ${fallback_ver}${NC}"
+            npm pack "${pkg_name}@${fallback_ver}" --pack-destination="$OUTPUT_DIR" 2>/dev/null || true
+        fi
+    fi
 }
 
 if [[ "$ALL_PLATFORMS" == true ]]; then
@@ -273,7 +280,7 @@ source env-offline.sh
 
 ### 2. Configure internal LLM endpoint
 
-Create or edit `~/.opencode/opencode.json`:
+Create or edit `~/.config/opencode/opencode.json` (global config):
 
 ```json
 {
@@ -293,7 +300,7 @@ Create or edit `~/.opencode/opencode.json`:
 
 ### 3. Configure OMO (optional)
 
-Create or edit `~/.opencode/oh-my-opencode.json`:
+Create or edit `~/.config/opencode/oh-my-opencode.json`:
 
 ```json
 {
