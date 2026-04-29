@@ -138,8 +138,8 @@ body {
 }
 
 @keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
 }
 
 @keyframes pulse {
@@ -199,6 +199,15 @@ body {
 
 .animate-pulse-gold {
   animation: pulseGold 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes bounceSubtle {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+.animate-bounce-subtle {
+  animation: bounceSubtle 2s ease-in-out infinite;
 }
 
 /* Streaming cursor — blinking block, only on the last text part of a streaming message */
@@ -300,8 +309,14 @@ body {
   letter-spacing: -0.011em;
   box-shadow: 0 4px 16px rgba(0,0,0,0.3);
   position: relative;
-  word-break: break-word;
-  overflow-wrap: break-word;
+  word-break: normal;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  text-align: left;
+  width: fit-content;
+  min-width: 110px; 
+  min-height: 48px;
+  padding: 0.875rem 3.5rem 0.875rem 1.25rem; /* Large right padding to protect the corner */
 }
 
 .msg-assistant {
@@ -318,6 +333,8 @@ body {
   color: var(--text-secondary);
   line-height: 1.75;
   letter-spacing: -0.011em;
+  padding-right: 4rem; 
+  padding-bottom: 0.5rem;
 }
 
 /* ============================================================
@@ -657,10 +674,10 @@ body {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 10px;
+  padding: 5px 10px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-subtle);
-  background: rgba(24, 24, 27, 0.8);
+  background: rgba(255, 255, 255, 0.03);
   backdrop-filter: blur(12px) saturate(180%);
   color: var(--text-muted);
   font-family: var(--font-display);
@@ -669,15 +686,16 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.05em;
   cursor: pointer;
-  transition: all 0.15s ease;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  transition: all 0.2s cubic-bezier(0.2, 0, 0, 1);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  overflow: hidden;
 }
 
 .copy-btn:hover {
-  background: var(--bg-hover);
+  background: rgba(255, 255, 255, 0.08);
   border-color: var(--border-bright);
   color: var(--text-primary);
-  transform: scale(1.02);
+  transform: translateY(-1px);
 }
 
 .copy-btn:active {
@@ -686,8 +704,17 @@ body {
 
 .copy-btn-success {
   border-color: rgba(52, 211, 153, 0.4);
-  background: rgba(52, 211, 153, 0.1);
+  background: rgba(52, 211, 153, 0.05);
   color: var(--accent-emerald) !important;
+  box-shadow: 0 0 15px rgba(52, 211, 153, 0.1);
+}
+
+.copy-btn-shimmer {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+  transform: translateX(-100%);
+  pointer-events: none;
 }
 
 /* Delete button */

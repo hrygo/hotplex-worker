@@ -356,9 +356,9 @@ export function useHotPlexRuntime({
       apiKey,
       initConfig,
       heartbeat: {
-        pingIntervalMs: 10000,
-        pongTimeoutMs: 5000,
-        maxMissedPongs: 2,
+        pingIntervalMs: 20000,
+        pongTimeoutMs: 10000,
+        maxMissedPongs: 3,
       },
     });
 

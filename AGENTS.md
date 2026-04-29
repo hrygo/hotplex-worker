@@ -239,6 +239,7 @@ configs/  config.yaml, config-dev.yaml, env.example
 - **Testing**: `testify/require` (not `t.Fatal`), table-driven, `t.Parallel()`, `t.Cleanup()`
 - **Config**: Viper YAML + env expansion, `SecretsProvider` interface for secrets
 - **Worker registration**: `init()` + `worker.Register(WorkerType, Builder)` pattern via blank imports
+- **Messaging adapter import**: `cmd/hotplex/messaging_init.go` must import ALL adapter packages — feishu (direct, for `NewFeishuSTT`) + slack (blank import `_`, for `init()` registration). Removing direct type references during refactoring must preserve the import as blank `_`; compiler won't warn on silent registration loss
 - **STT engine**: SenseVoice-Small via `funasr-onnx` (ONNX FP32, non-quantized), auto-patches ONNX model on first load, persistent subprocess for zero cold-start
 - **DI**: Manual constructor injection (no wire/dig), `GatewayDeps` struct in serve.go
 - **Shutdown order**: signal → cancel ctx → tracing → hub → configWatcher → sessionMgr → HTTP server
