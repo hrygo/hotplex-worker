@@ -50,14 +50,12 @@ type Adapter struct {
 	backoffMaxDelay  time.Duration
 
 	mu           sync.RWMutex
-	dedup        *Dedup
+	dedup        *messaging.Dedup
 	activeConns  map[string]*FeishuConn
-	gate         *Gate
+	gate         *messaging.Gate
 	chatQueue    *ChatQueue
 	interactions *messaging.InteractionManager
 	rateLimiter  *FeishuRateLimiter
-	dedupDone    chan struct{}
-	dedupWg      sync.WaitGroup
 	started      atomic.Bool
 }
 
@@ -73,7 +71,7 @@ func (a *Adapter) SetBridge(b *messaging.Bridge) {
 	a.bridge = b
 }
 
-func (a *Adapter) SetGate(gate *Gate) {
+func (a *Adapter) SetGate(gate *messaging.Gate) {
 	a.gate = gate
 }
 
@@ -95,15 +93,13 @@ func (a *Adapter) Start(ctx context.Context) error {
 		return fmt.Errorf("feishu: appID and appSecret required")
 	}
 
-	a.dedup = NewDedup(dedupDefaultMaxEntries, dedupDefaultTTL)
+	a.dedup = messaging.NewDedup(0, 0) // uses shared defaults: 5000 entries, 12h TTL
 	a.activeConns = make(map[string]*FeishuConn)
 	a.interactions = messaging.NewInteractionManager(a.log)
 	a.chatQueue = NewChatQueue(a.log)
 	a.rateLimiter = NewFeishuRateLimiter()
 	a.rateLimiter.Start()
-	a.dedupDone = make(chan struct{})
-	a.dedupWg.Add(1)
-	go a.dedupCleanupLoop()
+	a.dedup.StartCleanup()
 
 	a.larkClient = lark.NewClient(a.appID, a.appSecret,
 		lark.WithLogger(SlogLogger{Logger: a.log}),
@@ -150,7 +146,7 @@ func (a *Adapter) runWebSocket(ctx context.Context) {
 	if maxDelay <= 0 {
 		maxDelay = 60 * time.Second
 	}
-	backoff := newReconnectBackoff(baseDelay, maxDelay)
+	backoff := messaging.NewReconnectBackoff(baseDelay, maxDelay)
 
 	attempt := 1
 	for {
@@ -342,7 +338,7 @@ func (a *Adapter) handleMessage(ctx context.Context, event *larkim.P2MessageRece
 	// Step 7: Access control.
 	botMentioned := isBotMentioned(msg.Mentions, a.botOpenID)
 	if a.gate != nil {
-		result := a.gate.Check(chatType, userID, botMentioned)
+		result := a.gate.Check(chatType == "p2p", userID, botMentioned)
 		if !result.Allowed {
 			a.log.Debug("feishu: gate rejected", "reason", result.Reason, "chat", chatID, "user", userID)
 			return nil
@@ -520,9 +516,10 @@ func (a *Adapter) Close(ctx context.Context) error {
 		conns = append(conns, conn)
 	}
 	a.activeConns = nil
-	a.dedup = nil
-	close(a.dedupDone)
-	a.dedupWg.Wait()
+	if a.dedup != nil {
+		a.dedup.Close()
+		a.dedup = nil
+	}
 	if a.rateLimiter != nil {
 		a.rateLimiter.Stop()
 		a.rateLimiter = nil
@@ -1253,21 +1250,6 @@ func mimeExt(mime string) string {
 		return ".webm"
 	default:
 		return ""
-	}
-}
-
-func (a *Adapter) dedupCleanupLoop() {
-	defer a.dedupWg.Done()
-	ticker := time.NewTicker(dedupSweepInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-a.dedupDone:
-			return
-		case <-ticker.C:
-			a.dedup.Sweep()
-		}
 	}
 }
 

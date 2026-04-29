@@ -23,7 +23,7 @@ import (
 
 func TestDedup_TryRecord(t *testing.T) {
 	t.Parallel()
-	d := NewDedup(100, 5*time.Minute)
+	d := messaging.NewDedup(100, 5*time.Minute)
 	t.Cleanup(d.Close)
 
 	// First record succeeds
@@ -36,7 +36,7 @@ func TestDedup_TryRecord(t *testing.T) {
 
 func TestDedup_FIFOEvection(t *testing.T) {
 	t.Parallel()
-	d := NewDedup(2, 5*time.Minute)
+	d := messaging.NewDedup(2, 5*time.Minute)
 	t.Cleanup(d.Close)
 
 	require.True(t, d.TryRecord("msg1"))
@@ -49,7 +49,7 @@ func TestDedup_FIFOEvection(t *testing.T) {
 
 func TestDedup_Close(t *testing.T) {
 	t.Parallel()
-	d := NewDedup(100, 5*time.Minute)
+	d := messaging.NewDedup(100, 5*time.Minute)
 	d.Close()
 	// No panic after close
 }
@@ -436,64 +436,64 @@ func (e errFake) Error() string { return string(e) }
 
 func TestGate_DMOpen(t *testing.T) {
 	t.Parallel()
-	g := NewGate("open", "open", false, nil, nil, nil)
-	r := g.Check("im", "U1", false)
+	g := messaging.NewGate("open", "open", false, nil, nil, nil)
+	r := g.Check(true, "U1", false)
 	require.True(t, r.Allowed)
 }
 
 func TestGate_DMDisabled(t *testing.T) {
 	t.Parallel()
-	g := NewGate("disabled", "open", false, nil, nil, nil)
-	r := g.Check("im", "U1", false)
+	g := messaging.NewGate("disabled", "open", false, nil, nil, nil)
+	r := g.Check(true, "U1", false)
 	require.False(t, r.Allowed)
 	require.Equal(t, "dm_disabled", r.Reason)
 }
 
 func TestGate_DMAllowlist(t *testing.T) {
 	t.Parallel()
-	g := NewGate("allowlist", "open", false, []string{"U1"}, nil, nil)
-	r := g.Check("im", "U1", false)
+	g := messaging.NewGate("allowlist", "open", false, []string{"U1"}, nil, nil)
+	r := g.Check(true, "U1", false)
 	require.True(t, r.Allowed)
 
-	r2 := g.Check("im", "U2", false)
+	r2 := g.Check(true, "U2", false)
 	require.False(t, r2.Allowed)
 	require.Equal(t, "not_in_allowlist", r2.Reason)
 }
 
 func TestGate_GroupDisabled(t *testing.T) {
 	t.Parallel()
-	g := NewGate("open", "disabled", false, nil, nil, nil)
-	r := g.Check("channel", "U1", false)
+	g := messaging.NewGate("open", "disabled", false, nil, nil, nil)
+	r := g.Check(false, "U1", false)
 	require.False(t, r.Allowed)
 	require.Equal(t, "group_disabled", r.Reason)
 }
 
 func TestGate_RequireMention(t *testing.T) {
 	t.Parallel()
-	g := NewGate("open", "open", true, nil, nil, nil)
+	g := messaging.NewGate("open", "open", true, nil, nil, nil)
 
-	r := g.Check("channel", "U1", false)
+	r := g.Check(false, "U1", false)
 	require.False(t, r.Allowed)
 	require.Equal(t, "no_mention", r.Reason)
 
-	r2 := g.Check("channel", "U1", true)
+	r2 := g.Check(false, "U1", true)
 	require.True(t, r2.Allowed)
 }
 
 func TestGate_DMNotRequireMention(t *testing.T) {
 	t.Parallel()
-	g := NewGate("open", "open", true, nil, nil, nil)
+	g := messaging.NewGate("open", "open", true, nil, nil, nil)
 	// DM should not require mention
-	r := g.Check("im", "U1", false)
+	r := g.Check(true, "U1", false)
 	require.True(t, r.Allowed)
 }
 
 func TestGate_DefaultOpen(t *testing.T) {
 	t.Parallel()
-	g := NewGate(PolicyOpen, PolicyOpen, false, nil, nil, nil)
-	require.True(t, g.Check("im", "U1", false).Allowed)
-	require.True(t, g.Check("channel", "U1", false).Allowed)
-	require.True(t, g.Check("mpim", "U1", false).Allowed)
+	g := messaging.NewGate(messaging.PolicyOpen, messaging.PolicyOpen, false, nil, nil, nil)
+	require.True(t, g.Check(true, "U1", false).Allowed)
+	require.True(t, g.Check(false, "U1", false).Allowed)
+	require.True(t, g.Check(false, "U1", false).Allowed)
 }
 
 // --- Phase 3.2: Message expiry ---
@@ -684,14 +684,14 @@ func TestHandleCapabilityError_Degrades(t *testing.T) {
 
 func TestGate_GroupAllowlist(t *testing.T) {
 	t.Parallel()
-	g := NewGate("open", "allowlist", false, []string{"U_ALLOWED"}, nil, nil)
+	g := messaging.NewGate("open", "allowlist", false, []string{"U_ALLOWED"}, nil, nil)
 
-	result := g.Check(ChannelGroup, "U_ALLOWED", false)
+	result := g.Check(false, "U_ALLOWED", false)
 	require.True(t, result.Allowed, "whitelisted user in group should pass")
 
-	result = g.Check(ChannelGroup, "U_STRANGER", false)
+	result = g.Check(false, "U_STRANGER", false)
 	require.False(t, result.Allowed, "non-whitelisted user in group should be rejected")
-	require.Equal(t, ReasonNotInAllowlist, result.Reason)
+	require.Equal(t, messaging.ReasonNotInAllowlist, result.Reason)
 }
 
 // ---------------------------------------------------------------------------
@@ -2017,7 +2017,7 @@ func TestAdapter_SetGate(t *testing.T) {
 	t.Parallel()
 
 	a := &Adapter{}
-	g := &Gate{}
+	g := &messaging.Gate{}
 	a.SetGate(g)
 	require.Same(t, g, a.gate)
 }

@@ -75,7 +75,7 @@ func startMessagingAdapters(ctx context.Context, deps *GatewayDeps) ([]messaging
 		case messaging.PlatformSlack:
 			if sa, ok := adapter.(*slack.Adapter); ok {
 				sa.Configure(cfg.Messaging.Slack.BotToken, cfg.Messaging.Slack.AppToken, msgBridge)
-				gate := slack.NewGate(
+				gate := messaging.NewGate(
 					cfg.Messaging.Slack.DMPolicy,
 					cfg.Messaging.Slack.GroupPolicy,
 					cfg.Messaging.Slack.RequireMention,
@@ -93,7 +93,7 @@ func startMessagingAdapters(ctx context.Context, deps *GatewayDeps) ([]messaging
 		case messaging.PlatformFeishu:
 			if fa, ok := adapter.(*feishu.Adapter); ok {
 				fa.Configure(cfg.Messaging.Feishu.AppID, cfg.Messaging.Feishu.AppSecret, msgBridge)
-				gate := feishu.NewGate(
+				gate := messaging.NewGate(
 					cfg.Messaging.Feishu.DMPolicy,
 					cfg.Messaging.Feishu.GroupPolicy,
 					cfg.Messaging.Feishu.RequireMention,

@@ -101,10 +101,10 @@ func TestFeishuConn_Close_NilStreamCtrl(t *testing.T) {
 func TestFeishuConn_Close_NilLarkClient(t *testing.T) {
 	t.Parallel()
 	a := &Adapter{
-		log:          slog.New(slog.NewTextHandler(io.Discard, nil)),
-		dedup:        NewDedup(100, time.Hour),
-		activeConns:  make(map[string]*FeishuConn),
-		dedupDone:    make(chan struct{}),
+		log:         slog.New(slog.NewTextHandler(io.Discard, nil)),
+		dedup:       messaging.NewDedup(100, time.Hour),
+		activeConns: make(map[string]*FeishuConn),
+
 		interactions: messaging.NewInteractionManager(slog.New(slog.NewTextHandler(io.Discard, nil))),
 	}
 
@@ -129,10 +129,10 @@ func TestAdapter_HandleTextMessage_NilBridge(t *testing.T) {
 func TestFeishuConn_WriteCtx_PermissionRequest_NilClient(t *testing.T) {
 	t.Parallel()
 	a := &Adapter{
-		log:          slog.New(slog.NewTextHandler(io.Discard, nil)),
-		dedup:        NewDedup(100, time.Hour),
-		activeConns:  make(map[string]*FeishuConn),
-		dedupDone:    make(chan struct{}),
+		log:         slog.New(slog.NewTextHandler(io.Discard, nil)),
+		dedup:       messaging.NewDedup(100, time.Hour),
+		activeConns: make(map[string]*FeishuConn),
+
 		interactions: messaging.NewInteractionManager(slog.New(slog.NewTextHandler(io.Discard, nil))),
 	}
 
@@ -161,10 +161,10 @@ func TestFeishuConn_WriteCtx_PermissionRequest_NilClient(t *testing.T) {
 func TestFeishuConn_WriteCtx_QuestionRequest_NilClient(t *testing.T) {
 	t.Parallel()
 	a := &Adapter{
-		log:          slog.New(slog.NewTextHandler(io.Discard, nil)),
-		dedup:        NewDedup(100, time.Hour),
-		activeConns:  make(map[string]*FeishuConn),
-		dedupDone:    make(chan struct{}),
+		log:         slog.New(slog.NewTextHandler(io.Discard, nil)),
+		dedup:       messaging.NewDedup(100, time.Hour),
+		activeConns: make(map[string]*FeishuConn),
+
 		interactions: messaging.NewInteractionManager(slog.New(slog.NewTextHandler(io.Discard, nil))),
 	}
 
@@ -191,10 +191,10 @@ func TestFeishuConn_WriteCtx_QuestionRequest_NilClient(t *testing.T) {
 func TestFeishuConn_WriteCtx_ElicitationRequest_NilClient(t *testing.T) {
 	t.Parallel()
 	a := &Adapter{
-		log:          slog.New(slog.NewTextHandler(io.Discard, nil)),
-		dedup:        NewDedup(100, time.Hour),
-		activeConns:  make(map[string]*FeishuConn),
-		dedupDone:    make(chan struct{}),
+		log:         slog.New(slog.NewTextHandler(io.Discard, nil)),
+		dedup:       messaging.NewDedup(100, time.Hour),
+		activeConns: make(map[string]*FeishuConn),
+
 		interactions: messaging.NewInteractionManager(slog.New(slog.NewTextHandler(io.Discard, nil))),
 	}
 

@@ -1,4 +1,4 @@
-package slack
+package messaging
 
 import (
 	"testing"
@@ -10,7 +10,7 @@ import (
 func TestReconnectBackoff_Next_ExponentialGrowth(t *testing.T) {
 	baseDelay := 1 * time.Second
 	maxDelay := 60 * time.Second
-	b := newReconnectBackoff(baseDelay, maxDelay)
+	b := NewReconnectBackoff(baseDelay, maxDelay)
 
 	// First attempt: should be approximately 1s (0.5s to 1s due to jitter)
 	d1 := b.Next()
@@ -36,7 +36,7 @@ func TestReconnectBackoff_Next_ExponentialGrowth(t *testing.T) {
 func TestReconnectBackoff_Next_MaxDelayCap(t *testing.T) {
 	baseDelay := 10 * time.Second
 	maxDelay := 30 * time.Second
-	b := newReconnectBackoff(baseDelay, maxDelay)
+	b := NewReconnectBackoff(baseDelay, maxDelay)
 
 	// After enough attempts, should cap at maxDelay
 	var lastDelay time.Duration
@@ -56,7 +56,7 @@ func TestReconnectBackoff_Next_JitterProducesDifferentValues(t *testing.T) {
 	// Collect multiple samples from fresh backoff instances
 	samples := make([]time.Duration, 20)
 	for i := range samples {
-		b := newReconnectBackoff(baseDelay, maxDelay)
+		b := NewReconnectBackoff(baseDelay, maxDelay)
 		samples[i] = b.Next()
 	}
 
@@ -75,7 +75,7 @@ func TestReconnectBackoff_Next_JitterProducesDifferentValues(t *testing.T) {
 func TestReconnectBackoff_Reset(t *testing.T) {
 	baseDelay := 1 * time.Second
 	maxDelay := 60 * time.Second
-	b := newReconnectBackoff(baseDelay, maxDelay)
+	b := NewReconnectBackoff(baseDelay, maxDelay)
 
 	// Advance several attempts
 	for i := 0; i < 5; i++ {
@@ -94,7 +94,7 @@ func TestReconnectBackoff_Reset(t *testing.T) {
 func TestReconnectBackoff_Next_JitterRange(t *testing.T) {
 	baseDelay := 2 * time.Second
 	maxDelay := 60 * time.Second
-	b := newReconnectBackoff(baseDelay, maxDelay)
+	b := NewReconnectBackoff(baseDelay, maxDelay)
 
 	// First attempt: baseDelay * 2^0 = 2s
 	// After jitter: delay should be in [1s, 2s)
@@ -106,7 +106,7 @@ func TestReconnectBackoff_Next_JitterRange(t *testing.T) {
 func TestReconnectBackoff_ConcurrentAccess(t *testing.T) {
 	baseDelay := 1 * time.Second
 	maxDelay := 60 * time.Second
-	b := newReconnectBackoff(baseDelay, maxDelay)
+	b := NewReconnectBackoff(baseDelay, maxDelay)
 
 	// Run concurrent calls to Next() and Reset()
 	done := make(chan bool, 4)
@@ -151,7 +151,7 @@ func TestReconnectBackoff_ConcurrentAccess(t *testing.T) {
 func TestReconnectBackoff_ZeroBaseDelay(t *testing.T) {
 	baseDelay := time.Duration(0)
 	maxDelay := 60 * time.Second
-	b := newReconnectBackoff(baseDelay, maxDelay)
+	b := NewReconnectBackoff(baseDelay, maxDelay)
 
 	// With zero base delay, should immediately use maxDelay
 	d := b.Next()

@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"testing"
+	"time"
 
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	"github.com/stretchr/testify/require"
@@ -93,7 +94,7 @@ func TestExtractResponseText_RawData(t *testing.T) {
 
 func TestFeishuConn_WriteCtx_NilEnvelope(t *testing.T) {
 	t.Parallel()
-	adapter := &Adapter{log: slog.New(slog.NewTextHandler(io.Discard, nil)), dedup: NewDedup(100, 12*60*60*1e9), activeConns: make(map[string]*FeishuConn), dedupDone: make(chan struct{})}
+	adapter := &Adapter{log: slog.New(slog.NewTextHandler(io.Discard, nil)), dedup: messaging.NewDedup(100, 12*time.Hour), activeConns: make(map[string]*FeishuConn)}
 	conn := NewFeishuConn(adapter, "test_chat", "")
 
 	err := conn.WriteCtx(context.Background(), nil)
@@ -123,9 +124,8 @@ func TestAdapter_Close(t *testing.T) {
 	t.Parallel()
 	a := &Adapter{
 		log:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		dedup:       NewDedup(100, 12*60*60*1e9),
+		dedup:       messaging.NewDedup(100, 12*60*60*1e9),
 		activeConns: make(map[string]*FeishuConn),
-		dedupDone:   make(chan struct{}),
 	}
 	require.NoError(t, a.Close(context.Background()))
 	require.Nil(t, a.activeConns)
@@ -134,7 +134,7 @@ func TestAdapter_Close(t *testing.T) {
 
 func TestDedup_TryRecord(t *testing.T) {
 	t.Parallel()
-	d := NewDedup(100, 12*60*60*1e9)
+	d := messaging.NewDedup(100, 12*60*60*1e9)
 	require.True(t, d.TryRecord("msg1"))
 	require.False(t, d.TryRecord("msg1"))
 	require.True(t, d.TryRecord("msg2"))
@@ -142,7 +142,7 @@ func TestDedup_TryRecord(t *testing.T) {
 
 func TestDedup_FIFOEviction(t *testing.T) {
 	t.Parallel()
-	d := NewDedup(2, 12*60*60*1e9)
+	d := messaging.NewDedup(2, 12*60*60*1e9)
 	require.True(t, d.TryRecord("a"))
 	require.True(t, d.TryRecord("b"))
 	require.True(t, d.TryRecord("c"))  // evicts "a"
@@ -292,9 +292,8 @@ func TestAdapter_DoubleStartGuard(t *testing.T) {
 
 	a := &Adapter{
 		log:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		dedup:       NewDedup(100, 12*60*60*1e9),
+		dedup:       messaging.NewDedup(100, 12*60*60*1e9),
 		activeConns: make(map[string]*FeishuConn),
-		dedupDone:   make(chan struct{}),
 	}
 
 	// First call: fails due to missing credentials (guard passes, validation fails)
@@ -312,9 +311,8 @@ func TestAdapter_CloseAfterSingleStart(t *testing.T) {
 
 	a := &Adapter{
 		log:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		dedup:       NewDedup(100, 12*60*60*1e9),
+		dedup:       messaging.NewDedup(100, 12*60*60*1e9),
 		activeConns: make(map[string]*FeishuConn),
-		dedupDone:   make(chan struct{}),
 	}
 
 	// Start fails (no credentials), but guard is set

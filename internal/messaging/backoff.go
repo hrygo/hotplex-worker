@@ -1,4 +1,4 @@
-package slack
+package messaging
 
 import (
 	"math/rand/v2"
@@ -6,19 +6,18 @@ import (
 	"time"
 )
 
-// reconnectBackoff implements exponential backoff with jitter for reconnection attempts.
+// ReconnectBackoff implements exponential backoff with jitter for reconnection attempts.
 // It is safe for concurrent use.
-type reconnectBackoff struct {
+type ReconnectBackoff struct {
 	attempt   int
 	baseDelay time.Duration
 	maxDelay  time.Duration
 	mu        sync.Mutex
 }
 
-// newReconnectBackoff creates a new backoff with the specified base and max delays.
-func newReconnectBackoff(baseDelay, maxDelay time.Duration) *reconnectBackoff {
-	return &reconnectBackoff{
-		attempt:   0,
+// NewReconnectBackoff creates a new backoff with the specified base and max delays.
+func NewReconnectBackoff(baseDelay, maxDelay time.Duration) *ReconnectBackoff {
+	return &ReconnectBackoff{
 		baseDelay: baseDelay,
 		maxDelay:  maxDelay,
 	}
@@ -31,7 +30,7 @@ func newReconnectBackoff(baseDelay, maxDelay time.Duration) *reconnectBackoff {
 //   - jitter = random duration in [0, delay/2)
 //   - final = delay/2 + jitter (ensures at least half the computed delay)
 //   - increment attempt
-func (b *reconnectBackoff) Next() time.Duration {
+func (b *ReconnectBackoff) Next() time.Duration {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -54,7 +53,7 @@ func (b *reconnectBackoff) Next() time.Duration {
 }
 
 // Reset resets the backoff attempt counter to 0.
-func (b *reconnectBackoff) Reset() {
+func (b *ReconnectBackoff) Reset() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.attempt = 0

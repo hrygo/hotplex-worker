@@ -363,13 +363,11 @@ func TestAdapterFlow_DedupCleanupLoop_Exit(t *testing.T) {
 	t.Parallel()
 	a := &Adapter{
 		log:         discardLogger,
-		dedup:       NewDedup(10, time.Millisecond),
+		dedup:       messaging.NewDedup(10, time.Millisecond),
 		activeConns: make(map[string]*FeishuConn),
-		dedupDone:   make(chan struct{}),
 	}
-
-	close(a.dedupDone)
-	a.dedupWg.Wait()
+	a.dedup.StartCleanup()
+	a.dedup.Close() // should not panic
 }
 
 func TestAdapterFlow_Close_WithConnections(t *testing.T) {

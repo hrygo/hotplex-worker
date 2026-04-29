@@ -8,6 +8,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/hrygo/hotplex/internal/messaging"
+
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 )
 
@@ -194,7 +196,7 @@ func TestHandleMessage_TextWithGateAllowed(t *testing.T) {
 	a := newTestAdapter(t)
 	a.chatQueue = NewChatQueue(discardLogger)
 	t.Cleanup(func() { a.chatQueue.Close() })
-	a.gate = NewGate("", "", false, nil, nil, nil) // no restrictions → DM always allowed
+	a.gate = messaging.NewGate("", "", false, nil, nil, nil) // no restrictions → DM always allowed
 
 	sender := larkim.NewEventSenderBuilder().
 		SenderId(larkim.NewUserIdBuilder().OpenId("user1").Build()).
@@ -220,7 +222,7 @@ func TestHandleMessage_GateRejected(t *testing.T) {
 	a := newTestAdapter(t)
 	a.chatQueue = NewChatQueue(discardLogger)
 	t.Cleanup(func() { a.chatQueue.Close() })
-	a.gate = NewGate("allowlist", "allowlist", true, []string{"allowed_user"}, nil, nil)
+	a.gate = messaging.NewGate("allowlist", "allowlist", true, []string{"allowed_user"}, nil, nil)
 
 	sender := larkim.NewEventSenderBuilder().
 		SenderId(larkim.NewUserIdBuilder().OpenId("stranger").Build()).

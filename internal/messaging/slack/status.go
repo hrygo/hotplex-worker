@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -489,15 +490,7 @@ func extractFileName(path string) string {
 	if path == "" {
 		return ""
 	}
-	// Handle both / and \ separators for robustness
-	path = strings.ReplaceAll(path, `\`, "/")
-	parts := strings.Split(path, "/")
-	for i := len(parts) - 1; i >= 0; i-- {
-		if parts[i] != "" {
-			return parts[i]
-		}
-	}
-	return path
+	return filepath.Base(path)
 }
 
 // extractToolResultStatus formats tool result preview truncated to statusTextLimit chars.

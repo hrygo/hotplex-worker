@@ -62,12 +62,12 @@ type Adapter struct {
 	botID              string
 	teamID             string
 	bridge             *messaging.Bridge
-	dedup              *Dedup
+	dedup              *messaging.Dedup
 	userCache          *UserCache
 	statusMgr          *StatusManager
 	isAssistantCapable atomic.Bool
 	assistantEnabled   *bool
-	gate               *Gate
+	gate               *messaging.Gate
 	transcriber        stt.Transcriber
 	started            atomic.Bool
 	backoffBaseDelay   time.Duration
@@ -99,7 +99,7 @@ func (a *Adapter) SetBridge(b *messaging.Bridge) {
 }
 
 // SetGate sets the access control gate.
-func (a *Adapter) SetGate(g *Gate) {
+func (a *Adapter) SetGate(g *messaging.Gate) {
 	a.gate = g
 }
 
@@ -141,7 +141,8 @@ func (a *Adapter) Start(ctx context.Context) error {
 
 	a.rateLimiter = NewChannelRateLimiter(ctx)
 	a.slashLimiter = NewSlashRateLimiter()
-	a.dedup = NewDedup(dedupMaxEntries, dedupTTL)
+	a.dedup = messaging.NewDedup(dedupMaxEntries, dedupTTL)
+	a.dedup.StartCleanup()
 	a.userCache = NewUserCache(a.client)
 	a.statusMgr = NewStatusManager(a, a.log)
 	a.interactions = messaging.NewInteractionManager(a.log)
@@ -178,7 +179,7 @@ func (a *Adapter) runSocketMode(ctx context.Context) {
 	if maxDelay <= 0 {
 		maxDelay = 60 * time.Second
 	}
-	backoff := newReconnectBackoff(baseDelay, maxDelay)
+	backoff := messaging.NewReconnectBackoff(baseDelay, maxDelay)
 
 	// Run() blocks until the WebSocket closes. Wrap it in a loop so that
 	// connection errors trigger automatic reconnect instead of silently exiting.
@@ -318,7 +319,7 @@ func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsA
 	// Access control gate (must run before ResolveMentions which strips <@BOTID>)
 	if a.gate != nil {
 		botMentioned := strings.Contains(text, "<@"+a.botID+">")
-		result := a.gate.Check(channelType, userID, botMentioned)
+		result := a.gate.Check(channelType == ChannelIM, userID, botMentioned)
 		if !result.Allowed {
 			a.log.Debug("slack: gate rejected", "reason", result.Reason, "user", userID)
 			return

@@ -14,6 +14,7 @@ import (
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	"github.com/stretchr/testify/require"
 
+	"github.com/hrygo/hotplex/internal/messaging"
 	"github.com/hrygo/hotplex/internal/messaging/stt"
 	"github.com/hrygo/hotplex/pkg/events"
 )
@@ -389,9 +390,8 @@ func newTestAdapter(t *testing.T) *Adapter {
 	t.Helper()
 	return &Adapter{
 		log:         discardLogger,
-		dedup:       NewDedup(100, time.Hour),
+		dedup:       messaging.NewDedup(100, time.Hour),
 		activeConns: make(map[string]*FeishuConn),
-		dedupDone:   make(chan struct{}),
 	}
 }
 
