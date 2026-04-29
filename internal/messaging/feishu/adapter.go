@@ -29,7 +29,7 @@ import (
 
 func init() {
 	messaging.Register(messaging.PlatformFeishu, func(log *slog.Logger) messaging.PlatformAdapterInterface {
-		return &Adapter{PlatformAdapter: messaging.PlatformAdapter{Log: log.With("channel", "feishu")}}
+		return &Adapter{PlatformAdapter: messaging.PlatformAdapter{Log: log.With("channel", string(messaging.PlatformFeishu))}}
 	})
 }
 

@@ -5,8 +5,6 @@ import (
 	"sync/atomic"
 )
 
-// ConnPool is a generic connection pool that manages platform connections by key.
-// It provides thread-safe get-or-create semantics with closed-state protection.
 type ConnPool[C any] struct {
 	mu      sync.RWMutex
 	conns   map[string]C
@@ -14,7 +12,6 @@ type ConnPool[C any] struct {
 	factory func(key string) C
 }
 
-// NewConnPool creates a connection pool with the given factory function.
 func NewConnPool[C any](factory func(key string) C) *ConnPool[C] {
 	return &ConnPool[C]{
 		conns:   make(map[string]C),
@@ -22,9 +19,12 @@ func NewConnPool[C any](factory func(key string) C) *ConnPool[C] {
 	}
 }
 
-// GetOrCreate returns an existing connection or creates a new one.
-// Returns the zero value of C if the pool is closed.
+// Fast-path: check closed before acquiring lock to avoid contention in hot paths.
 func (p *ConnPool[C]) GetOrCreate(key string) C {
+	if p.closed.Load() {
+		var zero C
+		return zero
+	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.closed.Load() {
@@ -39,23 +39,20 @@ func (p *ConnPool[C]) GetOrCreate(key string) C {
 	return c
 }
 
-// Get returns a connection by key, or the zero value if not found.
 func (p *ConnPool[C]) Get(key string) C {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return p.conns[key]
 }
 
-// Len returns the number of connections in the pool.
 func (p *ConnPool[C]) Len() int {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return len(p.conns)
 }
 
-// ClearAndClose drains all connections, calls closer on each, and marks the pool as closed.
-// Returns the connections that were collected for callers that need to perform
-// cleanup outside the lock.
+// ClearAndClose drains all connections and marks the pool as closed.
+// Returns collected connections for cleanup outside the lock.
 func (p *ConnPool[C]) ClearAndClose() []C {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -68,14 +65,12 @@ func (p *ConnPool[C]) ClearAndClose() []C {
 	return conns
 }
 
-// Delete removes a connection by key. No-op if the pool is closed or key not found.
 func (p *ConnPool[C]) Delete(key string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	delete(p.conns, key)
 }
 
-// IsClosed reports whether the pool has been closed.
 func (p *ConnPool[C]) IsClosed() bool {
 	return p.closed.Load()
 }

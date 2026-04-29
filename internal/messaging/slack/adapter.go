@@ -46,7 +46,7 @@ var blockedSubtypes = map[string]bool{
 
 func init() {
 	messaging.Register(messaging.PlatformSlack, func(log *slog.Logger) messaging.PlatformAdapterInterface {
-		return &Adapter{PlatformAdapter: messaging.PlatformAdapter{Log: log.With("channel", "slack")}}
+		return &Adapter{PlatformAdapter: messaging.PlatformAdapter{Log: log.With("channel", string(messaging.PlatformSlack))}}
 	})
 }
 
