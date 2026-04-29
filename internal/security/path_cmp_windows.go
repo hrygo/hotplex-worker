@@ -7,7 +7,7 @@ import "strings"
 func pathEqual(a, b string) bool { return strings.EqualFold(a, b) }
 
 func pathHasPrefix(path, prefix string) bool {
-	return strings.HasPrefix(strings.ToLower(path), strings.ToLower(prefix))
+	return len(path) >= len(prefix) && strings.EqualFold(path[:len(prefix)], prefix)
 }
 
 func isRootPath(path string) bool {
