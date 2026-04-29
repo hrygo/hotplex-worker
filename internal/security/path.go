@@ -57,7 +57,7 @@ func checkForbidden(path string) error {
 			return fmt.Errorf("security: work dir %q is a forbidden system directory", path)
 		}
 		// Sub-path check: "/home/foo" starts with "/home/".
-		if strings.HasPrefix(path, forbidden+"/") {
+		if strings.HasPrefix(path, forbidden+string(filepath.Separator)) {
 			return fmt.Errorf("security: work dir %q is under forbidden directory %q", path, forbidden)
 		}
 	}

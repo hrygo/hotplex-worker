@@ -300,8 +300,8 @@ func (t *Tracker) cleanupSingle(ctx context.Context, match string) CleanupResult
 
 	t.log.Warn("pidfile: confirmed orphan, killing", "pgid", pgid)
 
-	// Graceful terminate.
-	if err := GracefulTerminate(pgid); err != nil {
+	// Graceful terminate (suppress expected race: process may exit between alive check and signal).
+	if err := GracefulTerminate(pgid); err != nil && !IsProcessNotExist(err) {
 		t.log.Warn("pidfile: graceful terminate failed", "pgid", pgid, "err", err)
 	}
 
@@ -311,7 +311,7 @@ func (t *Tracker) cleanupSingle(ctx context.Context, match string) CleanupResult
 
 	select {
 	case <-graceTimer.C:
-		if err := ForceKill(pgid); err != nil {
+		if err := ForceKill(pgid); err != nil && !IsProcessNotExist(err) {
 			t.log.Warn("pidfile: force kill failed", "pgid", pgid, "err", err)
 		}
 		result.Killed = true
