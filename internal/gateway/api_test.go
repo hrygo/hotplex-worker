@@ -116,6 +116,28 @@ func (m *mockAPIBridge) SwitchWorkDir(ctx context.Context, oldSessionID, newWork
 	return args.Get(0).(*SwitchWorkDirResult), args.Error(1)
 }
 
+// ─── Mock ConversationStoreReader for API tests ────────────────────────────────
+
+type mockAPIConvStore struct {
+	mock.Mock
+}
+
+func (m *mockAPIConvStore) GetBySession(ctx context.Context, sessionID string, limit, offset int) ([]*session.ConversationRecord, error) {
+	args := m.Called(ctx, sessionID, limit, offset)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*session.ConversationRecord), args.Error(1)
+}
+
+func (m *mockAPIConvStore) GetBySessionBefore(ctx context.Context, sessionID string, beforeSeq int64, limit int) ([]*session.ConversationRecord, error) {
+	args := m.Called(ctx, sessionID, beforeSeq, limit)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*session.ConversationRecord), args.Error(1)
+}
+
 // ─── Test helpers ───────────────────────────────────────────────────────────────
 
 func newTestAuth(t *testing.T) *security.Authenticator {
@@ -125,7 +147,12 @@ func newTestAuth(t *testing.T) *security.Authenticator {
 
 func newTestAPI(t *testing.T, sm *mockAPISM, bridge *mockAPIBridge) *GatewayAPI {
 	t.Helper()
-	return NewGatewayAPI(slog.Default(), newTestAuth(t), sm, bridge, config.NewConfigStore(&config.Config{}, nil))
+	return NewGatewayAPI(slog.Default(), newTestAuth(t), sm, bridge, config.NewConfigStore(&config.Config{}, nil), nil)
+}
+
+func newTestAPIWithConv(t *testing.T, sm *mockAPISM, bridge *mockAPIBridge, convStore *mockAPIConvStore) *GatewayAPI {
+	t.Helper()
+	return NewGatewayAPI(slog.Default(), newTestAuth(t), sm, bridge, config.NewConfigStore(&config.Config{}, nil), convStore)
 }
 
 func authedReq(method, target string, body io.Reader) *http.Request {
@@ -142,6 +169,7 @@ func setupMux(api *GatewayAPI) *http.ServeMux {
 	mux.HandleFunc("GET /api/sessions/{id}", api.GetSession)
 	mux.HandleFunc("DELETE /api/sessions/{id}", api.DeleteSession)
 	mux.HandleFunc("POST /api/sessions/{id}/cd", api.SwitchWorkDir)
+	mux.HandleFunc("GET /api/sessions/{id}/history", api.GetHistory)
 	return mux
 }
 
@@ -434,4 +462,165 @@ func TestSwitchWorkDir_SessionNotFound(t *testing.T) {
 	mux.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusNotFound, w.Code)
+}
+
+// ─── GetHistory tests ───────────────────────────────────────────────────────────
+
+func TestGetHistory_Success(t *testing.T) {
+	t.Parallel()
+	sm := new(mockAPISM)
+	bridge := new(mockAPIBridge)
+	convStore := new(mockAPIConvStore)
+	api := newTestAPIWithConv(t, sm, bridge, convStore)
+
+	sm.On("Get", "sess-1").Return(&session.SessionInfo{ID: "sess-1", UserID: "anonymous"}, nil)
+	records := []*session.ConversationRecord{
+		{ID: "conv-1", SessionID: "sess-1", Seq: 1, Role: "user", Content: "hello"},
+	}
+	convStore.On("GetBySession", mock.Anything, "sess-1", 51, 0).Return(records, nil)
+
+	mux := setupMux(api)
+	w := httptest.NewRecorder()
+	r := authedReq("GET", "/api/sessions/sess-1/history?limit=50", nil)
+	mux.ServeHTTP(w, r)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var resp struct {
+		Records []*session.ConversationRecord `json:"records"`
+		HasMore bool                          `json:"has_more"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	require.Len(t, resp.Records, 1)
+	require.False(t, resp.HasMore)
+}
+
+func TestGetHistory_HasMore(t *testing.T) {
+	t.Parallel()
+	sm := new(mockAPISM)
+	bridge := new(mockAPIBridge)
+	convStore := new(mockAPIConvStore)
+	api := newTestAPIWithConv(t, sm, bridge, convStore)
+
+	sm.On("Get", "sess-1").Return(&session.SessionInfo{ID: "sess-1", UserID: "anonymous"}, nil)
+	records := []*session.ConversationRecord{
+		{ID: "conv-1", Seq: 1},
+		{ID: "conv-2", Seq: 2},
+		{ID: "conv-3", Seq: 3},
+	}
+	convStore.On("GetBySession", mock.Anything, "sess-1", 3, 0).Return(records, nil)
+
+	mux := setupMux(api)
+	w := httptest.NewRecorder()
+	r := authedReq("GET", "/api/sessions/sess-1/history?limit=2", nil)
+	mux.ServeHTTP(w, r)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var resp struct {
+		Records []*session.ConversationRecord `json:"records"`
+		HasMore bool                          `json:"has_more"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	require.Len(t, resp.Records, 2)
+	require.True(t, resp.HasMore)
+}
+
+func TestGetHistory_NoRecords(t *testing.T) {
+	t.Parallel()
+	sm := new(mockAPISM)
+	bridge := new(mockAPIBridge)
+	convStore := new(mockAPIConvStore)
+	api := newTestAPIWithConv(t, sm, bridge, convStore)
+
+	sm.On("Get", "sess-1").Return(&session.SessionInfo{ID: "sess-1", UserID: "anonymous"}, nil)
+	convStore.On("GetBySession", mock.Anything, "sess-1", 51, 0).Return(nil, session.ErrConvNotFound)
+
+	mux := setupMux(api)
+	w := httptest.NewRecorder()
+	r := authedReq("GET", "/api/sessions/sess-1/history", nil)
+	mux.ServeHTTP(w, r)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var resp struct {
+		Records []any `json:"records"`
+		HasMore bool  `json:"has_more"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	require.Empty(t, resp.Records)
+	require.False(t, resp.HasMore)
+}
+
+func TestGetHistory_Unauthorized(t *testing.T) {
+	t.Parallel()
+	sm := new(mockAPISM)
+	bridge := new(mockAPIBridge)
+	convStore := new(mockAPIConvStore)
+	api := newTestAPIWithConv(t, sm, bridge, convStore)
+
+	mux := setupMux(api)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/api/sessions/sess-1/history", nil)
+	mux.ServeHTTP(w, r)
+
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
+func TestGetHistory_OwnershipCheck(t *testing.T) {
+	t.Parallel()
+	sm := new(mockAPISM)
+	bridge := new(mockAPIBridge)
+	convStore := new(mockAPIConvStore)
+	api := newTestAPIWithConv(t, sm, bridge, convStore)
+
+	sm.On("Get", "sess-1").Return(&session.SessionInfo{ID: "sess-1", UserID: "other-user"}, nil)
+
+	mux := setupMux(api)
+	w := httptest.NewRecorder()
+	r := authedReq("GET", "/api/sessions/sess-1/history", nil)
+	mux.ServeHTTP(w, r)
+
+	require.Equal(t, http.StatusForbidden, w.Code)
+}
+
+func TestGetHistory_WithBeforeSeq(t *testing.T) {
+	t.Parallel()
+	sm := new(mockAPISM)
+	bridge := new(mockAPIBridge)
+	convStore := new(mockAPIConvStore)
+	api := newTestAPIWithConv(t, sm, bridge, convStore)
+
+	sm.On("Get", "sess-1").Return(&session.SessionInfo{ID: "sess-1", UserID: "anonymous"}, nil)
+	records := []*session.ConversationRecord{
+		{ID: "conv-1", Seq: 1},
+	}
+	convStore.On("GetBySessionBefore", mock.Anything, "sess-1", int64(5), 11).Return(records, nil)
+
+	mux := setupMux(api)
+	w := httptest.NewRecorder()
+	r := authedReq("GET", "/api/sessions/sess-1/history?before_seq=5&limit=10", nil)
+	mux.ServeHTTP(w, r)
+
+	require.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestGetHistory_NilConvStore(t *testing.T) {
+	t.Parallel()
+	sm := new(mockAPISM)
+	bridge := new(mockAPIBridge)
+	api := newTestAPI(t, sm, bridge)
+
+	sm.On("Get", "sess-1").Return(&session.SessionInfo{ID: "sess-1", UserID: "anonymous"}, nil)
+
+	mux := setupMux(api)
+	w := httptest.NewRecorder()
+	r := authedReq("GET", "/api/sessions/sess-1/history", nil)
+	mux.ServeHTTP(w, r)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var resp struct {
+		Records []any `json:"records"`
+		HasMore bool  `json:"has_more"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	require.Empty(t, resp.Records)
+	require.False(t, resp.HasMore)
 }
