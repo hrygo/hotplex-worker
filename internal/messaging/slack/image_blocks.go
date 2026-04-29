@@ -49,8 +49,8 @@ func extractImages(text string) (parts []imagePart, remaining string) {
 }
 
 func isLocalMediaPath(s string) bool {
-	return strings.HasPrefix(s, MediaPathPrefix+"/images/") ||
-		strings.HasPrefix(s, MediaPathPrefix+"/videos/")
+	return strings.HasPrefix(s, filepath.Join(MediaPathPrefix, "images")+string(filepath.Separator)) ||
+		strings.HasPrefix(s, filepath.Join(MediaPathPrefix, "videos")+string(filepath.Separator))
 }
 
 func isImageURL(s string) bool {

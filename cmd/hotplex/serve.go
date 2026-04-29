@@ -54,7 +54,7 @@ func newGatewayStopCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "stop",
 		Short: "Stop the running gateway server",
-		Long:  `Stop the running gateway server by sending SIGTERM to the process recorded in the PID file.`,
+		Long:  `Stop the running gateway server by sending graceful termination to the process recorded in the PID file.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			pid, err := readGatewayPID()
 			if err != nil {
@@ -63,7 +63,7 @@ func newGatewayStopCmd() *cobra.Command {
 			if err := proc.GracefulTerminate(pid); err != nil {
 				return fmt.Errorf("stop PID %d: %w", pid, err)
 			}
-			fmt.Fprintf(os.Stderr, "gateway: sent SIGTERM to PID %d\n", pid)
+			fmt.Fprintf(os.Stderr, "gateway: sent graceful termination to PID %d\n", pid)
 			removeGatewayPID()
 			return nil
 		},

@@ -47,17 +47,16 @@ func ValidateWorkDir(dir string) error {
 
 // checkForbidden returns an error if path is exactly or under a forbidden directory.
 func checkForbidden(path string) error {
-	// Reject root itself — no process should use / as its working directory.
-	if path == "/" {
+	// Reject root itself — no process should use the root as its working directory.
+	if isRootPath(path) {
 		return fmt.Errorf("security: work dir %q is a forbidden system directory", path)
 	}
 
 	for _, forbidden := range ForbiddenWorkDirs {
-		if path == forbidden {
+		if pathEqual(path, forbidden) {
 			return fmt.Errorf("security: work dir %q is a forbidden system directory", path)
 		}
-		// Sub-path check: "/home/foo" starts with "/home/".
-		if strings.HasPrefix(path, forbidden+string(filepath.Separator)) {
+		if pathHasPrefix(path, forbidden+string(filepath.Separator)) {
 			return fmt.Errorf("security: work dir %q is under forbidden directory %q", path, forbidden)
 		}
 	}
@@ -100,7 +99,7 @@ func SafePathJoin(baseDir, userPath string) (string, error) {
 
 	// Verify resolved path is inside baseDir.
 	realBase = strings.TrimSuffix(realBase, string(filepath.Separator))
-	if !strings.HasPrefix(realPath, realBase+string(filepath.Separator)) {
+	if !pathHasPrefix(realPath, realBase+string(filepath.Separator)) {
 		return "", fmt.Errorf("security: path escapes base directory: %s", userPath)
 	}
 

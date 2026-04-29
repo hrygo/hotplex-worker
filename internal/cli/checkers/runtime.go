@@ -9,9 +9,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/hrygo/hotplex/internal/worker/proc"
-
 	"github.com/hrygo/hotplex/internal/cli"
+	"github.com/hrygo/hotplex/internal/config"
+	"github.com/hrygo/hotplex/internal/worker/proc"
 )
 
 type diskSpaceChecker struct{}
@@ -221,9 +221,9 @@ func (c dataDirWritableChecker) Check(ctx context.Context) cli.Diagnostic {
 }
 
 func init() {
-	home, _ := os.UserHomeDir()
+	hplexHome := config.HotplexHome()
 	cli.DefaultRegistry.Register(diskSpaceChecker{})
 	cli.DefaultRegistry.Register(portAvailableChecker{})
-	cli.DefaultRegistry.Register(orphanPIDsChecker{pidDir: filepath.Join(home, ".hotplex", ".pids")})
-	cli.DefaultRegistry.Register(dataDirWritableChecker{dataDir: filepath.Join(home, ".hotplex", "data")})
+	cli.DefaultRegistry.Register(orphanPIDsChecker{pidDir: filepath.Join(hplexHome, ".pids")})
+	cli.DefaultRegistry.Register(dataDirWritableChecker{dataDir: filepath.Join(hplexHome, "data")})
 }
