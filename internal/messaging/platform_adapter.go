@@ -125,8 +125,8 @@ type PlatformAdapter struct {
 	bridge  *Bridge
 
 	// Shared adapter state (promoted from Slack/Feishu adapters).
-	Started          atomic.Bool
-	Closed           atomic.Bool
+	started          atomic.Bool
+	closed           atomic.Bool
 	Dedup            *Dedup
 	Gate             *Gate
 	Interactions     *InteractionManager
@@ -181,13 +181,13 @@ func (a *PlatformAdapter) ConfigureShared(config AdapterConfig) {
 
 // StartGuard atomically marks the adapter as started. Returns true on the
 // first call, false on subsequent calls.
-func (a *PlatformAdapter) StartGuard() bool { return a.Started.CompareAndSwap(false, true) }
+func (a *PlatformAdapter) StartGuard() bool { return a.started.CompareAndSwap(false, true) }
 
 // MarkClosed marks the adapter as closed.
-func (a *PlatformAdapter) MarkClosed() { a.Closed.Store(true) }
+func (a *PlatformAdapter) MarkClosed() { a.closed.Store(true) }
 
 // IsClosed reports whether the adapter has been closed.
-func (a *PlatformAdapter) IsClosed() bool { return a.Closed.Load() }
+func (a *PlatformAdapter) IsClosed() bool { return a.closed.Load() }
 
 // InitSharedState creates the default Dedup (5000 entries, 12h TTL) and
 // InteractionManager. Adapters with custom dedup params should overwrite

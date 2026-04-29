@@ -46,15 +46,6 @@ func (p *ConnPool[C]) Get(key string) C {
 	return p.conns[key]
 }
 
-// Range calls f for each connection in the pool. Locks for reading.
-func (p *ConnPool[C]) Range(f func(key string, conn C)) {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	for k, c := range p.conns {
-		f(k, c)
-	}
-}
-
 // Len returns the number of connections in the pool.
 func (p *ConnPool[C]) Len() int {
 	p.mu.RLock()

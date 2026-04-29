@@ -390,7 +390,7 @@ func TestAdapterFlow_Close_WithConnections(t *testing.T) {
 func TestAdapterFlow_Start_AlreadyStarted(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
-	a.Started.Store(true)
+	a.StartGuard()
 
 	err := a.Start(context.Background())
 	require.NoError(t, err)
