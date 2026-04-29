@@ -2,4 +2,4 @@
 
 package config
 
-func hotplexFallbackDir() string { return "/tmp/hotplex" }
+func hotplexFallbackDir() string { return TempBaseDir() }

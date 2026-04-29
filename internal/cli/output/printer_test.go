@@ -117,7 +117,7 @@ func TestPrintSummary(t *testing.T) {
 
 func TestIsTTY(t *testing.T) {
 	var buf bytes.Buffer
-	if isTTY(&buf) {
+	if IsTTY(&buf) {
 		t.Error("bytes.Buffer should not be a TTY")
 	}
 }

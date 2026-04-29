@@ -18,7 +18,7 @@ const (
 )
 
 func PrintDiagnostic(out io.Writer, d cli.Diagnostic, verbose bool) {
-	tty := isTTY(out)
+	tty := IsTTY(out)
 
 	var symbol, color string
 	switch d.Status {
@@ -58,7 +58,7 @@ func PrintDiagnostic(out io.Writer, d cli.Diagnostic, verbose bool) {
 
 // PrintSummary prints the summary line with pass/warn/fail counts.
 func PrintSummary(out io.Writer, pass, warn, fail, fixable int) {
-	tty := isTTY(out)
+	tty := IsTTY(out)
 
 	total := pass + warn + fail
 	summary := fmt.Sprintf("%d checks: %d passed, %d warnings, %d failed", total, pass, warn, fail)

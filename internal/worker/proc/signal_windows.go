@@ -5,7 +5,6 @@ package proc
 import (
 	"fmt"
 	"os/exec"
-	"strconv"
 
 	"golang.org/x/sys/windows"
 )
@@ -22,9 +21,15 @@ func GracefulTerminate(pgid int) error {
 	return windows.GenerateConsoleCtrlEvent(windows.CTRL_BREAK_EVENT, uint32(pgid))
 }
 
-// ForceKill terminates the process tree using taskkill.
+// ForceKill terminates the process and its descendants via TerminateProcess.
 func ForceKill(pgid int) error {
-	return exec.Command("taskkill", "/PID", strconv.Itoa(pgid), "/T", "/F").Run()
+	// Open with PROCESS_TERMINATE to call TerminateProcess.
+	handle, err := windows.OpenProcess(windows.PROCESS_TERMINATE, false, uint32(pgid))
+	if err != nil {
+		return fmt.Errorf("open process %d for termination: %w", pgid, err)
+	}
+	defer windows.CloseHandle(handle)
+	return windows.TerminateProcess(handle, 1)
 }
 
 // IsProcessAlive checks if a process exists using OpenProcess.
@@ -44,5 +49,26 @@ func IsProcessGroupAlive(pgid int) error {
 
 // IsProcessNotExist returns true if the error indicates the process does not exist.
 func IsProcessNotExist(err error) bool {
-	return err != nil
+	if err == nil {
+		return false
+	}
+	return isWindowsError(err, windows.ERROR_INVALID_PARAMETER)
+}
+
+// isWindowsError checks if err wraps the specified Windows error code.
+func isWindowsError(err error, target error) bool {
+	for ; err != nil; err = unwrap(err) {
+		if err == target {
+			return true
+		}
+	}
+	return false
+}
+
+func unwrap(err error) error {
+	type unwrapper interface{ Unwrap() error }
+	if u, ok := err.(unwrapper); ok {
+		return u.Unwrap()
+	}
+	return nil
 }

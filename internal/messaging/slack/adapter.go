@@ -13,7 +13,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/hrygo/hotplex/internal/config"
 	"github.com/hrygo/hotplex/internal/messaging"
 	"github.com/hrygo/hotplex/internal/messaging/stt"
 	"github.com/hrygo/hotplex/pkg/aep"
@@ -25,8 +24,6 @@ import (
 	"github.com/slack-go/slack/slackevents"
 	"github.com/slack-go/slack/socketmode"
 )
-
-var mediaPathPrefix = filepath.Join(config.TempBaseDir(), "media", "slack")
 
 const (
 	messageExpiry    = 30 * time.Minute
@@ -1048,7 +1045,7 @@ func (a *Adapter) cleanupMedia(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			a.cleanupMediaInDir(mediaPathPrefix)
+			a.cleanupMediaInDir(MediaPathPrefix)
 		}
 	}
 }

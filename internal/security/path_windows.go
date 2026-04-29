@@ -3,12 +3,11 @@
 package security
 
 import (
-	"os"
-	"path/filepath"
+	"github.com/hrygo/hotplex/internal/config"
 )
 
 var AllowedBaseDirs = map[string]bool{
-	filepath.Join(os.TempDir(), "hotplex"): true,
+	config.TempBaseDir(): true,
 }
 
 var ForbiddenWorkDirs = []string{

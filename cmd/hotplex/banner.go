@@ -7,6 +7,8 @@ import (
 	"os"
 	"runtime"
 	"strings"
+
+	"github.com/hrygo/hotplex/internal/cli/output"
 )
 
 // ANSI escape codes for TTY output.
@@ -71,7 +73,7 @@ func writeAll(w io.Writer, lines ...string) {
 }
 
 func printStartupBanner(out *os.File, info BuildInfo, s RuntimeStatus, configPath string) {
-	tty := isTTY(out.Fd())
+	tty := output.IsTTY(out)
 
 	bold := func(s string) string {
 		if tty {
