@@ -112,3 +112,57 @@ jobs:
             dist/checksums.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ── Offline Bundle (OpenCode + OMO) ────────────────────────────────────
+  offline-bundle:
+    name: Pack offline bundle
+    needs: [release]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      - name: Resolve versions
+        id: versions
+        run: |
+          OPENCODE_VER=$(curl -s https://api.github.com/repos/anomalyco/opencode/releases/latest \
+            | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | sed 's/^v//')
+          OMO_VER=$(npm view oh-my-opencode version 2>/dev/null || echo "unknown")
+          echo "opencode=${OPENCODE_VER}" >> $GITHUB_OUTPUT
+          echo "omo=${OMO_VER}" >> $GITHUB_OUTPUT
+          echo "OpenCode: ${OPENCODE_VER}, OMO: ${OMO_VER}"
+
+      - name: Pack bundles
+        run: |
+          chmod +x scripts/pack-offline-bundle.sh
+
+          # Pack for each platform
+          for PLATFORM in linux-x64 linux-arm64 darwin-arm64 darwin-x64; do
+            echo "==> Packing ${PLATFORM}..."
+            bash scripts/pack-offline-bundle.sh \
+              --opencode-version "${{ steps.versions.outputs.opencode }}" \
+              --omo-version "${{ steps.versions.outputs.omo }}" \
+              --platform "${PLATFORM}" \
+              --output "dist/offline-bundle-${PLATFORM}"
+          done
+
+          ls -lh dist/hotplex-offline-bundle-*.tar.gz
+
+      - name: Compute bundle checksums
+        run: |
+          for f in dist/hotplex-offline-bundle-*.tar.gz; do
+            sha256sum "$f" >> dist/checksums-offline.txt
+          done
+          cat dist/checksums-offline.txt
+
+      - name: Upload offline bundles to release
+        uses: softprops/action-gh-release@v3.0.0
+        with:
+          files: |
+            dist/hotplex-offline-bundle-*.tar.gz
+            dist/checksums-offline.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
