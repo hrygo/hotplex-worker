@@ -96,12 +96,9 @@ func TestAdapter_BaseMethods(t *testing.T) {
 		Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 
-	// Verify setters don't panic
 	hub := &mockHub{}
-	a.SetHub(hub)
-	a.SetSessionManager(nil)
-	a.SetHandler(nil)
-	a.SetBridge(nil)
+	err := a.ConfigureWith(AdapterConfig{Hub: hub})
+	require.NoError(t, err)
 }
 
 type mockHub struct{}

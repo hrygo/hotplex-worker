@@ -84,39 +84,40 @@ type Adapter struct {
 
 func (a *Adapter) Platform() messaging.PlatformType { return messaging.PlatformSlack }
 
-// Configure sets tokens and bridge before Start.
-func (a *Adapter) Configure(botToken, appToken string, bridge *messaging.Bridge) {
-	a.botToken = botToken
-	a.appToken = appToken
-	a.bridge = bridge
-	SetWorkDir(bridge.WorkDir())
-}
+func (a *Adapter) ConfigureWith(config messaging.AdapterConfig) error {
+	// Call base to set hub/sm/handler/bridge.
+	_ = a.PlatformAdapter.ConfigureWith(config)
 
-// SetBridge stores the bridge for later use.
-func (a *Adapter) SetBridge(b *messaging.Bridge) {
-	a.bridge = b
-	SetWorkDir(b.WorkDir())
-}
+	// Slack-specific: tokens.
+	a.botToken = config.ExtrasString("bot_token")
+	a.appToken = config.ExtrasString("app_token")
 
-// SetGate sets the access control gate.
-func (a *Adapter) SetGate(g *messaging.Gate) {
-	a.gate = g
-}
+	// Bridge reference and workdir.
+	if config.Bridge != nil {
+		a.bridge = config.Bridge
+		SetWorkDir(config.Bridge.WorkDir())
+	}
 
-// SetAssistantEnabled controls whether to attempt native Assistant API.
-func (a *Adapter) SetAssistantEnabled(enabled *bool) {
-	a.assistantEnabled = enabled
-}
+	// Access control.
+	if config.Gate != nil {
+		a.gate = config.Gate
+	}
 
-// SetReconnectDelays configures the exponential backoff delays for reconnection.
-func (a *Adapter) SetReconnectDelays(baseDelay, maxDelay time.Duration) {
-	a.backoffBaseDelay = baseDelay
-	a.backoffMaxDelay = maxDelay
-}
+	// Platform-specific extras.
+	if v := config.ExtrasBoolPtr("assistant_enabled"); v != nil {
+		a.assistantEnabled = v
+	}
+	if bd := config.ExtrasDuration("reconnect_base_delay"); bd > 0 {
+		a.backoffBaseDelay = bd
+	}
+	if md := config.ExtrasDuration("reconnect_max_delay"); md > 0 {
+		a.backoffMaxDelay = md
+	}
+	if t, ok := config.Extras["transcriber"].(stt.Transcriber); ok && t != nil {
+		a.transcriber = t
+	}
 
-// SetTranscriber sets the speech-to-text transcriber for voice messages.
-func (a *Adapter) SetTranscriber(t stt.Transcriber) {
-	a.transcriber = t
+	return nil
 }
 
 func (a *Adapter) Start(ctx context.Context) error {

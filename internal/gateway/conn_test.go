@@ -632,7 +632,7 @@ func TestBotIDIsolation_CreateMismatch(t *testing.T) {
 		mu1.Unlock()
 		go func() {
 			c := newBotIDTestConn(h1, conn, derivedSID, "alice", botAlice)
-			h := NewHandler(slog.Default(), h1, mgr1, jwtVal)
+			h := NewHandler(HandlerDeps{Log: slog.Default(), Hub: h1, SM: mgr1, JWTValidator: jwtVal})
 			c.ReadPump(h)
 		}()
 	}))
@@ -697,7 +697,7 @@ func TestBotIDIsolation_CreateMismatch(t *testing.T) {
 		mu2.Unlock()
 		go func() {
 			c := newBotIDTestConn(h2, conn, derivedSID, "alice", botBob)
-			h := NewHandler(slog.Default(), h2, mgr2, jwtVal)
+			h := NewHandler(HandlerDeps{Log: slog.Default(), Hub: h2, SM: mgr2, JWTValidator: jwtVal})
 			c.ReadPump(h)
 		}()
 	}))
@@ -772,7 +772,7 @@ func TestBotIDIsolation_MatchAllowed(t *testing.T) {
 		mu.Unlock()
 		go func() {
 			c := newBotIDTestConn(hubForTest, conn, derivedSID, "user1", botID)
-			handler := NewHandler(slog.Default(), hubForTest, mgr, jwtVal)
+			handler := NewHandler(HandlerDeps{Log: slog.Default(), Hub: hubForTest, SM: mgr, JWTValidator: jwtVal})
 			c.ReadPump(handler)
 		}()
 	}))
@@ -835,7 +835,7 @@ func TestBotIDIsolation_EmptyBotIDAllowed(t *testing.T) {
 		mu.Unlock()
 		go func() {
 			c := newBotIDTestConn(h, conn, derivedSID, "anon", "")
-			handler := NewHandler(slog.Default(), h, mgr, nil)
+			handler := NewHandler(HandlerDeps{Log: slog.Default(), Hub: h, SM: mgr})
 			c.ReadPump(handler)
 		}()
 	}))
@@ -910,7 +910,7 @@ func TestBotIDIsolation_NewSessionStoresBotID(t *testing.T) {
 		mu.Unlock()
 		go func() {
 			c := newBotIDTestConn(h, conn, derivedSID, "user1", botID)
-			handler := NewHandler(slog.Default(), h, mgr, jwtVal)
+			handler := NewHandler(HandlerDeps{Log: slog.Default(), Hub: h, SM: mgr, JWTValidator: jwtVal})
 			c.ReadPump(handler)
 		}()
 	}))
@@ -1102,7 +1102,7 @@ func TestBridge_ForwardEvents_NormalEvent(t *testing.T) {
 	t.Cleanup(cancel)
 
 	// Call forwardEvents directly (no goroutine).
-	b := NewBridge(slog.Default(), h, nil)
+	b := NewBridge(BridgeDeps{Log: slog.Default(), Hub: h})
 	done := make(chan struct{})
 	go func() {
 		b.forwardEvents(fw, "sess_fwd", forwardOpts{})
@@ -1149,7 +1149,7 @@ func TestBridge_ForwardEvents_DoneWithDroppedFlag(t *testing.T) {
 	_, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	b := NewBridge(slog.Default(), h, nil)
+	b := NewBridge(BridgeDeps{Log: slog.Default(), Hub: h})
 	done := make(chan struct{})
 	go func() {
 		b.forwardEvents(fw, "sess_drop", forwardOpts{})
@@ -1187,7 +1187,7 @@ func TestBridge_ForwardEvents_CrashExitCode(t *testing.T) {
 	_, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	b := NewBridge(slog.Default(), h, nil)
+	b := NewBridge(BridgeDeps{Log: slog.Default(), Hub: h})
 	done := make(chan struct{})
 	go func() {
 		b.forwardEvents(fw, "sess_crash", forwardOpts{})
@@ -1234,7 +1234,7 @@ func TestBridge_StartSession_Success(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	b := NewBridge(slog.Default(), h, sm)
+	b := NewBridge(BridgeDeps{Log: slog.Default(), Hub: h, SM: sm})
 	// Inject the worker factory via a test helper - since wf is a field,
 	// we replace it after construction (field injection for tests).
 	b.wf = wf
@@ -1255,7 +1255,7 @@ func TestBridge_StartSession_CreateFails(t *testing.T) {
 		Return(nil, errors.New("create failed"))
 
 	h := newTestHub(t)
-	b := NewBridge(slog.Default(), h, sm)
+	b := NewBridge(BridgeDeps{Log: slog.Default(), Hub: h, SM: sm})
 	// Inject a worker factory that would fail if Start were called.
 	b.wf = &failingWorkerFactory{}
 
@@ -1312,7 +1312,7 @@ func TestBridge_ResumeSession_Success(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	b := NewBridge(slog.Default(), h, sm)
+	b := NewBridge(BridgeDeps{Log: slog.Default(), Hub: h, SM: sm})
 	b.wf = wf
 
 	err := b.ResumeSession(ctx, "sess_resume", "")
@@ -1343,7 +1343,7 @@ func TestBridge_ResumeSession_DeletedSession(t *testing.T) {
 	sm.On("Get", "sess_deleted").Return(sessionInfo, nil)
 
 	h := newTestHub(t)
-	b := NewBridge(slog.Default(), h, sm)
+	b := NewBridge(BridgeDeps{Log: slog.Default(), Hub: h, SM: sm})
 
 	err := b.ResumeSession(context.Background(), "sess_deleted", "")
 	require.Error(t, err)
@@ -1392,7 +1392,7 @@ func TestBridge_ResumeSession_NoopWorker(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	b := NewBridge(slog.Default(), h, sm)
+	b := NewBridge(BridgeDeps{Log: slog.Default(), Hub: h, SM: sm})
 	// Use the default factory (defaultWorkerFactory) so real noop workers are created.
 	// b.wf is already defaultWorkerFactory{} from NewBridge.
 

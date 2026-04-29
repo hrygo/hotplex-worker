@@ -10,8 +10,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/hrygo/hotplex/internal/config"
-	"github.com/hrygo/hotplex/internal/session"
 	"github.com/hrygo/hotplex/internal/worker"
 	"github.com/hrygo/hotplex/pkg/events"
 )
@@ -22,14 +20,14 @@ func TestNewBridge(t *testing.T) {
 	log := slog.Default()
 	hub := newTestHub(t)
 	sm := new(mockBridgeSM)
-	b := NewBridge(log, hub, sm)
+	b := NewBridge(BridgeDeps{Log: log, Hub: hub, SM: sm})
 
 	require.NotNil(t, b)
 	assert.Same(t, sm, b.sm)
 	assert.Equal(t, hub, b.hub)
 }
 
-// ─── Test Bridge setters ─────────────────────────────────────────────────────
+// ─── Test Bridge SetWorkerFactory ─────────────────────────────────────────────
 
 func TestBridge_SetWorkerFactory(t *testing.T) {
 	log := slog.Default()
@@ -41,83 +39,13 @@ func TestBridge_SetWorkerFactory(t *testing.T) {
 	assert.Same(t, wf, b.wf)
 }
 
-func TestBridge_SetRetryController(t *testing.T) {
-	log := slog.Default()
-	sm := new(mockBridgeSM)
-	b := &Bridge{log: log, sm: sm}
-
-	cfg := config.AutoRetryConfig{Enabled: false}
-	ctrl := NewLLMRetryController(cfg, log)
-	b.SetRetryController(ctrl)
-
-	assert.Same(t, ctrl, b.retryCtrl)
-}
-
-func TestBridge_SetConvStore(t *testing.T) {
-	log := slog.Default()
-	sm := new(mockBridgeSM)
-	b := &Bridge{log: log, sm: sm}
-
-	fcs := &fakeConvStoreForBridge{}
-	b.SetConvStore(fcs)
-
-	assert.Same(t, fcs, b.convStore)
-}
-
-// fakeConvStoreForBridge implements session.ConversationStore.
-type fakeConvStoreForBridge struct{}
-
-func (*fakeConvStoreForBridge) Append(ctx context.Context, rec *session.ConversationRecord) error {
-	return nil
-}
-func (*fakeConvStoreForBridge) GetBySession(ctx context.Context, sessionID string, limit, offset int) ([]*session.ConversationRecord, error) {
-	return nil, nil
-}
-func (*fakeConvStoreForBridge) DeleteBySession(ctx context.Context, sessionID string) error {
-	return nil
-}
-func (*fakeConvStoreForBridge) DeleteExpired(ctx context.Context, cutoff time.Time) (int64, error) {
-	return 0, nil
-}
-func (*fakeConvStoreForBridge) SessionStats(ctx context.Context, sessionID string) (*session.ConversationSessionStats, error) {
-	return nil, nil
-}
-func (*fakeConvStoreForBridge) GetBySessionBefore(ctx context.Context, sessionID string, beforeSeq int64, limit int) ([]*session.ConversationRecord, error) {
-	return nil, nil
-}
-func (*fakeConvStoreForBridge) Close() error { return nil }
-
-func TestBridge_SetAgentConfigDir(t *testing.T) {
-	log := slog.Default()
-	sm := new(mockBridgeSM)
-	b := &Bridge{log: log, sm: sm}
-
-	b.SetAgentConfigDir("/tmp/test-config")
-	assert.Equal(t, "/tmp/test-config", b.agentConfigDir)
-
-	b.SetAgentConfigDir("")
-	assert.Equal(t, "", b.agentConfigDir)
-}
-
-func TestBridge_SetTurnTimeout(t *testing.T) {
-	log := slog.Default()
-	sm := new(mockBridgeSM)
-	b := &Bridge{log: log, sm: sm}
-
-	b.SetTurnTimeout(5 * time.Minute)
-	assert.Equal(t, 5*time.Minute, b.turnTimeout)
-
-	b.SetTurnTimeout(0)
-	assert.Equal(t, time.Duration(0), b.turnTimeout)
-}
-
 // ─── Test Shutdown ────────────────────────────────────────────────────────────
 
 func TestBridge_Shutdown(t *testing.T) {
 	log := slog.Default()
 	hub := newTestHub(t)
 	sm := new(mockBridgeSM)
-	b := NewBridge(log, hub, sm)
+	b := NewBridge(BridgeDeps{Log: log, Hub: hub, SM: sm})
 
 	b.Shutdown()
 	assert.True(t, b.closed.Load())
@@ -131,7 +59,7 @@ func TestBridge_Shutdown_RejectNewSession(t *testing.T) {
 	log := slog.Default()
 	hub := newTestHub(t)
 	sm := new(mockBridgeSM)
-	b := NewBridge(log, hub, sm)
+	b := NewBridge(BridgeDeps{Log: log, Hub: hub, SM: sm})
 
 	b.Shutdown()
 
@@ -287,7 +215,7 @@ func TestInjectSessionStats(t *testing.T) {
 	log := slog.Default()
 	sm := new(mockBridgeSM)
 	hub := newTestHub(t)
-	b := NewBridge(log, hub, sm)
+	b := NewBridge(BridgeDeps{Log: log, Hub: hub, SM: sm})
 
 	acc := b.getOrInitAccum("sess-1")
 	acc.ToolCallCount = 4
@@ -312,7 +240,7 @@ func TestInjectSessionStats_NonDoneData(t *testing.T) {
 	log := slog.Default()
 	sm := new(mockBridgeSM)
 	hub := newTestHub(t)
-	b := NewBridge(log, hub, sm)
+	b := NewBridge(BridgeDeps{Log: log, Hub: hub, SM: sm})
 
 	acc := b.getOrInitAccum("sess-1")
 	env := &events.Envelope{

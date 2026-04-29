@@ -909,7 +909,7 @@ func TestPCEntry_RouteMessage_LazyEncode(t *testing.T) {
 func TestBridge_NewBridge(t *testing.T) {
 	t.Parallel()
 	h := newTestHub(t)
-	b := NewBridge(slog.Default(), h, nil)
+	b := NewBridge(BridgeDeps{Log: slog.Default(), Hub: h})
 	require.NotNil(t, b)
 	require.Equal(t, h, b.hub)
 }
@@ -969,8 +969,8 @@ func TestHub_HandleHTTP_Success(t *testing.T) {
 
 	auth := security.NewAuthenticator(&cfg.Security, nil)
 	h := newTestHub(t)
-	handler := NewHandler(slog.Default(), h, nil, nil)
-	bridge := NewBridge(slog.Default(), h, nil)
+	handler := NewHandler(HandlerDeps{Log: slog.Default(), Hub: h})
+	bridge := NewBridge(BridgeDeps{Log: slog.Default(), Hub: h})
 
 	serveHandler := h.HandleHTTP(auth, nil, handler, bridge)
 	server := httptest.NewServer(serveHandler)
@@ -998,8 +998,8 @@ func TestHub_HandleHTTP_Unauthorized(t *testing.T) {
 
 	auth := security.NewAuthenticator(&cfg.Security, nil)
 	h := newTestHub(t)
-	handler := NewHandler(slog.Default(), h, nil, nil)
-	bridge := NewBridge(slog.Default(), h, nil)
+	handler := NewHandler(HandlerDeps{Log: slog.Default(), Hub: h})
+	bridge := NewBridge(BridgeDeps{Log: slog.Default(), Hub: h})
 
 	serveHandler := h.HandleHTTP(auth, nil, handler, bridge)
 	server := httptest.NewServer(serveHandler)
@@ -1021,8 +1021,8 @@ func TestHub_HandleHTTP_WithSessionID(t *testing.T) {
 
 	auth := security.NewAuthenticator(&cfg.Security, nil)
 	h := newTestHub(t)
-	handler := NewHandler(slog.Default(), h, nil, nil)
-	bridge := NewBridge(slog.Default(), h, nil)
+	handler := NewHandler(HandlerDeps{Log: slog.Default(), Hub: h})
+	bridge := NewBridge(BridgeDeps{Log: slog.Default(), Hub: h})
 
 	serveHandler := h.HandleHTTP(auth, nil, handler, bridge)
 	server := httptest.NewServer(serveHandler)
@@ -1053,8 +1053,8 @@ func TestHub_HandleHTTP_GeneratesSessionID(t *testing.T) {
 
 	auth := security.NewAuthenticator(&cfg.Security, nil)
 	h := newTestHub(t)
-	handler := NewHandler(slog.Default(), h, nil, nil)
-	bridge := NewBridge(slog.Default(), h, nil)
+	handler := NewHandler(HandlerDeps{Log: slog.Default(), Hub: h})
+	bridge := NewBridge(BridgeDeps{Log: slog.Default(), Hub: h})
 
 	serveHandler := h.HandleHTTP(auth, nil, handler, bridge)
 	server := httptest.NewServer(serveHandler)
@@ -1086,8 +1086,8 @@ func TestHub_HandleHTTP_RejectsInvalidAPIKey(t *testing.T) {
 
 	auth := security.NewAuthenticator(&cfg.Security, nil)
 	h := newTestHub(t)
-	handler := NewHandler(slog.Default(), h, nil, nil)
-	bridge := NewBridge(slog.Default(), h, nil)
+	handler := NewHandler(HandlerDeps{Log: slog.Default(), Hub: h})
+	bridge := NewBridge(BridgeDeps{Log: slog.Default(), Hub: h})
 
 	serveHandler := h.HandleHTTP(auth, nil, handler, bridge)
 	server := httptest.NewServer(serveHandler)

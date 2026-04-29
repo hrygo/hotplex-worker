@@ -61,27 +61,36 @@ type Adapter struct {
 
 func (a *Adapter) Platform() messaging.PlatformType { return messaging.PlatformFeishu }
 
-func (a *Adapter) Configure(appID, appSecret string, bridge *messaging.Bridge) {
-	a.appID = appID
-	a.appSecret = appSecret
-	a.bridge = bridge
-}
+func (a *Adapter) ConfigureWith(config messaging.AdapterConfig) error {
+	// Call base to set hub/sm/handler/bridge.
+	_ = a.PlatformAdapter.ConfigureWith(config)
 
-func (a *Adapter) SetBridge(b *messaging.Bridge) {
-	a.bridge = b
-}
+	// Feishu-specific: credentials.
+	a.appID = config.ExtrasString("app_id")
+	a.appSecret = config.ExtrasString("app_secret")
 
-func (a *Adapter) SetGate(gate *messaging.Gate) {
-	a.gate = gate
-}
+	// Bridge reference.
+	if config.Bridge != nil {
+		a.bridge = config.Bridge
+	}
 
-func (a *Adapter) SetTranscriber(t Transcriber) {
-	a.transcriber = t
-}
+	// Access control.
+	if config.Gate != nil {
+		a.gate = config.Gate
+	}
 
-func (a *Adapter) SetReconnectDelays(baseDelay, maxDelay time.Duration) {
-	a.backoffBaseDelay = baseDelay
-	a.backoffMaxDelay = maxDelay
+	// Platform-specific extras.
+	if bd := config.ExtrasDuration("reconnect_base_delay"); bd > 0 {
+		a.backoffBaseDelay = bd
+	}
+	if md := config.ExtrasDuration("reconnect_max_delay"); md > 0 {
+		a.backoffMaxDelay = md
+	}
+	if t, ok := config.Extras["transcriber"].(Transcriber); ok && t != nil {
+		a.transcriber = t
+	}
+
+	return nil
 }
 
 func (a *Adapter) Start(ctx context.Context) error {
