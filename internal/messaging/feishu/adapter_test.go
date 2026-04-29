@@ -102,11 +102,16 @@ func TestFeishuConn_WriteCtx_NilEnvelope(t *testing.T) {
 	require.Contains(t, err.Error(), "nil envelope")
 }
 
-func TestAdapter_Configure(t *testing.T) {
+func TestAdapter_ConfigureWith(t *testing.T) {
 	t.Parallel()
 	a := &Adapter{log: nil}
-	a.Configure("app123", "secret456", nil)
-
+	err := a.ConfigureWith(messaging.AdapterConfig{
+		Extras: map[string]any{
+			"app_id":     "app123",
+			"app_secret": "secret456",
+		},
+	})
+	require.NoError(t, err)
 	require.Equal(t, "app123", a.appID)
 	require.Equal(t, "secret456", a.appSecret)
 	require.Equal(t, messaging.PlatformFeishu, a.Platform())

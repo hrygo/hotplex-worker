@@ -53,14 +53,18 @@ type Bridge struct {
 }
 
 // NewBridge creates a new bridge.
-func NewBridge(log *slog.Logger, hub *Hub, sm SessionManager) *Bridge {
+func NewBridge(deps BridgeDeps) *Bridge {
 	return &Bridge{
-		log:         log.With("component", "bridge"),
-		hub:         hub,
-		sm:          sm,
-		wf:          defaultWorkerFactory{},
-		retryCancel: make(map[string]chan struct{}),
-		accum:       make(map[string]*sessionAccumulator),
+		log:            deps.Log.With("component", "bridge"),
+		hub:            deps.Hub,
+		sm:             deps.SM,
+		wf:             defaultWorkerFactory{},
+		convStore:      deps.ConvStore,
+		retryCtrl:      deps.RetryCtrl,
+		agentConfigDir: deps.AgentConfigDir,
+		turnTimeout:    deps.TurnTimeout,
+		retryCancel:    make(map[string]chan struct{}),
+		accum:          make(map[string]*sessionAccumulator),
 	}
 }
 
@@ -68,28 +72,6 @@ func NewBridge(log *slog.Logger, hub *Hub, sm SessionManager) *Bridge {
 // simulated workers without requiring external CLI binaries.
 func (b *Bridge) SetWorkerFactory(wf WorkerFactory) {
 	b.wf = wf
-}
-
-// SetRetryController enables automatic LLM error retry.
-func (b *Bridge) SetRetryController(ctrl *LLMRetryController) {
-	b.retryCtrl = ctrl
-}
-
-// SetConvStore injects the conversation store for turn-level persistence.
-func (b *Bridge) SetConvStore(cs session.ConversationStore) {
-	b.convStore = cs
-}
-
-// SetAgentConfigDir sets the directory from which agent personality/context
-// files are loaded. Pass "" to disable agent config loading.
-func (b *Bridge) SetAgentConfigDir(dir string) {
-	b.agentConfigDir = dir
-}
-
-// SetTurnTimeout sets the maximum duration a single worker turn may run
-// before being terminated. Pass 0 to disable turn-level timeouts.
-func (b *Bridge) SetTurnTimeout(d time.Duration) {
-	b.turnTimeout = d
 }
 
 // StartSession creates a new session and starts a worker.

@@ -15,7 +15,6 @@ import (
 	"github.com/hrygo/hotplex/internal/config"
 	"github.com/hrygo/hotplex/internal/messaging"
 	"github.com/hrygo/hotplex/internal/messaging/feishu"
-	"github.com/hrygo/hotplex/internal/messaging/slack"
 	"github.com/hrygo/hotplex/internal/messaging/stt"
 )
 
@@ -39,7 +38,7 @@ func startMessagingAdapters(ctx context.Context, deps *GatewayDeps) ([]messaging
 	var adapters []messaging.PlatformAdapterInterface
 	var statuses []AdapterStatus
 	log := deps.Log
-	cfg := deps.Config
+	appCfg := deps.Config
 	hub := deps.Hub
 	sm := deps.SessionMgr
 	handler := deps.Handler
@@ -48,19 +47,19 @@ func startMessagingAdapters(ctx context.Context, deps *GatewayDeps) ([]messaging
 		var workerType, workDir string
 		switch pt {
 		case messaging.PlatformSlack:
-			if !cfg.Messaging.Slack.Enabled {
+			if !appCfg.Messaging.Slack.Enabled {
 				statuses = append(statuses, AdapterStatus{Name: "Slack", Started: false})
 				continue
 			}
-			workerType = cfg.Messaging.Slack.WorkerType
-			workDir = cfg.Messaging.Slack.WorkDir
+			workerType = appCfg.Messaging.Slack.WorkerType
+			workDir = appCfg.Messaging.Slack.WorkDir
 		case messaging.PlatformFeishu:
-			if !cfg.Messaging.Feishu.Enabled {
+			if !appCfg.Messaging.Feishu.Enabled {
 				statuses = append(statuses, AdapterStatus{Name: "Feishu", Started: false})
 				continue
 			}
-			workerType = cfg.Messaging.Feishu.WorkerType
-			workDir = cfg.Messaging.Feishu.WorkDir
+			workerType = appCfg.Messaging.Feishu.WorkerType
+			workDir = appCfg.Messaging.Feishu.WorkDir
 		}
 
 		adapter, err := messaging.New(pt, log)
@@ -71,59 +70,53 @@ func startMessagingAdapters(ctx context.Context, deps *GatewayDeps) ([]messaging
 
 		msgBridge := messaging.NewBridge(log, pt, hub, sm, handler, gwBridge, workerType, workDir)
 
+		acfg := messaging.AdapterConfig{
+			Hub:     hub,
+			SM:      sm,
+			Handler: handler,
+			Bridge:  msgBridge,
+			Extras:  make(map[string]any),
+		}
+
 		switch pt {
 		case messaging.PlatformSlack:
-			if sa, ok := adapter.(*slack.Adapter); ok {
-				sa.Configure(cfg.Messaging.Slack.BotToken, cfg.Messaging.Slack.AppToken, msgBridge)
-				gate := messaging.NewGate(
-					cfg.Messaging.Slack.DMPolicy,
-					cfg.Messaging.Slack.GroupPolicy,
-					cfg.Messaging.Slack.RequireMention,
-					cfg.Messaging.Slack.AllowFrom,
-					cfg.Messaging.Slack.AllowDMFrom,
-					cfg.Messaging.Slack.AllowGroupFrom,
-				)
-				sa.SetGate(gate)
-				sa.SetAssistantEnabled(cfg.Messaging.Slack.AssistantAPIEnabled)
-				sa.SetReconnectDelays(cfg.Messaging.Slack.ReconnectBaseDelay, cfg.Messaging.Slack.ReconnectMaxDelay)
-				if t := buildSlackTranscriber(cfg.Messaging.Slack, log); t != nil {
-					sa.SetTranscriber(t)
-				}
+			gateway := messaging.NewGate(
+				appCfg.Messaging.Slack.DMPolicy,
+				appCfg.Messaging.Slack.GroupPolicy,
+				appCfg.Messaging.Slack.RequireMention,
+				appCfg.Messaging.Slack.AllowFrom,
+				appCfg.Messaging.Slack.AllowDMFrom,
+				appCfg.Messaging.Slack.AllowGroupFrom,
+			)
+			acfg.Gate = gateway
+			acfg.Extras["bot_token"] = appCfg.Messaging.Slack.BotToken
+			acfg.Extras["app_token"] = appCfg.Messaging.Slack.AppToken
+			acfg.Extras["assistant_enabled"] = appCfg.Messaging.Slack.AssistantAPIEnabled
+			acfg.Extras["reconnect_base_delay"] = appCfg.Messaging.Slack.ReconnectBaseDelay
+			acfg.Extras["reconnect_max_delay"] = appCfg.Messaging.Slack.ReconnectMaxDelay
+			if t := buildSlackTranscriber(appCfg.Messaging.Slack, log); t != nil {
+				acfg.Extras["transcriber"] = t
 			}
 		case messaging.PlatformFeishu:
-			if fa, ok := adapter.(*feishu.Adapter); ok {
-				fa.Configure(cfg.Messaging.Feishu.AppID, cfg.Messaging.Feishu.AppSecret, msgBridge)
-				gate := messaging.NewGate(
-					cfg.Messaging.Feishu.DMPolicy,
-					cfg.Messaging.Feishu.GroupPolicy,
-					cfg.Messaging.Feishu.RequireMention,
-					cfg.Messaging.Feishu.AllowFrom,
-					cfg.Messaging.Feishu.AllowDMFrom,
-					cfg.Messaging.Feishu.AllowGroupFrom,
-				)
-				fa.SetGate(gate)
-
-				if t := buildFeishuTranscriber(cfg.Messaging.Feishu, log); t != nil {
-					fa.SetTranscriber(t)
-				}
+			gateway := messaging.NewGate(
+				appCfg.Messaging.Feishu.DMPolicy,
+				appCfg.Messaging.Feishu.GroupPolicy,
+				appCfg.Messaging.Feishu.RequireMention,
+				appCfg.Messaging.Feishu.AllowFrom,
+				appCfg.Messaging.Feishu.AllowDMFrom,
+				appCfg.Messaging.Feishu.AllowGroupFrom,
+			)
+			acfg.Gate = gateway
+			acfg.Extras["app_id"] = appCfg.Messaging.Feishu.AppID
+			acfg.Extras["app_secret"] = appCfg.Messaging.Feishu.AppSecret
+			if t := buildFeishuTranscriber(appCfg.Messaging.Feishu, log); t != nil {
+				acfg.Extras["transcriber"] = t
 			}
 		}
 
-		if a, ok := adapter.(interface{ SetHub(messaging.HubInterface) }); ok {
-			a.SetHub(hub)
-		}
-		if a, ok := adapter.(interface {
-			SetSessionManager(messaging.SessionManager)
-		}); ok {
-			a.SetSessionManager(sm)
-		}
-		if a, ok := adapter.(interface {
-			SetHandler(messaging.HandlerInterface)
-		}); ok {
-			a.SetHandler(handler)
-		}
-		if a, ok := adapter.(interface{ SetBridge(*messaging.Bridge) }); ok {
-			a.SetBridge(msgBridge)
+		if err := adapter.ConfigureWith(acfg); err != nil {
+			log.Warn("messaging: configure failed", "platform", pt, "err", err)
+			continue
 		}
 
 		if err := adapter.Start(ctx); err != nil {

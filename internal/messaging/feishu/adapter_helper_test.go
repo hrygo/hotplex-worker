@@ -141,17 +141,20 @@ func TestExtractChatID(t *testing.T) {
 	}
 }
 
-func TestAdapter_Setters(t *testing.T) {
+func TestAdapter_ConfigureWith_Fields(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
 
-	a.SetBridge(nil)
+	err := a.ConfigureWith(messaging.AdapterConfig{
+		Bridge: nil,
+		Gate:   nil,
+		Extras: map[string]any{
+			"transcriber": nil,
+		},
+	})
+	require.NoError(t, err)
 	require.Nil(t, a.bridge)
-
-	a.SetGate(nil)
 	require.Nil(t, a.gate)
-
-	a.SetTranscriber(nil)
 	require.Nil(t, a.transcriber)
 }
 

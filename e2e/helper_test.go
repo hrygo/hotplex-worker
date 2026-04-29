@@ -349,8 +349,8 @@ func setupTestGateway(t *testing.T) *testGateway {
 		_ = hub.SendToSession(ctx, env)
 	}
 
-	handler := gateway.NewHandler(log, hub, sm, jwtValidator)
-	bridge := gateway.NewBridge(log, hub, sm)
+	handler := gateway.NewHandler(gateway.HandlerDeps{Log: log, Hub: hub, SM: sm, JWTValidator: jwtValidator})
+	bridge := gateway.NewBridge(gateway.BridgeDeps{Log: log, Hub: hub, SM: sm})
 	bridge.SetWorkerFactory(testWorkerFactory{})
 
 	auth := security.NewAuthenticator(&cfg.Security, jwtValidator)
