@@ -201,8 +201,8 @@ body {
   animation: pulseGold 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
-/* Streaming cursor — blinking block */
-.streaming-cursor::after {
+/* Streaming cursor — blinking block, only on the last text part of a streaming message */
+.streaming-cursor:last-of-type::after {
   content: '▍';
   animation: streamingCursor 0.8s steps(2) infinite;
   color: var(--accent-gold);
@@ -300,6 +300,8 @@ body {
   letter-spacing: -0.011em;
   box-shadow: 0 4px 16px rgba(0,0,0,0.3);
   position: relative;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .msg-assistant {
@@ -343,7 +345,8 @@ body {
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
   box-shadow: 0 8px 32px rgba(0,0,0,0.5);
-  transition: all 0.3s cubic-bezier(0.2, 0, 0, 1);
+  /* Only animate border, box-shadow for perf — avoid 'all' which triggers layout recalc */
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
   display: flex;
   flex-direction: column;
   backdrop-filter: blur(24px) saturate(200%);
@@ -369,7 +372,6 @@ body {
 .composer-root:focus-within {
   border-color: var(--amber-border);
   box-shadow: 0 0 0 4px rgba(251, 191, 36, 0.06), 0 12px 40px rgba(0,0,0,0.5);
-  transform: translateY(-2px);
 }
 
 .composer-root:focus-within::after {

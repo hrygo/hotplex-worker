@@ -31,24 +31,24 @@ const (
 
 // ConversationRecord represents a single row in the conversation table.
 type ConversationRecord struct {
-	ID            string
-	SessionID     string
-	Seq           int64
-	Role          string
-	Content       string
-	Platform      string
-	UserID        string
-	Model         string
-	Success       *bool
-	Source        string
-	Tools         map[string]int
-	ToolCallCount int
-	TokensIn      int64
-	TokensOut     int64
-	DurationMs    int64
-	CostUSD       float64
-	Metadata      map[string]any
-	CreatedAt     time.Time
+	ID            string         `json:"id"`
+	SessionID     string         `json:"session_id"`
+	Seq           int64          `json:"seq"`
+	Role          string         `json:"role"`
+	Content       string         `json:"content"`
+	Platform      string         `json:"platform"`
+	UserID        string         `json:"user_id"`
+	Model         string         `json:"model"`
+	Success       *bool          `json:"success"`
+	Source        string         `json:"source"`
+	Tools         map[string]int `json:"tools"`
+	ToolCallCount int            `json:"tool_call_count"`
+	TokensIn      int64          `json:"tokens_in"`
+	TokensOut     int64          `json:"tokens_out"`
+	DurationMs    int64          `json:"duration_ms"`
+	CostUSD       float64        `json:"cost_usd"`
+	Metadata      map[string]any `json:"metadata"`
+	CreatedAt     time.Time      `json:"created_at"`
 }
 
 // ConversationTurnStats holds statistics for a single turn.
@@ -346,6 +346,7 @@ func (s *SQLiteConversationStore) flushBatch(batch []*convWriteReq) {
 		s.log.Error("conversation store: batch stmt prepare", "err", err)
 		return
 	}
+	defer func() { _ = stmt.Close() }()
 
 	for _, req := range batch {
 		r := req.rec
@@ -364,14 +365,24 @@ func (s *SQLiteConversationStore) flushBatch(batch []*convWriteReq) {
 			for name := range r.Tools {
 				names = append(names, name)
 			}
-			b, _ := json.Marshal(names)
-			toolsJSON = string(b)
+			b, err := json.Marshal(names)
+			if err != nil {
+				s.log.Warn("conversation store: marshal tools", "err", err, "session_id", r.SessionID)
+				toolsJSON = "[]"
+			} else {
+				toolsJSON = string(b)
+			}
 		}
 
 		var metaJSON string
 		if len(r.Metadata) > 0 {
-			b, _ := json.Marshal(r.Metadata)
-			metaJSON = string(b)
+			b, err := json.Marshal(r.Metadata)
+			if err != nil {
+				s.log.Warn("conversation store: marshal metadata", "err", err, "session_id", r.SessionID)
+				metaJSON = "{}"
+			} else {
+				metaJSON = string(b)
+			}
 		}
 
 		if _, execErr := stmt.Exec(
@@ -384,7 +395,6 @@ func (s *SQLiteConversationStore) flushBatch(batch []*convWriteReq) {
 			s.log.Warn("conversation store: batch insert", "err", execErr, "session_id", r.SessionID)
 		}
 	}
-	_ = stmt.Close()
 
 	if err := tx.Commit(); err != nil {
 		s.log.Error("conversation store: batch commit", "err", err)

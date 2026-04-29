@@ -245,7 +245,15 @@ function UserMessage({ message }: { message: any }) {
         <div className="message-actions" style={{ right: '4px', top: '-14px' }}>
           <CopyButton message={message} />
         </div>
-        <div className="msg-user-bubble w-full"><MessagePrimitive.Content /></div>
+        <div className="msg-user-bubble w-full">
+          <MessagePrimitive.Parts>
+            {({ part }) => {
+              const p = part as Record<string, any>;
+              if (p?.type === 'text') return <span>{p.text}</span>;
+              return null;
+            }}
+          </MessagePrimitive.Parts>
+        </div>
       </div>
       <div className="flex-shrink-0 mt-0.5">
         <div className="w-9 h-9 rounded-full glass-dark flex items-center justify-center border border-[var(--border-subtle)]">
@@ -359,6 +367,12 @@ export function Thread({ skills, hasMore, onLoadHistory }: ThreadProps) {
               message.role === "user" ? <UserMessage message={message} /> : <AssistantMessage message={message} />
             }
           </ThreadPrimitive.Messages>
+          <ThreadPrimitive.ScrollToBottom className="scroll-bottom-btn">
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+            </svg>
+            <span>New</span>
+          </ThreadPrimitive.ScrollToBottom>
           <PreAssistantIndicator />
         </div>
       </ThreadPrimitive.Viewport>

@@ -96,7 +96,7 @@ export function NewSessionModal({ onConfirm, onCancel, existingTitles = [] }: Ne
                   ? 'border-[var(--accent-emerald)] focus:ring-[rgba(16,185,129,0.15)]'
                   : 'border-[var(--border-default)] focus:ring-[rgba(251,191,36,0.1)] focus:border-[var(--amber-border)]'
             }`}
-            onKeyDown={(e) => e.key === 'Enter' && canConfirm && handleConfirm()}
+            onKeyDown={(e) => e.stopPropagation()}
           />
           {isDuplicate && (
             <p className="text-[10px] text-[var(--accent-gold)] mt-1.5 flex items-center gap-1">

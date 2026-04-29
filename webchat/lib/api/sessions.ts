@@ -45,13 +45,13 @@ export interface ConversationRecord {
   model: string;
   success: boolean | null;
   source: string;
-  tools_json: string | null;
+  tools: Record<string, number> | null;
   tool_call_count: number;
   tokens_in: number;
   tokens_out: number;
   duration_ms: number;
   cost_usd: number;
-  metadata_json: string | null;
+  metadata: Record<string, unknown> | null;
   created_at: string;
 }
 

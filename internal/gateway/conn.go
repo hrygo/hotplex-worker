@@ -13,6 +13,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 
+	"github.com/hrygo/hotplex/internal/config"
 	"github.com/hrygo/hotplex/internal/metrics"
 	"github.com/hrygo/hotplex/internal/security"
 	"github.com/hrygo/hotplex/internal/session"
@@ -268,7 +269,13 @@ func (c *Conn) performInit(handler *Handler) error {
 	if workDir == "" {
 		workDir = c.hub.cfgStore.Load().Worker.DefaultWorkDir
 	}
-	if err := security.ValidateWorkDir(workDir); err != nil {
+	expanded, err := config.ExpandAndAbs(workDir)
+	if err != nil {
+		c.sendInitError(events.ErrCodeInvalidMessage, "invalid work_dir: "+err.Error())
+		metrics.GatewayErrorsTotal.WithLabelValues(string(events.ErrCodeInvalidMessage)).Inc()
+		return err
+	}
+	if err := security.ValidateWorkDir(expanded); err != nil {
 		c.sendInitError(events.ErrCodeInvalidMessage, err.Error())
 		metrics.GatewayErrorsTotal.WithLabelValues(string(events.ErrCodeInvalidMessage)).Inc()
 		return err

@@ -106,10 +106,16 @@ func (g *GatewayAPI) CreateSession(w http.ResponseWriter, r *http.Request) {
 		workDir = g.cfgStore.Load().Worker.DefaultWorkDir
 	}
 	if workDir != "" {
-		if err := security.ValidateWorkDir(workDir); err != nil {
+		expanded, err := config.ExpandAndAbs(workDir)
+		if err != nil {
+			http.Error(w, "invalid work_dir: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := security.ValidateWorkDir(expanded); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		workDir = expanded
 	}
 
 	// Derive session ID via UUIDv5 for consistency with WebSocket path.
