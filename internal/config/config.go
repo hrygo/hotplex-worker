@@ -670,6 +670,10 @@ func ExpandAndAbs(p string) (string, error) {
 		}
 		p = abs
 	}
+	// Resolve symlinks to prevent TOCTOU attacks on SwitchWorkDir.
+	if resolved, err := filepath.EvalSymlinks(p); err == nil {
+		p = resolved
+	}
 	return p, nil
 }
 

@@ -52,6 +52,10 @@ func parseCIDR(s string) netip.Prefix {
 	return p
 }
 
+// LookupHost resolves a hostname to IP addresses. It is a variable so that
+// tests can replace it with a mock. Production code must not reassign this.
+var LookupHost = net.LookupHost
+
 // SSRFProtectionError describes why a URL was rejected by the SSRF check.
 type SSRFProtectionError struct {
 	URL     string
@@ -108,7 +112,7 @@ func ValidateURL(targetURL string) error {
 	}
 
 	// Layer 3: DNS resolution.
-	ips, err := net.LookupHost(host)
+	ips, err := LookupHost(host)
 	if err != nil {
 		return &SSRFProtectionError{URL: targetURL, Reason: "DNS lookup failed: " + err.Error()}
 	}
@@ -155,7 +159,7 @@ func ValidateURLDoubleResolve(targetURL string) error {
 		return nil
 	}
 
-	ips, err := net.LookupHost(u.Hostname())
+	ips, err := LookupHost(u.Hostname())
 	if err != nil {
 		return &SSRFProtectionError{URL: targetURL, Reason: "DNS re-lookup failed: " + err.Error()}
 	}

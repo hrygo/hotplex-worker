@@ -196,10 +196,19 @@ func (m *Manager) UpdateWorkDir(ctx context.Context, id, workDir string) error {
 	}
 	ms.mu.Lock()
 	m.mu.RUnlock()
-	defer ms.mu.Unlock()
+	prevWorkDir := ms.info.WorkDir
 	ms.info.WorkDir = workDir
 	ms.info.UpdatedAt = time.Now()
-	return m.store.Upsert(ctx, &ms.info)
+	info := ms.info
+	ms.mu.Unlock()
+
+	if err := m.store.Upsert(ctx, &info); err != nil {
+		ms.mu.Lock()
+		ms.info.WorkDir = prevWorkDir
+		ms.mu.Unlock()
+		return err
+	}
+	return nil
 }
 
 // ─── State transitions ───────────────────────────────────────────────────────
@@ -209,20 +218,31 @@ const gracefulShutdownTimeout = 5 * time.Second
 
 // transitionState performs the common state-transition work: validation,
 // in-memory update, persistence, and notifications.
-// Caller must hold ms.mu for write.
+// Caller must hold ms.mu for write; this method temporarily releases ms.mu
+// for the DB write and re-acquires it before returning.
 func (m *Manager) transitionState(ctx context.Context, ms *managedSession, from, to events.SessionState, termReason string) error {
 	ms.info.State = to
 	ms.info.UpdatedAt = time.Now()
 
 	// Set idle expiry when entering IDLE; clear when leaving IDLE.
+	prevIdleExpiresAt := ms.info.IdleExpiresAt
 	if to == events.StateIdle {
 		ms.info.IdleExpiresAt = ptr(time.Now().Add(m.cfg.Worker.IdleTimeout))
 	} else {
 		ms.info.IdleExpiresAt = nil
 	}
 
-	if err := m.store.Upsert(ctx, &ms.info); err != nil {
-		return err
+	info := ms.info
+	ms.mu.Unlock() // Release for DB write.
+
+	dbErr := m.store.Upsert(ctx, &info)
+
+	ms.mu.Lock() // Re-acquire for cleanup.
+	if dbErr != nil {
+		ms.info.State = from
+		ms.info.UpdatedAt = time.Now()
+		ms.info.IdleExpiresAt = prevIdleExpiresAt
+		return dbErr
 	}
 
 	if to == events.StateTerminated || to == events.StateDeleted {
@@ -466,6 +486,7 @@ func (m *Manager) detachWorkerUnchecked(id string, expected worker.Worker) bool 
 
 // Delete marks a session as DELETED and removes it from the in-memory cache.
 // Lock ordering: m.mu → ms.mu (same as AttachWorker/DetachWorker to avoid deadlock).
+// DB write is performed outside locks to avoid holding mutexes during I/O.
 func (m *Manager) Delete(ctx context.Context, id string) error {
 	// Acquire m.mu first to maintain consistent lock order with AttachWorker.
 	m.mu.Lock()
@@ -480,21 +501,31 @@ func (m *Manager) Delete(ctx context.Context, id string) error {
 	hasWorker := ms.worker != nil
 	workerType := ms.info.WorkerType
 	uid := ms.info.UserID
+	prevState := ms.info.State
 	ms.info.State = events.StateDeleted
 	ms.info.UpdatedAt = time.Now()
-	if err := m.store.Upsert(ctx, &ms.info); err != nil {
+	info := ms.info // snapshot for DB write
+	ms.mu.Unlock()
+	m.mu.Unlock()
+
+	// Persist state change outside all locks.
+	if err := m.store.Upsert(ctx, &info); err != nil {
+		// Rollback in-memory state on DB failure.
+		ms.mu.Lock()
+		ms.info.State = prevState
 		ms.mu.Unlock()
-		m.mu.Unlock()
 		return err
 	}
-	ms.mu.Unlock()
 
-	// Release quota and remove from map while still holding m.mu.
-	if hasWorker {
-		metrics.WorkersRunning.WithLabelValues(string(workerType)).Dec()
-		m.pool.Release(uid)
+	// Re-acquire m.mu for quota release and map cleanup.
+	m.mu.Lock()
+	if _, exists := m.sessions[id]; exists {
+		if hasWorker {
+			metrics.WorkersRunning.WithLabelValues(string(workerType)).Dec()
+			m.pool.Release(uid)
+		}
+		delete(m.sessions, id)
 	}
-	delete(m.sessions, id)
 	m.mu.Unlock()
 
 	if m.StateNotifier != nil {
@@ -563,12 +594,19 @@ func (m *Manager) ClearContext(ctx context.Context, sessionID string) error {
 	}
 
 	ms.mu.Lock()
-	defer ms.mu.Unlock()
-
+	prevCtx := ms.info.Context
 	ms.info.Context = map[string]any{}
 	ms.info.UpdatedAt = time.Now()
+	info := ms.info
+	ms.mu.Unlock()
 
-	return m.store.Upsert(ctx, &ms.info)
+	if err := m.store.Upsert(ctx, &info); err != nil {
+		ms.mu.Lock()
+		ms.info.Context = prevCtx
+		ms.mu.Unlock()
+		return err
+	}
+	return nil
 }
 
 // UpdateWorkerSessionID persists the worker-internal session ID for resume support.
@@ -584,15 +622,23 @@ func (m *Manager) UpdateWorkerSessionID(ctx context.Context, id, workerSessionID
 	}
 
 	ms.mu.Lock()
-	defer ms.mu.Unlock()
-
 	if ms.info.WorkerSessionID == workerSessionID {
+		ms.mu.Unlock()
 		return nil
 	}
+	prevID := ms.info.WorkerSessionID
 	ms.info.WorkerSessionID = workerSessionID
 	ms.info.UpdatedAt = time.Now()
+	info := ms.info
+	ms.mu.Unlock()
 
-	return m.store.Upsert(ctx, &ms.info)
+	if err := m.store.Upsert(ctx, &info); err != nil {
+		ms.mu.Lock()
+		ms.info.WorkerSessionID = prevID
+		ms.mu.Unlock()
+		return err
+	}
+	return nil
 }
 
 // DebugSessionSnapshot holds safe-to-expose debug info for a managed session.
@@ -692,10 +738,19 @@ func (m *Manager) ResetExpiry(ctx context.Context, id string) error {
 	}
 	ms.mu.Lock()
 	m.mu.RUnlock()
-	defer ms.mu.Unlock()
+	prevExpiresAt := ms.info.ExpiresAt
 	ms.info.ExpiresAt = ptr(time.Now().Add(m.cfg.Session.RetentionPeriod))
 	ms.info.UpdatedAt = time.Now()
-	return m.store.Upsert(ctx, &ms.info)
+	info := ms.info
+	ms.mu.Unlock()
+
+	if err := m.store.Upsert(ctx, &info); err != nil {
+		ms.mu.Lock()
+		ms.info.ExpiresAt = prevExpiresAt
+		ms.mu.Unlock()
+		return err
+	}
+	return nil
 }
 
 // WorkerHealthStatuses returns a snapshot of health for all active worker processes.

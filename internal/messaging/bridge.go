@@ -155,32 +155,7 @@ func (b *Bridge) extractPlatformKey(env *events.Envelope) (string, map[string]st
 		platform = string(b.platform)
 	}
 
-	platformKey := make(map[string]string)
-	switch b.platform {
-	case PlatformFeishu:
-		if v, ok := md["chat_id"].(string); ok && v != "" {
-			platformKey["chat_id"] = v
-		}
-		if v, ok := md["thread_ts"].(string); ok {
-			platformKey["thread_ts"] = v
-		}
-		if v, ok := md["user_id"].(string); ok && v != "" {
-			platformKey["user_id"] = v
-		}
-	case PlatformSlack:
-		if v, ok := md["team_id"].(string); ok && v != "" {
-			platformKey["team_id"] = v
-		}
-		if v, ok := md["channel_id"].(string); ok && v != "" {
-			platformKey["channel_id"] = v
-		}
-		if v, ok := md["thread_ts"].(string); ok {
-			platformKey["thread_ts"] = v
-		}
-		if v, ok := md["user_id"].(string); ok && v != "" {
-			platformKey["user_id"] = v
-		}
-	}
+	platformKey := b.platform.ExtractPlatformKeys(md)
 
 	if len(platformKey) == 0 {
 		return platform, nil
