@@ -280,6 +280,24 @@ func TestCreateSession_BridgeError(t *testing.T) {
 
 var errTestBridge = fmt.Errorf("test bridge error")
 
+func TestCreateSession_WithWorkDir(t *testing.T) {
+	t.Parallel()
+	sm := new(mockAPISM)
+	bridge := new(mockAPIBridge)
+	api := newTestAPI(t, sm, bridge)
+
+	sm.On("Get", mock.Anything).Return(nil, session.ErrSessionNotFound)
+	bridge.On("StartSession", mock.Anything, mock.Anything, "anonymous", "",
+		worker.TypeClaudeCode, ([]string)(nil), mock.Anything, "webchat", map[string]string(nil), "with-workdir").
+		Return(nil)
+
+	w := httptest.NewRecorder()
+	api.CreateSession(w, authedReq("POST", "/api/sessions?title=with-workdir&work_dir=/tmp", nil))
+
+	require.Equal(t, http.StatusOK, w.Code)
+	bridge.AssertExpectations(t)
+}
+
 // ─── DeleteSession tests ────────────────────────────────────────────────────────
 
 func TestDeleteSession_GracefulTermination(t *testing.T) {
