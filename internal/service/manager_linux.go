@@ -164,10 +164,9 @@ func (m *linuxManager) Logs(name string, level Level, follow bool, lines int) er
 		args = append(args, "--user")
 	}
 	args = append(args, "-u", name)
+	args = append(args, "--no-pager", "-n", strconv.Itoa(lines))
 	if follow {
 		args = append(args, "-f")
-	} else {
-		args = append(args, "--no-pager", "-n", strconv.Itoa(lines))
 	}
 
 	cmd := exec.Command("journalctl", args...)

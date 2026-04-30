@@ -32,7 +32,13 @@ func newServiceLogsCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&levelStr, "level", "user", "service level: user or system")
 	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "follow log output")
-	cmd.Flags().IntVarP(&lines, "lines", "n", 100, "number of recent lines to show")
+	cmd.Flags().IntVarP(&lines, "lines", "n", 100, "number of recent lines to show (min 1)")
+	cmd.PreRunE = func(cmd *cobra.Command, args []string) error {
+		if lines < 1 {
+			lines = 100
+		}
+		return nil
+	}
 
 	return cmd
 }
