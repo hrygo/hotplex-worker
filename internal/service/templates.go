@@ -92,10 +92,7 @@ func BuildLaunchdPlist(opts InstallOptions, homeDir string) string {
 	b.WriteString("  <key>RunAtLoad</key>\n  <true/>\n")
 	b.WriteString("  <key>KeepAlive</key>\n  <true/>\n")
 
-	logDir := filepath.Join(homeDir, ".hotplex", "logs")
-	if opts.Level == LevelSystem {
-		logDir = "/var/log/hotplex"
-	}
+	logDir := logDirForHome(opts.Level, homeDir)
 	b.WriteString("  <key>StandardOutPath</key>\n")
 	fmt.Fprintf(&b, "  <string>%s/launchd.stdout.log</string>\n", logDir)
 	b.WriteString("  <key>StandardErrorPath</key>\n")
@@ -107,6 +104,13 @@ func BuildLaunchdPlist(opts InstallOptions, homeDir string) string {
 
 	b.WriteString("</dict>\n</plist>\n")
 	return b.String()
+}
+
+func logDirForHome(level Level, homeDir string) string {
+	if level == LevelSystem {
+		return "/var/log/hotplex"
+	}
+	return filepath.Join(homeDir, ".hotplex", "logs")
 }
 
 func launchdLabel(name string, level Level) string {

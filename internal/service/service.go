@@ -62,3 +62,13 @@ func ResolveBinaryPath() (string, error) {
 	}
 	return exe, nil
 }
+
+func LogDir(level Level) string {
+	if level == LevelSystem {
+		return "/var/log/hotplex"
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".hotplex", "logs")
+}
+
+var ErrNotInstalled = fmt.Errorf("service not installed (run 'hotplex service install' first)")

@@ -16,7 +16,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-//go:embed sql/queries/*.sql
+//go:embed sql/queries/*.sql sql/schema.sql
 var sqlFS embed.FS
 
 var queries = loadQueries()
@@ -83,11 +83,10 @@ type StoredEvent struct {
 
 // EventPage is a page of events with pagination metadata.
 type EventPage struct {
-	Events     []*StoredEvent `json:"events"`
-	OldestSeq  int64          `json:"oldest_seq"`
-	NewestSeq  int64          `json:"newest_seq"`
-	HasOlder   bool           `json:"has_older"`
-	TotalCount int64          `json:"total_count"`
+	Events    []*StoredEvent `json:"events"`
+	OldestSeq int64          `json:"oldest_seq"`
+	NewestSeq int64          `json:"newest_seq"`
+	HasOlder  bool           `json:"has_older"`
 }
 
 // EventStore defines the interface for AEP event persistence.
@@ -150,6 +149,18 @@ func NewSQLiteStore(ctx context.Context, dbPath string) (*SQLiteStore, error) {
 	if _, err := db.Exec("PRAGMA foreign_keys=ON"); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("eventstore: enable foreign_keys: %w", err)
+	}
+
+	for _, p := range []string{
+		"PRAGMA synchronous=NORMAL",
+		"PRAGMA cache_size=-2000",
+		"PRAGMA temp_store=MEMORY",
+		"PRAGMA wal_autocheckpoint=1000",
+	} {
+		if _, err := db.Exec(p); err != nil {
+			_ = db.Close()
+			return nil, fmt.Errorf("eventstore: pragma %s: %w", p, err)
+		}
 	}
 
 	schema, err := sqlFS.ReadFile("sql/schema.sql")
@@ -264,8 +275,7 @@ func (s *SQLiteStore) QueryBySession(ctx context.Context, sessionID string, curs
 	}
 
 	page := &EventPage{
-		Events:     events,
-		TotalCount: -1, // lazy, filled below
+		Events: events,
 	}
 
 	if len(events) > 0 {
@@ -273,11 +283,15 @@ func (s *SQLiteStore) QueryBySession(ctx context.Context, sessionID string, curs
 		page.NewestSeq = events[len(events)-1].Seq
 	}
 
-	// Determine has_older: check if events exist with seq < oldestSeq.
 	if len(events) > 0 {
-		var exists int
-		err := s.db.QueryRowContext(ctx, queries["has_older"], sessionID, page.OldestSeq).Scan(&exists)
-		page.HasOlder = err == nil && exists == 1
+		switch dir {
+		case CursorLatest, CursorBefore:
+			page.HasOlder = hasMore
+		default:
+			var exists int
+			err := s.db.QueryRowContext(ctx, queries["has_older"], sessionID, page.OldestSeq).Scan(&exists)
+			page.HasOlder = err == nil && exists == 1
+		}
 	}
 
 	return page, nil
