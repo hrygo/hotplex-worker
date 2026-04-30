@@ -1,0 +1,52 @@
+name: 'Setup Go + Webchat'
+description: 'Install Go, pnpm, Node.js, build webchat SPA, download Go modules'
+
+inputs:
+  go-version:
+    description: 'Go version'
+    required: false
+    default: '1.26'
+  node-version:
+    description: 'Node.js version'
+    required: false
+    default: '22'
+  pnpm-version:
+    description: 'pnpm version'
+    required: false
+    default: '10'
+  build-webchat:
+    description: 'Whether to build webchat SPA'
+    required: false
+    default: 'true'
+  download-modules:
+    description: 'Whether to download Go modules'
+    required: false
+    default: 'true'
+
+runs:
+  using: 'composite'
+  steps:
+    - uses: actions/setup-go@v6
+      with:
+        go-version: ${{ inputs.go-version }}
+        cache: true
+
+    - uses: pnpm/action-setup@v4
+      with:
+        version: ${{ inputs.pnpm-version }}
+
+    - uses: actions/setup-node@v6
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: 'pnpm'
+        cache-dependency-path: webchat/pnpm-lock.yaml
+
+    - name: Build webchat SPA
+      if: inputs.build-webchat == 'true'
+      shell: bash
+      run: make webchat-embed
+
+    - name: Download Go modules
+      if: inputs.download-modules == 'true'
+      shell: bash
+      run: go mod download

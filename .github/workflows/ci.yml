@@ -11,7 +11,8 @@ on:
       - 'scripts/**'
       - 'webchat/**'
       - 'internal/webchat/**'
-      - '.github/workflows/ci.yml'
+      - 'configs/**'
+      - '.github/workflows/**'
   pull_request:
     branches: [main]
     paths:
@@ -22,7 +23,8 @@ on:
       - 'scripts/**'
       - 'webchat/**'
       - 'internal/webchat/**'
-      - '.github/workflows/ci.yml'
+      - 'configs/**'
+      - '.github/workflows/**'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -41,7 +43,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Scan for files >1MB
         run: |
@@ -73,25 +75,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: actions/setup-go@v6
-        with:
-          go-version: '1.26'
-          cache: true
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: '22'
-          cache: 'pnpm'
-          cache-dependency-path: webchat/pnpm-lock.yaml
-
-      - name: Build webchat
-        run: make webchat-embed
-
-      - run: go mod download
+      - uses: ./.github/actions/setup-go-webchat
 
       - name: Verify module checksums
         run: go mod verify
@@ -108,7 +92,7 @@ jobs:
           version: v2.11.4
           args: --timeout=10m
 
-  # ── Test: all packages with race detector ──────────────────────────────
+  # ── Test: race + coverage in single run ────────────────────────────────
   test:
     needs: [gate]
     name: Test
@@ -117,32 +101,12 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: actions/setup-go@v6
-        with:
-          go-version: '1.26'
-          cache: true
+      - uses: ./.github/actions/setup-go-webchat
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: '22'
-          cache: 'pnpm'
-          cache-dependency-path: webchat/pnpm-lock.yaml
-
-      - name: Build webchat
-        run: make webchat-embed
-
-      - run: go mod download
-
-      - name: Run tests with race detector
-        run: go test -race -timeout=15m ./...
-
-      - name: Run tests with coverage
+      - name: Run tests with race detector + coverage
         run: |
-          go test -timeout=15m -coverprofile=coverage.out -covermode=atomic \
+          # shellcheck disable=SC2046
+          go test -race -timeout=15m -coverprofile=coverage.out -covermode=atomic \
             $(go list ./... | grep -v \
               -e 'internal/worker/proc' \
               -e 'internal/worker/pi' \
@@ -211,9 +175,11 @@ jobs:
           THRESHOLDS["internal/messaging"]=20
 
           FAILED=0
-          echo "## Per-Package Coverage Report" >> $GITHUB_STEP_SUMMARY
-          echo "| Package | Coverage | Threshold | Status |" >> $GITHUB_STEP_SUMMARY
-          echo "|---------|----------|-----------|--------|" >> $GITHUB_STEP_SUMMARY
+          {
+            echo "## Per-Package Coverage Report"
+            echo "| Package | Coverage | Threshold | Status |"
+            echo "|---------|----------|-----------|--------|"
+          } >> "$GITHUB_STEP_SUMMARY"
 
           # Aggregate per-package coverage from raw profile (statement-weighted).
           declare -A PKG_TOTAL
@@ -257,13 +223,15 @@ jobs:
               else
                 STATUS=":white_check_mark: PASS"
               fi
-              echo "| \`$PKG\` | ${COV}% | ${THRESH}% | $STATUS |" >> $GITHUB_STEP_SUMMARY
+              echo "| \`$PKG\` | ${COV}% | ${THRESH}% | $STATUS |" >> "$GITHUB_STEP_SUMMARY"
             fi
           done
 
           TOTAL_LINE=$(go tool cover -func="$COV_FILE" 2>/dev/null | tail -1 | grep -oE '[0-9]+\.[0-9]+')
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Total coverage: ${TOTAL_LINE}%** (informational, not gated)" >> $GITHUB_STEP_SUMMARY
+          {
+            echo ""
+            echo "**Total coverage: ${TOTAL_LINE}%** (informational, not gated)"
+          } >> "$GITHUB_STEP_SUMMARY"
 
           if [ "$FAILED" -ne 0 ]; then
             echo "::error::One or more packages are below their coverage thresholds."
@@ -280,25 +248,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: actions/setup-go@v6
-        with:
-          go-version: '1.26'
-          cache: true
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: '22'
-          cache: 'pnpm'
-          cache-dependency-path: webchat/pnpm-lock.yaml
-
-      - name: Build webchat
-        run: make webchat-embed
-
-      - run: go mod download
+      - uses: ./.github/actions/setup-go-webchat
 
       - name: Build gateway binary
         run: |

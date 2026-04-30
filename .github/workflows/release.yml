@@ -14,28 +14,21 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   GO_VERSION: '1.26'
 
 jobs:
-  # ── Build ────────────────────────────────────────────────────────────────
-  build:
-    name: Build ${{ matrix.os }}-${{ matrix.arch }}
+  # ── Prepare: build webchat once ────────────────────────────────────────
+  prepare:
+    name: Prepare
     runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.version.outputs.version }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [darwin, linux, windows]
-        arch: [amd64, arm64]
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
-
-      - uses: actions/setup-go@v6
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          cache: true
 
       - uses: pnpm/action-setup@v4
         with:
@@ -50,6 +43,41 @@ jobs:
       - name: Build webchat
         run: make webchat-embed
 
+      - uses: actions/upload-artifact@v6
+        with:
+          name: webchat-out
+          path: internal/webchat/out
+          retention-days: 1
+
+  # ── Build ────────────────────────────────────────────────────────────────
+  build:
+    needs: [prepare]
+    name: Build ${{ matrix.os }}-${{ matrix.arch }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [darwin, linux, windows]
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Restore webchat
+        uses: actions/download-artifact@v6
+        with:
+          name: webchat-out
+          path: internal/webchat/out
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - run: go mod download
+
       - name: Compute version
         id: version
         run: |
@@ -57,7 +85,7 @@ jobs:
           TAG="${REF#refs/tags/}"
           VER="${TAG:-dev}"
           if [ "$VER" = "$REF" ]; then VER="${{ github.event.inputs.version || 'dev' }}"; fi
-          echo "version=${VER}" >> $GITHUB_OUTPUT
+          echo "version=${VER}" >> "$GITHUB_OUTPUT"
 
       - name: Build
         env:
@@ -92,6 +120,7 @@ jobs:
   release:
     needs: [build]
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
 
@@ -128,8 +157,9 @@ jobs:
   # ── Offline Bundle (OpenCode + OMO) ────────────────────────────────────
   offline-bundle:
     name: Pack offline bundle
-    needs: [release]
+    needs: [build]
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
 
@@ -143,8 +173,8 @@ jobs:
           OPENCODE_VER=$(curl -s https://api.github.com/repos/anomalyco/opencode/releases/latest \
             | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | sed 's/^v//')
           OMO_VER=$(npm view oh-my-opencode version 2>/dev/null || echo "unknown")
-          echo "opencode=${OPENCODE_VER}" >> $GITHUB_OUTPUT
-          echo "omo=${OMO_VER}" >> $GITHUB_OUTPUT
+          echo "opencode=${OPENCODE_VER}" >> "$GITHUB_OUTPUT"
+          echo "omo=${OMO_VER}" >> "$GITHUB_OUTPUT"
           echo "OpenCode: ${OPENCODE_VER}, OMO: ${OMO_VER}"
 
       - name: Pack bundles
