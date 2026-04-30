@@ -412,12 +412,12 @@ export function Thread({ skills, hasMore, onLoadHistory }: ThreadProps) {
             {menuOpen && <CommandMenu isOpen={menuOpen} inputValue={localText} onSelect={handleSelectCommand} onClose={() => setMenuOpen(false)} skills={skills} />}
           </AnimatePresence>
           <div className="flex items-center gap-2 mb-3 px-4 overflow-x-auto no-scrollbar animate-fadeIn">
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[var(--accent-gold)]/10 border border-[var(--accent-gold)]/20 shadow-sm whitespace-nowrap">
+            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-[var(--accent-gold)]/10 border border-[var(--accent-gold)]/20 shadow-sm whitespace-nowrap">
               <span className="text-[9px] font-display font-black text-[var(--accent-gold)] uppercase tracking-[0.05em]">Agent Skills</span>
               <div className="w-1 h-1 rounded-full bg-[var(--accent-gold)] animate-pulse" />
             </div>
             {skills?.slice(0, 4).map(skill => (
-              <div key={skill} className="px-3 py-1 rounded-full bg-[var(--bg-elevated)] border border-[var(--border-subtle)] text-[10px] font-medium text-[var(--text-muted)] whitespace-nowrap hover:border-[var(--text-faint)] transition-colors cursor-default">
+              <div key={skill} className="px-3 py-1.5 rounded-full bg-[var(--bg-elevated)] border border-[var(--border-subtle)] text-[10px] font-medium text-[var(--text-muted)] whitespace-nowrap hover:border-[var(--text-faint)] transition-colors cursor-default">
                 {skill}
               </div>
             ))}
