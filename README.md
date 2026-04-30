@@ -73,6 +73,8 @@ cd hotplex
 make quickstart    # check tools + build + test
 ```
 
+> **Tip:** Use the `/setup-env` skill in Claude Code for interactive `.env` configuration (Slack/Feishu tokens, access policies, STT, worker settings, etc.).
+
 ### Or with Docker (Experimental)
 
 ```bash
