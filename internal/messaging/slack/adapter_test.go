@@ -2012,6 +2012,31 @@ func TestShortenPaths(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// controlFeedbackMessage
+// ---------------------------------------------------------------------------
+
+func TestControlFeedbackMessage(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		action events.ControlAction
+		want   string
+	}{
+		{"gc", events.ControlActionGC, "Session parked"},
+		{"reset", events.ControlActionReset, "Context reset"},
+		{"cd", events.ControlActionCD, "Switching work directory"},
+		{"unknown", events.ControlAction("unknown"), "Done"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require.Contains(t, controlFeedbackMessage(tt.action), tt.want)
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Adapter ConfigureWith
 // ---------------------------------------------------------------------------
 

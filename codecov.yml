@@ -8,6 +8,10 @@ coverage:
 
   # 所有路径统一允许 ±1% 浮动
   status:
+    patch:
+      default:
+        target: 50%
+        threshold: 5%
     project:
       default:
         target: 50%
