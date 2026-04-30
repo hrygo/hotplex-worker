@@ -4,37 +4,44 @@
 
 ### Summary
 
-v1.3.0 是一次 minor 版本更新，聚焦于 **跨平台 Windows 支持、Messaging 适配器 DRY/SOLID 重构、Session History REST API、DI 构造函数注入和离线 Bundle 打包**。新增 Windows amd64/arm64 一等公民支持（Job Object 进程树管理、跨平台路径安全验证、TTY 检测）。Messaging 层完成 issue #65 七阶段重构，提取共享 Pipeline、ConnPool、Streaming、Dedup/Backoff/Gate 到基础包，Feishu/Slack 适配器代码量大幅缩减。Gateway 新增 `GET /api/sessions/{id}/history` 端点和 ConversationStore 分页查询。DI 层从 setter 链式调用迁移到构造函数注入。CI 新增 OpenCode + OMO 离线 bundle 自动打包发布流程。
+v1.3.0 是一次 minor 版本更新，聚焦于 **跨平台 Windows 支持、Gateway 安全默认值与生命周期管理、WebChat 嵌入式 SPA + AI Native UX、Messaging 适配器 DRY/SOLID 重构、Session History REST API、DI 构造函数注入**。新增 Windows amd64/arm64 一等公民支持（Job Object 进程树管理、纯 Go SQLite、跨平台路径安全验证）。Gateway 全面加固安全基线（localhost-only 默认绑定）、新增系统服务管理（systemd/launchd/SCM）和守护进程模式。WebChat 完成嵌入式 SPA 部署（`go:embed`）和 AI Native UX 升级（ghost assistant、AgentTool/TodoTool、glassmorphism 设计）。Messaging 层完成 issue #65 七阶段重构，提取共享 Pipeline/ConnPool/Streaming/Dedup/Backoff/Gate 到基础包。DI 层从 setter 链迁移到构造函数注入。
 
 ### Added
 
-- **Platform**: Windows amd64/arm64 一等公民支持 — Job Object 进程树清理、跨平台 TTY 检测、路径安全验证、pipe 错误检测。(#64, 794a8ff, de8b097, 1e75218, 6229be9)
-- **Platform**: 跨平台构建目标 — Makefile 新增 `GOOS=windows` 构建，release workflow 支持 Windows 二进制发布。(#64, 794a8ff)
-- **Gateway**: `GET /api/sessions/{id}/history` — 会话历史 REST 端点，支持分页查询 ConversationStore。(#60, d17b90d, 440525e)
+- **Platform**: Windows amd64/arm64 一等公民支持 — Job Object 进程树清理、纯 Go SQLite (modernc.org)、跨平台 TTY 检测、路径安全验证、pipe 错误检测。(#64, 794a8ff, de8b097, 1e75218, 6229be9)
+- **Gateway**: 安全默认值加固 — localhost-only 默认绑定、daemon 模式 (`-d`)、统一进程生命周期管理 (stop/restart/status/service)。(#62, 3204cfc)
+- **Gateway**: 系统服务管理 — install/uninstall/start/stop/restart 支持 systemd/launchd/Windows SCM，user/system 级别。(#62, 3204cfc)
+- **Gateway**: `GET /api/sessions/{id}/history` — 会话历史 REST 端点，支持 cursor 分页查询 ConversationStore。(#60, d17b90d, 440525e)
 - **Gateway**: `GetBySessionBefore` — ConversationStore 新增基于序列号的分页查询，用于历史回放。(#60, 440525e)
-- **WebChat**: History runtime adapter — 将 session history API 集成到运行时适配器，支持客户端历史加载。(#60, a5bbb72, 686e1fa)
+- **WebChat**: 嵌入式 SPA — Next.js 静态导出通过 `go:embed` 嵌入 gateway 二进制，SPA fallback 路由，零外部依赖部署。(#62, 5d0a414)
+- **WebChat**: Ghost assistant — 后端静默期间显示 skeleton 占位符，消除"黑洞效应"。(#62, 0ce448c, 171963f)
+- **WebChat**: AI Native UX — thinking indicator 重设计、glassmorphism copy button、inline message actions、AgentTool 和 TodoTool 结构化任务渲染。(#62, 08fa8ed, cf6a2b6, 3003c0b, 2f49dfa, aa727b6)
+- **WebChat**: History runtime adapter — L1 (React state) + L2 (LocalStorage) 双层缓存，cursor 分页历史加载。(#60, a5bbb72, 686e1fa, ed7aecb)
+- **Skills**: Skills 发现整合到独立 `skills` 包 — 可配置 TTL 缓存 + CWD 目录扫描。(#67, f1538fe)
 - **CI**: OpenCode + OMO 离线 bundle — GitHub Release 自动打包和安装脚本，支持离线环境部署。(#59, ffaf168, 3412b22)
+- **Infrastructure**: `make hooks` 目标自动安装 git hooks，`make quickstart` 适配非开发者用户。(#62, c61b03e, ca5b698)
 
 ### Changed
 
-- **Messaging**: 七阶段 DRY/SOLID 重构 (issue #65) — 提取共享 Pipeline（消息处理管道）、ConnPool（连接池）、StreamingCard 抽象、Dedup/Backoff/Gate 到 `internal/messaging/` 基础包；Feishu/Slack 适配器代码量大幅缩减，消除重复逻辑。(#67, 02f239b, 1be2d0f, c0892b4, 37751dc, e8f0ae3, 24cf4eb)
-- **Messaging**: ConnPool 热路径优化 — 消除 stringly-typed log channels，提升连接查找性能。(#67, e8f0ae3)
-- **DI**: 构造函数注入替代 setter 链 — `Bridge`、`Hub`、`SessionManager` 等组件改用构造函数注入，消除运行时 nil 风险。(#63, f906d30)
-- **Logging**: 结构化日志优化 — gateway 栈统一 slog key-value 风格，消除冗余日志属性。(#67, baf4546)
-- **Security**: SSRF DNS mock + TOCTOU 修复 — 消除 lock-DB-I/O 反模式，修复配置验证时序窗口，平台 key 去重。(#67, a290bb3)
-- **Security**: 跨平台路径验证重构 — `ValidateWorkDir` 拆分为 `path_unix.go`/`path_windows.go`，Windows 路径比较大小写不敏感。(#64, 6229be9, d702753)
-- **Session**: 移除 EventStore，ConversationStore 增加统计查询 — 简化持久化架构为双层（MessageStore + ConversationStore）。(#67, a7b6eda)
-- **Config**: codecov 统一 1% threshold，patch target 50% + 10% threshold。(#67, ab5b465, b048eb9)
-- **Hooks**: pre-push gate 增加 fmt + lint 检查，在本地拦截 CI 失败。(#63, 05961c1)
+- **Messaging**: 七阶段 DRY/SOLID 重构 (issue #65) — 提取共享 Pipeline、ConnPool、StreamingCard 抽象、Dedup/Backoff/Gate 到 `internal/messaging/` 基础包；Feishu/Slack 适配器代码量大幅缩减。(#67, 02f239b, 1be2d0f, c0892b4, 37751dc, e8f0ae3, 24cf4eb)
+- **DI**: 构造函数注入替代 setter 链 — Handler/Bridge/Adapter 改用 `Deps` struct 注入，编译期保证完整性。(#61, f906d30)
+- **Logging**: 结构化日志优化 — gateway 栈统一 slog key-value 风格 (snake_case)，注入 channel 标识到所有组件 logger，14 个可恢复错误从 Error 降级为 Warn。(#67, baf4546)
+- **Security**: TOCTOU 修复 + SSRF DNS mock — ExpandAndAbs 解析符号链接防止 workdir 竞态，6 个 Manager 方法 copy-then-write 模式消除 lock-DB-I/O。(#67, a290bb3)
+- **Security**: 跨平台路径验证重构 — `ValidateWorkDir` 拆分为 `path_unix.go`/`path_windows.go`，Windows 大小写不敏感。(#64, 6229be9, d702753)
+- **Session**: 移除 EventStore + PostgresStore，ConversationStore 增加统计查询 — 简化持久化架构。(#67, a7b6eda)
+- **Gateway**: PID 文件容错 — restart 遇到 stale PID 时 warning 并继续启动而非失败。(#62, 0165d17)
+- **Config**: `~` 展开修复 — 所有 YAML 路径字段正确展开波浪号为 home 目录，防止创建字面 `~` 目录。(#62, dad790c)
+- **Hooks**: pre-push gate 增强 — 新增 fmt + lint + go vet + go mod verify + race test，本地拦截 CI 失败。(#62, 05961c1, c61b03e, 6e08233)
 
 ### Fixed
 
+- **Messaging**: 飞书消息无响应三类根因 — ResumeSession 输入丢失、Error 事件静默丢弃、长时间无输出无提示。(#68, e96640d)
 - **Gateway**: `handler.sm` nil guard — conn.go idle 转换检查添加空指针防护。(#67, 9203060)
-- **Slack**: `TestShortenPaths` data race — 使用 mutex-guarded `SetWorkDir` 消除竞态条件。(#68, 0e30a30)
-- **WebChat**: 依赖更新和类型兼容性修复。(#68, fab6be6)
-- **Windows**: 进程管理加固 — 修复跨平台 STT Job Object 清理、PID 文件路径、signal 处理。(#64, 031eab2, f602b6a, de8b097)
-- **CI**: large file guard 扫描 HEAD tree only，避免误报。(#59, d4b6818)
-- **CI**: OMO 插件通过 OpenCode auto-discovery 注册。(#59, 1883866)
+- **Slack**: `TestShortenPaths` data race — mutex-guarded `SetWorkDir` 消除竞态条件。(#68, 0e30a30)
+- **WebChat**: 多项 UX 修复 — 额外换行、tool 折叠/展开、terminal 状态生命周期、reasoning markdown 渲染、scroll button 定位。(#62, various)
+- **WebChat**: 依赖更新和类型兼容性修复 — pin ai SDK 版本，修复 ConversationRecord success 类型。(#68, fab6be6, 632f180)
+- **Windows**: 进程管理加固 — 修复跨平台 STT Job Object 清理、PID 文件路径、signal 处理、pipe 错误检测。(#64, 031eab2, f602b6a, de8b097)
+- **CI**: large file guard 扫描 HEAD tree only 避免误报；OMO 插件通过 OpenCode auto-discovery 注册。(#59, d4b6818, 1883866)
 
 ## [1.2.0] - 2026-04-29
 
