@@ -28,7 +28,7 @@ func BuildSystemdUnit(opts InstallOptions, homeDir string) string {
 		b.WriteString("WorkingDirectory=" + homeDir + "\n")
 	}
 
-	b.WriteString("\nExecStart=" + opts.BinaryPath + " -config " + opts.ConfigPath + "\n")
+	b.WriteString("\nExecStart=" + opts.BinaryPath + " gateway start -config " + opts.ConfigPath + "\n")
 	b.WriteString("ExecReload=/bin/kill -HUP $MAINPID\n")
 	b.WriteString("TimeoutStopSec=30\n")
 	b.WriteString("KillMode=mixed\n")
@@ -74,6 +74,8 @@ func BuildLaunchdPlist(opts InstallOptions, homeDir string) string {
 
 	fmt.Fprintf(&b, "  <key>ProgramArguments</key>\n  <array>\n")
 	fmt.Fprintf(&b, "    <string>%s</string>\n", opts.BinaryPath)
+	fmt.Fprintf(&b, "    <string>gateway</string>\n")
+	fmt.Fprintf(&b, "    <string>start</string>\n")
 	fmt.Fprintf(&b, "    <string>-config</string>\n")
 	fmt.Fprintf(&b, "    <string>%s</string>\n", opts.ConfigPath)
 	b.WriteString("  </array>\n")

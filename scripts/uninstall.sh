@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 #
-# HotPlex Worker Gateway — Uninstaller
+# HotPlex Worker Gateway — Uninstaller (macOS / Linux)
 #
 # Removes the hotplex binary. Optionally purges config and data.
+# For Windows, use: install.ps1 -Uninstall
 #
 # Usage:
 #   sudo ./scripts/uninstall.sh [options]
@@ -18,6 +19,7 @@ set -euo pipefail
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
 NC='\033[0m'
 
 PREFIX="/usr/local"
@@ -26,7 +28,7 @@ NON_INTERACTIVE=false
 USER_DIR="$HOME/.hotplex"
 
 need_arg() {
-    [[ $# -lt 2 || "$2" == --* ]] && { echo -e "${RED}error: $1 requires an argument${NC}"; exit 1; }
+    [[ $# -lt 2 || "$2" == --* ]] && { echo -e "${RED}error: $1 requires an argument${NC}" >&2; exit 1; }
 }
 
 while [[ $# -gt 0 ]]; do
@@ -35,7 +37,7 @@ while [[ $# -gt 0 ]]; do
         --purge)          PURGE=true; shift ;;
         --non-interactive) NON_INTERACTIVE=true; shift ;;
         --help)           sed -n '2,/^$/p' "$0" | sed 's/^# //; /^$/d'; exit 0 ;;
-        *)                echo -e "${RED}Unknown option: $1${NC}"; exit 1 ;;
+        *)                echo -e "${RED}Unknown option: $1${NC}" >&2; exit 1 ;;
     esac
 done
 
@@ -61,6 +63,12 @@ if [[ $EUID -eq 0 ]] && systemctl is-active --quiet hotplex 2>/dev/null; then
     info "Systemd service stopped and removed"
 fi
 
+if [[ $EUID -eq 0 ]] && launchctl list | grep -q "com.hotplex.gateway" 2>/dev/null; then
+    launchctl bootout "gui/$(id -u)/com.hotplex.gateway" 2>/dev/null || true
+    rm -f "$HOME/Library/LaunchAgents/com.hotplex.gateway.plist"
+    info "Launchd service stopped and removed"
+fi
+
 # Kill dev-mode gateway process and clean PID file
 if [[ -f "$USER_DIR/.pids/gateway.pid" ]]; then
     pid=$(cat "$USER_DIR/.pids/gateway.pid" 2>/dev/null || true)
@@ -82,6 +90,33 @@ if [[ -f "$TARGET" ]]; then
 else
     warn "Binary not found: $TARGET"
 fi
+
+# ── Clean PATH from shell config ────────────────────────────────────────────
+
+BIN_DIR="$PREFIX/bin"
+SHELL_RC_FILES=(
+    "$HOME/.bashrc"
+    "$HOME/.zshrc"
+    "$HOME/.config/fish/config.fish"
+    "$HOME/.profile"
+)
+
+for rc in "${SHELL_RC_FILES[@]}"; do
+    [[ -f "$rc" ]] || continue
+    if grep -q "$BIN_DIR" "$rc" 2>/dev/null; then
+        case "$rc" in
+            *fish*)  PATTERN="set -gx PATH ${BIN_DIR}" ;;
+            *)       PATTERN="export PATH=\"${BIN_DIR}" ;;
+        esac
+        if grep -q "$PATTERN" "$rc" 2>/dev/null; then
+            warn "Found PATH entry in $rc"
+            echo -e "  Remove this line manually if needed:"
+            grep -n "$PATTERN" "$rc" | head -3 | while read -r line; do
+                echo -e "  ${CYAN}${line}${NC}"
+            done
+        fi
+    fi
+done
 
 # ── Remove systemd user ──────────────────────────────────────────────────────
 
