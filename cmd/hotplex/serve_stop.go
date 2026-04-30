@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -163,8 +162,7 @@ func startDaemon(configPath string, devMode bool) error {
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	cmd.Stdin = nil
-	// Detach from terminal — new process group
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.SysProcAttr = daemonSysProcAttr()
 
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start daemon: %w", err)
