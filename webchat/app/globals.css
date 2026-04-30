@@ -28,6 +28,7 @@
 
   /* Accents */
   --accent-gold:        #fbbf24; /* Amber 400 */
+  --accent-gold-bright: #fcd34d; /* Amber 300 */
   --accent-gold-glow:   rgba(251, 191, 36, 0.15);
   --accent-emerald:     #34d399; /* Emerald 400 */
   --accent-emerald-glow: rgba(52, 211, 153, 0.15);
