@@ -987,6 +987,7 @@ gateway:
 
 db:
   path: "/var/hotplex/hotplex.db"
+  events_path: "/var/hotplex/events.db"
   wal_mode: true
   busy_timeout: 500ms
 

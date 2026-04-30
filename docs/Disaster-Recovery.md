@@ -47,6 +47,7 @@ docker-compose stop gateway
 
 # Backup database
 cp /var/lib/hotplex/hotplex.db /backups/hotplex-backup-$(date +%Y%m%d-%H%M%S).db
+cp /var/lib/hotplex/events.db /backups/events-backup-$(date +%Y%m%d-%H%M%S).db
 
 # Restart service
 systemctl start hotplex
@@ -114,6 +115,7 @@ docker-compose stop gateway
 
 # 2. Verify corruption
 sqlite3 /var/lib/hotplex/hotplex.db "PRAGMA integrity_check;"
+sqlite3 /var/lib/hotplex/events.db "PRAGMA integrity_check;"
 # Expected: "Error: database disk image is malformed"
 
 # 3. Find latest valid backup
@@ -215,6 +217,7 @@ source /etc/hotplex/secrets.env
 # 4. Restore database
 mkdir -p /var/lib/hotplex/data
 cp /path/to/backup/hotplex.db /var/lib/hotplex/data/
+cp /path/to/backup/events.db /var/lib/hotplex/data/
 chown -R hotplex:hotplex /var/lib/hotplex
 
 # 5. Build and install
@@ -249,7 +252,7 @@ curl http://localhost:9999/admin/health
 After recovery:
 
 - [ ] Verify all sessions are accessible
-- [ ] Check database integrity: `sqlite3 hotplex.db "PRAGMA integrity_check;"`
+- [ ] Check database integrity: `sqlite3 hotplex.db "PRAGMA integrity_check;"` and `sqlite3 events.db "PRAGMA integrity_check;"`
 - [ ] Review logs for errors: `journalctl -u hotplex -n 100`
 - [ ] Check LLM auto-retry stats in logs: `grep "llm_retry" logs/*.log`
 - [ ] Verify auto-retry config is correct if rate limit errors were involved
