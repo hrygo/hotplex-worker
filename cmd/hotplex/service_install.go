@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -47,13 +46,10 @@ func newServiceInstallCmd() *cobra.Command {
 				return err
 			}
 
-			envPath := filepath.Join(filepath.Dir(configPath), ".env")
-
 			mgr := service.NewManager()
 			opts := service.InstallOptions{
 				BinaryPath: binaryPath,
 				ConfigPath: configPath,
-				EnvPath:    envPath,
 				Level:      level,
 				Name:       "hotplex",
 			}

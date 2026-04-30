@@ -27,7 +27,6 @@ func ParseLevel(s string) (Level, error) {
 type InstallOptions struct {
 	BinaryPath string
 	ConfigPath string
-	EnvPath    string
 	Level      Level
 	Name       string
 }
