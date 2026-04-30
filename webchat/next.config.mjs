@@ -11,6 +11,6 @@ const env = Object.fromEntries(
     .map(([k, v]) => [k, v ?? ""]),
 );
 
-const nextConfig = { reactStrictMode: false, env };
+const nextConfig = { reactStrictMode: false, output: "export", env };
 
 export default nextConfig;

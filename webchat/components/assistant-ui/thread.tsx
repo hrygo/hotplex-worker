@@ -19,6 +19,7 @@ import { CommandMenu } from "./CommandMenu";
 import { CompactToolTab } from "./tools/CompactToolTab";
 import { ListTool } from "./tools/ListTool";
 import { TodoTool } from "./tools/TodoTool";
+import { AgentTool } from "./tools/AgentTool";
 
 /* ============================================================
    Animation & Extraction Logic (Legacy Sync)
@@ -193,6 +194,7 @@ function AssistantMessage({ message }: { message: any }) {
                         case "search": return <SearchTool toolName={p.toolName} query={args.query || args.pattern} results={p.result} status={status} onToggle={!isLastPart ? toggle : undefined} />;
                         case "list": return <ListTool toolName={p.toolName} path={extractFilePath(args)} items={p.result} status={status} onToggle={!isLastPart ? toggle : undefined} />;
                         case "todo": return <TodoTool todo={args.todo} todos={args.todos} status={status === "running" ? "running" : "complete"} />;
+                        case "ai": return <AgentTool description={args.description} prompt={args.prompt} subagent_type={args.subagent_type} run_in_background={args.run_in_background} status={status === "running" ? "running" : "complete"} />;
                         case "permission": return <PermissionCard toolName={p.toolName} args={args} status={status === "error" ? "complete" : status as "running" | "complete"} onToggle={!isLastPart ? toggle : undefined} />;
                         default: {
                           const content = p.result || args;

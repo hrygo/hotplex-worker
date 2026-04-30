@@ -1,13 +1,8 @@
 /**
  * @hotplex/ai-sdk-transport
  *
- * AI SDK ChatTransport adapter for HotPlex Worker Gateway (AEP v1 over WebSocket).
+ * Browser WebSocket client for HotPlex Worker Gateway (AEP v1 over WebSocket).
  */
-
-// Transport utilities
-export { createAepStream, createDataStreamWriter } from './transport/stream-controller';
-export { mapAepToDataStream, mapErrorToDataStream } from './transport/chunk-mapper';
-export type { DataStreamWriter } from './transport/chunk-mapper';
 
 // Client
 export { BrowserHotPlexClient } from './client/browser-client';

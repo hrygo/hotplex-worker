@@ -65,6 +65,10 @@ const LIST_TOOLS: ReadonlySet<string> = new Set([
   ToolName.ListDirectory, "ls",
 ]);
 
+const AI_TOOLS: ReadonlySet<string> = new Set([
+  "agent", "subagent", "ai_task", "neural_process"
+]);
+
 const PERMISSION_TOOLS: ReadonlySet<string> = new Set([
   ToolName.AskPermission, ToolName.Confirm, ToolName.Elicitation,
 ]);
@@ -76,6 +80,7 @@ export function getToolCategory(name: string): ToolCategory {
   if (FILE_TOOLS.has(lowerName)) return "file";
   if (SEARCH_TOOLS.has(lowerName)) return "search";
   if (LIST_TOOLS.has(lowerName)) return "list";
+  if (AI_TOOLS.has(lowerName)) return "ai";
   if (PERMISSION_TOOLS.has(lowerName)) return "permission";
   return "default";
 }
