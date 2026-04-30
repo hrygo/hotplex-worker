@@ -24,13 +24,11 @@
 
 ---
 
-
-
 ## ✨ 核心能力
 
 - 🌐 **全协议统一网关** — 基于 **AEP v1 (Agent Exchange Protocol)** WebSocket 标准，抹平不同 AI Coding Agent 的协议差异，提供一致的流式交互与权限控制。
-- 📱 **跨平台分发能力** — **“一次接入，全端覆盖”**。无需修改 Agent 代码即可秒级分发至 Web、Slack (Socket Mode) 和飞书。
-- 🛠️ **多模态编程范式** — 原生集成 SenseVoice-Small 语音转文字引擎，支持通过语音下达指令，开启“语音编程”新纪元。
+- 📱 **跨平台分发能力** — **"一次接入，全端覆盖"**。无需修改 Agent 代码即可秒级分发至 Web、Slack (Socket Mode) 和飞书。
+- 🛠️ **多模态编程范式** — 原生集成 SenseVoice-Small 语音转文字引擎，支持通过语音下达指令，开启"语音编程"新纪元。
 - 🤖 **深度配置注入** — 独创 **B/C 双通道** 注入系统：**B 通道** (SOUL/AGENTS/SKILLS) 负责指令约束，**C 通道** (USER/MEMORY) 负责背景上下文。
 - 🧠 **自主元认知内核** — 内置 5 状态机控制核心与 **META-COGNITION** 自模型，支持 LLM 智能重试与 3 层故障自愈，确保极端稳定性。
 - 🌐 **开箱即用 Web UI** — 内部集成高颜值 Next.js Chat 界面，单二进制文件即可完成从 API 到前端的全栈部署。
@@ -41,15 +39,37 @@
 
 ## ⚡ 快速开始
 
-### 从源码安装
+> **AI Agent：** 机器可读安装指南请参考：
+> ```
+> https://github.com/hrygo/hotplex/blob/main/INSTALL.md
+> ```
+
+### 安装
+
+**macOS / Linux（一键安装二进制）：**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/hrygo/hotplex/main/scripts/install.sh | bash -s -- --latest
+```
+
+**Windows（PowerShell 5.1+）：**
+
+```powershell
+Invoke-WebRequest -Uri https://raw.githubusercontent.com/hrygo/hotplex/main/scripts/install.ps1 -OutFile install.ps1
+.\install.ps1 -Latest
+```
+
+**从源码构建（需要 Go 1.26+、pnpm、Node.js 22+）：**
 
 ```bash
 git clone https://github.com/hrygo/hotplex.git
 cd hotplex
-make quickstart    # 检查工具链 + 构建 + 测试
+make quickstart
 ```
 
-### 或使用 Docker
+> **提示（Claude Code 用户）：** 克隆后可使用 `/setup-env` 交互式配置 `.env`（Slack/飞书 Token、访问策略、STT、Worker 设置等）。
+
+**Docker（实验性）：**
 
 ```bash
 cp configs/env.example .env  # 填入你的 API 密钥
@@ -59,7 +79,7 @@ docker compose up -d
 ### 配置
 
 ```bash
-# 交互式配置向导（自动检测已有配置，支持保留或重新配置）
+# 交互式配置向导
 hotplex onboard
 
 # 或快速自动生成全部配置：
@@ -83,18 +103,11 @@ hotplex gateway restart -d
 ### 安装为系统服务
 
 ```bash
-# 安装为用户级服务（无需 root）
-hotplex service install
-
-# 管理服务
-hotplex service start      # 启动服务
-hotplex service stop       # 停止服务
-hotplex service restart    # 重启服务
-hotplex service status     # 查看状态
-hotplex service logs -f    # 实时查看日志
-
-# 系统级安装（需要 sudo）
-sudo hotplex service install --level system
+hotplex service install              # 用户级（无需 root）
+sudo hotplex service install --level system  # 系统级
+hotplex service start
+hotplex service status
+hotplex service logs -f
 
 # 卸载
 hotplex service uninstall
@@ -102,12 +115,46 @@ hotplex service uninstall
 
 支持 **systemd** (Linux)、**launchd** (macOS) 和 **Windows SCM**。
 
+### 服务端口
+
 | 服务             | 地址                     | 说明                                     |
 | :--------------- | :----------------------- | :--------------------------------------- |
 | 网关 (WebSocket) | `ws://localhost:8888/ws` | 主协议端点                               |
 | Admin API        | `http://localhost:9999`  | 管理接口与统计指标                       |
 | Web Chat UI      | `http://localhost:8888`  | **内置 SPA**（由网关直接托管）           |
-| 开发版 Web Chat  | `http://localhost:3000`  | Next.js 开发服务器（运行 `make dev` 时） |
+| 开发版 Web Chat  | `http://localhost:3000`  | Next.js 开发服务器（`make dev`）         |
+
+## 🏗️ 架构
+
+HotPlex 位于前端客户端和后端 AI Coding Agent 之间，内置 **元认知控制内核**，将协议差异抽象为统一的 **AEP v1 (Agent Exchange Protocol)** WebSocket 层。
+
+```
+┌──────────┐   ┌──────────┐   ┌──────────┐
+│  Web UI  │   │  Slack   │   │  飞书    │
+└────┬─────┘   └────┬─────┘   └────┬─────┘
+     │              │              │
+     └──────────────┼──────────────┘
+                    │  WebSocket / AEP v1
+              ┌─────┴─────┐
+              │  HotPlex  │  会话 · 认证 · 重试 · B/C 配置注入
+              │  Gateway  │  指标 · 链路追踪 · Admin · 元认知内核
+              └─────┬─────┘
+     ┌──────────────┼──────────────┐
+     │              │              │
+┌────┴─────┐  ┌────┴──────┐  ┌───┴───────┐
+│  Claude  │  │  OpenCode │  │  Pi-mono  │
+│  Code    │  │  Server   │  │           │
+└──────────┘  └───────────┘  └───────────┘
+```
+
+## 🔗 SDK 与客户端库
+
+|      语言      | 路径                                                         | 特性                             |
+| :------------: | :----------------------------------------------------------- | :------------------------------- |
+|     **Go**     | [`client/`](client/)                                         | 全功能支持，事件驱动，生产级可用 |
+| **TypeScript** | [`examples/typescript-client/`](examples/typescript-client/) | 流式输出、多轮对话、React 兼容   |
+|   **Python**   | [`examples/python-client/`](examples/python-client/)         | Asyncio 支持、会话恢复、CLI 友好 |
+|    **Java**    | [`examples/java-client/`](examples/java-client/)             | 企业级 AEP v1 协议实现           |
 
 ### 使用 Go SDK 连接
 
@@ -141,47 +188,17 @@ func main() {
 }
 ```
 
-HotPlex 位于前端客户端和后端 AI Coding Agent 之间，内置 **元认知控制内核**，将协议差异抽象为统一的 **AEP v1 (Agent Exchange Protocol)** WebSocket 层。
-
-```
-┌──────────┐   ┌──────────┐   ┌──────────┐
-│  Web UI  │   │  Slack   │   │  飞书    │
-└────┬─────┘   └────┬─────┘   └────┬─────┘
-     │              │              │
-     └──────────────┼──────────────┘
-                    │  WebSocket / AEP v1
-              ┌─────┴─────┐
-              │  HotPlex  │  会话 · 认证 · 重试 · B/C 配置注入
-              │  Gateway  │  指标 · 链路追踪 · Admin · 元认知内核
-              └─────┬─────┘
-     ┌──────────────┼──────────────┐
-     │              │              │
-┌────┴─────┐  ┌────┴──────┐  ┌───┴───────┐
-│  Claude  │  │  OpenCode │  │  Pi-mono  │
-│  Code    │  │  Server   │  │           │
-└──────────┘  └───────────┘  └───────────┘
-```
-
-## 🔗 SDK 与客户端库
-
-|      语言      | 路径                                                         | 特性                             |
-| :------------: | :----------------------------------------------------------- | :------------------------------- |
-|     **Go**     | [`client/`](client/)                                         | 全功能支持，事件驱动，生产级可用 |
-| **TypeScript** | [`examples/typescript-client/`](examples/typescript-client/) | 流式输出、多轮对话、React 兼容   |
-|   **Python**   | [`examples/python-client/`](examples/python-client/)         | Asyncio 支持、会话恢复、CLI 友好 |
-|    **Java**    | [`examples/java-client/`](examples/java-client/)             | 企业级 AEP v1 协议实现           |
-
 ## 🛠️ 配置说明
 
-| 配置项                    | 默认值                       | 说明                                |
-| :------------------------ | :--------------------------- | :---------------------------------- |
-| `agent_config.enabled`    | `true`                       | 启用 Agent 人格/上下文注入          |
-| `webchat.enabled`         | `true`                       | 从网关提供嵌入式 Web Chat SPA       |
-| `worker.auto_retry.enabled`| `true`                      | LLM 智能重试，支持指数退避          |
-| `gateway.addr`            | `localhost:8888`             | WebSocket 网关地址                  |
-| `admin.addr`              | `localhost:9999`             | Admin API 地址                      |
-| `db.path`                 | `~/.hotplex/data/hotplex.db` | SQLite 数据库路径                   |
-| `log.level`               | `info`                       | 日志级别 (debug, info, warn, error) |
+| 配置项                     | 默认值                       | 说明                                |
+| :------------------------- | :--------------------------- | :---------------------------------- |
+| `agent_config.enabled`     | `true`                       | 启用 Agent 人格/上下文注入          |
+| `webchat.enabled`          | `true`                       | 从网关提供嵌入式 Web Chat SPA       |
+| `worker.auto_retry.enabled`| `true`                       | LLM 智能重试，支持指数退避          |
+| `gateway.addr`             | `localhost:8888`             | WebSocket 网关地址                  |
+| `admin.addr`               | `localhost:9999`             | Admin API 地址                      |
+| `db.path`                  | `~/.hotplex/data/hotplex.db` | SQLite 数据库路径                   |
+| `log.level`                | `info`                       | 日志级别 (debug, info, warn, error) |
 
 > [!TIP]
 > 完整的环境变量和 YAML 设置请参考 [配置指南](docs/management/Config-Reference.md)。
