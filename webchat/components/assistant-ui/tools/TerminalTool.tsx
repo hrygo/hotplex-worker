@@ -38,7 +38,7 @@ export function TerminalTool({ command, stdout, stderr, status, onToggle }: Term
           SHELL
         </span>
         <div className="flex-1 h-[1px] bg-gradient-to-r from-[var(--border-subtle)] to-transparent ml-2" />
-        {status === "running" && (
+        {status === "running" ? (
           <motion.span
             className="text-[10px] font-mono text-[var(--accent-emerald)] font-bold flex items-center gap-2"
             animate={{ opacity: [0.6, 1, 0.6] }}
@@ -47,6 +47,16 @@ export function TerminalTool({ command, stdout, stderr, status, onToggle }: Term
             <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent-emerald)] shadow-[0_0_8px_var(--accent-emerald)]" />
             LIVE
           </motion.span>
+        ) : status === "error" ? (
+          <span className="text-[10px] font-mono text-[var(--accent-coral)] font-bold flex items-center gap-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent-coral)]" />
+            ERROR
+          </span>
+        ) : (
+          <span className="text-[10px] font-mono text-[var(--text-faint)] font-bold flex items-center gap-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-[var(--text-faint)]" />
+            PROCESSED
+          </span>
         )}
         {onToggle && status !== "running" && (
           <div className="text-[var(--text-faint)] transform group-hover/terminal:scale-110 transition-transform">
