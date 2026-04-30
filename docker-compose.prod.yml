@@ -12,6 +12,7 @@ services:
     environment:
       - HOTPLEX_LOG_LEVEL=warn
       - GIN_MODE=release
+      - GOMEMLIMIT=6500MiB
 
     # SQLite High Availability Note:
     # Standard SQLite on shared volumes (NFS/EFS) is NOT recommended for multiple writers.

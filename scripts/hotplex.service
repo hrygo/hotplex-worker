@@ -51,6 +51,9 @@ LimitNOFILE=65536
 LimitNPROC=4096
 LimitCORE=0
 
+# Go runtime memory limit (soft limit for GC pacing)
+Environment=GOMEMLIMIT=6500MiB
+
 # OOM Score (higher = less likely to be killed)
 OOMScoreAdjust=-500
 

@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	_ "modernc.org/sqlite"
+	"github.com/hrygo/hotplex/internal/sqlutil"
 )
 
 //go:embed sql/queries/*.sql sql/schema.sql
@@ -133,7 +133,7 @@ func NewSQLiteStore(ctx context.Context, dbPath string) (*SQLiteStore, error) {
 		return nil, fmt.Errorf("eventstore: create dir: %w", err)
 	}
 
-	db, err := sql.Open("sqlite", dbPath)
+	db, err := sql.Open(sqlutil.DriverName, dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("eventstore: open db: %w", err)
 	}

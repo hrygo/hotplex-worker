@@ -39,6 +39,7 @@ services:
       - HOTPLEX_LOG_LEVEL=${HOTPLEX_LOG_LEVEL:-info}
       - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-}
       - TZ=${TZ:-Asia/Shanghai}
+      - GOMEMLIMIT=6500MiB
       
       # Claude Code environment
       - CLAUDE_API_KEY=${CLAUDE_API_KEY:-}
