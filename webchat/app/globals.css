@@ -210,6 +210,76 @@ body {
   animation: bounceSubtle 2s ease-in-out infinite;
 }
 
+@keyframes quantumBloom {
+  0%, 100% { transform: scale(1); opacity: 0.2; filter: blur(10px); }
+  50% { transform: scale(1.5); opacity: 0.4; filter: blur(20px); }
+}
+
+@keyframes rotateOrbit {
+  from { transform: rotateX(65deg) rotateZ(0deg); }
+  to { transform: rotateX(65deg) rotateZ(360deg); }
+}
+
+@keyframes quantumWobble {
+  0%, 100% { transform: translate(0, 0); }
+  25% { transform: translate(2px, -2px); }
+  50% { transform: translate(-2px, 1px); }
+  75% { transform: translate(1px, 2px); }
+}
+
+@keyframes electricalGlow {
+  0% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0); }
+  20% { box-shadow: 0 0 20px 2px rgba(251, 191, 36, 0.4); }
+  100% { box-shadow: 0 0 40px 4px rgba(251, 191, 36, 0); }
+}
+
+.animate-quantum-bloom { animation: quantumBloom 3s ease-in-out infinite; }
+.animate-quantum-wobble { animation: quantumWobble 0.2s linear infinite; }
+.electrical-glow { animation: electricalGlow 0.8s ease-out forwards; }
+
+.skeleton-text {
+  height: 12px;
+  background: linear-gradient(90deg, var(--bg-elevated) 25%, var(--bg-hover) 50%, var(--bg-elevated) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite linear;
+  border-radius: 4px;
+}
+
+@keyframes quantumBloom {
+  0%, 100% { transform: scale(1); opacity: 0.2; filter: blur(10px); }
+  50% { transform: scale(1.5); opacity: 0.4; filter: blur(20px); }
+}
+
+@keyframes rotateOrbit {
+  from { transform: rotateX(65deg) rotateZ(0deg); }
+  to { transform: rotateX(65deg) rotateZ(360deg); }
+}
+
+@keyframes quantumWobble {
+  0%, 100% { transform: translate(0, 0); }
+  25% { transform: translate(2px, -2px); }
+  50% { transform: translate(-2px, 1px); }
+  75% { transform: translate(1px, 2px); }
+}
+
+@keyframes electricalGlow {
+  0% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0); }
+  20% { box-shadow: 0 0 20px 2px rgba(251, 191, 36, 0.4); }
+  100% { box-shadow: 0 0 40px 4px rgba(251, 191, 36, 0); }
+}
+
+.animate-quantum-bloom { animation: quantumBloom 3s ease-in-out infinite; }
+.animate-quantum-wobble { animation: quantumWobble 0.2s linear infinite; }
+.electrical-glow { animation: electricalGlow 0.8s ease-out forwards; }
+
+.skeleton-text {
+  height: 12px;
+  background: linear-gradient(90deg, var(--bg-elevated) 25%, var(--bg-hover) 50%, var(--bg-elevated) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite linear;
+  border-radius: 4px;
+}
+
 /* Streaming cursor — blinking block, only on the last text part of a streaming message */
 .streaming-cursor:last-of-type::after {
   content: '▍';
@@ -333,8 +403,21 @@ body {
   color: var(--text-secondary);
   line-height: 1.75;
   letter-spacing: -0.011em;
-  padding-right: 4rem; 
-  padding-bottom: 0.5rem;
+}
+
+.message-action-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: all 0.3s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.group:hover .message-action-bar {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 /* ============================================================
@@ -650,21 +733,19 @@ body {
 .panel-icon-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* Message Actions - Floating Tool */
-.message-actions {
-  position: absolute;
-  top: -10px;
-  right: 0px;
+/* Message Action Bar — Premium Floating Capsule */
+.message-action-bar {
   display: flex;
   align-items: center;
-  gap: 4px;
-  z-index: 30;
+  gap: 8px;
+  margin-top: 10px;
   opacity: 0;
-  transform: translateY(6px);
-  transition: all 0.2s cubic-bezier(0.2, 0, 0, 1);
+  transform: translateY(8px);
+  transition: all 0.3s cubic-bezier(0.2, 0, 0, 1);
   pointer-events: none;
 }
 
-.group:hover .message-actions {
+.group:hover .message-action-bar {
   opacity: 1;
   transform: translateY(0);
   pointer-events: auto;
@@ -674,45 +755,45 @@ body {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 10px;
-  border-radius: var(--radius-sm);
+  padding: 5px 12px;
+  border-radius: 12px;
   border: 1px solid var(--border-subtle);
-  background: rgba(255, 255, 255, 0.03);
-  backdrop-filter: blur(12px) saturate(180%);
-  color: var(--text-muted);
-  font-family: var(--font-display);
+  background: var(--bg-glass);
+  backdrop-filter: blur(16px) saturate(200%);
+  color: var(--text-faint);
+  font-family: var(--font-mono);
   font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.08em;
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.2, 0, 0, 1);
-  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
 }
 
 .copy-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--bg-hover);
   border-color: var(--border-bright);
   color: var(--text-primary);
-  transform: translateY(-1px);
+  transform: translateY(-1.5px);
+  box-shadow: 0 8px 20px rgba(0,0,0,0.2);
 }
 
 .copy-btn:active {
-  transform: scale(0.95);
+  transform: scale(0.94);
 }
 
 .copy-btn-success {
-  border-color: rgba(52, 211, 153, 0.4);
-  background: rgba(52, 211, 153, 0.05);
+  border-color: rgba(52, 211, 153, 0.4) !important;
+  background: rgba(52, 211, 153, 0.08) !important;
   color: var(--accent-emerald) !important;
-  box-shadow: 0 0 15px rgba(52, 211, 153, 0.1);
+  box-shadow: 0 0 20px rgba(52, 211, 153, 0.15) !important;
 }
 
 .copy-btn-shimmer {
   position: absolute;
   inset: 0;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent);
   transform: translateX(-100%);
   pointer-events: none;
 }

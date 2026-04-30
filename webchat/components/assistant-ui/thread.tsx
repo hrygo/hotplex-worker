@@ -46,41 +46,33 @@ function PreAssistantIndicator() {
 
   return (
     <motion.div
-      className="group msg-assistant flex items-start gap-6 mb-12"
-      initial={{ opacity: 0, y: 10 }}
+      className="group msg-assistant flex items-start gap-5 mb-10"
+      initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, ease: "easeOut" }}
     >
       <div className="flex-shrink-0">
-        <div className="relative">
-          <div className="absolute inset-0 bg-[var(--accent-gold)] opacity-20 blur-md rounded-xl animate-pulse-subtle" />
-          <div className="w-10 h-10 rounded-xl glass-dark flex items-center justify-center border border-[var(--border-bright)] relative z-10 shadow-lg">
-            <BrandIcon size={30} />
-          </div>
+        <div className="w-9 h-9 rounded-[var(--radius-md)] glass-dark flex items-center justify-center border border-[var(--border-subtle)] relative overflow-hidden group">
+          <div className="absolute inset-0 bg-gradient-to-tr from-[var(--accent-gold)]/10 to-transparent animate-pulse" />
+          <BrandIcon size={28} className="opacity-40 animate-pulse-subtle" />
         </div>
       </div>
 
-      <div className="msg-assistant-body active-session shadow-[0_0_50px_rgba(251,191,36,0.05)]">
-        <div className="flex items-start gap-4 px-2">
-          <div className="relative w-8 h-8 flex-shrink-0 mt-1" style={{ perspective: '400px' }}>
-            <div className="absolute inset-0 bg-[var(--accent-gold)] opacity-20 blur-xl rounded-full animate-pulse-bloom" style={{ animationDuration: '3s' }} />
-            <svg className="absolute inset-[-4px] w-[calc(100%+8px)] h-[calc(100%+8px)] pointer-events-none" style={{ transform: 'rotateX(65deg) rotateY(0deg)', animation: 'rotateOrbit 4s linear infinite' }}>
-              <ellipse cx="50%" cy="50%" rx="12" ry="12" fill="none" stroke="var(--accent-gold)" strokeWidth="0.5" strokeDasharray="1 3" opacity="0.3" />
-              <circle r="1.5" fill="var(--accent-gold)">
-                <animateMotion dur="2s" repeatCount="indefinite" path="M -12,0 a 12,12 0 1,0 24,0 a 12,12 0 1,0 -24,0" />
-              </circle>
-            </svg>
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="w-1.5 h-1.5 rounded-full bg-[var(--accent-gold)] shadow-[0_0_8px_var(--accent-gold)] animate-quantum-wobble" />
-            </div>
+      <div className="msg-assistant-body flex flex-col gap-3">
+        <div className="flex items-center gap-2 mb-1">
+          <div className="flex gap-1">
+            <span className="thinking-dot" />
+            <span className="thinking-dot" />
+            <span className="thinking-dot" />
           </div>
-          <div className="flex flex-col gap-1">
-            <span className="text-[10px] font-mono text-[var(--accent-gold)] font-bold tracking-[0.2em] animate-pulse uppercase">
-              Thinking
-            </span>
-            <span className="text-[9px] font-mono text-[var(--text-faint)] uppercase tracking-wider">
-              Preparing response...
-            </span>
-          </div>
+          <span className="text-[10px] font-mono text-[var(--accent-gold)] font-bold tracking-widest uppercase opacity-60">
+            HotPlex is distilling thoughts
+          </span>
+        </div>
+        <div className="flex flex-col gap-2.5 max-w-sm">
+          <div className="skeleton-text w-full" />
+          <div className="skeleton-text w-[90%]" style={{ animationDelay: '0.2s' }} />
+          <div className="skeleton-text w-[75%]" style={{ animationDelay: '0.4s' }} />
         </div>
       </div>
     </motion.div>
@@ -90,7 +82,7 @@ function PreAssistantIndicator() {
 /* ============================================================
    Assistant Message - Enhanced with Functional Regression
    ============================================================ */
-function CopyButton({ message }: { message: any }) {
+function CopyButton({ message, onCopy }: { message: any, onCopy?: () => void }) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {
@@ -104,56 +96,48 @@ function CopyButton({ message }: { message: any }) {
     if (text) {
       navigator.clipboard.writeText(text);
       setCopied(true);
+      onCopy?.();
       setTimeout(() => setCopied(false), 2000);
     }
   };
 
   return (
-    <motion.button 
-      onClick={handleCopy} 
-      whileTap={{ scale: 0.95 }}
-      className={`copy-btn group/copy relative ${copied ? 'copy-btn-success' : ''}`}
-    >
+    <button onClick={handleCopy} className={`copy-btn ${copied ? 'copy-btn-success' : ''}`}>
       <AnimatePresence mode="wait" initial={false}>
         {copied ? (
-          <motion.div 
-            key="check" 
-            initial={{ y: 5, opacity: 0 }} 
-            animate={{ y: 0, opacity: 1 }} 
-            exit={{ y: -5, opacity: 0 }} 
-            className="flex items-center gap-1.5"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <motion.div key="check" initial={{ y: 2, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -2, opacity: 0 }} className="flex items-center gap-1.5">
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
             </svg>
-            <span className="font-mono">COPIED</span>
+            <span>COPIED</span>
           </motion.div>
         ) : (
-          <motion.div 
-            key="copy" 
-            initial={{ y: 5, opacity: 0 }} 
-            animate={{ y: 0, opacity: 1 }} 
-            exit={{ y: -5, opacity: 0 }} 
-            className="flex items-center gap-1.5"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
+          <motion.div key="copy" initial={{ y: 2, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -2, opacity: 0 }} className="flex items-center gap-1.5">
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
             </svg>
-            <span className="font-mono">COPY</span>
+            <span>COPY</span>
           </motion.div>
         )}
       </AnimatePresence>
-      
-      {/* Shimmer effect on success */}
-      {copied && (
-        <motion.div 
-          className="copy-btn-shimmer"
-          initial={{ x: '-100%' }}
-          animate={{ x: '100%' }}
-          transition={{ duration: 0.5, ease: "linear" }}
-        />
-      )}
-    </motion.button>
+    </button>
+  );
+}
+
+function MessageActions({ message, isUser }: { message: any, isUser?: boolean }) {
+  const [glow, setGlow] = useState(false);
+  const handleCopy = () => {
+    setGlow(true);
+    setTimeout(() => setGlow(false), 800);
+  };
+
+  return (
+    <>
+      <div className={`message-action-bar ${isUser ? 'justify-end' : 'justify-start'}`}>
+        <CopyButton message={message} onCopy={handleCopy} />
+      </div>
+      {glow && <div className="absolute inset-0 rounded-[inherit] pointer-events-none electrical-glow" />}
+    </>
   );
 }
 
@@ -168,7 +152,7 @@ function AssistantMessage({ message }: { message: any }) {
         </div>
       </div>
 
-      <div className="msg-assistant-body relative group/msg">
+      <div className="msg-assistant-body relative">
         <MessagePrimitive.Parts>
           {({ part }) => {
             const p = part as Record<string, any>;
@@ -232,9 +216,7 @@ function AssistantMessage({ message }: { message: any }) {
             return null;
           }}
         </MessagePrimitive.Parts>
-        <div className="absolute bottom-2 right-2 z-10 opacity-0 group-hover/msg:opacity-100 translate-y-2 group-hover/msg:translate-y-0 transition-all duration-300">
-          <CopyButton message={message} />
-        </div>
+        <MessageActions message={message} />
       </div>
     </motion.div>
   );
@@ -280,9 +262,7 @@ function UserMessage({ message }: { message: any }) {
               return null;
             }}
           </MessagePrimitive.Parts>
-          <div className="absolute bottom-2 right-2 z-10 opacity-0 group-hover/msg:opacity-100 translate-y-2 group-hover/msg:translate-y-0 transition-all duration-300">
-            <CopyButton message={message} />
-          </div>
+          <MessageActions message={message} isUser />
         </div>
       </div>
       <div className="flex-shrink-0 mt-0.5">
