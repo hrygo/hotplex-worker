@@ -22,7 +22,7 @@ func TestBuildSystemdUnit_SystemLevel(t *testing.T) {
 	require.Contains(t, result, "[Unit]")
 	require.Contains(t, result, "[Service]")
 	require.Contains(t, result, "[Install]")
-	require.Contains(t, result, "ExecStart=/usr/local/bin/hotplex gateway start -config /etc/hotplex/config.yaml")
+	require.Contains(t, result, "ExecStart=/usr/local/bin/hotplex gateway start --config /etc/hotplex/config.yaml")
 	require.Contains(t, result, "User=hotplex")
 	require.Contains(t, result, "WantedBy=multi-user.target")
 	require.Contains(t, result, "NoNewPrivileges=true")
