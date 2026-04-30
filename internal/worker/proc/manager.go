@@ -43,6 +43,11 @@ type Manager struct {
 	outputLimit  int
 	allowedTools []string
 	pidKey       string
+
+	// jobHandle stores the Windows Job Object handle for process tree cleanup.
+	// On Unix this is always 0. On Windows, closing this handle kills the entire
+	// process tree (JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE).
+	jobHandle uintptr //nolint:unused // used by manager_job_windows.go
 }
 
 // Opts configures a process manager.
@@ -147,6 +152,7 @@ func (m *Manager) Start(ctx context.Context, name string, args, env []string, di
 	// Limit process virtual address space to 512 MB (platform-specific).
 	if cmd.Process != nil {
 		setMemoryLimit(cmd.Process.Pid, m.log)
+		m.createJobAndAssign(cmd.Process.Pid)
 	}
 
 	// Set up bufio.Scanner for line-by-line stdout parsing.
@@ -218,6 +224,7 @@ func (m *Manager) Kill() error {
 		return nil
 	}
 
+	m.killJob()
 	if m.pgid > 0 {
 		_ = ForceKill(m.pgid)
 		m.log.Info("proc: force killed", "pgid", m.pgid)
@@ -225,6 +232,7 @@ func (m *Manager) Kill() error {
 	_ = m.cmd.Wait()
 	m.captureExitCodeLocked()
 	m.untrackPID(m.pidKey)
+	m.closeJobHandle()
 	return nil
 }
 

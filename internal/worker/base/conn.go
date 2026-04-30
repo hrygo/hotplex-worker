@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"strings"
 	"sync"
 
 	"github.com/hrygo/hotplex/pkg/aep"
@@ -73,15 +72,6 @@ func (c *Conn) Send(ctx context.Context, msg *events.Envelope) error {
 	}
 
 	return nil
-}
-
-// IsDeadProcessError checks if the error indicates the worker process is gone.
-func IsDeadProcessError(err error) bool {
-	if err == nil {
-		return false
-	}
-	s := err.Error()
-	return strings.Contains(s, "file already closed") || strings.Contains(s, "broken pipe")
 }
 
 func (c *Conn) SendUserMessage(ctx context.Context, content string) error {

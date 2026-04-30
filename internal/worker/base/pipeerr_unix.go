@@ -1,0 +1,14 @@
+//go:build darwin || linux
+
+package base
+
+import "strings"
+
+// IsDeadProcessError checks if the error indicates the worker process is gone.
+func IsDeadProcessError(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	return strings.Contains(s, "file already closed") || strings.Contains(s, "broken pipe")
+}
