@@ -53,7 +53,20 @@ type Bridge struct {
 
 	accum   map[string]*sessionAccumulator // per-session stats accumulator
 	accumMu sync.Mutex
+
+	crashTracker   map[string]*crashHistory // per-session crash loop detection
+	crashTrackerMu sync.Mutex
 }
+
+type crashHistory struct {
+	count     int
+	firstSeen time.Time
+}
+
+const (
+	crashLoopMax    = 3               // max consecutive crashes before abort
+	crashLoopWindow = 5 * time.Minute // window for counting consecutive crashes
+)
 
 // NewBridge creates a new bridge.
 func NewBridge(deps BridgeDeps) *Bridge {
@@ -70,6 +83,7 @@ func NewBridge(deps BridgeDeps) *Bridge {
 		workerEnv:      deps.WorkerEnv,
 		retryCancel:    make(map[string]chan struct{}),
 		accum:          make(map[string]*sessionAccumulator),
+		crashTracker:   make(map[string]*crashHistory),
 	}
 }
 
@@ -417,6 +431,7 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 		// UI Reconciliation (Fallback full message if silent dropped)
 		if env.Event.Type == events.Done {
 			doneReceived = true
+			b.resetCrashLoop(sessionID)
 			if b.hub.GetAndClearDropped(sessionID) {
 				b.log.Warn("bridge: handling dropped deltas before done", "session_id", sessionID, "worker_type", workerType)
 
@@ -686,6 +701,20 @@ type fallbackParams struct {
 func (b *Bridge) attemptResumeFallback(p fallbackParams) bool {
 	b.log.Warn("bridge: worker crashed shortly after resume",
 		"session_id", p.sessionID, "worker_type", p.workerType, "exit_code", p.exitCode, "retry_depth", p.retryDepth)
+
+	// Crash-loop protection: if this session has crashed crashLoopMax times within
+	// crashLoopWindow, stop retrying to prevent thread exhaustion that can kill
+	// the entire gateway process (pthread_create failed → SIGABRT).
+	if b.recordCrashLoop(p.sessionID) {
+		b.log.Error("bridge: crash loop detected, aborting retry to protect gateway",
+			"session_id", p.sessionID, "worker_type", p.workerType, "max", crashLoopMax, "window", crashLoopWindow)
+		errEvt := events.NewEnvelope(aep.NewID(), p.sessionID, b.hub.NextSeq(p.sessionID), events.Error, events.ErrorData{
+			Code:    events.ErrCodeWorkerCrash,
+			Message: fmt.Sprintf("Worker crashed %d times in %v. Stopping retry to protect gateway stability.", crashLoopMax, crashLoopWindow),
+		})
+		_ = b.hub.SendToSession(context.Background(), errEvt)
+		return false
+	}
 
 	// Clean up the crashed worker first.
 	b.cleanupCrashedWorker(p.sessionID, p.crashedWorker)
@@ -1257,4 +1286,28 @@ func sanitizeLastInput(input string) string {
 		return ""
 	}
 	return strings.Join(filtered, "\n")
+}
+
+// recordCrashLoop tracks consecutive crashes per session. Returns true if the
+// session has exceeded crashLoopMax crashes within crashLoopWindow, indicating
+// a crash loop that should abort retries to protect gateway stability.
+func (b *Bridge) recordCrashLoop(sessionID string) bool {
+	b.crashTrackerMu.Lock()
+	defer b.crashTrackerMu.Unlock()
+
+	h, ok := b.crashTracker[sessionID]
+	if !ok || time.Since(h.firstSeen) > crashLoopWindow {
+		h = &crashHistory{firstSeen: time.Now()}
+		b.crashTracker[sessionID] = h
+	}
+	h.count++
+
+	return h.count > crashLoopMax
+}
+
+// resetCrashLoop clears the crash history for a session on successful completion.
+func (b *Bridge) resetCrashLoop(sessionID string) {
+	b.crashTrackerMu.Lock()
+	defer b.crashTrackerMu.Unlock()
+	delete(b.crashTracker, sessionID)
 }

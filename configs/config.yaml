@@ -107,7 +107,7 @@ worker:
   # Extra environment variables for all worker processes (highest priority).
   # These override whitelisted keys from os.Environ().
   environment:
-    - BUN_RUNTIME_NV=disable_avx512
+    - BUN_JSC_useJIT=0
 
   auto_retry:
     enabled: true
