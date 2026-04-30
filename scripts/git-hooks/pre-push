@@ -71,7 +71,21 @@ if ! make lint; then
     exit 1
 fi
 
-# 3. Build validation
+# 3. Vet (static analysis beyond lint)
+printf "🔹 Running go vet...\n"
+if ! go vet ./...; then
+    printf "${RED}❌ go vet found issues! Fix before pushing.${NC}\n"
+    exit 1
+fi
+
+# 4. Module integrity
+printf "🔹 Verifying module checksums...\n"
+if ! go mod verify; then
+    printf "${RED}❌ Module checksums mismatch! Run 'go mod tidy' and check dependencies.${NC}\n"
+    exit 1
+fi
+
+# 5. Build validation
 printf "🔹 Verifying build...\n"
 if ! make build > /dev/null 2>&1; then
     printf "${RED}❌ Build failed! Fix compilation errors before pushing.${NC}\n"
@@ -79,7 +93,7 @@ if ! make build > /dev/null 2>&1; then
     exit 1
 fi
 
-# 4. Fast unit tests
+# 6. Fast unit tests
 printf "🔹 Running tests...\n"
 if ! make test-short > /dev/null 2>&1; then
     printf "${RED}❌ Tests failed! Push aborted.${NC}\n"
