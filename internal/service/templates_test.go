@@ -59,6 +59,8 @@ func TestBuildLaunchdPlist_SystemLevel(t *testing.T) {
 	require.Contains(t, result, "<string>com.hrygo.hotplex</string>")
 	require.Contains(t, result, "<string>/usr/local/bin/hotplex</string>")
 	require.Contains(t, result, "<key>RunAtLoad</key>")
+	require.Contains(t, result, "<key>EnvironmentVariables</key>")
+	require.Contains(t, result, "<key>PATH</key>")
 	require.Contains(t, result, "/var/log/hotplex/launchd.stdout.log")
 }
 
@@ -95,6 +97,8 @@ func TestBuildLaunchdPlist_EnvVars(t *testing.T) {
 	require.Contains(t, result, "<string>val1</string>")
 	require.Contains(t, result, "<key>KEY2</key>")
 	require.Contains(t, result, "<string>val2</string>")
+	// .env does not override PATH, so caller PATH is preserved
+	require.Contains(t, result, "<key>PATH</key>")
 }
 
 func TestParseLevel(t *testing.T) {
