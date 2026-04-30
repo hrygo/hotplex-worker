@@ -18,6 +18,7 @@ import { getToolCategory } from "@/lib/tool-categories";
 import { CommandMenu } from "./CommandMenu";
 import { CompactToolTab } from "./tools/CompactToolTab";
 import { ListTool } from "./tools/ListTool";
+import { TodoTool } from "./tools/TodoTool";
 
 /* ============================================================
    Animation & Extraction Logic (Legacy Sync)
@@ -191,6 +192,7 @@ function AssistantMessage({ message }: { message: any }) {
                         case "file": return <FileDiffTool toolName={p.toolName} filePath={extractFilePath(args)} content={extractFileContent(args, p.result)} status={status} onToggle={!isLastPart ? toggle : undefined} />;
                         case "search": return <SearchTool toolName={p.toolName} query={args.query || args.pattern} results={p.result} status={status} onToggle={!isLastPart ? toggle : undefined} />;
                         case "list": return <ListTool toolName={p.toolName} path={extractFilePath(args)} items={p.result} status={status} onToggle={!isLastPart ? toggle : undefined} />;
+                        case "todo": return <TodoTool todo={args.todo} todos={args.todos} status={status === "running" ? "running" : "complete"} />;
                         case "permission": return <PermissionCard toolName={p.toolName} args={args} status={status === "error" ? "complete" : status as "running" | "complete"} onToggle={!isLastPart ? toggle : undefined} />;
                         default: {
                           const content = p.result || args;
