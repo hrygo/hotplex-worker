@@ -647,13 +647,20 @@ func loadRecursive(filePath string, opts LoadOptions, visited []string) (*Config
 		}
 	}
 
-	// Normalize DB path.
-	if cfg.DB.Path != "" {
-		absPath, err := ExpandAndAbs(cfg.DB.Path)
-		if err != nil {
-			return nil, fmt.Errorf("config: normalize db path %q: %w", cfg.DB.Path, err)
+	// Normalize all path fields — Viper does not expand ~ in YAML values.
+	for _, pf := range []*string{
+		&cfg.DB.Path,
+		&cfg.Worker.DefaultWorkDir,
+		&cfg.Worker.PIDDir,
+		&cfg.AgentConfig.ConfigDir,
+	} {
+		if *pf != "" {
+			absPath, err := ExpandAndAbs(*pf)
+			if err != nil {
+				return nil, fmt.Errorf("config: normalize path %q: %w", *pf, err)
+			}
+			*pf = absPath
 		}
-		cfg.DB.Path = absPath
 	}
 
 	return cfg, nil

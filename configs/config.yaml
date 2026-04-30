@@ -49,7 +49,7 @@ admin:
 # ─────────────────────────────────────────────────────────────────────────────
 
 db:
-  path: "~/.hotplex/data/hotplex.db"
+  path: ~/.hotplex/data/hotplex.db
   wal_mode: true
   busy_timeout: 5s
   max_open_conns: 2
@@ -94,9 +94,9 @@ worker:
   idle_timeout: 60m
   execution_timeout: 30m
   turn_timeout: 15m
-  default_work_dir: "~/.hotplex/workspace"
-  pid_dir: "~/.hotplex/.pids"
-  
+  default_work_dir: ~/.hotplex/workspace
+  pid_dir: ~/.hotplex/.pids
+
   # Environment variables to pass through to workers
   env_whitelist: []
 
@@ -127,7 +127,7 @@ agent_config:
   enabled: true
   # Root directory for personality (SOUL.md, AGENTS.md, SKILLS.md)
   # and user context (USER.md, MEMORY.md).
-  config_dir: "~/.hotplex/agent-configs"
+  config_dir: ~/.hotplex/agent-configs
 
 skills:
   cache_ttl: 5m
