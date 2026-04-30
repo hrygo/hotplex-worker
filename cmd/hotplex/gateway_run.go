@@ -259,6 +259,7 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 		RetryCtrl:      retryCtrl,
 		AgentConfigDir: agentConfigDir,
 		TurnTimeout:    cfg.Worker.TurnTimeout,
+		WorkerEnv:      cfg.Worker.Environment,
 	})
 
 	handler := gateway.NewHandler(gateway.HandlerDeps{

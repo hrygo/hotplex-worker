@@ -49,6 +49,7 @@ type Bridge struct {
 
 	agentConfigDir string        // agent config directory path; "" = disabled
 	turnTimeout    time.Duration // per-turn timeout; 0 = disabled
+	workerEnv      []string      // extra env vars from worker.environment config
 
 	accum   map[string]*sessionAccumulator // per-session stats accumulator
 	accumMu sync.Mutex
@@ -66,6 +67,7 @@ func NewBridge(deps BridgeDeps) *Bridge {
 		retryCtrl:      deps.RetryCtrl,
 		agentConfigDir: deps.AgentConfigDir,
 		turnTimeout:    deps.TurnTimeout,
+		workerEnv:      deps.WorkerEnv,
 		retryCancel:    make(map[string]chan struct{}),
 		accum:          make(map[string]*sessionAccumulator),
 	}
@@ -106,9 +108,8 @@ func (b *Bridge) StartSession(ctx context.Context, id, userID, botID string, wt 
 		SessionID:    id,
 		UserID:       userID,
 		ProjectDir:   workDir,
-		Env:          nil,
-		Args:         nil,
 		AllowedTools: si.AllowedTools,
+		ConfigEnv:    b.workerEnv,
 	}
 	b.injectAgentConfig(&workerInfo, platform)
 	if err := w.Start(ctx, workerInfo); err != nil {
@@ -203,6 +204,7 @@ func (b *Bridge) resumeWithOpts(ctx context.Context, id, workDir string, opts fo
 		AllowedTools:    si.AllowedTools,
 		WorkerSessionID: si.WorkerSessionID,
 		ProjectDir:      workDir,
+		ConfigEnv:       b.workerEnv,
 	}
 	b.injectAgentConfig(&workerInfo, si.Platform)
 	if err := w.Resume(ctx, workerInfo); err != nil {
@@ -738,6 +740,7 @@ func (b *Bridge) attemptResumeFallback(p fallbackParams) bool {
 		AllowedTools:    si.AllowedTools,
 		WorkerSessionID: si.WorkerSessionID,
 		ProjectDir:      p.workDir,
+		ConfigEnv:       b.workerEnv,
 	}
 	b.injectAgentConfig(&workerInfo, si.Platform)
 	if err := w.Start(context.Background(), workerInfo); err != nil {
@@ -1035,6 +1038,7 @@ func (b *Bridge) SwitchWorkDirInPlace(ctx context.Context, sessionID, newWorkDir
 		ProjectDir:      expanded,
 		AllowedTools:    si.AllowedTools,
 		WorkerSessionID: si.WorkerSessionID,
+		ConfigEnv:       b.workerEnv,
 	}
 	b.injectAgentConfig(&workerInfo, si.Platform)
 	if err := w.Start(ctx, workerInfo); err != nil {

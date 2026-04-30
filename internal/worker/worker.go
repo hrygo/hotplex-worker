@@ -187,6 +187,9 @@ type SessionInfo struct {
 	// SystemPromptReplace, if non-empty, replaces the default system prompt entirely (--system-prompt).
 	// Takes precedence over SystemPrompt when set.
 	SystemPromptReplace string
+	// ConfigEnv holds extra env vars from worker.environment config. These always
+	// override values from os.Environ(), even for whitelisted keys (e.g. BUN_RUNTIME_NV).
+	ConfigEnv []string
 	// PermissionMode controls how the worker handles permission requests.
 	// Valid values: "default", "plan", "auto-accept".
 	PermissionMode string
