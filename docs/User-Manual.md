@@ -102,6 +102,7 @@ hotplex service uninstall
   Admin      localhost:9999
   WebChat    http://localhost:8888/
   Sessions   ~/.hotplex/data/hotplex.db
+  Events     ~/.hotplex/data/events.db
   Adapters   feishu ✓  slack ✓
 ```
 
@@ -230,6 +231,7 @@ security:
 ```bash
 export HOTPLEX_GATEWAY_ADDR=":8888"
 export HOTPLEX_DB_PATH="/var/lib/hotplex/hotplex.db"
+export HOTPLEX_DB_EVENTS_PATH="/var/lib/hotplex/events.db"
 ```
 
 ---

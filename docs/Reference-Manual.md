@@ -67,7 +67,7 @@ Client (WebSocket) ──→ Gateway (AEP v1) ──→ Worker (Claude Code / Op
 hotplex gateway start
 ```
 
-Binary starts with all defaults (`localhost:8888` WebSocket, `localhost:9999` Admin, `~/.hotplex/data/hotplex.db` SQLite).
+Binary starts with all defaults (`localhost:8888` WebSocket, `localhost:9999` Admin, `~/.hotplex/data/hotplex.db` SQLite session store, `~/.hotplex/data/events.db` SQLite event store).
 
 ### 2.2 Run with Config File
 
@@ -150,10 +150,9 @@ gateway:
 
 db:
   path: "/var/hotplex/hotplex.db"
+  events_path: "/var/hotplex/events.db"
   wal_mode: true
   busy_timeout: 500ms
-
-worker:
   max_lifetime: 24h
   idle_timeout: 60m
   execution_timeout: 30m
@@ -267,7 +266,8 @@ All non-sensitive fields have production defaults. Binary runs with zero config.
 | `gateway.pong_timeout` | `60s` | |
 | `gateway.idle_timeout` | `5m` | |
 | `gateway.broadcast_queue_size` | `256` | |
-| `db.path` | `~/.hotplex/data/hotplex.db` | SQLite path |
+| `db.path` | `~/.hotplex/data/hotplex.db` | SQLite session store path |
+| `db.events_path` | `~/.hotplex/data/events.db` | SQLite event store path |
 | `db.wal_mode` | `true` | |
 | `worker.max_lifetime` | `24h` | |
 | `worker.idle_timeout` | `60m` | |
@@ -316,7 +316,7 @@ pool:
 **Static** (requires restart):
 
 - `gateway.addr`, `gateway.tls_*`
-- `db.path`
+- `db.path`, `db.events_path`
 - `security.*` (except JWT runtime rotation)
 - `worker.max_lifetime`, `worker.idle_timeout`, `worker.env_whitelist`
 
@@ -901,7 +901,7 @@ Rollback to version `N` steps back from current (not absolute version number).
 
 ### 12.4 Static Field Changes
 
-Changes to static fields (`gateway.addr`, `db.path`, etc.) require a restart. The binary logs a warning but continues running with the old config.
+Changes to static fields (`gateway.addr`, `db.path`, `db.events_path`, etc.) require a restart. The binary logs a warning but continues running with the old config.
 
 ---
 

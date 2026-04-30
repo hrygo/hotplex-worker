@@ -115,6 +115,7 @@ graph TD
 | `gateway.addr` | 需重新绑定端口 |
 | `gateway.broadcast_queue_size` | channel 容量不可变 |
 | `db.path` | 数据库连接池无法平滑迁移 |
+| `db.events_path` | 事件数据库连接池无法平滑迁移 |
 | `security.jwt_secret` | 加密上下文依赖 |
 
 ---
