@@ -8,10 +8,18 @@ import (
 	"strings"
 
 	"github.com/slack-go/slack"
+
+	"github.com/hrygo/hotplex/internal/config"
 )
 
 // MediaPathPrefix is the base path for downloaded Slack media files.
-const MediaPathPrefix = "/tmp/hotplex/media/slack"
+var MediaPathPrefix = filepath.Join(config.TempBaseDir(), "media", "slack")
+
+// Pre-computed media subdirectory prefixes for fast path matching.
+var (
+	mediaImagesPrefix = filepath.Join(MediaPathPrefix, "images") + string(filepath.Separator)
+	mediaVideosPrefix = filepath.Join(MediaPathPrefix, "videos") + string(filepath.Separator)
+)
 
 // ImageExtensions lists file extensions recognized as images by block rendering.
 var ImageExtensions = []string{".png", ".jpg", ".jpeg", ".gif", ".webp"}
@@ -47,8 +55,8 @@ func extractImages(text string) (parts []imagePart, remaining string) {
 }
 
 func isLocalMediaPath(s string) bool {
-	return strings.HasPrefix(s, MediaPathPrefix+"/images/") ||
-		strings.HasPrefix(s, MediaPathPrefix+"/videos/")
+	return strings.HasPrefix(s, mediaImagesPrefix) ||
+		strings.HasPrefix(s, mediaVideosPrefix)
 }
 
 func isImageURL(s string) bool {

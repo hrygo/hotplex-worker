@@ -3,8 +3,6 @@ package output
 import (
 	"fmt"
 	"io"
-	"os"
-	"syscall"
 
 	"github.com/hrygo/hotplex/internal/cli"
 )
@@ -20,7 +18,7 @@ const (
 )
 
 func PrintDiagnostic(out io.Writer, d cli.Diagnostic, verbose bool) {
-	tty := isTTY(out)
+	tty := IsTTY(out)
 
 	var symbol, color string
 	switch d.Status {
@@ -60,7 +58,7 @@ func PrintDiagnostic(out io.Writer, d cli.Diagnostic, verbose bool) {
 
 // PrintSummary prints the summary line with pass/warn/fail counts.
 func PrintSummary(out io.Writer, pass, warn, fail, fixable int) {
-	tty := isTTY(out)
+	tty := IsTTY(out)
 
 	total := pass + warn + fail
 	summary := fmt.Sprintf("%d checks: %d passed, %d warnings, %d failed", total, pass, warn, fail)
@@ -82,16 +80,4 @@ func PrintSummary(out io.Writer, pass, warn, fail, fixable int) {
 	}
 
 	_, _ = fmt.Fprintln(out, summary)
-}
-
-func isTTY(w io.Writer) bool {
-	f, ok := w.(*os.File)
-	if !ok {
-		return false
-	}
-	var st syscall.Stat_t
-	if err := syscall.Fstat(int(f.Fd()), &st); err != nil {
-		return false
-	}
-	return st.Mode&syscall.S_IFMT == syscall.S_IFCHR
 }

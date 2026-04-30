@@ -11,7 +11,7 @@ import (
 	"log/slog"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 
 	"github.com/hrygo/hotplex/internal/config"
 	"github.com/hrygo/hotplex/pkg/events"
@@ -46,7 +46,7 @@ func NewSQLiteStore(ctx context.Context, cfg *config.Config) (*SQLiteStore, erro
 		return nil, err
 	}
 
-	db, err := sql.Open("sqlite3", cfg.DB.Path)
+	db, err := sql.Open("sqlite", cfg.DB.Path)
 	if err != nil {
 		return nil, fmt.Errorf("session store: open db: %w", err)
 	}

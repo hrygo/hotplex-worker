@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/hrygo/hotplex/internal/config"
 )
 
 // ─── Command whitelist ────────────────────────────────────────────────────────
@@ -123,6 +125,56 @@ func TestContainsDangerousChars(t *testing.T) {
 	}
 }
 
+// ─── ValidateWorkDir ──────────────────────────────────────────────────────────
+
+func TestValidateWorkDir(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+
+	tests := []struct {
+		name    string
+		dir     string
+		wantErr bool
+	}{
+		{"empty rejected", "", true},
+		{"relative rejected", "relative/path", true},
+		{"root forbidden", "/", true},
+		{"usr forbidden", "/usr", true},
+		{"usr sub forbidden", "/usr/local/bin", true},
+		{"etc forbidden", "/etc", true},
+		{"etc sub forbidden", "/etc/nginx/conf.d", true},
+		{"bin forbidden", "/bin", true},
+		{"sbin forbidden", "/sbin", true},
+		{"boot forbidden", "/boot", true},
+		{"dev forbidden", "/dev", true},
+		{"proc forbidden", "/proc", true},
+		{"sys forbidden", "/sys", true},
+		{"lib forbidden", "/lib", true},
+		{"lib64 forbidden", "/lib64", true},
+		{"root home forbidden", "/root", true},
+		{"home forbidden", "/home", true},
+		{"run forbidden", "/run", true},
+		{"srv forbidden", "/srv", true},
+		{"System forbidden (macOS)", "/System", true},
+		{"tmp dir allowed", tmpDir, false},
+		{"non-existent clean path allowed", filepath.Join(tmpDir, "nonexistent", "project"), false},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			err := ValidateWorkDir(tt.dir)
+			if tt.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
 // ─── Path safety ─────────────────────────────────────────────────────────────
 
 func TestSafePathJoin(t *testing.T) {
@@ -204,7 +256,7 @@ func TestValidateBaseDir(t *testing.T) {
 		wantErr bool
 	}{
 		{"var hotplex projects allowed", "/var/hotplex/projects", false},
-		{"tmp hotplex allowed", "/tmp/hotplex", false},
+		{"tmp hotplex allowed", config.TempBaseDir(), false},
 		{"home rejected", "/home/user", true},
 		{"root rejected", "/", true},
 		{"empty rejected", "", true},

@@ -5,9 +5,9 @@ import (
 	"os"
 	"time"
 
-	"syscall"
-
 	"github.com/spf13/cobra"
+
+	"github.com/hrygo/hotplex/internal/worker/proc"
 )
 
 func newGatewayCmd() *cobra.Command {
@@ -54,16 +54,16 @@ func newGatewayStopCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "stop",
 		Short: "Stop the running gateway server",
-		Long:  `Stop the running gateway server by sending SIGTERM to the process recorded in the PID file.`,
+		Long:  `Stop the running gateway server by sending graceful termination to the process recorded in the PID file.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			pid, err := readGatewayPID()
 			if err != nil {
 				return err
 			}
-			if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
+			if err := proc.GracefulTerminate(pid); err != nil {
 				return fmt.Errorf("stop PID %d: %w", pid, err)
 			}
-			fmt.Fprintf(os.Stderr, "gateway: sent SIGTERM to PID %d\n", pid)
+			fmt.Fprintf(os.Stderr, "gateway: sent graceful termination to PID %d\n", pid)
 			removeGatewayPID()
 			return nil
 		},
@@ -84,7 +84,7 @@ Preserves the same configuration file and mode.`,
 			if err != nil {
 				return err
 			}
-			if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
+			if err := proc.GracefulTerminate(pid); err != nil {
 				return fmt.Errorf("stop PID %d: %w", pid, err)
 			}
 			fmt.Fprintf(os.Stderr, "gateway: stopped PID %d\n", pid)
@@ -92,7 +92,7 @@ Preserves the same configuration file and mode.`,
 
 			deadline := time.Now().Add(5 * time.Second)
 			for time.Now().Before(deadline) {
-				if err := syscall.Kill(pid, 0); err != nil {
+				if err := proc.IsProcessAlive(pid); err != nil {
 					break
 				}
 				time.Sleep(100 * time.Millisecond)

@@ -65,7 +65,7 @@ type osArchChecker struct{}
 func (c osArchChecker) Name() string     { return "environment.os_arch" }
 func (c osArchChecker) Category() string { return "environment" }
 func (c osArchChecker) Check(ctx context.Context) cli.Diagnostic {
-	supportedOS := runtime.GOOS == "darwin" || runtime.GOOS == "linux"
+	supportedOS := runtime.GOOS == "darwin" || runtime.GOOS == "linux" || runtime.GOOS == "windows"
 	supportedArch := runtime.GOARCH == "amd64" || runtime.GOARCH == "arm64"
 	if supportedOS && supportedArch {
 		return cli.Diagnostic{
@@ -80,7 +80,7 @@ func (c osArchChecker) Check(ctx context.Context) cli.Diagnostic {
 		Category: c.Category(),
 		Status:   cli.StatusFail,
 		Message:  "Platform " + runtime.GOOS + "/" + runtime.GOARCH + " is not supported",
-		Detail:   "Supported platforms: darwin/amd64, darwin/arm64, linux/amd64, linux/arm64",
+		Detail:   "Supported platforms: darwin/amd64, darwin/arm64, linux/amd64, linux/arm64, windows/amd64, windows/arm64",
 		FixHint:  "Use a supported platform or build from source",
 	}
 }

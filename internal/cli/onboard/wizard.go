@@ -11,7 +11,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"syscall"
 
 	"github.com/hrygo/hotplex/internal/cli"
 	"github.com/hrygo/hotplex/internal/cli/checkers"
@@ -328,15 +327,15 @@ func stepEnvPreCheck() StepResult {
 		return StepResult{Name: "env_precheck", Status: "fail", Detail: fmt.Sprintf("Go version %s does not meet requirement (>= go1.26)", ver)}
 	}
 
-	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
-		return StepResult{Name: "env_precheck", Status: "fail", Detail: fmt.Sprintf("OS %s is not supported (need darwin or linux)", runtime.GOOS)}
+	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" && runtime.GOOS != "windows" {
+		return StepResult{Name: "env_precheck", Status: "fail", Detail: fmt.Sprintf("OS %s is not supported (need darwin, linux, or windows)", runtime.GOOS)}
 	}
 
-	var stat syscall.Statfs_t
-	if err := syscall.Statfs(".", &stat); err != nil {
+	freeMB, err := checkers.GetDiskFreeMB(".")
+	if err != nil {
 		return StepResult{Name: "env_precheck", Status: "fail", Detail: "cannot check disk space: " + err.Error()}
 	}
-	freeMB := stat.Bavail * uint64(stat.Bsize) / 1024 / 1024
+
 	if freeMB < 100 {
 		return StepResult{Name: "env_precheck", Status: "fail", Detail: fmt.Sprintf("insufficient disk space: %d MB (need >= 100 MB)", freeMB)}
 	}

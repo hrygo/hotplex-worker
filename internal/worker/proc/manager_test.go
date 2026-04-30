@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
-	"syscall"
 	"testing"
 	"time"
 
@@ -314,7 +313,7 @@ func TestManager_Terminate_GracefulExit(t *testing.T) {
 
 		require.True(t, m.IsRunning())
 
-		err = m.Terminate(ctx, syscall.SIGTERM, 5*time.Second)
+		err = m.Terminate(ctx, 5*time.Second)
 		require.NoError(t, err)
 		require.False(t, m.IsRunning())
 	})
@@ -338,7 +337,7 @@ func TestManager_Terminate_GracefulExit(t *testing.T) {
 		m := New(Opts{Logger: slog.Default()})
 		ctx := context.Background()
 
-		err := m.Terminate(ctx, syscall.SIGTERM, time.Second)
+		err := m.Terminate(ctx, time.Second)
 		require.NoError(t, err)
 	})
 

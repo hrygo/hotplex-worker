@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/hrygo/hotplex/internal/cli"
+	"github.com/hrygo/hotplex/internal/config"
 )
 
 type workerBinaryChecker struct{}
@@ -102,5 +103,5 @@ func (c sqlitePathChecker) Check(ctx context.Context) cli.Diagnostic {
 
 func init() {
 	cli.DefaultRegistry.Register(workerBinaryChecker{})
-	cli.DefaultRegistry.Register(sqlitePathChecker{dbPath: filepath.Join(os.ExpandEnv("$HOME"), ".hotplex", "data", "hotplex.db")})
+	cli.DefaultRegistry.Register(sqlitePathChecker{dbPath: filepath.Join(config.HotplexHome(), "data", "hotplex.db")})
 }

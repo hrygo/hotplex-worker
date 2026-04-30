@@ -29,7 +29,6 @@ const (
 	messageExpiry    = 30 * time.Minute
 	dedupMaxEntries  = 5000
 	dedupTTL         = 30 * time.Minute
-	mediaPathPrefix  = "/tmp/hotplex/media/slack"
 	mediaCleanupInt  = 6 * time.Hour
 	mediaTTL         = 24 * time.Hour
 	maxMessageLength = 3800            // Slack limit is ~4000
@@ -1046,7 +1045,7 @@ func (a *Adapter) cleanupMedia(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			a.cleanupMediaInDir(mediaPathPrefix)
+			a.cleanupMediaInDir(MediaPathPrefix)
 		}
 	}
 }
