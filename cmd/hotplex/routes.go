@@ -121,6 +121,9 @@ func setupRoutes(
 	mux.HandleFunc("GET /admin/health", adminAPI.HandleHealth)
 
 	mux.Handle("/admin/", adminAPI.Middleware(adminMux))
+
+	// Webchat SPA is NOT registered on the mux directly.
+	// Instead, the caller wraps the mux with a fallback handler below.
 }
 
 type sessionManagerAdapter struct {

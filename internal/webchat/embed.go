@@ -2,5 +2,5 @@ package webchat
 
 import "embed"
 
-//go:embed out
+//go:embed all:out
 var StaticFS embed.FS

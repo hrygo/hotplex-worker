@@ -25,6 +25,7 @@ import (
 	"github.com/hrygo/hotplex/internal/session"
 	"github.com/hrygo/hotplex/internal/skills"
 	"github.com/hrygo/hotplex/internal/tracing"
+	"github.com/hrygo/hotplex/internal/webchat"
 	"github.com/hrygo/hotplex/internal/worker/claudecode"
 	"github.com/hrygo/hotplex/internal/worker/opencodeserver"
 	"github.com/hrygo/hotplex/internal/worker/proc"
@@ -305,9 +306,24 @@ func runGateway(configPath string, devMode bool) (err error) {
 
 	setupRoutes(mux, deps)
 
+	// Wrap mux with webchat SPA fallback: API/WS routes are handled by the
+	// mux first; unmatched paths fall through to the embedded webchat handler.
+	var rootHandler http.Handler = mux
+	if cfg.WebChat.Enabled {
+		spa := webchat.Handler()
+		rootHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			h, pattern := mux.Handler(r)
+			if pattern != "" {
+				h.ServeHTTP(w, r)
+				return
+			}
+			spa.ServeHTTP(w, r)
+		})
+	}
+
 	server := &http.Server{
 		Addr:         cfg.Gateway.Addr,
-		Handler:      mux,
+		Handler:      rootHandler,
 		ReadTimeout:  cfg.Gateway.IdleTimeout,
 		WriteTimeout: cfg.Gateway.WriteTimeout,
 	}
@@ -328,16 +344,17 @@ func runGateway(configPath string, devMode bool) (err error) {
 		adminAddr = ""
 	}
 	printStartupBanner(os.Stdout, newBuildInfo(), RuntimeStatus{
-		GatewayAddr:  cfg.Gateway.Addr,
-		AdminAddr:    adminAddr,
-		WebChatAddr:  cfg.WebChat.Addr,
-		DBPath:       cfg.DB.Path,
-		PoolMax:      cfg.Pool.MaxSize,
-		PoolIdle:     cfg.Pool.MaxIdlePerUser,
-		Adapters:     adapterStatuses,
-		RetryEnabled: cfg.Worker.AutoRetry.Enabled,
-		RetryMax:     cfg.Worker.AutoRetry.MaxRetries,
-		RetryDelay:   cfg.Worker.AutoRetry.BaseDelay.String(),
+		GatewayAddr:     cfg.Gateway.Addr,
+		AdminAddr:       adminAddr,
+		WebChatAddr:     cfg.WebChat.Addr,
+		WebChatEmbedded: cfg.WebChat.Enabled,
+		DBPath:          cfg.DB.Path,
+		PoolMax:         cfg.Pool.MaxSize,
+		PoolIdle:        cfg.Pool.MaxIdlePerUser,
+		Adapters:        adapterStatuses,
+		RetryEnabled:    cfg.Worker.AutoRetry.Enabled,
+		RetryMax:        cfg.Worker.AutoRetry.MaxRetries,
+		RetryDelay:      cfg.Worker.AutoRetry.BaseDelay.String(),
 	}, configPath)
 
 	sig := waitForSignal()
@@ -369,7 +386,7 @@ func runGateway(configPath string, devMode bool) (err error) {
 
 	closeSTTCache(shutdownCtx, log)
 
-	bridge.Shutdown()
+	bridge.Shutdown(shutdownCtx)
 	opencodeserver.ShutdownSingleton(shutdownCtx)
 
 	if jwtValidator != nil {

@@ -220,9 +220,10 @@ type LogConfig struct {
 	Format string `mapstructure:"format"` // "json" or "text"
 }
 
-// WebChatConfig holds webchat UI address (informational only, gateway does not manage webchat).
+// WebChatConfig holds webchat UI serving settings.
 type WebChatConfig struct {
-	Addr string `mapstructure:"addr"`
+	Addr    string `mapstructure:"addr"`    // informational: banner display
+	Enabled bool   `mapstructure:"enabled"` // serve embedded webchat SPA from gateway
 }
 
 // GatewayConfig holds WebSocket gateway settings.
@@ -443,7 +444,8 @@ func Default() *Config {
 			Format: "json",
 		},
 		WebChat: WebChatConfig{
-			Addr: "",
+			Addr:    "",
+			Enabled: true,
 		},
 		Messaging: MessagingConfig{
 			Feishu: FeishuConfig{

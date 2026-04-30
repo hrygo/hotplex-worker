@@ -47,11 +47,11 @@ func TestBridge_Shutdown(t *testing.T) {
 	sm := new(mockBridgeSM)
 	b := NewBridge(BridgeDeps{Log: log, Hub: hub, SM: sm})
 
-	b.Shutdown()
+	b.Shutdown(context.Background())
 	assert.True(t, b.closed.Load())
 
 	// Idempotent.
-	b.Shutdown()
+	b.Shutdown(context.Background())
 	assert.True(t, b.closed.Load())
 }
 
@@ -61,7 +61,7 @@ func TestBridge_Shutdown_RejectNewSession(t *testing.T) {
 	sm := new(mockBridgeSM)
 	b := NewBridge(BridgeDeps{Log: log, Hub: hub, SM: sm})
 
-	b.Shutdown()
+	b.Shutdown(context.Background())
 
 	// After shutdown, StartSession should be rejected.
 	err := b.StartSession(context.Background(), "sess-closed", "u", "b",

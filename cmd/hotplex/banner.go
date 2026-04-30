@@ -47,16 +47,17 @@ func newBuildInfo() BuildInfo {
 
 // RuntimeStatus holds component state for the status panel.
 type RuntimeStatus struct {
-	GatewayAddr  string
-	AdminAddr    string
-	WebChatAddr  string
-	DBPath       string
-	PoolMax      int
-	PoolIdle     int
-	Adapters     []AdapterStatus
-	RetryEnabled bool
-	RetryMax     int
-	RetryDelay   string
+	GatewayAddr     string
+	AdminAddr       string
+	WebChatAddr     string
+	WebChatEmbedded bool
+	DBPath          string
+	PoolMax         int
+	PoolIdle        int
+	Adapters        []AdapterStatus
+	RetryEnabled    bool
+	RetryMax        int
+	RetryDelay      string
 }
 
 // AdapterStatus reports a single messaging adapter's state.
@@ -107,7 +108,7 @@ func printStartupBanner(out *os.File, info BuildInfo, s RuntimeStatus, configPat
 	}
 
 	pad := func(label, value string) string {
-		return fmt.Sprintf("  %-11s%s", bold(label), value)
+		return fmt.Sprintf("  %s%s", bold(fmt.Sprintf("%-11s", label)), value)
 	}
 
 	var lines []string
@@ -132,7 +133,9 @@ func printStartupBanner(out *os.File, info BuildInfo, s RuntimeStatus, configPat
 	if s.AdminAddr != "" {
 		lines = append(lines, pad("Admin", "http://"+s.AdminAddr))
 	}
-	if s.WebChatAddr != "" {
+	if s.WebChatEmbedded {
+		lines = append(lines, pad("WebChat", "http://"+s.GatewayAddr+"/ "+dim("(embedded)")))
+	} else if s.WebChatAddr != "" {
 		lines = append(lines, pad("WebChat", "http://"+s.WebChatAddr))
 	}
 	lines = append(lines, pad("Database", s.DBPath+" (SQLite)"))

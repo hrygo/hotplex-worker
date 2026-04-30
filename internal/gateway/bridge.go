@@ -1069,10 +1069,19 @@ func isWorkerInUseError(err error) bool {
 
 // Shutdown signals the bridge that the gateway is shutting down.
 // It sets the closed flag so forwardEvents goroutines skip crash detection,
-// then waits for all forwardEvents goroutines to complete.
-func (b *Bridge) Shutdown() {
+// then waits for all forwardEvents goroutines to complete or ctx to expire.
+func (b *Bridge) Shutdown(ctx context.Context) {
 	b.closed.Store(true)
-	b.fwdWg.Wait()
+	done := make(chan struct{})
+	go func() {
+		b.fwdWg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-ctx.Done():
+		b.log.Warn("bridge: shutdown timed out, some forwardEvents goroutines still running")
+	}
 }
 
 // CancelRetry cancels any pending auto-retry for a session.

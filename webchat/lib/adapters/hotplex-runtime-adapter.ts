@@ -172,7 +172,7 @@ function historyToMessages(records: ConversationRecord[]): HotPlexMessage[] {
     platform: r.platform,
     user_id: r.user_id,
     model: r.model,
-    success: r.success == null ? null : r.success ? 1 : 0,
+    success: r.success == null ? null : !!r.success,
     source: r.source,
     tools: r.tools,
     tool_call_count: r.tool_call_count,
