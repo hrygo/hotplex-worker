@@ -419,7 +419,25 @@ export function Thread({ skills, hasMore, onLoadHistory }: ThreadProps) {
               <span className="text-[10px] font-bold uppercase tracking-widest">Latest Messages</span>
             </ThreadPrimitive.ScrollToBottom>
           </div>
-          <ComposerPrimitive.Root className="composer-root">
+
+          <div className="flex items-center gap-2 mb-3 px-4 overflow-x-auto no-scrollbar animate-fadeIn">
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[var(--accent-gold)]/10 border border-[var(--accent-gold)]/20 shadow-sm whitespace-nowrap">
+              <span className="text-[9px] font-display font-black text-[var(--accent-gold)] uppercase tracking-[0.05em]">Agent Skills</span>
+              <div className="w-1 h-1 rounded-full bg-[var(--accent-gold)] animate-pulse" />
+            </div>
+            {skills?.slice(0, 4).map(skill => (
+              <div key={skill} className="px-3 py-1 rounded-full bg-[var(--bg-elevated)] border border-[var(--border-subtle)] text-[10px] font-medium text-[var(--text-muted)] whitespace-nowrap hover:border-[var(--text-faint)] transition-colors cursor-default">
+                {skill}
+              </div>
+            ))}
+            {skills && skills.length > 4 && (
+              <div className="px-2 py-1 text-[10px] font-mono text-[var(--text-faint)] uppercase tracking-tighter">
+                +{skills.length - 4} More
+              </div>
+            )}
+          </div>
+
+          <ComposerPrimitive.Root className="composer-root shadow-[0_20px_50px_rgba(0,0,0,0.3)]">
             <div className="composer-input-row">
               <ComposerPrimitive.Input 
                 className="composer-input" 
