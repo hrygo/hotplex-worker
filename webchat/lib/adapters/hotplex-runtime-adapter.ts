@@ -773,6 +773,7 @@ export function useHotPlexRuntime({
     };
 
     setMessages((prev) => [...prev, userMessage]);
+    setIsRunning(true); // Immediate feedback: show thinking indicator
     startTurn(); // Begin timing for metrics
 
     // Send to HotPlex gateway with error handling

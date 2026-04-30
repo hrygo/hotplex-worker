@@ -95,6 +95,9 @@ type EventStore interface {
 	// Append adds a single event (used internally by the collector's batch writer).
 	Append(ctx context.Context, event *StoredEvent) error
 
+	// BeginTx starts a transaction for batch writes.
+	BeginTx(ctx context.Context) (EventTx, error)
+
 	// QueryBySession fetches events with cursor-based bidirectional pagination.
 	//   dir=CursorLatest, cursor=0  → latest N events (initial load)
 	//   dir=CursorAfter,  cursor=X  → events with seq > X (catch-up)
@@ -110,6 +113,12 @@ type EventStore interface {
 
 	// Close flushes pending writes and closes the database.
 	Close() error
+}
+
+// EventTx is a transaction handle for batch event writes.
+type EventTx interface {
+	Append(ctx context.Context, event *StoredEvent) error
+	Commit() error
 }
 
 // SQLiteStore implements EventStore using an independent SQLite database.
@@ -173,6 +182,36 @@ func (s *SQLiteStore) Append(ctx context.Context, event *StoredEvent) error {
 		return fmt.Errorf("eventstore: append: %w", err)
 	}
 	return nil
+}
+
+func (s *SQLiteStore) BeginTx(ctx context.Context) (EventTx, error) {
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("eventstore: begin tx: %w", err)
+	}
+	return &sqliteTx{tx: tx}, nil
+}
+
+type sqliteTx struct {
+	tx *sql.Tx
+}
+
+func (t *sqliteTx) Append(ctx context.Context, event *StoredEvent) error {
+	_, err := t.tx.ExecContext(ctx, queries["insert"],
+		event.SessionID, event.Seq, event.Type, event.Data, event.Direction, event.CreatedAt)
+	if err != nil {
+		return fmt.Errorf("eventstore: tx append: %w", err)
+	}
+	return nil
+}
+
+func (t *sqliteTx) Commit() error {
+	return t.tx.Commit()
 }
 
 func (s *SQLiteStore) QueryBySession(ctx context.Context, sessionID string, cursor int64, dir CursorDirection, limit int) (*EventPage, error) {

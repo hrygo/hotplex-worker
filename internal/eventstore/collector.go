@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -231,8 +232,14 @@ func (c *Collector) flushBatch(batch []*captureRequest) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
+	tx, err := c.store.BeginTx(ctx)
+	if err != nil {
+		c.log.Error("eventstore: batch tx begin", "err", err)
+		return
+	}
+
 	for _, req := range batch {
-		if err := c.store.Append(ctx, req.event); err != nil {
+		if err := tx.Append(ctx, req.event); err != nil {
 			c.log.Warn("eventstore: batch append failed",
 				"session_id", req.event.SessionID,
 				"seq", req.event.Seq,
@@ -241,12 +248,16 @@ func (c *Collector) flushBatch(batch []*captureRequest) {
 			)
 		}
 	}
+
+	if err := tx.Commit(); err != nil {
+		c.log.Error("eventstore: batch commit", "err", err)
+	}
 }
 
 // deltaAccumulator merges message.delta content in-memory.
 type deltaAccumulator struct {
-	content  string
-	seq      int64 // seq to assign to the merged event (first delta's seq)
+	content  strings.Builder
+	seq      int64
 	firstSeq int64
 	lastSeq  int64
 	count    int
@@ -257,13 +268,12 @@ func newDeltaAccumulator() *deltaAccumulator {
 }
 
 func (a *deltaAccumulator) append(seq int64, data json.RawMessage) {
-	// Extract text from delta data: {"type":"message.delta","data":{"content":"..."}}
 	var delta struct {
 		Content string `json:"content"`
 	}
 	_ = json.Unmarshal(data, &delta)
 
-	a.content += delta.Content
+	a.content.WriteString(delta.Content)
 	a.lastSeq = seq
 	if a.count == 0 {
 		a.firstSeq = seq
@@ -273,7 +283,7 @@ func (a *deltaAccumulator) append(seq int64, data json.RawMessage) {
 }
 
 func (a *deltaAccumulator) flush() (content string, seq, firstSeq, lastSeq int64) {
-	content = a.content
+	content = a.content.String()
 	seq = a.seq
 	firstSeq = a.firstSeq
 	lastSeq = a.lastSeq

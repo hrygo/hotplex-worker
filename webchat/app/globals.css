@@ -930,3 +930,36 @@ body {
 .prose-hotplex p:last-child { margin-bottom: 0; }
 .prose-hotplex strong { font-weight: 700; color: var(--text-primary); border-bottom: 1px solid rgba(251, 191, 36, 0.3); }
 .prose-hotplex code { font-family: var(--font-mono); font-size: 13px; background: var(--bg-elevated); padding: 2px 6px; border-radius: var(--radius-xs); border: 1px solid var(--border-subtle); }
+
+/* ============================================================
+   Thinking Indicator — Instant Feedback System
+   ============================================================ */
+.thinking-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--accent-gold);
+  display: inline-block;
+  animation: thinking-bounce 1.4s infinite ease-in-out both;
+  box-shadow: 0 0 8px var(--accent-gold-glow);
+}
+
+@keyframes thinking-bounce {
+  0%, 80%, 100% { 
+    transform: scale(0);
+    opacity: 0.3;
+  } 
+  40% { 
+    transform: scale(1.0);
+    opacity: 1;
+  }
+}
+
+.animate-pulse-subtle {
+  animation: pulse-subtle 2s ease-in-out infinite;
+}
+
+@keyframes pulse-subtle {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
