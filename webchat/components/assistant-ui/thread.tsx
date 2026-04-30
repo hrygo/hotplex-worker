@@ -285,7 +285,7 @@ function ReasoningBlock({ text }: { text: string }) {
             className="overflow-hidden"
           >
             <div className="reasoning-content border-t border-[var(--border-subtle)]/50 leading-relaxed">
-              <MarkdownText text={text} />
+              <MarkdownText text={text.trim()} />
             </div>
           </motion.div>
         )}

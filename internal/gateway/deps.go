@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/hrygo/hotplex/internal/eventstore"
 	"github.com/hrygo/hotplex/internal/security"
 	"github.com/hrygo/hotplex/internal/session"
 )
@@ -25,6 +26,7 @@ type BridgeDeps struct {
 	Hub            *Hub
 	SM             SessionManager
 	ConvStore      session.ConversationStore // was SetConvStore
+	EventCollector *eventstore.Collector     // optional; nil means event storage disabled
 	RetryCtrl      *LLMRetryController       // was SetRetryController
 	AgentConfigDir string                    // was SetAgentConfigDir
 	TurnTimeout    time.Duration             // was SetTurnTimeout

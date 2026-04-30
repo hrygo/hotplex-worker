@@ -13,6 +13,7 @@ import (
 
 	"github.com/hrygo/hotplex/internal/agentconfig"
 	"github.com/hrygo/hotplex/internal/config"
+	"github.com/hrygo/hotplex/internal/eventstore"
 	"github.com/hrygo/hotplex/internal/messaging"
 	"github.com/hrygo/hotplex/internal/metrics"
 	"github.com/hrygo/hotplex/internal/security"
@@ -37,6 +38,7 @@ type Bridge struct {
 	hub       *Hub
 	sm        SessionManager
 	convStore session.ConversationStore // optional; nil means conversation logging disabled
+	collector *eventstore.Collector     // optional; nil means event storage disabled
 	wf        WorkerFactory
 	retryCtrl *LLMRetryController
 
@@ -60,6 +62,7 @@ func NewBridge(deps BridgeDeps) *Bridge {
 		sm:             deps.SM,
 		wf:             defaultWorkerFactory{},
 		convStore:      deps.ConvStore,
+		collector:      deps.EventCollector,
 		retryCtrl:      deps.RetryCtrl,
 		agentConfigDir: deps.AgentConfigDir,
 		turnTimeout:    deps.TurnTimeout,
@@ -435,10 +438,22 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 			b.log.Warn("bridge: forward event failed", "err", err, "session_id", sessionID, "worker_type", workerType, "event_type", env.Event.Type)
 		}
 
+		// Capture event for replay storage.
+		if b.collector != nil {
+			if ed, err := json.Marshal(env.Event.Data); err == nil {
+				b.collector.Capture(sessionID, env.Seq, env.Event.Type, ed, "outbound")
+			}
+		}
+
 		// Flush buffered error on non-Done events (no retry decision possible yet).
 		if pendingError != nil && env.Event.Type != events.Done {
 			if err := b.hub.SendToSession(context.Background(), pendingError); err != nil {
 				b.log.Warn("bridge: forward buffered error failed", "err", err, "session_id", sessionID, "worker_type", workerType)
+			}
+			if b.collector != nil {
+				if ed, cerr := json.Marshal(pendingError.Event.Data); cerr == nil {
+					b.collector.Capture(sessionID, pendingError.Seq, pendingError.Event.Type, ed, "outbound")
+				}
 			}
 			pendingError = nil
 		}
@@ -460,6 +475,11 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 			if pendingError != nil {
 				if err := b.hub.SendToSession(context.Background(), pendingError); err != nil {
 					b.log.Warn("bridge: forward buffered error failed", "err", err, "session_id", sessionID, "worker_type", workerType)
+				}
+				if b.collector != nil {
+					if ed, cerr := json.Marshal(pendingError.Event.Data); cerr == nil {
+						b.collector.Capture(sessionID, pendingError.Seq, pendingError.Event.Type, ed, "outbound")
+					}
 				}
 				pendingError = nil
 			}

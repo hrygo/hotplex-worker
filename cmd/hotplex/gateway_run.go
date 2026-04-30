@@ -20,6 +20,7 @@ import (
 	"github.com/hrygo/hotplex/internal/admin"
 	"github.com/hrygo/hotplex/internal/assets"
 	"github.com/hrygo/hotplex/internal/config"
+	"github.com/hrygo/hotplex/internal/eventstore"
 	"github.com/hrygo/hotplex/internal/gateway"
 	"github.com/hrygo/hotplex/internal/security"
 	"github.com/hrygo/hotplex/internal/session"
@@ -34,16 +35,18 @@ import (
 )
 
 type GatewayDeps struct {
-	Log           *slog.Logger
-	Config        *config.Config
-	ConfigStore   *config.ConfigStore
-	Hub           *gateway.Hub
-	SessionMgr    *session.Manager
-	ConvStore     session.ConversationStore
-	Auth          *security.Authenticator
-	Handler       *gateway.Handler
-	Bridge        *gateway.Bridge
-	ConfigWatcher *config.Watcher
+	Log            *slog.Logger
+	Config         *config.Config
+	ConfigStore    *config.ConfigStore
+	Hub            *gateway.Hub
+	SessionMgr     *session.Manager
+	ConvStore      session.ConversationStore
+	EventStore     *eventstore.SQLiteStore
+	EventCollector *eventstore.Collector
+	Auth           *security.Authenticator
+	Handler        *gateway.Handler
+	Bridge         *gateway.Bridge
+	ConfigWatcher  *config.Watcher
 }
 
 const defaultConfigPath = "~/.hotplex/config.yaml"
@@ -148,6 +151,15 @@ func runGateway(configPath string, devMode bool) (err error) {
 		return fmt.Errorf("gateway: init conversation store: %w", err)
 	}
 
+	eventDBPath := filepath.Join(filepath.Dir(cfg.DB.Path), "events.db")
+	eventStore, err := eventstore.NewSQLiteStore(ctx, eventDBPath)
+	if err != nil {
+		_ = store.Close()
+		_ = convStore.Close()
+		return fmt.Errorf("gateway: init event store: %w", err)
+	}
+	eventCollector := eventstore.NewCollector(eventStore, log)
+
 	sm, err := session.NewManager(ctx, log, cfg, cfgStore, store)
 	if err != nil {
 		return err
@@ -245,6 +257,7 @@ func runGateway(configPath string, devMode bool) (err error) {
 		Hub:            hub,
 		SM:             sm,
 		ConvStore:      convStore,
+		EventCollector: eventCollector,
 		RetryCtrl:      retryCtrl,
 		AgentConfigDir: agentConfigDir,
 		TurnTimeout:    cfg.Worker.TurnTimeout,
@@ -290,16 +303,18 @@ func runGateway(configPath string, devMode bool) (err error) {
 
 	mux := http.NewServeMux()
 	deps := &GatewayDeps{
-		Log:           log,
-		Config:        cfg,
-		ConfigStore:   cfgStore,
-		Hub:           hub,
-		SessionMgr:    sm,
-		ConvStore:     convStore,
-		Auth:          auth,
-		Handler:       handler,
-		Bridge:        bridge,
-		ConfigWatcher: configWatcher,
+		Log:            log,
+		Config:         cfg,
+		ConfigStore:    cfgStore,
+		Hub:            hub,
+		SessionMgr:     sm,
+		ConvStore:      convStore,
+		EventStore:     eventStore,
+		EventCollector: eventCollector,
+		Auth:           auth,
+		Handler:        handler,
+		Bridge:         bridge,
+		ConfigWatcher:  configWatcher,
 	}
 
 	msgAdapters, adapterStatuses := startMessagingAdapters(ctx, deps)
@@ -400,6 +415,16 @@ func runGateway(configPath string, devMode bool) (err error) {
 		log.Warn("gateway: session manager close", "err", err)
 	}
 
+	if eventCollector != nil {
+		if err := eventCollector.Close(); err != nil {
+			log.Warn("gateway: event collector close", "err", err)
+		}
+	}
+	if eventStore != nil {
+		if err := eventStore.Close(); err != nil {
+			log.Warn("gateway: event store close", "err", err)
+		}
+	}
 	if convStore != nil {
 		if err := convStore.Close(); err != nil {
 			log.Warn("gateway: conversation store close", "err", err)

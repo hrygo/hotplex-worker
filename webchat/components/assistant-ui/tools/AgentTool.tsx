@@ -99,8 +99,8 @@ export function AgentTool({ description, prompt, subagent_type, run_in_backgroun
                 transition={{ duration: 0.3, ease: "easeInOut" }}
               >
                 <div className="px-4 pb-4 pt-1">
-                  <div className="p-4 rounded-lg bg-white/[0.02] border border-white/[0.03] text-[12px] text-[var(--text-muted)] font-mono leading-relaxed max-h-[400px] overflow-y-auto custom-scrollbar whitespace-pre-wrap">
-                    <MarkdownText text={prompt} />
+                  <div className="p-4 rounded-lg bg-white/[0.02] border border-white/[0.03] text-[12px] text-[var(--text-muted)] font-mono leading-relaxed max-h-[400px] overflow-y-auto custom-scrollbar">
+                    <MarkdownText text={prompt.trim()} />
                   </div>
                 </div>
               </motion.div>
