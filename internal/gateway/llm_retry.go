@@ -33,10 +33,9 @@ type LLMRetryController struct {
 // NewLLMRetryController creates a controller from config.
 func NewLLMRetryController(cfg config.AutoRetryConfig, log *slog.Logger) *LLMRetryController {
 	cfg = cfg.Defaults()
-	patterns := defaultPatterns
-	if len(cfg.Patterns) > 0 {
-		patterns = cfg.Patterns
-	}
+	patterns := make([]string, 0, len(defaultPatterns)+len(cfg.Patterns))
+	patterns = append(patterns, defaultPatterns...)
+	patterns = append(patterns, cfg.Patterns...)
 	compiled := make([]*regexp.Regexp, len(patterns))
 	for i, p := range patterns {
 		compiled[i] = regexp.MustCompile(p)
@@ -144,10 +143,9 @@ func (c *LLMRetryController) ExhaustedMessage() string {
 // Existing per-session attempt counters are preserved.
 func (c *LLMRetryController) UpdateConfig(cfg config.AutoRetryConfig) {
 	cfg = cfg.Defaults()
-	patterns := defaultPatterns
-	if len(cfg.Patterns) > 0 {
-		patterns = cfg.Patterns
-	}
+	patterns := make([]string, 0, len(defaultPatterns)+len(cfg.Patterns))
+	patterns = append(patterns, defaultPatterns...)
+	patterns = append(patterns, cfg.Patterns...)
 	compiled := make([]*regexp.Regexp, 0, len(patterns))
 	for _, p := range patterns {
 		re, err := regexp.Compile(p)

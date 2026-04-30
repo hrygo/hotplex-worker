@@ -24,7 +24,7 @@ func TestLocator_List_CacheAndScan(t *testing.T) {
 	require.NoError(t, os.MkdirAll(skillDir, 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(skillDir, "test-skill.md"), []byte("---\nname: test-skill\ndescription: A test skill\n---\n# Content\n"), 0o644))
 
-	l := NewLocator(slog.Default())
+	l := NewLocator(slog.Default(), time.Minute)
 	defer l.Close()
 
 	skills, err := l.List(context.Background(), homeDir, workDir)
@@ -40,7 +40,7 @@ func TestLocator_List_CacheHit(t *testing.T) {
 	homeDir := t.TempDir()
 	workDir := t.TempDir()
 
-	l := NewLocator(slog.Default())
+	l := NewLocator(slog.Default(), time.Minute)
 	defer l.Close()
 
 	// First call populates cache
@@ -58,14 +58,14 @@ func TestLocator_List_CacheHit(t *testing.T) {
 func TestLocator_Close(t *testing.T) {
 	t.Parallel()
 
-	l := NewLocator(slog.Default())
+	l := NewLocator(slog.Default(), time.Minute)
 	require.NotPanics(t, func() { l.Close() })
 }
 
 func TestLocator_EvictOldest(t *testing.T) {
 	t.Parallel()
 
-	l := NewLocator(slog.Default())
+	l := NewLocator(slog.Default(), time.Minute)
 	defer l.Close()
 
 	l.cache["old"] = &cacheEntry{skills: nil, expiresAt: time.Now().Add(-time.Hour)}

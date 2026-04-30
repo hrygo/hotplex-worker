@@ -185,7 +185,24 @@ Worker 进程启动时的工作目录遵循以下优先级覆盖逻辑：
 | `max_delay` | duration | `120s` | ✅ | 退避延迟上限。即使指数增长超过此值，实际延迟也不会超过 120s |
 | `retry_input` | string | `继续` | ✅ | 重试时发送给 Worker 的文本。Bridge 在 Worker 的 stdin 写入此文本，触发 Worker 重新发起 LLM 请求 |
 | `notify_user` | bool | `true` | ✅ | 重试期间是否通知用户。启用时在重试前发送一条 `message` 事件（如"🔄 正在自动重试 (1/9)..."），替代原始 LLM 错误信息。关闭后用户看不到任何重试提示，但错误信息仍然会被拦截 |
-| `patterns` | []string | `[]` | ✅ | **追加**到内置默认模式的自定义正则表达式。内置模式匹配：`429/rate limit`、`529/overloaded`、`500-503/server error`、`network/connection reset/ECONNREFUSED/timeout`、`API Error.*reject`。自定义模式与内置模式共同生效，不会覆盖 |
+| `patterns` | []string | `[]` | ✅ | **追加模式 (Append Mode)**。在此定义的正则表达式将追加到内置模式（如 429, 5xx, 网络超时等）之后。自定义模式与内置模式共同生效，不会覆盖内置逻辑。 |
+
+### agent_config — Agent 角色配置 (B/C Channels)
+
+定义 Agent 的“人格（Persona）”与“上下文（Context）”。系统自动将这些 Markdown 文件注入到系统提示词的 XML 标签中。
+
+| 字段 | 类型 | 默认值 | 热重载 | 说明 |
+|:-----|:-----|:-------|:------:|:-----|
+| `enabled` | bool | `true` | — | 是否启用 Agent 配置注入。关闭后 Agent 将仅使用代码内建的通用提示词。 |
+| `config_dir` | string | `~/.hotplex/agent-configs` | — | 配置文件根目录。系统会扫描其中的 `SOUL.md`, `AGENTS.md`, `SKILLS.md` (B-Channel) 以及 `USER.md`, `MEMORY.md` (C-Channel)。 |
+
+### skills — 技能管理
+
+管理 Agent 可调用的工具和发现逻辑。
+
+| 字段 | 类型 | 默认值 | 热重载 | 说明 |
+|:-----|:-----|:-------|:------:|:-----|
+| `cache_ttl` | duration | `5m` | ✅ | 技能发现结果在内存中的缓存时长。过期后触发重新扫描。设为 `0` 则禁用缓存（不推荐，会增加磁盘 I/O）。 |
 
 ### log — 日志
 
