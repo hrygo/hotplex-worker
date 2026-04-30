@@ -45,6 +45,10 @@ type Manager interface {
 	Install(opts InstallOptions) error
 	Uninstall(name string, level Level) error
 	Status(name string, level Level) (*Status, error)
+	Start(name string, level Level) error
+	Stop(name string, level Level) error
+	Restart(name string, level Level) error
+	Logs(name string, level Level, follow bool, lines int) error
 }
 
 func ResolveBinaryPath() (string, error) {

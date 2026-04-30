@@ -18,6 +18,10 @@ Supports both user-level and system-level service installation.
 		newServiceInstallCmd(),
 		newServiceUninstallCmd(),
 		newServiceStatusCmd(),
+		newServiceStartCmd(),
+		newServiceStopCmd(),
+		newServiceRestartCmd(),
+		newServiceLogsCmd(),
 	)
 	return cmd
 }
