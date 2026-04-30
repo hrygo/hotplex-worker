@@ -33,9 +33,13 @@ export const ToolName = {
   AskPermission: "ask_permission",
   Confirm: "confirm",
   Elicitation: "elicitation",
+  // AI Tools
+  SearchWeb: "search_web",
+  GenerateImage: "generate_image",
+  ReadUrlContent: "read_url_content",
 } as const;
 
-export type ToolCategory = "terminal" | "file" | "search" | "list" | "permission" | "default";
+export type ToolCategory = "terminal" | "file" | "search" | "list" | "permission" | "ai" | "default";
 
 const TERMINAL_TOOLS: ReadonlySet<string> = new Set([
   ToolName.RunCommand, ToolName.Bash, ToolName.ExecuteCommand, ToolName.Shell,
@@ -45,16 +49,16 @@ const FILE_TOOLS: ReadonlySet<string> = new Set([
   ToolName.EditFile, ToolName.WriteFile, ToolName.ReplaceFileContent,
   ToolName.CreateFile, ToolName.ApplyDiff,
   ToolName.Write, ToolName.WriteToFile, ToolName.MultiReplaceFileContent,
-  ToolName.Edit, ToolName.StrReplaceEditor,
+  ToolName.Edit, ToolName.StrReplaceEditor, "patch",
 ]);
 
 const SEARCH_TOOLS: ReadonlySet<string> = new Set([
   ToolName.GrepSearch, ToolName.ViewFile, ToolName.SearchFiles,
-  ToolName.ReadFile,
+  ToolName.ReadFile, "search_web", "read_url_content", "google_search",
 ]);
 
 const LIST_TOOLS: ReadonlySet<string> = new Set([
-  ToolName.ListDirectory,
+  ToolName.ListDirectory, "ls",
 ]);
 
 const PERMISSION_TOOLS: ReadonlySet<string> = new Set([
