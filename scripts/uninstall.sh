@@ -28,7 +28,9 @@ NON_INTERACTIVE=false
 USER_DIR="$HOME/.hotplex"
 
 need_arg() {
-    [[ $# -lt 2 || "$2" == --* ]] && { echo -e "${RED}error: $1 requires an argument${NC}" >&2; exit 1; }
+    if [[ $# -lt 2 || "$2" == --* ]]; then
+        echo -e "${RED}error: $1 requires an argument${NC}" >&2; exit 1
+    fi
 }
 
 while [[ $# -gt 0 ]]; do

@@ -40,18 +40,26 @@ warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
 die()   { echo -e "${RED}[ERROR]${NC} $1" >&2; exit 1; }
 
 need_arg() {
-    [[ $# -lt 2 || "$2" == --* ]] && { echo -e "${RED}error: $1 requires an argument${NC}" >&2; exit 1; }
+    if [[ $# -lt 2 || "$2" == --* ]]; then
+        echo -e "${RED}error: $1 requires an argument${NC}" >&2; exit 1
+    fi
 }
 
 # ── Parse arguments ──────────────────────────────────────────────────────────
 
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --prefix)      need_arg "$@"; PREFIX="$2"; shift 2 ;;
+        --prefix)           need_arg "$@"; PREFIX="$2"; shift 2 ;;
         --release|--version) need_arg "$@"; RELEASE="$2"; shift 2 ;;
-        --latest)      RELEASE="__LATEST__"; shift ;;
-        --help)        sed -n '2,/^$/p' "$0" | sed 's/^# //; /^$/d'; exit 0 ;;
-        *)             echo -e "${RED}Unknown option: $1${NC}" >&2; exit 1 ;;
+        --latest)           RELEASE="__LATEST__"; shift ;;
+        --help)
+            if [[ -r "$0" ]]; then
+                sed -n '2,/^$/p' "$0" | sed 's/^# //; /^$/d'
+            else
+                echo "Usage: ./install.sh --latest | --release <tag> [--prefix <path>]"
+            fi
+            exit 0 ;;
+        *)                  echo -e "${RED}Unknown option: $1${NC}" >&2; exit 1 ;;
     esac
 done
 
@@ -79,8 +87,15 @@ else
     die "curl or wget is required."
 fi
 
-command -v sha256sum &>/dev/null || command -v shasum &>/dev/null \
-    || warn "sha256sum not found — checksum verification will be skipped"
+# Choose checksum tool: sha256sum (Linux/coreutils) or shasum (macOS)
+if command -v sha256sum &>/dev/null; then
+    HASH_CMD="sha256sum"
+elif command -v shasum &>/dev/null; then
+    HASH_CMD="shasum"
+else
+    HASH_CMD=""
+    warn "Neither sha256sum nor shasum found — checksum verification will be skipped"
+fi
 
 # ── Check permissions ────────────────────────────────────────────────────────
 
@@ -93,11 +108,18 @@ fi
 if [[ "$RELEASE" == "__LATEST__" ]]; then
     info "Querying latest release from GitHub..."
     LATEST_URL="https://api.github.com/repos/${REPO}/releases/latest"
+    API_OUTPUT=""
     if [[ "$DL_CMD" == "curl" ]]; then
-        RELEASE=$(curl -fsSL "$LATEST_URL" | grep '"tag_name"' | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+        API_OUTPUT=$(curl -fsSL -w "\n%{http_code}" "$LATEST_URL" 2>/dev/null) || true
     else
-        RELEASE=$(wget -qO- "$LATEST_URL" | grep '"tag_name"' | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+        API_OUTPUT=$(wget -qO- "$LATEST_URL" 2>/dev/null) || true
     fi
+    # Check for rate limit (HTTP 403)
+    HTTP_STATUS=$(echo "$API_OUTPUT" | tail -1)
+    if [[ "$HTTP_STATUS" == "403" ]]; then
+        die "GitHub API rate limit exceeded. Specify --release <tag> manually."
+    fi
+    RELEASE=$(echo "$API_OUTPUT" | grep '"tag_name"' | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
     [[ -z "$RELEASE" ]] && die "Failed to detect latest release. Specify --release <tag> manually."
     info "Latest release: ${RELEASE}"
 fi
@@ -108,42 +130,53 @@ fi
 # ── Download ─────────────────────────────────────────────────────────────────
 
 TARGET="$PREFIX/bin/$BIN_NAME"
-TMPDIR=$(mktemp -d)
-trap 'rm -rf "$TMPDIR"' EXIT
+WORK_DIR=$(mktemp -d)
+trap 'rm -rf "$WORK_DIR"' EXIT
 
 BINARY_NAME="hotplex-${OS}-${ARCH}"
 CHECKSUM_NAME="checksums.txt"
 BASE_URL="https://github.com/${REPO}/releases/download/${RELEASE}"
 
-BINARY_PATH="${TMPDIR}/${BINARY_NAME}"
-CHECKSUM_PATH="${TMPDIR}/${CHECKSUM_NAME}"
+BINARY_PATH="${WORK_DIR}/${BINARY_NAME}"
+CHECKSUM_PATH="${WORK_DIR}/${CHECKSUM_NAME}"
 
 info "Downloading hotplex ${RELEASE} for ${OS}/${ARCH}..."
 mkdir -p "$PREFIX/bin"
 
+DL_OK=false
 if [[ "$DL_CMD" == "curl" ]]; then
-    curl -fSL --progress-bar "${BASE_URL}/${BINARY_NAME}" -o "$BINARY_PATH"
+    curl -fSL --progress-bar "${BASE_URL}/${BINARY_NAME}" -o "$BINARY_PATH" && DL_OK=true
 else
-    wget -q --show-progress "${BASE_URL}/${BINARY_NAME}" -O "$BINARY_PATH"
+    wget -q --show-progress "${BASE_URL}/${BINARY_NAME}" -O "$BINARY_PATH" && DL_OK=true
 fi
+
+$DL_OK || die "Download failed. Release ${RELEASE} may not include a binary for ${OS}/${ARCH}.
+
+  Check available releases: https://github.com/${REPO}/releases"
+[[ $(stat -f%z "$BINARY_PATH" 2>/dev/null || stat -c%s "$BINARY_PATH") -eq 0 ]] \
+    && die "Downloaded file is empty — release binary may not exist for this platform."
 
 # ── Verify checksum ──────────────────────────────────────────────────────────
 
-VERIFY=true
-if command -v sha256sum &>/dev/null; then
+if [[ -n "$HASH_CMD" ]]; then
     info "Downloading checksums..."
+    DL_OK=false
     if [[ "$DL_CMD" == "curl" ]]; then
-        curl -fsSL "${BASE_URL}/${CHECKSUM_NAME}" -o "$CHECKSUM_PATH" 2>/dev/null || VERIFY=false
+        curl -fsSL "${BASE_URL}/${CHECKSUM_NAME}" -o "$CHECKSUM_PATH" 2>/dev/null && DL_OK=true
     else
-        wget -q "${BASE_URL}/${CHECKSUM_NAME}" -O "$CHECKSUM_PATH" 2>/dev/null || VERIFY=false
+        wget -q "${BASE_URL}/${CHECKSUM_NAME}" -O "$CHECKSUM_PATH" 2>/dev/null && DL_OK=true
     fi
 
-    if $VERIFY && [[ -f "$CHECKSUM_PATH" ]]; then
+    if $DL_OK && [[ -f "$CHECKSUM_PATH" ]]; then
         EXPECTED=$(grep "$BINARY_NAME" "$CHECKSUM_PATH" | awk '{print $1}')
         if [[ -n "$EXPECTED" ]]; then
-            ACTUAL=$(sha256sum "$BINARY_PATH" | awk '{print $1}')
+            if [[ "$HASH_CMD" == "sha256sum" ]]; then
+                ACTUAL=$(sha256sum "$BINARY_PATH" | awk '{print $1}')
+            else
+                ACTUAL=$(shasum -a 256 "$BINARY_PATH" | awk '{print $1}')
+            fi
             if [[ "$EXPECTED" != "$ACTUAL" ]]; then
-                die "Checksum mismatch!\n  Expected: $EXPECTED\n  Actual:   $ACTUAL"
+                die "Checksum mismatch! Expected: $EXPECTED  Actual: $ACTUAL"
             fi
             info "Checksum verified."
         else
@@ -152,8 +185,6 @@ if command -v sha256sum &>/dev/null; then
     else
         warn "Checksums file unavailable — skipping verification."
     fi
-else
-    warn "sha256sum not found — skipping checksum verification."
 fi
 
 # ── Install ──────────────────────────────────────────────────────────────────
@@ -182,14 +213,10 @@ if [[ ":$PATH:" != *":${BIN_DIR}:"* ]]; then
     warn "${BIN_DIR} is not in your PATH."
     if [[ -n "$RC_FILE" ]]; then
         case "$SHELL_NAME" in
-            fish) echo -e "  Add this line to ${RC_FILE}:" ;;
-            *)    echo -e "  Add this line to ${RC_FILE}:" ;;
+            fish) echo -e "  Add to ${RC_FILE}:  ${CYAN}fish_add_path ${BIN_DIR}${NC}" ;;
+            *)    echo -e "  Add to ${RC_FILE}:  ${CYAN}export PATH=\"${BIN_DIR}:\$PATH\"${NC}" ;;
         esac
-        case "$SHELL_NAME" in
-            fish) echo -e "  ${CYAN}set -gx PATH ${BIN_DIR} \$PATH${NC}" ;;
-            *)    echo -e "  ${CYAN}export PATH=\"${BIN_DIR}:\$PATH\"${NC}" ;;
-        esac
-        echo -e "  Then run: ${CYAN}source ${RC_FILE}${NC}"
+        echo -e "  Then: ${CYAN}source ${RC_FILE}${NC}"
     fi
 fi
 
