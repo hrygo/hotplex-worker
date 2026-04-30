@@ -457,7 +457,8 @@ export function Thread({ skills, hasMore, onLoadHistory }: ThreadProps) {
               </div>
             </div>
           </ComposerPrimitive.Root>
-          <div className="mt-2 flex justify-between items-center px-2">
+        </div>
+        <div className="mt-2 flex justify-between items-center px-2">
             <div className="flex gap-4">
               <span className="text-[10px] text-[var(--text-faint)] font-mono uppercase tracking-widest flex items-center gap-1.5">
                 <kbd className="px-1.5 py-0.5 rounded bg-[var(--bg-elevated)] border border-[var(--border-subtle)] text-[9px]">Enter</kbd> to send
