@@ -259,14 +259,7 @@ func (s *PersistentSTT) start(_ context.Context) error {
 	s.pgid = cmd.Process.Pid
 	s.started = true
 
-	job, err := proc.CreateJobObject()
-	if err != nil {
-		s.log.Warn("persistent stt: job object creation failed, tree cleanup disabled", "err", err)
-	} else if assignErr := proc.AssignProcessToJob(job, s.pgid); assignErr != nil {
-		s.log.Warn("persistent stt: job assignment failed", "pid", s.pgid, "err", assignErr)
-	} else {
-		s.jobHandle = job
-	}
+	s.jobHandle = proc.CreateAndAssignJob(s.pgid, s.log)
 
 	// Track PID for orphan cleanup.
 	if tracker := proc.GlobalTracker(); tracker != nil {

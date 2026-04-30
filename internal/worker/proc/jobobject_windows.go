@@ -4,6 +4,7 @@ package proc
 
 import (
 	"fmt"
+	"log/slog"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -56,4 +57,22 @@ func CloseJobHandle(handle uintptr) {
 		return
 	}
 	_ = windows.CloseHandle(windows.Handle(handle))
+}
+
+// CreateAndAssignJob creates a Job Object, assigns the process to it, and
+// returns the handle. Returns 0 if creation or assignment fails (errors are
+// logged). The handle must be closed via CloseJobHandle to clean up the tree.
+func CreateAndAssignJob(pid int, log *slog.Logger) uintptr {
+	job, err := CreateJobObject()
+	if err != nil {
+		log.Warn("proc: failed to create job object, process tree cleanup disabled", "error", err)
+		return 0
+	}
+	if err := AssignProcessToJob(job, pid); err != nil {
+		CloseJobHandle(job)
+		log.Warn("proc: failed to assign process to job object", "pid", pid, "error", err)
+		return 0
+	}
+	log.Info("proc: assigned process to job object", "pid", pid)
+	return job
 }

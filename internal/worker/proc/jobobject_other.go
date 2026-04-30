@@ -11,3 +11,6 @@ func AssignProcessToJob(_ uintptr, _ int) error { return nil }
 
 // CloseJobHandle is a no-op on non-Windows platforms.
 func CloseJobHandle(_ uintptr) {}
+
+// CreateAndAssignJob is a no-op on non-Windows platforms.
+func CreateAndAssignJob(_ int, _ any) uintptr { return 0 }
