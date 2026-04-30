@@ -5,10 +5,11 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/hrygo/hotplex/internal/messaging"
 	"github.com/hrygo/hotplex/pkg/events"
 )
 
-// ─── extractResponseText: raw type ───────────────────────────────────────────
+// ─── messaging.ExtractResponseText: raw type ───────────────────────────────────────────
 
 func TestExtractResponseText_RawType(t *testing.T) {
 	t.Parallel()
@@ -47,24 +48,24 @@ func TestExtractResponseText_RawType(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			env := &events.Envelope{Event: events.Event{Type: "raw", Data: tt.data}}
-			got, ok := extractResponseText(env)
+			got, ok := messaging.ExtractResponseText(env)
 			require.Equal(t, tt.ok, ok)
 			require.Equal(t, tt.want, got)
 		})
 	}
 }
 
-// ─── extractResponseText: done type ─────────────────────────────────────────
+// ─── messaging.ExtractResponseText: done type ─────────────────────────────────────────
 
 func TestExtractResponseText_DoneType(t *testing.T) {
 	t.Parallel()
 	env := &events.Envelope{Event: events.Event{Type: "done", Data: nil}}
-	got, ok := extractResponseText(env)
+	got, ok := messaging.ExtractResponseText(env)
 	require.False(t, ok)
 	require.Equal(t, "", got)
 }
 
-// ─── extractResponseText: message delta with map data ────────────────────────
+// ─── messaging.ExtractResponseText: message delta with map data ────────────────────────
 
 func TestExtractResponseText_MessageDeltaMap(t *testing.T) {
 	t.Parallel()
@@ -72,12 +73,12 @@ func TestExtractResponseText_MessageDeltaMap(t *testing.T) {
 		Type: "message.delta",
 		Data: map[string]any{"content": "delta from map"},
 	}}
-	got, ok := extractResponseText(env)
+	got, ok := messaging.ExtractResponseText(env)
 	require.True(t, ok)
 	require.Equal(t, "delta from map", got)
 }
 
-// ─── extractResponseText: text type with string data ─────────────────────────
+// ─── messaging.ExtractResponseText: text type with string data ─────────────────────────
 
 func TestExtractResponseText_TextStringData(t *testing.T) {
 	t.Parallel()
@@ -85,12 +86,12 @@ func TestExtractResponseText_TextStringData(t *testing.T) {
 		Type: "text",
 		Data: "plain string text",
 	}}
-	got, ok := extractResponseText(env)
+	got, ok := messaging.ExtractResponseText(env)
 	require.True(t, ok)
 	require.Equal(t, "plain string text", got)
 }
 
-// ─── extractResponseText: unknown type ─────────────────────────────────────
+// ─── messaging.ExtractResponseText: unknown type ─────────────────────────────────────
 
 func TestExtractResponseText_UnknownType(t *testing.T) {
 	t.Parallel()
@@ -98,7 +99,7 @@ func TestExtractResponseText_UnknownType(t *testing.T) {
 		Type: "unknown_event",
 		Data: map[string]any{"content": "should not extract"},
 	}}
-	got, ok := extractResponseText(env)
+	got, ok := messaging.ExtractResponseText(env)
 	require.False(t, ok)
 	require.Equal(t, "", got)
 }

@@ -22,13 +22,14 @@ func TestAdapterFlow_HandleTextMessage_NilBridge(t *testing.T) {
 func TestAdapterFlow_HandleTextMessage_WithInteractionConsumed(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
-	a.bridge = &messaging.Bridge{}
-	a.interactions = messaging.NewInteractionManager(discardLogger)
+	// Set bridge via ConfigureWith (private field).
+	_ = a.ConfigureWith(messaging.AdapterConfig{Bridge: &messaging.Bridge{}})
+	a.Interactions = messaging.NewInteractionManager(discardLogger)
 	a.rateLimiter = NewFeishuRateLimiter()
 	t.Cleanup(func() { a.rateLimiter.Stop() })
 
 	// Register a pending permission request.
-	a.interactions.Register(&messaging.PendingInteraction{
+	a.Interactions.Register(&messaging.PendingInteraction{
 		ID:           "perm-ht-1",
 		SessionID:    "",
 		Type:         events.PermissionRequest,
@@ -66,7 +67,7 @@ func TestAdapterFlow_WriteCtx_DoneEvent_WithStreamCtrl(t *testing.T) {
 func TestAdapterFlow_WriteCtx_ErrorEvent_WithStreamCtrl(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
-	a.interactions = messaging.NewInteractionManager(discardLogger)
+	a.Interactions = messaging.NewInteractionManager(discardLogger)
 	conn := NewFeishuConn(a, "chat123", "")
 
 	ctrl := newTestStreamingCtrl()
@@ -362,12 +363,14 @@ func TestAdapterFlow_ReplyMessage_NilClient(t *testing.T) {
 func TestAdapterFlow_DedupCleanupLoop_Exit(t *testing.T) {
 	t.Parallel()
 	a := &Adapter{
-		log:         discardLogger,
-		dedup:       messaging.NewDedup(10, time.Millisecond),
-		activeConns: make(map[string]*FeishuConn),
+		PlatformAdapter: messaging.PlatformAdapter{
+			Log:   discardLogger,
+			Dedup: messaging.NewDedup(10, time.Millisecond),
+		},
+		connPool: messaging.NewConnPool[*FeishuConn](nil),
 	}
-	a.dedup.StartCleanup()
-	a.dedup.Close() // should not panic
+	a.Dedup.StartCleanup()
+	a.Dedup.Close() // should not panic
 }
 
 func TestAdapterFlow_Close_WithConnections(t *testing.T) {
@@ -381,16 +384,13 @@ func TestAdapterFlow_Close_WithConnections(t *testing.T) {
 	err := a.Close(context.Background())
 	require.NoError(t, err)
 
-	a.mu.RLock()
-	_, exists := a.activeConns["chat_cleanup#"]
-	a.mu.RUnlock()
-	require.False(t, exists)
+	require.Nil(t, a.connPool.Get("chat_cleanup#"))
 }
 
 func TestAdapterFlow_Start_AlreadyStarted(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
-	a.started.Store(true)
+	a.StartGuard()
 
 	err := a.Start(context.Background())
 	require.NoError(t, err)
@@ -485,7 +485,7 @@ func TestAdapterFlow_WriteCtx_ElicitationRequest_ExtractFail(t *testing.T) {
 func TestAdapterFlow_WriteCtx_Done_NoStreamCtrl(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
-	a.interactions = messaging.NewInteractionManager(discardLogger)
+	a.Interactions = messaging.NewInteractionManager(discardLogger)
 	conn := NewFeishuConn(a, "chat123", "")
 
 	env := &events.Envelope{
@@ -504,7 +504,7 @@ func TestAdapterFlow_WriteCtx_Done_NoStreamCtrl(t *testing.T) {
 func TestAdapterFlow_WriteCtx_Error_NoStreamCtrl(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
-	a.interactions = messaging.NewInteractionManager(discardLogger)
+	a.Interactions = messaging.NewInteractionManager(discardLogger)
 	conn := NewFeishuConn(a, "chat123", "")
 
 	env := &events.Envelope{
@@ -623,7 +623,7 @@ func TestAdapterFlow_WriteCtx_Done_WithReactionCleanup(t *testing.T) {
 func TestAdapterFlow_WriteCtx_Error_WithReactionCleanup(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
-	a.interactions = messaging.NewInteractionManager(discardLogger)
+	a.Interactions = messaging.NewInteractionManager(discardLogger)
 	conn := NewFeishuConn(a, "chat123", "")
 	conn.mu.Lock()
 	conn.typingRid = "typing_rid"
@@ -653,11 +653,11 @@ func TestAdapterFlow_WriteCtx_Error_WithReactionCleanup(t *testing.T) {
 func TestAdapterFlow_RegisterInteraction(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
-	a.interactions = messaging.NewInteractionManager(discardLogger)
+	a.Interactions = messaging.NewInteractionManager(discardLogger)
 	conn := a.GetOrCreateConn("chat_ri", "")
 
 	a.registerInteraction("req-1", "sess-ri", events.PermissionRequest, conn)
-	require.Equal(t, 1, a.interactions.Len())
+	require.Equal(t, 1, a.Interactions.Len())
 }
 
 func TestAdapterFlow_WriteCtx_StreamCtrl_WriteFlush(t *testing.T) {
@@ -703,7 +703,7 @@ func TestAdapterFlow_RemoveReaction_EmptyReactionID_NilClient(t *testing.T) {
 func TestAdapterFlow_RegisterInteraction_CallbackConsumed(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
-	a.interactions = messaging.NewInteractionManager(discardLogger)
+	a.Interactions = messaging.NewInteractionManager(discardLogger)
 	conn := a.GetOrCreateConn("chat_ricb", "")
 	conn.mu.Lock()
 	conn.sessionID = "sess-ricb"
@@ -711,10 +711,10 @@ func TestAdapterFlow_RegisterInteraction_CallbackConsumed(t *testing.T) {
 
 	// Register via registerInteraction (creates SendResponse closure with nil bridge).
 	a.registerInteraction("perm-ricb", "sess-ricb", events.PermissionRequest, conn)
-	require.Equal(t, 1, a.interactions.Len())
+	require.Equal(t, 1, a.Interactions.Len())
 
 	// Consume the interaction via checkPendingInteraction.
 	consumed := a.checkPendingInteraction(context.Background(), "允许", conn)
 	require.True(t, consumed)
-	require.Equal(t, 0, a.interactions.Len())
+	require.Equal(t, 0, a.Interactions.Len())
 }

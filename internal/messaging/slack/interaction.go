@@ -45,7 +45,7 @@ func (a *Adapter) handleInteractionEvent(ctx context.Context, evt socketmode.Eve
 		threadTS := callback.MessageTs
 		userID := callback.User.ID
 
-		a.log.Info("slack: interaction callback",
+		a.Log.Info("slack: interaction callback",
 			"type", interactionType,
 			"request_id", requestID,
 			"user_id", userID,
@@ -55,9 +55,9 @@ func (a *Adapter) handleInteractionEvent(ctx context.Context, evt socketmode.Eve
 		_ = a.socketMode.Ack(*evt.Request)
 
 		// Look up the pending interaction
-		pi, ok := a.interactions.Complete(requestID)
+		pi, ok := a.Interactions.Complete(requestID)
 		if !ok {
-			a.log.Warn("slack: interaction not found or expired", "request_id", requestID)
+			a.Log.Warn("slack: interaction not found or expired", "request_id", requestID)
 			continue
 		}
 
@@ -109,7 +109,7 @@ func (a *Adapter) handleInteractionEvent(ctx context.Context, evt socketmode.Eve
 			slack.MsgOptionText(fmt.Sprintf("_Response recorded by <@%s>_", userID), false),
 		)
 		if err != nil {
-			a.log.Debug("slack: update interaction message", "err", err)
+			a.Log.Debug("slack: update interaction message", "err", err)
 		}
 
 		_ = threadTS // thread context
@@ -201,7 +201,7 @@ func (c *SlackConn) sendPermissionRequest(ctx context.Context, env *events.Envel
 			if err != nil {
 				return fmt.Errorf("slack: post permission request (fallback): %w", err)
 			}
-			c.adapter.log.Warn("slack: sent permission request as plain text fallback", "request_id", data.ID)
+			c.adapter.Log.Warn("slack: sent permission request as plain text fallback", "request_id", data.ID)
 		} else {
 			return fmt.Errorf("slack: post permission request: %w", err)
 		}
@@ -210,7 +210,7 @@ func (c *SlackConn) sendPermissionRequest(ctx context.Context, env *events.Envel
 	// Register the pending interaction with timeout
 	c.adapter.registerInteraction(data.ID, env.SessionID, events.PermissionRequest, msgTS, c)
 
-	c.adapter.log.Info("slack: permission request posted",
+	c.adapter.Log.Info("slack: permission request posted",
 		"request_id", data.ID,
 		"tool_name", data.ToolName,
 		"channel", c.channelID,
@@ -314,7 +314,7 @@ func (c *SlackConn) sendQuestionRequest(ctx context.Context, env *events.Envelop
 			if err != nil {
 				return fmt.Errorf("slack: post question request (fallback): %w", err)
 			}
-			c.adapter.log.Warn("slack: sent question request as plain text fallback", "request_id", data.ID)
+			c.adapter.Log.Warn("slack: sent question request as plain text fallback", "request_id", data.ID)
 		} else {
 			return fmt.Errorf("slack: post question request: %w", err)
 		}
@@ -322,7 +322,7 @@ func (c *SlackConn) sendQuestionRequest(ctx context.Context, env *events.Envelop
 
 	c.adapter.registerInteraction(data.ID, env.SessionID, events.QuestionRequest, msgTS, c)
 
-	c.adapter.log.Info("slack: question request posted",
+	c.adapter.Log.Info("slack: question request posted",
 		"request_id", data.ID,
 		"questions", len(data.Questions))
 
@@ -399,7 +399,7 @@ func (c *SlackConn) sendElicitationRequest(ctx context.Context, env *events.Enve
 			if err != nil {
 				return fmt.Errorf("slack: post elicitation request (fallback): %w", err)
 			}
-			c.adapter.log.Warn("slack: sent elicitation request as plain text fallback", "request_id", data.ID)
+			c.adapter.Log.Warn("slack: sent elicitation request as plain text fallback", "request_id", data.ID)
 		} else {
 			return fmt.Errorf("slack: post elicitation request: %w", err)
 		}
@@ -412,7 +412,7 @@ func (c *SlackConn) sendElicitationRequest(ctx context.Context, env *events.Enve
 
 // registerInteraction registers a pending interaction with the adapter's manager.
 func (a *Adapter) registerInteraction(requestID, sessionID string, kind events.Kind, _ string, conn *SlackConn) {
-	a.interactions.Register(&messaging.PendingInteraction{
+	a.Interactions.Register(&messaging.PendingInteraction{
 		ID:        requestID,
 		SessionID: sessionID,
 		Type:      kind,
@@ -434,8 +434,8 @@ func (a *Adapter) registerInteraction(requestID, sessionID string, kind events.K
 				},
 				OwnerID: "",
 			}
-			if a.bridge != nil {
-				_ = a.bridge.Handle(respCtx, env, conn)
+			if a.Bridge() != nil {
+				_ = a.Bridge().Handle(respCtx, env, conn)
 			}
 		},
 	})

@@ -196,7 +196,7 @@ func TestHandleMessage_TextWithGateAllowed(t *testing.T) {
 	a := newTestAdapter(t)
 	a.chatQueue = NewChatQueue(discardLogger)
 	t.Cleanup(func() { a.chatQueue.Close() })
-	a.gate = messaging.NewGate("", "", false, nil, nil, nil) // no restrictions → DM always allowed
+	a.Gate = messaging.NewGate("", "", false, nil, nil, nil) // no restrictions → DM always allowed
 
 	sender := larkim.NewEventSenderBuilder().
 		SenderId(larkim.NewUserIdBuilder().OpenId("user1").Build()).
@@ -222,7 +222,7 @@ func TestHandleMessage_GateRejected(t *testing.T) {
 	a := newTestAdapter(t)
 	a.chatQueue = NewChatQueue(discardLogger)
 	t.Cleanup(func() { a.chatQueue.Close() })
-	a.gate = messaging.NewGate("allowlist", "allowlist", true, []string{"allowed_user"}, nil, nil)
+	a.Gate = messaging.NewGate("allowlist", "allowlist", true, []string{"allowed_user"}, nil, nil)
 
 	sender := larkim.NewEventSenderBuilder().
 		SenderId(larkim.NewUserIdBuilder().OpenId("stranger").Build()).

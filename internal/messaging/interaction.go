@@ -175,8 +175,11 @@ func (m *InteractionManager) watchTimeout(pi *PendingInteraction) {
 }
 
 // CancelAll removes all pending interactions for a given session.
-// Called when a session ends (GC/Reset/Close).
+// Called when a session ends (GC/Reset/Close). Nil-safe: no-op if m is nil.
 func (m *InteractionManager) CancelAll(sessionID string) {
+	if m == nil {
+		return
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
