@@ -82,20 +82,22 @@ Preserves the same configuration file and mode.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			pid, err := readGatewayPID()
 			if err != nil {
-				return err
-			}
-			if err := proc.GracefulTerminate(pid); err != nil {
-				return fmt.Errorf("stop PID %d: %w", pid, err)
-			}
-			fmt.Fprintf(os.Stderr, "gateway: stopped PID %d\n", pid)
-			removeGatewayPID()
-
-			deadline := time.Now().Add(5 * time.Second)
-			for time.Now().Before(deadline) {
-				if err := proc.IsProcessAlive(pid); err != nil {
-					break
+				fmt.Fprintf(os.Stderr, "gateway: %s (proceeding with start)\n", err)
+			} else {
+				if err := proc.GracefulTerminate(pid); err != nil {
+					fmt.Fprintf(os.Stderr, "gateway: stop PID %d failed: %s (proceeding with start)\n", pid, err)
+				} else {
+					fmt.Fprintf(os.Stderr, "gateway: stopped PID %d\n", pid)
 				}
-				time.Sleep(100 * time.Millisecond)
+				removeGatewayPID()
+
+				deadline := time.Now().Add(5 * time.Second)
+				for time.Now().Before(deadline) {
+					if err := proc.IsProcessAlive(pid); err != nil {
+						break
+					}
+					time.Sleep(100 * time.Millisecond)
+				}
 			}
 
 			if err := writeGatewayPID(); err != nil {
