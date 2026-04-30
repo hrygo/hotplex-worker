@@ -50,7 +50,7 @@ func NewSQLiteStore(ctx context.Context, cfg *config.Config) (*SQLiteStore, erro
 		return nil, fmt.Errorf("session store: open db: %w", err)
 	}
 
-	if err := initSQLiteDB(db, cfg, "enable"); err != nil {
+	if err := sqlutil.InitSQLiteDB(db, &cfg.DB, "session"); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
@@ -67,37 +67,6 @@ func NewSQLiteStore(ctx context.Context, cfg *config.Config) (*SQLiteStore, erro
 	}
 
 	return &SQLiteStore{db: db, log: slog.Default().With("component", "session_store")}, nil
-}
-
-// initSQLiteDB configures a SQLite connection with standard PRAGMAs.
-func initSQLiteDB(db *sql.DB, cfg *config.Config, label string) error {
-	if cfg.DB.WALMode {
-		if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
-			return fmt.Errorf("session store: %s WAL: %w", label, err)
-		}
-	}
-	if _, err := db.Exec(fmt.Sprintf("PRAGMA busy_timeout=%d", int(cfg.DB.BusyTimeout.Milliseconds()))); err != nil {
-		return fmt.Errorf("session store: %s busy_timeout: %w", label, err)
-	}
-	if _, err := db.Exec("PRAGMA foreign_keys=ON"); err != nil {
-		return fmt.Errorf("session store: %s foreign_keys: %w", label, err)
-	}
-	if _, err := db.Exec("PRAGMA synchronous=NORMAL"); err != nil {
-		return fmt.Errorf("session store: %s synchronous: %w", label, err)
-	}
-	if _, err := db.Exec(fmt.Sprintf("PRAGMA cache_size=-%d", cfg.DB.CacheSizeKiB)); err != nil {
-		return fmt.Errorf("session store: %s cache_size: %w", label, err)
-	}
-	if _, err := db.Exec("PRAGMA temp_store=MEMORY"); err != nil {
-		return fmt.Errorf("session store: %s temp_store: %w", label, err)
-	}
-	if _, err := db.Exec(fmt.Sprintf("PRAGMA mmap_size=%d", cfg.DB.MmapSizeMiB*1024*1024)); err != nil {
-		return fmt.Errorf("session store: %s mmap_size: %w", label, err)
-	}
-	if _, err := db.Exec("PRAGMA wal_autocheckpoint=2000"); err != nil {
-		return fmt.Errorf("session store: %s wal_autocheckpoint: %w", label, err)
-	}
-	return nil
 }
 
 func (s *SQLiteStore) Upsert(ctx context.Context, info *SessionInfo) error {

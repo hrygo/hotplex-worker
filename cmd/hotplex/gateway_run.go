@@ -151,7 +151,7 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 		return fmt.Errorf("gateway: init conversation store: %w", err)
 	}
 
-	eventStore, err := eventstore.NewSQLiteStore(ctx, cfg.DB.EventsPath)
+	eventStore, err := eventstore.NewSQLiteStore(ctx, cfg.DB.EventsPath, &cfg.DB)
 	if err != nil {
 		_ = store.Close()
 		_ = convStore.Close()
