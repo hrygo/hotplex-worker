@@ -68,7 +68,7 @@ cd hotplex
 make quickstart    # check tools + build + test
 ```
 
-### Or with Docker
+### Or with Docker (Experimental)
 
 ```bash
 cp configs/env.example .env  # edit with your API keys
@@ -120,6 +120,8 @@ hotplex service uninstall
 ```
 
 Supports **systemd** (Linux), **launchd** (macOS), and **Windows SCM**.
+
+> For detailed installation options, troubleshooting, and automation, see [INSTALL.md](INSTALL.md).
 
 | Service             | Address                  | Note                                     |
 | :------------------ | :----------------------- | :--------------------------------------- |
