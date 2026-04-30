@@ -204,6 +204,7 @@ jobs:
         with:
           files: |
             dist/hotplex-offline-bundle-*.tar.gz
+            dist/hotplex-offline-bundle-*.zip
             dist/checksums-offline.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
