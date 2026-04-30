@@ -177,16 +177,24 @@ func (m *darwinManager) Restart(name string, level Level) error {
 
 func (m *darwinManager) Logs(name string, level Level, follow bool, lines int) error {
 	dir := LogDir(level)
+	stderrLog := filepath.Join(dir, "launchd.stderr.log")
 	stdoutLog := filepath.Join(dir, "launchd.stdout.log")
-	if _, err := os.Stat(stdoutLog); os.IsNotExist(err) {
-		return fmt.Errorf("log file not found: %s", stdoutLog)
+
+	// Prefer stderr log: slog writes to os.Stderr (application logs).
+	// Fall back to stdout if stderr log doesn't exist yet (banner-only startup).
+	logFile := stderrLog
+	if _, err := os.Stat(logFile); os.IsNotExist(err) {
+		logFile = stdoutLog
+		if _, err := os.Stat(logFile); os.IsNotExist(err) {
+			return fmt.Errorf("log file not found in %s", dir)
+		}
 	}
 
 	args := []string{}
 	if follow {
 		args = append(args, "-f")
 	}
-	args = append(args, "-n", strconv.Itoa(lines), stdoutLog)
+	args = append(args, "-n", strconv.Itoa(lines), logFile)
 
 	cmd := exec.Command("tail", args...)
 	cmd.Stdout = os.Stdout
