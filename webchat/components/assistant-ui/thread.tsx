@@ -192,7 +192,21 @@ function AssistantMessage({ message }: { message: any }) {
                         case "search": return <SearchTool toolName={p.toolName} query={args.query || args.pattern} results={p.result} status={status} onToggle={!isLastPart ? toggle : undefined} />;
                         case "list": return <ListTool toolName={p.toolName} path={extractFilePath(args)} items={p.result} status={status} onToggle={!isLastPart ? toggle : undefined} />;
                         case "permission": return <PermissionCard toolName={p.toolName} args={args} status={status === "error" ? "complete" : status as "running" | "complete"} onToggle={!isLastPart ? toggle : undefined} />;
-                        default: return <div className="p-4 bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-[var(--radius-md)] font-mono text-[11px] mt-2 shadow-inner">{JSON.stringify(p.result || args, null, 2)}</div>;
+                        default: {
+                          const content = p.result || args;
+                          const summary = typeof content === 'string' ? content : JSON.stringify(content, null, 2);
+                          return (
+                            <div className="group/tool border border-[var(--border-subtle)] rounded-[var(--radius-md)] overflow-hidden bg-[var(--bg-elevated)] shadow-sm">
+                              <div className="flex items-center justify-between px-3 py-2 bg-[var(--bg-surface)] border-b border-[var(--border-subtle)]">
+                                <span className="text-[10px] font-bold text-[var(--accent-gold)] uppercase tracking-wider">{p.toolName}</span>
+                                {status === "running" && <div className="w-2 h-2 rounded-full bg-[var(--accent-gold)] animate-pulse" />}
+                              </div>
+                              <div className="p-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap max-h-[300px] overflow-y-auto custom-scrollbar">
+                                {summary}
+                              </div>
+                            </div>
+                          );
+                        }
                       }
                     })()}
                   </motion.div>
@@ -208,6 +222,15 @@ function AssistantMessage({ message }: { message: any }) {
                   </div>
                 );
               }
+              
+              // Fallback for unknown parts that might have text (like custom reasoning types)
+              if (p.text || p.reasoning || p.content) {
+                const fallbackText = p.text || p.reasoning || (typeof p.content === 'string' ? p.content : JSON.stringify(p.content));
+                if (fallbackText) {
+                  return <div className="mt-3"><MarkdownText text={fallbackText} /></div>;
+                }
+              }
+
               return null;
             }}
           </MessagePrimitive.Parts>
