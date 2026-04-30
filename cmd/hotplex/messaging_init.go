@@ -49,14 +49,14 @@ func startMessagingAdapters(ctx context.Context, deps *GatewayDeps) ([]messaging
 		switch pt {
 		case messaging.PlatformSlack:
 			if !appCfg.Messaging.Slack.Enabled {
-				statuses = append(statuses, AdapterStatus{Name: "Slack", Started: false})
+				statuses = append(statuses, AdapterStatus{Name: "slack", Started: false})
 				continue
 			}
 			workerType = appCfg.Messaging.Slack.WorkerType
 			workDir = appCfg.Messaging.Slack.WorkDir
 		case messaging.PlatformFeishu:
 			if !appCfg.Messaging.Feishu.Enabled {
-				statuses = append(statuses, AdapterStatus{Name: "Feishu", Started: false})
+				statuses = append(statuses, AdapterStatus{Name: "feishu", Started: false})
 				continue
 			}
 			workerType = appCfg.Messaging.Feishu.WorkerType

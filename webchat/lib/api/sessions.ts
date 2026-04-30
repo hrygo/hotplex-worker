@@ -119,14 +119,14 @@ export function formatRelativeTime(dateStr: string): string {
   const diffHour = Math.floor(diffMs / 3600000);
   const diffDay = Math.floor(diffMs / 86400000);
 
-  const timeStr = date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+  const timeStr = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
 
-  if (diffMin < 1) return `刚刚 ${timeStr}`;
-  if (diffMin < 60) return `${diffMin} 分钟前`;
-  if (diffHour < 24) return `今天 ${timeStr}`;
-  if (diffDay === 1) return `昨天 ${timeStr}`;
-  if (diffDay < 7) return `${diffDay} 天前`;
-  return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
+  if (diffMin < 1) return `Just now ${timeStr}`;
+  if (diffMin < 60) return `${diffMin}m ago`;
+  if (diffHour < 24) return `Today ${timeStr}`;
+  if (diffDay === 1) return `Yesterday ${timeStr}`;
+  if (diffDay < 7) return `${diffDay}d ago`;
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
 export function stateLabel(state: SessionState): string {
