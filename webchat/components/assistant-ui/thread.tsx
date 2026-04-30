@@ -151,7 +151,7 @@ function AssistantMessage({ message }: { message: any }) {
               if (!p || !p.type) return null;
               const isStreaming = (message as any)?.status?.type === "running";
 
-              if (p.type === "reasoning") return <ReasoningBlock text={p.text} />;
+              if (p.type === "reasoning") return <ReasoningBlock text={p.text || p.reasoning || ""} />;
               if (p.type === "text") return <div className={`prose-hotplex ${isStreaming ? "streaming-cursor" : ""}`}><MarkdownText text={p.text} /></div>;
               
               if (p.type === "tool-call") {
@@ -258,7 +258,7 @@ function ReasoningBlock({ text }: { text: string }) {
             className="overflow-hidden"
           >
             <div className="reasoning-content border-t border-[var(--border-subtle)]/50 leading-relaxed">
-              {text}
+              <MarkdownText text={text} />
             </div>
           </motion.div>
         )}
