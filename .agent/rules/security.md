@@ -122,59 +122,12 @@ if err := security.ValidateWorkDir(workDir); err != nil {
 
 ## 环境变量隔离
 
-### BaseEnvWhitelist（系统变量）
-```go
-var BaseEnvWhitelist = []string{
-    "HOME", "USER", "SHELL", "PATH", "TERM", "LANG", "LC_ALL", "PWD",
-    "GOPROXY", "GOSUMDB",
-}
-```
+三层防护（详见 `security/env.go`）：
+- **BaseEnvWhitelist**：系统变量白名单（HOME/USER/PATH 等）
+- **ProtectedEnvVars**：禁止 Worker 覆盖的变量（HOME/PATH/CLAUDECODE/GATEWAY_* 等）
+- **Sensitive 检测**：`IsSensitive()` 自动脱敏（前缀匹配 `AWS_*/ANTHROPIC_*/SLACK_*` 等 + 精确匹配 `API_KEY/DATABASE_URL` 等）
 
-### ProtectedEnvVars（禁止 Worker 覆盖）
-```go
-var ProtectedEnvVars = map[string]bool{
-    "HOME":      true, "PATH": true, "GOPATH": true, "GOROOT": true,
-    "CLAUDECODE": true, // 防止嵌套 Agent
-    "GATEWAY_ADDR": true, "GATEWAY_TOKEN": true,
-}
-```
-
-### Sensitive 检测（自动脱敏）
-```go
-var sensitivePrefixes = []string{
-    "AWS_", "AZURE_", "GITHUB_", "GH_",
-    "ANTHROPIC_", "OPENAI_", "GOOGLE_",
-    "SLACK_", "SENTRY_",
-}
-var sensitiveExact = map[string]bool{
-    "API_KEY": true, "API_SECRET": true, "PRIVATE_KEY": true,
-    "SECRET_TOKEN": true, "DATABASE_URL": true,
-    "DB_PASSWORD": true, "POSTGRES_PASSWORD": true,
-}
-
-func IsSensitive(key string) bool {
-    for _, p := range sensitivePrefixes {
-        if strings.HasPrefix(key, p) {
-            return true
-        }
-    }
-    return sensitiveExact[key]
-}
-```
-
-### 嵌套 Agent 防护
-```go
-func StripNestedAgent(env []string) []string {
-    result := make([]string, 0, len(env))
-    for _, e := range env {
-        if strings.HasPrefix(e, "CLAUDECODE=") {
-            continue // 剥离 CLAUDECODE= 防止嵌套
-        }
-        result = append(result, e)
-    }
-    return result
-}
-```
+**嵌套 Agent 防护**：`StripNestedAgent()` 剥离 `CLAUDECODE=` 环境变量，防止嵌套。
 
 ---
 
