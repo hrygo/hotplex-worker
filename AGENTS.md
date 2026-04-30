@@ -366,7 +366,7 @@ make webchat-stop             # 停止 webchat 开发服务器
 - `CLAUDE.md` 是 `AGENTS.md` 的符号链接 — 只编辑 AGENTS.md，CLAUDE.md 自动跟随
 - `.claude` 是 `.agent` 的符号链接 — 两个目录都存在
 - 无 `api/` 目录 — 项目使用 JSON over WebSocket，不是 protobuf
-- 项目仅支持 POSIX (PGID 隔离需要 `syscall.SysProcAttr{Setpgid: true}`)
+- 跨平台支持: POSIX (PGID 隔离 `Setpgid`) + Windows (Job Object `KILL_ON_JOB_CLOSE` 级联终止); 进程管理、安全、配置、服务管理均有平台适配文件 (`*_windows.go` / `*_unix.go`)
 - 最大文件: `bridge.go` (1256)、`feishu/adapter.go` (1240)、`slack/adapter.go` (1165)、`manager.go` (961)、`config.go` (835)、`opencodeserver/worker.go` (824)、`hub.go` (818)
 - STT 脚本 (`scripts/stt_server.py`、`scripts/fix_onnx_model.py`) 也部署到 `~/.agents/skills/audio-transcribe/scripts/` 供 Claude Code skill 使用
 - STT 模型: `~/.cache/modelscope/hub/models/iic/SenseVoiceSmall` (~900MB)，ONNX FP32 非量化

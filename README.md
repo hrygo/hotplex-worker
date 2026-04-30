@@ -27,15 +27,15 @@
 
 ## ✨ Core Capabilities
 
-- 🌐 **Universal Agent Gateway** — Abstract any AI Coding Agent protocol into a unified AEP v1 WebSocket interface for consistent streaming and interaction.
+- 🌐 **Universal Agent Gateway** — Abstract any AI Coding Agent protocol into a unified AEP v1 (Agent Exchange Protocol) WebSocket interface for consistent streaming and interaction.
 - 📱 **Cross-Platform Delivery** — **"Write Once, Deploy Anywhere"**. Bridge agents to Web, Slack (Socket Mode), and Feishu (WebSocket) with zero code changes.
 - 🛠️ **Multi-Modal Interaction** — Native Speech-to-Text (SenseVoice-Small) support for a seamless voice-to-code development workflow.
-- 🤖 **Deep Personality Injection** — Dynamic SOUL/AGENTS/MEMORY injection via the B/C dual-channel XML system for tailored agent behavior.
-- 🧠 **Autonomous Meta-Cognition** — Built-in 5-state machine with intelligent LLM retry and 3-layer self-healing for unmatched session stability.
-- 🌐 **Embedded Web Chat** — A single binary serves both the API/WebSocket gateway and a premium Next.js-based web chat interface.
+- 🤖 **Deep Personality Injection** — Dynamic **B/C dual-channel** injection: **B-channel** (SOUL/AGENTS/SKILLS) for directives and **C-channel** (USER/MEMORY) for context.
+- 🧠 **Autonomous Meta-Cognition** — Built-in 5-state machine with **META-COGNITION** core, intelligent LLM retry, and 3-layer self-healing for unmatched session stability.
+- 🌐 **Embedded Web Chat** — A single binary serves both the API/WebSocket gateway and a premium Next.js-based web chat interface out of the box.
 - 🛡️ **Enterprise-Grade Security** — JWT ES256 authentication, SSRF protection, and PGID-isolated process management with orphan cleanup.
 - 📊 **End-to-End Observability** — Native Prometheus metrics, OpenTelemetry tracing, and structured JSON logging for full auditability.
-- 🛠️ **Self-contained CLI** — `onboard`, `doctor`, `security`, `status` in a single binary
+- 🛠️ **Self-contained CLI** — `gateway`, `service`, `dev`, `onboard`, `doctor`, `security`, `status` in a single binary
 - 🌍 **Multi-language SDKs** — Go, TypeScript, Python, Java clients ready to use
 
 ## ⚡ Quick Start
@@ -101,11 +101,12 @@ hotplex service uninstall
 
 Supports **systemd** (Linux), **launchd** (macOS), and **Windows SCM**.
 
-| Service             | Address                  |
-| :------------------ | :----------------------- |
-| Gateway (WebSocket) | `ws://localhost:8888/ws` |
-| Admin API           | `http://localhost:9999`  |
-| Web Chat UI         | `http://localhost:3000`  |
+| Service             | Address                  | Note                                     |
+| :------------------ | :----------------------- | :--------------------------------------- |
+| Gateway (WebSocket) | `ws://localhost:8888/ws` | Main protocol endpoint                   |
+| Admin API           | `http://localhost:9999`  | Management & Statistics                  |
+| Web Chat UI         | `http://localhost:8888`  | **Embedded SPA** (served from Gateway)   |
+| Dev Web Chat        | `http://localhost:3000`  | Next.js Dev Server (when running `make dev`) |
 
 ### Connect with Go SDK
 
@@ -139,9 +140,7 @@ func main() {
 }
 ```
 
-## 🏛️ Architecture
-
-HotPlex sits between frontend clients and backend AI coding agents, featuring a built-in meta-cognition core that abstracts protocol differences into a unified AEP v1 WebSocket layer.
+HotPlex sits between frontend clients and backend AI coding agents, featuring a built-in **Meta-Cognition Core** that abstracts protocol differences into a unified **AEP v1** (Agent Exchange Protocol) WebSocket layer.
 
 ```
 ┌──────────┐   ┌──────────┐   ┌──────────┐
@@ -151,8 +150,8 @@ HotPlex sits between frontend clients and backend AI coding agents, featuring a 
      └──────────────┼──────────────┘
                     │  WebSocket / AEP v1
               ┌─────┴─────┐
-              │  HotPlex  │  Session · Auth · Retry · Config
-              │  Gateway  │  Metrics · Tracing · Admin API
+              │  HotPlex  │  Session · Auth · Retry · B/C Config
+              │  Gateway  │  Metrics · Tracing · Admin · Meta-Core
               └─────┬─────┘
      ┌──────────────┼──────────────┐
      │              │              │
