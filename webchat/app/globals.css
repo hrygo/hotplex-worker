@@ -325,7 +325,7 @@ body {
 }
 
 .thread-content {
-  max-width: 48rem;
+  max-width: 56rem; /* 896px - max-w-4xl */
   margin: 0 auto;
   padding: 0 1.25rem;
 }
@@ -430,7 +430,7 @@ body {
 }
 
 .composer-container {
-  max-width: 48rem;
+  max-width: 48rem; /* 768px - max-w-3xl */
   margin: 0 auto;
   pointer-events: auto;
 }

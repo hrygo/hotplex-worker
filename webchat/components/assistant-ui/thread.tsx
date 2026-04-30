@@ -398,7 +398,7 @@ export function Thread({ skills, hasMore, onLoadHistory }: ThreadProps) {
   return (
     <ThreadPrimitive.Root className="flex flex-col h-full relative overflow-hidden bg-[var(--bg-base)]">
       <ThreadPrimitive.Viewport className="thread-viewport relative px-4 py-8">
-        <div className="max-w-5xl mx-auto w-full">
+        <div className="max-w-4xl mx-auto w-full">
           <ThreadPrimitive.Empty><WelcomeScreen /></ThreadPrimitive.Empty>
           {historyHasMore && (
             <div className="flex justify-center py-4 mb-4">
@@ -434,7 +434,7 @@ export function Thread({ skills, hasMore, onLoadHistory }: ThreadProps) {
       </ThreadPrimitive.Viewport>
 
       <div className="composer-wrapper px-4 pb-12">
-        <div className="composer-container relative max-w-4xl mx-auto">
+        <div className="composer-container relative max-w-3xl mx-auto">
           <AnimatePresence>
             {menuOpen && <CommandMenu isOpen={menuOpen} inputValue={localText} onSelect={handleSelectCommand} onClose={() => setMenuOpen(false)} skills={skills} />}
           </AnimatePresence>
