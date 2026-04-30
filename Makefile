@@ -65,14 +65,28 @@ all: help
 # Setup
 # ─────────────────────────────────────────────────────────────────────────────
 
-quickstart: hooks check-tools build test-short
-	@echo ""
-	@echo "  $(GREEN)✓ Setup complete$(RESET)"
-	@echo ""
-	@echo "    make dev      Start dev environment"
-	@echo "    make run      Run gateway"
-	@echo "    make help     Show all commands"
-	@echo ""
+quickstart: hooks
+	@if command -v go > /dev/null 2>&1; then \
+		$(MAKE) check-tools build test-short; \
+		echo ""; \
+		echo "  $(GREEN)✓ Developer setup complete$(RESET)"; \
+		echo ""; \
+		echo "    make dev      Start dev environment"; \
+		echo "    make run      Run gateway"; \
+		echo "    make help     Show all commands"; \
+		echo ""; \
+	else \
+		echo ""; \
+		echo "  $(GREEN)✓ Quickstart complete$(RESET)"; \
+		echo ""; \
+		echo "    $(DIM)Go not detected — skipping build & tests.$(RESET)"; \
+		echo ""; \
+		echo "    $(BOLD)Next steps:$(RESET)"; \
+		echo "      1. Download binary from releases"; \
+		echo "      2. Run $(CYAN)hotplex onboard$(RESET) to configure"; \
+		echo "      3. Run $(CYAN)hotplex gateway start$(RESET) to launch"; \
+		echo ""; \
+	fi
 
 check-tools:
 	@$(call check-tool, go, "Go")
@@ -305,8 +319,8 @@ help:
 	@echo "  $(BOLD)🧹 Other"
 	@printf "    $(CYAN)make %-15s$(RESET)  %s\n" "clean"        "Clean artifacts"
 	@printf "    $(CYAN)make %-15s$(RESET)  %s\n" "check-tools"  "Check dev tools"
-		@printf "    $(CYAN)make %-15s$(RESET)  %s\n" "hooks"        "Install git hooks"
-		@echo ""
+	@printf "    $(CYAN)make %-15s$(RESET)  %s\n" "hooks"        "Install git hooks"
+	@echo ""
 	@echo "  $(DIM)Try:  make dev | make test | make check"
 	@echo ""
 
