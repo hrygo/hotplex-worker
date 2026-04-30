@@ -414,9 +414,9 @@ export function Thread({ skills, hasMore, onLoadHistory }: ThreadProps) {
           <div className="relative">
             <div className="absolute bottom-full left-0 right-0 z-20 mb-3 flex items-center justify-between px-1">
               {/* Left Side: Agent Skills */}
-              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar animate-fadeIn max-w-[65%]">
+              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar animate-fadeIn max-w-[70%]">
                 <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-[var(--accent-gold)]/10 border border-[var(--accent-gold)]/20 shadow-sm whitespace-nowrap">
-                  <span className="text-[9px] font-display font-black text-[var(--accent-gold)] uppercase tracking-[0.05em]">Skills</span>
+                  <span className="text-[9px] font-display font-black text-[var(--accent-gold)] uppercase tracking-[0.05em]">Agent Skills</span>
                   <div className="w-1 h-1 rounded-full bg-[var(--accent-gold)] animate-pulse" />
                 </div>
                 {skills?.slice(0, 3).map(skill => (
@@ -436,7 +436,7 @@ export function Thread({ skills, hasMore, onLoadHistory }: ThreadProps) {
                 <svg className="w-3.5 h-3.5 animate-bounce-subtle" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
                 </svg>
-                <span className="text-[10px] font-bold uppercase tracking-widest">Latest</span>
+                <span className="text-[10px] font-bold uppercase tracking-widest">Latest Messages</span>
               </ThreadPrimitive.ScrollToBottom>
             </div>
 
