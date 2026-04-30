@@ -897,7 +897,7 @@ version: v1.0
 **描述**: 系统必须按 defaults.yaml → 环境配置（dev/staging/prod）→ config.yaml 的顺序加载。
 
 **验收标准**:
-- Given configs/_defaults/defaults.yaml 存在且定义了 gateway.server_addr=:8888，When 启动 Gateway，Then server_addr 字段取默认值 :8888
+- Given configs/_defaults/defaults.yaml 存在且定义了 gateway.server_addr=localhost:8888，When 启动 Gateway，Then server_addr 字段取默认值 localhost:8888
 - Given HOTPLEX_ENV=staging，When 启动 Gateway，Then 加载 configs/environments/staging.yaml 并覆盖 defaults.yaml 中的同名字段
 - Given config.yaml 中存在 inherits 字段指向 ./environments/prod.yaml，When 加载 config.yaml，Then 先加载 parent 再加载当前文件
 

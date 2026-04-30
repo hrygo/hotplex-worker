@@ -15,7 +15,6 @@ permissions:
   contents: write
 
 env:
-  # Build-time variables injected via ldflags
   GO_VERSION: '1.26'
 
 jobs:
@@ -37,6 +36,19 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+          cache-dependency-path: webchat/pnpm-lock.yaml
+
+      - name: Build webchat
+        run: make webchat-embed
 
       - name: Compute version
         id: version
@@ -121,7 +133,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v6
         with:
           node-version: '22'
 
@@ -139,7 +151,6 @@ jobs:
         run: |
           chmod +x scripts/pack-offline-bundle.sh
 
-          # Pack for each platform
           for PLATFORM in linux-x64 linux-x64-musl linux-arm64 linux-arm64-musl darwin-arm64 darwin-x64; do
             echo "==> Packing ${PLATFORM}..."
             bash scripts/pack-offline-bundle.sh \

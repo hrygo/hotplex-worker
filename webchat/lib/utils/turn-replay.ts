@@ -19,15 +19,15 @@ export interface ConversationTurn {
   platform: string;
   user_id: string;
   model: string;
-  success: number | null; // 0=false, 1=true, null=unknown
+  success: boolean | null;
   source: string;
-  tools_json: string | null; // JSON array of tool names, e.g. '["Read","Edit","Bash"]'
+  tools: Record<string, number> | null; // e.g. {"Read": 2, "Edit": 1}
   tool_call_count: number;
   tokens_in: number;
   tokens_out: number;
   duration_ms: number;
   cost_usd: number;
-  metadata_json: string | null;
+  metadata: Record<string, unknown> | null;
   created_at: string;
 }
 
@@ -72,26 +72,23 @@ export function conversationTurnsToMessages(turns: ConversationTurn[]): HotPlexM
     }
 
     // Add tool summary for assistant turns with tools
-    if (turn.role === 'assistant' && turn.tools_json) {
-      try {
-        const toolNames: string[] = JSON.parse(turn.tools_json);
-        if (Array.isArray(toolNames) && toolNames.length > 0) {
-          parts.push({
-            type: 'tool-summary',
-            toolNames,
-            count: toolNames.length,
-          });
-        }
-      } catch {
-        // Ignore malformed tools_json
+    if (turn.role === 'assistant' && turn.tools) {
+      const toolNames = Object.keys(turn.tools);
+      if (toolNames.length > 0) {
+        parts.push({
+          type: 'tool-summary',
+          toolNames,
+          count: toolNames.length,
+        });
       }
     }
 
+    const createdAt = new Date(turn.created_at);
     return {
       id: turn.id,
       role: turn.role as 'user' | 'assistant',
       parts,
-      createdAt: new Date(turn.created_at),
+      createdAt: isNaN(createdAt.getTime()) ? new Date() : createdAt,
       status: 'complete' as const,
     };
   });

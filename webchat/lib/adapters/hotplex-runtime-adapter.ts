@@ -43,6 +43,8 @@ export interface UseHotPlexRuntimeConfig {
   onMetricsChange?: (metrics: import('@/lib/hooks/useMetrics').SessionMetrics) => void;
   /** Called when skills list is fetched from the worker. */
   onSkillsChange?: (skills: string[]) => void;
+  /** Custom welcome suggestions shown when thread is empty. */
+  suggestions?: readonly ThreadSuggestion[];
 }
 
 // Single part of a message
@@ -133,7 +135,9 @@ function toCacheable(msg: HotPlexMessage): CacheableMessage {
       toolNames: 'toolNames' in p ? p.toolNames : undefined,
       count: 'count' in p ? p.count : undefined,
     })),
-    createdAt: msg.createdAt.toISOString(),
+    createdAt: msg.createdAt instanceof Date && !isNaN(msg.createdAt.getTime())
+      ? msg.createdAt.toISOString()
+      : new Date().toISOString(),
     status: msg.status,
   };
 }
@@ -146,6 +150,9 @@ function fromCacheable(msg: CacheableMessage): HotPlexMessage {
     parts: (msg.parts || []).map(p => {
       if (p.type === 'tool-summary') {
         return { type: 'tool-summary' as const, toolNames: (p as any).toolNames || [], count: (p as any).count || 0 };
+      }
+      if (p.type === 'reasoning') {
+        return { type: 'reasoning' as const, text: p.text || '' };
       }
       return { type: 'text' as const, text: p.text || '' };
     }),
@@ -165,15 +172,15 @@ function historyToMessages(records: ConversationRecord[]): HotPlexMessage[] {
     platform: r.platform,
     user_id: r.user_id,
     model: r.model,
-    success: r.success == null ? null : r.success ? 1 : 0,
+    success: r.success == null ? null : !!r.success,
     source: r.source,
-    tools_json: r.tools_json,
+    tools: r.tools,
     tool_call_count: r.tool_call_count,
     tokens_in: r.tokens_in,
     tokens_out: r.tokens_out,
     duration_ms: r.duration_ms,
     cost_usd: r.cost_usd,
-    metadata_json: r.metadata_json,
+    metadata: r.metadata,
     created_at: r.created_at,
   }));
   return conversationTurnsToMessages(turns).map(m => ({
@@ -186,6 +193,7 @@ function historyToMessages(records: ConversationRecord[]): HotPlexMessage[] {
       if (p.type === 'text') {
         return { type: 'text' as const, text: p.text || '' };
       }
+      // reasoning not persisted in history (streaming content, restored from cache)
       return null;
     }).filter((p): p is TextPart | ToolSummaryPart => p !== null),
     createdAt: m.createdAt,
@@ -213,6 +221,7 @@ export function useHotPlexRuntime({
   overrideWorkDir,
   onMetricsChange,
   onSkillsChange,
+  suggestions: configSuggestions,
 }: UseHotPlexRuntimeConfig = {}): ExternalStoreAdapter<HotPlexMessage> {
   // State
   const [messages, setMessages] = useState<HotPlexMessage[]>([]);
@@ -224,13 +233,15 @@ export function useHotPlexRuntime({
   sessionIdRef.current = sessionId;
 
   // Welcome suggestions — shown when thread is empty (stable reference)
-  const suggestions: readonly ThreadSuggestion[] = useMemo(() => [
+  // Welcome suggestions — shown when thread is empty (use prop or default)
+  const defaultSuggestions: readonly ThreadSuggestion[] = [
     { title: '帮我写一个 React 组件', label: '代码', prompt: '帮我写一个 React 组件' },
     { title: '解释这段代码的逻辑', label: '学习', prompt: '解释这段代码的逻辑' },
     { title: '帮我调试这个错误', label: '调试', prompt: '帮我调试这个错误' },
     { title: '重构这段代码让它更简洁', label: '重构', prompt: '重构这段代码让它更简洁' },
     { title: '解释系统架构设计', label: '架构', prompt: '解释系统架构设计' },
-  ], []);
+  ];
+  const suggestions: readonly ThreadSuggestion[] = configSuggestions ?? defaultSuggestions;
 
   // Pending reasoning content accumulated before messageStart
   const pendingReasoningRef = useRef<string>('');
@@ -241,6 +252,9 @@ export function useHotPlexRuntime({
 
   // Track whether skills have been fetched (only after first turn completes)
   const skillsFetchedRef = useRef(false);
+
+  // Cache min seq for cursor-based pagination (avoid O(n) scan on each load)
+  const minSeqRef = useRef<number>(0);
 
   // Metrics tracking (spec §4.5 — Token & latency dashboard)
   const { sessionMetrics, startTurn, recordTurn } = useMetrics();
@@ -274,17 +288,45 @@ export function useHotPlexRuntime({
       .then(res => {
         if (res.records.length > 0) {
           const serverMessages = historyToMessages(res.records);
+          // Build content signature set for dedup (live user messages have different IDs than server)
+          // Extract ALL visible parts (text, reasoning, tool-summary) for accurate dedup
+          const extractText = (parts: MessagePart[]) =>
+            parts
+              .filter(p => p.type === 'text' || p.type === 'reasoning' || p.type === 'tool-summary')
+              .map(p => {
+                if (p.type === 'text') return (p as TextPart).text || '';
+                if (p.type === 'reasoning') return `[THOUGHT]${(p as ReasoningPart).text || ''}`;
+                if (p.type === 'tool-summary') return `[TOOL]${((p as ToolSummaryPart).toolNames || []).join(',')}`;
+                return '';
+              })
+              .join('');
+          // Merge server messages with live messages (dedup by ID and content signature)
           setMessages(prev => {
-            // Merge: server messages first, then any live messages not in server data
             const serverIds = new Set(serverMessages.map(m => m.id));
-            const liveOnly = prev.filter(m => !serverIds.has(m.id));
-            return [...serverMessages, ...liveOnly];
+            const serverSigs = new Set(
+              serverMessages.map(m => `${m.role}:${extractText(m.parts)}`)
+            );
+            const liveOnly = prev.filter(m => {
+              if (serverIds.has(m.id)) return false;
+              // Also dedup by role+content for user messages (live ID vs server ID)
+              const sig = `${m.role}:${extractText(m.parts)}`;
+              return !serverSigs.has(sig);
+            });
+            const merged = [...serverMessages, ...liveOnly];
+            // Save merged state to cache after state update
+            setTimeout(() => {
+              saveMessages(sessionId, merged.filter(m => m.status !== 'streaming').map(toCacheable));
+            }, 0);
+            return merged;
           });
-          // Save merged state to cache
-          setMessages(current => {
-            saveMessages(sessionId, current.filter(m => m.status !== 'streaming').map(toCacheable));
-            return current;
-          });
+          // Update minSeq cache for cursor-based pagination
+          if (serverMessages.length > 0) {
+            const minSeq = Math.min(...serverMessages.map(m => {
+              const seq = parseInt(m.id.split('_').pop() || '0', 10);
+              return seq > 0 ? seq : Number.MAX_SAFE_INTEGER;
+            }));
+            minSeqRef.current = minSeq === Number.MAX_SAFE_INTEGER ? 0 : minSeq;
+          }
         }
         setHistoryHasMore(res.has_more);
       })
@@ -314,9 +356,9 @@ export function useHotPlexRuntime({
       apiKey,
       initConfig,
       heartbeat: {
-        pingIntervalMs: 10000,
-        pongTimeoutMs: 5000,
-        maxMissedPongs: 2,
+        pingIntervalMs: 20000,
+        pongTimeoutMs: 10000,
+        maxMissedPongs: 3,
       },
     });
 
@@ -325,7 +367,8 @@ export function useHotPlexRuntime({
     // Append delta content to the last text part of the last assistant message
     const appendDelta = (content: string) => {
       setMessages((prev) => {
-        const lastMessage = prev[prev.length - 1];
+        const filtered = prev.filter(m => m.id !== 'ghost-assistant');
+        const lastMessage = filtered[filtered.length - 1];
         if (lastMessage?.role === 'assistant' && lastMessage.status === 'streaming') {
           const parts = [...lastMessage.parts];
           // Append to last text part, or add new one
@@ -335,11 +378,11 @@ export function useHotPlexRuntime({
           } else {
             parts.push({ type: 'text', text: content });
           }
-          return [...prev.slice(0, -1), { ...lastMessage, parts }];
+          return [...filtered.slice(0, -1), { ...lastMessage, parts }];
         }
         // No streaming message — create one (message.start may not have been sent)
         return [
-          ...prev,
+          ...filtered,
           {
             id: `assistant-${Date.now()}`,
             role: 'assistant' as const,
@@ -358,7 +401,8 @@ export function useHotPlexRuntime({
       pendingReasoningRef.current += data.content || '';
 
       setMessages((prev) => {
-        const lastMessage = prev[prev.length - 1];
+        const filtered = prev.filter(m => m.id !== 'ghost-assistant');
+        const lastMessage = filtered[filtered.length - 1];
         if (lastMessage?.role === 'assistant' && lastMessage.status === 'streaming') {
           const parts = [...lastMessage.parts];
           // Append to last reasoning part, or add new one
@@ -368,11 +412,11 @@ export function useHotPlexRuntime({
           } else {
             parts.push({ type: 'reasoning', text: pendingReasoningRef.current });
           }
-          return [...prev.slice(0, -1), { ...lastMessage, parts }];
+          return [...filtered.slice(0, -1), { ...lastMessage, parts }];
         }
         // No streaming message yet — create one with reasoning
         return [
-          ...prev,
+          ...filtered,
           {
             id: `assistant-${Date.now()}`,
             role: 'assistant' as const,
@@ -570,16 +614,17 @@ export function useHotPlexRuntime({
     const handleMessageStart = (data: MessageStartData, env: Envelope) => {
       if (!data) return;
       setMessages((prev) => {
-        const existingIdx = prev.findIndex((m) => m.id === env.id);
+        const filtered = prev.filter(m => m.id !== 'ghost-assistant');
+        const existingIdx = filtered.findIndex((m) => m.id === env.id);
         if (existingIdx !== -1) {
           // Message already created (e.g., from reasoning events) — just update status
-          const updated = [...prev];
-          updated[existingIdx] = { ...prev[existingIdx], status: 'streaming' };
+          const updated = [...filtered];
+          updated[existingIdx] = { ...filtered[existingIdx], status: 'streaming' };
           return updated;
         }
         // New message — create with streaming status
         return [
-          ...prev,
+          ...filtered,
           {
             id: env.id,
             role: 'assistant' as const,
@@ -721,7 +766,7 @@ export function useHotPlexRuntime({
       return;
     }
 
-    // Add user message to state
+    // 1. Add user message to state
     const userMessage: HotPlexMessage = {
       id: `user-${Date.now()}`,
       role: 'user',
@@ -730,7 +775,17 @@ export function useHotPlexRuntime({
       status: 'complete',
     };
 
-    setMessages((prev) => [...prev, userMessage]);
+    // 2. Add optimistic "Ghost" assistant message to provide immediate feedback
+    const ghostMessage: HotPlexMessage = {
+      id: 'ghost-assistant',
+      role: 'assistant',
+      parts: [{ type: 'reasoning', text: 'Initializing HotPlex Agent and analyzing workspace context...' }],
+      createdAt: new Date(),
+      status: 'streaming',
+    };
+
+    setMessages((prev) => [...prev, userMessage, ghostMessage]);
+    setIsRunning(true); 
     startTurn(); // Begin timing for metrics
 
     // Send to HotPlex gateway with error handling
@@ -760,13 +815,11 @@ export function useHotPlexRuntime({
     historyLoadingRef.current = true;
 
     try {
-      // Get the smallest seq from current messages as cursor
-      const minSeq = messages.reduce((min, m) => {
-        const seq = parseInt(m.id.split('_').pop() || '0', 10);
-        return seq > 0 && (min === 0 || seq < min) ? seq : min;
-      }, 0);
+      // Use cached minSeq for cursor (updated when loading history from server)
+      const cursorSeq = minSeqRef.current;
+      if (!cursorSeq) return { hasMore: false };
 
-      const res = await getSessionHistory(sid, { beforeSeq: minSeq || undefined, limit: 50 });
+      const res = await getSessionHistory(sid, { beforeSeq: cursorSeq, limit: 50 });
       if (res.records.length > 0) {
         const olderMessages = historyToMessages(res.records);
         setMessages(prev => {
@@ -774,6 +827,14 @@ export function useHotPlexRuntime({
           const newOnly = olderMessages.filter(m => !existingIds.has(m.id));
           return [...newOnly, ...prev];
         });
+        // Update minSeq cache for next page
+        if (olderMessages.length > 0) {
+          const minSeq = Math.min(...olderMessages.map(m => {
+            const seq = parseInt(m.id.split('_').pop() || '0', 10);
+            return seq > 0 ? seq : Number.MAX_SAFE_INTEGER;
+          }));
+          minSeqRef.current = minSeq === Number.MAX_SAFE_INTEGER ? cursorSeq : minSeq;
+        }
       }
       setHistoryHasMore(res.has_more);
       return { hasMore: res.has_more };
@@ -783,7 +844,7 @@ export function useHotPlexRuntime({
     } finally {
       historyLoadingRef.current = false;
     }
-  }, [messages]);
+  }, []);
 
   // Memoized thread messages conversion (spec §7.1)
   // Filter out malformed messages and guard against undefined roles to prevent

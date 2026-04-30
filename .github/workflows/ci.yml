@@ -9,6 +9,8 @@ on:
       - 'go.sum'
       - 'Makefile'
       - 'scripts/**'
+      - 'webchat/**'
+      - 'internal/webchat/**'
       - '.github/workflows/ci.yml'
   pull_request:
     branches: [main]
@@ -18,6 +20,8 @@ on:
       - 'go.sum'
       - 'Makefile'
       - 'scripts/**'
+      - 'webchat/**'
+      - 'internal/webchat/**'
       - '.github/workflows/ci.yml'
 
 concurrency:
@@ -74,6 +78,19 @@ jobs:
           go-version: '1.26'
           cache: true
 
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+          cache-dependency-path: webchat/pnpm-lock.yaml
+
+      - name: Build webchat
+        run: make webchat-embed
+
       - run: go mod download
 
       - name: Verify module checksums
@@ -104,6 +121,19 @@ jobs:
         with:
           go-version: '1.26'
           cache: true
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+          cache-dependency-path: webchat/pnpm-lock.yaml
+
+      - name: Build webchat
+        run: make webchat-embed
 
       - run: go mod download
 
@@ -254,6 +284,19 @@ jobs:
         with:
           go-version: '1.26'
           cache: true
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+          cache-dependency-path: webchat/pnpm-lock.yaml
+
+      - name: Build webchat
+        run: make webchat-embed
 
       - run: go mod download
 

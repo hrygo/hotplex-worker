@@ -577,7 +577,7 @@ func (s *AdminServer) handleSessions(w http.ResponseWriter, r *http.Request) {
 ```yaml
 # configs/admin.yaml
 admin:
-  server_addr: ":9999"
+  server_addr: "localhost:9999"
 
   auth:
     enabled: true
@@ -607,7 +607,7 @@ admin:
 
 ```bash
 # .env
-HOTPLEX_ADMIN_SERVER_ADDR=:9999
+HOTPLEX_ADMIN_SERVER_ADDR=localhost:9999
 HOTPLEX_ADMIN_TOKEN_1=admin_secret_001
 HOTPLEX_ADMIN_TOKEN_2=admin_secret_002
 ```

@@ -601,7 +601,11 @@ export class BrowserHotPlexClient extends EventEmitter<BrowserClientEvents> {
     this._connected = false;
 
     if (this.ws) {
+      const old = this.ws;
       this.ws = null;
+      if (old.readyState === WebSocket.OPEN || old.readyState === WebSocket.CONNECTING) {
+        old.close(1000, reason);
+      }
     }
 
     if (!wasConnected && !this._reconnecting) {

@@ -17,11 +17,34 @@ related:
 
 # HotPlex Agent Context 设定文件方案 (Dual-Worker)
 
-> **实施状态**: ✅ Phase 1-4 已实现 | Phase 5（动态能力）待实现
+> **实施状态**: ✅ Phase 1-4 已实现 | 🔄 Phase 5（动态能力）规划中
 
-### 元认知与 Agent Config 的关系
+## 1. 概述与目标
 
-Agent Config 是 Agent 的**可配置人格层**，而 `META-COGNITION.md` 是 Agent 的**不可配置元认知层**。
+HotPlex Gateway 作为一个统一接入层，需要为底层不同的 Worker（Claude Code / OpenCode Server）提供一致的人格（Persona）和工作上下文。本方案旨在建立一套统一的、可扩展的设定文件架构，实现「一套配置，多端同步」。
+
+### 1.1 核心设计思想：双通道注入
+为了确保 Agent 既能严格遵守规则，又能灵活参考背景信息，我们采用了双通道注入模型：
+- **B 通道 (Behavioral/Directives)**：定义 Agent「必须遵循」的行为规范、性格特质和工具使用准则。
+- **C 通道 (Contextual/Facts)**：提供「参考性」的用户画像、项目背景和跨会话记忆。
+
+---
+
+## 2. 核心概念
+
+### 2.1 术语对照
+
+| 缩写 | 全称 | 说明 |
+|------|------|------|
+| **CC** | Claude Code | Anthropic CLI 编码 Agent |
+| **OCS** | OpenCode Server | OpenCode 的 HTTP Server 模式 |
+| **B 通道** | B Channel (System-level) | 行为指令 "必须遵循"，高优先级，无削弱 |
+| **C 通道** | C Channel (Context-level) | 上下文数据 "参考信息"，辅助性 |
+| **hedging** | 削弱声明 | CC 通过 `prependUserContext()` 注入的 user message 中带有 "may or may not be relevant" |
+
+### 2.2 元认知与 Agent Config 的关系
+
+Agent Config 是 Agent 的**可配置人格层**，而 `META-COGNITION.md` 是 Agent 的**不可配置元认知层**（自我意识基础）。
 
 | 维度 | Agent Config | META-COGNITION.md |
 |------|--------------|-------------------|
@@ -36,23 +59,14 @@ Agent Config 是 Agent 的**可配置人格层**，而 `META-COGNITION.md` 是 A
 - `META-COGNITION.md` 内容注入到 `<context>` 顶部（C 通道，Agent 自我认知）
 - `USER.md/MEMORY.md` 内容注入到 `<context>` 底部（用户上下文）
 
-### 术语对照
-
-| 缩写 | 全称 | 说明 |
-|------|------|------|
-| **CC** | Claude Code | Anthropic CLI 编码 Agent |
-| **OCS** | OpenCode Server | OpenCode 的 HTTP Server 模式 |
-| **B 通道** | B Channel (System-level) | 行为指令 "必须遵循"，高优先级，无削弱 |
-| **C 通道** | C Channel (Context-level) | 上下文数据 "参考信息"，辅助性 |
-| **hedging** | 削弱声明 | CC M0 中 "this context may or may not be relevant" |
 
 ---
 
-## 1. Worker Context 架构对比
+## 3. Worker Context 架构对比
 
 > 基于 [[Claude-Code-Context-Analysis]] 与 [[OpenCode-Server-Context-Analysis]] 的源码研究。
 
-### 1.1 通道语义定义
+### 3.1 通道语义定义
 
 | 通道 | 语义 | 注入位置 | 特征 |
 |------|------|---------|------|
@@ -61,7 +75,7 @@ Agent Config 是 Agent 的**可配置人格层**，而 `META-COGNITION.md` 是 A
 
 B 通道承载指令性内容 (人格/规则/工具指南)，C 通道承载事实性内容 (用户画像/记忆)。
 
-### 1.2 Claude Code Context 槽位
+### 3.2 Claude Code Context 槽位
 
 ```
 system[] (System Prompt — 5 段)
@@ -70,18 +84,19 @@ system[] (System Prompt — 5 段)
   S2  Static Content     (不可控, ~15K tok)
   S3  Dynamic Content    (部分可控)
       ┃ ↓↓↓ B 通道注入点 (--append-system-prompt) ↓↓↓
-  S4  System Context     (不可控)
+  S4  System Context     (不可控, gitStatus 等)
 
 messages[] (对话)
-  M0  User Context       <system-reminder>
-      ┃ ↓↓↓ C 通道注入点 (.claude/rules/hotplex-*.md) ↓↓↓
-      附带削弱: "this context may or may not be relevant"
+  M0  User Context (prependUserContext 追加的 user message)
+      附带削弱: "IMPORTANT: may or may not be relevant"
   M1+ Conversation History
 ```
 
 **要点**: `--append-system-prompt` 注入 S3 尾部，无削弱。同时 S1 自动切换为 SDK 模式 ("running within the Claude Agent SDK")，模型更易接受外部规则。
 
-### 1.3 OpenCode Server Context 槽位
+**实际标签**: CC 通过 `--append-system-prompt` 注入的内容使用 `<persona>` / `<rules>` / `<skills>` 标签（B 通道）和 `<hotplex>` / `<user>` / `<memory>` 标签（C 通道），由 `prompt.go` 的 `BuildSystemPrompt()` 统一组装。
+
+### 3.3 OpenCode Server Context 槽位
 
 OCS 使用两层组装架构：
 
@@ -104,7 +119,7 @@ messages[role: "system"] — 两层组装
 
 **要点**: S2 (Call-level System) 无 hedging，所有内容等权。但 S3 的 `lastUser` 在跨消息时切换为新消息 — **HotPlex 必须每条消息都附带 `system` 字段**，不存在"发送一次即持久"的机制。
 
-### 1.4 架构差异对照
+### 3.4 架构差异对照
 
 | 维度 | Claude Code | OpenCode Server |
 |------|-------------|-----------------|
@@ -117,9 +132,9 @@ messages[role: "system"] — 两层组装
 
 ---
 
-## 2. 统一通道映射
+## 4. 统一通道映射
 
-### 2.1 映射表
+### 4.1 映射表
 
 | Config 文件 | 通道 | CC 机制 | OCS 机制 | 强度 |
 |------------|------|---------|----------|------|
@@ -131,13 +146,13 @@ messages[role: "system"] — 两层组装
 
 B/C 合并注入同一机制的原因：两个 Worker 统一使用 system-level 注入，B/C 分类通过 `<directives>`/`<context>` XML 标签在内容层面传达语义优先级，而非通过不同的注入机制。合并注入消除了 CC C 通道的 hedging 削弱。
 
-### 2.2 分配原则
+### 4.2 分配原则
 
 - 需覆盖 Worker 预设默认值 → B 通道 (SOUL 覆盖身份声明，AGENTS 覆盖默认行为)
 - 行为指令性内容 → B (SOUL/AGENTS/SKILLS)
 - 事实性上下文数据 → C (USER/MEMORY)
 
-### 2.3 语义分层总览
+### 4.3 语义分层总览
 
 ```
 Claude Code:
@@ -157,9 +172,9 @@ OpenCode Server:
 
 ---
 
-## 3. Prompt 组装
+## 5. Prompt 组装
 
-### 3.1 XML 结构
+### 5.1 XML 结构
 
 ```xml
 <agent-configuration>
@@ -216,9 +231,9 @@ Recall relevant past context when applicable.
 
 ---
 
-## 4. Context 分布图
+## 6. Context 分布图
 
-### 4.1 Claude Code
+### 6.1 Claude Code
 
 ```
 system[]
@@ -251,7 +266,7 @@ messages[]
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-### 4.2 OpenCode Server
+### 6.2 OpenCode Server
 
 ```
 messages[role: "system"] — 两层组装
@@ -280,19 +295,19 @@ messages[role: "system"] — 两层组装
 
 ---
 
-## 5. 子 Agent 上下文继承
+## 7. 子 Agent 上下文继承
 
-### 5.1 Claude Code (upstream-blocked)
+### 7.1 Claude Code (upstream-blocked)
 
 CC 子 Agent 继承**全部 system prompt**（含 HotPlex B+C 注入），不支持按 Agent 类型裁剪。MEMORY.md 对搜索/研究类子 Agent 无害，风险低。若未来 CC 上游支持 agent-scoped rules 可重新评估。
 
-### 5.2 OpenCode Server
+### 7.2 OpenCode Server
 
 OCS 子 Agent (explore, general) 有自己的专用 prompt，不继承 S2 注入。子 Agent 执行短期特定任务，不需要用户画像。**由 OCS 自行管理，HotPlex 无需干预。**
 
 ---
 
-## 6. 完整 Context 组装流程
+## 8. 完整 Context 组装流程
 
 ```
 Step 1: 加载设定文件 (共享)
@@ -304,15 +319,16 @@ Step 1: 加载设定文件 (共享)
   └── MEMORY.md  → C 通道 (跨会话记忆)
 
   加载规则:
-  · 按平台选择变体: SOUL.slack.md > SOUL.md (追加模式，非替换)
-  · frontmatter (YAML) 剥离后注入
+  · 按平台选择变体: SOUL.slack.md / SOUL.feishu.md / SOUL.webchat.md 等追加到 SOUL.md (追加模式，非替换)
+  · frontmatter (--- 包裹的 YAML) 剥离后注入
   · 大小限制: 8K/文件, 40K/总计
   · 文件不存在 → 跳过
 
-Step 2: 元认知加载 (init 时 go:embed)
+Step 2: 元认知加载 (编译时 go:embed，运行时组装)
   internal/agentconfig/
-  ├── META-COGNITION.md → 元认知核心 (身份/架构/状态机/配置架构/控制命令)
-  └── prompt.go 在 init() 时通过 go:embed 读取，注入到 `<context>` 顶部 (C 通道)
+  ├── META-COGNITION.md → 元认知核心 (5 节: 身份/系统架构/状态机/配置架构/控制命令)
+  └── `//go:embed META-COGNITION.md` 在编译时嵌入内容，init() 时拼接为 `hotplexMetacognition` 变量；
+      真正的 prompt 组装在 `BuildSystemPrompt()` 调用时完成（会话启动时），注入到 `<context>` 顶部 (C 通道)
 
 Step 3: Worker 路由 (Bridge 层)
   configs := agentconfig.Load(configDir, platform)
@@ -332,9 +348,9 @@ Step 3b: OpenCode Server Worker
 
 ---
 
-## 7. 设定文件模板
+## 9. 设定文件模板
 
-### 7.1 SOUL.md — Agent 人格 (→ B 通道)
+### 9.1 SOUL.md — Agent 人格 (→ B 通道)
 
 ```markdown
 ---
@@ -367,7 +383,7 @@ description: "HotPlex Agent 人格定义"
 - 遇到安全漏洞立即修复，不推迟
 ```
 
-### 7.2 AGENTS.md — 工作空间规则 (→ B 通道)
+### 9.2 AGENTS.md — 工作空间规则 (→ B 通道)
 
 ```markdown
 ---
@@ -399,7 +415,7 @@ description: "HotPlex 工作空间行为规范"
 | 编辑文件 | Edit |
 ```
 
-### 7.3 SKILLS.md — 工具使用指南 (→ B 通道)
+### 9.3 SKILLS.md — 工具使用指南 (→ B 通道)
 
 ```markdown
 ---
@@ -426,7 +442,7 @@ description: "HotPlex 工具使用指南"
 所有操作必须用 `make` 目标：`make build` / `make test` / `make lint` / `make check`
 ```
 
-### 7.4 USER.md — 用户画像 (→ C 通道)
+### 9.4 USER.md — 用户画像 (→ C 通道)
 
 ```markdown
 ---
@@ -458,7 +474,7 @@ description: "HotPlex 用户画像"
 
 ---
 
-## 8. 实施路径
+## 10. 实施路径
 
 ```
 Phase 1: 共享基础设施 ✅
@@ -478,7 +494,7 @@ Phase 4: Bridge 集成与路由 ✅
 ├── bridge.injectAgentConfig 按 workerType 选择注入方式
 └── SessionInfo.SystemPrompt 字段传播链
 
-Phase 5: 动态能力 (待实现)
+Phase 5: 动态能力 (规划中)
 ├── 按平台/通道动态选择配置变体 (SOUL.slack.md 等)
 ├── 运行时热更新 (文件变更 → 下次会话生效)
 ├── 用户画像自动学习 (从对话中提取偏好更新 USER.md)
@@ -487,15 +503,15 @@ Phase 5: 动态能力 (待实现)
 
 ---
 
-## 9. 设计原则总结
+## 11. 设计原则总结
 
 1. **注入位置效果优先** — B = 行为框架，C = 上下文数据；统一 system-level 注入，无 hedging
 2. **语义分层** — `<directives>`/`<context>` XML 标签传达 B/C 优先级，每段附 1 行行为指令
 3. **职责分离** — SOUL (人格) / AGENTS (规则) / SKILLS (工具) / USER (用户) / MEMORY (记忆)
 4. **非侵入式** — CC: `--append-system-prompt` 不写文件；OCS: API `system` 字段不接触项目文件
 5. **保留 Worker 基线** — CC S2 安全规范、OCS S0 Provider Prompt 均保留
-6. **平台适配** — `SOUL.slack.md` / `SOUL.feishu.md` 追加模式（非替换）
+6. **平台适配** — `SOUL.slack.md` / `SOUL.feishu.md` / `SOUL.webchat.md` 等追加模式（非替换）
 7. **安全边界** — 8K/文件, 40K/总计；frontmatter 剥离；CC 子 Agent 全量继承 (upstream-blocked)；OCS 子 Agent 天然隔离
 8. **OCS 消息级注入** — S2 无 hedging，同 cycle 内持续生效，跨消息需每条带 `system` 字段
 9. **元认知与 Agent Config 分离** — `META-COGNITION.md` (不可配置) 定义 Agent 自我认知，属于 C 通道；`~/.hotplex/agent-configs/` (可配置) 定义用户偏好；两者合并注入，`<hotplex>` 位于 `<context>` 顶部
-10. **元认知 go:embed 惰性计算** — `META-COGNITION.md` 内容在 `init()` 时通过 `go:embed` 读取，避免运行时文件 IO；Agent Config 文件在会话启动时 `Load()` 读取
+10. **元认知 go:embed + 运行时组装** — `META-COGNITION.md` 内容在编译时通过 `go:embed` 嵌入二进制，init() 时拼接为 `<hotplex>` 变量，Session 启动时由 `BuildSystemPrompt()` 组装进 C-channel；Agent Config 文件在会话启动时 `Load()` 读取

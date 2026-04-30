@@ -33,28 +33,40 @@ export const ToolName = {
   AskPermission: "ask_permission",
   Confirm: "confirm",
   Elicitation: "elicitation",
+  // AI Tools
+  SearchWeb: "search_web",
+  GenerateImage: "generate_image",
+  ReadUrlContent: "read_url_content",
 } as const;
 
-export type ToolCategory = "terminal" | "file" | "search" | "list" | "permission" | "default";
+export type ToolCategory = "terminal" | "file" | "search" | "list" | "permission" | "todo" | "ai" | "default";
 
 const TERMINAL_TOOLS: ReadonlySet<string> = new Set([
   ToolName.RunCommand, ToolName.Bash, ToolName.ExecuteCommand, ToolName.Shell,
+]);
+
+const TODO_TOOLS: ReadonlySet<string> = new Set([
+  "todo", "todowrite", "todo_write", "task_list", "checklist"
 ]);
 
 const FILE_TOOLS: ReadonlySet<string> = new Set([
   ToolName.EditFile, ToolName.WriteFile, ToolName.ReplaceFileContent,
   ToolName.CreateFile, ToolName.ApplyDiff,
   ToolName.Write, ToolName.WriteToFile, ToolName.MultiReplaceFileContent,
-  ToolName.Edit, ToolName.StrReplaceEditor,
+  ToolName.Edit, ToolName.StrReplaceEditor, "patch",
 ]);
 
 const SEARCH_TOOLS: ReadonlySet<string> = new Set([
   ToolName.GrepSearch, ToolName.ViewFile, ToolName.SearchFiles,
-  ToolName.ReadFile,
+  ToolName.ReadFile, "search_web", "read_url_content", "google_search",
 ]);
 
 const LIST_TOOLS: ReadonlySet<string> = new Set([
-  ToolName.ListDirectory,
+  ToolName.ListDirectory, "ls",
+]);
+
+const AI_TOOLS: ReadonlySet<string> = new Set([
+  "agent", "subagent", "ai_task", "neural_process"
 ]);
 
 const PERMISSION_TOOLS: ReadonlySet<string> = new Set([
@@ -64,9 +76,11 @@ const PERMISSION_TOOLS: ReadonlySet<string> = new Set([
 export function getToolCategory(name: string): ToolCategory {
   const lowerName = name?.toLowerCase()?.trim() || "";
   if (TERMINAL_TOOLS.has(lowerName)) return "terminal";
+  if (TODO_TOOLS.has(lowerName)) return "todo";
   if (FILE_TOOLS.has(lowerName)) return "file";
   if (SEARCH_TOOLS.has(lowerName)) return "search";
   if (LIST_TOOLS.has(lowerName)) return "list";
+  if (AI_TOOLS.has(lowerName)) return "ai";
   if (PERMISSION_TOOLS.has(lowerName)) return "permission";
   return "default";
 }

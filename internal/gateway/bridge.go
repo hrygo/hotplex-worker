@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"path/filepath"
 	"runtime/debug"
 	"strings"
 	"sync"
@@ -13,6 +12,8 @@ import (
 	"time"
 
 	"github.com/hrygo/hotplex/internal/agentconfig"
+	"github.com/hrygo/hotplex/internal/config"
+	"github.com/hrygo/hotplex/internal/eventstore"
 	"github.com/hrygo/hotplex/internal/messaging"
 	"github.com/hrygo/hotplex/internal/metrics"
 	"github.com/hrygo/hotplex/internal/security"
@@ -37,6 +38,7 @@ type Bridge struct {
 	hub       *Hub
 	sm        SessionManager
 	convStore session.ConversationStore // optional; nil means conversation logging disabled
+	collector *eventstore.Collector     // optional; nil means event storage disabled
 	wf        WorkerFactory
 	retryCtrl *LLMRetryController
 
@@ -60,6 +62,7 @@ func NewBridge(deps BridgeDeps) *Bridge {
 		sm:             deps.SM,
 		wf:             defaultWorkerFactory{},
 		convStore:      deps.ConvStore,
+		collector:      deps.EventCollector,
 		retryCtrl:      deps.RetryCtrl,
 		agentConfigDir: deps.AgentConfigDir,
 		turnTimeout:    deps.TurnTimeout,
@@ -160,7 +163,14 @@ func (b *Bridge) resumeWithOpts(ctx context.Context, id, workDir string, opts fo
 		return session.ErrSessionNotFound
 	}
 
+	// Capture pending input before terminating so it can be re-delivered to the new worker.
+	// This prevents input loss when ResumeSession is called concurrently (e.g., a
+	// second user message arrives while attemptResumeFallback is starting a fresh worker).
+	var pendingInput string
 	if existing := b.sm.GetWorker(id); existing != nil {
+		if ir, ok := existing.(worker.InputRecoverer); ok {
+			pendingInput = ir.LastInput()
+		}
 		_ = existing.Terminate(context.Background())
 		b.sm.DetachWorker(id)
 	}
@@ -203,6 +213,19 @@ func (b *Bridge) resumeWithOpts(ctx context.Context, id, workDir string, opts fo
 	// Refresh ExpiresAt so a reactivated session isn't immediately killed by GC max_lifetime.
 	if err := b.sm.ResetExpiry(ctx, id); err != nil {
 		b.log.Warn("bridge: resume reset expiry failed", "session_id", id, "err", err)
+	}
+
+	// Re-deliver pending input that was captured before the old worker was terminated.
+	// This covers the case where a concurrent message triggered ResumeSession while
+	// attemptResumeFallback was starting a fresh worker — the fresh worker's buffered
+	// input would otherwise be lost when the old worker is terminated here.
+	if pendingInput != "" {
+		b.log.Info("bridge: re-delivering pending input to resumed worker",
+			"session_id", id, "content_len", len(pendingInput))
+		if err := w.Input(ctx, pendingInput, nil); err != nil {
+			b.log.Warn("bridge: pending input re-delivery failed",
+				"session_id", id, "err", err)
+		}
 	}
 
 	// Notify client of current state.
@@ -415,11 +438,14 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 			b.log.Warn("bridge: forward event failed", "err", err, "session_id", sessionID, "worker_type", workerType, "event_type", env.Event.Type)
 		}
 
+		b.captureEvent(sessionID, env.Seq, env.Event.Type, env.Event.Data)
+
 		// Flush buffered error on non-Done events (no retry decision possible yet).
 		if pendingError != nil && env.Event.Type != events.Done {
 			if err := b.hub.SendToSession(context.Background(), pendingError); err != nil {
 				b.log.Warn("bridge: forward buffered error failed", "err", err, "session_id", sessionID, "worker_type", workerType)
 			}
+			b.captureEvent(sessionID, pendingError.Seq, pendingError.Event.Type, pendingError.Event.Data)
 			pendingError = nil
 		}
 
@@ -441,6 +467,7 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 				if err := b.hub.SendToSession(context.Background(), pendingError); err != nil {
 					b.log.Warn("bridge: forward buffered error failed", "err", err, "session_id", sessionID, "worker_type", workerType)
 				}
+				b.captureEvent(sessionID, pendingError.Seq, pendingError.Event.Type, pendingError.Event.Data)
 				pendingError = nil
 			}
 			b.retryCtrl.RecordSuccess(sessionID)
@@ -898,8 +925,11 @@ func (b *Bridge) SwitchWorkDir(ctx context.Context, oldSessionID, newWorkDir str
 		return nil, fmt.Errorf("switch-workdir: session not active (state: %s)", si.State)
 	}
 
-	cleaned := filepath.Clean(newWorkDir)
-	if err := security.ValidateWorkDir(cleaned); err != nil {
+	expanded, err := config.ExpandAndAbs(newWorkDir)
+	if err != nil {
+		return nil, fmt.Errorf("switch-workdir: expand work dir: %w", err)
+	}
+	if err := security.ValidateWorkDir(expanded); err != nil {
 		return nil, fmt.Errorf("switch-workdir: %w", err)
 	}
 
@@ -916,7 +946,7 @@ func (b *Bridge) SwitchWorkDir(ctx context.Context, oldSessionID, newWorkDir str
 
 	var newID string
 	if si.Platform != "" && len(si.PlatformKey) > 0 {
-		pc := session.PlatformContext{Platform: si.Platform, WorkDir: cleaned}
+		pc := session.PlatformContext{Platform: si.Platform, WorkDir: expanded}
 		for k, v := range si.PlatformKey {
 			switch k {
 			case "team_id":
@@ -936,20 +966,20 @@ func (b *Bridge) SwitchWorkDir(ctx context.Context, oldSessionID, newWorkDir str
 		newID = aep.NewSessionID()
 	}
 
-	if err := b.StartSession(ctx, newID, si.UserID, si.BotID, si.WorkerType, si.AllowedTools, cleaned, si.Platform, si.PlatformKey, si.Title); err != nil {
+	if err := b.StartSession(ctx, newID, si.UserID, si.BotID, si.WorkerType, si.AllowedTools, expanded, si.Platform, si.PlatformKey, si.Title); err != nil {
 		return nil, fmt.Errorf("switch-workdir: start session: %w", err)
 	}
 
 	b.log.Info("switch-workdir: session switched",
 		"old_session_id", oldSessionID,
 		"new_session_id", newID,
-		"work_dir", cleaned,
+		"work_dir", expanded,
 	)
 
 	return &SwitchWorkDirResult{
 		OldSessionID: oldSessionID,
 		NewSessionID: newID,
-		WorkDir:      cleaned,
+		WorkDir:      expanded,
 	}, nil
 }
 
@@ -970,8 +1000,11 @@ func (b *Bridge) SwitchWorkDirInPlace(ctx context.Context, sessionID, newWorkDir
 		return "", fmt.Errorf("switch-workdir-inplace: session not active (state: %s)", si.State)
 	}
 
-	cleaned := filepath.Clean(newWorkDir)
-	if err := security.ValidateWorkDir(cleaned); err != nil {
+	expanded, err := config.ExpandAndAbs(newWorkDir)
+	if err != nil {
+		return "", fmt.Errorf("switch-workdir-inplace: expand work dir: %w", err)
+	}
+	if err := security.ValidateWorkDir(expanded); err != nil {
 		return "", fmt.Errorf("switch-workdir-inplace: %w", err)
 	}
 
@@ -982,7 +1015,7 @@ func (b *Bridge) SwitchWorkDirInPlace(ctx context.Context, sessionID, newWorkDir
 		b.sm.DetachWorker(sessionID)
 	}
 
-	if err := b.sm.UpdateWorkDir(ctx, sessionID, cleaned); err != nil {
+	if err := b.sm.UpdateWorkDir(ctx, sessionID, expanded); err != nil {
 		return "", fmt.Errorf("switch-workdir-inplace: update workdir: %w", err)
 	}
 
@@ -999,7 +1032,7 @@ func (b *Bridge) SwitchWorkDirInPlace(ctx context.Context, sessionID, newWorkDir
 	workerInfo := worker.SessionInfo{
 		SessionID:       sessionID,
 		UserID:          si.UserID,
-		ProjectDir:      cleaned,
+		ProjectDir:      expanded,
 		AllowedTools:    si.AllowedTools,
 		WorkerSessionID: si.WorkerSessionID,
 	}
@@ -1024,15 +1057,15 @@ func (b *Bridge) SwitchWorkDirInPlace(ctx context.Context, sessionID, newWorkDir
 	b.fwdWg.Add(1)
 	go func() {
 		defer b.fwdWg.Done()
-		b.forwardEvents(w, sessionID, forwardOpts{workDir: cleaned})
+		b.forwardEvents(w, sessionID, forwardOpts{workDir: expanded})
 	}()
 
 	b.log.Info("switch-workdir-inplace: switched",
 		"session_id", sessionID,
-		"work_dir", cleaned,
+		"work_dir", expanded,
 	)
 
-	return cleaned, nil
+	return expanded, nil
 }
 
 // isWorkerInUseError checks if the worker rejected the session because its
@@ -1043,10 +1076,19 @@ func isWorkerInUseError(err error) bool {
 
 // Shutdown signals the bridge that the gateway is shutting down.
 // It sets the closed flag so forwardEvents goroutines skip crash detection,
-// then waits for all forwardEvents goroutines to complete.
-func (b *Bridge) Shutdown() {
+// then waits for all forwardEvents goroutines to complete or ctx to expire.
+func (b *Bridge) Shutdown(ctx context.Context) {
 	b.closed.Store(true)
-	b.fwdWg.Wait()
+	done := make(chan struct{})
+	go func() {
+		b.fwdWg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-ctx.Done():
+		b.log.Warn("bridge: shutdown timed out, some forwardEvents goroutines still running")
+	}
 }
 
 // CancelRetry cancels any pending auto-retry for a session.
@@ -1120,6 +1162,17 @@ func (b *Bridge) autoRetry(ctx context.Context, w worker.Worker, sessionID strin
 	if err := w.Input(ctx, b.retryCtrl.RetryInput(), nil); err != nil {
 		b.log.Warn("bridge: auto-retry input failed", "session_id", sessionID, "err", err)
 	}
+}
+
+func (b *Bridge) captureEvent(sessionID string, seq int64, eventType events.Kind, data any) {
+	if b.collector == nil {
+		return
+	}
+	ed, err := json.Marshal(data)
+	if err != nil {
+		return
+	}
+	b.collector.Capture(sessionID, seq, eventType, ed, "outbound")
 }
 
 // extractMessageContent extracts text content from a message or message_delta event.

@@ -2,48 +2,70 @@
 #
 # Sensible defaults for both dev and prod. Override via:
 #   1. Inheritance: config-dev.yaml / config-prod.yaml (inherits this file)
-#   2. Environment variables: HOTPLEX_* (highest priority)
+#   2. Environment variables: HOTPLEX_* (highest priority, auto-detected if key exists here)
 #   3. Secrets provider: JWT secret, admin tokens (never in config files)
 #
 # Code defaults live in internal/config/config.go:Default().
 
 # ─────────────────────────────────────────────────────────────────────────────
-# CORE NETWORK
+# CORE NETWORK (Gateway)
 # ─────────────────────────────────────────────────────────────────────────────
 
 gateway:
-  addr: ":8888"
+  # Bind to localhost by default for security.
+  # Change to ":8888" to listen on all interfaces (e.g. behind a reverse proxy).
+  addr: "localhost:8888"
+  read_buffer_size: 4096
+  write_buffer_size: 4096
   ping_interval: 54s
   pong_timeout: 60s
   write_timeout: 10s
   idle_timeout: 5m
   max_frame_size: 32768
   broadcast_queue_size: 256
+  
+  # Advanced performance tuning for messaging platforms
+  platform_write_buffer: 64
+  platform_drop_threshold: 56
+  delta_coalesce_interval: 120ms
+  delta_coalesce_size: 200
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ADMIN API
+# ─────────────────────────────────────────────────────────────────────────────
 
 admin:
   enabled: true
-  addr: ":9999"
+  # Bind to localhost by default. Change to ":9999" to expose.
+  addr: "localhost:9999"
+  # Tokens must be provided via HOTPLEX_ADMIN_TOKEN_1..N env vars
+  tokens: []
+  default_scopes: ["session:read", "stats:read", "health:read"]
+  ip_whitelist_enabled: false
+  allowed_cidrs: ["127.0.0.0/8", "10.0.0.0/8"]
   rate_limit_enabled: true
   requests_per_sec: 10
   burst: 20
 
 # ─────────────────────────────────────────────────────────────────────────────
-# DATA
+# DATA & PERSISTENCE
 # ─────────────────────────────────────────────────────────────────────────────
 
 db:
-  path: "~/.hotplex/data/hotplex.db"
+  path: ~/.hotplex/data/hotplex.db
   wal_mode: true
   busy_timeout: 5s
-  event_retention: 720h     # 30 days
+  max_open_conns: 2
   vacuum_threshold: 0.2     # VACUUM when 20%+ free pages
 
 # ─────────────────────────────────────────────────────────────────────────────
-# SECURITY
+# SECURITY & AUTH
 # ─────────────────────────────────────────────────────────────────────────────
 
 security:
   api_key_header: "X-API-Key"
+  # APIKeys must be provided via HOTPLEX_SECURITY_API_KEY_1..N env vars
+  api_keys: []
   tls_enabled: false
   tls_cert_file: "/etc/hotplex/tls/server.crt"
   tls_key_file: "/etc/hotplex/tls/server.key"
@@ -52,26 +74,22 @@ security:
   jwt_audience: "hotplex-gateway"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# SESSION
+# SESSION & RESOURCE POOL
 # ─────────────────────────────────────────────────────────────────────────────
 
 session:
-  retention_period: 168h
+  retention_period: 168h    # Data retention for events and logs
   gc_scan_interval: 1m
   max_concurrent: 1000
-
-# ─────────────────────────────────────────────────────────────────────────────
-# POOL
-# ─────────────────────────────────────────────────────────────────────────────
 
 pool:
   min_size: 0
   max_size: 100
   max_idle_per_user: 5
-  max_memory_per_user: 3221225472  # 3GB
+  max_memory_per_user: 3221225472  # 3GB (bytes)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# WORKER
+# WORKER RUNTIME
 # ─────────────────────────────────────────────────────────────────────────────
 
 worker:
@@ -79,6 +97,11 @@ worker:
   idle_timeout: 60m
   execution_timeout: 30m
   turn_timeout: 15m
+  default_work_dir: ~/.hotplex/workspace
+  pid_dir: ~/.hotplex/.pids
+
+  # Environment variables to pass through to workers
+  env_whitelist: []
 
   auto_retry:
     enabled: true
@@ -87,19 +110,45 @@ worker:
     max_delay: 120s
     retry_input: "继续"
     notify_user: true
+    # Regex patterns for retryable errors (appended to system defaults like 429, 500).
+    patterns: []
+
   claude_code:
-    command: claude  # Binary + optional subcommand, e.g. "ccr code"
+    command: "claude"
+
+  opencode_server:
+    idle_drain_period: 30m
+    ready_timeout: 10s
+    ready_poll_interval: 200ms
+    http_timeout: 30s
 
 # ─────────────────────────────────────────────────────────────────────────────
-# LOGGING
+# AGENT PERSONALITY & SKILLS (B/C Channels)
+# ─────────────────────────────────────────────────────────────────────────────
+
+agent_config:
+  enabled: true
+  # Root directory for personality (SOUL.md, AGENTS.md, SKILLS.md)
+  # and user context (USER.md, MEMORY.md).
+  config_dir: ~/.hotplex/agent-configs
+
+skills:
+  cache_ttl: 5m
+
+# ─────────────────────────────────────────────────────────────────────────────
+# OBSERVABILITY & UI
 # ─────────────────────────────────────────────────────────────────────────────
 
 log:
   level: "info"
-  format: "json"
+  format: "json" # "json" or "text"
+
+webchat:
+  addr: ""      # informational: banner display only
+  enabled: true  # serve embedded webchat SPA from gateway
 
 # ─────────────────────────────────────────────────────────────────────────────
-# MESSAGING
+# MESSAGING PLATFORMS
 # ─────────────────────────────────────────────────────────────────────────────
 
 messaging:
@@ -110,6 +159,7 @@ messaging:
     dm_policy: "allowlist"
     group_policy: "allowlist"
     require_mention: true
+    # STT (Speech-to-Text)
     stt_provider: "local"
     stt_local_cmd: "python3 ~/.hotplex/scripts/stt_server.py"
     stt_local_mode: "persistent"
@@ -121,6 +171,7 @@ messaging:
     dm_policy: "allowlist"
     group_policy: "allowlist"
     require_mention: true
+    # STT (Speech-to-Text)
     stt_provider: "feishu+local"
     stt_local_cmd: "python3 ~/.hotplex/scripts/stt_server.py"
     stt_local_mode: "persistent"

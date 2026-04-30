@@ -3,107 +3,87 @@
 # Usage:
 #   docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 #
-# This file extends docker-compose.yml with production-specific settings:
-#   - TLS enabled
-#   - Stricter resource limits
-#   - External reverse proxy (Traefik)
-#   - Secrets management
-#
 
 version: '3.8'
 
 services:
   gateway:
-    # Remove port mappings (use Traefik)
-    ports: []
-
+    # Production overrides
     environment:
-      # Production settings
       - HOTPLEX_LOG_LEVEL=warn
+      - GIN_MODE=release
 
-    volumes:
-      # Production TLS certificates
-      - /etc/letsencrypt:/etc/letsencrypt:ro
-
-    # Production resource limits
+    # SQLite High Availability Note:
+    # Standard SQLite on shared volumes (NFS/EFS) is NOT recommended for multiple writers.
+    # If using SQLite, keep replicas: 1. If HA is required, migrate to Postgres.
     deploy:
       mode: replicated
-      replicas: 2
+      replicas: 1 
       resources:
         limits:
           cpus: '4'
-          memory: 4G
+          memory: 8G
         reservations:
-          cpus: '1'
-          memory: 1G
+          cpus: '2'
+          memory: 4G
       restart_policy:
         condition: on-failure
         delay: 5s
-        max_attempts: 3
+        max_attempts: 5
         window: 120s
 
-    # Production labels for Traefik
+    # Traefik labels for secure access and WebSocket support
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.hotplex-gateway.rule=Host(`gateway.hotplex.dev`)"
+      - "traefik.http.routers.hotplex-gateway.rule=Host(`${HOTPLEX_DOMAIN:-gateway.hotplex.dev}`)"
       - "traefik.http.routers.hotplex-gateway.entrypoints=websecure"
       - "traefik.http.routers.hotplex-gateway.tls.certresolver=letsencrypt"
       - "traefik.http.services.hotplex-gateway.loadbalancer.server.port=8888"
-
-      - "traefik.http.routers.hotplex-admin.rule=Host(`admin.hotplex.dev`)"
+      
+      # Admin API (protected by token, but we can add IP whitelist here if needed)
+      - "traefik.http.routers.hotplex-admin.rule=Host(`${HOTPLEX_ADMIN_DOMAIN:-admin.hotplex.dev}`)"
       - "traefik.http.routers.hotplex-admin.entrypoints=websecure"
       - "traefik.http.routers.hotplex-admin.tls.certresolver=letsencrypt"
       - "traefik.http.services.hotplex-admin.loadbalancer.server.port=9999"
 
     networks:
       - traefik-network
+      - hotplex-network
 
   # Traefik reverse proxy
   traefik:
     image: traefik:v2.10
     container_name: hotplex-traefik
     restart: unless-stopped
-
     command:
-      - "--api.dashboard=true"
+      - "--api.dashboard=false" # Disable dashboard in prod or protect it
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
       - "--entrypoints.web.address=:80"
       - "--entrypoints.websecure.address=:443"
+      # Auto redirect HTTP to HTTPS
+      - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
       - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
-      - "--certificatesresolvers.letsencrypt.acme.email=admin@hotplex.dev"
+      - "--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:-admin@hotplex.dev}"
       - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
-
     ports:
       - "80:80"
       - "443:443"
-      - "8081:8888"  # Traefik dashboard
-
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - traefik-letsencrypt:/letsencrypt
-
     networks:
       - traefik-network
 
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.traefik-dashboard.rule=Host(`traefik.hotplex.dev`)"
-      - "traefik.http.routers.traefik-dashboard.entrypoints=websecure"
-      - "traefik.http.routers.traefik-dashboard.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.traefik-dashboard.service=api@internal"
-
-  # Remove Prometheus and Grafana (use external monitoring)
-  prometheus:
-    profiles: []
-
-  grafana:
-    profiles: []
+  # Prometheus and Grafana are handled via profiles in base compose.
+  # In prod, you might want to use an external monitoring solution.
 
 networks:
   traefik-network:
     external: true
+  hotplex-network:
+    driver: bridge
 
 volumes:
   traefik-letsencrypt:
-    driver: local

@@ -11,45 +11,9 @@ paths:
 
 ## Session ID 生命周期
 
-**生成规则**：
-- Session ID 由服务端在 `init` 握手时生成
-- 客户端在 `init` 中可选提供 `session_id`（用于重连恢复）
-- 服务端决定最终使用的 `session_id`
-- `init_ack` 中返回的 `session_id` 是唯一可信来源
-
-**客户端行为**：
-```typescript
-// 发送 init
-const initEnv = {
-    id: generateId(),
-    version: 'aep/v1',
-    session_id: existingSessionId || undefined,  // 重连时提供
-    event: { type: 'init', data: { worker_type, config, auth } }
-}
-
-// 使用 init_ack 返回的 session_id
-onMessage((env) => {
-    if (env.event.type === 'init_ack') {
-        this.sessionId = env.session_id  // 服务端分配的权威 ID
-    }
-})
-```
-
-**服务端行为**：
-```go
-// conn.go performInit
-sessionID := initData.SessionID
-if sessionID == "" {
-    sessionID = c.sessionID  // 使用 conn 创建时的 ID
-}
-
-// 创建或恢复 session
-si, err := handler.sm.Get(sessionID)
-// ...
-
-// 返回 session_id 给客户端
-ack := BuildInitAck(sessionID, si.State, initData.WorkerType)
-```
+- Session ID 由服务端在 `init` 握手时生成，`init_ack` 返回的为权威 ID
+- 客户端可在 `init` 中提供 `session_id` 用于重连恢复，服务端决定最终值
+- 实现：`conn.go performInit` — 空 sessionID 时使用 conn 创建时的 ID
 
 ---
 
@@ -128,50 +92,13 @@ var ValidTransitions = map[State][]State{
 
 ## TransitionWithInput 原子性
 
-**核心原则**：状态转换和 input 处理**必须在同一 mutex 内完成**，防止竞态。
-
-```go
-func (ms *managedSession) TransitionWithInput(ctx context.Context, content string) error {
-    ms.mu.Lock()
-    defer ms.mu.Unlock()
-
-    // 1. 状态检查
-    if !IsActive(ms.info.State) {
-        return ErrSessionNotActive
-    }
-    if ms.info.State == RUNNING {
-        return ErrSessionBusy
-    }
-
-    // 2. 原子转换 + 记录 input
-    if err := ms.sm.Transition(RUNNING); err != nil {
-        return err
-    }
-    return ms.store.RecordInput(ms.info.ID, content)
-}
-```
-
-### done/input 竞态防护
-当 Worker 发送 `done` 同时 Client 发送 `input`：
-- 两者共享 `ms.mu.Lock`，input 的 state 检查和转换原子完成
-- 第二个并发 input 收到 `SESSION_BUSY`
+状态转换和 input 处理**必须在同一 mutex 内完成**，防止 done/input 竞态。实现：`ms.mu.Lock` 内先检查状态（非 Active → `ErrSessionNotActive`，Running → `ErrSessionBusy`），再原子转换 + 记录 input。
 
 ---
 
 ## SESSION_BUSY 硬拒绝
 
-Session 不处于 `CREATED/RUNNING/IDLE` 状态时，**硬拒绝** input，不排队。
-
-```go
-func (sm *SessionManager) HandleInput(sessionID, content string) error {
-    ms, err := sm.Get(sessionID)
-    if err != nil {
-        return err
-    }
-    return ms.TransitionWithInput(ctx, content)
-    // err == ErrSessionBusy → 回复 error.code="SESSION_BUSY"
-}
-```
+Session 不处于 `CREATED/RUNNING/IDLE` 状态时，**硬拒绝** input，不排队。返回 `error.code="SESSION_BUSY"`。
 
 ---
 
@@ -286,22 +213,7 @@ func (p *PoolManager) Acquire(userID string) error {
 
 ## SQLite WAL 模式
 
-```go
-func NewSQLiteStore(path string) (*SQLiteStore, error) {
-    db, err := sql.Open("sqlite", path)
-    if err != nil {
-        return nil, err
-    }
-    // 必须启用 WAL + busy_timeout
-    if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
-        return nil, err
-    }
-    if _, err := db.Exec("PRAGMA busy_timeout=5000"); err != nil {
-        return nil, err
-    }
-    // 写入通过单写 goroutine 串行化
-}
-```
+必须启用 `PRAGMA journal_mode=WAL` + `PRAGMA busy_timeout=5000`，写入通过单写 goroutine 串行化。详见 `session/store.go`。
 
 ---
 

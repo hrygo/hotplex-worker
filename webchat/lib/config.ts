@@ -12,8 +12,18 @@ import type { WorkerType } from "@/lib/ai-sdk-transport/client/constants";
 
 // -- Gateway -----------------------------------------------------------
 
-export const wsUrl: string =
-  process.env.HOTPLEX_WEBCHAT_WS_URL ?? "ws://localhost:8888/ws";
+function resolveWsUrl(): string {
+  const envUrl = process.env.HOTPLEX_WEBCHAT_WS_URL;
+  if (envUrl) return envUrl;
+  // Auto-detect when served from the same Go binary (zero-config).
+  if (typeof window !== "undefined") {
+    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+    return `${proto}//${window.location.host}/ws`;
+  }
+  return "ws://localhost:8888/ws";
+}
+
+export const wsUrl: string = resolveWsUrl();
 
 export const workerType: WorkerType =
   (process.env.HOTPLEX_WEBCHAT_WORKER_TYPE as WorkerType) ?? "claude_code";

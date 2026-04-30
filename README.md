@@ -15,7 +15,7 @@
 
 <p align="center">
   <a href="https://github.com/hrygo/hotplex/actions/workflows/ci.yml"><img src="https://github.com/hrygo/hotplex/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <img src="https://img.shields.io/badge/Version-v1.1.2-10B981?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/Version-v1.2.0-10B981?style=flat-square" alt="Version">
   <a href="https://github.com/hrygo/hotplex/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-3B82F6?style=flat-square" alt="License"></a>
   <img src="https://img.shields.io/badge/Go-1.26+-00ADD8?style=flat-square&logo=go" alt="Go">
   <img src="https://img.shields.io/badge/Protocol-AEP%20v1-7C3AED?style=flat-square" alt="AEP v1">
@@ -25,15 +25,17 @@
 ---
 
 
-## ✨ Highlights
+## ✨ Core Capabilities
 
-- 🌐 **Unified WebSocket interface** — 23+ AEP v1 event types for streaming, permissions, and MCP Elicitation
-- 🔌 **Multi-channel bridge** — bidirectional support for Slack (Socket Mode) and Feishu (WebSocket)
-- 🤖 **Agent config injection** — personality, rules, and memory auto-injected via B/C dual-channel XML system
-- 🧠 **Built-in Meta-Cognition** — 5-state machine, intelligent LLM retry, and 3-layer self-healing for environment awareness
-- 🛡️ **Production-hardened** — JWT ES256 auth, SSRF protection, orphan process cleanup, and physical isolation
-- 📊 **Full observability** — Prometheus metrics, OpenTelemetry tracing, structured JSON logging
-- 🛠️ **Self-contained CLI** — `onboard`, `doctor`, `security`, `status` in a single binary
+- 🌐 **Universal Agent Gateway** — Abstract any AI Coding Agent protocol into a unified AEP v1 (Agent Exchange Protocol) WebSocket interface for consistent streaming and interaction.
+- 📱 **Cross-Platform Delivery** — **"Write Once, Deploy Anywhere"**. Bridge agents to Web, Slack (Socket Mode), and Feishu (WebSocket) with zero code changes.
+- 🛠️ **Multi-Modal Interaction** — Native Speech-to-Text (SenseVoice-Small) support for a seamless voice-to-code development workflow.
+- 🤖 **Deep Personality Injection** — Dynamic **B/C dual-channel** injection: **B-channel** (SOUL/AGENTS/SKILLS) for directives and **C-channel** (USER/MEMORY) for context.
+- 🧠 **Autonomous Meta-Cognition** — Built-in 5-state machine with **META-COGNITION** core, intelligent LLM retry, and 3-layer self-healing for unmatched session stability.
+- 🌐 **Embedded Web Chat** — A single binary serves both the API/WebSocket gateway and a premium Next.js-based web chat interface out of the box.
+- 🛡️ **Enterprise-Grade Security** — JWT ES256 authentication, SSRF protection, and PGID-isolated process management with orphan cleanup.
+- 📊 **End-to-End Observability** — Native Prometheus metrics, OpenTelemetry tracing, and structured JSON logging for full auditability.
+- 🛠️ **Self-contained CLI** — `gateway`, `service`, `dev`, `onboard`, `doctor`, `security`, `status` in a single binary
 - 🌍 **Multi-language SDKs** — Go, TypeScript, Python, Java clients ready to use
 
 ## ⚡ Quick Start
@@ -66,14 +68,45 @@ hotplex onboard --non-interactive --enable-slack --enable-feishu
 ### Run
 
 ```bash
+# Development mode (foreground)
 make dev
+
+# Production mode (background daemon)
+hotplex gateway start -d
+
+# Stop / restart
+hotplex gateway stop
+hotplex gateway restart -d
 ```
 
-| Service             | Address                  |
-| :------------------ | :----------------------- |
-| Gateway (WebSocket) | `ws://localhost:8888/ws` |
-| Admin API           | `http://localhost:9999`  |
-| Web Chat UI         | `http://localhost:3000`  |
+### Install as System Service
+
+```bash
+# Install as user-level service (no root required)
+hotplex service install
+
+# Manage the service
+hotplex service start      # Start service
+hotplex service stop       # Stop service
+hotplex service restart    # Restart service
+hotplex service status     # Check status
+hotplex service logs -f    # Follow logs
+
+# System-wide installation (requires sudo)
+sudo hotplex service install --level system
+
+# Uninstall
+hotplex service uninstall
+```
+
+Supports **systemd** (Linux), **launchd** (macOS), and **Windows SCM**.
+
+| Service             | Address                  | Note                                     |
+| :------------------ | :----------------------- | :--------------------------------------- |
+| Gateway (WebSocket) | `ws://localhost:8888/ws` | Main protocol endpoint                   |
+| Admin API           | `http://localhost:9999`  | Management & Statistics                  |
+| Web Chat UI         | `http://localhost:8888`  | **Embedded SPA** (served from Gateway)   |
+| Dev Web Chat        | `http://localhost:3000`  | Next.js Dev Server (when running `make dev`) |
 
 ### Connect with Go SDK
 
@@ -107,9 +140,7 @@ func main() {
 }
 ```
 
-## 🏛️ Architecture
-
-HotPlex sits between frontend clients and backend AI coding agents, featuring a built-in meta-cognition core that abstracts protocol differences into a unified AEP v1 WebSocket layer.
+HotPlex sits between frontend clients and backend AI coding agents, featuring a built-in **Meta-Cognition Core** that abstracts protocol differences into a unified **AEP v1** (Agent Exchange Protocol) WebSocket layer.
 
 ```
 ┌──────────┐   ┌──────────┐   ┌──────────┐
@@ -119,8 +150,8 @@ HotPlex sits between frontend clients and backend AI coding agents, featuring a 
      └──────────────┼──────────────┘
                     │  WebSocket / AEP v1
               ┌─────┴─────┐
-              │  HotPlex  │  Session · Auth · Retry · Config
-              │  Gateway  │  Metrics · Tracing · Admin API
+              │  HotPlex  │  Session · Auth · Retry · B/C Config
+              │  Gateway  │  Metrics · Tracing · Admin · Meta-Core
               └─────┬─────┘
      ┌──────────────┼──────────────┐
      │              │              │
@@ -144,9 +175,10 @@ HotPlex sits between frontend clients and backend AI coding agents, featuring a 
 | Key                       | Default                      | Description                                       |
 | :------------------------ | :--------------------------- | :------------------------------------------------ |
 | `agent_config.enabled`    | `true`                       | Enable agent personality/context injection        |
-| `agent_config.config_dir` | `~/.hotplex/agent-configs/`  | Config files directory (SOUL.md, AGENTS.md, etc.) |
-| `gateway.addr`            | `:8888`                      | WebSocket gateway address                         |
-| `admin.addr`              | `:9999`                      | Admin API address                                 |
+| `webchat.enabled`         | `true`                       | Serve embedded webchat SPA from gateway           |
+| `worker.auto_retry.enabled`| `true`                      | Intelligent LLM retry with exponential backoff    |
+| `gateway.addr`            | `localhost:8888`             | WebSocket gateway address                         |
+| `admin.addr`              | `localhost:9999`             | Admin API address                                 |
 | `db.path`                 | `~/.hotplex/data/hotplex.db` | SQLite database path                              |
 | `log.level`               | `info`                       | Log level: debug, info, warn, error               |
 

@@ -110,21 +110,11 @@ ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 
 ## Passthrough 命令反馈
 
-Worker Commander 操作（compact/clear/rewind）成功后，发送可见 `message` 事件：
+Worker Commander 操作（compact/clear/rewind）成功后，发送可见 `message` 事件；不支持的命令返回 `NOT_SUPPORTED`。
 
-```go
-// handler.go — handlePassthroughCommand
-// ✅ 成功后：发送可见消息给客户端
-msg := buildMessageEvent("✅ 会话已压缩", env.SessionID, seq)
-return h.sendToConn(ctx, env.SessionID, msg)
+**实现**：`handler.go handlePassthroughCommand`
 
-// ❌ 不支持命令：返回 NOT_SUPPORTED，不发事件
-if err == ErrCommandNotSupported {
-    return &AppError{Code: "NOT_SUPPORTED", Message: "/effort not supported"}
-}
-```
-
-**OCS 特有**：Compact/Rewind 可自动从消息历史推断缺失参数（model、messageID），无需客户端传参。
+**OCS 特有行为**：Compact/Rewind 自动推断缺失参数（model/messageID），详见 `worker-proc.md`
 
 ---
 
