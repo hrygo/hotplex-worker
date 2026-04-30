@@ -76,5 +76,24 @@ func BuildEnv(session worker.SessionInfo, whitelist []string, workerTypeLabel st
 	// Strip nested agent config (CLAUDECODE=).
 	env = security.StripNestedAgent(env)
 
+	// Apply config-driven env vars (worker.environment). These override
+	// everything, including whitelisted keys from os.Environ().
+	for _, e := range session.ConfigEnv {
+		if e == "" || !strings.Contains(e, "=") {
+			continue
+		}
+		key, _, _ := strings.Cut(e, "=")
+		for i, existing := range env {
+			if strings.HasPrefix(existing, key+"=") {
+				env[i] = e
+				e = "" // mark as already set
+				break
+			}
+		}
+		if e != "" {
+			env = append(env, e)
+		}
+	}
+
 	return env
 }

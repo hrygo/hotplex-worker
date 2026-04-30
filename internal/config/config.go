@@ -257,16 +257,17 @@ type GatewayConfig struct {
 	DeltaCoalesceSize int `mapstructure:"delta_coalesce_size"`
 }
 
-// DBConfig holds SQLite settings.
+// DBConfig holds SQLite settings shared by all database connections.
 type DBConfig struct {
-	Path            string        `mapstructure:"path"`
-	EventsPath      string        `mapstructure:"events_path"`
-	WALMode         bool          `mapstructure:"wal_mode"`
-	BusyTimeout     time.Duration `mapstructure:"busy_timeout"`
-	MaxOpenConns    int           `mapstructure:"max_open_conns"`
-	VacuumThreshold float64       `mapstructure:"vacuum_threshold"`
-	CacheSizeKiB    int           `mapstructure:"cache_size_kib"`
-	MmapSizeMiB     int           `mapstructure:"mmap_size_mib"`
+	Path              string        `mapstructure:"path"`
+	EventsPath        string        `mapstructure:"events_path"`
+	WALMode           bool          `mapstructure:"wal_mode"`
+	BusyTimeout       time.Duration `mapstructure:"busy_timeout"`
+	MaxOpenConns      int           `mapstructure:"max_open_conns"`
+	VacuumThreshold   float64       `mapstructure:"vacuum_threshold"`
+	CacheSizeKiB      int           `mapstructure:"cache_size_kib"`
+	MmapSizeMiB       int           `mapstructure:"mmap_size_mib"`
+	WalAutoCheckpoint int           `mapstructure:"wal_autocheckpoint"`
 }
 
 // WorkerConfig holds per-worker defaults.
@@ -282,6 +283,7 @@ type WorkerConfig struct {
 	AutoRetry        AutoRetryConfig      `mapstructure:"auto_retry"`
 	OpenCodeServer   OpenCodeServerConfig `mapstructure:"opencode_server"`
 	ClaudeCode       ClaudeCodeConfig     `mapstructure:"claude_code"`
+	Environment      []string             `mapstructure:"environment"`
 }
 
 // ClaudeCodeConfig holds Claude Code worker startup settings.
@@ -387,14 +389,15 @@ func Default() *Config {
 			DeltaCoalesceSize:     200,
 		},
 		DB: DBConfig{
-			Path:            filepath.Join(HotplexHome(), "data", "hotplex.db"),
-			EventsPath:      filepath.Join(HotplexHome(), "data", "events.db"),
-			WALMode:         true,
-			BusyTimeout:     5 * time.Second,
-			MaxOpenConns:    2,
-			VacuumThreshold: 0.2,
-			CacheSizeKiB:    8192,
-			MmapSizeMiB:     64,
+			Path:              filepath.Join(HotplexHome(), "data", "hotplex.db"),
+			EventsPath:        filepath.Join(HotplexHome(), "data", "events.db"),
+			WALMode:           true,
+			BusyTimeout:       5 * time.Second,
+			MaxOpenConns:      2,
+			VacuumThreshold:   0.2,
+			CacheSizeKiB:      8192,
+			MmapSizeMiB:       64,
+			WalAutoCheckpoint: 2000,
 		},
 		Worker: WorkerConfig{
 			MaxLifetime:      24 * time.Hour,

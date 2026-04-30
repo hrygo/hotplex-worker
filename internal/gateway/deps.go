@@ -30,4 +30,5 @@ type BridgeDeps struct {
 	RetryCtrl      *LLMRetryController
 	AgentConfigDir string
 	TurnTimeout    time.Duration
+	WorkerEnv      []string // extra env vars from worker.environment config
 }
