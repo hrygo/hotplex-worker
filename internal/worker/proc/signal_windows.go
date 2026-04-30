@@ -18,6 +18,10 @@ func SetSysProcAttr(cmd *exec.Cmd) {
 }
 
 // GracefulTerminate sends CTRL_BREAK_EVENT to the process group.
+// NOTE: This only works for processes sharing the caller's console. Processes
+// created with CREATE_NEW_PROCESS_GROUP get their own console, so this signal
+// may not reach them. The Job Object (JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE)
+// handles the actual process tree cleanup — this is a best-effort hint.
 func GracefulTerminate(pgid int) error {
 	return windows.GenerateConsoleCtrlEvent(windows.CTRL_BREAK_EVENT, uint32(pgid))
 }

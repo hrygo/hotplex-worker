@@ -55,13 +55,9 @@ func NewLocalSTT(cmdTemplate string, log *slog.Logger) *LocalSTT {
 func (s *LocalSTT) RequiresDisk() bool { return true }
 
 func (s *LocalSTT) Transcribe(ctx context.Context, audioData []byte) (string, error) {
-	tmpDir := filepath.Join(config.TempBaseDir(), "media", "stt_tmp")
-	if err := os.MkdirAll(tmpDir, 0o755); err != nil {
-		return "", fmt.Errorf("local stt: mkdir: %w", err)
-	}
-	tmpPath := filepath.Join(tmpDir, fmt.Sprintf("stt_%d.opus", time.Now().UnixNano()))
-	if err := os.WriteFile(tmpPath, audioData, 0o644); err != nil {
-		return "", fmt.Errorf("local stt: write: %w", err)
+	tmpPath, err := writeTempAudioFile(audioData)
+	if err != nil {
+		return "", err
 	}
 	defer func() { _ = os.Remove(tmpPath) }()
 
@@ -125,7 +121,8 @@ func (s *FallbackSTT) Transcribe(ctx context.Context, audioData []byte) (string,
 //
 // Resource cleanup:
 //   - Temp audio files: removed after each Transcribe call (defer).
-//   - Subprocess: PGID-isolated, layered SIGTERM → 5s → SIGKILL.
+//   - Subprocess: PGID-isolated, layered graceful termination → 5s → force kill.
+//   - Windows: Job Object (KILL_ON_JOB_CLOSE) ensures full process tree cleanup.
 //   - Idle timeout: auto-shutdown after idleTTL (configurable).
 //   - Crash recovery: detected on next Transcribe, subprocess auto-restarts.
 //   - Gateway shutdown: Adapter.Close → PersistentSTT.Close.
@@ -142,6 +139,11 @@ type PersistentSTT struct {
 	scanner *bufio.Scanner
 	pgid    int
 	started bool
+
+	// jobHandle stores the Windows Job Object handle for subprocess tree cleanup.
+	// On Unix this is always 0. On Windows, closing this handle kills the entire
+	// process tree (JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE).
+	jobHandle uintptr //nolint:unused // read by stt_job_windows.go
 
 	lastUsed atomic.Int64 // unix nano of last successful request
 	cancel   context.CancelFunc
@@ -179,13 +181,9 @@ func (s *PersistentSTT) Transcribe(ctx context.Context, audioData []byte) (strin
 	}
 
 	// Write audio to temp file.
-	tmpDir := filepath.Join(config.TempBaseDir(), "media", "stt_tmp")
-	if err := os.MkdirAll(tmpDir, 0o755); err != nil {
-		return "", fmt.Errorf("persistent stt: mkdir: %w", err)
-	}
-	tmpPath := filepath.Join(tmpDir, fmt.Sprintf("stt_%d.opus", time.Now().UnixNano()))
-	if err := os.WriteFile(tmpPath, audioData, 0o644); err != nil {
-		return "", fmt.Errorf("persistent stt: write: %w", err)
+	tmpPath, err := writeTempAudioFile(audioData)
+	if err != nil {
+		return "", err
 	}
 	defer func() { _ = os.Remove(tmpPath) }()
 
@@ -264,6 +262,15 @@ func (s *PersistentSTT) start(_ context.Context) error {
 	s.pgid = cmd.Process.Pid
 	s.started = true
 
+	// Assign subprocess to Job Object for process tree cleanup on Windows.
+	if job, jerr := proc.CreateJobObject(); jerr != nil {
+		s.log.Warn("persistent stt: job object creation failed, tree cleanup disabled", "err", jerr)
+	} else if jerr = proc.AssignProcessToJob(job, s.pgid); jerr != nil {
+		s.log.Warn("persistent stt: job assignment failed", "pid", s.pgid, "err", jerr)
+	} else {
+		s.jobHandle = job
+	}
+
 	// Track PID for orphan cleanup.
 	if tracker := proc.GlobalTracker(); tracker != nil {
 		if err := tracker.Write(s.pidKey, s.pgid); err != nil {
@@ -288,7 +295,7 @@ func (s *PersistentSTT) start(_ context.Context) error {
 	return nil
 }
 
-// terminate sends SIGTERM, waits 5s, then SIGKILL. Cleans up all resources.
+// terminate sends graceful termination, waits 5s, then force kills. Cleans up all resources.
 func (s *PersistentSTT) terminate(ctx context.Context) {
 	if !s.started {
 		return
@@ -304,7 +311,7 @@ func (s *PersistentSTT) terminate(ctx context.Context) {
 	// Close stdin to signal subprocess.
 	_ = s.stdin.Close()
 
-	// Send SIGTERM to process group.
+	// Send graceful termination to process group.
 	if s.pgid > 0 {
 		_ = proc.GracefulTerminate(s.pgid)
 		s.log.Info("persistent stt: sent graceful termination", "pgid", s.pgid)
@@ -319,11 +326,13 @@ func (s *PersistentSTT) terminate(ctx context.Context) {
 		// Graceful exit.
 	case <-time.After(5 * time.Second):
 		s.log.Warn("persistent stt: graceful timeout, force killing", "pgid", s.pgid)
+		s.closeJob()
 		if s.pgid > 0 {
 			_ = proc.ForceKill(s.pgid)
 		}
 		<-done
 	case <-ctx.Done():
+		s.closeJob()
 		if s.pgid > 0 {
 			_ = proc.ForceKill(s.pgid)
 		}
@@ -341,7 +350,7 @@ func (s *PersistentSTT) terminate(ctx context.Context) {
 	s.log.Info("persistent stt: stopped")
 }
 
-// kill sends SIGKILL immediately and cleans up.
+// kill force-kills immediately and cleans up.
 func (s *PersistentSTT) kill() {
 	if s.cancel != nil {
 		s.cancel()
@@ -350,6 +359,7 @@ func (s *PersistentSTT) kill() {
 		}
 		s.cancel = nil
 	}
+	s.closeJob()
 	if s.pgid > 0 {
 		_ = proc.ForceKill(s.pgid)
 	}
@@ -398,6 +408,19 @@ func (s *PersistentSTT) idleMonitor(ctx context.Context) {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+// writeTempAudioFile writes audio data to a temp file in the STT temp directory.
+func writeTempAudioFile(audioData []byte) (string, error) {
+	tmpDir := filepath.Join(config.TempBaseDir(), "media", "stt_tmp")
+	if err := os.MkdirAll(tmpDir, 0o755); err != nil {
+		return "", fmt.Errorf("stt: mkdir: %w", err)
+	}
+	tmpPath := filepath.Join(tmpDir, fmt.Sprintf("stt_%d.opus", time.Now().UnixNano()))
+	if err := os.WriteFile(tmpPath, audioData, 0o644); err != nil {
+		return "", fmt.Errorf("stt: write: %w", err)
+	}
+	return tmpPath, nil
+}
 
 // AudioToPCM converts audio bytes (any ffmpeg-supported format) to raw PCM:
 // 16-bit signed little-endian, 16kHz, mono. All work is done in memory via

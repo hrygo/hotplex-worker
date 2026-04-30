@@ -9,13 +9,13 @@ import (
 // createJobAndAssign creates a Job Object with KILL_ON_JOB_CLOSE and assigns
 // the process to it. The handle is stored in m.jobHandle for later cleanup.
 func (m *Manager) createJobAndAssign(pid int) {
-	job, err := createJobObject()
+	job, err := CreateJobObject()
 	if err != nil {
 		m.log.Warn("proc: failed to create job object, process tree cleanup disabled", "error", err)
 		return
 	}
-	if err := assignProcessToJob(job, pid); err != nil {
-		windows.CloseHandle(job)
+	if err := AssignProcessToJob(job, pid); err != nil {
+		windows.CloseHandle(windows.Handle(job))
 		m.log.Warn("proc: failed to assign process to job object", "pid", pid, "error", err)
 		return
 	}

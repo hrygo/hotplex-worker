@@ -48,7 +48,7 @@ CYAN   := \033[36m
 # PHONY
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: all help quickstart check-tools build build-windows run
+.PHONY: all help quickstart check-tools build build-windows build-one run
 .PHONY: dev dev-start dev-stop dev-status dev-logs dev-reset
 .PHONY: gateway-start gateway-stop gateway-status gateway-logs
 .PHONY: webchat-dev webchat-stop
@@ -100,12 +100,13 @@ build:
 build-windows:
 	@echo "$(CYAN)Cross-compiling for Windows...$(RESET)"
 	@mkdir -p $(BUILD_DIR)
-	@CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build $(BUILD_OPTS) -ldflags="$(LDFLAGS)" \
-		-o $(BUILD_DIR)/$(BINARY_NAME)-windows-amd64.exe $(MAIN_PATH)
-	@CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build $(BUILD_OPTS) -ldflags="$(LDFLAGS)" \
-		-o $(BUILD_DIR)/$(BINARY_NAME)-windows-arm64.exe $(MAIN_PATH)
-	@echo "  $(GREEN)✓$(RESET) $(BUILD_DIR)/$(BINARY_NAME)-windows-amd64.exe"
-	@echo "  $(GREEN)✓$(RESET) $(BUILD_DIR)/$(BINARY_NAME)-windows-arm64.exe"
+	@$(MAKE) build-one GOOS=windows GOARCH=amd64 SUFFIX=.exe --no-print-directory
+	@$(MAKE) build-one GOOS=windows GOARCH=arm64 SUFFIX=.exe --no-print-directory
+
+build-one:
+	@CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(BUILD_OPTS) -ldflags="$(LDFLAGS)" \
+		-o $(BUILD_DIR)/$(BINARY_NAME)-$(GOOS)-$(GOARCH)$(SUFFIX) $(MAIN_PATH)
+	@echo "  $(GREEN)✓$(RESET) $(BUILD_DIR)/$(BINARY_NAME)-$(GOOS)-$(GOARCH)$(SUFFIX)"
 
 run: build
 	@./$(BUILD_DIR)/$(BINARY_NAME)-$(GOOS)-$(GOARCH) \

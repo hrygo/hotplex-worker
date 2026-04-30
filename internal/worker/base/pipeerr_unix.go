@@ -2,13 +2,17 @@
 
 package base
 
-import "strings"
+import (
+	"errors"
+	"os"
+	"syscall"
+)
 
 // IsDeadProcessError checks if the error indicates the worker process is gone.
 func IsDeadProcessError(err error) bool {
 	if err == nil {
 		return false
 	}
-	s := err.Error()
-	return strings.Contains(s, "file already closed") || strings.Contains(s, "broken pipe")
+	return errors.Is(err, syscall.EPIPE) ||
+		errors.Is(err, os.ErrClosed)
 }

@@ -15,7 +15,7 @@ import (
 )
 
 // DefaultWorkerWorkDir is the fallback working directory when workDir is not configured.
-var DefaultWorkerWorkDir = filepath.Join(config.TempBaseDir(), "workspace")
+var DefaultWorkerWorkDir = filepath.Join(config.HotplexHome(), "workspace")
 
 // Bridge orchestrates platform messages and gateway sessions.
 // It is the counterpart of gateway.Bridge for messaging platforms.
