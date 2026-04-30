@@ -15,7 +15,7 @@
 
 <p align="center">
   <a href="https://github.com/hrygo/hotplex/actions/workflows/ci.yml"><img src="https://github.com/hrygo/hotplex/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <img src="https://img.shields.io/badge/Version-v1.2.0-10B981?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/Version-v1.3.0-10B981?style=flat-square" alt="Version">
   <a href="https://github.com/hrygo/hotplex/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-3B82F6?style=flat-square" alt="License"></a>
   <img src="https://img.shields.io/badge/Go-1.26+-00ADD8?style=flat-square&logo=go" alt="Go">
   <img src="https://img.shields.io/badge/Protocol-AEP%20v1-7C3AED?style=flat-square" alt="AEP v1">
@@ -24,65 +24,70 @@
 
 ---
 
+```
+┌──────────┐   ┌──────────┐   ┌──────────┐
+│  Web UI  │   │  Slack   │   │  Feishu  │
+└────┬─────┘   └────┬─────┘   └────┬─────┘
+     │              │              │
+     └──────────────┼──────────────┘
+                    │  WebSocket / AEP v1
+              ┌─────┴─────┐
+              │  HotPlex  │  Session · Auth · Retry · B/C Config
+              │  Gateway  │  Metrics · Tracing · Admin · Meta-Core
+              └─────┬─────┘
+     ┌──────────────┼──────────────┐
+     │              │              │
+┌────┴─────┐  ┌────┴──────┐  ┌───┴───────┐
+│  Claude  │  │  OpenCode │  │  Pi-mono  │
+│  Code    │  │  Server   │  │           │
+└──────────┘  └───────────┘  └───────────┘
+```
 
-## ✨ Core Capabilities
+HotPlex sits between frontend clients and backend AI coding agents, abstracting protocol differences into a unified **AEP v1** WebSocket layer — with a built-in Meta-Cognition Core for session stability.
 
-- 🌐 **Universal Agent Gateway** — Abstract any AI Coding Agent protocol into a unified AEP v1 (Agent Exchange Protocol) WebSocket interface for consistent streaming and interaction.
-- 📱 **Cross-Platform Delivery** — **"Write Once, Deploy Anywhere"**. Bridge agents to Web, Slack (Socket Mode), and Feishu (WebSocket) with zero code changes.
-- 🛠️ **Multi-Modal Interaction** — Native Speech-to-Text (SenseVoice-Small) support for a seamless voice-to-code development workflow.
-- 🤖 **Deep Personality Injection** — Dynamic **B/C dual-channel** injection: **B-channel** (SOUL/AGENTS/SKILLS) for directives and **C-channel** (USER/MEMORY) for context.
-- 🧠 **Autonomous Meta-Cognition** — Built-in 5-state machine with **META-COGNITION** core, intelligent LLM retry, and 3-layer self-healing for unmatched session stability.
-- 🌐 **Embedded Web Chat** — A single binary serves both the API/WebSocket gateway and a premium Next.js-based web chat interface out of the box.
-- 🛡️ **Enterprise-Grade Security** — JWT ES256 authentication, SSRF protection, and PGID-isolated process management with orphan cleanup.
-- 📊 **End-to-End Observability** — Native Prometheus metrics, OpenTelemetry tracing, and structured JSON logging for full auditability.
-- 🛠️ **Self-contained CLI** — `gateway`, `service`, `dev`, `onboard`, `doctor`, `security`, `status` in a single binary
-- 🌍 **Multi-language SDKs** — Go, TypeScript, Python, Java clients ready to use
+## Core Capabilities
 
-## ⚡ Quick Start
+- **Universal Agent Gateway** — Unified AEP v1 WebSocket interface for Claude Code, OpenCode Server, and Pi-mono
+- **Cross-Platform Delivery** — Bridge agents to Web, Slack (Socket Mode), and Feishu (WebSocket) with zero code changes
+- **Embedded Web Chat** — Single binary serves both the gateway and a Next.js-based web chat UI
+- **Deep Personality Injection** — B/C dual-channel agent config: directives (SOUL/AGENTS/SKILLS) + context (USER/MEMORY)
+- **Enterprise Security** — JWT ES256, SSRF protection, PGID-isolated process management, path traversal prevention
+- **Full Observability** — Prometheus metrics, OpenTelemetry tracing, structured JSON logging
 
-> **AI Agents:** Read INSTALL.md for installation, CLI usage, and configuration instructions:
-> ```
-> https://github.com/hrygo/hotplex/blob/main/INSTALL.md
-> ```
+## Quick Start
 
-### One-Click Install (macOS / Linux)
+> **AI Agents:** See [INSTALL.md](INSTALL.md) for machine-readable installation instructions.
+
+### 1. Install
+
+**Binary (macOS / Linux):**
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/hrygo/hotplex/main/scripts/install.sh | bash -s -- --latest
 ```
 
-Or download a specific version:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/hrygo/hotplex/main/scripts/install.sh | bash -s -- --release v1.3.0 --prefix ~/.local
-```
-
-### One-Click Install (Windows)
+**Binary (Windows):**
 
 ```powershell
-# PowerShell 5.1+
 Invoke-WebRequest -Uri https://raw.githubusercontent.com/hrygo/hotplex/main/scripts/install.ps1 -OutFile install.ps1
 .\install.ps1 -Latest
 ```
 
-### Install from Source
+**From Source:**
 
 ```bash
-git clone https://github.com/hrygo/hotplex.git
-cd hotplex
+git clone https://github.com/hrygo/hotplex.git && cd hotplex
 make quickstart    # check tools + build + test
 ```
 
-> **Tip:** Use the `/setup-env` skill in Claude Code for interactive `.env` configuration (Slack/Feishu tokens, access policies, STT, worker settings, etc.).
-
-### Or with Docker (Experimental)
+**Docker (Experimental):**
 
 ```bash
 cp configs/env.example .env  # edit with your API keys
 docker compose up -d
 ```
 
-### Configure
+### 2. Configure
 
 ```bash
 # Interactive setup wizard
@@ -92,50 +97,52 @@ hotplex onboard
 hotplex onboard --non-interactive --enable-slack --enable-feishu
 ```
 
-### Run
+> **Tip (Claude Code users):** Use the `/setup-env` skill for interactive `.env` configuration — Slack/Feishu tokens, access policies, STT, worker settings, and more.
+
+### 3. Run
 
 ```bash
-# Development mode (foreground)
-make dev
-
-# Production mode (background daemon)
-hotplex gateway start -d
-
-# Stop / restart
-hotplex gateway stop
-hotplex gateway restart -d
+make dev                   # Development (foreground, gateway + webchat)
+hotplex gateway start -d   # Production (background daemon)
 ```
 
-### Install as System Service
+| Service             | Address                  | Note                                   |
+| :------------------ | :----------------------- | :------------------------------------- |
+| Gateway (WebSocket) | `ws://localhost:8888/ws` | Main protocol endpoint                 |
+| Admin API           | `http://localhost:9999`  | Management & Statistics                |
+| Web Chat UI         | `http://localhost:8888`  | Embedded SPA (served from Gateway)     |
+| Dev Web Chat        | `http://localhost:3000`  | Next.js Dev Server (`make dev` only)   |
+
+## System Service
+
+Install as a native system service — no root required for user-level setup.
 
 ```bash
-# Install as user-level service (no root required)
-hotplex service install
+hotplex service install              # User-level (no root)
+sudo hotplex service install --level system  # System-wide
+```
 
-# Manage the service
-hotplex service start      # Start service
-hotplex service stop       # Stop service
-hotplex service restart    # Restart service
-hotplex service status     # Check status
-hotplex service logs -f    # Follow logs
-
-# System-wide installation (requires sudo)
-sudo hotplex service install --level system
-
-# Uninstall
-hotplex service uninstall
+```bash
+hotplex service start       # Start
+hotplex service stop        # Stop
+hotplex service restart     # Restart
+hotplex service status      # Status
+hotplex service logs -f     # Follow logs
+hotplex service uninstall   # Uninstall
 ```
 
 Supports **systemd** (Linux), **launchd** (macOS), and **Windows SCM**.
 
-| Service             | Address                  | Note                                     |
-| :------------------ | :----------------------- | :--------------------------------------- |
-| Gateway (WebSocket) | `ws://localhost:8888/ws` | Main protocol endpoint                   |
-| Admin API           | `http://localhost:9999`  | Management & Statistics                  |
-| Web Chat UI         | `http://localhost:8888`  | **Embedded SPA** (served from Gateway)   |
-| Dev Web Chat        | `http://localhost:3000`  | Next.js Dev Server (when running `make dev`) |
+## SDKs
 
-### Connect with Go SDK
+| Language       | Path                                                         | Features                          |
+| :------------- | :----------------------------------------------------------- | :-------------------------------- |
+| **Go**         | [`client/`](client/)                                         | Channel-based events, production  |
+| **TypeScript** | [`examples/typescript-client/`](examples/typescript-client/) | Streaming, multi-turn, React      |
+| **Python**     | [`examples/python-client/`](examples/python-client/)         | Asyncio, session resume           |
+| **Java**       | [`examples/java-client/`](examples/java-client/)             | Enterprise AEP v1                 |
+
+Quick example with Go SDK:
 
 ```go
 package main
@@ -167,64 +174,34 @@ func main() {
 }
 ```
 
-HotPlex sits between frontend clients and backend AI coding agents, featuring a built-in **Meta-Cognition Core** that abstracts protocol differences into a unified **AEP v1** (Agent Exchange Protocol) WebSocket layer.
+## Configuration
 
-```
-┌──────────┐   ┌──────────┐   ┌──────────┐
-│  Web UI  │   │  Slack   │   │  Feishu  │
-└────┬─────┘   └────┬─────┘   └────┬─────┘
-     │              │              │
-     └──────────────┼──────────────┘
-                    │  WebSocket / AEP v1
-              ┌─────┴─────┐
-              │  HotPlex  │  Session · Auth · Retry · B/C Config
-              │  Gateway  │  Metrics · Tracing · Admin · Meta-Core
-              └─────┬─────┘
-     ┌──────────────┼──────────────┐
-     │              │              │
-┌────┴─────┐  ┌────┴──────┐  ┌───┴───────┐
-│  Claude  │  │  OpenCode │  │  Pi-mono  │
-│  Code    │  │  Server   │  │           │
-└──────────┘  └───────────┘  └───────────┘
-```
-
-## 🔗 SDKs & Libraries
-
-|    Language    | Path                                                         | Features                                              |
-| :------------: | :----------------------------------------------------------- | :---------------------------------------------------- |
-|     **Go**     | [`client/`](client/)                                         | Full-featured, channel-based events, production-grade |
-| **TypeScript** | [`examples/typescript-client/`](examples/typescript-client/) | Streaming, multi-turn chat, React compatible          |
-|   **Python**   | [`examples/python-client/`](examples/python-client/)         | Asyncio, session resume, CLI ready                    |
-|    **Java**    | [`examples/java-client/`](examples/java-client/)             | Enterprise AEP v1 implementation                      |
-
-## 🛠️ Configuration
-
-| Key                       | Default                      | Description                                       |
-| :------------------------ | :--------------------------- | :------------------------------------------------ |
-| `agent_config.enabled`    | `true`                       | Enable agent personality/context injection        |
-| `webchat.enabled`         | `true`                       | Serve embedded webchat SPA from gateway           |
-| `worker.auto_retry.enabled`| `true`                      | Intelligent LLM retry with exponential backoff    |
-| `gateway.addr`            | `localhost:8888`             | WebSocket gateway address                         |
-| `admin.addr`              | `localhost:9999`             | Admin API address                                 |
-| `db.path`                 | `~/.hotplex/data/hotplex.db` | SQLite database path                              |
-| `log.level`               | `info`                       | Log level: debug, info, warn, error               |
+| Key                        | Default                      | Description                                    |
+| :------------------------- | :--------------------------- | :--------------------------------------------- |
+| `gateway.addr`             | `localhost:8888`             | WebSocket gateway address                      |
+| `admin.addr`               | `localhost:9999`             | Admin API address                              |
+| `agent_config.enabled`     | `true`                       | Agent personality/context injection            |
+| `worker.auto_retry.enabled`| `true`                       | LLM retry with exponential backoff             |
+| `webchat.enabled`          | `true`                       | Embedded webchat SPA                           |
+| `db.path`                  | `~/.hotplex/data/hotplex.db` | SQLite database path                           |
+| `log.level`                | `info`                       | Log level: debug, info, warn, error            |
 
 > [!TIP]
 > See [Config Reference](docs/management/Config-Reference.md) for the full list of environment variables and YAML settings.
 
-## 📖 Documentation
+## Documentation
 
-| Area                | Guide                                                                                                                                                     |
-| :------------------ | :-------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Getting Started** | [Quick Start](docs/User-Manual.md) · [Reference Manual](docs/Reference-Manual.md) · [Whitepaper](docs/Product-Whitepaper.md)                              |
-| **Protocol**        | [AEP v1 Specification](docs/architecture/AEP-v1-Protocol.md)                                                                                              |
-| **Architecture**    | [Gateway Design](docs/architecture/Worker-Gateway-Design.md) · [Agent Config Design](docs/architecture/Agent-Config-Design.md) · [Meta-Cognition Design](internal/agentconfig/META-COGNITION.md) |
-| **Security**        | [Authentication](docs/security/Security-Authentication.md) · [SSRF Protection](docs/security/SSRF-Protection.md)                                          |
+| Area                | Guide                                                                                                                        |
+| :------------------ | :--------------------------------------------------------------------------------------------------------------------------- |
+| **Getting Started** | [Quick Start](docs/User-Manual.md) · [Reference Manual](docs/Reference-Manual.md) · [Whitepaper](docs/Product-Whitepaper.md) |
+| **Protocol**        | [AEP v1 Specification](docs/architecture/AEP-v1-Protocol.md)                                                                 |
+| **Architecture**    | [Gateway Design](docs/architecture/Worker-Gateway-Design.md) · [Agent Config](docs/architecture/Agent-Config-Design.md) · [Meta-Cognition](internal/agentconfig/META-COGNITION.md) |
+| **Security**        | [Authentication](docs/security/Security-Authentication.md) · [SSRF Protection](docs/security/SSRF-Protection.md)             |
 | **Operations**      | [Admin API](docs/management/Admin-API-Design.md) · [Observability](docs/management/Observability-Design.md) · [Testing](docs/testing/Testing-Strategy.md) |
 
-## 👥 Contributing
+## Contributing
 
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
 1. Fork the repository
 2. Create your feature branch (`git checkout -b feat/AmazingFeature`)
@@ -235,10 +212,10 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for deta
 > [!NOTE]
 > All build/test/lint operations must use `make` targets. See `make help` for the full list.
 
-## 🛡️ Security
+## Security
 
 If you discover a security vulnerability, please do NOT open a public issue. Report it via [SECURITY.md](SECURITY.md) or contact maintainers directly.
 
-## 📜 License
+## License
 
 Distributed under the [Apache License 2.0](LICENSE).
