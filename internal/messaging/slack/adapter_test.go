@@ -1996,15 +1996,17 @@ func TestShortenPaths(t *testing.T) {
 	require.Equal(t, "no path here", shortenPaths("no path here"))
 
 	// WorkDir substitution takes priority
+	workDirMu.RLock()
 	origWorkDir := workDir
-	workDir = "/tmp/hotplex/workspace"
-	t.Cleanup(func() { workDir = origWorkDir })
+	workDirMu.RUnlock()
+	SetWorkDir("/tmp/hotplex/workspace")
+	t.Cleanup(func() { SetWorkDir(origWorkDir) })
 
 	require.Equal(t, "$WK/main.go", shortenPaths("/tmp/hotplex/workspace/main.go"))
 	require.Equal(t, "$WK/sub/file.txt", shortenPaths("/tmp/hotplex/workspace/sub/file.txt"))
 
 	// Both: workDir first, then homeDir on remaining
-	workDir = homeDir + "/projects/myapp"
+	SetWorkDir(homeDir + "/projects/myapp")
 	require.Equal(t, "$WK/main.go", shortenPaths(homeDir+"/projects/myapp/main.go"))
 	require.Equal(t, "~/other/file.go", shortenPaths(homeDir+"/other/file.go"))
 }
