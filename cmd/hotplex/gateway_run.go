@@ -151,8 +151,7 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 		return fmt.Errorf("gateway: init conversation store: %w", err)
 	}
 
-	eventDBPath := filepath.Join(filepath.Dir(cfg.DB.Path), "events.db")
-	eventStore, err := eventstore.NewSQLiteStore(ctx, eventDBPath)
+	eventStore, err := eventstore.NewSQLiteStore(ctx, cfg.DB.EventsPath)
 	if err != nil {
 		_ = store.Close()
 		_ = convStore.Close()
@@ -362,7 +361,7 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 		WebChatAddr:     cfg.WebChat.Addr,
 		WebChatEmbedded: cfg.WebChat.Enabled,
 		DBPath:          cfg.DB.Path,
-		EventDBPath:     eventDBPath,
+		EventDBPath:     cfg.DB.EventsPath,
 		PoolMax:         cfg.Pool.MaxSize,
 		PoolIdle:        cfg.Pool.MaxIdlePerUser,
 		Adapters:        adapterStatuses,

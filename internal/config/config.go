@@ -260,6 +260,7 @@ type GatewayConfig struct {
 // DBConfig holds SQLite settings.
 type DBConfig struct {
 	Path            string        `mapstructure:"path"`
+	EventsPath      string        `mapstructure:"events_path"`
 	WALMode         bool          `mapstructure:"wal_mode"`
 	BusyTimeout     time.Duration `mapstructure:"busy_timeout"`
 	MaxOpenConns    int           `mapstructure:"max_open_conns"`
@@ -385,6 +386,7 @@ func Default() *Config {
 		},
 		DB: DBConfig{
 			Path:            filepath.Join(HotplexHome(), "data", "hotplex.db"),
+			EventsPath:      filepath.Join(HotplexHome(), "data", "events.db"),
 			WALMode:         true,
 			BusyTimeout:     5 * time.Second,
 			MaxOpenConns:    2,
@@ -652,6 +654,7 @@ func loadRecursive(filePath string, opts LoadOptions, visited []string) (*Config
 	// Normalize all path fields — Viper does not expand ~ in YAML values.
 	for _, pf := range []*string{
 		&cfg.DB.Path,
+		&cfg.DB.EventsPath,
 		&cfg.Worker.DefaultWorkDir,
 		&cfg.Worker.PIDDir,
 		&cfg.AgentConfig.ConfigDir,

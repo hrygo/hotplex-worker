@@ -53,6 +53,7 @@ admin:
 
 db:
   path: ~/.hotplex/data/hotplex.db
+  events_path: ~/.hotplex/data/events.db
   wal_mode: true
   busy_timeout: 5s
   max_open_conns: 2
