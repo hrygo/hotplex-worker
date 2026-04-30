@@ -85,21 +85,13 @@ func initSQLiteDB(db *sql.DB, cfg *config.Config, label string) error {
 	if _, err := db.Exec("PRAGMA synchronous=NORMAL"); err != nil {
 		return fmt.Errorf("session store: %s synchronous: %w", label, err)
 	}
-	cacheSize := cfg.DB.CacheSizeKiB
-	if cacheSize <= 0 {
-		cacheSize = 8192
-	}
-	if _, err := db.Exec(fmt.Sprintf("PRAGMA cache_size=-%d", cacheSize)); err != nil {
+	if _, err := db.Exec(fmt.Sprintf("PRAGMA cache_size=-%d", cfg.DB.CacheSizeKiB)); err != nil {
 		return fmt.Errorf("session store: %s cache_size: %w", label, err)
 	}
 	if _, err := db.Exec("PRAGMA temp_store=MEMORY"); err != nil {
 		return fmt.Errorf("session store: %s temp_store: %w", label, err)
 	}
-	mmapSize := cfg.DB.MmapSizeMiB
-	if mmapSize <= 0 {
-		mmapSize = 64
-	}
-	if _, err := db.Exec(fmt.Sprintf("PRAGMA mmap_size=%d", mmapSize*1024*1024)); err != nil {
+	if _, err := db.Exec(fmt.Sprintf("PRAGMA mmap_size=%d", cfg.DB.MmapSizeMiB*1024*1024)); err != nil {
 		return fmt.Errorf("session store: %s mmap_size: %w", label, err)
 	}
 	if _, err := db.Exec("PRAGMA wal_autocheckpoint=2000"); err != nil {
