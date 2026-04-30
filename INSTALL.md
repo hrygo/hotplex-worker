@@ -11,10 +11,11 @@ User's OS?
 │   ├── Has Go 1.26+ AND wants source build? → `make quickstart`
 │   └── Wants pre-built binary? → install.sh --latest
 │       └── No sudo? → add --prefix ~/.local
-└── Windows → install.ps1
-    └── Download only (no source build on Windows)
-        ├── Admin? → installs to $env:ProgramFiles\HotPlex
-        └── Non-admin? → installs to $HOME\.hotplex\bin
+├── Windows → install.ps1
+│   └── Download only (no source build on Windows)
+│       ├── Admin? → installs to $env:ProgramFiles\HotPlex
+│       └── Non-admin? → installs to $HOME\.hotplex\bin
+└── Docker (Experimental, unverified) → docker compose up -d
 ```
 
 ## Methods
@@ -72,15 +73,7 @@ make quickstart    # check tools + build + test
 
 Binary output: `bin/hotplex-{os}-{arch}`
 
-### Method 3: Docker
-
-```bash
-cp configs/env.example .env
-# Edit .env with secrets (see Configuration section)
-docker compose up -d
-```
-
-### Method 4: System Service
+### Method 3: System Service
 
 After any install method above:
 
@@ -93,6 +86,16 @@ hotplex service logs -f
 ```
 
 Service managers: systemd (Linux), launchd (macOS), SCM (Windows).
+
+### Method 4: Docker (Experimental)
+
+> **Note:** Docker deployment is unverified. Use at your own risk.
+
+```bash
+cp configs/env.example .env
+# Edit .env with secrets (see Configuration section)
+docker compose up -d
+```
 
 ## Script Reference
 
