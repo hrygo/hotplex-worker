@@ -39,10 +39,14 @@ export const ToolName = {
   ReadUrlContent: "read_url_content",
 } as const;
 
-export type ToolCategory = "terminal" | "file" | "search" | "list" | "permission" | "ai" | "default";
+export type ToolCategory = "terminal" | "file" | "search" | "list" | "permission" | "todo" | "ai" | "default";
 
 const TERMINAL_TOOLS: ReadonlySet<string> = new Set([
   ToolName.RunCommand, ToolName.Bash, ToolName.ExecuteCommand, ToolName.Shell,
+]);
+
+const TODO_TOOLS: ReadonlySet<string> = new Set([
+  "todo", "todowrite", "todo_write", "task_list", "checklist"
 ]);
 
 const FILE_TOOLS: ReadonlySet<string> = new Set([
@@ -68,6 +72,7 @@ const PERMISSION_TOOLS: ReadonlySet<string> = new Set([
 export function getToolCategory(name: string): ToolCategory {
   const lowerName = name?.toLowerCase()?.trim() || "";
   if (TERMINAL_TOOLS.has(lowerName)) return "terminal";
+  if (TODO_TOOLS.has(lowerName)) return "todo";
   if (FILE_TOOLS.has(lowerName)) return "file";
   if (SEARCH_TOOLS.has(lowerName)) return "search";
   if (LIST_TOOLS.has(lowerName)) return "list";
