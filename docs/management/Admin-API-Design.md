@@ -261,6 +261,7 @@ GET /admin/health HTTP/1.1
       "status": "healthy",
       "type": "sqlite",
       "path": "/var/hotplex/data/hotplex.db",
+      "events_path": "/var/hotplex/data/events.db",
       "size_mb": 50
     },
     "workers": {
