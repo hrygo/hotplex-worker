@@ -890,3 +890,42 @@ body {
   .welcome-title { font-size: 1.5rem; }
   .suggestion-card { padding: 0.625rem; font-size: 0.75rem; }
 }
+
+/* ============================================================
+   AI Native UI Additions
+   ============================================================ */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.animate-shimmer {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(251, 191, 36, 0.05) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2.5s infinite linear;
+}
+
+@keyframes pulse-subtle {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.85; transform: scale(0.98); }
+}
+
+.animate-pulse-subtle {
+  animation: pulse-subtle 3s ease-in-out infinite;
+}
+
+.prose-hotplex {
+  font-size: 14.5px;
+  line-height: 1.65;
+  color: var(--text-primary);
+}
+
+.prose-hotplex p { margin-bottom: 1rem; }
+.prose-hotplex p:last-child { margin-bottom: 0; }
+.prose-hotplex strong { font-weight: 700; color: var(--text-primary); border-bottom: 1px solid rgba(251, 191, 36, 0.3); }
+.prose-hotplex code { font-family: var(--font-mono); font-size: 13px; background: var(--bg-elevated); padding: 2px 6px; border-radius: var(--radius-xs); border: 1px solid var(--border-subtle); }

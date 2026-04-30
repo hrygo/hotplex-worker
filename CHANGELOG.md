@@ -1,5 +1,41 @@
 # Changelog
 
+## [1.3.0] - 2026-04-30
+
+### Summary
+
+v1.3.0 是一次 minor 版本更新，聚焦于 **跨平台 Windows 支持、Messaging 适配器 DRY/SOLID 重构、Session History REST API、DI 构造函数注入和离线 Bundle 打包**。新增 Windows amd64/arm64 一等公民支持（Job Object 进程树管理、跨平台路径安全验证、TTY 检测）。Messaging 层完成 issue #65 七阶段重构，提取共享 Pipeline、ConnPool、Streaming、Dedup/Backoff/Gate 到基础包，Feishu/Slack 适配器代码量大幅缩减。Gateway 新增 `GET /api/sessions/{id}/history` 端点和 ConversationStore 分页查询。DI 层从 setter 链式调用迁移到构造函数注入。CI 新增 OpenCode + OMO 离线 bundle 自动打包发布流程。
+
+### Added
+
+- **Platform**: Windows amd64/arm64 一等公民支持 — Job Object 进程树清理、跨平台 TTY 检测、路径安全验证、pipe 错误检测。(#64, 794a8ff, de8b097, 1e75218, 6229be9)
+- **Platform**: 跨平台构建目标 — Makefile 新增 `GOOS=windows` 构建，release workflow 支持 Windows 二进制发布。(#64, 794a8ff)
+- **Gateway**: `GET /api/sessions/{id}/history` — 会话历史 REST 端点，支持分页查询 ConversationStore。(#60, d17b90d, 440525e)
+- **Gateway**: `GetBySessionBefore` — ConversationStore 新增基于序列号的分页查询，用于历史回放。(#60, 440525e)
+- **WebChat**: History runtime adapter — 将 session history API 集成到运行时适配器，支持客户端历史加载。(#60, a5bbb72, 686e1fa)
+- **CI**: OpenCode + OMO 离线 bundle — GitHub Release 自动打包和安装脚本，支持离线环境部署。(#59, ffaf168, 3412b22)
+
+### Changed
+
+- **Messaging**: 七阶段 DRY/SOLID 重构 (issue #65) — 提取共享 Pipeline（消息处理管道）、ConnPool（连接池）、StreamingCard 抽象、Dedup/Backoff/Gate 到 `internal/messaging/` 基础包；Feishu/Slack 适配器代码量大幅缩减，消除重复逻辑。(#67, 02f239b, 1be2d0f, c0892b4, 37751dc, e8f0ae3, 24cf4eb)
+- **Messaging**: ConnPool 热路径优化 — 消除 stringly-typed log channels，提升连接查找性能。(#67, e8f0ae3)
+- **DI**: 构造函数注入替代 setter 链 — `Bridge`、`Hub`、`SessionManager` 等组件改用构造函数注入，消除运行时 nil 风险。(#63, f906d30)
+- **Logging**: 结构化日志优化 — gateway 栈统一 slog key-value 风格，消除冗余日志属性。(#67, baf4546)
+- **Security**: SSRF DNS mock + TOCTOU 修复 — 消除 lock-DB-I/O 反模式，修复配置验证时序窗口，平台 key 去重。(#67, a290bb3)
+- **Security**: 跨平台路径验证重构 — `ValidateWorkDir` 拆分为 `path_unix.go`/`path_windows.go`，Windows 路径比较大小写不敏感。(#64, 6229be9, d702753)
+- **Session**: 移除 EventStore，ConversationStore 增加统计查询 — 简化持久化架构为双层（MessageStore + ConversationStore）。(#67, a7b6eda)
+- **Config**: codecov 统一 1% threshold，patch target 50% + 10% threshold。(#67, ab5b465, b048eb9)
+- **Hooks**: pre-push gate 增加 fmt + lint 检查，在本地拦截 CI 失败。(#63, 05961c1)
+
+### Fixed
+
+- **Gateway**: `handler.sm` nil guard — conn.go idle 转换检查添加空指针防护。(#67, 9203060)
+- **Slack**: `TestShortenPaths` data race — 使用 mutex-guarded `SetWorkDir` 消除竞态条件。(#68, 0e30a30)
+- **WebChat**: 依赖更新和类型兼容性修复。(#68, fab6be6)
+- **Windows**: 进程管理加固 — 修复跨平台 STT Job Object 清理、PID 文件路径、signal 处理。(#64, 031eab2, f602b6a, de8b097)
+- **CI**: large file guard 扫描 HEAD tree only，避免误报。(#59, d4b6818)
+- **CI**: OMO 插件通过 OpenCode auto-discovery 注册。(#59, 1883866)
+
 ## [1.2.0] - 2026-04-29
 
 ### Summary
