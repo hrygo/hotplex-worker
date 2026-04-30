@@ -1,8 +1,6 @@
 package service
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -14,7 +12,6 @@ func TestBuildSystemdUnit_SystemLevel(t *testing.T) {
 	result := BuildSystemdUnit(InstallOptions{
 		BinaryPath: "/usr/local/bin/hotplex",
 		ConfigPath: "/etc/hotplex/config.yaml",
-		EnvPath:    "/etc/hotplex/secrets.env",
 		Level:      LevelSystem,
 		Name:       "hotplex",
 	}, "/root")
@@ -34,7 +31,6 @@ func TestBuildSystemdUnit_UserLevel(t *testing.T) {
 	result := BuildSystemdUnit(InstallOptions{
 		BinaryPath: "/home/user/bin/hotplex",
 		ConfigPath: "/home/user/.hotplex/config.yaml",
-		EnvPath:    "/home/user/.hotplex/.env",
 		Level:      LevelUser,
 		Name:       "hotplex",
 	}, "/home/user")
@@ -45,12 +41,23 @@ func TestBuildSystemdUnit_UserLevel(t *testing.T) {
 	require.NotContains(t, result, "NoNewPrivileges=true")
 }
 
+func TestBuildSystemdUnit_InjectsPath(t *testing.T) {
+	t.Parallel()
+	result := BuildSystemdUnit(InstallOptions{
+		BinaryPath: "/usr/local/bin/hotplex",
+		ConfigPath: "/etc/hotplex/config.yaml",
+		Level:      LevelUser,
+		Name:       "hotplex",
+	}, "/home/user")
+
+	require.Contains(t, result, "Environment=PATH=")
+}
+
 func TestBuildLaunchdPlist_SystemLevel(t *testing.T) {
 	t.Parallel()
 	result := BuildLaunchdPlist(InstallOptions{
 		BinaryPath: "/usr/local/bin/hotplex",
 		ConfigPath: "/etc/hotplex/config.yaml",
-		EnvPath:    "/etc/hotplex/.env",
 		Level:      LevelSystem,
 		Name:       "hotplex",
 	}, "/root")
@@ -69,7 +76,6 @@ func TestBuildLaunchdPlist_UserLevel(t *testing.T) {
 	result := BuildLaunchdPlist(InstallOptions{
 		BinaryPath: "/usr/local/bin/hotplex",
 		ConfigPath: "/Users/test/.hotplex/config.yaml",
-		EnvPath:    "/Users/test/.hotplex/.env",
 		Level:      LevelUser,
 		Name:       "hotplex",
 	}, "/Users/test")
@@ -78,27 +84,18 @@ func TestBuildLaunchdPlist_UserLevel(t *testing.T) {
 	require.Contains(t, result, "/Users/test/.hotplex/logs/launchd.stdout.log")
 }
 
-func TestBuildLaunchdPlist_EnvVars(t *testing.T) {
+func TestBuildLaunchdPlist_ContainsGatewayStartArgs(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	envPath := filepath.Join(dir, ".env")
-	err := os.WriteFile(envPath, []byte("KEY1=val1\n# comment\nKEY2=val2\n"), 0o600)
-	require.NoError(t, err)
-
 	result := BuildLaunchdPlist(InstallOptions{
 		BinaryPath: "/usr/local/bin/hotplex",
 		ConfigPath: "/etc/hotplex/config.yaml",
-		EnvPath:    envPath,
 		Level:      LevelUser,
 		Name:       "hotplex",
 	}, "/home")
 
-	require.Contains(t, result, "<key>KEY1</key>")
-	require.Contains(t, result, "<string>val1</string>")
-	require.Contains(t, result, "<key>KEY2</key>")
-	require.Contains(t, result, "<string>val2</string>")
-	// .env does not override PATH, so caller PATH is preserved
-	require.Contains(t, result, "<key>PATH</key>")
+	require.Contains(t, result, "<string>gateway</string>")
+	require.Contains(t, result, "<string>start</string>")
+	require.Contains(t, result, "<string>--config</string>")
 }
 
 func TestParseLevel(t *testing.T) {

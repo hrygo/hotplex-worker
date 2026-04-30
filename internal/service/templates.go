@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 )
 
@@ -48,13 +47,8 @@ func BuildSystemdUnit(opts InstallOptions, homeDir string) string {
 		b.WriteString("LimitNOFILE=65536\n")
 	}
 
-	envVars := buildServiceEnv(opts.EnvPath)
-	if len(envVars) > 0 {
-		var parts []string
-		for _, k := range sortedEnvKeys(envVars) {
-			parts = append(parts, fmt.Sprintf("%s=%s", k, envVars[k]))
-		}
-		b.WriteString("\nEnvironment=" + strings.Join(parts, " ") + "\n")
+	if path := os.Getenv("PATH"); path != "" {
+		b.WriteString("\nEnvironment=PATH=" + path + "\n")
 	}
 
 	b.WriteString("\nStandardOutput=journal\n")
@@ -91,13 +85,11 @@ func BuildLaunchdPlist(opts InstallOptions, homeDir string) string {
 
 	fmt.Fprintf(&b, "  <key>WorkingDirectory</key>\n  <string>%s</string>\n", homeDir)
 
-	// Merge env: .env vars override caller's PATH; other .env vars append.
-	envVars := buildServiceEnv(opts.EnvPath)
-	b.WriteString("  <key>EnvironmentVariables</key>\n  <dict>\n")
-	for _, k := range sortedEnvKeys(envVars) {
-		fmt.Fprintf(&b, "    <key>%s</key>\n    <string>%s</string>\n", k, envVars[k])
+	if path := os.Getenv("PATH"); path != "" {
+		b.WriteString("  <key>EnvironmentVariables</key>\n  <dict>\n")
+		fmt.Fprintf(&b, "    <key>PATH</key>\n    <string>%s</string>\n", path)
+		b.WriteString("  </dict>\n")
 	}
-	b.WriteString("  </dict>\n")
 
 	b.WriteString("  <key>RunAtLoad</key>\n  <true/>\n")
 	b.WriteString("  <key>KeepAlive</key>\n  <true/>\n")
@@ -128,54 +120,4 @@ func launchdLabel(name string, level Level) string {
 		return "com.hrygo." + name + ".user"
 	}
 	return "com.hrygo." + name
-}
-
-// buildServiceEnv merges the caller's PATH with vars from the .env file.
-// .env PATH overrides the caller PATH; other .env vars are added.
-func buildServiceEnv(envPath string) map[string]string {
-	env := make(map[string]string)
-	if path := os.Getenv("PATH"); path != "" {
-		env["PATH"] = path
-	}
-	for k, v := range parseEnvFile(envPath) {
-		env[k] = v
-	}
-	return env
-}
-
-func parseEnvFile(path string) map[string]string {
-	if path == "" {
-		return nil
-	}
-	env := make(map[string]string)
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return env
-	}
-	for _, line := range strings.Split(string(data), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		idx := strings.Index(line, "=")
-		if idx <= 0 {
-			continue
-		}
-		key := strings.TrimSpace(line[:idx])
-		val := strings.TrimSpace(line[idx+1:])
-		val = strings.Trim(val, `"'`)
-		if val != "" {
-			env[key] = val
-		}
-	}
-	return env
-}
-
-func sortedEnvKeys(m map[string]string) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
 }

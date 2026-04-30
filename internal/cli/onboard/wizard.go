@@ -749,11 +749,9 @@ func stepServiceInstall(reader *bufio.Reader, opts WizardOptions) StepResult {
 		return StepResult{Name: "service_install", Status: "fail", Detail: err.Error()}
 	}
 
-	envPath := filepath.Join(filepath.Dir(opts.ConfigPath), ".env")
 	if err := mgr.Install(service.InstallOptions{
 		BinaryPath: binaryPath,
 		ConfigPath: opts.ConfigPath,
-		EnvPath:    envPath,
 		Level:      level,
 		Name:       "hotplex",
 	}); err != nil {
