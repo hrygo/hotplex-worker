@@ -539,8 +539,9 @@ func limitedSprintf(v any, maxBytes int) string {
 
 // shortenPaths replaces workDir with "$WK" then homeDir with "~" in s.
 var (
-	homeDir string
-	workDir string
+	homeDir   string
+	workDir   string
+	workDirMu sync.RWMutex
 )
 
 func init() {
@@ -551,12 +552,17 @@ func init() {
 
 // SetWorkDir sets the workdir used for $WK substitution in status text.
 func SetWorkDir(dir string) {
+	workDirMu.Lock()
 	workDir = dir
+	workDirMu.Unlock()
 }
 
 func shortenPaths(s string) string {
-	if workDir != "" {
-		s = strings.ReplaceAll(s, workDir, "$WK")
+	workDirMu.RLock()
+	wd := workDir
+	workDirMu.RUnlock()
+	if wd != "" {
+		s = strings.ReplaceAll(s, wd, "$WK")
 	}
 	if homeDir != "" {
 		s = strings.ReplaceAll(s, homeDir, "~")
@@ -619,14 +625,14 @@ func (a *Adapter) ClearStatus(ctx context.Context, channelID, threadTS string) e
 
 func (a *Adapter) handleCapabilityError(err error) {
 	if isAssistantCapabilityError(err) {
-		a.log.Warn("slack: Assistant API no longer available, switching to emoji fallback",
+		a.Log.Warn("slack: Assistant API no longer available, switching to emoji fallback",
 			"err", err)
 		a.isAssistantCapable.Store(false)
 		if a.statusMgr != nil {
 			a.statusMgr.SetEmojiOnly(true)
 		}
 	} else {
-		a.log.Debug("slack: Assistant API call failed, trying emoji fallback",
+		a.Log.Debug("slack: Assistant API call failed, trying emoji fallback",
 			"err", err)
 	}
 }
@@ -674,12 +680,12 @@ func (a *Adapter) ProbeAssistantCapability(ctx context.Context) bool {
 	err := a.client.SetAssistantThreadsStatusContext(ctx, params)
 	if err != nil {
 		if isAssistantCapabilityError(err) {
-			a.log.Warn("slack: Assistant API not available (free workspace?), falling back to emoji reactions",
+			a.Log.Warn("slack: Assistant API not available (free workspace?), falling back to emoji reactions",
 				"err", err)
 			return false
 		}
 		// Transient or benign error (e.g. channel_not_found from empty params): treat as capable
-		a.log.Info("slack: Assistant API probe skipped (benign error), assuming capable",
+		a.Log.Info("slack: Assistant API probe skipped (benign error), assuming capable",
 			"err", err)
 		return true
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -26,16 +27,25 @@ func newTestAdapter(t *testing.T) *Adapter {
 	ctx := context.Background()
 
 	a := &Adapter{
-		log:           slog.Default(),
+		PlatformAdapter: messaging.PlatformAdapter{
+			Log:          slog.Default(),
+			Dedup:        messaging.NewDedup(5000, 30*time.Minute),
+			Interactions: messaging.NewInteractionManager(slog.Default()),
+		},
 		botID:         "B_TEST",
 		teamID:        "T_TEST",
-		dedup:         messaging.NewDedup(5000, 30*time.Minute),
 		userCache:     NewUserCache(nil),
 		rateLimiter:   NewChannelRateLimiter(ctx),
 		activeStreams: make(map[string]*NativeStreamingWriter),
-		activeConns:   make(map[string]*SlackConn),
-		interactions:  messaging.NewInteractionManager(slog.Default()),
 	}
+	a.connPool = messaging.NewConnPool[*SlackConn](func(key string) *SlackConn {
+		parts := strings.SplitN(key, "#", 2)
+		threadTS := ""
+		if len(parts) > 1 {
+			threadTS = parts[1]
+		}
+		return NewSlackConn(a, parts[0], threadTS)
+	})
 	// StatusManager needs the adapter pointer; set after struct creation.
 	a.statusMgr = NewStatusManager(a, slog.Default())
 	t.Cleanup(func() { _ = a.Close(ctx) })
@@ -88,7 +98,7 @@ func newAdapterWithCapture(t *testing.T) (*Adapter, *[]capturedCall) {
 		"test_worker",
 		"/tmp",
 	)
-	a.bridge = bridge
+	_ = a.ConfigureWith(messaging.AdapterConfig{Bridge: bridge})
 
 	return a, &handler.calls
 }
@@ -96,7 +106,7 @@ func newAdapterWithCapture(t *testing.T) (*Adapter, *[]capturedCall) {
 // dedupCount returns the current number of entries in the dedup tracker.
 // Safe to call from within package slack tests.
 func dedupCount(a *Adapter) int {
-	return a.dedup.Len()
+	return a.Dedup.Len()
 }
 
 // handleAndCheck runs handleEventsAPI and returns whether the message
@@ -230,7 +240,7 @@ func TestE2E_DedupFallbackToTimestamp(t *testing.T) {
 func TestE2E_GateDMDisabled(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
-	a.gate = messaging.NewGate("disabled", "open", false, nil, nil, nil)
+	a.Gate = messaging.NewGate("disabled", "open", false, nil, nil, nil)
 
 	require.False(t, handleAndCheck(t, a, makeDMEvent("U_ALICE", "hello")),
 		"DM should be rejected when dm_policy=disabled")
@@ -239,7 +249,7 @@ func TestE2E_GateDMDisabled(t *testing.T) {
 func TestE2E_GateDMAllowlist(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
-	a.gate = messaging.NewGate("allowlist", "open", false, []string{"U_ALLOWED"}, nil, nil)
+	a.Gate = messaging.NewGate("allowlist", "open", false, []string{"U_ALLOWED"}, nil, nil)
 
 	require.True(t, handleAndCheck(t, a, makeDMEvent("U_ALLOWED", "hello")),
 		"allowlisted user should pass")
@@ -250,7 +260,7 @@ func TestE2E_GateDMAllowlist(t *testing.T) {
 func TestE2E_GateGroupRequireMention(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
-	a.gate = messaging.NewGate("open", "open", true, nil, nil, nil)
+	a.Gate = messaging.NewGate("open", "open", true, nil, nil, nil)
 
 	require.False(t, handleAndCheck(t, a, makeGroupEvent("C123", "U_ALICE", "hello")),
 		"group message without @bot should be rejected")
@@ -261,7 +271,7 @@ func TestE2E_GateGroupRequireMention(t *testing.T) {
 func TestE2E_GateGroupDisabled(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
-	a.gate = messaging.NewGate("open", "disabled", false, nil, nil, nil)
+	a.Gate = messaging.NewGate("open", "disabled", false, nil, nil, nil)
 
 	require.False(t, handleAndCheck(t, a, makeGroupEvent("C123", "U_ALICE", "hello")),
 		"group messages should be rejected when group_policy=disabled")
@@ -313,7 +323,7 @@ func TestE2E_RichTextPasses(t *testing.T) {
 func TestE2E_MPIMUsesGroupPolicy(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
-	a.gate = messaging.NewGate("open", "disabled", false, nil, nil, nil)
+	a.Gate = messaging.NewGate("open", "disabled", false, nil, nil, nil)
 
 	// MPIM channel IDs start with 'G'
 	require.False(t, handleAndCheck(t, a, makeGroupEvent("G12345", "U_ALICE", "hello")),
@@ -341,7 +351,7 @@ func TestE2E_Capture_MentionTextStripped(t *testing.T) {
 
 	// Mention should be stripped from text
 	evt := makeGroupEvent("C123", "U_ALICE", "<@B_TEST> help me")
-	a.gate = messaging.NewGate("open", "open", true, nil, nil, nil)
+	a.Gate = messaging.NewGate("open", "open", true, nil, nil, nil)
 
 	a.handleEventsAPI(context.Background(), evt)
 	require.Len(t, *calls, 1)
@@ -559,17 +569,11 @@ func TestE2E_SlackConn_CloseRemovesFromRegistry(t *testing.T) {
 	require.NotNil(t, conn)
 
 	key := "C123#456.789"
-	a.mu.RLock()
-	_, exists := a.activeConns[key]
-	a.mu.RUnlock()
-	require.True(t, exists, "conn should be registered")
+	require.NotNil(t, a.connPool.Get(key), "conn should be registered")
 
 	require.NoError(t, conn.Close())
 
-	a.mu.RLock()
-	_, exists = a.activeConns[key]
-	a.mu.RUnlock()
-	require.False(t, exists, "conn should be removed after Close")
+	require.Nil(t, a.connPool.Get(key), "conn should be removed after Close")
 }
 
 func TestE2E_SlackConn_GetOrCreateIsIdempotent(t *testing.T) {
@@ -623,7 +627,7 @@ func TestE2E_ExtractResponseText_MessageTypes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			text, ok := extractResponseText(&events.Envelope{Event: tt.event})
+			text, ok := messaging.ExtractResponseText(&events.Envelope{Event: tt.event})
 			require.Equal(t, tt.wantText, text)
 			require.Equal(t, tt.wantOK, ok)
 		})
@@ -729,12 +733,14 @@ func TestE2E_AuthTestFailureReturnsError(t *testing.T) {
 	t.Parallel()
 
 	a := &Adapter{
-		log:           slog.Default(),
+		PlatformAdapter: messaging.PlatformAdapter{
+			Log:          slog.Default(),
+			Interactions: messaging.NewInteractionManager(slog.Default()),
+		},
 		botToken:      "xoxb-invalid",
 		appToken:      "xapp-invalid",
 		activeStreams: make(map[string]*NativeStreamingWriter),
-		activeConns:   make(map[string]*SlackConn),
-		interactions:  messaging.NewInteractionManager(slog.Default()),
+		connPool:      messaging.NewConnPool[*SlackConn](nil),
 	}
 
 	err := a.Start(context.Background())
@@ -906,7 +912,7 @@ func TestE2E_ExtractText_MixedBlocks(t *testing.T) {
 func TestE2E_GateRejected_NoMessageToUser(t *testing.T) {
 	t.Parallel()
 	a, calls := newAdapterWithCapture(t)
-	a.gate = messaging.NewGate("disabled", "open", false, nil, nil, nil)
+	a.Gate = messaging.NewGate("disabled", "open", false, nil, nil, nil)
 
 	// DM rejected by disabled policy — should not reach HandleTextMessage
 	a.handleEventsAPI(context.Background(), makeDMEvent("U_ALICE", "hello"))
@@ -920,7 +926,7 @@ func TestE2E_GateRejected_NoMessageToUser(t *testing.T) {
 func TestE2E_BlockKitMentionDetected(t *testing.T) {
 	t.Parallel()
 	a, calls := newAdapterWithCapture(t)
-	a.gate = messaging.NewGate("open", "open", true, nil, nil, nil)
+	a.Gate = messaging.NewGate("open", "open", true, nil, nil, nil)
 
 	// Message with @bot mention inside a SectionBlock, text is empty
 	evt := makeGroupEvent("C123", "U_ALICE", "")

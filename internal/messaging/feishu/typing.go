@@ -70,7 +70,7 @@ func (a *Adapter) addReaction(ctx context.Context, messageID, emoji string) (str
 		return "", fmt.Errorf("feishu: add reaction %s failed: code=%d msg=%s", emoji, resp.Code, resp.Msg)
 	}
 
-	a.log.Debug("feishu: added reaction", "emoji", emoji, "msg", messageID)
+	a.Log.Debug("feishu: added reaction", "emoji", emoji, "msg", messageID)
 
 	reactionID := ""
 	if resp.Data != nil && resp.Data.ReactionId != nil {
@@ -99,11 +99,11 @@ func (a *Adapter) removeReaction(ctx context.Context, messageID, reactionID stri
 	}
 
 	if !resp.Success() {
-		a.log.Warn("feishu: remove reaction failed",
+		a.Log.Warn("feishu: remove reaction failed",
 			"msg", messageID, "code", resp.Code, "msg", resp.Msg)
 	}
 
-	a.log.Debug("feishu: removed reaction", "msg", messageID)
+	a.Log.Debug("feishu: removed reaction", "msg", messageID)
 	return nil
 }
 

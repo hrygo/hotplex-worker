@@ -44,7 +44,7 @@ func (c *FeishuConn) sendPermissionRequest(ctx context.Context, env *events.Enve
 	cardJSON := buildInteractionCard(header, footer)
 
 	chatID := c.chatID
-	c.adapter.log.Debug("feishu: sending permission request card", "chat", chatID, "request_id", data.ID)
+	c.adapter.Log.Debug("feishu: sending permission request card", "chat", chatID, "request_id", data.ID)
 
 	if err := c.adapter.sendCardMessage(ctx, chatID, cardJSON); err != nil {
 		return fmt.Errorf("feishu: send permission card: %w", err)
@@ -52,7 +52,7 @@ func (c *FeishuConn) sendPermissionRequest(ctx context.Context, env *events.Enve
 
 	c.adapter.registerInteraction(data.ID, env.SessionID, events.PermissionRequest, c)
 
-	c.adapter.log.Info("feishu: permission request posted",
+	c.adapter.Log.Info("feishu: permission request posted",
 		"request_id", data.ID,
 		"tool_name", data.ToolName,
 		"chat", chatID)
@@ -99,7 +99,7 @@ func (c *FeishuConn) sendQuestionRequest(ctx context.Context, env *events.Envelo
 
 	c.adapter.registerInteraction(data.ID, env.SessionID, events.QuestionRequest, c)
 
-	c.adapter.log.Info("feishu: question request posted",
+	c.adapter.Log.Info("feishu: question request posted",
 		"request_id", data.ID,
 		"questions", len(data.Questions))
 
@@ -131,7 +131,7 @@ func (c *FeishuConn) sendElicitationRequest(ctx context.Context, env *events.Env
 
 	c.adapter.registerInteraction(data.ID, env.SessionID, events.ElicitationRequest, c)
 
-	c.adapter.log.Info("feishu: elicitation request posted",
+	c.adapter.Log.Info("feishu: elicitation request posted",
 		"request_id", data.ID,
 		"mcp_server", data.MCPServerName)
 
@@ -140,7 +140,7 @@ func (c *FeishuConn) sendElicitationRequest(ctx context.Context, env *events.Env
 
 // registerInteraction registers a pending interaction with the adapter's manager.
 func (a *Adapter) registerInteraction(requestID, sessionID string, kind events.Kind, conn *FeishuConn) {
-	a.interactions.Register(&messaging.PendingInteraction{
+	a.Interactions.Register(&messaging.PendingInteraction{
 		ID:        requestID,
 		SessionID: sessionID,
 		Type:      kind,
@@ -159,8 +159,8 @@ func (a *Adapter) registerInteraction(requestID, sessionID string, kind events.K
 					},
 				},
 			}
-			if a.bridge != nil {
-				_ = a.bridge.Handle(context.Background(), env, conn)
+			if a.Bridge() != nil {
+				_ = a.Bridge().Handle(context.Background(), env, conn)
 			}
 		},
 	})
@@ -169,7 +169,7 @@ func (a *Adapter) registerInteraction(requestID, sessionID string, kind events.K
 // checkPendingInteraction checks if a text message is a response to a pending
 // interaction. Returns true if the text was consumed as an interaction response.
 func (a *Adapter) checkPendingInteraction(ctx context.Context, text string, conn *FeishuConn) bool {
-	if a.interactions.Len() == 0 {
+	if a.Interactions.Len() == 0 {
 		return false
 	}
 
@@ -179,9 +179,9 @@ func (a *Adapter) checkPendingInteraction(ctx context.Context, text string, conn
 
 	var candidates []*messaging.PendingInteraction
 	if sid != "" {
-		candidates = a.interactions.GetBySession(sid)
+		candidates = a.Interactions.GetBySession(sid)
 	} else {
-		candidates = a.interactions.GetAll()
+		candidates = a.Interactions.GetAll()
 	}
 	if len(candidates) == 0 {
 		return false
@@ -235,7 +235,7 @@ func (a *Adapter) checkPendingInteraction(ctx context.Context, text string, conn
 	}
 
 	// Complete (remove) the interaction
-	if completed, ok := a.interactions.Complete(matched.ID); !ok {
+	if completed, ok := a.Interactions.Complete(matched.ID); !ok {
 		return false
 	} else {
 		_ = completed
@@ -244,7 +244,7 @@ func (a *Adapter) checkPendingInteraction(ctx context.Context, text string, conn
 	// Send the response
 	matched.SendResponse(metadata)
 
-	a.log.Info("feishu: interaction response received via text",
+	a.Log.Info("feishu: interaction response received via text",
 		"request_id", matched.ID,
 		"type", matched.Type,
 		"text_preview", truncate(text, 50))

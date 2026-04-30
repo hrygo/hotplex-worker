@@ -181,7 +181,7 @@ func TestIsAbortCommand(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, IsAbortCommand(tt.input))
+			require.Equal(t, tt.want, messaging.IsAbortCommand(tt.input))
 		})
 	}
 }
@@ -631,9 +631,9 @@ func TestUserCache_ResolveMentions_MixedFormats(t *testing.T) {
 func TestAssistantAPIEnabled_ControlsProbe(t *testing.T) {
 	t.Parallel()
 	a := &Adapter{
-		log:           slog.Default(),
-		activeStreams: make(map[string]*NativeStreamingWriter),
-		activeConns:   make(map[string]*SlackConn),
+		PlatformAdapter: messaging.PlatformAdapter{Log: slog.Default()},
+		activeStreams:   make(map[string]*NativeStreamingWriter),
+		connPool:        messaging.NewConnPool[*SlackConn](nil),
 	}
 
 	// Default (nil) → enabled
@@ -660,9 +660,9 @@ func TestAssistantAPIEnabled_ControlsProbe(t *testing.T) {
 func TestHandleCapabilityError_Degrades(t *testing.T) {
 	t.Parallel()
 	a := &Adapter{
-		log:           slog.Default(),
-		activeStreams: make(map[string]*NativeStreamingWriter),
-		activeConns:   make(map[string]*SlackConn),
+		PlatformAdapter: messaging.PlatformAdapter{Log: slog.Default()},
+		activeStreams:   make(map[string]*NativeStreamingWriter),
+		connPool:        messaging.NewConnPool[*SlackConn](nil),
 	}
 
 	// Set to capable
@@ -854,9 +854,9 @@ func TestAdapter_DoubleStartGuard(t *testing.T) {
 	t.Parallel()
 
 	a := &Adapter{
-		log:           slog.New(slog.NewTextHandler(io.Discard, nil)),
-		activeStreams: make(map[string]*NativeStreamingWriter),
-		activeConns:   make(map[string]*SlackConn),
+		PlatformAdapter: messaging.PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil))},
+		activeStreams:   make(map[string]*NativeStreamingWriter),
+		connPool:        messaging.NewConnPool[*SlackConn](nil),
 	}
 
 	// First call: fails due to missing tokens (guard passes, validation fails)
@@ -873,11 +873,11 @@ func TestAdapter_DoubleStartGuard_WithTokens(t *testing.T) {
 	t.Parallel()
 
 	a := &Adapter{
-		log:           slog.New(slog.NewTextHandler(io.Discard, nil)),
-		botToken:      "xoxb-fake",
-		appToken:      "xapp-fake",
-		activeStreams: make(map[string]*NativeStreamingWriter),
-		activeConns:   make(map[string]*SlackConn),
+		PlatformAdapter: messaging.PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil))},
+		botToken:        "xoxb-fake",
+		appToken:        "xapp-fake",
+		activeStreams:   make(map[string]*NativeStreamingWriter),
+		connPool:        messaging.NewConnPool[*SlackConn](nil),
 	}
 
 	// First call: fails at auth test (guard passes, Slack API fails)
@@ -893,9 +893,9 @@ func TestAdapter_CloseAfterSingleStart(t *testing.T) {
 	t.Parallel()
 
 	a := &Adapter{
-		log:           slog.New(slog.NewTextHandler(io.Discard, nil)),
-		activeStreams: make(map[string]*NativeStreamingWriter),
-		activeConns:   make(map[string]*SlackConn),
+		PlatformAdapter: messaging.PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil))},
+		activeStreams:   make(map[string]*NativeStreamingWriter),
+		connPool:        messaging.NewConnPool[*SlackConn](nil),
 	}
 
 	// Start fails (no tokens), but guard is set
@@ -1000,9 +1000,9 @@ func TestSlackConn_Close_CleansUpStreamWriter(t *testing.T) {
 	t.Parallel()
 
 	adapter := &Adapter{
-		log:           slog.New(slog.NewTextHandler(io.Discard, nil)),
-		activeConns:   make(map[string]*SlackConn),
-		activeStreams: make(map[string]*NativeStreamingWriter),
+		PlatformAdapter: messaging.PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil))},
+		connPool:        messaging.NewConnPool[*SlackConn](nil),
+		activeStreams:   make(map[string]*NativeStreamingWriter),
 	}
 
 	conn := &SlackConn{
@@ -1083,7 +1083,7 @@ func TestSlackConn_ExtractResponseText_MessageDelta(t *testing.T) {
 		},
 	}
 
-	text, ok := extractResponseText(env)
+	text, ok := messaging.ExtractResponseText(env)
 	require.True(t, ok)
 	require.Equal(t, "hello world", text)
 }
@@ -1098,7 +1098,7 @@ func TestSlackConn_ExtractResponseText_TextEvent(t *testing.T) {
 		},
 	}
 
-	text, ok := extractResponseText(env)
+	text, ok := messaging.ExtractResponseText(env)
 	require.True(t, ok)
 	require.Equal(t, "plain text content", text)
 }
@@ -1113,7 +1113,7 @@ func TestSlackConn_ExtractResponseText_DoneEvent(t *testing.T) {
 		},
 	}
 
-	text, ok := extractResponseText(env)
+	text, ok := messaging.ExtractResponseText(env)
 	require.False(t, ok)
 	require.Empty(t, text)
 }
@@ -1191,7 +1191,7 @@ func TestAC11_DeltaEventsUseStreaming(t *testing.T) {
 		},
 	}
 
-	text, ok := extractResponseText(env)
+	text, ok := messaging.ExtractResponseText(env)
 	require.True(t, ok, "AC-1.1: Should extract text from delta event")
 	require.Equal(t, "delta content", text)
 }
@@ -1284,7 +1284,7 @@ func TestAC16_NonStreamingEventsUsePostMessage(t *testing.T) {
 func TestCleanupMedia(t *testing.T) {
 	// Creating a logger that discards output for the test
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	a := &Adapter{log: logger}
+	a := &Adapter{PlatformAdapter: messaging.PlatformAdapter{Log: logger}}
 
 	tmpDir := t.TempDir()
 
@@ -1335,7 +1335,7 @@ func TestChunkContent_Integration(t *testing.T) {
 	}
 }
 
-// --- extractErrorMessage: P0 fix verification ---
+// --- messaging.ExtractErrorMessage: P0 fix verification ---
 
 func TestExtractErrorMessage_TypedErrorData(t *testing.T) {
 	t.Parallel()
@@ -1346,7 +1346,7 @@ func TestExtractErrorMessage_TypedErrorData(t *testing.T) {
 			Data: events.ErrorData{Code: events.ErrCodeSessionNotFound, Message: "session not found"},
 		},
 	}
-	require.Equal(t, "session not found", extractErrorMessage(env))
+	require.Equal(t, "session not found", messaging.ExtractErrorMessage(env))
 }
 
 func TestExtractErrorMessage_MapData(t *testing.T) {
@@ -1358,7 +1358,7 @@ func TestExtractErrorMessage_MapData(t *testing.T) {
 			Data: map[string]any{"message": "something went wrong", "code": "INTERNAL_ERROR"},
 		},
 	}
-	require.Equal(t, "something went wrong", extractErrorMessage(env))
+	require.Equal(t, "something went wrong", messaging.ExtractErrorMessage(env))
 }
 
 func TestExtractErrorMessage_NilData(t *testing.T) {
@@ -1367,7 +1367,7 @@ func TestExtractErrorMessage_NilData(t *testing.T) {
 	env := &events.Envelope{
 		Event: events.Event{Type: events.Error},
 	}
-	require.Equal(t, "", extractErrorMessage(env))
+	require.Equal(t, "", messaging.ExtractErrorMessage(env))
 }
 
 func TestExtractErrorMessage_EmptyMessage(t *testing.T) {
@@ -1379,7 +1379,7 @@ func TestExtractErrorMessage_EmptyMessage(t *testing.T) {
 			Data: events.ErrorData{Code: events.ErrCodeInternalError, Message: ""},
 		},
 	}
-	require.Equal(t, "", extractErrorMessage(env))
+	require.Equal(t, "", messaging.ExtractErrorMessage(env))
 }
 
 // ---------------------------------------------------------------------------
@@ -1495,10 +1495,10 @@ func TestClearStatus_CleansEmojiEvenWhenAssistantCapable(t *testing.T) {
 // exercises its full code path. PostMessageContext will fail with invalid_auth.
 func testAdapter() *Adapter {
 	return &Adapter{
-		log:           slog.New(slog.NewTextHandler(io.Discard, nil)),
-		client:        slack.New("x-test-token"),
-		activeStreams: make(map[string]*NativeStreamingWriter),
-		activeConns:   make(map[string]*SlackConn),
+		PlatformAdapter: messaging.PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil))},
+		client:          slack.New("x-test-token"),
+		activeStreams:   make(map[string]*NativeStreamingWriter),
+		connPool:        messaging.NewConnPool[*SlackConn](nil),
 	}
 }
 
@@ -1580,7 +1580,7 @@ func TestSlackConn_SendContextUsage(t *testing.T) {
 		{
 			name: "nil client",
 			conn: &SlackConn{
-				adapter:   &Adapter{log: slog.New(slog.NewTextHandler(io.Discard, nil)), client: nil, activeStreams: make(map[string]*NativeStreamingWriter), activeConns: make(map[string]*SlackConn)},
+				adapter:   &Adapter{PlatformAdapter: messaging.PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil))}, client: nil, activeStreams: make(map[string]*NativeStreamingWriter), connPool: messaging.NewConnPool[*SlackConn](nil)},
 				channelID: "C123", threadTS: "123.456",
 			},
 			env:     &events.Envelope{Event: events.Event{Type: events.ContextUsage, Data: events.ContextUsageData{TotalTokens: 100, MaxTokens: 200, Percentage: 50}}},
@@ -1674,7 +1674,7 @@ func TestSlackConn_SendMCPStatus(t *testing.T) {
 		{
 			name: "nil client",
 			conn: &SlackConn{
-				adapter:   &Adapter{log: slog.New(slog.NewTextHandler(io.Discard, nil)), client: nil, activeStreams: make(map[string]*NativeStreamingWriter), activeConns: make(map[string]*SlackConn)},
+				adapter:   &Adapter{PlatformAdapter: messaging.PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil))}, client: nil, activeStreams: make(map[string]*NativeStreamingWriter), connPool: messaging.NewConnPool[*SlackConn](nil)},
 				channelID: "C123", threadTS: "123.456",
 			},
 			env:     &events.Envelope{Event: events.Event{Type: events.MCPStatus, Data: events.MCPStatusData{Servers: []events.MCPServerInfo{{Name: "fs", Status: "connected"}}}}},
@@ -1996,17 +1996,44 @@ func TestShortenPaths(t *testing.T) {
 	require.Equal(t, "no path here", shortenPaths("no path here"))
 
 	// WorkDir substitution takes priority
+	workDirMu.RLock()
 	origWorkDir := workDir
-	workDir = "/tmp/hotplex/workspace"
-	t.Cleanup(func() { workDir = origWorkDir })
+	workDirMu.RUnlock()
+	SetWorkDir("/tmp/hotplex/workspace")
+	t.Cleanup(func() { SetWorkDir(origWorkDir) })
 
 	require.Equal(t, "$WK/main.go", shortenPaths("/tmp/hotplex/workspace/main.go"))
 	require.Equal(t, "$WK/sub/file.txt", shortenPaths("/tmp/hotplex/workspace/sub/file.txt"))
 
 	// Both: workDir first, then homeDir on remaining
-	workDir = homeDir + "/projects/myapp"
+	SetWorkDir(homeDir + "/projects/myapp")
 	require.Equal(t, "$WK/main.go", shortenPaths(homeDir+"/projects/myapp/main.go"))
 	require.Equal(t, "~/other/file.go", shortenPaths(homeDir+"/other/file.go"))
+}
+
+// ---------------------------------------------------------------------------
+// controlFeedbackMessage
+// ---------------------------------------------------------------------------
+
+func TestControlFeedbackMessage(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		action events.ControlAction
+		want   string
+	}{
+		{"gc", events.ControlActionGC, "Session parked"},
+		{"reset", events.ControlActionReset, "Context reset"},
+		{"cd", events.ControlActionCD, "Switching work directory"},
+		{"unknown", events.ControlAction("unknown"), "Done"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require.Contains(t, controlFeedbackMessage(tt.action), tt.want)
+		})
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -2036,8 +2063,8 @@ func TestAdapter_ConfigureWith(t *testing.T) {
 	require.Equal(t, "xoxb-test", a.botToken)
 	require.Equal(t, "xapp-test", a.appToken)
 	require.Same(t, &enabled, a.assistantEnabled)
-	require.Equal(t, 5*time.Second, a.backoffBaseDelay)
-	require.Equal(t, 60*time.Second, a.backoffMaxDelay)
+	require.Equal(t, 5*time.Second, a.BackoffBaseDelay)
+	require.Equal(t, 60*time.Second, a.BackoffMaxDelay)
 	require.Same(t, fakeTS, a.transcriber)
 }
 
@@ -2049,7 +2076,7 @@ func TestAdapter_ConfigureWith_Gate(t *testing.T) {
 	a := &Adapter{}
 	err := a.ConfigureWith(messaging.AdapterConfig{Gate: g})
 	require.NoError(t, err)
-	require.Same(t, g, a.gate)
+	require.Same(t, g, a.Gate)
 }
 
 func TestAdapter_ConfigureWith_BridgeSetsWorkDir(t *testing.T) {
@@ -2065,7 +2092,7 @@ func TestAdapter_ConfigureWith_BridgeSetsWorkDir(t *testing.T) {
 	a := &Adapter{}
 	err := a.ConfigureWith(messaging.AdapterConfig{Bridge: testBridge})
 	require.NoError(t, err)
-	require.Same(t, testBridge, a.bridge)
+	require.Same(t, testBridge, a.Bridge())
 	require.Equal(t, "/tmp/hotplex/workspace", workDir)
 }
 

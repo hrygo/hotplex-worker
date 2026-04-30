@@ -45,7 +45,7 @@ var blockedSubtypes = map[string]bool{
 
 func init() {
 	messaging.Register(messaging.PlatformSlack, func(log *slog.Logger) messaging.PlatformAdapterInterface {
-		return &Adapter{log: log.With("channel", "slack")}
+		return &Adapter{PlatformAdapter: messaging.PlatformAdapter{Log: log.With("channel", string(messaging.PlatformSlack))}}
 	})
 }
 
@@ -53,32 +53,24 @@ func init() {
 type Adapter struct {
 	messaging.PlatformAdapter
 
-	log                *slog.Logger
+	mu sync.RWMutex
+
 	botToken           string
 	appToken           string
 	client             *slack.Client
 	socketMode         *socketmode.Client
 	botID              string
 	teamID             string
-	bridge             *messaging.Bridge
-	dedup              *messaging.Dedup
 	userCache          *UserCache
 	statusMgr          *StatusManager
 	isAssistantCapable atomic.Bool
 	assistantEnabled   *bool
-	gate               *messaging.Gate
 	transcriber        stt.Transcriber
-	started            atomic.Bool
-	backoffBaseDelay   time.Duration
-	backoffMaxDelay    time.Duration
 
-	mu            sync.RWMutex
 	rateLimiter   *ChannelRateLimiter
 	slashLimiter  *SlashRateLimiter
 	activeStreams map[string]*NativeStreamingWriter // messageTS -> writer
-	activeConns   map[string]*SlackConn             // "channelID#threadTS" -> conn
-	interactions  *messaging.InteractionManager
-	closed        atomic.Bool
+	connPool      *messaging.ConnPool[*SlackConn]   // "channelID#threadTS" -> conn
 }
 
 func (a *Adapter) Platform() messaging.PlatformType { return messaging.PlatformSlack }
@@ -93,24 +85,15 @@ func (a *Adapter) ConfigureWith(config messaging.AdapterConfig) error {
 
 	// Bridge reference and workdir.
 	if config.Bridge != nil {
-		a.bridge = config.Bridge
 		SetWorkDir(config.Bridge.WorkDir())
 	}
 
-	// Access control.
-	if config.Gate != nil {
-		a.gate = config.Gate
-	}
+	// Shared: gate, backoff delays.
+	a.ConfigureShared(config)
 
 	// Platform-specific extras.
 	if v := config.ExtrasBoolPtr("assistant_enabled"); v != nil {
 		a.assistantEnabled = v
-	}
-	if bd := config.ExtrasDuration("reconnect_base_delay"); bd > 0 {
-		a.backoffBaseDelay = bd
-	}
-	if md := config.ExtrasDuration("reconnect_max_delay"); md > 0 {
-		a.backoffMaxDelay = md
 	}
 	if t, ok := config.Extras["transcriber"].(stt.Transcriber); ok && t != nil {
 		a.transcriber = t
@@ -120,8 +103,8 @@ func (a *Adapter) ConfigureWith(config messaging.AdapterConfig) error {
 }
 
 func (a *Adapter) Start(ctx context.Context) error {
-	if !a.started.CompareAndSwap(false, true) {
-		a.log.Warn("slack: adapter already started, skipping")
+	if !a.StartGuard() {
+		a.Log.Warn("slack: adapter already started, skipping")
 		return nil
 	}
 	if a.botToken == "" || a.appToken == "" {
@@ -141,15 +124,22 @@ func (a *Adapter) Start(ctx context.Context) error {
 
 	a.rateLimiter = NewChannelRateLimiter(ctx)
 	a.slashLimiter = NewSlashRateLimiter()
-	a.dedup = messaging.NewDedup(dedupMaxEntries, dedupTTL)
-	a.dedup.StartCleanup()
+	a.Dedup = messaging.NewDedup(dedupMaxEntries, dedupTTL) // Slack-specific params
+	a.Dedup.StartCleanup()
 	a.userCache = NewUserCache(a.client)
-	a.statusMgr = NewStatusManager(a, a.log)
-	a.interactions = messaging.NewInteractionManager(a.log)
+	a.statusMgr = NewStatusManager(a, a.Log)
+	a.Interactions = messaging.NewInteractionManager(a.Log)
 	a.activeStreams = make(map[string]*NativeStreamingWriter)
-	a.activeConns = make(map[string]*SlackConn)
+	a.connPool = messaging.NewConnPool[*SlackConn](func(key string) *SlackConn {
+		parts := strings.SplitN(key, "#", 2)
+		threadTS := ""
+		if len(parts) > 1 {
+			threadTS = parts[1]
+		}
+		return NewSlackConn(a, parts[0], threadTS)
+	})
 
-	a.log.Info("slack: starting Socket Mode", "bot_id", a.botID)
+	a.Log.Info("slack: starting Socket Mode", "bot_id", a.botID)
 
 	// Async probe for Assistant API capability
 	go func() {
@@ -158,9 +148,9 @@ func (a *Adapter) Start(ctx context.Context) error {
 		capable := a.ProbeAssistantCapability(probeCtx)
 		a.isAssistantCapable.Store(capable)
 		if capable {
-			a.log.Info("slack: Assistant API capability confirmed (paid workspace)")
+			a.Log.Info("slack: Assistant API capability confirmed (paid workspace)")
 		} else {
-			a.log.Info("slack: Assistant API not available, using emoji reaction fallback")
+			a.Log.Info("slack: Assistant API not available, using emoji reaction fallback")
 			a.statusMgr.SetEmojiOnly(true)
 		}
 	}()
@@ -171,11 +161,11 @@ func (a *Adapter) Start(ctx context.Context) error {
 }
 
 func (a *Adapter) runSocketMode(ctx context.Context) {
-	baseDelay := a.backoffBaseDelay
+	baseDelay := a.BackoffBaseDelay
 	if baseDelay <= 0 {
 		baseDelay = 1 * time.Second
 	}
-	maxDelay := a.backoffMaxDelay
+	maxDelay := a.BackoffMaxDelay
 	if maxDelay <= 0 {
 		maxDelay = 60 * time.Second
 	}
@@ -192,20 +182,20 @@ func (a *Adapter) runSocketMode(ctx context.Context) {
 			default:
 			}
 
-			a.log.Info("slack: starting socket mode", "attempt", attempt)
+			a.Log.Info("slack: starting socket mode", "attempt", attempt)
 			if err := a.socketMode.Run(); err != nil {
 				select {
 				case <-ctx.Done():
 					return
 				case <-time.After(backoff.Next()):
-					a.log.Warn("slack: socket mode error, will retry", "err", err, "attempt", attempt)
+					a.Log.Warn("slack: socket mode error, will retry", "err", err, "attempt", attempt)
 					attempt++
 					continue
 				}
 			}
 			// Run() returned without error (clean close); reset attempt counter.
 			attempt = 1
-			a.log.Info("slack: socket closed cleanly, reconnecting")
+			a.Log.Info("slack: socket closed cleanly, reconnecting")
 			select {
 			case <-ctx.Done():
 				return
@@ -222,7 +212,7 @@ func (a *Adapter) runSocketMode(ctx context.Context) {
 			if !ok {
 				// Channel closed — Run() exited. The reconnect goroutine above will
 				// detect this and restart the connection.
-				a.log.Warn("slack: events channel closed, waiting for reconnect")
+				a.Log.Warn("slack: events channel closed, waiting for reconnect")
 				continue
 			}
 			switch evt.Type {
@@ -235,29 +225,29 @@ func (a *Adapter) runSocketMode(ctx context.Context) {
 				go func() {
 					defer func() {
 						if r := recover(); r != nil {
-							a.log.Error("slack: panic in event handler", "panic", r, "stack", string(debug.Stack()))
+							a.Log.Error("slack: panic in event handler", "panic", r, "stack", string(debug.Stack()))
 						}
 					}()
 					a.handleEventsAPI(ctx, eventsAPI)
 				}()
 
 			case socketmode.EventTypeConnecting:
-				a.log.Info("slack: websocket handshake in progress")
+				a.Log.Info("slack: websocket handshake in progress")
 			case socketmode.EventTypeConnected:
-				a.log.Info("slack: websocket established, ready to receive events")
+				a.Log.Info("slack: websocket established, ready to receive events")
 				backoff.Reset()
 
 			case socketmode.EventTypeDisconnect:
-				a.log.Info("slack: disconnected by Slack server, reconnecting...")
+				a.Log.Info("slack: disconnected by Slack server, reconnecting...")
 
 			case socketmode.EventTypeConnectionError:
-				a.log.Warn("slack: websocket connection error, retrying...", "err", evt.Data)
+				a.Log.Warn("slack: websocket connection error, retrying...", "err", evt.Data)
 
 			case socketmode.EventTypeInteractive:
 				go func() {
 					defer func() {
 						if r := recover(); r != nil {
-							a.log.Error("slack: panic in interaction handler", "panic", r, "stack", string(debug.Stack()))
+							a.Log.Error("slack: panic in interaction handler", "panic", r, "stack", string(debug.Stack()))
 						}
 					}()
 					a.handleInteractionEvent(ctx, evt)
@@ -267,7 +257,7 @@ func (a *Adapter) runSocketMode(ctx context.Context) {
 				go func() {
 					defer func() {
 						if r := recover(); r != nil {
-							a.log.Error("slack: panic in slash command handler", "panic", r, "stack", string(debug.Stack()))
+							a.Log.Error("slack: panic in slash command handler", "panic", r, "stack", string(debug.Stack()))
 						}
 					}()
 					a.handleSlashCommandEvent(ctx, evt)
@@ -284,7 +274,7 @@ func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsA
 	}
 
 	if msgEvent.BotID != "" {
-		a.log.Debug("slack: skipping bot message", "bot_id", msgEvent.BotID)
+		a.Log.Debug("slack: skipping bot message", "bot_id", msgEvent.BotID)
 		return
 	}
 
@@ -295,7 +285,7 @@ func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsA
 	if msgEvent.TimeStamp != "" {
 		if ts, err := parseSlackTS(msgEvent.TimeStamp); err == nil {
 			if time.Since(ts) > messageExpiry {
-				a.log.Debug("slack: skipping expired message", "ts", msgEvent.TimeStamp)
+				a.Log.Debug("slack: skipping expired message", "ts", msgEvent.TimeStamp)
 				return
 			}
 		}
@@ -317,11 +307,11 @@ func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsA
 	}
 
 	// Access control gate (must run before ResolveMentions which strips <@BOTID>)
-	if a.gate != nil {
+	if a.Gate != nil {
 		botMentioned := strings.Contains(text, "<@"+a.botID+">")
-		result := a.gate.Check(channelType == ChannelIM, userID, botMentioned)
+		result := a.Gate.Check(channelType == ChannelIM, userID, botMentioned)
 		if !result.Allowed {
-			a.log.Debug("slack: gate rejected", "reason", result.Reason, "user", userID)
+			a.Log.Debug("slack: gate rejected", "reason", result.Reason, "user", userID)
 			return
 		}
 	}
@@ -331,7 +321,7 @@ func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsA
 	if platformMsgID == "" {
 		platformMsgID = msgEvent.TimeStamp
 	}
-	if !a.dedup.TryRecord(platformMsgID) {
+	if !a.Dedup.TryRecord(platformMsgID) {
 		return
 	}
 
@@ -362,13 +352,13 @@ func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsA
 			if err == nil {
 				text += "\n" + path
 			} else {
-				a.log.Warn("slack: download media failed", "file", m.Name, "err", err)
+				a.Log.Warn("slack: download media failed", "file", m.Name, "err", err)
 				text += fmt.Sprintf("\n[%s: %s]", m.Type, m.Name)
 			}
 		}
 	}
 
-	a.log.Debug("slack: handling message",
+	a.Log.Debug("slack: handling message",
 		"channel", channelID,
 		"thread", threadTS,
 		"user", userID,
@@ -376,13 +366,12 @@ func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsA
 		"text_len", len(text),
 	)
 
-	if IsAbortCommand(text) {
-		a.log.Info("slack: abort command received", "channel", channelID)
+	cmd := messaging.DetectCommand(text)
+	switch cmd.Action {
+	case messaging.CmdAbort:
+		a.Log.Info("slack: abort command received", "channel", channelID)
 		return
-	}
-
-	// Help command - reply directly without involving the worker.
-	if messaging.IsHelpCommand(text) {
+	case messaging.CmdHelp:
 		_ = a.SetStatus(ctx, channelID, threadTS, StatusThinking, "Loading help...")
 		opts := []slack.MsgOption{
 			slack.MsgOptionText(messaging.HelpText(), false),
@@ -393,24 +382,15 @@ func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsA
 		_, _, _ = a.client.PostMessageContext(ctx, channelID, opts...)
 		_ = a.ClearStatus(ctx, channelID, threadTS)
 		return
-	}
-
-	// Control command detection (natural language + /command in text).
-	if result := messaging.ParseControlCommand(text); result != nil {
+	case messaging.CmdControl:
 		conn := a.GetOrCreateConn(channelID, threadTS)
 		if conn != nil {
 			conn.handlerMu.Lock()
 			defer conn.handlerMu.Unlock()
 		}
-		a.handleTextControlCommand(ctx, teamID, channelID, threadTS, userID, result)
+		a.handleTextControlCommand(ctx, teamID, channelID, threadTS, userID, cmd.Control)
 		return
-	}
-
-	// Worker command detection (slash + $ natural language).
-	// Only intercept structured commands (context, mcp, model, perm).
-	// Passthrough commands (compact, clear, rewind, effort, commit)
-	// fall through to normal input — they aren't supported in stream-json mode.
-	if cmdResult := messaging.ParseWorkerCommand(text); cmdResult != nil && !cmdResult.Command.IsPassthrough() {
+	case messaging.CmdWorker:
 		conn := a.GetOrCreateConn(channelID, threadTS)
 		if conn != nil {
 			conn.messageTS = msgEvent.TimeStamp
@@ -418,9 +398,9 @@ func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsA
 			defer conn.handlerMu.Unlock()
 		}
 		if a.isAssistantCapable.Load() && threadTS != "" {
-			_ = a.SetAssistantStatus(ctx, channelID, threadTS, "Processing "+cmdResult.Label+"...")
+			_ = a.SetAssistantStatus(ctx, channelID, threadTS, "Processing "+cmd.Worker.Label+"...")
 		}
-		a.handleTextWorkerCommand(ctx, teamID, channelID, threadTS, userID, cmdResult)
+		a.handleTextWorkerCommand(ctx, teamID, channelID, threadTS, userID, cmd.Worker)
 		return
 	}
 
@@ -430,7 +410,7 @@ func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsA
 	}
 
 	if err := a.HandleTextMessage(ctx, platformMsgID, channelID, teamID, threadTS, userID, text); err != nil {
-		a.log.Warn("slack: handle message failed", "err", err, "channel", channelID, "thread", threadTS, "user", userID)
+		a.Log.Warn("slack: handle message failed", "err", err, "channel", channelID, "thread", threadTS, "user", userID)
 	}
 }
 
@@ -439,26 +419,16 @@ func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsA
 // across multiple messages in the same thread, so Hub.Shutdown can close it.
 func (a *Adapter) GetOrCreateConn(channelID, threadTS string) *SlackConn {
 	key := channelID + "#" + threadTS
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.closed.Load() {
-		return nil
-	}
-	if c, ok := a.activeConns[key]; ok {
-		return c
-	}
-	c := NewSlackConn(a, channelID, threadTS)
-	a.activeConns[key] = c
-	return c
+	return a.connPool.GetOrCreate(key)
 }
 
 func (a *Adapter) HandleTextMessage(ctx context.Context, platformMsgID, channelID, teamID, threadTS, userID, text string) error {
-	if a.bridge == nil {
-		a.log.Warn("slack: bridge not configured, dropping message", "channel", channelID, "user", userID)
+	if a.Bridge() == nil {
+		a.Log.Warn("slack: bridge not configured, dropping message", "channel", channelID, "user", userID)
 		return nil
 	}
 
-	envelope := a.bridge.MakeSlackEnvelope(teamID, channelID, threadTS, userID, text)
+	envelope := a.Bridge().MakeSlackEnvelope(teamID, channelID, threadTS, userID, text)
 	if envelope == nil {
 		return fmt.Errorf("slack: failed to build envelope")
 	}
@@ -470,13 +440,13 @@ func (a *Adapter) HandleTextMessage(ctx context.Context, platformMsgID, channelI
 
 	conn.handlerMu.Lock()
 	defer conn.handlerMu.Unlock()
-	return a.bridge.Handle(ctx, envelope, conn)
+	return a.Bridge().Handle(ctx, envelope, conn)
 }
 
 // NewStreamingWriter creates a streaming writer for the given channel/thread.
 func (a *Adapter) NewStreamingWriter(ctx context.Context, channelID, threadTS string, onComplete func(string)) *NativeStreamingWriter {
-	w := NewNativeStreamingWriter(ctx, a.client, channelID, threadTS, a.rateLimiter, a.log, func(ts string) {
-		if !a.closed.Load() {
+	w := NewNativeStreamingWriter(ctx, a.client, channelID, threadTS, a.rateLimiter, a.Log, func(ts string) {
+		if !a.IsClosed() {
 			a.mu.Lock()
 			delete(a.activeStreams, ts)
 			a.mu.Unlock()
@@ -485,7 +455,7 @@ func (a *Adapter) NewStreamingWriter(ctx context.Context, channelID, threadTS st
 			onComplete(ts)
 		}
 	}, func(w *NativeStreamingWriter) {
-		if !a.closed.Load() {
+		if !a.IsClosed() {
 			a.mu.Lock()
 			if w.messageTS != "" {
 				a.activeStreams[w.messageTS] = w
@@ -498,8 +468,8 @@ func (a *Adapter) NewStreamingWriter(ctx context.Context, channelID, threadTS st
 
 // Close gracefully terminates the platform connection. Safe to call multiple times.
 func (a *Adapter) Close(ctx context.Context) error {
-	a.log.Info("slack: adapter closing")
-	a.closed.Store(true)
+	a.Log.Info("slack: adapter closing")
+	a.MarkClosed()
 
 	a.mu.Lock()
 	for _, w := range a.activeStreams {
@@ -508,15 +478,9 @@ func (a *Adapter) Close(ctx context.Context) error {
 	for k := range a.activeStreams {
 		delete(a.activeStreams, k)
 	}
-	conns := make([]*SlackConn, 0, len(a.activeConns))
-	for _, c := range a.activeConns {
-		conns = append(conns, c)
-	}
-	for k := range a.activeConns {
-		delete(a.activeConns, k)
-	}
 	a.mu.Unlock()
 
+	conns := a.connPool.ClearAndClose()
 	for _, c := range conns {
 		_ = c.Close()
 	}
@@ -531,10 +495,7 @@ func (a *Adapter) Close(ctx context.Context) error {
 		a.slashLimiter = nil
 	}
 	a.mu.Unlock()
-	if a.dedup != nil {
-		a.dedup.Close()
-		a.dedup = nil
-	}
+	a.CloseSharedState()
 	if a.userCache != nil {
 		a.userCache.Close()
 	}
@@ -552,13 +513,13 @@ func (a *Adapter) Close(ctx context.Context) error {
 func (a *Adapter) handleAudioMessage(ctx context.Context, m *MediaInfo) (string, error) {
 	audioData, err := a.downloadMediaBytes(ctx, m)
 	if err != nil {
-		a.log.Warn("slack: download audio failed", "file", m.Name, "err", err)
+		a.Log.Warn("slack: download audio failed", "file", m.Name, "err", err)
 		return "", err
 	}
 
 	transcript, err := a.transcriber.Transcribe(ctx, audioData)
 	if err != nil {
-		a.log.Warn("slack: stt failed", "file", m.Name, "err", err)
+		a.Log.Warn("slack: stt failed", "file", m.Name, "err", err)
 		return "", err
 	}
 
@@ -580,9 +541,9 @@ func (a *Adapter) handleAudioMessage(ctx context.Context, m *MediaInfo) (string,
 // handleTextControlCommand sends a control event derived from a text message
 // through the bridge, then sends ephemeral feedback to the user.
 func (a *Adapter) handleTextControlCommand(ctx context.Context, teamID, channelID, threadTS, userID string, result *messaging.ControlCommandResult) {
-	env := a.bridge.MakeSlackEnvelope(teamID, channelID, threadTS, userID, "")
+	env := a.Bridge().MakeSlackEnvelope(teamID, channelID, threadTS, userID, "")
 	if env == nil {
-		a.log.Warn("slack: text control command failed to derive session", "action", result.Label)
+		a.Log.Warn("slack: text control command failed to derive session", "action", result.Label)
 		return
 	}
 
@@ -604,22 +565,22 @@ func (a *Adapter) handleTextControlCommand(ctx context.Context, teamID, channelI
 
 	conn := a.GetOrCreateConn(channelID, threadTS)
 	if conn == nil {
-		a.log.Warn("slack: adapter closed, dropping control command", "action", result.Label)
+		a.Log.Warn("slack: adapter closed, dropping control command", "action", result.Label)
 		return
 	}
-	if err := a.bridge.Handle(ctx, ctrlEnv, conn); err != nil {
-		a.log.Warn("slack: text control command failed", "action", result.Label, "err", err)
+	if err := a.Bridge().Handle(ctx, ctrlEnv, conn); err != nil {
+		a.Log.Warn("slack: text control command failed", "action", result.Label, "err", err)
 		a.sendEphemeralOrPost(ctx, channelID, threadTS, userID, fmt.Sprintf("❌ Failed to execute %s.", result.Label))
 		return
 	}
 
-	a.log.Info("slack: text control command sent", "action", result.Label, "user", userID, "session_id", env.SessionID)
+	a.Log.Info("slack: text control command sent", "action", result.Label, "user", userID, "session_id", env.SessionID)
 
 	// Reset/GC kills the worker without a guaranteed done event, so stale
 	// pending interactions (permission/question/elicitation) may survive.
 	// Cancel them now so stale interactive buttons don't route to the new worker.
 	if result.Action == events.ControlActionReset || result.Action == events.ControlActionGC {
-		a.interactions.CancelAll(env.SessionID)
+		a.Interactions.CancelAll(env.SessionID)
 		// Abort any active streaming writer — GC/Reset kills the worker without a
 		// done event, so the writer would otherwise remain active until TTL expiry.
 		if conn := a.GetOrCreateConn(channelID, threadTS); conn != nil {
@@ -631,9 +592,9 @@ func (a *Adapter) handleTextControlCommand(ctx context.Context, teamID, channelI
 }
 
 func (a *Adapter) handleTextWorkerCommand(ctx context.Context, teamID, channelID, threadTS, userID string, result *messaging.WorkerCommandResult) {
-	envelope := a.bridge.MakeSlackEnvelope(teamID, channelID, threadTS, userID, "")
+	envelope := a.Bridge().MakeSlackEnvelope(teamID, channelID, threadTS, userID, "")
 	if envelope == nil {
-		a.log.Warn("slack: worker command failed to derive session", "command", result.Label)
+		a.Log.Warn("slack: worker command failed to derive session", "command", result.Label)
 		return
 	}
 
@@ -654,17 +615,17 @@ func (a *Adapter) handleTextWorkerCommand(ctx context.Context, teamID, channelID
 
 	conn := a.GetOrCreateConn(channelID, threadTS)
 	if conn == nil {
-		a.log.Warn("slack: adapter closed, dropping worker command", "command", result.Label)
+		a.Log.Warn("slack: adapter closed, dropping worker command", "command", result.Label)
 		return
 	}
 
-	if err := a.bridge.Handle(ctx, cmdEnv, conn); err != nil {
-		a.log.Warn("slack: worker command failed", "command", result.Label, "err", err)
+	if err := a.Bridge().Handle(ctx, cmdEnv, conn); err != nil {
+		a.Log.Warn("slack: worker command failed", "command", result.Label, "err", err)
 		a.sendEphemeralOrPost(ctx, channelID, threadTS, userID, fmt.Sprintf("❌ Failed to execute %s.", result.Label))
 		return
 	}
 
-	a.log.Info("slack: worker command sent", "command", result.Label, "user", userID, "session_id", envelope.SessionID)
+	a.Log.Info("slack: worker command sent", "command", result.Label, "user", userID, "session_id", envelope.SessionID)
 }
 
 func controlFeedbackMessage(action events.ControlAction) string {
@@ -735,10 +696,10 @@ func (c *SlackConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 	switch env.Event.Type {
 	case events.Done, events.Error:
 		c.clearStatus(ctx)
-		c.adapter.interactions.CancelAll(env.SessionID)
+		c.adapter.Interactions.CancelAll(env.SessionID)
 		c.closeStreamWriter()
 		if env.Event.Type == events.Error {
-			if errMsg := extractErrorMessage(env); errMsg != "" {
+			if errMsg := messaging.ExtractErrorMessage(env); errMsg != "" {
 				// Async: PostMessage is synchronous HTTP and must not block Hub broadcast.
 				go func() { _ = c.writeWithPostMessage(ctx, FormatMrkdwn(errPrefix+errMsg), false) }()
 			}
@@ -776,11 +737,11 @@ func (c *SlackConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		if slErr == nil || !strings.Contains(slErr.Error(), "invalid_blocks") {
 			return slErr
 		}
-		c.adapter.log.Warn("slack: skills blocks rejected, falling back to plain text", "err", slErr)
+		c.adapter.Log.Warn("slack: skills blocks rejected, falling back to plain text", "err", slErr)
 		return c.postSkillsMessageFallback(ctx, env)
 	}
 
-	text, ok := extractResponseText(env)
+	text, ok := messaging.ExtractResponseText(env)
 	if !ok {
 		return nil
 	}
@@ -888,7 +849,7 @@ func (c *SlackConn) tryImageBlocks(ctx context.Context, text string) error {
 	}
 	_, _, err := c.adapter.client.PostMessageContext(ctx, c.channelID, opts...)
 	if err != nil {
-		c.adapter.log.Warn("slack: image blocks failed, falling back to text", "err", err)
+		c.adapter.Log.Warn("slack: image blocks failed, falling back to text", "err", err)
 	}
 	return err
 }
@@ -942,7 +903,7 @@ func (c *SlackConn) tryFileUpload(ctx context.Context, text string) bool {
 		}
 		fileID, err := c.adapter.postFile(ctx, c.channelID, c.threadTS, lastLine, filepath.Base(lastLine))
 		if err != nil {
-			c.adapter.log.Warn("slack: file upload failed, falling back to text", "path", lastLine, "err", err)
+			c.adapter.Log.Warn("slack: file upload failed, falling back to text", "path", lastLine, "err", err)
 			return false
 		}
 		// Send any preceding text along with upload confirmation
@@ -977,63 +938,13 @@ func (c *SlackConn) closeStreamWriter() {
 // Close removes the conn from the adapter registry and cleans up the stream writer.
 func (c *SlackConn) Close() error {
 	key := c.channelID + "#" + c.threadTS
-	c.adapter.mu.Lock()
-	delete(c.adapter.activeConns, key)
-	c.adapter.mu.Unlock()
+	c.adapter.connPool.Delete(key)
 
 	c.closeStreamWriter()
 
 	c.clearStatus(context.Background())
 
 	return nil
-}
-
-// extractResponseText extracts text content from an AEP event for Slack output.
-func extractResponseText(env *events.Envelope) (string, bool) {
-	switch env.Event.Type {
-	case "text", events.MessageDelta:
-		// Try MessageDeltaData
-		if d, ok := env.Event.Data.(events.MessageDeltaData); ok {
-			return d.Content, d.Content != ""
-		}
-		// Try map[string]any (JSON-decoded)
-		if m, ok := env.Event.Data.(map[string]any); ok {
-			if text, ok := m["content"].(string); ok {
-				return text, true
-			}
-			if text, ok := m["text"].(string); ok {
-				return text, true
-			}
-		}
-		// Try string data directly
-		if text, ok := env.Event.Data.(string); ok {
-			return text, true
-		}
-	case "done":
-		return "", false
-	case "raw":
-		if d, ok := env.Event.Data.(events.RawData); ok {
-			if m, ok := d.Raw.(map[string]any); ok {
-				if text, ok := m["text"].(string); ok {
-					return text, true
-				}
-			}
-		}
-	}
-	return "", false
-}
-
-// extractErrorMessage tries ErrorData then map[string]any fallback.
-func extractErrorMessage(env *events.Envelope) string {
-	if d, ok := env.Event.Data.(events.ErrorData); ok {
-		return d.Message
-	}
-	if m, ok := env.Event.Data.(map[string]any); ok {
-		if msg, ok := m["message"].(string); ok {
-			return msg
-		}
-	}
-	return ""
 }
 
 func (a *Adapter) cleanupMedia(ctx context.Context) {
@@ -1051,14 +962,14 @@ func (a *Adapter) cleanupMedia(ctx context.Context) {
 }
 
 func (a *Adapter) cleanupMediaInDir(dir string) {
-	a.log.Debug("slack: cleaning up media files", "dir", dir)
+	a.Log.Debug("slack: cleaning up media files", "dir", dir)
 	_ = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil
 		}
 		if !info.IsDir() && time.Since(info.ModTime()) > mediaTTL {
 			if err := os.Remove(path); err != nil {
-				a.log.Warn("slack: failed to remove old media file", "path", path, "err", err)
+				a.Log.Warn("slack: failed to remove old media file", "path", path, "err", err)
 			}
 		}
 		return nil
@@ -1108,7 +1019,7 @@ func (c *SlackConn) sendContextUsage(ctx context.Context, env *events.Envelope) 
 	}
 
 	// Fallback: ContextBlock (universally supported)
-	c.adapter.log.Warn("slack: context usage TableBlock rejected, falling back to ContextBlock", "err", err)
+	c.adapter.Log.Warn("slack: context usage TableBlock rejected, falling back to ContextBlock", "err", err)
 	fbBlocks := c.buildContextUsageFallback(d, catParts)
 	fbOpts := []slack.MsgOption{
 		slack.MsgOptionBlocks(fbBlocks...),
@@ -1239,7 +1150,7 @@ func (c *SlackConn) sendMCPStatus(ctx context.Context, env *events.Envelope) err
 	_, _, err := c.adapter.client.PostMessageContext(ctx, c.channelID, opts...)
 	if err != nil {
 		if strings.Contains(err.Error(), "invalid_blocks") {
-			c.adapter.log.Warn("slack: MCP status TableBlock rejected, falling back to plain text", "err", err)
+			c.adapter.Log.Warn("slack: MCP status TableBlock rejected, falling back to plain text", "err", err)
 			fbOpts := []slack.MsgOption{slack.MsgOptionText(plainText, false)}
 			if c.threadTS != "" {
 				fbOpts = append(fbOpts, slack.MsgOptionTS(c.threadTS))

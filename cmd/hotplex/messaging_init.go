@@ -15,6 +15,7 @@ import (
 	"github.com/hrygo/hotplex/internal/config"
 	"github.com/hrygo/hotplex/internal/messaging"
 	"github.com/hrygo/hotplex/internal/messaging/feishu"
+	_ "github.com/hrygo/hotplex/internal/messaging/slack"
 	"github.com/hrygo/hotplex/internal/messaging/stt"
 )
 

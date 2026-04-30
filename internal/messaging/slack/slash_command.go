@@ -95,11 +95,11 @@ func (r *SlashRateLimiter) Stop() {
 func (a *Adapter) handleSlashCommandEvent(ctx context.Context, evt socketmode.Event) {
 	cmd, ok := evt.Data.(slack.SlashCommand)
 	if !ok {
-		a.log.Warn("slack: slash command event type assertion failed")
+		a.Log.Warn("slack: slash command event type assertion failed")
 		return
 	}
 
-	a.log.Info("slack: slash command received",
+	a.Log.Info("slack: slash command received",
 		"command", cmd.Command,
 		"user", cmd.UserID,
 		"channel", cmd.ChannelID,
@@ -109,15 +109,15 @@ func (a *Adapter) handleSlashCommandEvent(ctx context.Context, evt socketmode.Ev
 	a.socketMode.Ack(*evt.Request) //nolint:errcheck // Ack must not block event processing
 
 	if a.slashLimiter != nil && !a.slashLimiter.Allow(cmd.UserID) {
-		a.log.Warn("slack: slash command rate limited", "user_id", cmd.UserID)
+		a.Log.Warn("slack: slash command rate limited", "user_id", cmd.UserID)
 		a.sendEphemeralOrPost(ctx, cmd.ChannelID, "", cmd.UserID, "⚠️ Rate limit exceeded. Please wait a moment.")
 		return
 	}
 
-	if a.gate != nil {
-		result := a.gate.Check(false, cmd.UserID, false)
+	if a.Gate != nil {
+		result := a.Gate.Check(false, cmd.UserID, false)
 		if !result.Allowed {
-			a.log.Debug("slack: gate rejected slash command", "reason", result.Reason, "user", cmd.UserID)
+			a.Log.Debug("slack: gate rejected slash command", "reason", result.Reason, "user", cmd.UserID)
 			a.sendEphemeralOrPost(ctx, cmd.ChannelID, "", cmd.UserID, "🚫 You are not authorized to use this command.")
 			return
 		}
@@ -151,16 +151,16 @@ func (a *Adapter) handleControlCommand(ctx context.Context, cmd slack.SlashComma
 
 	conn := a.GetOrCreateConn(cmd.ChannelID, "")
 	if conn == nil {
-		a.log.Warn("slack: adapter closed, dropping slash command", "command", logPrefix)
+		a.Log.Warn("slack: adapter closed, dropping slash command", "command", logPrefix)
 		return
 	}
-	if err := a.bridge.Handle(ctx, env, conn); err != nil {
-		a.log.Error("slack: control event failed", "command", logPrefix, "session_id", sessionID, "err", err)
+	if err := a.Bridge().Handle(ctx, env, conn); err != nil {
+		a.Log.Error("slack: control event failed", "command", logPrefix, "session_id", sessionID, "err", err)
 		a.sendEphemeralOrPost(ctx, cmd.ChannelID, "", cmd.UserID, errorMsg)
 		return
 	}
 
-	a.log.Info("slack: control sent", "command", logPrefix, "session_id", sessionID, "user", cmd.UserID)
+	a.Log.Info("slack: control sent", "command", logPrefix, "session_id", sessionID, "user", cmd.UserID)
 	a.sendEphemeralOrPost(ctx, cmd.ChannelID, "", cmd.UserID, successMsg)
 }
 
@@ -182,7 +182,7 @@ func (a *Adapter) sendEphemeralOrPost(ctx context.Context, channelID, threadTS, 
 }
 
 func (a *Adapter) deriveSessionIDFromCommand(cmd slack.SlashCommand) string {
-	envelope := a.bridge.MakeSlackEnvelope(cmd.TeamID, cmd.ChannelID, "", cmd.UserID, "")
+	envelope := a.Bridge().MakeSlackEnvelope(cmd.TeamID, cmd.ChannelID, "", cmd.UserID, "")
 	if envelope == nil {
 		return ""
 	}
