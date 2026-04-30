@@ -121,9 +121,9 @@ hotplex service uninstall
 
 Supports **systemd** (Linux), **launchd** (macOS), and **Windows SCM**.
 
-> For detailed installation options, troubleshooting, and automation, see [INSTALL.md](INSTALL.md).
+> For detailed installation options, troubleshooting, and automation, see [INSTALL.md](https://github.com/hrygo/hotplex/blob/main/INSTALL.md).
 >
-> **For AI Agents:** Read [INSTALL.md](INSTALL.md) directly — it is a structured, machine-parseable installation reference with decision trees, script parameters, exit codes, and verification checklists.
+> **For AI Agents:** Read [INSTALL.md](https://github.com/hrygo/hotplex/blob/main/INSTALL.md) directly — it is a structured, machine-parseable installation reference with decision trees, script parameters, exit codes, and verification checklists.
 
 | Service             | Address                  | Note                                     |
 | :------------------ | :----------------------- | :--------------------------------------- |
