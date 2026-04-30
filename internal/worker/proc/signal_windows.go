@@ -23,8 +23,9 @@ func GracefulTerminate(pgid int) error {
 }
 
 // ForceKill terminates the process via TerminateProcess.
-// NOTE: Only kills the target process, not its children. Unix kills the entire process group.
-// A Job Object with JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE would be needed for full tree cleanup.
+// NOTE: Only kills the target process, not its children. The Manager creates a
+// Job Object (JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE) at process start to handle
+// full tree cleanup. This function serves as a fallback for non-Manager callers.
 func ForceKill(pgid int) error {
 	handle, err := windows.OpenProcess(windows.PROCESS_TERMINATE, false, uint32(pgid))
 	if err != nil {
@@ -38,7 +39,7 @@ func ForceKill(pgid int) error {
 func IsProcessAlive(pid int) error {
 	handle, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(pid))
 	if err != nil {
-		return fmt.Errorf("process %d not found: %w", pid, err)
+		return fmt.Errorf("process %d check: %w", pid, err)
 	}
 	defer windows.CloseHandle(handle)
 	return nil

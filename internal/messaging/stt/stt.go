@@ -307,7 +307,7 @@ func (s *PersistentSTT) terminate(ctx context.Context) {
 	// Send SIGTERM to process group.
 	if s.pgid > 0 {
 		_ = proc.GracefulTerminate(s.pgid)
-		s.log.Info("persistent stt: sent SIGTERM", "pgid", s.pgid)
+		s.log.Info("persistent stt: sent graceful termination", "pgid", s.pgid)
 	}
 
 	// Wait for graceful exit with deadline.
@@ -318,7 +318,7 @@ func (s *PersistentSTT) terminate(ctx context.Context) {
 	case <-done:
 		// Graceful exit.
 	case <-time.After(5 * time.Second):
-		s.log.Warn("persistent stt: graceful timeout, sending SIGKILL", "pgid", s.pgid)
+		s.log.Warn("persistent stt: graceful timeout, force killing", "pgid", s.pgid)
 		if s.pgid > 0 {
 			_ = proc.ForceKill(s.pgid)
 		}
