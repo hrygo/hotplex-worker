@@ -224,7 +224,7 @@ function AssistantMessage({ message }: { message: any }) {
    ============================================================ */
 
 function ReasoningBlock({ text }: { text: string }) {
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
   if (!text.trim()) return null;
   const estimatedSeconds = Math.max(1, Math.round(text.length / 200));
 
