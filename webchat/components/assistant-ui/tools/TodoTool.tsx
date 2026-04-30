@@ -13,9 +13,10 @@ interface TodoToolProps {
   todo?: string;
   todos?: Array<{ activeForm: string; content: string; status: string }>;
   status: "running" | "complete";
+  onToggle?: () => void;
 }
 
-export function TodoTool({ todo, todos, status }: TodoToolProps) {
+export function TodoTool({ todo, todos, status, onToggle }: TodoToolProps) {
   // Parse markdown-style TODOs if string is provided
   const parseTasks = (text: string): Task[] => {
     return text.split("\n")
@@ -39,7 +40,10 @@ export function TodoTool({ todo, todos, status }: TodoToolProps) {
   return (
     <div className="rounded-[var(--radius-lg)] overflow-hidden border border-[var(--border-default)] my-6 bg-[var(--bg-surface)]/50 backdrop-blur-xl shadow-[0_20px_50px_rgba(0,0,0,0.3)]">
       {/* Header with Progress Bar */}
-      <div className="px-5 py-4 border-b border-[var(--border-subtle)] bg-gradient-to-r from-[var(--bg-elevated)] to-transparent">
+      <div 
+        className={`px-5 py-4 border-b border-[var(--border-subtle)] bg-gradient-to-r from-[var(--bg-elevated)] to-transparent ${onToggle ? "cursor-pointer hover:bg-white/[0.02] transition-all" : ""}`}
+        onClick={onToggle}
+      >
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg bg-[var(--accent-violet)]/10 flex items-center justify-center text-[var(--accent-violet)] shadow-[0_0_15px_rgba(139,92,246,0.2)]">
@@ -48,7 +52,14 @@ export function TodoTool({ todo, todos, status }: TodoToolProps) {
               </svg>
             </div>
             <div>
-              <h3 className="text-[13px] font-bold text-[var(--text-primary)] tracking-tight">Mission Checklist</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="text-[13px] font-bold text-[var(--text-primary)] tracking-tight">Mission Checklist</h3>
+                {onToggle && (
+                  <svg className="w-3 h-3 text-[var(--text-faint)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 15l7-7 7 7" />
+                  </svg>
+                )}
+              </div>
               <p className="text-[10px] font-mono text-[var(--text-faint)] uppercase tracking-wider">Operational Status Update</p>
             </div>
           </div>

@@ -16,6 +16,7 @@ import (
 	"github.com/hrygo/hotplex/internal/cli/checkers"
 	"github.com/hrygo/hotplex/internal/cli/output"
 	"github.com/hrygo/hotplex/internal/config"
+	"github.com/hrygo/hotplex/internal/service"
 )
 
 type messagingPlatformConfig struct {
@@ -40,6 +41,8 @@ type WizardOptions struct {
 	FeishuAllowFrom   []string
 	FeishuDMPolicy    string
 	FeishuGroupPolicy string
+	InstallService    bool
+	ServiceLevel      string
 }
 
 // ExistingConfig holds detected existing configuration state.
@@ -228,6 +231,13 @@ func Run(ctx context.Context, opts WizardOptions) (*WizardResult, error) {
 	runAgentConfigStep()
 
 	result.add(stepVerify(opts.ConfigPath))
+
+	var reader *bufio.Reader
+	if !opts.NonInteractive {
+		reader = bufio.NewReader(os.Stdin)
+	}
+	result.add(stepServiceInstall(reader, opts))
+
 	result.Action = "reconfigure"
 	return result, nil
 }
@@ -699,4 +709,58 @@ func stepAgentConfig() (StepResult, []string) {
 		Status: "pass",
 		Detail: fmt.Sprintf("%s (%s)", dir, strings.Join(created, ", ")),
 	}, created
+}
+
+// ─── Step 9: Service installation ──────────────────────────────────────────
+
+func stepServiceInstall(reader *bufio.Reader, opts WizardOptions) StepResult {
+	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
+		return StepResult{Name: "service_install", Status: "skip", Detail: "unsupported OS: " + runtime.GOOS}
+	}
+
+	mgr := service.NewManager()
+	level, _ := service.ParseLevel(opts.ServiceLevel)
+	existing, _ := mgr.Status("hotplex", level)
+	if existing != nil && existing.Installed {
+		return StepResult{Name: "service_install", Status: "pass", Detail: "already installed at " + existing.UnitPath}
+	}
+
+	if opts.NonInteractive {
+		if !opts.InstallService {
+			return StepResult{Name: "service_install", Status: "skip", Detail: "not requested (use --install-service)"}
+		}
+	} else {
+		fmt.Fprint(os.Stderr, output.SectionHeader("System Service"))
+		if !promptYesNo(reader, "Install HotPlex as system service?") {
+			return StepResult{Name: "service_install", Status: "skip", Detail: "skipped by user"}
+		}
+		levelStr := promptWithDefault(reader, "  Service level (user/system)", "user")
+		var err error
+		level, err = service.ParseLevel(levelStr)
+		if err != nil {
+			return StepResult{Name: "service_install", Status: "fail", Detail: err.Error()}
+		}
+	}
+
+	if level == service.LevelSystem && os.Getuid() != 0 {
+		return StepResult{Name: "service_install", Status: "fail", Detail: "system-level requires root (use sudo)"}
+	}
+
+	binaryPath, err := service.ResolveBinaryPath()
+	if err != nil {
+		return StepResult{Name: "service_install", Status: "fail", Detail: err.Error()}
+	}
+
+	envPath := filepath.Join(filepath.Dir(opts.ConfigPath), ".env")
+	if err := mgr.Install(service.InstallOptions{
+		BinaryPath: binaryPath,
+		ConfigPath: opts.ConfigPath,
+		EnvPath:    envPath,
+		Level:      level,
+		Name:       "hotplex",
+	}); err != nil {
+		return StepResult{Name: "service_install", Status: "fail", Detail: err.Error()}
+	}
+
+	return StepResult{Name: "service_install", Status: "pass", Detail: string(level) + " level"}
 }

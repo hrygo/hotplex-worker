@@ -10,15 +10,19 @@ interface AgentToolProps {
   subagent_type?: string;
   run_in_background?: boolean;
   status: "running" | "complete" | "error";
+  onToggle?: () => void;
 }
 
-export function AgentTool({ description, prompt, subagent_type, run_in_background, status }: AgentToolProps) {
+export function AgentTool({ description, prompt, subagent_type, run_in_background, status, onToggle }: AgentToolProps) {
   const [isExpanded, setIsExpanded] = useState(false);
 
   return (
     <div className="rounded-[var(--radius-lg)] overflow-hidden border border-[var(--border-default)] my-6 bg-[var(--bg-surface)]/40 backdrop-blur-md shadow-[0_8px_32px_rgba(0,0,0,0.4)] transition-all duration-500 hover:shadow-[0_12px_48px_rgba(0,0,0,0.5)]">
       {/* Header */}
-      <div className="px-5 py-4 bg-gradient-to-r from-[var(--bg-elevated)] to-transparent border-b border-white/[0.05] flex items-center justify-between">
+      <div 
+        className={`px-5 py-4 bg-gradient-to-r from-[var(--bg-elevated)] to-transparent border-b border-white/[0.05] flex items-center justify-between ${onToggle ? "cursor-pointer hover:bg-white/[0.02] transition-all" : ""}`}
+        onClick={onToggle}
+      >
         <div className="flex items-center gap-4">
           <div className="relative">
             <div className="w-10 h-10 rounded-xl bg-[var(--accent-gold)]/10 flex items-center justify-center text-[var(--accent-gold)] shadow-[0_0_20px_rgba(245,158,11,0.15)] border border-[var(--accent-gold)]/20">
