@@ -30,6 +30,7 @@ WEB_CHAT_PID  := $(HOME)/.hotplex/.pids/hotplex-webchat.pid
 WEB_CHAT_PORT := 3000
 WEB_CHAT_LOG  := $(CURDIR)/$(LOG_DIR)/webchat.log
 WEB_CHAT_DIR  := webchat
+WEB_CHAT_OUT  := internal/webchat/out
 GRACE_PERIOD  := 7
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -51,7 +52,7 @@ CYAN   := \033[36m
 .PHONY: all help quickstart check-tools build build-windows build-one run
 .PHONY: dev dev-start dev-stop dev-status dev-logs dev-reset
 .PHONY: gateway-start gateway-stop gateway-status gateway-logs
-.PHONY: webchat-dev webchat-stop
+.PHONY: webchat-dev webchat-stop webchat-embed webchat-rebuild
 .PHONY: test test-short lint fmt quality check clean
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -90,7 +91,7 @@ endef
 # Build
 # ─────────────────────────────────────────────────────────────────────────────
 
-build:
+build: webchat-embed
 	@echo "$(CYAN)Building...$(RESET)"
 	@mkdir -p $(BUILD_DIR) $(LOG_DIR)
 	@go build $(BUILD_OPTS) -ldflags="$(LDFLAGS)" \
@@ -217,6 +218,21 @@ webchat-dev:
 
 webchat-stop:
 	@./scripts/dev.sh stop webchat
+
+webchat-embed:
+	@if [ ! -d $(WEB_CHAT_OUT)/_next ]; then \
+		echo "$(CYAN)Building webchat for embedding...$(RESET)"; \
+		cd $(WEB_CHAT_DIR) && npm run build && \
+		rm -rf ../$(WEB_CHAT_OUT).tmp && cp -r out ../$(WEB_CHAT_OUT).tmp && \
+		rm -rf ../$(WEB_CHAT_OUT) && mv ../$(WEB_CHAT_OUT).tmp ../$(WEB_CHAT_OUT); \
+	fi
+
+webchat-rebuild:
+	@echo "$(CYAN)Rebuilding webchat...$(RESET)"
+	@cd $(WEB_CHAT_DIR) && npm run build && \
+	rm -rf ../$(WEB_CHAT_OUT).tmp && cp -r out ../$(WEB_CHAT_OUT).tmp && \
+	rm -rf ../$(WEB_CHAT_OUT) && mv ../$(WEB_CHAT_OUT).tmp ../$(WEB_CHAT_OUT)
+	@echo "  $(GREEN)✓$(RESET) Webchat rebuilt"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Clean

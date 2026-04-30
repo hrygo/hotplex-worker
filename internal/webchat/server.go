@@ -6,8 +6,9 @@ import (
 	"strings"
 )
 
-// spaFS strips the "out/" prefix from the embedded filesystem.
 var spaFS, _ = fs.Sub(StaticFS, "out")
+
+var fileServer = http.FileServerFS(spaFS)
 
 // Handler returns an http.Handler that serves the webchat SPA.
 //
@@ -18,8 +19,6 @@ var spaFS, _ = fs.Sub(StaticFS, "out")
 //
 // Must be registered last on the ServeMux so explicit API/WS routes take priority.
 func Handler() http.Handler {
-	fileServer := http.FileServerFS(spaFS)
-
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
 

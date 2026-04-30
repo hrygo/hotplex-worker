@@ -112,4 +112,8 @@ __pycache__
 # Ignore temporary png files but keep intentional assets
 ./*.png
 webchat/*.png
+
+# --- Embedded Webchat (build artifact) ---
+internal/webchat/out/
+!internal/webchat/out/index.html
  
