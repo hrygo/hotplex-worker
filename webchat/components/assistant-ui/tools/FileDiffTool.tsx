@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { motion } from "framer-motion";
 import { ToolLoadingSkeleton } from "./ToolLoadingSkeleton";
 import { useCopyToClipboard } from "@/lib/hooks/useCopyToClipboard";
@@ -21,7 +20,7 @@ export function FileDiffTool({ toolName, filePath, content, status, onToggle }: 
   return (
     <div className="rounded-[var(--radius-md)] overflow-hidden border border-[var(--border-subtle)] my-6 shadow-[0_12px_40px_rgba(0,0,0,0.4)] group/diff">
       {/* File header */}
-      <div 
+      <div
         className={`flex items-center gap-3 px-4 py-2.5 bg-[var(--bg-elevated)] border-b border-[var(--border-subtle)] ${onToggle ? "cursor-pointer hover:bg-[var(--bg-hover)] transition-all" : ""}`}
         onClick={onToggle}
       >
@@ -36,17 +35,17 @@ export function FileDiffTool({ toolName, filePath, content, status, onToggle }: 
             {displayPath}
           </span>
         )}
-        
+
         <div className="ml-auto flex items-center gap-3">
           {status === "running" && (
-             <motion.span
-               className="text-[10px] font-mono text-[var(--accent-blue)] font-bold flex items-center gap-2"
-               animate={{ opacity: [0.5, 1, 0.5] }}
-               transition={{ repeat: Infinity, duration: 1.5 }}
-             >
-               <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent-blue)] shadow-[0_0_8px_var(--accent-blue)]" />
-               PATCHING
-             </motion.span>
+            <motion.span
+              className="text-[10px] font-mono text-[var(--accent-blue)] font-bold flex items-center gap-2"
+              animate={{ opacity: [0.5, 1, 0.5] }}
+              transition={{ repeat: Infinity, duration: 1.5 }}
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent-blue)] shadow-[0_0_8px_var(--accent-blue)]" />
+              PATCHING
+            </motion.span>
           )}
           {onToggle && status !== "running" && (
             <div className="text-[var(--text-faint)] transform group-hover/diff:scale-110 transition-transform">
@@ -91,19 +90,17 @@ export function FileDiffTool({ toolName, filePath, content, status, onToggle }: 
                 const isAdd = line.startsWith("+") && !line.startsWith("+++");
                 const isDel = line.startsWith("-") && !line.startsWith("---");
                 return (
-                  <tr key={i} className={`font-mono text-[13px] leading-relaxed transition-colors ${
-                    isAdd ? "bg-[var(--accent-emerald)]/[0.08] hover:bg-[var(--accent-emerald)]/[0.12]" :
-                    isDel ? "bg-[var(--accent-coral)]/[0.08] hover:bg-[var(--accent-coral)]/[0.12]" : 
-                    "hover:bg-white/[0.02]"
-                  }`}>
+                  <tr key={i} className={`font-mono text-[13px] leading-relaxed transition-colors ${isAdd ? "bg-[var(--accent-emerald)]/[0.08] hover:bg-[var(--accent-emerald)]/[0.12]" :
+                      isDel ? "bg-[var(--accent-coral)]/[0.08] hover:bg-[var(--accent-coral)]/[0.12]" :
+                        "hover:bg-white/[0.02]"
+                    }`}>
                     <td className="px-4 py-0.5 text-right text-[var(--text-faint)] select-none w-[1%] whitespace-nowrap opacity-30 font-mono text-[11px]">
                       {i + 1}
                     </td>
-                    <td className={`px-4 py-0.5 whitespace-pre break-all ${
-                      isAdd ? "text-[var(--accent-emerald)]" :
-                      isDel ? "text-[var(--accent-coral)] font-medium" :
-                      "text-[var(--text-muted)]"
-                    }`}>
+                    <td className={`px-4 py-0.5 whitespace-pre break-all ${isAdd ? "text-[var(--accent-emerald)]" :
+                        isDel ? "text-[var(--accent-coral)] font-medium" :
+                          "text-[var(--text-muted)]"
+                      }`}>
                       {line}
                     </td>
                   </tr>
