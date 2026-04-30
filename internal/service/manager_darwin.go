@@ -126,6 +126,82 @@ func (m *darwinManager) plistPath(name string, level Level) (string, error) {
 	}
 }
 
+func (m *darwinManager) Start(name string, level Level) error {
+	plistPath, err := m.plistPath(name, level)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat(plistPath); os.IsNotExist(err) {
+		return fmt.Errorf("service not installed (run 'hotplex service install' first)")
+	}
+
+	label := launchdLabel(name, level)
+	out, err := exec.Command("launchctl", "load", "-w", plistPath).CombinedOutput()
+	if err != nil {
+		if strings.Contains(string(out), "already loaded") {
+			if err := exec.Command("launchctl", "start", label).Run(); err != nil {
+				return fmt.Errorf("launchctl start: %w", err)
+			}
+			return nil
+		}
+		return fmt.Errorf("launchctl load: %s: %w", strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
+func (m *darwinManager) Stop(name string, level Level) error {
+	plistPath, err := m.plistPath(name, level)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat(plistPath); os.IsNotExist(err) {
+		return fmt.Errorf("service not installed")
+	}
+
+	label := launchdLabel(name, level)
+	_ = exec.Command("launchctl", "stop", label).Run()
+
+	out, err := exec.Command("launchctl", "unload", plistPath).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("launchctl unload: %s: %w", strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
+func (m *darwinManager) Restart(name string, level Level) error {
+	if err := m.Stop(name, level); err != nil {
+		return fmt.Errorf("stop: %w", err)
+	}
+	return m.Start(name, level)
+}
+
+func (m *darwinManager) Logs(name string, level Level, follow bool, lines int) error {
+	dir := m.logDir(level)
+	stdoutLog := filepath.Join(dir, "launchd.stdout.log")
+	if _, err := os.Stat(stdoutLog); os.IsNotExist(err) {
+		return fmt.Errorf("log file not found: %s", stdoutLog)
+	}
+
+	args := []string{}
+	if follow {
+		args = append(args, "-f")
+	}
+	args = append(args, "-n", strconv.Itoa(lines), stdoutLog)
+
+	cmd := exec.Command("tail", args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+func (m *darwinManager) logDir(level Level) string {
+	if level == LevelSystem {
+		return "/var/log/hotplex"
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".hotplex", "logs")
+}
+
 func parseLaunchctlPID(output string) string {
 	for _, line := range strings.Split(output, "\n") {
 		line = strings.TrimSpace(line)

@@ -134,6 +134,48 @@ func systemctl(level Level, args ...string) (string, error) {
 	return strings.TrimSpace(string(out)), err
 }
 
+func (m *linuxManager) Start(name string, level Level) error {
+	out, err := systemctl(level, "start", name)
+	if err != nil {
+		return fmt.Errorf("systemctl start: %s: %w", out, err)
+	}
+	return nil
+}
+
+func (m *linuxManager) Stop(name string, level Level) error {
+	out, err := systemctl(level, "stop", name)
+	if err != nil {
+		return fmt.Errorf("systemctl stop: %s: %w", out, err)
+	}
+	return nil
+}
+
+func (m *linuxManager) Restart(name string, level Level) error {
+	out, err := systemctl(level, "restart", name)
+	if err != nil {
+		return fmt.Errorf("systemctl restart: %s: %w", out, err)
+	}
+	return nil
+}
+
+func (m *linuxManager) Logs(name string, level Level, follow bool, lines int) error {
+	var args []string
+	if level == LevelUser {
+		args = append(args, "--user")
+	}
+	args = append(args, "-u", name)
+	if follow {
+		args = append(args, "-f")
+	} else {
+		args = append(args, "--no-pager", "-n", strconv.Itoa(lines))
+	}
+
+	cmd := exec.Command("journalctl", args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
 func enableLinger() error {
 	uid := os.Getuid()
 	return exec.Command("loginctl", "enable-linger", strconv.Itoa(uid)).Run()
