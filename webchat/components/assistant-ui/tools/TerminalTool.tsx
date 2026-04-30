@@ -60,12 +60,12 @@ export function TerminalTool({ command, stdout, stderr, status, onToggle }: Term
       {/* Command */}
       <div className="px-5 py-3.5 bg-[#08080a] border-b border-[var(--border-subtle)]/50">
         <div className="flex items-start gap-3">
-          <span className="text-[var(--accent-emerald)] font-mono text-[14px] font-bold select-none mt-0.5">❯</span>
-          <code className="font-mono text-[14px] text-[var(--text-primary)] leading-tight break-all">
+          <span className="text-[var(--accent-emerald)] font-mono text-[14px] font-bold select-none leading-[21px] flex-shrink-0">❯</span>
+          <code className="font-mono text-[14px] text-[var(--text-primary)] leading-[21px] break-all">
             {command}
             {status === "running" && (
               <motion.span
-                className="inline-block w-2 h-4.5 ml-1 bg-[var(--accent-emerald)] align-middle"
+                className="inline-block w-2 h-[15px] ml-1.5 bg-[var(--accent-emerald)] align-middle"
                 animate={{ opacity: [1, 0] }}
                 transition={{ repeat: Infinity, duration: 0.8, ease: "linear" }}
               />
