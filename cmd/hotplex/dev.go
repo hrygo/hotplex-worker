@@ -21,7 +21,7 @@ func newDevCmd() *cobra.Command {
 			if err := writeGatewayPID(); err != nil {
 				fmt.Fprintf(os.Stderr, "warning: could not write PID file: %s\n", err)
 			}
-			return runGateway(configPath, true)
+			return runGateway(configPath, true, nil)
 		},
 	}
 	configFlag(cmd, &configPath)

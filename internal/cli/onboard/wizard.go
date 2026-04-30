@@ -712,7 +712,7 @@ func stepAgentConfig() (StepResult, []string) {
 }
 
 func stepServiceInstall(reader *bufio.Reader, opts WizardOptions) StepResult {
-	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
+	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" && runtime.GOOS != "windows" {
 		return StepResult{Name: "service_install", Status: "skip", Detail: "unsupported OS: " + runtime.GOOS}
 	}
 
@@ -740,8 +740,8 @@ func stepServiceInstall(reader *bufio.Reader, opts WizardOptions) StepResult {
 		}
 	}
 
-	if level == service.LevelSystem && os.Getuid() != 0 {
-		return StepResult{Name: "service_install", Status: "fail", Detail: "system-level requires root (use sudo)"}
+	if level == service.LevelSystem && !service.IsPrivileged() {
+		return StepResult{Name: "service_install", Status: "fail", Detail: "system-level requires elevated privileges (use sudo or run as administrator)"}
 	}
 
 	binaryPath, err := service.ResolveBinaryPath()

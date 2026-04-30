@@ -108,7 +108,7 @@ func BuildLaunchdPlist(opts InstallOptions, homeDir string) string {
 
 func logDirForHome(level Level, homeDir string) string {
 	if level == LevelSystem {
-		return "/var/log/hotplex"
+		return systemLogDir()
 	}
 	return filepath.Join(homeDir, ".hotplex", "logs")
 }

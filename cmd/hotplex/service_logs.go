@@ -16,8 +16,9 @@ func newServiceLogsCmd() *cobra.Command {
 		Short: "View service logs",
 		Long: `View HotPlex service logs.
 
-  Linux:  journalctl (with --user for user-level services)
-  macOS:  tail the launchd log files`,
+  Linux:   journalctl (with --user for user-level services)
+  macOS:   tail the launchd log files
+  Windows: PowerShell Get-Content on the service log files`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			level, err := service.ParseLevel(levelStr)
 			if err != nil {

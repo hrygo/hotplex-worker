@@ -38,7 +38,7 @@ func newServiceInstallCmd() *cobra.Command {
 				return fmt.Errorf("config not found: %s (run 'hotplex onboard' first)", configPath)
 			}
 
-			if level == service.LevelSystem && os.Getuid() != 0 {
+			if level == service.LevelSystem && !service.IsPrivileged() {
 				return fmt.Errorf("system-level service requires root (use sudo or --level user)")
 			}
 

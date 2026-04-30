@@ -52,6 +52,7 @@ type RuntimeStatus struct {
 	WebChatAddr     string
 	WebChatEmbedded bool
 	DBPath          string
+	EventDBPath     string
 	PoolMax         int
 	PoolIdle        int
 	Adapters        []AdapterStatus
@@ -138,7 +139,12 @@ func printStartupBanner(out *os.File, info BuildInfo, s RuntimeStatus, configPat
 	} else if s.WebChatAddr != "" {
 		lines = append(lines, pad("WebChat", "http://"+s.WebChatAddr))
 	}
-	lines = append(lines, pad("Database", s.DBPath+" (SQLite)"))
+	if s.EventDBPath != "" {
+		lines = append(lines, pad("Sessions", s.DBPath))
+		lines = append(lines, pad("Events", s.EventDBPath))
+	} else {
+		lines = append(lines, pad("Database", s.DBPath))
+	}
 	lines = append(lines, pad("Pool", fmt.Sprintf("%d sessions / %d idle per user", s.PoolMax, s.PoolIdle)))
 
 	if len(s.Adapters) > 0 {

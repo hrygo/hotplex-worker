@@ -65,7 +65,7 @@ func ResolveBinaryPath() (string, error) {
 
 func LogDir(level Level) string {
 	if level == LevelSystem {
-		return "/var/log/hotplex"
+		return systemLogDir()
 	}
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".hotplex", "logs")

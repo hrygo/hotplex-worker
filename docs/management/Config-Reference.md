@@ -50,7 +50,7 @@ Example:
 ```yaml
 # configs/config.yaml
 gateway:
-  addr: ":8888"    # Priority 3 (config file)
+  addr: "localhost:8888"    # Priority 3 (config file)
 ```
 
 ```bash
@@ -197,7 +197,7 @@ Pattern: `HOTPLEX_<SECTION>_<FIELD>`
 
 Examples:
 ```bash
-HOTPLEX_GATEWAY_ADDR=:8888
+HOTPLEX_GATEWAY_ADDR=localhost:8888
 HOTPLEX_DB_PATH=/var/lib/hotplex/data/hotplex.db
 HOTPLEX_SECURITY_TLS_ENABLED=true
 HOTPLEX_ADMIN_RATE_LIMIT_ENABLED=false
@@ -512,8 +512,8 @@ messaging:
 
 # Expected output:
 # Config validation successful
-# Gateway: :8888
-# Admin: :9999
+# Gateway: localhost:8888
+# Admin: localhost:9999
 # TLS: enabled
 # Database: hotplex.db
 ```
@@ -611,7 +611,7 @@ data:
   config.yaml: |
     inherits: config-prod.yaml
     gateway:
-      addr: ":8888"
+      addr: "localhost:8888"
 ---
 apiVersion: v1
 kind: Secret

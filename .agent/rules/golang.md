@@ -118,77 +118,10 @@ v.Store(someData)
 data := v.Load().(Type)
 ```
 
-**OCS Worker 中的 session ID 隔离**：
-```go
-workerSessionID atomic.Value // 存储 string，无锁 Get/Set
-
-func (w *Worker) SetWorkerSessionID(id string) {
-    w.workerSessionID.Store(id)
-}
-func (w *Worker) GetWorkerSessionID() string {
-    return w.workerSessionID.Load().(string)
-}
-```
-
 **禁止**：对带 sync.Mutex 的类型用 atomic 操作替代锁；atomic 只适用于简单读/写/交换。
 
----
-
-## go:embed 模式
-
-编译时嵌入静态资源：
-```go
-import "embed"
-
-//go:embed META-COGNITION.md
-var metaCognitionFS embed.FS
-
-func LoadMetaCognition() (string, error) {
-    data, err := metaCognitionFS.ReadFile("META-COGNITION.md")
-    if err != nil {
-        return "", err
-    }
-    return string(data), nil
-}
-```
-
-**规则**：
-- `//go:embed` 注释和文件路径之间有**严格空格**
-- 只 embed 不含敏感信息的静态配置文本
-- 搭配 `strings.TrimSpace` / frontmatter 剥离使用
-
----
-
-## 全局单例进程管理模式（OCS）
-
-```go
-// singleton.go — SingletonProcessManager
-type SingletonProcessManager struct {
-    mu        sync.Mutex
-    refCount  int
-    proc      *proc.Manager
-    crashCh   chan struct{}      // 每次 lifecycle 新建
-    drainCh   chan struct{}
-    drainTimer *time.Timer
-    httpServer *http.Server
-}
-
-func (sm *SingletonProcessManager) Acquire(ctx context.Context) error { ... }
-func (sm *SingletonProcessManager) Release()                         { ... }
-```
-
-**Worker 持有引用，不直接管理进程**：
-```go
-type Worker struct {
-    *base.BaseWorker
-    ref     *SingletonProcessManager
-    session atomic.Value  // 当前 worker session ID（隔离）
-    closeOnce sync.Once
-}
-```
-- `Start/Resume` → `Acquire` + 创建 SSE 连接
-- `Terminate/Kill` → 仅释放引用 + 关闭 SSE，不杀进程
-- `crashCh` 每生命周期新建，确保隔离
+> OCS 单例进程管理模式 → 见 `worker-proc.md`
+> go:embed 模式 → 见 `agentconfig.md`
 
 ---
 
@@ -207,19 +140,7 @@ type Worker struct {
 
 ## Panic Recovery 模式
 
-Gateway handler 和 bridge forwardEvents 必须包含 panic recovery：
-
-```go
-func (h *Handler) Handle(ctx context.Context, env *Envelope) (err error) {
-    defer func() {
-        if r := recover(); r != nil {
-            h.log.Error("gateway: panic in handler", "error", r, "session_id", env.SessionID)
-            err = fmt.Errorf("handler panic: %v", r)
-        }
-    }()
-    // ... normal handling
-}
-```
+Gateway handler 和 bridge forwardEvents 必须 `defer recover()` — 捕获 panic 后 `log.Error` + 返回 `"handler panic"` / `"bridge panic"` 错误。
 
 ---
 
@@ -277,32 +198,12 @@ func (sm *Manager) GetSession(id string) (*ManagedSession, error) {
 
 ## SwitchWorkDir 模式
 
-工作目录切换（跨 WebSocket 和 REST）：
-
-```go
-// bridge.go — handleSwitchWorkDir
-// 1. 安全验证工作目录（ExpandAndAbs + ValidateWorkDir 必须同时使用）
-workDir, err := cfg.ExpandAndAbs(req.Path)
-if err != nil {
-    return fmt.Errorf("expand work dir: %w", err)
-}
-if err := security.ValidateWorkDir(workDir); err != nil {
-    return fmt.Errorf("unsafe work dir: %w", err)
-}
-
-// 2. 派生新 session key（使用新的 workDir）
-newKey := DeriveSessionKey(platformCtx.WithWorkDir(workDir))
-
-// 3. 终止旧 worker（不删 session 记录）
-ms.Terminate(ctx)
-
-// 4. 在新 key 下启动 session
-si, err := sm.GetOrCreate(ctx, newKey, workerType, req.OwnerID)
-
-// 5. 注入最后输入并 resume（同一 OCS singleton 进程）
-```
-
-**安全组合**：`config.ExpandAndAbs` + `security.ValidateWorkDir` 必须同时使用，防止路径穿越。
+工作目录切换（`bridge.go handleSwitchWorkDir`）5 步流程：
+1. **安全验证**：`config.ExpandAndAbs` + `security.ValidateWorkDir` 必须同时使用，防止路径穿越
+2. **派生新 key**：`DeriveSessionKey(platformCtx.WithWorkDir(workDir))`
+3. **终止旧 worker**（不删 session 记录）
+4. **新 key 下启动 session**：`sm.GetOrCreate`
+5. **注入最后输入并 resume**（同一 OCS singleton 进程）
 
 ---
 

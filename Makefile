@@ -1,189 +1,89 @@
-# HotPlex Worker Gateway - Development Makefile
-# Not for production service management.
+# HotPlex Gateway — Dev Makefile (not for production)
 #
-#   make help        Show commands
-#   make quickstart  First-time setup
-#   make dev         Start dev environment
-#   make check       Quality check (CI)
+#   make help       Show commands
+#   make dev        Start dev environment
+#   make check      Quality gate (CI)
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Configuration
-# ─────────────────────────────────────────────────────────────────────────────
+# ─── Config ────────────────────────────────────────────────────────────────────
 
-BINARY_NAME  := hotplex
-BUILD_DIR    := bin
-MAIN_PATH    := ./cmd/hotplex
-CONFIG_DIR   := configs
-LOG_DIR      := logs
+BINARY   := hotplex
+BUILDDIR := bin
+MAIN     := ./cmd/hotplex
+CFGDIR   := configs
+LOGDIR   := logs
 
-GO_VERSION   := $(shell go version | cut -d' ' -f3)
-GOOS         := $(shell go env GOOS)
-GOARCH       := $(shell go env GOARCH)
-GIT_SHA      := $(shell git rev-parse --short=8 HEAD 2>/dev/null || echo "unknown")
-BUILD_TIME   := $(shell date '+%Y-%m-%dT%H:%M:%S%z')
-LDFLAGS      := -s -w -X main.version=v1.2.0 -X main.buildTime=$(BUILD_TIME)
-BUILD_OPTS   := -trimpath
+GOOS     := $(shell go env GOOS)
+GOARCH   := $(shell go env GOARCH)
+LDFLAGS  := -s -w -X main.version=v1.2.0 -X main.buildTime=$(shell date '+%Y-%m-%dT%H:%M:%S%z')
 
-GATEWAY_PID   := $(HOME)/.hotplex/.pids/gateway.pid
-GATEWAY_LOG   := $(LOG_DIR)/hotplex.log
-WEB_CHAT_PID  := $(HOME)/.hotplex/.pids/hotplex-webchat.pid
-WEB_CHAT_PORT := 3000
-WEB_CHAT_LOG  := $(CURDIR)/$(LOG_DIR)/webchat.log
-WEB_CHAT_DIR  := webchat
-WEB_CHAT_OUT  := internal/webchat/out
-GRACE_PERIOD  := 7
+# ─── PHONY ─────────────────────────────────────────────────────────────────────
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Color
-# ─────────────────────────────────────────────────────────────────────────────
-
-RESET  := \033[0m
-BOLD   := \033[1m
-DIM    := \033[2m
-RED    := \033[31m
-GREEN  := \033[32m
-YELLOW := \033[33m
-CYAN   := \033[36m
-
-# ─────────────────────────────────────────────────────────────────────────────
-# PHONY
-# ─────────────────────────────────────────────────────────────────────────────
-
-.PHONY: all help quickstart check-tools build build-windows build-one run
-.PHONY: dev dev-start dev-stop dev-status dev-logs dev-reset
-.PHONY: gateway-start gateway-stop gateway-status gateway-logs
-.PHONY: webchat-dev webchat-stop webchat-embed webchat-rebuild
-.PHONY: test test-short lint fmt quality check clean
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Default
-# ─────────────────────────────────────────────────────────────────────────────
+.PHONY: all help quickstart build run \
+        dev dev-stop dev-status dev-logs dev-reset \
+        gateway-start gateway-stop gateway-status gateway-logs \
+        webchat-dev webchat-stop webchat-embed webchat-rebuild \
+        test test-short coverage lint fmt quality check clean
 
 all: help
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Setup
-# ─────────────────────────────────────────────────────────────────────────────
+# ─── Setup ─────────────────────────────────────────────────────────────────────
 
-quickstart: check-tools build test-short
-	@echo ""
-	@echo "  $(GREEN)✓ Setup complete$(RESET)"
-	@echo ""
-	@echo "    make dev      Start dev environment"
-	@echo "    make run      Run gateway"
-	@echo "    make help     Show all commands"
-	@echo ""
+quickstart: build test-short
+	@echo "\n  Setup complete — make dev | make run | make help\n"
 
-check-tools:
-	@$(call check-tool, go, "Go")
-	@$(call check-tool, golangci-lint, "golangci-lint")
-	@$(call check-tool, goimports, "goimports")
-
-define check-tool
-	@if command -v $(1) > /dev/null 2>&1; then \
-		echo "  $(GREEN)✓$(RESET) $(2)"; \
-	else \
-		echo "  $(YELLOW)⚠$(RESET) $(2) $(DIM)(missing)$(RESET)"; \
-	fi
-endef
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Build
-# ─────────────────────────────────────────────────────────────────────────────
+# ─── Build ─────────────────────────────────────────────────────────────────────
 
 build: webchat-embed
-	@echo "$(CYAN)Building...$(RESET)"
-	@mkdir -p $(BUILD_DIR) $(LOG_DIR)
-	@go build $(BUILD_OPTS) -ldflags="$(LDFLAGS)" \
-		-o $(BUILD_DIR)/$(BINARY_NAME)-$(GOOS)-$(GOARCH) $(MAIN_PATH)
-	@echo "  $(GREEN)✓$(RESET) $(BUILD_DIR)/$(BINARY_NAME)-$(GOOS)-$(GOARCH)"
-
-build-windows:
-	@echo "$(CYAN)Cross-compiling for Windows...$(RESET)"
-	@mkdir -p $(BUILD_DIR)
-	@$(MAKE) build-one GOOS=windows GOARCH=amd64 SUFFIX=.exe --no-print-directory
-	@$(MAKE) build-one GOOS=windows GOARCH=arm64 SUFFIX=.exe --no-print-directory
-
-build-one:
-	@CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(BUILD_OPTS) -ldflags="$(LDFLAGS)" \
-		-o $(BUILD_DIR)/$(BINARY_NAME)-$(GOOS)-$(GOARCH)$(SUFFIX) $(MAIN_PATH)
-	@echo "  $(GREEN)✓$(RESET) $(BUILD_DIR)/$(BINARY_NAME)-$(GOOS)-$(GOARCH)$(SUFFIX)"
+	@mkdir -p $(BUILDDIR) $(LOGDIR)
+	@go build -trimpath -ldflags="$(LDFLAGS)" -o $(BUILDDIR)/$(BINARY)-$(GOOS)-$(GOARCH) $(MAIN)
 
 run: build
-	@./$(BUILD_DIR)/$(BINARY_NAME)-$(GOOS)-$(GOARCH) \
-		gateway start -c $(CONFIG_DIR)/config-dev.yaml
+	@./$(BUILDDIR)/$(BINARY)-$(GOOS)-$(GOARCH) gateway start -c $(CFGDIR)/config-dev.yaml
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Test
-# ─────────────────────────────────────────────────────────────────────────────
+webchat-embed:
+	@if [ ! -d internal/webchat/out/_next ]; then \
+		cd webchat && npm run build && \
+		rm -rf ../internal/webchat/out.tmp && cp -r out ../internal/webchat/out.tmp && \
+		rm -rf ../internal/webchat/out && mv ../internal/webchat/out.tmp ../internal/webchat/out; \
+	fi
+
+webchat-rebuild:
+	@cd webchat && npm run build && \
+		rm -rf ../internal/webchat/out.tmp && cp -r out ../internal/webchat/out.tmp && \
+		rm -rf ../internal/webchat/out && mv ../internal/webchat/out.tmp ../internal/webchat/out
+
+# ─── Test ──────────────────────────────────────────────────────────────────────
 
 test:
-	@echo "$(CYAN)Testing...$(RESET)"
 	@GORACE="history_size=5" go test -race -timeout 15m ./...
-	@echo "  $(GREEN)✓ Tests passed$(RESET)"
 
 test-short:
-	@echo "$(CYAN)Testing...$(RESET)"
 	@GORACE="history_size=5" go test -short -race -timeout 5m ./...
-	@echo "  $(GREEN)✓ Tests passed$(RESET)"
 
 coverage:
-	@echo "$(CYAN)Generating coverage report...$(RESET)"
 	@go test -timeout=15m -coverprofile=coverage.out -covermode=atomic \
 		$$(go list ./... | grep -v -e 'internal/worker/proc' -e 'internal/worker/pi' -e 'cmd/hotplex')
-	@echo ""
-	@echo "$(BOLD)Per-package coverage:$(RESET)"
-	@go tool cover -func=coverage.out | grep -v "^total:" | sort -t: -k3 -n
-	@echo ""
-	@TOTAL=$$(go tool cover -func=coverage.out | tail -1 | grep -oP '\d+\.\d+') ; \
-		echo "  $(BOLD)Total: $${TOTAL}%$(RESET)"
+	@go tool cover -func=coverage.out
 
-test-slack-e2e:
-	@echo "$(CYAN)Running Slack semi-automated E2E tests...$(RESET)"
-	@test -n "$$SLACK_BOT_TOKEN" || (echo "  $(RED)SLACK_BOT_TOKEN required$(RESET)"; exit 1)
-	@test -n "$$SLACK_APP_TOKEN" || (echo "  $(RED)SLACK_APP_TOKEN required$(RESET)"; exit 1)
-	@go test -v -tags=slack_e2e -timeout 30m ./internal/messaging/slack/...
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Quality
-# ─────────────────────────────────────────────────────────────────────────────
-
-lint:
-	@echo "$(CYAN)Linting...$(RESET)"
-	@golangci-lint run ./...
+# ─── Quality ───────────────────────────────────────────────────────────────────
 
 fmt:
-	@echo "$(CYAN)Formatting...$(RESET)"
 	@go fmt ./...
-	@if command -v goimports > /dev/null 2>&1; then goimports -w .; fi
+	@command -v goimports > /dev/null 2>&1 && goimports -w . || true
+
+lint:
+	@golangci-lint run ./...
 
 quality: fmt lint test
-	@echo ""
-	@echo "  $(GREEN)✓ All checks passed$(RESET)"
-	@echo ""
 
 check: quality build
-	@echo "  $(GREEN)✓ CI check passed$(RESET)"
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Dev Environment
-# ─────────────────────────────────────────────────────────────────────────────
+# ─── Dev ───────────────────────────────────────────────────────────────────────
 
-dev: dev-start
-	@echo ""
-	@echo "  $(DIM)─────────────────────────────────────$(RESET)"
-	@echo "  $(GREEN)✓ Dev environment ready$(RESET)"
-	@echo ""
-	@printf "    make %-12s %s\n" "dev-logs" "View logs"
-	@printf "    make %-12s %s\n" "dev-status" "Check status"
-	@printf "    make %-12s %s\n" "dev-stop" "Stop all"
-	@echo ""
-
-dev-start: gateway-start
-	@$(MAKE) webchat-dev || echo "  $(YELLOW)⚠$(RESET) Webchat skipped (run 'cd webchat && pnpm install' to fix)"
+dev: gateway-start
+	@$(MAKE) webchat-dev || echo "  Webchat skipped — cd webchat && pnpm install"
 
 dev-stop: webchat-stop gateway-stop
-	@echo "  $(GREEN)✓ Dev environment stopped$(RESET)"
 
 dev-status:
 	@./scripts/dev.sh status all
@@ -191,11 +91,7 @@ dev-status:
 dev-logs:
 	@./scripts/dev.sh logs all
 
-dev-reset: dev-stop dev-start
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Gateway
-# ─────────────────────────────────────────────────────────────────────────────
+dev-reset: dev-stop dev
 
 gateway-start: build
 	@./scripts/dev.sh start gateway
@@ -209,94 +105,37 @@ gateway-status:
 gateway-logs:
 	@./scripts/dev.sh logs gateway
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Webchat
-# ─────────────────────────────────────────────────────────────────────────────
-
 webchat-dev:
 	@./scripts/dev.sh start webchat
 
 webchat-stop:
 	@./scripts/dev.sh stop webchat
 
-webchat-embed:
-	@if [ ! -d $(WEB_CHAT_OUT)/_next ]; then \
-		echo "$(CYAN)Building webchat for embedding...$(RESET)"; \
-		cd $(WEB_CHAT_DIR) && npm run build && \
-		rm -rf ../$(WEB_CHAT_OUT).tmp && cp -r out ../$(WEB_CHAT_OUT).tmp && \
-		rm -rf ../$(WEB_CHAT_OUT) && mv ../$(WEB_CHAT_OUT).tmp ../$(WEB_CHAT_OUT); \
-	fi
-
-webchat-rebuild:
-	@echo "$(CYAN)Rebuilding webchat...$(RESET)"
-	@cd $(WEB_CHAT_DIR) && npm run build && \
-	rm -rf ../$(WEB_CHAT_OUT).tmp && cp -r out ../$(WEB_CHAT_OUT).tmp && \
-	rm -rf ../$(WEB_CHAT_OUT) && mv ../$(WEB_CHAT_OUT).tmp ../$(WEB_CHAT_OUT)
-	@echo "  $(GREEN)✓$(RESET) Webchat rebuilt"
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Clean
-# ─────────────────────────────────────────────────────────────────────────────
+# ─── Clean ─────────────────────────────────────────────────────────────────────
 
 clean:
 	@go clean
-	@rm -rf $(BUILD_DIR)
-	@rm -f coverage.out
-	@echo "  $(GREEN)✓$(RESET) Cleaned"
+	@rm -rf $(BUILDDIR) coverage.out
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Help
-# ─────────────────────────────────────────────────────────────────────────────
+# ─── Help ──────────────────────────────────────────────────────────────────────
 
 help:
 	@echo ""
-	@echo "  $(CYAN)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(RESET)"
-	@echo "  $(CYAN)  ⚡ HotPlex Worker$(RESET)  $(GIT_SHA)  $(GOOS)/$(GOARCH)"
-	@echo "  $(CYAN)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(RESET)"
+	@echo "  HotPlex Gateway  $$(git rev-parse --short=8 HEAD 2>/dev/null)  $(GOOS)/$(GOARCH)"
 	@echo ""
-	@echo "  $(BOLD)⚡ Start"
-	@printf "    $(CYAN)make %-15s$(RESET)  %s\n" "dev"         "Start all services (gateway + webchat)"
-	@printf "    $(CYAN)make %-15s$(RESET)  %s\n" "dev-start"   "Start individually"
+	@echo "  Dev       make dev          Start gateway + webchat"
+	@echo "            make dev-stop     Stop all"
+	@echo "            make dev-logs     View logs"
+	@echo "            make dev-reset    Restart all"
 	@echo ""
-	@echo "  $(BOLD)⏹  Stop"
-	@printf "    $(CYAN)make %-15s$(RESET)  %s\n" "dev-stop"      "Stop all services"
-	@printf "    $(CYAN)make %-15s$(RESET)  %s\n" "gateway-stop"   "Stop gateway"
-	@printf "    $(CYAN)make %-15s$(RESET)  %s\n" "webchat-stop"  "Stop webchat"
+	@echo "  Build     make build        Build binary"
+	@echo "            make run          Build and run"
+	@echo "            make clean        Clean artifacts"
 	@echo ""
-	@echo "  $(BOLD)🔧 Build"
-	@printf "    $(CYAN)make %-15s$(RESET)  %s\n" "build"          "Build binary"
-	@printf "    $(CYAN)make %-15s$(RESET)  %s\n" "build-windows"  "Cross-compile for Windows"
-	@printf "    $(CYAN)make %-15s$(RESET)  %s\n" "run"     "Build and run (foreground)"
+	@echo "  Test      make test         Full tests (race, 15m)"
+	@echo "            make test-short   Quick tests (5m)"
+	@echo "            make coverage     Coverage report"
+	@echo "            make lint         Linter"
+	@echo "            make fmt          Format code"
+	@echo "            make check        CI gate (fmt+lint+test+build)"
 	@echo ""
-	@echo "  $(BOLD)🧪 Test & Quality"
-	@printf "    $(CYAN)make %-15s$(RESET)  %s\n" "test"         "All tests (race, 15m)"
-	@printf "    $(CYAN)make %-15s$(RESET)  %s\n" "test-short"   "Short tests (5m)"
-	@printf "    $(CYAN)make %-15s$(RESET)  %s\n" "lint"         "Run linter"
-	@printf "    $(CYAN)make %-15s$(RESET)  %s\n" "fmt"          "Format code"
-	@printf "    $(CYAN)make %-15s$(RESET)  %s\n" "quality"       "fmt + lint + test"
-	@printf "    $(CYAN)make %-15s$(RESET)  %s\n" "check"         "quality + build (CI)"
-	@echo ""
-	@echo "  $(BOLD)📊 Status & Logs"
-	@printf "    $(CYAN)make %-15s$(RESET)  %s\n" "dev-status"     "All services"
-	@printf "    $(CYAN)make %-15s$(RESET)  %s\n" "gateway-status"  "Gateway"
-	@printf "    $(CYAN)make %-15s$(RESET)  %s\n" "dev-logs"      "View all logs"
-	@printf "    $(CYAN)make %-15s$(RESET)  %s\n" "gateway-logs"   "Gateway logs"
-	@echo ""
-	@echo "  $(BOLD)🔄 Workflow"
-	@printf "    $(CYAN)make %-15s$(RESET)  %s\n" "dev-reset"   "Restart all services"
-	@printf "    $(CYAN)make %-15s$(RESET)  %s\n" "quickstart"  "First-time setup"
-	@echo ""
-	@echo "  $(BOLD)🧹 Other"
-	@printf "    $(CYAN)make %-15s$(RESET)  %s\n" "clean"        "Clean artifacts"
-	@printf "    $(CYAN)make %-15s$(RESET)  %s\n" "check-tools"  "Check dev tools"
-	@echo ""
-	@echo "  $(DIM)Try:  make dev | make test | make check"
-	@echo ""
-
-# Catch-all
-%:
-	@echo ""
-	@echo "  $(RED)Unknown: make $@$(RESET)"
-	@echo "    make help  Show commands"
-	@echo ""
-	@exit 1
