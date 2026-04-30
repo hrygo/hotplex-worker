@@ -117,6 +117,9 @@ func launchdLabel(name string, level Level) string {
 }
 
 func parseEnvFile(path string) map[string]string {
+	if path == "" {
+		return nil
+	}
 	env := make(map[string]string)
 	data, err := os.ReadFile(path)
 	if err != nil {

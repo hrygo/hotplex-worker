@@ -711,8 +711,6 @@ func stepAgentConfig() (StepResult, []string) {
 	}, created
 }
 
-// ─── Step 9: Service installation ──────────────────────────────────────────
-
 func stepServiceInstall(reader *bufio.Reader, opts WizardOptions) StepResult {
 	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
 		return StepResult{Name: "service_install", Status: "skip", Detail: "unsupported OS: " + runtime.GOOS}

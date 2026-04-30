@@ -5,7 +5,6 @@ import { ToolLoadingSkeleton } from "./ToolLoadingSkeleton";
 
 interface Task {
   text: string;
-  completed: boolean;
   status: "pending" | "in_progress" | "completed";
 }
 
@@ -21,20 +20,21 @@ export function TodoTool({ todo, todos, status, onToggle }: TodoToolProps) {
   const parseTasks = (text: string): Task[] => {
     return text.split("\n")
       .filter(line => line.trim().startsWith("- ["))
-      .map(line => ({
-        text: line.replace(/- \[[x ]\] /i, "").trim(),
-        completed: /- \[x\]/i.test(line),
-        status: /- \[x\]/i.test(line) ? "completed" : "pending" as any
-      }));
+      .map(line => {
+        const isCompleted = /- \[x\]/i.test(line);
+        return {
+          text: line.replace(/- \[[x ]\] /i, "").trim(),
+          status: isCompleted ? "completed" as const : "pending" as const
+        };
+      });
   };
 
   const tasks: Task[] = todos ? todos.map(t => ({
     text: t.content || t.activeForm,
-    completed: t.status === "completed",
-    status: t.status as any
+    status: t.status as Task["status"]
   })) : (typeof todo === 'string' ? parseTasks(todo) : []);
 
-  const completedCount = tasks.filter(t => t.completed).length;
+  const completedCount = tasks.filter(t => t.status === "completed").length;
   const progress = tasks.length > 0 ? (completedCount / tasks.length) * 100 : 0;
 
   return (
@@ -100,19 +100,19 @@ export function TodoTool({ todo, todos, status, onToggle }: TodoToolProps) {
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: i * 0.05 }}
                 className={`flex items-center gap-4 px-4 py-3 rounded-xl transition-all duration-300 ${
-                  task.completed ? "bg-white/[0.02] opacity-50" : 
+                  task.status === "completed" ? "bg-white/[0.02] opacity-50" : 
                   task.status === "in_progress" ? "bg-[var(--accent-violet)]/5 border border-[var(--accent-violet)]/20" :
                   "hover:bg-white/[0.05] group"
                 }`}
               >
                 <div className={`w-5 h-5 rounded-md border flex items-center justify-center transition-all duration-500 ${
-                  task.completed 
+                  task.status === "completed" 
                     ? "bg-[var(--accent-emerald)] border-[var(--accent-emerald)] shadow-[0_0_10px_var(--accent-emerald)]" 
                     : task.status === "in_progress"
                     ? "bg-[var(--accent-violet)]/20 border-[var(--accent-violet)] shadow-[0_0_10px_var(--accent-violet)]/30"
                     : "border-white/20 group-hover:border-[var(--accent-violet)]/50"
                 }`}>
-                  {task.completed ? (
+                  {task.status === "completed" ? (
                     <svg className="w-3.5 h-3.5 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                     </svg>
@@ -121,7 +121,7 @@ export function TodoTool({ todo, todos, status, onToggle }: TodoToolProps) {
                   ) : null}
                 </div>
                 <span className={`text-[13px] font-medium leading-none ${
-                  task.completed ? "text-[var(--text-faint)] line-through" : 
+                  task.status === "completed" ? "text-[var(--text-faint)] line-through" : 
                   task.status === "in_progress" ? "text-[var(--text-primary)]" :
                   "text-[var(--text-secondary)]"
                 }`}>

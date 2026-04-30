@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/hrygo/hotplex/internal/cli/output"
 	"github.com/hrygo/hotplex/internal/config"
 	"github.com/hrygo/hotplex/internal/service"
 )
@@ -62,11 +63,11 @@ func newServiceInstallCmd() *cobra.Command {
 			}
 
 			s, _ := mgr.Status("hotplex", level)
-			fmt.Fprintf(os.Stderr, "  ✓ Service installed (%s)\n", level)
+			fmt.Fprintf(os.Stderr, "  %s Service installed %s\n", output.StatusSymbol("pass"), output.Dim(fmt.Sprintf("(%s)", level)))
 			if s != nil && s.UnitPath != "" {
-				fmt.Fprintf(os.Stderr, "    %s\n", s.UnitPath)
+				fmt.Fprintf(os.Stderr, "    %s\n", output.Dim(s.UnitPath))
 			}
-			fmt.Fprintf(os.Stderr, "\n  Manage with: hotplex service status / uninstall\n")
+			fmt.Fprintf(os.Stderr, "\n  Manage with: %s\n", output.Bold("hotplex service status / uninstall"))
 			return nil
 		},
 	}

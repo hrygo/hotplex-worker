@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/hrygo/hotplex/internal/cli/output"
 	"github.com/hrygo/hotplex/internal/service"
 )
 
@@ -26,7 +27,7 @@ func newServiceUninstallCmd() *cobra.Command {
 				return fmt.Errorf("uninstall service: %w", err)
 			}
 
-			fmt.Fprintf(os.Stderr, "  ✓ Service uninstalled (%s)\n", level)
+			fmt.Fprintf(os.Stderr, "  %s Service uninstalled %s\n", output.StatusSymbol("pass"), output.Dim(fmt.Sprintf("(%s)", level)))
 			return nil
 		},
 	}

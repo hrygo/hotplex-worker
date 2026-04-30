@@ -38,7 +38,7 @@ export function AgentTool({ description, prompt, subagent_type, run_in_backgroun
             )}
           </div>
           <div>
-            <h3 className="text-[14px] font-bold text-[var(--text-primary)] tracking-tight">Deploying Subagent</h3>
+            <h3 className="text-[14px] font-bold text-[var(--text-primary)] tracking-tight">Agent Delegation</h3>
             <div className="flex items-center gap-2 mt-0.5">
               <span className="text-[10px] font-mono text-[var(--accent-gold)] uppercase tracking-wider bg-[var(--accent-gold)]/10 px-1.5 py-0.5 rounded border border-[var(--accent-gold)]/20 font-bold">
                 {subagent_type || "autonomous"}

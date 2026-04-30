@@ -56,8 +56,5 @@ func ResolveBinaryPath() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("eval symlinks: %w", err)
 	}
-	if _, err := os.Stat(exe); err != nil {
-		return "", fmt.Errorf("binary not found: %s: %w", exe, err)
-	}
 	return exe, nil
 }

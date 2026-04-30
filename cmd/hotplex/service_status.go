@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/hrygo/hotplex/internal/cli/output"
 	"github.com/hrygo/hotplex/internal/service"
 )
 
@@ -36,15 +37,15 @@ func newServiceStatusCmd() *cobra.Command {
 			}
 
 			if !s.Installed {
-				fmt.Fprintf(os.Stderr, "  Service not installed (%s)\n", level)
+				fmt.Fprintf(os.Stderr, "  Service not installed %s\n", output.Dim(fmt.Sprintf("(%s)", level)))
 				return nil
 			}
 
-			statusIcon := "●"
+			icon := output.StatusSymbol("warn")
 			if s.Running {
-				statusIcon = "✓"
+				icon = output.StatusSymbol("pass")
 			}
-			fmt.Fprintf(os.Stderr, "  %s hotplex (%s): %s\n", statusIcon, level, s.StatusText)
+			fmt.Fprintf(os.Stderr, "  %s %s %s %s\n", icon, output.Bold("hotplex"), output.Dim(fmt.Sprintf("(%s)", level)), s.StatusText)
 			if s.PID > 0 {
 				fmt.Fprintf(os.Stderr, "    PID: %d\n", s.PID)
 			}
