@@ -20,35 +20,37 @@ func newStatusCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "status",
 		Short: "Check gateway status",
-		Long: "Check if the gateway is running by reading the PID file and pinging the health endpoint.\n" +
+		Long: "Check if the gateway is running by inspecting PID file and platform service manager, then pinging the health endpoint.\n" +
 			"Exit code 0 = running, 1 = not running.",
 		Example: `  hotplex status                     # Check if gateway is running
   hotplex status --format json        # JSON output`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			pid, pidErr := readGatewayPID()
+			inst, findErr := findRunningGateway()
 
 			type statusInfo struct {
 				Running bool   `json:"running"`
 				PID     int    `json:"pid,omitempty"`
+				Source  string `json:"source,omitempty"`
 				Health  string `json:"health,omitempty"`
 				Error   string `json:"error,omitempty"`
 			}
 
 			info := statusInfo{}
 
-			if pidErr != nil {
-				info.Error = pidErr.Error()
+			if findErr != nil {
+				info.Error = findErr.Error()
 				if format == "json" {
 					enc := json.NewEncoder(os.Stdout)
 					enc.SetIndent("", "  ")
 					_ = enc.Encode(info)
 				} else {
-					fmt.Fprintf(os.Stderr, "gateway: %s\n", pidErr.Error())
+					fmt.Fprintf(os.Stderr, "gateway: %s\n", findErr.Error())
 				}
-				return fmt.Errorf("gateway: %w", pidErr)
+				return fmt.Errorf("gateway: %w", findErr)
 			}
 
-			info.PID = pid
+			info.PID = inst.PID
+			info.Source = string(inst.Source)
 			info.Running = true
 
 			addr := gatewayAddrFromConfig(configPath)
@@ -66,7 +68,12 @@ func newStatusCmd() *cobra.Command {
 				enc.SetIndent("", "  ")
 				_ = enc.Encode(info)
 			} else {
-				fmt.Fprintf(os.Stderr, "gateway: running (PID %d)\n", pid)
+				switch inst.Source {
+				case sourcePID:
+					fmt.Fprintf(os.Stderr, "gateway: running (PID %d)\n", inst.PID)
+				case sourceService:
+					fmt.Fprintf(os.Stderr, "gateway: running as service (%s, PID %d)\n", inst.Level, inst.PID)
+				}
 				fmt.Fprintf(os.Stderr, "  health: http://%s/health → %s\n", addr, info.Health)
 			}
 			return nil

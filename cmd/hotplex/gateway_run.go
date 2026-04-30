@@ -55,7 +55,7 @@ func configFlag(cmd *cobra.Command, target *string) {
 	cmd.Flags().StringVarP(target, "config", "c", defaultConfigPath, "config file path")
 }
 
-func runGateway(configPath string, devMode bool) (err error) {
+func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err error) {
 	defer func() {
 		if err != nil {
 			removeGatewayPID()
@@ -362,6 +362,7 @@ func runGateway(configPath string, devMode bool) (err error) {
 		WebChatAddr:     cfg.WebChat.Addr,
 		WebChatEmbedded: cfg.WebChat.Enabled,
 		DBPath:          cfg.DB.Path,
+		EventDBPath:     eventDBPath,
 		PoolMax:         cfg.Pool.MaxSize,
 		PoolIdle:        cfg.Pool.MaxIdlePerUser,
 		Adapters:        adapterStatuses,
@@ -370,7 +371,7 @@ func runGateway(configPath string, devMode bool) (err error) {
 		RetryDelay:      cfg.Worker.AutoRetry.BaseDelay.String(),
 	}, configPath)
 
-	sig := waitForSignal()
+	sig := waitForSignal(stopCh)
 	log.Info("gateway: shutdown", "signal", sig)
 
 	cancel()
@@ -399,8 +400,13 @@ func runGateway(configPath string, devMode bool) (err error) {
 
 	closeSTTCache(shutdownCtx, log)
 
-	bridge.Shutdown(shutdownCtx)
+	// Terminate all workers BEFORE bridge.Shutdown() so forwardEvents
+	// goroutines (blocked on worker stdout) can exit. Without this,
+	// bridge.Shutdown() waits 30s for fwdWg while nobody kills workers.
+	sm.TerminateAllWorkers()
 	opencodeserver.ShutdownSingleton(shutdownCtx)
+
+	bridge.Shutdown(shutdownCtx)
 
 	if jwtValidator != nil {
 		jwtValidator.Stop()
@@ -428,7 +434,7 @@ func runGateway(configPath string, devMode bool) (err error) {
 	}
 
 	log.Info("gateway: stopped")
-	return ctx.Err()
+	return nil
 }
 
 func loadConfig(configPath string, devMode bool) (*config.Config, error) {
@@ -480,8 +486,13 @@ func loadEnvFile(dir string) {
 	}
 }
 
-func waitForSignal() os.Signal {
+func waitForSignal(stopCh <-chan struct{}) os.Signal {
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
-	return <-sig
+	select {
+	case s := <-sig:
+		return s
+	case <-stopCh:
+		return syscall.SIGTERM
+	}
 }

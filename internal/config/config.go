@@ -369,7 +369,7 @@ type SkillsConfig struct {
 func Default() *Config {
 	return &Config{
 		Gateway: GatewayConfig{
-			Addr:                  ":8888",
+			Addr:                  "localhost:8888",
 			ReadBufferSize:        4096,
 			WriteBufferSize:       4096,
 			PingInterval:          54 * time.Second,
@@ -429,7 +429,7 @@ func Default() *Config {
 		},
 		Admin: AdminConfig{
 			Enabled:            true,
-			Addr:               ":9999",
+			Addr:               "localhost:9999",
 			Tokens:             nil,
 			TokenScopes:        nil,
 			DefaultScopes:      []string{"session:read", "stats:read", "health:read"},

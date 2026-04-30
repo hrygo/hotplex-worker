@@ -12,7 +12,9 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 gateway:
-  addr: ":8888"
+  # Bind to localhost by default for security.
+  # Change to ":8888" to listen on all interfaces (e.g. behind a reverse proxy).
+  addr: "localhost:8888"
   read_buffer_size: 4096
   write_buffer_size: 4096
   ping_interval: 54s
@@ -34,7 +36,8 @@ gateway:
 
 admin:
   enabled: true
-  addr: ":9999"
+  # Bind to localhost by default. Change to ":9999" to expose.
+  addr: "localhost:9999"
   # Tokens must be provided via HOTPLEX_ADMIN_TOKEN_1..N env vars
   tokens: []
   default_scopes: ["session:read", "stats:read", "health:read"]

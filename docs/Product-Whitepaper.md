@@ -970,7 +970,7 @@ security:
 
 四层优先级（从高到低）：
 
-1. 命令行 flag：`-gateway.addr :9999`
+1. 命令行 flag：`-gateway.addr localhost:9999`
 2. 环境变量：`HOTPLEX_GATEWAY_ADDR`
 3. 配置文件：`configs/config.yaml`
 4. 代码默认值：`internal/config/config.go:Default()`
@@ -979,7 +979,7 @@ security:
 
 ```yaml
 gateway:
-  addr: ":8888"
+  addr: "localhost:8888"
   ping_interval: 54s
   pong_timeout: 60s
   idle_timeout: 5m
@@ -1014,7 +1014,7 @@ session:
 
 admin:
   enabled: true
-  addr: ":9999"
+  addr: "localhost:9999"
   tokens:
     - "admin-token-1"
   rate_limit_enabled: true
@@ -1113,7 +1113,7 @@ curl -X POST -H "Authorization: Bearer admin-token-1" \
 | WebSocket | `hotplex_ws_connections_active` |
 | Error | `hotplex_errors_total` |
 
-端点：`GET /admin/metrics`（`:9999` 端口）
+端点：`GET /admin/metrics`（`localhost:9999` 端口）
 
 ### 13.3 OpenTelemetry 链路追踪
 

@@ -11,8 +11,9 @@ func newServiceCmd() *cobra.Command {
 		Long: `Install, uninstall, or check the HotPlex gateway as a system service.
 
 Supports both user-level and system-level service installation.
-  Linux:  systemd (user or system)
-  macOS:  launchd (LaunchAgents or LaunchDaemons)`,
+  Linux:   systemd (user or system)
+  macOS:   launchd (LaunchAgents or LaunchDaemons)
+  Windows: Windows Service Control Manager (SCM)`,
 	}
 	cmd.AddCommand(
 		newServiceInstallCmd(),

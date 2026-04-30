@@ -766,12 +766,11 @@ func (m *Manager) WorkerHealthStatuses() []worker.WorkerHealth {
 	return statuses
 }
 
-// Close shuts down the manager and cancels the GC goroutine.
-// It also terminates all actively tracked worker processes and closes the MessageStore.
-func (m *Manager) Close() error {
-	m.gcStop()
-	<-m.gcDone
-
+// TerminateAllWorkers gracefully terminates all actively tracked worker processes.
+// This unblocks forwardEvents goroutines that are waiting on worker stdout,
+// allowing bridge.Shutdown() to complete without timeout.
+// Safe to call multiple times — Terminate is idempotent on exited processes.
+func (m *Manager) TerminateAllWorkers() {
 	m.mu.Lock()
 	var workers []worker.Worker
 	for _, ms := range m.sessions {
@@ -783,14 +782,28 @@ func (m *Manager) Close() error {
 	}
 	m.mu.Unlock()
 
-	for _, w := range workers {
-		if w != nil {
-			// Graceful shutdown with 5s grace period
-			terminateCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			_ = w.Terminate(terminateCtx)
-			cancel()
-		}
+	if len(workers) == 0 {
+		return
 	}
+
+	eg, ctx := errgroup.WithContext(context.Background())
+	for _, w := range workers {
+		w := w
+		eg.Go(func() error {
+			terminateCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			defer cancel()
+			return w.Terminate(terminateCtx)
+		})
+	}
+	_ = eg.Wait()
+}
+
+// Close shuts down the manager: stops GC, terminates workers, and closes the store.
+func (m *Manager) Close() error {
+	m.gcStop()
+	<-m.gcDone
+
+	m.TerminateAllWorkers()
 
 	if err := m.store.Close(); err != nil {
 		return err

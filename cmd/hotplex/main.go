@@ -18,6 +18,11 @@ var (
 )
 
 func main() {
+	if isServiceRun() {
+		runAsWindowsService(extractServiceConfig())
+		return
+	}
+
 	rootCmd := &cobra.Command{
 		Use:   "hotplex",
 		Short: "HotPlex Worker Gateway",

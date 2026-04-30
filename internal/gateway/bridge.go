@@ -576,7 +576,7 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 		}) {
 			return // new forwardEvents goroutine took over
 		}
-		// Fallback already expanded up (DetachWorker + Transition); skip redundant cleanup below.
+		// Fallback already cleaned up (DetachWorker + Transition); skip redundant cleanup below.
 	}
 
 	// During shutdown, skip crash detection — workers are SIGTERM'd by design.
@@ -783,7 +783,7 @@ func (b *Bridge) attemptResumeFallback(p fallbackParams) bool {
 // Uses CAS via crashedWorker to avoid detaching a worker that was already replaced
 // by a concurrent ResumeSession or attemptResumeFallback.
 func (b *Bridge) cleanupCrashedWorker(sessionID string, crashedWorker worker.Worker) {
-	// Read turn_count without deleting — the accumulator is expanded up when the
+	// Read turn_count without deleting — the accumulator is cleaned up when the
 	// session is physically deleted, not here. This avoids reading TurnCount=0
 	// after resetPerTurn() has already cleared it at done.
 	acc := b.getOrInitAccum(sessionID)
