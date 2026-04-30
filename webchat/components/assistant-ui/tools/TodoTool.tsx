@@ -5,34 +5,45 @@ import { ToolLoadingSkeleton } from "./ToolLoadingSkeleton";
 
 interface Task {
   text: string;
-  completed: boolean;
-  priority?: "low" | "medium" | "high";
+  status: "pending" | "in_progress" | "completed";
 }
 
 interface TodoToolProps {
   todo?: string;
+  todos?: Array<{ activeForm: string; content: string; status: string }>;
   status: "running" | "complete";
+  onToggle?: () => void;
 }
 
-export function TodoTool({ todo, status }: TodoToolProps) {
+export function TodoTool({ todo, todos, status, onToggle }: TodoToolProps) {
   // Parse markdown-style TODOs if string is provided
   const parseTasks = (text: string): Task[] => {
     return text.split("\n")
       .filter(line => line.trim().startsWith("- ["))
-      .map(line => ({
-        text: line.replace(/- \[[x ]\] /i, "").trim(),
-        completed: /- \[x\]/i.test(line),
-      }));
+      .map(line => {
+        const isCompleted = /- \[x\]/i.test(line);
+        return {
+          text: line.replace(/- \[[x ]\] /i, "").trim(),
+          status: isCompleted ? "completed" as const : "pending" as const
+        };
+      });
   };
 
-  const tasks = typeof todo === 'string' ? parseTasks(todo) : [];
-  const completedCount = tasks.filter(t => t.completed).length;
+  const tasks: Task[] = todos ? todos.map(t => ({
+    text: t.content || t.activeForm,
+    status: t.status as Task["status"]
+  })) : (typeof todo === 'string' ? parseTasks(todo) : []);
+
+  const completedCount = tasks.filter(t => t.status === "completed").length;
   const progress = tasks.length > 0 ? (completedCount / tasks.length) * 100 : 0;
 
   return (
     <div className="rounded-[var(--radius-lg)] overflow-hidden border border-[var(--border-default)] my-6 bg-[var(--bg-surface)]/50 backdrop-blur-xl shadow-[0_20px_50px_rgba(0,0,0,0.3)]">
       {/* Header with Progress Bar */}
-      <div className="px-5 py-4 border-b border-[var(--border-subtle)] bg-gradient-to-r from-[var(--bg-elevated)] to-transparent">
+      <div 
+        className={`px-5 py-4 border-b border-[var(--border-subtle)] bg-gradient-to-r from-[var(--bg-elevated)] to-transparent ${onToggle ? "cursor-pointer hover:bg-white/[0.02] transition-all" : ""}`}
+        onClick={onToggle}
+      >
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg bg-[var(--accent-violet)]/10 flex items-center justify-center text-[var(--accent-violet)] shadow-[0_0_15px_rgba(139,92,246,0.2)]">
@@ -41,7 +52,14 @@ export function TodoTool({ todo, status }: TodoToolProps) {
               </svg>
             </div>
             <div>
-              <h3 className="text-[13px] font-bold text-[var(--text-primary)] tracking-tight">Mission Checklist</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="text-[13px] font-bold text-[var(--text-primary)] tracking-tight">Mission Checklist</h3>
+                {onToggle && (
+                  <svg className="w-3 h-3 text-[var(--text-faint)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 15l7-7 7 7" />
+                  </svg>
+                )}
+              </div>
               <p className="text-[10px] font-mono text-[var(--text-faint)] uppercase tracking-wider">Operational Status Update</p>
             </div>
           </div>
@@ -82,27 +100,37 @@ export function TodoTool({ todo, status }: TodoToolProps) {
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: i * 0.05 }}
                 className={`flex items-center gap-4 px-4 py-3 rounded-xl transition-all duration-300 ${
-                  task.completed ? "bg-white/[0.02] opacity-50" : "hover:bg-white/[0.05] group"
+                  task.status === "completed" ? "bg-white/[0.02] opacity-50" : 
+                  task.status === "in_progress" ? "bg-[var(--accent-violet)]/5 border border-[var(--accent-violet)]/20" :
+                  "hover:bg-white/[0.05] group"
                 }`}
               >
                 <div className={`w-5 h-5 rounded-md border flex items-center justify-center transition-all duration-500 ${
-                  task.completed 
+                  task.status === "completed" 
                     ? "bg-[var(--accent-emerald)] border-[var(--accent-emerald)] shadow-[0_0_10px_var(--accent-emerald)]" 
+                    : task.status === "in_progress"
+                    ? "bg-[var(--accent-violet)]/20 border-[var(--accent-violet)] shadow-[0_0_10px_var(--accent-violet)]/30"
                     : "border-white/20 group-hover:border-[var(--accent-violet)]/50"
                 }`}>
-                  {task.completed && (
+                  {task.status === "completed" ? (
                     <svg className="w-3.5 h-3.5 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                     </svg>
-                  )}
+                  ) : task.status === "in_progress" ? (
+                    <div className="w-1.5 h-1.5 rounded-full bg-[var(--accent-violet)] animate-pulse" />
+                  ) : null}
                 </div>
                 <span className={`text-[13px] font-medium leading-none ${
-                  task.completed ? "text-[var(--text-faint)] line-through" : "text-[var(--text-secondary)]"
+                  task.status === "completed" ? "text-[var(--text-faint)] line-through" : 
+                  task.status === "in_progress" ? "text-[var(--text-primary)]" :
+                  "text-[var(--text-secondary)]"
                 }`}>
                   {task.text}
                 </span>
-                {!task.completed && (
-                  <div className="ml-auto w-1.5 h-1.5 rounded-full bg-[var(--accent-violet)] opacity-0 group-hover:opacity-100 transition-opacity animate-pulse" />
+                {task.status === "in_progress" && (
+                  <div className="ml-auto flex items-center gap-2">
+                    <span className="text-[9px] font-mono text-[var(--accent-violet)] uppercase tracking-tighter animate-pulse">Running</span>
+                  </div>
                 )}
               </motion.div>
             ))}

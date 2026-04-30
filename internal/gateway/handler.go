@@ -14,6 +14,7 @@ import (
 	"github.com/hrygo/hotplex/internal/metrics"
 	"github.com/hrygo/hotplex/internal/security"
 	"github.com/hrygo/hotplex/internal/session"
+	"github.com/hrygo/hotplex/internal/skills"
 	"github.com/hrygo/hotplex/internal/worker"
 	"github.com/hrygo/hotplex/pkg/aep"
 	"github.com/hrygo/hotplex/pkg/events"
@@ -35,14 +36,7 @@ type Handler struct {
 
 // SkillsLocator discovers skills from the filesystem.
 type SkillsLocator interface {
-	List(ctx context.Context, homeDir, workDir string) ([]Skill, error)
-}
-
-// Skill is a minimal skill entry for the handler to use.
-type Skill = struct {
-	Name        string
-	Description string
-	Source      string
+	List(ctx context.Context, homeDir, workDir string) ([]skills.Skill, error)
 }
 
 // NewHandler creates a new message handler.
@@ -738,26 +732,26 @@ func (h *Handler) handleSkillsList(ctx context.Context, env *events.Envelope, fi
 		return h.sendErrorf(ctx, env, events.ErrCodeSessionNotFound, "session not found")
 	}
 
-	skills, err := h.skillsLocator.List(ctx, "", si.WorkDir)
+	allSkills, err := h.skillsLocator.List(ctx, "", si.WorkDir)
 	if err != nil {
 		return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "skills: %v", err)
 	}
 
 	filter = strings.TrimSpace(filter)
 	if filter != "" {
-		filtered := make([]Skill, 0, len(skills))
+		filtered := make([]skills.Skill, 0, len(allSkills))
 		lower := strings.ToLower(filter)
-		for _, s := range skills {
+		for _, s := range allSkills {
 			if strings.Contains(strings.ToLower(s.Name), lower) ||
 				strings.Contains(strings.ToLower(s.Description), lower) {
 				filtered = append(filtered, s)
 			}
 		}
-		skills = filtered
+		allSkills = filtered
 	}
 
-	entries := make([]events.SkillEntry, len(skills))
-	for i, s := range skills {
+	entries := make([]events.SkillEntry, len(allSkills))
+	for i, s := range allSkills {
 		entries[i] = events.SkillEntry{
 			Name:        s.Name,
 			Description: s.Description,

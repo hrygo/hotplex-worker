@@ -18,6 +18,8 @@ import { getToolCategory } from "@/lib/tool-categories";
 import { CommandMenu } from "./CommandMenu";
 import { CompactToolTab } from "./tools/CompactToolTab";
 import { ListTool } from "./tools/ListTool";
+import { TodoTool } from "./tools/TodoTool";
+import { AgentTool } from "./tools/AgentTool";
 
 /* ============================================================
    Animation & Extraction Logic (Legacy Sync)
@@ -39,48 +41,39 @@ function PreAssistantIndicator() {
   const messages = useAuiState((s) => s.thread.messages);
   const lastMessage = messages[messages.length - 1];
   
-  // Show if thread is busy but no assistant message has appeared yet for the current turn
   const isWaiting = isRunning && lastMessage?.role === 'user';
 
   if (!isWaiting) return null;
 
   return (
     <motion.div
-      className="group msg-assistant flex items-start gap-6 mb-12"
-      initial={{ opacity: 0, y: 10 }}
+      className="group msg-assistant flex items-start gap-4 mb-8"
+      initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, ease: "easeOut" }}
     >
       <div className="flex-shrink-0">
-        <div className="relative">
-          <div className="absolute inset-0 bg-[var(--accent-gold)] opacity-20 blur-md rounded-xl animate-pulse-subtle" />
-          <div className="w-10 h-10 rounded-xl glass-dark flex items-center justify-center border border-[var(--border-bright)] relative z-10 shadow-lg">
-            <BrandIcon size={30} />
-          </div>
+        <div className="w-9 h-9 rounded-[var(--radius-md)] bg-[var(--bg-elevated)] flex items-center justify-center border border-[var(--border-subtle)] relative overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-tr from-[var(--accent-gold)]/10 to-transparent animate-pulse" />
+          <BrandIcon size={24} className="opacity-40 animate-pulse-subtle" />
         </div>
       </div>
 
-      <div className="msg-assistant-body active-session shadow-[0_0_50px_rgba(251,191,36,0.05)]">
-        <div className="flex items-start gap-4 px-2">
-          <div className="relative w-8 h-8 flex-shrink-0 mt-1" style={{ perspective: '400px' }}>
-            <div className="absolute inset-0 bg-[var(--accent-gold)] opacity-20 blur-xl rounded-full animate-pulse-bloom" style={{ animationDuration: '3s' }} />
-            <svg className="absolute inset-[-4px] w-[calc(100%+8px)] h-[calc(100%+8px)] pointer-events-none" style={{ transform: 'rotateX(65deg) rotateY(0deg)', animation: 'rotateOrbit 4s linear infinite' }}>
-              <ellipse cx="50%" cy="50%" rx="12" ry="12" fill="none" stroke="var(--accent-gold)" strokeWidth="0.5" strokeDasharray="1 3" opacity="0.3" />
-              <circle r="1.5" fill="var(--accent-gold)">
-                <animateMotion dur="2s" repeatCount="indefinite" path="M -12,0 a 12,12 0 1,0 24,0 a 12,12 0 1,0 -24,0" />
-              </circle>
-            </svg>
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="w-1.5 h-1.5 rounded-full bg-[var(--accent-gold)] shadow-[0_0_8px_var(--accent-gold)] animate-quantum-wobble" />
-            </div>
+      <div className="msg-assistant-body flex flex-col gap-3">
+        <div className="flex items-center gap-3 mb-1">
+          <div className="flex items-center gap-1.5">
+            <span className="thinking-dot" />
+            <span className="thinking-dot" style={{ animationDelay: '0.2s' }} />
+            <span className="thinking-dot" style={{ animationDelay: '0.4s' }} />
           </div>
-          <div className="flex flex-col gap-1">
-            <span className="text-[10px] font-mono text-[var(--accent-gold)] font-bold tracking-[0.2em] animate-pulse uppercase">
-              Thinking
-            </span>
-            <span className="text-[9px] font-mono text-[var(--text-faint)] uppercase tracking-wider">
-              Preparing response...
-            </span>
-          </div>
+          <span className="text-[11px] font-display font-bold text-[var(--accent-gold)] tracking-[0.1em] uppercase">
+            Synthesizing Strategy
+          </span>
+        </div>
+        <div className="flex flex-col gap-3 max-w-sm">
+          <div className="skeleton-text w-full h-2 rounded-[var(--radius-xs)] animate-shimmer" />
+          <div className="skeleton-text w-[92%] h-2 rounded-[var(--radius-xs)] animate-shimmer" style={{ animationDelay: '0.15s' }} />
+          <div className="skeleton-text w-[78%] h-2 rounded-[var(--radius-xs)] animate-shimmer" style={{ animationDelay: '0.3s' }} />
         </div>
       </div>
     </motion.div>
@@ -90,7 +83,7 @@ function PreAssistantIndicator() {
 /* ============================================================
    Assistant Message - Enhanced with Functional Regression
    ============================================================ */
-function CopyButton({ message }: { message: any }) {
+function CopyButton({ message, onCopy }: { message: any, onCopy?: () => void }) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {
@@ -104,22 +97,27 @@ function CopyButton({ message }: { message: any }) {
     if (text) {
       navigator.clipboard.writeText(text);
       setCopied(true);
+      onCopy?.();
       setTimeout(() => setCopied(false), 2000);
     }
   };
 
   return (
     <button onClick={handleCopy} className={`copy-btn ${copied ? 'copy-btn-success' : ''}`}>
-      <AnimatePresence mode="wait">
+      <AnimatePresence mode="wait" initial={false}>
         {copied ? (
-          <motion.div key="check" initial={{ scale: 0.5, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.5, opacity: 0 }} className="flex items-center gap-1.5">
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
-            <span>Copied</span>
+          <motion.div key="check" initial={{ y: 2, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -2, opacity: 0 }} className="flex items-center gap-1.5">
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+            </svg>
+            <span>COPIED</span>
           </motion.div>
         ) : (
-          <motion.div key="copy" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex items-center gap-1.5">
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" /></svg>
-            <span>Copy</span>
+          <motion.div key="copy" initial={{ y: 2, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -2, opacity: 0 }} className="flex items-center gap-1.5">
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
+            </svg>
+            <span>COPY</span>
           </motion.div>
         )}
       </AnimatePresence>
@@ -127,84 +125,121 @@ function CopyButton({ message }: { message: any }) {
   );
 }
 
+function MessageActions({ message, isUser }: { message: any, isUser?: boolean }) {
+  return (
+    <div className={`message-action-bar ${isUser ? 'justify-end' : 'justify-start'}`}>
+      <CopyButton message={message} />
+    </div>
+  );
+}
+
 function AssistantMessage({ message }: { message: any }) {
   const [expandedTools, setExpandedTools] = useState<Record<string, boolean>>({});
 
   return (
-    <motion.div className="group msg-assistant" variants={messageVariants} initial="hidden" animate="visible">
+    <motion.div className="group msg-assistant flex items-start gap-4 mb-8" variants={messageVariants} initial="hidden" animate="visible">
       <div className="flex-shrink-0">
-        <div className="w-9 h-9 rounded-[var(--radius-md)] glass-dark flex items-center justify-center">
-          <BrandIcon size={28} />
+        <div className="w-9 h-9 rounded-[var(--radius-md)] bg-[var(--bg-elevated)] border border-[var(--border-subtle)] shadow-sm flex items-center justify-center relative overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-br from-[var(--accent-gold)]/5 to-transparent" />
+          <BrandIcon size={24} />
         </div>
       </div>
 
-      <div className="msg-assistant-body relative">
-        <div className="message-actions" style={{ right: '4px', top: '-14px' }}>
-          <CopyButton message={message} />
-        </div>
-        <MessagePrimitive.Parts>
-          {({ part }) => {
-            const p = part as Record<string, any>;
-            if (!p || !p.type) return null;
-            const isStreaming = (message as any)?.status?.type === "running";
+      <div className="flex flex-col flex-1 min-w-0">
+        <div className="msg-assistant-body relative p-0 space-y-4">
+          <MessagePrimitive.Parts>
+            {({ part }) => {
+              const p = part as Record<string, any>;
+              if (!p || !p.type) return null;
+              const isStreaming = (message as any)?.status?.type === "running";
 
-            if (p.type === "reasoning") return <ReasoningBlock text={p.text} />;
-            if (p.type === "text") return <span className={isStreaming ? "streaming-cursor" : ""}><MarkdownText text={p.text} /></span>;
-            
-            if (p.type === "tool-call") {
-              const parts = (message.content as any[]) || [];
-              const partIndex = parts.indexOf(p);
-              const isLastPart = partIndex === parts.length - 1;
-              const isComplete = p.status?.type === "complete" || p.status?.type === "error";
-              const isExpanded = !!expandedTools[p.toolCallId || partIndex];
+              if (p.type === "reasoning") return <ReasoningBlock text={p.text || p.reasoning || ""} />;
+              if (p.type === "text") return <div className={`prose-hotplex ${isStreaming ? "streaming-cursor" : ""}`}><MarkdownText text={p.text} /></div>;
               
-              // Functional Enhancement: Auto-compact non-last finished tools
-              const isCompacted = !isLastPart && isComplete && !isExpanded;
-              const toggle = () => setExpandedTools(prev => ({ ...prev, [p.toolCallId || partIndex]: !prev[p.toolCallId || partIndex] }));
+              if (p.type === "tool-call") {
+                const parts = (message.content as any[]) || [];
+                const partIndex = parts.indexOf(p);
+                const isLastPart = partIndex === parts.length - 1;
+                const isComplete = p.status?.type === "complete" || p.status?.type === "error";
+                const isExpanded = !!expandedTools[p.toolCallId || partIndex];
+                
+                const isCompacted = !isLastPart && isComplete && !isExpanded;
+                const toggle = () => setExpandedTools(prev => ({ ...prev, [p.toolCallId || partIndex]: !prev[p.toolCallId || partIndex] }));
 
-              const category = getToolCategory(p.toolName);
-              const args = p.args ?? {};
-              const status = isComplete ? (p.status?.type === "error" ? "error" : "complete") : "running";
+                const category = getToolCategory(p.toolName);
+                const args = p.args ?? {};
+                const status = isComplete ? (p.status?.type === "error" ? "error" : "complete") : "running";
 
-              if (isCompacted) {
+                if (isCompacted) {
+                  return (
+                    <CompactToolTab 
+                      toolName={p.toolName} 
+                      summary={extractCommand(args) || extractFilePath(args) || "Action..."} 
+                      status={status === "running" ? "complete" : status as "complete" | "error"} 
+                      onClick={toggle} 
+                    />
+                  );
+                }
+
                 return (
-                  <CompactToolTab 
-                    toolName={p.toolName} 
-                    summary={extractCommand(args) || extractFilePath(args) || "Action..."} 
-                    status={status === "running" ? "complete" : status as "complete" | "error"} 
-                    onClick={toggle} 
-                  />
+                  <motion.div 
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    className="relative mt-3 first:mt-0"
+                  >
+                    {(() => {
+                      switch (category) {
+                        case "terminal": return <TerminalTool command={extractCommand(args)} stdout={p.result?.stdout || (typeof p.result === 'string' ? p.result : '')} stderr={p.result?.stderr} status={status} onToggle={!isLastPart ? toggle : undefined} />;
+                        case "file": return <FileDiffTool toolName={p.toolName} filePath={extractFilePath(args)} content={extractFileContent(args, p.result)} status={status} onToggle={!isLastPart ? toggle : undefined} />;
+                        case "search": return <SearchTool toolName={p.toolName} query={args.query || args.pattern} results={p.result} status={status} onToggle={!isLastPart ? toggle : undefined} />;
+                        case "list": return <ListTool toolName={p.toolName} path={extractFilePath(args)} items={p.result} status={status} onToggle={!isLastPart ? toggle : undefined} />;
+                        case "todo": return <TodoTool todo={args.todo} todos={args.todos} status={status === "running" ? "running" : "complete"} onToggle={!isLastPart ? toggle : undefined} />;
+                        case "ai": return <AgentTool description={args.description} prompt={args.prompt} subagent_type={args.subagent_type} run_in_background={args.run_in_background} status={status === "running" ? "running" : "complete"} onToggle={!isLastPart ? toggle : undefined} />;
+                        case "permission": return <PermissionCard toolName={p.toolName} args={args} status={status === "error" ? "complete" : status as "running" | "complete"} onToggle={!isLastPart ? toggle : undefined} />;
+                        default: {
+                          const content = p.result || args;
+                          const summary = typeof content === 'string' ? content : JSON.stringify(content, null, 2);
+                          return (
+                            <div className="group/tool border border-[var(--border-subtle)] rounded-[var(--radius-md)] overflow-hidden bg-[var(--bg-elevated)] shadow-sm">
+                              <div className="flex items-center justify-between px-3 py-2 bg-[var(--bg-surface)] border-b border-[var(--border-subtle)]">
+                                <span className="text-[10px] font-bold text-[var(--accent-gold)] uppercase tracking-wider">{p.toolName}</span>
+                                {status === "running" && <div className="w-2 h-2 rounded-full bg-[var(--accent-gold)] animate-pulse" />}
+                              </div>
+                              <div className="p-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap max-h-[300px] overflow-y-auto custom-scrollbar">
+                                {summary}
+                              </div>
+                            </div>
+                          );
+                        }
+                      }
+                    })()}
+                  </motion.div>
                 );
               }
+              if (p.type === "tool-summary") {
+                const names = p.toolNames || [];
+                return (
+                  <div className="flex items-center gap-2 px-3 py-1.5 mt-3 rounded-[var(--radius-sm)] bg-[var(--bg-elevated)] border border-[var(--border-subtle)] text-[11px] font-bold text-[var(--text-secondary)] w-fit shadow-sm">
+                    <span className="text-[var(--accent-gold)] animate-pulse-subtle">🔧</span>
+                    <span className="tracking-wide">{names.join(', ').toUpperCase()}</span>
+                    {p.count > 1 && <span className="text-[var(--text-faint)] ml-1">×{p.count}</span>}
+                  </div>
+                );
+              }
+              
+              // Fallback for unknown parts that might have text (like custom reasoning types)
+              if (p.text || p.reasoning || p.content) {
+                const fallbackText = p.text || p.reasoning || (typeof p.content === 'string' ? p.content : JSON.stringify(p.content));
+                if (fallbackText) {
+                  return <div className="mt-3"><MarkdownText text={fallbackText} /></div>;
+                }
+              }
 
-              return (
-                <div className="relative">
-                  {(() => {
-                    switch (category) {
-                      case "terminal": return <TerminalTool command={extractCommand(args)} stdout={p.result?.stdout || (typeof p.result === 'string' ? p.result : '')} stderr={p.result?.stderr} status={status} onToggle={!isLastPart ? toggle : undefined} />;
-                      case "file": return <FileDiffTool toolName={p.toolName} filePath={extractFilePath(args)} content={extractFileContent(args, p.result)} status={status} onToggle={!isLastPart ? toggle : undefined} />;
-                      case "search": return <SearchTool toolName={p.toolName} query={args.query || args.pattern} results={p.result} status={status} onToggle={!isLastPart ? toggle : undefined} />;
-                      case "list": return <ListTool toolName={p.toolName} path={extractFilePath(args)} items={p.result} status={status} onToggle={!isLastPart ? toggle : undefined} />;
-                      case "permission": return <PermissionCard toolName={p.toolName} args={args} status={status === "error" ? "complete" : status as "running" | "complete"} onToggle={!isLastPart ? toggle : undefined} />;
-                      default: return <div className="p-3 bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-md font-mono text-[11px] mt-4">{JSON.stringify(p.result || args, null, 2)}</div>;
-                    }
-                  })()}
-                </div>
-              );
-            }
-            if (p.type === "tool-summary") {
-              const names = p.toolNames || [];
-              return (
-                <div className="flex items-center gap-1.5 px-2 py-1 mt-2 rounded-md bg-[var(--bg-elevated)] border border-[var(--border-subtle)] text-[11px] text-[var(--text-secondary)]">
-                  <span className="text-[var(--accent)]">🔧</span>
-                  <span>{names.join(', ')}</span>
-                  {p.count > 1 && <span className="text-[var(--text-tertiary)]">×{p.count}</span>}
-                </div>
-              );
-            }
-            return null;
-          }}
-        </MessagePrimitive.Parts>
+              return null;
+            }}
+          </MessagePrimitive.Parts>
+        </div>
+        <MessageActions message={message} />
       </div>
     </motion.div>
   );
@@ -221,16 +256,37 @@ function ReasoningBlock({ text }: { text: string }) {
   const estimatedSeconds = Math.max(1, Math.round(text.length / 200));
 
   return (
-    <div className="reasoning-block">
-      <div className="reasoning-header" onClick={() => setExpanded(!expanded)}>
-        <motion.svg className="w-3.5 h-3.5" animate={{ rotate: expanded ? 90 : 0 }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" /></motion.svg>
-        <span>THOUGHT</span>
-        <span className="opacity-40 font-mono text-[9px] ml-auto tracking-normal">~{estimatedSeconds}s</span>
+    <div className="reasoning-block group/reasoning border-[var(--border-subtle)] hover:border-[var(--accent-gold)]/20 transition-colors">
+      <div 
+        className="reasoning-header px-4 py-2.5 flex items-center gap-3 cursor-pointer select-none" 
+        onClick={() => setExpanded(!expanded)}
+      >
+        <motion.div 
+          animate={{ rotate: expanded ? 90 : 0 }}
+          transition={{ type: "spring", stiffness: 400, damping: 30 }}
+        >
+          <svg className="w-3.5 h-3.5 text-[var(--accent-gold)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 5l7 7-7 7" />
+          </svg>
+        </motion.div>
+        <span className="text-[11px] font-display font-bold tracking-[0.1em] text-[var(--text-secondary)]">THOUGHT PROCESS</span>
+        <div className="flex-1 h-[1px] bg-gradient-to-r from-[var(--border-subtle)] to-transparent" />
+        <span className="font-mono text-[10px] text-[var(--text-faint)] tabular-nums">
+          {estimatedSeconds}s elapsed
+        </span>
       </div>
-      <AnimatePresence>
+      <AnimatePresence initial={false}>
         {expanded && (
-          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-            <div className="reasoning-content">{text}</div>
+          <motion.div 
+            initial={{ height: 0, opacity: 0 }} 
+            animate={{ height: "auto", opacity: 1 }} 
+            exit={{ height: 0, opacity: 0 }} 
+            transition={{ duration: 0.3, ease: "easeInOut" }}
+            className="overflow-hidden"
+          >
+            <div className="reasoning-content border-t border-[var(--border-subtle)]/50 leading-relaxed">
+              <MarkdownText text={text.trim()} />
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -241,14 +297,20 @@ function ReasoningBlock({ text }: { text: string }) {
 function UserMessage({ message }: { message: any }) {
   return (
     <motion.div className="group flex items-start justify-end gap-4 mb-8" variants={messageVariants} initial="hidden" animate="visible">
-      <div className="flex flex-col items-end max-w-[85%] relative">
-        <div className="message-actions" style={{ right: '4px', top: '-14px' }}>
-          <CopyButton message={message} />
+      <div className="relative max-w-[85%] flex-1 flex flex-col items-end min-w-0 group/msg">
+        <div className="msg-user-bubble relative w-fit p-3.5 rounded-[var(--radius-lg)] rounded-tr-[var(--radius-xs)] bg-[var(--bg-elevated)] border border-[var(--border-subtle)] shadow-sm">
+          <MessagePrimitive.Parts>
+            {({ part }) => {
+              const p = part as Record<string, any>;
+              if (p?.type === 'text') return <div className="whitespace-pre-wrap break-normal text-[14px] leading-relaxed">{p.text}</div>;
+              return null;
+            }}
+          </MessagePrimitive.Parts>
         </div>
-        <div className="msg-user-bubble w-full"><MessagePrimitive.Content /></div>
+        <MessageActions message={message} isUser />
       </div>
-      <div className="flex-shrink-0 mt-0.5">
-        <div className="w-9 h-9 rounded-full glass-dark flex items-center justify-center border border-[var(--border-subtle)]">
+      <div className="flex-shrink-0">
+        <div className="w-9 h-9 rounded-full bg-[var(--bg-elevated)] border border-[var(--border-subtle)] flex items-center justify-center shadow-sm">
           <svg className="w-5 h-5 text-[var(--text-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
           </svg>
@@ -261,22 +323,24 @@ function UserMessage({ message }: { message: any }) {
 function WelcomeScreen() {
   return (
     <div className="flex flex-col items-center justify-center py-24 text-center">
-      <div className="relative mb-8 flex items-center justify-center">
-        <div className="absolute inset-0 bg-[var(--accent-gold)] opacity-10 blur-3xl rounded-[var(--radius-full)] scale-[2]" />
+      <div className="relative mb-10 flex items-center justify-center">
+        <div className="absolute inset-0 bg-[var(--accent-gold)] opacity-10 blur-[100px] rounded-full scale-[2.5]" />
 
         {/* Orbital rings */}
-        <div className="absolute w-32 h-32 border border-[var(--accent-gold)] opacity-15 rounded-[var(--radius-full)] animate-[spin_10s_linear_infinite]" />
-        <div className="absolute w-40 h-40 border border-[var(--accent-emerald)] opacity-8 rounded-[var(--radius-full)] animate-[spin_15s_linear_infinite_reverse]" />
+        <div className="absolute w-36 h-36 border border-[var(--accent-gold)] opacity-20 rounded-full animate-[spin_12s_linear_infinite]" />
+        <div className="absolute w-44 h-44 border border-[var(--accent-emerald)] opacity-10 rounded-full animate-[spin_18s_linear_infinite_reverse]" />
 
         {/* Orbiting particles */}
-        <div className="absolute w-full h-full animate-[orbit_4s_linear_infinite]">
-           <div className="w-2 h-2 rounded-[var(--radius-full)] bg-[var(--accent-gold)] blur-[1px]" />
+        <div className="absolute w-full h-full animate-[orbit_5s_linear_infinite]">
+           <div className="w-2.5 h-2.5 rounded-full bg-[var(--accent-gold)] shadow-[0_0_10px_var(--accent-gold)]" />
         </div>
 
-        <BrandIcon size={96} className="relative z-10 animate-float" />
+        <BrandIcon size={112} className="relative z-10 animate-float" />
       </div>
-      <h1 className="text-4xl font-display font-bold tracking-tight mb-3 text-[var(--text-primary)]">HotPlex Workbench</h1>
-      <p className="text-lg text-[var(--text-muted)] mb-12 max-w-lg mx-auto">Autonomous workspace powered by HotPlex Intelligence.</p>
+      <h1 className="text-5xl font-display font-bold tracking-tight mb-4 text-[var(--text-primary)]">HotPlex</h1>
+      <p className="text-xl text-[var(--text-muted)] font-medium max-w-lg mx-auto leading-relaxed">
+        Next-generation autonomous workspace.
+      </p>
     </div>
   );
 }
@@ -334,7 +398,7 @@ export function Thread({ skills, hasMore, onLoadHistory }: ThreadProps) {
   return (
     <ThreadPrimitive.Root className="flex flex-col h-full relative overflow-hidden bg-[var(--bg-base)]">
       <ThreadPrimitive.Viewport className="thread-viewport relative px-4 py-8">
-        <div className="max-w-5xl mx-auto w-full">
+        <div className="max-w-4xl mx-auto w-full">
           <ThreadPrimitive.Empty><WelcomeScreen /></ThreadPrimitive.Empty>
           {historyHasMore && (
             <div className="flex justify-center py-4 mb-4">
@@ -359,16 +423,51 @@ export function Thread({ skills, hasMore, onLoadHistory }: ThreadProps) {
               message.role === "user" ? <UserMessage message={message} /> : <AssistantMessage message={message} />
             }
           </ThreadPrimitive.Messages>
+          <ThreadPrimitive.ScrollToBottom className="scroll-bottom-btn">
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+            </svg>
+            <span>New</span>
+          </ThreadPrimitive.ScrollToBottom>
           <PreAssistantIndicator />
         </div>
       </ThreadPrimitive.Viewport>
 
       <div className="composer-wrapper px-4 pb-12">
-        <div className="composer-container relative max-w-4xl mx-auto">
+        <div className="composer-container relative max-w-3xl mx-auto">
           <AnimatePresence>
             {menuOpen && <CommandMenu isOpen={menuOpen} inputValue={localText} onSelect={handleSelectCommand} onClose={() => setMenuOpen(false)} skills={skills} />}
           </AnimatePresence>
-          <ComposerPrimitive.Root className="composer-root">
+          <div className="relative">
+            <div className="absolute bottom-full left-0 right-0 z-20 mb-3 flex items-center justify-between px-1">
+              {/* Left Side: Agent Skills */}
+              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar animate-fadeIn max-w-[70%]">
+                <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-[var(--accent-gold)]/10 border border-[var(--accent-gold)]/20 shadow-sm whitespace-nowrap">
+                  <span className="text-[9px] font-display font-black text-[var(--accent-gold)] uppercase tracking-[0.05em]">Agent Skills</span>
+                  <div className="w-1 h-1 rounded-full bg-[var(--accent-gold)] animate-pulse" />
+                </div>
+                {skills?.slice(0, 3).map(skill => (
+                  <div key={skill} className="px-3 py-1.5 rounded-full bg-[var(--bg-elevated)] border border-[var(--border-subtle)] text-[10px] font-medium text-[var(--text-muted)] whitespace-nowrap hover:border-[var(--text-faint)] transition-colors cursor-default">
+                    {skill}
+                  </div>
+                ))}
+                {skills && skills.length > 3 && (
+                  <div className="px-1 py-1 text-[10px] font-mono text-[var(--text-faint)] uppercase tracking-tighter">
+                    +{skills.length - 3}
+                  </div>
+                )}
+              </div>
+
+              {/* Right Side: Scroll to Bottom */}
+              <ThreadPrimitive.ScrollToBottom className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[var(--bg-surface)] border border-[var(--border-bright)] shadow-xl text-[var(--accent-gold)] hover:bg-[var(--bg-hover)] hover:border-[var(--accent-gold)] transition-all active:scale-95 group/scroll whitespace-nowrap">
+                <svg className="w-3.5 h-3.5 animate-bounce-subtle" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                </svg>
+                <span className="text-[10px] font-bold uppercase tracking-widest">Latest Messages</span>
+              </ThreadPrimitive.ScrollToBottom>
+            </div>
+
+            <ComposerPrimitive.Root className="composer-root shadow-[0_20px_50px_rgba(0,0,0,0.3)]">
             <div className="composer-input-row">
               <ComposerPrimitive.Input 
                 className="composer-input" 
@@ -387,7 +486,8 @@ export function Thread({ skills, hasMore, onLoadHistory }: ThreadProps) {
               </div>
             </div>
           </ComposerPrimitive.Root>
-          <div className="mt-2 flex justify-between items-center px-2">
+        </div>
+        <div className="mt-2 flex justify-between items-center px-2">
             <div className="flex gap-4">
               <span className="text-[10px] text-[var(--text-faint)] font-mono uppercase tracking-widest flex items-center gap-1.5">
                 <kbd className="px-1.5 py-0.5 rounded bg-[var(--bg-elevated)] border border-[var(--border-subtle)] text-[9px]">Enter</kbd> to send

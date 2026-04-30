@@ -16,6 +16,7 @@ gateway:
 
 webchat:
   addr: "127.0.0.1:3000"
+  enabled: false # dev mode uses next dev server for hot reload
 
 session:
   retention_period: 24h

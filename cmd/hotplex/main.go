@@ -13,11 +13,16 @@ import (
 )
 
 var (
-	version   = "v1.2.0"
+	version   = "v1.3.0"
 	buildTime = "unknown"
 )
 
 func main() {
+	if isServiceRun() {
+		runAsWindowsService(extractServiceConfig())
+		return
+	}
+
 	rootCmd := &cobra.Command{
 		Use:   "hotplex",
 		Short: "HotPlex Worker Gateway",
@@ -43,6 +48,7 @@ Quick start:
 		newDevCmd(),
 		newConfigCmd(),
 		newStatusCmd(),
+		newServiceCmd(),
 	)
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "Error:", err)

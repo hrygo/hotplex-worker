@@ -128,6 +128,7 @@ type Config struct {
 	WebChat     WebChatConfig   `mapstructure:"webchat"`
 	Messaging   MessagingConfig `mapstructure:"messaging"`
 	AgentConfig AgentConfig     `mapstructure:"agent_config"`
+	Skills      SkillsConfig    `mapstructure:"skills"`
 	Inherits    string          `mapstructure:"inherits"` // path to parent config file; "" = no inheritance
 }
 
@@ -219,9 +220,10 @@ type LogConfig struct {
 	Format string `mapstructure:"format"` // "json" or "text"
 }
 
-// WebChatConfig holds webchat UI address (informational only, gateway does not manage webchat).
+// WebChatConfig holds webchat UI serving settings.
 type WebChatConfig struct {
-	Addr string `mapstructure:"addr"`
+	Addr    string `mapstructure:"addr"`    // informational: banner display
+	Enabled bool   `mapstructure:"enabled"` // serve embedded webchat SPA from gateway
 }
 
 // GatewayConfig holds WebSocket gateway settings.
@@ -349,11 +351,14 @@ type PoolConfig struct {
 	MaxMemoryPerUser int64 `mapstructure:"max_memory_per_user"` // bytes; 0 = unlimited
 }
 
-// AgentConfig holds agent personality/context configuration settings.
 type AgentConfig struct {
-	Enabled        bool          `mapstructure:"enabled"`          // enable agent config loading
-	ConfigDir      string        `mapstructure:"config_dir"`       // default: ~/.hotplex/agent-configs/
-	SkillsCacheTTL time.Duration `mapstructure:"skills_cache_ttl"` // TTL for skills list cache, default 24h
+	Enabled   bool   `mapstructure:"enabled"`    // enable agent config loading
+	ConfigDir string `mapstructure:"config_dir"` // default: ~/.hotplex/agent-configs/
+}
+
+// SkillsConfig holds skill discovery and caching settings.
+type SkillsConfig struct {
+	CacheTTL time.Duration `mapstructure:"cache_ttl"` // TTL for skills list cache, default 5m
 }
 
 // ─── Defaults ────────────────────────────────────────────────────────────────
@@ -364,7 +369,7 @@ type AgentConfig struct {
 func Default() *Config {
 	return &Config{
 		Gateway: GatewayConfig{
-			Addr:                  ":8888",
+			Addr:                  "localhost:8888",
 			ReadBufferSize:        4096,
 			WriteBufferSize:       4096,
 			PingInterval:          54 * time.Second,
@@ -424,7 +429,7 @@ func Default() *Config {
 		},
 		Admin: AdminConfig{
 			Enabled:            true,
-			Addr:               ":9999",
+			Addr:               "localhost:9999",
 			Tokens:             nil,
 			TokenScopes:        nil,
 			DefaultScopes:      []string{"session:read", "stats:read", "health:read"},
@@ -437,6 +442,10 @@ func Default() *Config {
 		Log: LogConfig{
 			Level:  "info",
 			Format: "json",
+		},
+		WebChat: WebChatConfig{
+			Addr:    "",
+			Enabled: true,
 		},
 		Messaging: MessagingConfig{
 			Feishu: FeishuConfig{
@@ -463,9 +472,11 @@ func Default() *Config {
 			},
 		},
 		AgentConfig: AgentConfig{
-			Enabled:        true,
-			ConfigDir:      filepath.Join(HotplexHome(), "agent-configs"),
-			SkillsCacheTTL: 24 * time.Hour,
+			Enabled:   true,
+			ConfigDir: filepath.Join(HotplexHome(), "agent-configs"),
+		},
+		Skills: SkillsConfig{
+			CacheTTL: 5 * time.Minute,
 		},
 	}
 }
@@ -527,6 +538,9 @@ func Load(filePath string, opts LoadOptions) (*Config, error) {
 	_ = v.BindEnv("worker.auto_retry.max_retries")
 	_ = v.BindEnv("security.jwt_audience")
 	_ = v.BindEnv("security.api_key_header")
+	_ = v.BindEnv("agent_config.enabled")
+	_ = v.BindEnv("agent_config.config_dir")
+	_ = v.BindEnv("skills.cache_ttl")
 
 	if err := v.Unmarshal(cfg); err != nil {
 		return nil, fmt.Errorf("config: environment override: %w", err)
@@ -635,13 +649,20 @@ func loadRecursive(filePath string, opts LoadOptions, visited []string) (*Config
 		}
 	}
 
-	// Normalize DB path.
-	if cfg.DB.Path != "" {
-		absPath, err := ExpandAndAbs(cfg.DB.Path)
-		if err != nil {
-			return nil, fmt.Errorf("config: normalize db path %q: %w", cfg.DB.Path, err)
+	// Normalize all path fields — Viper does not expand ~ in YAML values.
+	for _, pf := range []*string{
+		&cfg.DB.Path,
+		&cfg.Worker.DefaultWorkDir,
+		&cfg.Worker.PIDDir,
+		&cfg.AgentConfig.ConfigDir,
+	} {
+		if *pf != "" {
+			absPath, err := ExpandAndAbs(*pf)
+			if err != nil {
+				return nil, fmt.Errorf("config: normalize path %q: %w", *pf, err)
+			}
+			*pf = absPath
 		}
-		cfg.DB.Path = absPath
 	}
 
 	return cfg, nil

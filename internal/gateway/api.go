@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/hrygo/hotplex/internal/config"
+	"github.com/hrygo/hotplex/internal/eventstore"
 	"github.com/hrygo/hotplex/internal/messaging"
 	"github.com/hrygo/hotplex/internal/security"
 	"github.com/hrygo/hotplex/internal/session"
@@ -20,12 +21,18 @@ import (
 )
 
 type GatewayAPI struct {
-	auth      *security.Authenticator
-	sm        SessionManager
-	bridge    SessionStarter
-	cfgStore  *config.ConfigStore
-	convStore ConversationStoreReader
-	log       *slog.Logger
+	auth       *security.Authenticator
+	sm         SessionManager
+	bridge     SessionStarter
+	cfgStore   *config.ConfigStore
+	convStore  ConversationStoreReader
+	eventStore EventStoreReader
+	log        *slog.Logger
+}
+
+// EventStoreReader defines the subset of EventStore needed by the events API.
+type EventStoreReader interface {
+	QueryBySession(ctx context.Context, sessionID string, cursor int64, dir eventstore.CursorDirection, limit int) (*eventstore.EventPage, error)
 }
 
 // ConversationStoreReader defines the subset of ConversationStore needed by the history API.
@@ -34,8 +41,8 @@ type ConversationStoreReader interface {
 	GetBySessionBefore(ctx context.Context, sessionID string, beforeSeq int64, limit int) ([]*session.ConversationRecord, error)
 }
 
-func NewGatewayAPI(log *slog.Logger, auth *security.Authenticator, sm SessionManager, bridge SessionStarter, cfgStore *config.ConfigStore, convStore ConversationStoreReader) *GatewayAPI {
-	return &GatewayAPI{auth: auth, sm: sm, bridge: bridge, cfgStore: cfgStore, convStore: convStore, log: log.With("component", "api")}
+func NewGatewayAPI(log *slog.Logger, auth *security.Authenticator, sm SessionManager, bridge SessionStarter, cfgStore *config.ConfigStore, convStore ConversationStoreReader, eventStore EventStoreReader) *GatewayAPI {
+	return &GatewayAPI{auth: auth, sm: sm, bridge: bridge, cfgStore: cfgStore, convStore: convStore, eventStore: eventStore, log: log.With("component", "api")}
 }
 
 func respondJSON(w http.ResponseWriter, v any) {
@@ -106,10 +113,16 @@ func (g *GatewayAPI) CreateSession(w http.ResponseWriter, r *http.Request) {
 		workDir = g.cfgStore.Load().Worker.DefaultWorkDir
 	}
 	if workDir != "" {
-		if err := security.ValidateWorkDir(workDir); err != nil {
+		expanded, err := config.ExpandAndAbs(workDir)
+		if err != nil {
+			http.Error(w, "invalid work_dir: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := security.ValidateWorkDir(expanded); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		workDir = expanded
 	}
 
 	// Derive session ID via UUIDv5 for consistency with WebSocket path.
@@ -315,4 +328,69 @@ func (g *GatewayAPI) GetHistory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, map[string]any{"records": records, "has_more": hasMore})
+}
+
+func (g *GatewayAPI) GetEvents(w http.ResponseWriter, r *http.Request) {
+	if g.eventStore == nil {
+		respondJSON(w, map[string]any{"events": []any{}, "oldest_seq": 0, "newest_seq": 0, "has_older": false})
+		return
+	}
+
+	userID, _, err := g.auth.AuthenticateRequest(r)
+	if err != nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	id := r.PathValue("id")
+	if id == "" {
+		http.Error(w, "session id required", http.StatusBadRequest)
+		return
+	}
+
+	si, err := g.sm.Get(id)
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	if si.UserID != userID {
+		http.Error(w, "ownership required", http.StatusForbidden)
+		return
+	}
+
+	limit := 200
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if v, err := strconv.Atoi(l); err == nil && v > 0 && v <= 1000 {
+			limit = v
+		}
+	}
+
+	var cursor int64
+	if c := r.URL.Query().Get("cursor"); c != "" {
+		if v, err := strconv.ParseInt(c, 10, 64); err == nil && v > 0 {
+			cursor = v
+		}
+	}
+
+	var dir eventstore.CursorDirection
+	switch d := r.URL.Query().Get("direction"); d {
+	case "after":
+		dir = eventstore.CursorAfter
+	case "before":
+		dir = eventstore.CursorBefore
+	default:
+		dir = eventstore.CursorLatest
+	}
+
+	page, err := g.eventStore.QueryBySession(r.Context(), id, cursor, dir, limit)
+	if err != nil {
+		if errors.Is(err, eventstore.ErrNotFound) {
+			respondJSON(w, map[string]any{"events": []any{}, "oldest_seq": 0, "newest_seq": 0, "has_older": false})
+			return
+		}
+		g.log.Error("gateway: get events failed", "session_id", id, "err", err)
+		http.Error(w, "failed to get events", http.StatusInternalServerError)
+		return
+	}
+
+	respondJSON(w, page)
 }

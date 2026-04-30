@@ -34,7 +34,7 @@ func setupRoutes(
 		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
 
-	gatewayAPI := gateway.NewGatewayAPI(log, auth, sm, bridge, deps.ConfigStore, deps.ConvStore)
+	gatewayAPI := gateway.NewGatewayAPI(log, auth, sm, bridge, deps.ConfigStore, deps.ConvStore, deps.EventStore)
 
 	// withCORS wraps a handler to inject CORS headers.
 	withCORS := func(h http.HandlerFunc) http.HandlerFunc {
@@ -56,10 +56,12 @@ func setupRoutes(
 	mux.HandleFunc("DELETE /api/sessions/{id}", withCORS(gatewayAPI.DeleteSession))
 	mux.HandleFunc("POST /api/sessions/{id}/cd", withCORS(gatewayAPI.SwitchWorkDir))
 	mux.HandleFunc("GET /api/sessions/{id}/history", withCORS(gatewayAPI.GetHistory))
+	mux.HandleFunc("GET /api/sessions/{id}/events", withCORS(gatewayAPI.GetEvents))
 	mux.HandleFunc("OPTIONS /api/sessions", withCORS(func(w http.ResponseWriter, r *http.Request) {}))
 	mux.HandleFunc("OPTIONS /api/sessions/", withCORS(func(w http.ResponseWriter, r *http.Request) {}))
 	mux.HandleFunc("OPTIONS /api/sessions/{id}", withCORS(func(w http.ResponseWriter, r *http.Request) {}))
 	mux.HandleFunc("OPTIONS /api/sessions/{id}/history", withCORS(func(w http.ResponseWriter, r *http.Request) {}))
+	mux.HandleFunc("OPTIONS /api/sessions/{id}/events", withCORS(func(w http.ResponseWriter, r *http.Request) {}))
 
 	mux.HandleFunc("GET /admin/health/ready", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -121,6 +123,9 @@ func setupRoutes(
 	mux.HandleFunc("GET /admin/health", adminAPI.HandleHealth)
 
 	mux.Handle("/admin/", adminAPI.Middleware(adminMux))
+
+	// Webchat SPA is NOT registered on the mux directly.
+	// Instead, the caller wraps the mux with a fallback handler below.
 }
 
 type sessionManagerAdapter struct {

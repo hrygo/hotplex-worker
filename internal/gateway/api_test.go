@@ -147,12 +147,12 @@ func newTestAuth(t *testing.T) *security.Authenticator {
 
 func newTestAPI(t *testing.T, sm *mockAPISM, bridge *mockAPIBridge) *GatewayAPI {
 	t.Helper()
-	return NewGatewayAPI(slog.Default(), newTestAuth(t), sm, bridge, config.NewConfigStore(&config.Config{}, nil), nil)
+	return NewGatewayAPI(slog.Default(), newTestAuth(t), sm, bridge, config.NewConfigStore(&config.Config{}, nil), nil, nil)
 }
 
 func newTestAPIWithConv(t *testing.T, sm *mockAPISM, bridge *mockAPIBridge, convStore *mockAPIConvStore) *GatewayAPI {
 	t.Helper()
-	return NewGatewayAPI(slog.Default(), newTestAuth(t), sm, bridge, config.NewConfigStore(&config.Config{}, nil), convStore)
+	return NewGatewayAPI(slog.Default(), newTestAuth(t), sm, bridge, config.NewConfigStore(&config.Config{}, nil), convStore, nil)
 }
 
 func authedReq(method, target string, body io.Reader) *http.Request {
@@ -279,6 +279,24 @@ func TestCreateSession_BridgeError(t *testing.T) {
 }
 
 var errTestBridge = fmt.Errorf("test bridge error")
+
+func TestCreateSession_WithWorkDir(t *testing.T) {
+	t.Parallel()
+	sm := new(mockAPISM)
+	bridge := new(mockAPIBridge)
+	api := newTestAPI(t, sm, bridge)
+
+	sm.On("Get", mock.Anything).Return(nil, session.ErrSessionNotFound)
+	bridge.On("StartSession", mock.Anything, mock.Anything, "anonymous", "",
+		worker.TypeClaudeCode, ([]string)(nil), mock.Anything, "webchat", map[string]string(nil), "with-workdir").
+		Return(nil)
+
+	w := httptest.NewRecorder()
+	api.CreateSession(w, authedReq("POST", "/api/sessions?title=with-workdir&work_dir=/tmp", nil))
+
+	require.Equal(t, http.StatusOK, w.Code)
+	bridge.AssertExpectations(t)
+}
 
 // ─── DeleteSession tests ────────────────────────────────────────────────────────
 

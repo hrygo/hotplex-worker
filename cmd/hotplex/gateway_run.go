@@ -20,10 +20,13 @@ import (
 	"github.com/hrygo/hotplex/internal/admin"
 	"github.com/hrygo/hotplex/internal/assets"
 	"github.com/hrygo/hotplex/internal/config"
+	"github.com/hrygo/hotplex/internal/eventstore"
 	"github.com/hrygo/hotplex/internal/gateway"
 	"github.com/hrygo/hotplex/internal/security"
 	"github.com/hrygo/hotplex/internal/session"
+	"github.com/hrygo/hotplex/internal/skills"
 	"github.com/hrygo/hotplex/internal/tracing"
+	"github.com/hrygo/hotplex/internal/webchat"
 	"github.com/hrygo/hotplex/internal/worker/claudecode"
 	"github.com/hrygo/hotplex/internal/worker/opencodeserver"
 	"github.com/hrygo/hotplex/internal/worker/proc"
@@ -32,16 +35,18 @@ import (
 )
 
 type GatewayDeps struct {
-	Log           *slog.Logger
-	Config        *config.Config
-	ConfigStore   *config.ConfigStore
-	Hub           *gateway.Hub
-	SessionMgr    *session.Manager
-	ConvStore     session.ConversationStore
-	Auth          *security.Authenticator
-	Handler       *gateway.Handler
-	Bridge        *gateway.Bridge
-	ConfigWatcher *config.Watcher
+	Log            *slog.Logger
+	Config         *config.Config
+	ConfigStore    *config.ConfigStore
+	Hub            *gateway.Hub
+	SessionMgr     *session.Manager
+	ConvStore      session.ConversationStore
+	EventStore     *eventstore.SQLiteStore
+	EventCollector *eventstore.Collector
+	Auth           *security.Authenticator
+	Handler        *gateway.Handler
+	Bridge         *gateway.Bridge
+	ConfigWatcher  *config.Watcher
 }
 
 const defaultConfigPath = "~/.hotplex/config.yaml"
@@ -50,7 +55,7 @@ func configFlag(cmd *cobra.Command, target *string) {
 	cmd.Flags().StringVarP(target, "config", "c", defaultConfigPath, "config file path")
 }
 
-func runGateway(configPath string, devMode bool) (err error) {
+func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err error) {
 	defer func() {
 		if err != nil {
 			removeGatewayPID()
@@ -145,6 +150,15 @@ func runGateway(configPath string, devMode bool) (err error) {
 		_ = store.Close()
 		return fmt.Errorf("gateway: init conversation store: %w", err)
 	}
+
+	eventDBPath := filepath.Join(filepath.Dir(cfg.DB.Path), "events.db")
+	eventStore, err := eventstore.NewSQLiteStore(ctx, eventDBPath)
+	if err != nil {
+		_ = store.Close()
+		_ = convStore.Close()
+		return fmt.Errorf("gateway: init event store: %w", err)
+	}
+	eventCollector := eventstore.NewCollector(eventStore, log)
 
 	sm, err := session.NewManager(ctx, log, cfg, cfgStore, store)
 	if err != nil {
@@ -249,16 +263,13 @@ func runGateway(configPath string, devMode bool) (err error) {
 	})
 
 	handler := gateway.NewHandler(gateway.HandlerDeps{
-		Log:          log,
-		Hub:          hub,
-		SM:           sm,
-		JWTValidator: jwtValidator,
-		Bridge:       bridge,
-		ConvStore:    convStore,
-		SkillsLocator: gateway.NewSkillsCache(
-			gateway.NewFileSystemSkillsLocator(cfg),
-			cfg.AgentConfig.SkillsCacheTTL,
-		),
+		Log:           log,
+		Hub:           hub,
+		SM:            sm,
+		JWTValidator:  jwtValidator,
+		Bridge:        bridge,
+		ConvStore:     convStore,
+		SkillsLocator: skills.NewLocator(log, cfg.Skills.CacheTTL),
 	})
 
 	if cfg.Worker.AutoRetry.Enabled {
@@ -297,6 +308,7 @@ func runGateway(configPath string, devMode bool) (err error) {
 		Hub:           hub,
 		SessionMgr:    sm,
 		ConvStore:     convStore,
+		EventStore:    eventStore,
 		Auth:          auth,
 		Handler:       handler,
 		Bridge:        bridge,
@@ -307,9 +319,24 @@ func runGateway(configPath string, devMode bool) (err error) {
 
 	setupRoutes(mux, deps)
 
+	// Wrap mux with webchat SPA fallback: API/WS routes are handled by the
+	// mux first; unmatched paths fall through to the embedded webchat handler.
+	var rootHandler http.Handler = mux
+	if cfg.WebChat.Enabled {
+		spa := webchat.Handler()
+		rootHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			h, pattern := mux.Handler(r)
+			if pattern != "" {
+				h.ServeHTTP(w, r)
+				return
+			}
+			spa.ServeHTTP(w, r)
+		})
+	}
+
 	server := &http.Server{
 		Addr:         cfg.Gateway.Addr,
-		Handler:      mux,
+		Handler:      rootHandler,
 		ReadTimeout:  cfg.Gateway.IdleTimeout,
 		WriteTimeout: cfg.Gateway.WriteTimeout,
 	}
@@ -330,19 +357,21 @@ func runGateway(configPath string, devMode bool) (err error) {
 		adminAddr = ""
 	}
 	printStartupBanner(os.Stdout, newBuildInfo(), RuntimeStatus{
-		GatewayAddr:  cfg.Gateway.Addr,
-		AdminAddr:    adminAddr,
-		WebChatAddr:  cfg.WebChat.Addr,
-		DBPath:       cfg.DB.Path,
-		PoolMax:      cfg.Pool.MaxSize,
-		PoolIdle:     cfg.Pool.MaxIdlePerUser,
-		Adapters:     adapterStatuses,
-		RetryEnabled: cfg.Worker.AutoRetry.Enabled,
-		RetryMax:     cfg.Worker.AutoRetry.MaxRetries,
-		RetryDelay:   cfg.Worker.AutoRetry.BaseDelay.String(),
+		GatewayAddr:     cfg.Gateway.Addr,
+		AdminAddr:       adminAddr,
+		WebChatAddr:     cfg.WebChat.Addr,
+		WebChatEmbedded: cfg.WebChat.Enabled,
+		DBPath:          cfg.DB.Path,
+		EventDBPath:     eventDBPath,
+		PoolMax:         cfg.Pool.MaxSize,
+		PoolIdle:        cfg.Pool.MaxIdlePerUser,
+		Adapters:        adapterStatuses,
+		RetryEnabled:    cfg.Worker.AutoRetry.Enabled,
+		RetryMax:        cfg.Worker.AutoRetry.MaxRetries,
+		RetryDelay:      cfg.Worker.AutoRetry.BaseDelay.String(),
 	}, configPath)
 
-	sig := waitForSignal()
+	sig := waitForSignal(stopCh)
 	log.Info("gateway: shutdown", "signal", sig)
 
 	cancel()
@@ -371,8 +400,13 @@ func runGateway(configPath string, devMode bool) (err error) {
 
 	closeSTTCache(shutdownCtx, log)
 
-	bridge.Shutdown()
+	// Terminate all workers BEFORE bridge.Shutdown() so forwardEvents
+	// goroutines (blocked on worker stdout) can exit. Without this,
+	// bridge.Shutdown() waits 30s for fwdWg while nobody kills workers.
+	sm.TerminateAllWorkers()
 	opencodeserver.ShutdownSingleton(shutdownCtx)
+
+	bridge.Shutdown(shutdownCtx)
 
 	if jwtValidator != nil {
 		jwtValidator.Stop()
@@ -385,10 +419,14 @@ func runGateway(configPath string, devMode bool) (err error) {
 		log.Warn("gateway: session manager close", "err", err)
 	}
 
-	if convStore != nil {
-		if err := convStore.Close(); err != nil {
-			log.Warn("gateway: conversation store close", "err", err)
-		}
+	if err := eventCollector.Close(); err != nil {
+		log.Warn("gateway: event collector close", "err", err)
+	}
+	if err := eventStore.Close(); err != nil {
+		log.Warn("gateway: event store close", "err", err)
+	}
+	if err := convStore.Close(); err != nil {
+		log.Warn("gateway: conversation store close", "err", err)
 	}
 
 	if err := server.Shutdown(shutdownCtx); err != nil {
@@ -396,7 +434,7 @@ func runGateway(configPath string, devMode bool) (err error) {
 	}
 
 	log.Info("gateway: stopped")
-	return ctx.Err()
+	return nil
 }
 
 func loadConfig(configPath string, devMode bool) (*config.Config, error) {
@@ -448,8 +486,13 @@ func loadEnvFile(dir string) {
 	}
 }
 
-func waitForSignal() os.Signal {
+func waitForSignal(stopCh <-chan struct{}) os.Signal {
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
-	return <-sig
+	select {
+	case s := <-sig:
+		return s
+	case <-stopCh:
+		return syscall.SIGTERM
+	}
 }

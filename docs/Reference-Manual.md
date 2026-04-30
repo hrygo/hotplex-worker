@@ -67,7 +67,7 @@ Client (WebSocket) ──→ Gateway (AEP v1) ──→ Worker (Claude Code / Op
 hotplex gateway start
 ```
 
-Binary starts with all defaults (`:8888` WebSocket, `:9999` Admin, `~/.hotplex/data/hotplex.db` SQLite).
+Binary starts with all defaults (`localhost:8888` WebSocket, `localhost:9999` Admin, `~/.hotplex/data/hotplex.db` SQLite).
 
 ### 2.2 Run with Config File
 
@@ -142,7 +142,7 @@ HotPlex uses [Viper](https://github.com/spf13/viper) — supports YAML, JSON, TO
 ```yaml
 # config.yaml
 gateway:
-  addr: ":8888"
+  addr: "localhost:8888"
   ping_interval: 54s
   pong_timeout: 60s
   idle_timeout: 5m
@@ -192,7 +192,7 @@ agent_config:
 
 admin:
   enabled: true
-  addr: ":9999"
+  addr: "localhost:9999"
   tokens:
     - "admin-token-1"
     - "admin-token-2"
@@ -239,7 +239,7 @@ Config values support `${VAR}` and `${VAR:-default}` syntax (Go's `os.ExpandEnv`
 
 ```yaml
 gateway:
-  addr: "${HOTPLEX_GATEWAY_ADDR:-:8888}"
+  addr: "${HOTPLEX_GATEWAY_ADDR:-localhost:8888}"
 
 db:
   path: "${HOTPLEX_DB_PATH}"
@@ -262,7 +262,7 @@ All non-sensitive fields have production defaults. Binary runs with zero config.
 
 | Field | Default | Notes |
 |-------|---------|-------|
-| `gateway.addr` | `:8888` | WebSocket listen address |
+| `gateway.addr` | `localhost:8888` | WebSocket listen address |
 | `gateway.ping_interval` | `54s` | |
 | `gateway.pong_timeout` | `60s` | |
 | `gateway.idle_timeout` | `5m` | |
@@ -279,7 +279,7 @@ All non-sensitive fields have production defaults. Binary runs with zero config.
 | `pool.max_size` | `100` | |
 | `pool.max_memory_per_user` | `3GB` | |
 | `admin.enabled` | `true` | |
-| `admin.addr` | `:9999` | |
+| `admin.addr` | `localhost:9999` | |
 | `admin.rate_limit_enabled` | `true` | |
 | `admin.requests_per_sec` | `10` | |
 | `agent_config.enabled` | `true` | Enable agent personality/context injection |
@@ -522,7 +522,7 @@ Full protocol specification: `docs/architecture/AEP-v1-Protocol.md`
 
 ## 8. Admin API Reference
 
-Admin API runs on `:9999` (configurable). All endpoints require Bearer token authentication unless IP whitelist bypass is configured.
+Admin API runs on `localhost:9999` by default (configurable). All endpoints require Bearer token authentication unless IP whitelist bypass is configured.
 
 ### 8.1 Authentication
 
@@ -851,7 +851,7 @@ Key log fields:
 
 ### 11.2 Prometheus Metrics
 
-Metrics endpoint: `GET /metrics` on the admin port (`:9999`).
+Metrics endpoint: `GET /metrics` on the admin port (`localhost:9999` by default).
 
 Enabled by importing `github.com/prometheus/client_golang/prometheus/promhttp`.
 

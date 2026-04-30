@@ -21,6 +21,8 @@ func newOnboardCmd() *cobra.Command {
 	var slackAllowFrom, feishuAllowFrom []string
 	var slackDMPolicy, slackGroupPolicy string
 	var feishuDMPolicy, feishuGroupPolicy string
+	var installService bool
+	var serviceLevel string
 
 	cmd := &cobra.Command{
 		Use:   "onboard",
@@ -53,6 +55,8 @@ Supports non-interactive mode for automated deployments.`,
 				FeishuAllowFrom:   feishuAllowFrom,
 				FeishuDMPolicy:    feishuDMPolicy,
 				FeishuGroupPolicy: feishuGroupPolicy,
+				InstallService:    installService,
+				ServiceLevel:      serviceLevel,
 			})
 			if err != nil {
 				return err
@@ -108,6 +112,9 @@ Supports non-interactive mode for automated deployments.`,
 	cmd.Flags().StringSliceVar(&feishuAllowFrom, "feishu-allow-from", nil, "Feishu allowed user IDs")
 	cmd.Flags().StringVar(&feishuDMPolicy, "feishu-dm-policy", "allowlist", "Feishu DM policy: open, allowlist, disabled")
 	cmd.Flags().StringVar(&feishuGroupPolicy, "feishu-group-policy", "allowlist", "Feishu group policy: open, allowlist, disabled")
+
+	cmd.Flags().BoolVar(&installService, "install-service", false, "install as system service in non-interactive mode")
+	cmd.Flags().StringVar(&serviceLevel, "service-level", "user", "service level for --install-service (user or system)")
 
 	return cmd
 }

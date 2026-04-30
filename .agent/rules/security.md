@@ -83,57 +83,11 @@ func ValidateCommand(name string) error {
 
 ## 路径安全（SafePathJoin）
 
-完整安全流程（按顺序执行）：
+5 步流程（按序执行）：Clean → 拒绝绝对路径 → Join → EvalSymlinks → 前缀验证
 
-1. `filepath.Clean(userPath)` 规范化路径
-2. **拒绝绝对路径**：`userPath[0] == '/'`
-3. `filepath.Join(baseDir, cleaned)` 拼接
-4. `filepath.EvalSymlinks` 解析 symlink
-5. **前缀验证**：最终路径必须以 baseDir 开头
+详见 `security/path.go` — `SafePathJoin()`、`ContainsDangerousChars()`、`AllowedBaseDirs`
 
-```go
-func SafePathJoin(baseDir, userPath string) (string, error) {
-    cleaned := filepath.Clean(userPath)
-    if filepath.IsAbs(cleaned) {
-        return "", errors.New("absolute paths not allowed")
-    }
-    joined := filepath.Join(baseDir, cleaned)
-    resolved, err := filepath.EvalSymlinks(joined)
-    if err != nil {
-        return "", err
-    }
-    if !strings.HasPrefix(resolved, baseDir) {
-        return "", errors.New("path escapes base directory")
-    }
-    return resolved, nil
-}
-```
-
-### 危险字符检测（纵深防御）
-```go
-// 即使在非 shell exec 模式下也触发告警
-var dangerousChars = []rune{
-    ';', '|', '&', '`', '$', '(', ')', '\\', '\n', '\r',
-    '<', '>', '{', '}', '[', ']', '!', '#', '~', '*', '?', ' ',
-}
-
-func ContainsDangerousChars(input string) bool {
-    for _, ch := range dangerousChars {
-        if strings.ContainsRune(input, ch) {
-            return true
-        }
-    }
-    return false
-}
-```
-
-### BaseDir 白名单
-```go
-var AllowedBaseDirs = []string{
-    "/var/hotplex/projects",
-    "/tmp/hotplex",
-}
-```
+**规则**：路径操作必须通过 `SafePathJoin`，禁止手动拼接用户路径。
 
 ## ValidateWorkDir（SwitchWorkDir 专用）
 
@@ -158,173 +112,34 @@ if err := security.ValidateWorkDir(workDir); err != nil {
 
 ## SSRF 防护
 
-### 协议限制
-仅允许 `http://` 和 `https://`，拒绝 `file://`、`ftp://`、`gopher://`、`data://`。
+验证链路：协议限制（仅 http/https）→ 主机名黑名单 → IP 段阻止（loopback/private/link-local/IPv6）→ DNS 解析后检查所有返回 IP
 
-### 私有 IP 段阻止
-```go
-var blockedCIDRs = []*net.IPNet{
-    // Loopback
-    {IP: net.ParseIP("127.0.0.0"), Mask: net.CIDRMask(8, 32)},
-    // Private 10.x.x.x
-    {IP: net.ParseIP("10.0.0.0"), Mask: net.CIDRMask(8, 32)},
-    // Private 172.16.x.x
-    {IP: net.ParseIP("172.16.0.0"), Mask: net.CIDRMask(12, 32)},
-    // Private 192.168.x.x
-    {IP: net.ParseIP("192.168.0.0"), Mask: net.CIDRMask(16, 32)},
-    // Link-local (169.254.x.x) — 包含 AWS metadata 169.254.169.254
-    {IP: net.ParseIP("169.254.0.0"), Mask: net.CIDRMask(16, 32)},
-    // IPv6
-    {IP: net.ParseIP("::1"), Mask: net.CIDRMask(128, 128)},
-    {IP: net.ParseIP("fc00::"), Mask: net.CIDRMask(7, 128)},
-    {IP: net.ParseIP("fe80::"), Mask: net.CIDRMask(10, 128)},
-}
-```
+详见 `security/ssrf.go` — `ValidateURL()`、`blockedCIDRs`、`blockedHostnames`
 
-### DNS 重新绑定攻击防护
-- 阻止 `localhost`、`metadata.google.internal` 等特定主机名
-- DNS 解析后检查**所有返回 IP**
-
-### 完整验证链路
-```go
-func ValidateURL(rawURL string) error {
-    u, err := url.Parse(rawURL)
-    if err != nil || u.Host == "" {
-        return &SSRFProtectionError{Reason: "empty host"}
-    }
-    // 1. 协议检查
-    if u.Scheme != "http" && u.Scheme != "https" {
-        return &SSRFProtectionError{Reason: "non-http scheme"}
-    }
-    // 2. 主机名黑名单
-    if blockedHostnames[u.Hostname()] {
-        return &SSRFProtectionError{Reason: "blocked hostname"}
-    }
-    // 3. IP 前缀黑名单（先解析，若为 IP 直接检查）
-    // 4. DNS 解析后检查所有 IP
-    addrs, _ := net.LookupHost(u.Hostname())
-    for _, addr := range addrs {
-        ip := net.ParseIP(addr)
-        if isIPBlocked(ip) {
-            return &SSRFProtectionError{Reason: "blocked IP range"}
-        }
-    }
-    return nil
-}
-```
+**规则**：所有外部 URL 请求必须经过 `ValidateURL`，阻止 DNS 重新绑定攻击。
 
 ---
 
 ## 环境变量隔离
 
-### BaseEnvWhitelist（系统变量）
-```go
-var BaseEnvWhitelist = []string{
-    "HOME", "USER", "SHELL", "PATH", "TERM", "LANG", "LC_ALL", "PWD",
-    "GOPROXY", "GOSUMDB",
-}
-```
+三层防护（详见 `security/env.go`）：
+- **BaseEnvWhitelist**：系统变量白名单（HOME/USER/PATH 等）
+- **ProtectedEnvVars**：禁止 Worker 覆盖的变量（HOME/PATH/CLAUDECODE/GATEWAY_* 等）
+- **Sensitive 检测**：`IsSensitive()` 自动脱敏（前缀匹配 `AWS_*/ANTHROPIC_*/SLACK_*` 等 + 精确匹配 `API_KEY/DATABASE_URL` 等）
 
-### ProtectedEnvVars（禁止 Worker 覆盖）
-```go
-var ProtectedEnvVars = map[string]bool{
-    "HOME":      true, "PATH": true, "GOPATH": true, "GOROOT": true,
-    "CLAUDECODE": true, // 防止嵌套 Agent
-    "GATEWAY_ADDR": true, "GATEWAY_TOKEN": true,
-}
-```
-
-### Sensitive 检测（自动脱敏）
-```go
-var sensitivePrefixes = []string{
-    "AWS_", "AZURE_", "GITHUB_", "GH_",
-    "ANTHROPIC_", "OPENAI_", "GOOGLE_",
-    "SLACK_", "SENTRY_",
-}
-var sensitiveExact = map[string]bool{
-    "API_KEY": true, "API_SECRET": true, "PRIVATE_KEY": true,
-    "SECRET_TOKEN": true, "DATABASE_URL": true,
-    "DB_PASSWORD": true, "POSTGRES_PASSWORD": true,
-}
-
-func IsSensitive(key string) bool {
-    for _, p := range sensitivePrefixes {
-        if strings.HasPrefix(key, p) {
-            return true
-        }
-    }
-    return sensitiveExact[key]
-}
-```
-
-### 嵌套 Agent 防护
-```go
-func StripNestedAgent(env []string) []string {
-    result := make([]string, 0, len(env))
-    for _, e := range env {
-        if strings.HasPrefix(e, "CLAUDECODE=") {
-            continue // 剥离 CLAUDECODE= 防止嵌套
-        }
-        result = append(result, e)
-    }
-    return result
-}
-```
+**嵌套 Agent 防护**：`StripNestedAgent()` 剥离 `CLAUDECODE=` 环境变量，防止嵌套。
 
 ---
 
 ## Tool 限制
 
-### AllowedTools 白名单
-```go
-var AllowedTools = map[string]ToolCategory{
-    // Safe
-    "Read":        Safe,
-    "Edit":        Safe,
-    "Write":       Safe,
-    "Grep":        Safe,
-    "Glob":        Safe,
-    // Risky
-    "Bash":        Risky,
-    // Network
-    "WebFetch":    Network,
-    // System
-    "Agent":       System,
-    "NotebookEdit": System,
-    "TodoWrite":   System,
-}
-
-var ProductionAllowedTools = map[string]ToolCategory{
-    "Read": Safe, "Edit": Safe, "Write": Safe, "Grep": Safe, "Glob": Safe,
-    // 禁止 Bash、WebFetch、Agent 等
-}
-```
-
-### 工具参数构建
-```go
-func BuildAllowedToolsArgs(tools []string) []string {
-    if len(tools) == 0 {
-        return nil
-    }
-    args := make([]string, 0, len(tools)*2)
-    for _, t := range tools {
-        args = append(args, "--allowed-tools", t)
-    }
-    return args
-}
-```
+工具分 4 类：Safe（Read/Edit/Write/Grep/Glob）、Risky（Bash）、Network（WebFetch）、System（Agent/NotebookEdit/TodoWrite）。生产环境仅允许 Safe 类。详见 `security/tool.go` — `AllowedTools`、`ProductionAllowedTools`
 
 ---
 
 ## Model 限制
-```go
-var AllowedModels = map[string]bool{
-    "claude-sonnet-4-6":  true,
-    "claude-opus-4-6":    true,
-    "claude-3-5-sonnet":  true,
-    // case-insensitive
-}
-```
+
+允许的模型列表见 `security/tool.go` — `AllowedModels`（case-insensitive）。新增模型需同步更新白名单。
 
 ---
 

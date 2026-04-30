@@ -21,7 +21,7 @@ GOOS         := $(shell go env GOOS)
 GOARCH       := $(shell go env GOARCH)
 GIT_SHA      := $(shell git rev-parse --short=8 HEAD 2>/dev/null || echo "unknown")
 BUILD_TIME   := $(shell date '+%Y-%m-%dT%H:%M:%S%z')
-LDFLAGS      := -s -w -X main.version=v1.2.0 -X main.buildTime=$(BUILD_TIME)
+LDFLAGS      := -s -w -X main.version=v1.3.0 -X main.buildTime=$(BUILD_TIME)
 BUILD_OPTS   := -trimpath
 
 GATEWAY_PID   := $(HOME)/.hotplex/.pids/gateway.pid
@@ -30,6 +30,7 @@ WEB_CHAT_PID  := $(HOME)/.hotplex/.pids/hotplex-webchat.pid
 WEB_CHAT_PORT := 3000
 WEB_CHAT_LOG  := $(CURDIR)/$(LOG_DIR)/webchat.log
 WEB_CHAT_DIR  := webchat
+WEB_CHAT_OUT  := internal/webchat/out
 GRACE_PERIOD  := 7
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -48,10 +49,10 @@ CYAN   := \033[36m
 # PHONY
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: all help quickstart check-tools build build-windows build-one run
+.PHONY: all help quickstart hooks check-tools build build-windows build-one run
 .PHONY: dev dev-start dev-stop dev-status dev-logs dev-reset
 .PHONY: gateway-start gateway-stop gateway-status gateway-logs
-.PHONY: webchat-dev webchat-stop
+.PHONY: webchat-dev webchat-stop webchat-embed webchat-rebuild
 .PHONY: test test-short lint fmt quality check clean
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -64,19 +65,49 @@ all: help
 # Setup
 # ─────────────────────────────────────────────────────────────────────────────
 
-quickstart: check-tools build test-short
-	@echo ""
-	@echo "  $(GREEN)✓ Setup complete$(RESET)"
-	@echo ""
-	@echo "    make dev      Start dev environment"
-	@echo "    make run      Run gateway"
-	@echo "    make help     Show all commands"
-	@echo ""
+quickstart: hooks
+	@if command -v go > /dev/null 2>&1; then \
+		$(MAKE) check-tools build test-short; \
+		echo ""; \
+		echo "  $(GREEN)✓ Developer setup complete$(RESET)"; \
+		echo ""; \
+		echo "    make dev      Start dev environment"; \
+		echo "    make run      Run gateway"; \
+		echo "    make help     Show all commands"; \
+		echo ""; \
+	else \
+		echo ""; \
+		echo "  $(GREEN)✓ Quickstart complete$(RESET)"; \
+		echo ""; \
+		echo "    $(DIM)Go not detected — skipping build & tests.$(RESET)"; \
+		echo ""; \
+		echo "    $(BOLD)Next steps:$(RESET)"; \
+		echo "      1. Download binary from releases"; \
+		echo "      2. Run $(CYAN)hotplex onboard$(RESET) to configure"; \
+		echo "      3. Run $(CYAN)hotplex gateway start$(RESET) to launch"; \
+		echo ""; \
+	fi
 
 check-tools:
 	@$(call check-tool, go, "Go")
 	@$(call check-tool, golangci-lint, "golangci-lint")
 	@$(call check-tool, goimports, "goimports")
+
+hooks:
+	@echo "$(CYAN)Installing git hooks...$(RESET)"
+	@for hook in scripts/git-hooks/*; do \
+		name=$$(basename "$$hook"); \
+		target=".git/hooks/$$name"; \
+		if [ -L "$$target" ]; then \
+			echo "  $(GREEN)✓$(RESET) $$name (symlink exists)"; \
+		elif [ -f "$$target" ]; then \
+			echo "  $(YELLOW)⚠$(RESET) $$name (regular file, skipping — remove manually and re-run)"; \
+		else \
+			ln -s "$(PWD)/$$hook" "$$target" && \
+			echo "  $(GREEN)✓$(RESET) $$name → $$hook"; \
+		fi; \
+	done
+	@echo "  $(DIM)Pre-push runs: fmt → lint → vet → mod verify → build → test$(RESET)"
 
 define check-tool
 	@if command -v $(1) > /dev/null 2>&1; then \
@@ -90,7 +121,7 @@ endef
 # Build
 # ─────────────────────────────────────────────────────────────────────────────
 
-build:
+build: webchat-embed
 	@echo "$(CYAN)Building...$(RESET)"
 	@mkdir -p $(BUILD_DIR) $(LOG_DIR)
 	@go build $(BUILD_OPTS) -ldflags="$(LDFLAGS)" \
@@ -218,6 +249,21 @@ webchat-dev:
 webchat-stop:
 	@./scripts/dev.sh stop webchat
 
+webchat-embed:
+	@if [ ! -d $(WEB_CHAT_OUT)/_next ]; then \
+		echo "$(CYAN)Building webchat for embedding...$(RESET)"; \
+		cd $(WEB_CHAT_DIR) && pnpm install --frozen-lockfile && pnpm build && \
+		rm -rf ../$(WEB_CHAT_OUT).tmp && cp -r out ../$(WEB_CHAT_OUT).tmp && \
+		rm -rf ../$(WEB_CHAT_OUT) && mv ../$(WEB_CHAT_OUT).tmp ../$(WEB_CHAT_OUT); \
+	fi
+
+webchat-rebuild:
+	@echo "$(CYAN)Rebuilding webchat...$(RESET)"
+	@cd $(WEB_CHAT_DIR) && pnpm build && \
+	rm -rf ../$(WEB_CHAT_OUT).tmp && cp -r out ../$(WEB_CHAT_OUT).tmp && \
+	rm -rf ../$(WEB_CHAT_OUT) && mv ../$(WEB_CHAT_OUT).tmp ../$(WEB_CHAT_OUT)
+	@echo "  $(GREEN)✓$(RESET) Webchat rebuilt"
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Clean
 # ─────────────────────────────────────────────────────────────────────────────
@@ -273,6 +319,7 @@ help:
 	@echo "  $(BOLD)🧹 Other"
 	@printf "    $(CYAN)make %-15s$(RESET)  %s\n" "clean"        "Clean artifacts"
 	@printf "    $(CYAN)make %-15s$(RESET)  %s\n" "check-tools"  "Check dev tools"
+	@printf "    $(CYAN)make %-15s$(RESET)  %s\n" "hooks"        "Install git hooks"
 	@echo ""
 	@echo "  $(DIM)Try:  make dev | make test | make check"
 	@echo ""

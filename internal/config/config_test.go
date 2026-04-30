@@ -16,7 +16,7 @@ func TestDefault(t *testing.T) {
 
 	cfg := Default()
 	require.NotNil(t, cfg)
-	require.Equal(t, ":8888", cfg.Gateway.Addr)
+	require.Equal(t, "localhost:8888", cfg.Gateway.Addr)
 	require.True(t, cfg.DB.WALMode)
 	require.Equal(t, 100, cfg.Pool.MaxSize)
 	require.Equal(t, 5, cfg.Pool.MaxIdlePerUser)
@@ -24,7 +24,7 @@ func TestDefault(t *testing.T) {
 	require.Equal(t, 1*time.Minute, cfg.Session.GCScanInterval)
 	require.False(t, cfg.Security.TLSEnabled)
 	require.True(t, cfg.Admin.Enabled)
-	require.Equal(t, ":9999", cfg.Admin.Addr)
+	require.Equal(t, "localhost:9999", cfg.Admin.Addr)
 }
 
 func TestConfig_Validate(t *testing.T) {
@@ -38,7 +38,7 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name:   "valid defaults",
 			cfg:    *Default(),
-			errCnt: 1, // TLS warning for non-local address :8888
+			errCnt: 0, // localhost:8888 bypasses TLS warning
 		},
 		{
 			name: "missing gateway addr",
@@ -47,7 +47,7 @@ func TestConfig_Validate(t *testing.T) {
 				c.Gateway.Addr = ""
 				return c
 			}(),
-			errCnt: 2, // missing addr + TLS warning
+			errCnt: 2, // missing addr + TLS warning (empty addr is non-local)
 		},
 		{
 			name: "missing db path",
@@ -56,7 +56,7 @@ func TestConfig_Validate(t *testing.T) {
 				c.DB.Path = ""
 				return c
 			}(),
-			errCnt: 2, // missing path + TLS warning
+			errCnt: 1, // missing path only
 		},
 		{
 			name: "non-positive retention period",
@@ -65,7 +65,7 @@ func TestConfig_Validate(t *testing.T) {
 				c.Session.RetentionPeriod = 0
 				return c
 			}(),
-			errCnt: 2, // invalid retention + TLS warning
+			errCnt: 1, // invalid retention only
 		},
 		{
 			name: "non-positive pool max size",
@@ -74,7 +74,7 @@ func TestConfig_Validate(t *testing.T) {
 				c.Pool.MaxSize = 0
 				return c
 			}(),
-			errCnt: 2, // invalid pool + TLS warning
+			errCnt: 1, // invalid pool only
 		},
 		{
 			name: "multiple errors",
@@ -87,13 +87,13 @@ func TestConfig_Validate(t *testing.T) {
 			errCnt: 3, // missing addr + missing path + TLS warning
 		},
 		{
-			name: "localhost TLS bypass",
+			name: "non-local address TLS warning",
 			cfg: func() Config {
 				c := *Default()
-				c.Gateway.Addr = "127.0.0.1:8888"
+				c.Gateway.Addr = ":8888"
 				return c
 			}(),
-			errCnt: 0, // localhost bypasses TLS warning
+			errCnt: 1, // TLS warning for non-local address
 		},
 	}
 

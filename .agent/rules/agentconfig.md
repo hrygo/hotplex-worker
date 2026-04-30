@@ -33,19 +33,7 @@ paths:
 
 ## META-COGNITION.md（Agent 自画像）
 
-`internal/agentconfig/META-COGNITION.md` — 通过 `go:embed` 编译时注入：
-
-```go
-//go:embed META-COGNITION.md
-var metaCognitionFS embed.FS
-
-func LoadMetaCognition() (string, error) {
-    data, err := metaCognitionFS.ReadFile("META-COGNITION.md")
-    return string(data), err
-}
-```
-
-**5 节结构**：identity、system architecture、session lifecycle、agent config architecture、control commands
+`internal/agentconfig/META-COGNITION.md` — 通过 `go:embed` 编译时注入，5 节结构：identity、system architecture、session lifecycle、agent config architecture、control commands
 
 **注入方式**：作为 C 通道 `<hotplex>` 子节点注入，与 USER.md/MEMORY.md 同级：
 ```xml
@@ -107,18 +95,4 @@ for _, name := range platformVariants {
 
 ## YAML Frontmatter 剥离
 
-配置文件头部允许 YAML frontmatter（`---...---`），加载时自动剥离：
-
-```go
-func stripFrontmatter(content string) string {
-    if strings.HasPrefix(content, "---") {
-        end := strings.Index(content[2:], "---")
-        if end >= 0 {
-            return strings.TrimSpace(content[end+4:])
-        }
-    }
-    return content
-}
-```
-
-**用途**：元数据（版本、作者、标签）放在 frontmatter，正文注入 prompt。
+配置文件头部允许 YAML frontmatter（`---...---`），`loader.go stripFrontmatter()` 自动剥离。元数据放 frontmatter，正文注入 prompt。
