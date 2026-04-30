@@ -106,8 +106,8 @@ worker:
 
   # Extra environment variables for all worker processes (highest priority).
   # These override whitelisted keys from os.Environ().
-  environment:
-    - BUN_JSC_useJIT=0
+  environment: []
+  # - BUN_JSC_useJIT=0  # JIT workaround for Bun SIGILL on broken AVX VPS (severe perf penalty)
 
   auto_retry:
     enabled: true
