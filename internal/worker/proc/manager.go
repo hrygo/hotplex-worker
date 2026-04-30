@@ -149,7 +149,6 @@ func (m *Manager) Start(ctx context.Context, name string, args, env []string, di
 	// Write PID file if tracker is configured.
 	m.trackPID()
 
-	// Limit process virtual address space to 512 MB (platform-specific).
 	if cmd.Process != nil {
 		setMemoryLimit(cmd.Process.Pid, m.log)
 		m.createJobAndAssign(cmd.Process.Pid)
@@ -224,7 +223,10 @@ func (m *Manager) Kill() error {
 		return nil
 	}
 
-	m.killJob()
+	// closeJobHandle triggers KILL_ON_JOB_CLOSE on Windows, killing the
+	// entire process tree. ForceKill is a fallback for when Job Object
+	// creation failed (jobHandle == 0).
+	m.closeJobHandle()
 	if m.pgid > 0 {
 		_ = ForceKill(m.pgid)
 		m.log.Info("proc: force killed", "pgid", m.pgid)
@@ -232,7 +234,6 @@ func (m *Manager) Kill() error {
 	_ = m.cmd.Wait()
 	m.captureExitCodeLocked()
 	m.untrackPID(m.pidKey)
-	m.closeJobHandle()
 	return nil
 }
 

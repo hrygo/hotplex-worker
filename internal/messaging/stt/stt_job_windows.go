@@ -2,13 +2,10 @@
 
 package stt
 
-import "golang.org/x/sys/windows"
+import "github.com/hrygo/hotplex/internal/worker/proc"
 
 // closeJob closes the Job Object handle, killing the entire process tree.
 func (s *PersistentSTT) closeJob() {
-	if s.jobHandle == 0 {
-		return
-	}
-	_ = windows.CloseHandle(windows.Handle(s.jobHandle))
+	proc.CloseJobHandle(s.jobHandle)
 	s.jobHandle = 0
 }
