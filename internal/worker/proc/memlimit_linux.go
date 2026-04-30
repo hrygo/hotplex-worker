@@ -4,20 +4,21 @@ package proc
 
 import (
 	"log/slog"
-	"syscall"
+
+	"golang.org/x/sys/unix"
 )
 
-func setMemoryLimit(_ int, log *slog.Logger) {
-	// NOTE: syscall.Setrlimit applies to the calling process (the gateway),
-	// not to an already-started child. The RLIMIT_AS limit IS inherited by
-	// children forked after this call, so this sets a ceiling for the gateway
-	// and any worker processes it spawns subsequently.
-	// For production per-worker isolation, prefer cgroups.
-	const memLimit = 512 * 1024 * 1024 // 512 MB
-	if err := syscall.Setrlimit(syscall.RLIMIT_AS, &syscall.Rlimit{
+func setMemoryLimit(pid int, log *slog.Logger) {
+	// Use unix.Prlimit to set RLIMIT_AS on the child process specifically.
+	// syscall.Setrlimit applies to the CALLING process (the gateway) — that
+	// was a bug: it capped the gateway's own virtual address space, causing
+	// Bun bmalloc mmap failures AND gateway pthread_create failures.
+	// Prlimit targets a specific PID, so only the worker is constrained.
+	const memLimit = 2 * 1024 * 1024 * 1024 // 2 GB
+	if err := unix.Prlimit(pid, unix.RLIMIT_AS, &unix.Rlimit{
 		Cur: memLimit,
 		Max: memLimit,
-	}); err != nil {
-		log.Warn("proc: setrlimit RLIMIT_AS failed", "err", err)
+	}, nil); err != nil {
+		log.Warn("proc: prlimit RLIMIT_AS failed", "pid", pid, "err", err)
 	}
 }
