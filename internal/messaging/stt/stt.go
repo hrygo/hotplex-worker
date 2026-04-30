@@ -140,9 +140,6 @@ type PersistentSTT struct {
 	pgid    int
 	started bool
 
-	// jobHandle stores the Windows Job Object handle for subprocess tree cleanup.
-	// On Unix this is always 0. On Windows, closing this handle kills the entire
-	// process tree (JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE).
 	jobHandle uintptr //nolint:unused // read by stt_job_windows.go
 
 	lastUsed atomic.Int64 // unix nano of last successful request
@@ -262,11 +259,11 @@ func (s *PersistentSTT) start(_ context.Context) error {
 	s.pgid = cmd.Process.Pid
 	s.started = true
 
-	// Assign subprocess to Job Object for process tree cleanup on Windows.
-	if job, jerr := proc.CreateJobObject(); jerr != nil {
-		s.log.Warn("persistent stt: job object creation failed, tree cleanup disabled", "err", jerr)
-	} else if jerr = proc.AssignProcessToJob(job, s.pgid); jerr != nil {
-		s.log.Warn("persistent stt: job assignment failed", "pid", s.pgid, "err", jerr)
+	job, err := proc.CreateJobObject()
+	if err != nil {
+		s.log.Warn("persistent stt: job object creation failed, tree cleanup disabled", "err", err)
+	} else if assignErr := proc.AssignProcessToJob(job, s.pgid); assignErr != nil {
+		s.log.Warn("persistent stt: job assignment failed", "pid", s.pgid, "err", assignErr)
 	} else {
 		s.jobHandle = job
 	}
@@ -326,17 +323,9 @@ func (s *PersistentSTT) terminate(ctx context.Context) {
 		// Graceful exit.
 	case <-time.After(5 * time.Second):
 		s.log.Warn("persistent stt: graceful timeout, force killing", "pgid", s.pgid)
-		s.closeJob()
-		if s.pgid > 0 {
-			_ = proc.ForceKill(s.pgid)
-		}
-		<-done
+		s.forceKillAndWait(done)
 	case <-ctx.Done():
-		s.closeJob()
-		if s.pgid > 0 {
-			_ = proc.ForceKill(s.pgid)
-		}
-		<-done
+		s.forceKillAndWait(done)
 	}
 
 	_ = s.stdoutR.Close()
@@ -374,6 +363,15 @@ func (s *PersistentSTT) kill() {
 	if tracker := proc.GlobalTracker(); tracker != nil {
 		_ = tracker.Remove(s.pidKey)
 	}
+}
+
+// forceKillAndWait closes the Job Object, force-kills the process group, and waits for exit.
+func (s *PersistentSTT) forceKillAndWait(done chan struct{}) {
+	s.closeJob()
+	if s.pgid > 0 {
+		_ = proc.ForceKill(s.pgid)
+	}
+	<-done
 }
 
 // isAlive checks if subprocess is still running (non-blocking).

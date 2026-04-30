@@ -5,13 +5,13 @@ package security
 import "github.com/hrygo/hotplex/internal/config"
 
 // AllowedBaseDirs is the set of permitted base directories for session work dirs.
-var AllowedBaseDirs = map[string]bool{
+var allowedBaseDirs = map[string]bool{
 	"/var/hotplex/projects": true,
 	config.TempBaseDir():    true,
 }
 
-// ForbiddenWorkDirs are system directories that must never be used as session work dirs.
-var ForbiddenWorkDirs = []string{
+// forbiddenWorkDirs are system directories that must never be used as session work dirs.
+var forbiddenWorkDirs = []string{
 	"/bin",    // FHS: essential user binaries
 	"/sbin",   // FHS: essential system binaries
 	"/usr",    // FHS: system-wide read-only programs & libraries

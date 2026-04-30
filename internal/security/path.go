@@ -8,7 +8,7 @@ import (
 
 // ValidateBaseDir checks that the base directory is in the allowed list.
 func ValidateBaseDir(baseDir string) error {
-	if !AllowedBaseDirs[baseDir] {
+	if !allowedBaseDirs[baseDir] {
 		return fmt.Errorf("security: base directory %q not in whitelist", baseDir)
 	}
 	return nil
@@ -52,7 +52,7 @@ func checkForbidden(path string) error {
 		return fmt.Errorf("security: work dir %q is a forbidden system directory", path)
 	}
 
-	for _, forbidden := range ForbiddenWorkDirs {
+	for _, forbidden := range forbiddenWorkDirs {
 		if pathEqual(path, forbidden) {
 			return fmt.Errorf("security: work dir %q is a forbidden system directory", path)
 		}

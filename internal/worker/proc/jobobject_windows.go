@@ -48,3 +48,12 @@ func AssignProcessToJob(job uintptr, pid int) error {
 	}
 	return nil
 }
+
+// CloseJobHandle closes a Job Object handle. KILL_ON_JOB_CLOSE ensures all
+// processes in the job are terminated when the handle is closed.
+func CloseJobHandle(handle uintptr) {
+	if handle == 0 {
+		return
+	}
+	_ = windows.CloseHandle(windows.Handle(handle))
+}

@@ -9,13 +9,13 @@ import (
 	"github.com/hrygo/hotplex/internal/config"
 )
 
-var AllowedBaseDirs = map[string]bool{
+var allowedBaseDirs = map[string]bool{
 	config.TempBaseDir(): true,
 }
 
-// ForbiddenWorkDirs are system directories that must never be used as session work dirs.
+// forbiddenWorkDirs are system directories that must never be used as session work dirs.
 // Populated from environment variables to handle non-C: drive installations.
-var ForbiddenWorkDirs []string
+var forbiddenWorkDirs []string
 
 func init() {
 	sysDrive := os.Getenv("SystemDrive")
@@ -26,7 +26,7 @@ func init() {
 	if sysRoot == "" {
 		sysRoot = filepath.Join(sysDrive, "Windows")
 	}
-	ForbiddenWorkDirs = []string{
+	forbiddenWorkDirs = []string{
 		sysRoot,
 		filepath.Join(sysDrive, "Program Files"),
 		filepath.Join(sysDrive, "Program Files (x86)"),

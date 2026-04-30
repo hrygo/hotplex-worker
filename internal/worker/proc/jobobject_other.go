@@ -8,3 +8,6 @@ func CreateJobObject() (uintptr, error) { return 0, nil }
 
 // AssignProcessToJob is a no-op on non-Windows platforms.
 func AssignProcessToJob(_ uintptr, _ int) error { return nil }
+
+// CloseJobHandle is a no-op on non-Windows platforms.
+func CloseJobHandle(_ uintptr) {}
