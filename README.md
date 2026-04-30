@@ -39,10 +39,7 @@
 
 ## ⚡ Quick Start
 
-> **AI Agents:** For machine-readable installation instructions, see:
-> ```
-> https://github.com/hrygo/hotplex/blob/main/INSTALL.md
-> ```
+> **AI Agents:** Read https://github.com/hrygo/hotplex/blob/main/INSTALL.md and complete the HotPlex installation and configuration
 
 ### Install
 

@@ -181,7 +181,7 @@ jobs:
         run: |
           chmod +x scripts/pack-offline-bundle.sh
 
-          for PLATFORM in linux-x64 linux-x64-musl linux-arm64 linux-arm64-musl darwin-arm64 darwin-x64; do
+          for PLATFORM in linux-x64 linux-x64-musl linux-arm64 linux-arm64-musl darwin-arm64 darwin-x64 windows-x64 windows-arm64; do
             echo "==> Packing ${PLATFORM}..."
             bash scripts/pack-offline-bundle.sh \
               --opencode-version "${{ steps.versions.outputs.opencode }}" \

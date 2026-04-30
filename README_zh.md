@@ -39,10 +39,7 @@
 
 ## ⚡ 快速开始
 
-> **AI Agent：** 机器可读安装指南请参考：
-> ```
-> https://github.com/hrygo/hotplex/blob/main/INSTALL.md
-> ```
+> **AI Agent：** 阅读 https://github.com/hrygo/hotplex/blob/main/INSTALL.md 并完成 hotplex 安装和配置
 
 ### 安装
 

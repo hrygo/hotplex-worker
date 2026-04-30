@@ -71,7 +71,7 @@ resolve_platform() {
     case "$raw_os" in
         Darwin*)  os="darwin" ;;
         Linux*)   os="linux" ;;
-        MINGW*|MSYS*|CYGWIN*) die "Windows is not supported" ;;
+        MINGW*|MSYS*|CYGWIN*|Windows*) os="windows" ;;
         *)        os=$(echo "$raw_os" | tr '[:upper:]' '[:lower:]') ;;
     esac
 
@@ -185,7 +185,8 @@ declare -A PLATFORM_MAP=(
     ["darwin-x64"]="oh-my-opencode-darwin-x64"
     ["darwin-x64-baseline"]="oh-my-opencode-darwin-x64-baseline"
     ["darwin-arm64"]="oh-my-opencode-darwin-arm64"
-
+    ["windows-x64"]="oh-my-opencode-windows-x64"
+    ["windows-arm64"]="oh-my-opencode-windows-arm64"
 )
 
 pack_omo_platform() {
@@ -351,17 +352,23 @@ info "  ✓ Scripts and metadata generated"
 # ── Final archive ───────────────────────────────────────────────────────────
 
 BUNDLE_NAME="hotplex-offline-bundle-${PLATFORM}-opencode${OPENCODE_VERSION}-omo${OMO_VERSION}"
-FINAL_TAR="${PROJECT_DIR}/dist/${BUNDLE_NAME}.tar.gz"
 
-tar -czf "$FINAL_TAR" -C "$(dirname "$OUTPUT_DIR")" "$(basename "$OUTPUT_DIR")"
+if [[ "$PLATFORM" == windows* ]]; then
+    FINAL_ARCHIVE="${PROJECT_DIR}/dist/${BUNDLE_NAME}.zip"
+    mkdir -p "${PROJECT_DIR}/dist"
+    (cd "$OUTPUT_DIR" && zip -r "$FINAL_ARCHIVE" .)
+else
+    FINAL_ARCHIVE="${PROJECT_DIR}/dist/${BUNDLE_NAME}.tar.gz"
+    tar -czf "$FINAL_ARCHIVE" -C "$(dirname "$OUTPUT_DIR")" "$(basename "$OUTPUT_DIR")"
+fi
 
 echo ""
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${GREEN}  ✓ Offline bundle created${NC}"
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
-echo -e "  Bundle:  ${FINAL_TAR}"
-echo -e "  Size:    $(du -sh "$FINAL_TAR" | cut -f1)"
+echo -e "  Bundle:  ${FINAL_ARCHIVE}"
+echo -e "  Size:    $(du -sh "$FINAL_ARCHIVE" | cut -f1)"
 echo ""
 echo -e "  ${DIM}Contents:${NC}"
 ls -lh "$OUTPUT_DIR/" | tail -n +2 | while read -r line; do
@@ -369,7 +376,12 @@ ls -lh "$OUTPUT_DIR/" | tail -n +2 | while read -r line; do
 done
 echo ""
 echo -e "  ${DIM}Transfer to air-gapped network:${NC}"
-echo -e "  ${DIM}  scp ${FINAL_TAR} user@internal-server:/tmp/${NC}"
-echo -e "  ${DIM}  tar -xzf ${BUNDLE_NAME}.tar.gz${NC}"
+if [[ "$PLATFORM" == windows* ]]; then
+    echo -e "  ${DIM}  scp ${FINAL_ARCHIVE} user@internal-server:/tmp/${NC}"
+    echo -e "  ${DIM}  Expand-Archive ${BUNDLE_NAME}.zip${NC}"
+else
+    echo -e "  ${DIM}  scp ${FINAL_ARCHIVE} user@internal-server:/tmp/${NC}"
+    echo -e "  ${DIM}  tar -xzf ${BUNDLE_NAME}.tar.gz${NC}"
+fi
 echo -e "  ${DIM}  cd ${BUNDLE_NAME} && bash install.sh${NC}"
 echo ""
