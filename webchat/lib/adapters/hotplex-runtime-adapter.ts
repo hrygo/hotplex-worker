@@ -91,7 +91,8 @@ interface HotPlexMessage {
  * Handles both old format (content: string) and new format (parts: MessagePart[]).
  */
 function convertToThreadMessage(message: HotPlexMessage): ThreadMessageLike {
-  const content = message.parts;
+  // Filter out ToolSummaryPart — not recognized by assistant-ui's ThreadMessageLike type
+  const content = message.parts.filter((p): p is TextPart | ReasoningPart | ToolCallPart => p.type !== 'tool-summary');
 
   const role = (message.role as string) === 'user' ? 'user' : 'assistant';
 
@@ -164,7 +165,7 @@ function historyToMessages(records: ConversationRecord[]): HotPlexMessage[] {
     platform: r.platform,
     user_id: r.user_id,
     model: r.model,
-    success: r.success,
+    success: r.success == null ? null : r.success ? 1 : 0,
     source: r.source,
     tools_json: r.tools_json,
     tool_call_count: r.tool_call_count,

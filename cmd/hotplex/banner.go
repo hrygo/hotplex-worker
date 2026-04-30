@@ -7,7 +7,8 @@ import (
 	"os"
 	"runtime"
 	"strings"
-	"syscall"
+
+	"github.com/hrygo/hotplex/internal/cli/output"
 )
 
 // ANSI escape codes for TTY output.
@@ -64,15 +65,6 @@ type AdapterStatus struct {
 	Started bool
 }
 
-// isTTY returns true when fd refers to a character device (terminal).
-func isTTY(fd uintptr) bool {
-	var st syscall.Stat_t
-	if err := syscall.Fstat(int(fd), &st); err != nil {
-		return false
-	}
-	return st.Mode&syscall.S_IFMT == syscall.S_IFCHR
-}
-
 // writeAll writes strings to w, ignoring errors (banner output is best-effort).
 func writeAll(w io.Writer, lines ...string) {
 	for _, l := range lines {
@@ -81,7 +73,7 @@ func writeAll(w io.Writer, lines ...string) {
 }
 
 func printStartupBanner(out *os.File, info BuildInfo, s RuntimeStatus, configPath string) {
-	tty := isTTY(out.Fd())
+	tty := output.IsTTY(out)
 
 	bold := func(s string) string {
 		if tty {

@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
-	"syscall"
 	"testing"
 	"time"
 
@@ -245,7 +244,7 @@ func TestCleanupOrphans_LiveOrphan(t *testing.T) {
 	tr := NewTracker(dir, nil)
 
 	cmd := exec.Command("sleep", "60")
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	SetSysProcAttr(cmd)
 	require.NoError(t, cmd.Start())
 	pgid := cmd.Process.Pid
 

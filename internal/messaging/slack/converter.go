@@ -165,7 +165,7 @@ func mediaFilePath(m *MediaInfo) (string, string) {
 	if ext == "" {
 		ext = "." + m.FileID
 	}
-	dir := filepath.Join(mediaPathPrefix, m.Type+"s")
+	dir := filepath.Join(MediaPathPrefix, m.Type+"s")
 	path := filepath.Join(dir, fmt.Sprintf("%s_%s%s", m.Type, m.FileID, ext))
 	return dir, path
 }

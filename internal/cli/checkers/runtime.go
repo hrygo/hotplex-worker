@@ -8,9 +8,10 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 
 	"github.com/hrygo/hotplex/internal/cli"
+	"github.com/hrygo/hotplex/internal/config"
+	"github.com/hrygo/hotplex/internal/worker/proc"
 )
 
 type diskSpaceChecker struct{}
@@ -18,8 +19,7 @@ type diskSpaceChecker struct{}
 func (c diskSpaceChecker) Name() string     { return "runtime.disk_space" }
 func (c diskSpaceChecker) Category() string { return "runtime" }
 func (c diskSpaceChecker) Check(ctx context.Context) cli.Diagnostic {
-	var stat syscall.Statfs_t
-	err := syscall.Statfs(".", &stat)
+	freeMB, err := GetDiskFreeMB(".")
 	if err != nil {
 		return cli.Diagnostic{
 			Name:     c.Name(),
@@ -29,8 +29,6 @@ func (c diskSpaceChecker) Check(ctx context.Context) cli.Diagnostic {
 			Detail:   err.Error(),
 		}
 	}
-	freeBytes := stat.Bavail * uint64(stat.Bsize)
-	freeMB := freeBytes / 1024 / 1024
 	if freeMB >= 100 {
 		return cli.Diagnostic{
 			Name:     c.Name(),
@@ -118,13 +116,7 @@ func (c orphanPIDsChecker) Check(ctx context.Context) cli.Diagnostic {
 		if err != nil {
 			continue
 		}
-		proc, err := os.FindProcess(pid)
-		if err != nil {
-			orphanFiles = append(orphanFiles, name)
-			continue
-		}
-		err = proc.Signal(syscall.Signal(0))
-		if err != nil {
+		if err := proc.IsProcessAlive(pid); err != nil {
 			orphanFiles = append(orphanFiles, name)
 		} else {
 			alive = append(alive, pid)
@@ -229,8 +221,9 @@ func (c dataDirWritableChecker) Check(ctx context.Context) cli.Diagnostic {
 }
 
 func init() {
+	hplexHome := config.HotplexHome()
 	cli.DefaultRegistry.Register(diskSpaceChecker{})
 	cli.DefaultRegistry.Register(portAvailableChecker{})
-	cli.DefaultRegistry.Register(orphanPIDsChecker{pidDir: os.ExpandEnv("$HOME/.hotplex/.pids")})
-	cli.DefaultRegistry.Register(dataDirWritableChecker{dataDir: filepath.Join(os.ExpandEnv("$HOME"), ".hotplex", "data")})
+	cli.DefaultRegistry.Register(orphanPIDsChecker{pidDir: filepath.Join(hplexHome, ".pids")})
+	cli.DefaultRegistry.Register(dataDirWritableChecker{dataDir: filepath.Join(hplexHome, "data")})
 }

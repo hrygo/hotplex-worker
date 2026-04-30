@@ -1,15 +1,14 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 
 	"github.com/hrygo/hotplex/internal/config"
+	"github.com/hrygo/hotplex/internal/worker/proc"
 )
 
 func gatewayPIDPath() string {
@@ -35,8 +34,8 @@ func readGatewayPID() (int, error) {
 		return 0, fmt.Errorf("invalid PID file content")
 	}
 
-	if err := syscall.Kill(pid, 0); err != nil {
-		if errors.Is(err, syscall.ESRCH) {
+	if err := proc.IsProcessAlive(pid); err != nil {
+		if proc.IsProcessNotExist(err) {
 			removeGatewayPID()
 			return 0, fmt.Errorf("gateway not running (PID %d stale)", pid)
 		}
