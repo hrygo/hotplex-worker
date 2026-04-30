@@ -492,3 +492,21 @@ func TestConversationStore_GetBySessionBefore_SessionIsolation(t *testing.T) {
 	require.Len(t, records, 1)
 	require.Equal(t, "sess-a", records[0].SessionID)
 }
+
+func TestConversationStore_Append_UnmarshallableMetadata(t *testing.T) {
+	_, cs := helperStoreWithConv(t)
+	ctx := context.Background()
+
+	// json.Marshal cannot encode a channel → triggers the error fallback path.
+	ch := make(chan int)
+	require.NoError(t, cs.Append(ctx, &ConversationRecord{
+		SessionID: "sess-bad-meta", Seq: 1, Role: RoleUser, Content: "hello",
+		Metadata: map[string]any{"bad": ch},
+	}))
+	time.Sleep(200 * time.Millisecond)
+
+	// The record is still persisted (with "{}" as metadata fallback).
+	records, err := cs.GetBySession(ctx, "sess-bad-meta", 100, 0)
+	require.NoError(t, err)
+	require.Len(t, records, 1)
+}

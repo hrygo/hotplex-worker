@@ -263,3 +263,21 @@ func TestIsSymlink(t *testing.T) {
 	require.False(t, isSymlink(target))
 	require.False(t, isSymlink("/nonexistent/path"))
 }
+
+func TestNewLocator_ZeroTTL_UsesDefault(t *testing.T) {
+	t.Parallel()
+
+	l := NewLocator(slog.Default(), 0)
+	defer l.Close()
+
+	require.Equal(t, defaultTTL, l.ttl)
+}
+
+func TestNewLocator_NegativeTTL_UsesDefault(t *testing.T) {
+	t.Parallel()
+
+	l := NewLocator(slog.Default(), -5*time.Second)
+	defer l.Close()
+
+	require.Equal(t, defaultTTL, l.ttl)
+}
