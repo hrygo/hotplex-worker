@@ -124,6 +124,9 @@ if [[ "$SKIP_OMO" != true ]]; then
 
         # Detect current platform for native binary
         local_os=$(uname -s | tr '[:upper:]' '[:lower:]')
+        case "$local_os" in
+            mingw*|msys*|cygwin*) local_os="windows" ;;
+        esac
         local_arch=$(uname -m)
         case "$local_arch" in
             x86_64)       local_arch="x64" ;;
