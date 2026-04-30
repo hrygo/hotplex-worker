@@ -67,7 +67,7 @@ export function TerminalTool({ command, stdout, stderr, status, onToggle }: Term
               <motion.span
                 className="inline-block w-2 h-4.5 ml-1 bg-[var(--accent-emerald)] align-middle"
                 animate={{ opacity: [1, 0] }}
-                transition={{ repeat: Infinity, duration: 1, ease: "steps(2)" }}
+                transition={{ repeat: Infinity, duration: 0.8, ease: "linear" }}
               />
             )}
           </code>

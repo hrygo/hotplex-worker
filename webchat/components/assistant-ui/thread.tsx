@@ -411,15 +411,6 @@ export function Thread({ skills, hasMore, onLoadHistory }: ThreadProps) {
           <AnimatePresence>
             {menuOpen && <CommandMenu isOpen={menuOpen} inputValue={localText} onSelect={handleSelectCommand} onClose={() => setMenuOpen(false)} skills={skills} />}
           </AnimatePresence>
-          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-0.5 z-20">
-            <ThreadPrimitive.ScrollToBottom className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[var(--bg-surface)] border border-[var(--border-bright)] shadow-xl text-[var(--accent-gold)] hover:bg-[var(--bg-hover)] hover:border-[var(--accent-gold)] transition-all active:scale-95 group/scroll">
-              <svg className="w-3.5 h-3.5 animate-bounce-subtle" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-              </svg>
-              <span className="text-[10px] font-bold uppercase tracking-widest">Latest Messages</span>
-            </ThreadPrimitive.ScrollToBottom>
-          </div>
-
           <div className="flex items-center gap-2 mb-3 px-4 overflow-x-auto no-scrollbar animate-fadeIn">
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[var(--accent-gold)]/10 border border-[var(--accent-gold)]/20 shadow-sm whitespace-nowrap">
               <span className="text-[9px] font-display font-black text-[var(--accent-gold)] uppercase tracking-[0.05em]">Agent Skills</span>
@@ -437,7 +428,17 @@ export function Thread({ skills, hasMore, onLoadHistory }: ThreadProps) {
             )}
           </div>
 
-          <ComposerPrimitive.Root className="composer-root shadow-[0_20px_50px_rgba(0,0,0,0.3)]">
+          <div className="relative">
+            <div className="absolute bottom-full left-1/2 -translate-x-1/2 z-20 translate-y-2">
+              <ThreadPrimitive.ScrollToBottom className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[var(--bg-surface)] border border-[var(--border-bright)] shadow-xl text-[var(--accent-gold)] hover:bg-[var(--bg-hover)] hover:border-[var(--accent-gold)] transition-all active:scale-95 group/scroll">
+                <svg className="w-3.5 h-3.5 animate-bounce-subtle" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                </svg>
+                <span className="text-[10px] font-bold uppercase tracking-widest">Latest Messages</span>
+              </ThreadPrimitive.ScrollToBottom>
+            </div>
+
+            <ComposerPrimitive.Root className="composer-root shadow-[0_20px_50px_rgba(0,0,0,0.3)]">
             <div className="composer-input-row">
               <ComposerPrimitive.Input 
                 className="composer-input" 
