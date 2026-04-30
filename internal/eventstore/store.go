@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hrygo/hotplex/internal/config"
 	"github.com/hrygo/hotplex/internal/sqlutil"
 )
 
@@ -128,7 +129,7 @@ type SQLiteStore struct {
 var _ EventStore = (*SQLiteStore)(nil)
 
 // NewSQLiteStore creates a new event store backed by an independent SQLite file.
-func NewSQLiteStore(ctx context.Context, dbPath string) (*SQLiteStore, error) {
+func NewSQLiteStore(ctx context.Context, dbPath string, dbCfg *config.DBConfig) (*SQLiteStore, error) {
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
 		return nil, fmt.Errorf("eventstore: create dir: %w", err)
 	}
@@ -138,29 +139,9 @@ func NewSQLiteStore(ctx context.Context, dbPath string) (*SQLiteStore, error) {
 		return nil, fmt.Errorf("eventstore: open db: %w", err)
 	}
 
-	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
+	if err := sqlutil.InitSQLiteDB(db, dbCfg, "eventstore"); err != nil {
 		_ = db.Close()
-		return nil, fmt.Errorf("eventstore: enable WAL: %w", err)
-	}
-	if _, err := db.Exec("PRAGMA busy_timeout=5000"); err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("eventstore: set busy_timeout: %w", err)
-	}
-	if _, err := db.Exec("PRAGMA foreign_keys=ON"); err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("eventstore: enable foreign_keys: %w", err)
-	}
-
-	for _, p := range []string{
-		"PRAGMA synchronous=NORMAL",
-		"PRAGMA cache_size=-2000",
-		"PRAGMA temp_store=MEMORY",
-		"PRAGMA wal_autocheckpoint=1000",
-	} {
-		if _, err := db.Exec(p); err != nil {
-			_ = db.Close()
-			return nil, fmt.Errorf("eventstore: pragma %s: %w", p, err)
-		}
+		return nil, err
 	}
 
 	schema, err := sqlFS.ReadFile("sql/schema.sql")

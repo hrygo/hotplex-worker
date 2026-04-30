@@ -117,7 +117,7 @@ func NewSQLiteConversationStore(ctx context.Context, cfg *config.Config) (*SQLit
 		return nil, fmt.Errorf("conversation store: open db: %w", err)
 	}
 
-	if err := initSQLiteDB(db, cfg, "conversation"); err != nil {
+	if err := sqlutil.InitSQLiteDB(db, &cfg.DB, "conversation"); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
