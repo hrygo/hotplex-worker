@@ -252,14 +252,14 @@ webchat-stop:
 webchat-embed:
 	@if [ ! -d $(WEB_CHAT_OUT)/_next ]; then \
 		echo "$(CYAN)Building webchat for embedding...$(RESET)"; \
-		cd $(WEB_CHAT_DIR) && npm run build && \
+		cd $(WEB_CHAT_DIR) && pnpm install --frozen-lockfile && pnpm build && \
 		rm -rf ../$(WEB_CHAT_OUT).tmp && cp -r out ../$(WEB_CHAT_OUT).tmp && \
 		rm -rf ../$(WEB_CHAT_OUT) && mv ../$(WEB_CHAT_OUT).tmp ../$(WEB_CHAT_OUT); \
 	fi
 
 webchat-rebuild:
 	@echo "$(CYAN)Rebuilding webchat...$(RESET)"
-	@cd $(WEB_CHAT_DIR) && npm run build && \
+	@cd $(WEB_CHAT_DIR) && pnpm build && \
 	rm -rf ../$(WEB_CHAT_OUT).tmp && cp -r out ../$(WEB_CHAT_OUT).tmp && \
 	rm -rf ../$(WEB_CHAT_OUT) && mv ../$(WEB_CHAT_OUT).tmp ../$(WEB_CHAT_OUT)
 	@echo "  $(GREEN)✓$(RESET) Webchat rebuilt"
