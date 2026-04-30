@@ -429,7 +429,7 @@ export function Thread({ skills, hasMore, onLoadHistory }: ThreadProps) {
           </div>
 
           <div className="relative">
-            <div className="absolute bottom-full left-1/2 -translate-x-1/2 z-20 translate-y-2">
+            <div className="absolute bottom-full left-1/2 -translate-x-1/2 z-20 mb-0">
               <ThreadPrimitive.ScrollToBottom className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[var(--bg-surface)] border border-[var(--border-bright)] shadow-xl text-[var(--accent-gold)] hover:bg-[var(--bg-hover)] hover:border-[var(--accent-gold)] transition-all active:scale-95 group/scroll">
                 <svg className="w-3.5 h-3.5 animate-bounce-subtle" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
