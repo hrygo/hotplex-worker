@@ -147,12 +147,12 @@ func newTestAuth(t *testing.T) *security.Authenticator {
 
 func newTestAPI(t *testing.T, sm *mockAPISM, bridge *mockAPIBridge) *GatewayAPI {
 	t.Helper()
-	return NewGatewayAPI(slog.Default(), newTestAuth(t), sm, bridge, config.NewConfigStore(&config.Config{}, nil), nil)
+	return NewGatewayAPI(slog.Default(), newTestAuth(t), sm, bridge, config.NewConfigStore(&config.Config{}, nil), nil, nil)
 }
 
 func newTestAPIWithConv(t *testing.T, sm *mockAPISM, bridge *mockAPIBridge, convStore *mockAPIConvStore) *GatewayAPI {
 	t.Helper()
-	return NewGatewayAPI(slog.Default(), newTestAuth(t), sm, bridge, config.NewConfigStore(&config.Config{}, nil), convStore)
+	return NewGatewayAPI(slog.Default(), newTestAuth(t), sm, bridge, config.NewConfigStore(&config.Config{}, nil), convStore, nil)
 }
 
 func authedReq(method, target string, body io.Reader) *http.Request {
