@@ -58,20 +58,20 @@ function PreAssistantIndicator() {
       </div>
 
       <div className="msg-assistant-body flex flex-col gap-3">
-        <div className="flex items-center gap-2.5 mb-1">
-          <div className="flex gap-1.5">
+        <div className="flex items-center gap-3 mb-1">
+          <div className="flex items-center gap-1.5">
             <span className="thinking-dot" />
-            <span className="thinking-dot" />
-            <span className="thinking-dot" />
+            <span className="thinking-dot" style={{ animationDelay: '0.2s' }} />
+            <span className="thinking-dot" style={{ animationDelay: '0.4s' }} />
           </div>
-          <span className="text-[10px] font-display font-bold text-[var(--accent-gold)] tracking-widest uppercase opacity-70">
-            Thinking...
+          <span className="text-[11px] font-display font-bold text-[var(--accent-gold)] tracking-[0.1em] uppercase">
+            Synthesizing Strategy
           </span>
         </div>
         <div className="flex flex-col gap-3 max-w-sm">
-          <div className="skeleton-text w-full h-2 rounded-[var(--radius-xs)]" />
-          <div className="skeleton-text w-[90%] h-2 rounded-[var(--radius-xs)]" style={{ animationDelay: '0.2s' }} />
-          <div className="skeleton-text w-[75%] h-2 rounded-[var(--radius-xs)]" style={{ animationDelay: '0.4s' }} />
+          <div className="skeleton-text w-full h-2 rounded-[var(--radius-xs)] animate-shimmer" />
+          <div className="skeleton-text w-[92%] h-2 rounded-[var(--radius-xs)] animate-shimmer" style={{ animationDelay: '0.15s' }} />
+          <div className="skeleton-text w-[78%] h-2 rounded-[var(--radius-xs)] animate-shimmer" style={{ animationDelay: '0.3s' }} />
         </div>
       </div>
     </motion.div>
@@ -137,13 +137,14 @@ function AssistantMessage({ message }: { message: any }) {
   return (
     <motion.div className="group msg-assistant flex items-start gap-4 mb-8" variants={messageVariants} initial="hidden" animate="visible">
       <div className="flex-shrink-0">
-        <div className="w-9 h-9 rounded-[var(--radius-md)] bg-[var(--bg-elevated)] border border-[var(--border-subtle)] shadow-sm flex items-center justify-center">
+        <div className="w-9 h-9 rounded-[var(--radius-md)] bg-[var(--bg-elevated)] border border-[var(--border-subtle)] shadow-sm flex items-center justify-center relative overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-br from-[var(--accent-gold)]/5 to-transparent" />
           <BrandIcon size={24} />
         </div>
       </div>
 
       <div className="flex flex-col flex-1 min-w-0">
-        <div className="msg-assistant-body relative p-0">
+        <div className="msg-assistant-body relative p-0 space-y-4">
           <MessagePrimitive.Parts>
             {({ part }) => {
               const p = part as Record<string, any>;
@@ -151,7 +152,7 @@ function AssistantMessage({ message }: { message: any }) {
               const isStreaming = (message as any)?.status?.type === "running";
 
               if (p.type === "reasoning") return <ReasoningBlock text={p.text} />;
-              if (p.type === "text") return <div className={isStreaming ? "streaming-cursor" : ""}><MarkdownText text={p.text} /></div>;
+              if (p.type === "text") return <div className={`prose-hotplex ${isStreaming ? "streaming-cursor" : ""}`}><MarkdownText text={p.text} /></div>;
               
               if (p.type === "tool-call") {
                 const parts = (message.content as any[]) || [];
@@ -179,7 +180,11 @@ function AssistantMessage({ message }: { message: any }) {
                 }
 
                 return (
-                  <div className="relative mt-2 first:mt-0">
+                  <motion.div 
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    className="relative mt-3 first:mt-0"
+                  >
                     {(() => {
                       switch (category) {
                         case "terminal": return <TerminalTool command={extractCommand(args)} stdout={p.result?.stdout || (typeof p.result === 'string' ? p.result : '')} stderr={p.result?.stderr} status={status} onToggle={!isLastPart ? toggle : undefined} />;
@@ -187,18 +192,18 @@ function AssistantMessage({ message }: { message: any }) {
                         case "search": return <SearchTool toolName={p.toolName} query={args.query || args.pattern} results={p.result} status={status} onToggle={!isLastPart ? toggle : undefined} />;
                         case "list": return <ListTool toolName={p.toolName} path={extractFilePath(args)} items={p.result} status={status} onToggle={!isLastPart ? toggle : undefined} />;
                         case "permission": return <PermissionCard toolName={p.toolName} args={args} status={status === "error" ? "complete" : status as "running" | "complete"} onToggle={!isLastPart ? toggle : undefined} />;
-                        default: return <div className="p-4 bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-[var(--radius-md)] font-mono text-[11px] mt-2">{JSON.stringify(p.result || args, null, 2)}</div>;
+                        default: return <div className="p-4 bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-[var(--radius-md)] font-mono text-[11px] mt-2 shadow-inner">{JSON.stringify(p.result || args, null, 2)}</div>;
                       }
                     })()}
-                  </div>
+                  </motion.div>
                 );
               }
               if (p.type === "tool-summary") {
                 const names = p.toolNames || [];
                 return (
-                  <div className="flex items-center gap-2 px-3 py-1.5 mt-2 rounded-[var(--radius-sm)] bg-[var(--bg-elevated)] border border-[var(--border-subtle)] text-[11px] font-medium text-[var(--text-secondary)] w-fit">
-                    <span className="text-[var(--accent-gold)]">🔧</span>
-                    <span>{names.join(', ')}</span>
+                  <div className="flex items-center gap-2 px-3 py-1.5 mt-3 rounded-[var(--radius-sm)] bg-[var(--bg-elevated)] border border-[var(--border-subtle)] text-[11px] font-bold text-[var(--text-secondary)] w-fit shadow-sm">
+                    <span className="text-[var(--accent-gold)] animate-pulse-subtle">🔧</span>
+                    <span className="tracking-wide">{names.join(', ').toUpperCase()}</span>
                     {p.count > 1 && <span className="text-[var(--text-faint)] ml-1">×{p.count}</span>}
                   </div>
                 );
@@ -219,21 +224,42 @@ function AssistantMessage({ message }: { message: any }) {
    ============================================================ */
 
 function ReasoningBlock({ text }: { text: string }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
   if (!text.trim()) return null;
   const estimatedSeconds = Math.max(1, Math.round(text.length / 200));
 
   return (
-    <div className="reasoning-block">
-      <div className="reasoning-header" onClick={() => setExpanded(!expanded)}>
-        <motion.svg className="w-3.5 h-3.5" animate={{ rotate: expanded ? 90 : 0 }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" /></motion.svg>
-        <span>THOUGHT</span>
-        <span className="opacity-40 font-mono text-[9px] ml-auto tracking-normal">~{estimatedSeconds}s</span>
+    <div className="reasoning-block group/reasoning border-[var(--border-subtle)] hover:border-[var(--accent-gold)]/20 transition-colors">
+      <div 
+        className="reasoning-header px-4 py-2.5 flex items-center gap-3 cursor-pointer select-none" 
+        onClick={() => setExpanded(!expanded)}
+      >
+        <motion.div 
+          animate={{ rotate: expanded ? 90 : 0 }}
+          transition={{ type: "spring", stiffness: 400, damping: 30 }}
+        >
+          <svg className="w-3.5 h-3.5 text-[var(--accent-gold)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 5l7 7-7 7" />
+          </svg>
+        </motion.div>
+        <span className="text-[11px] font-display font-bold tracking-[0.1em] text-[var(--text-secondary)]">THOUGHT PROCESS</span>
+        <div className="flex-1 h-[1px] bg-gradient-to-r from-[var(--border-subtle)] to-transparent" />
+        <span className="font-mono text-[10px] text-[var(--text-faint)] tabular-nums">
+          {estimatedSeconds}s elapsed
+        </span>
       </div>
-      <AnimatePresence>
+      <AnimatePresence initial={false}>
         {expanded && (
-          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-            <div className="reasoning-content">{text}</div>
+          <motion.div 
+            initial={{ height: 0, opacity: 0 }} 
+            animate={{ height: "auto", opacity: 1 }} 
+            exit={{ height: 0, opacity: 0 }} 
+            transition={{ duration: 0.3, ease: "easeInOut" }}
+            className="overflow-hidden"
+          >
+            <div className="reasoning-content border-t border-[var(--border-subtle)]/50 leading-relaxed">
+              {text}
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
