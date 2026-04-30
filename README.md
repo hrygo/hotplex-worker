@@ -40,6 +40,26 @@
 
 ## ⚡ Quick Start
 
+### One-Click Install (macOS / Linux)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/hrygo/hotplex/main/scripts/install.sh | bash -s -- --latest
+```
+
+Or download a specific version:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/hrygo/hotplex/main/scripts/install.sh | bash -s -- --release v1.3.0 --prefix ~/.local
+```
+
+### One-Click Install (Windows)
+
+```powershell
+# PowerShell 5.1+
+Invoke-WebRequest -Uri https://raw.githubusercontent.com/hrygo/hotplex/main/scripts/install.ps1 -OutFile install.ps1
+.\install.ps1 -Latest
+```
+
 ### Install from Source
 
 ```bash
