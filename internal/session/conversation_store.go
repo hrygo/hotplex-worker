@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/hrygo/hotplex/internal/config"
+	"github.com/hrygo/hotplex/internal/sqlutil"
 )
 
 var ErrConvNotFound = errors.New("conversation store: no records found")
@@ -111,7 +112,7 @@ func NewSQLiteConversationStore(ctx context.Context, cfg *config.Config) (*SQLit
 		return nil, err
 	}
 
-	db, err := sql.Open("sqlite", cfg.DB.Path)
+	db, err := sql.Open(sqlutil.DriverName, cfg.DB.Path)
 	if err != nil {
 		return nil, fmt.Errorf("conversation store: open db: %w", err)
 	}

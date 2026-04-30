@@ -11,9 +11,8 @@ import (
 	"log/slog"
 	"time"
 
-	_ "modernc.org/sqlite"
-
 	"github.com/hrygo/hotplex/internal/config"
+	"github.com/hrygo/hotplex/internal/sqlutil"
 	"github.com/hrygo/hotplex/pkg/events"
 )
 
@@ -46,7 +45,7 @@ func NewSQLiteStore(ctx context.Context, cfg *config.Config) (*SQLiteStore, erro
 		return nil, err
 	}
 
-	db, err := sql.Open("sqlite", cfg.DB.Path)
+	db, err := sql.Open(sqlutil.DriverName, cfg.DB.Path)
 	if err != nil {
 		return nil, fmt.Errorf("session store: open db: %w", err)
 	}
@@ -86,16 +85,24 @@ func initSQLiteDB(db *sql.DB, cfg *config.Config, label string) error {
 	if _, err := db.Exec("PRAGMA synchronous=NORMAL"); err != nil {
 		return fmt.Errorf("session store: %s synchronous: %w", label, err)
 	}
-	if _, err := db.Exec("PRAGMA cache_size=-32000"); err != nil {
+	cacheSize := cfg.DB.CacheSizeKiB
+	if cacheSize <= 0 {
+		cacheSize = 8192
+	}
+	if _, err := db.Exec(fmt.Sprintf("PRAGMA cache_size=-%d", cacheSize)); err != nil {
 		return fmt.Errorf("session store: %s cache_size: %w", label, err)
 	}
 	if _, err := db.Exec("PRAGMA temp_store=MEMORY"); err != nil {
 		return fmt.Errorf("session store: %s temp_store: %w", label, err)
 	}
-	if _, err := db.Exec("PRAGMA mmap_size=268435456"); err != nil {
+	mmapSize := cfg.DB.MmapSizeMiB
+	if mmapSize <= 0 {
+		mmapSize = 64
+	}
+	if _, err := db.Exec(fmt.Sprintf("PRAGMA mmap_size=%d", mmapSize*1024*1024)); err != nil {
 		return fmt.Errorf("session store: %s mmap_size: %w", label, err)
 	}
-	if _, err := db.Exec("PRAGMA wal_autocheckpoint=5000"); err != nil {
+	if _, err := db.Exec("PRAGMA wal_autocheckpoint=2000"); err != nil {
 		return fmt.Errorf("session store: %s wal_autocheckpoint: %w", label, err)
 	}
 	return nil

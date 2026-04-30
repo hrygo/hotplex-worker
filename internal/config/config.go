@@ -265,6 +265,8 @@ type DBConfig struct {
 	BusyTimeout     time.Duration `mapstructure:"busy_timeout"`
 	MaxOpenConns    int           `mapstructure:"max_open_conns"`
 	VacuumThreshold float64       `mapstructure:"vacuum_threshold"`
+	CacheSizeKiB    int           `mapstructure:"cache_size_kib"`
+	MmapSizeMiB     int           `mapstructure:"mmap_size_mib"`
 }
 
 // WorkerConfig holds per-worker defaults.
@@ -391,6 +393,8 @@ func Default() *Config {
 			BusyTimeout:     5 * time.Second,
 			MaxOpenConns:    2,
 			VacuumThreshold: 0.2,
+			CacheSizeKiB:    8192,
+			MmapSizeMiB:     64,
 		},
 		Worker: WorkerConfig{
 			MaxLifetime:      24 * time.Hour,

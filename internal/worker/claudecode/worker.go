@@ -71,6 +71,8 @@ var claudeCodeEnvWhitelist = []string{
 	"BASH_MAX_TIMEOUT_MS", "BASH_MAX_OUTPUT_LENGTH",
 	"MAX_THINKING_TOKENS", "MAX_MCP_OUTPUT_TOKENS",
 	"MCP_TIMEOUT", "MCP_TOOL_TIMEOUT",
+	// Bun 运行时配置
+	"BUN_RUNTIME_NV",
 	// OpenTelemetry (prefix-matched in BuildEnv)
 	"OTEL_",
 }
