@@ -28,11 +28,14 @@ type Locator struct {
 }
 
 // NewLocator creates a skill locator with TTL cache.
-func NewLocator(log *slog.Logger) *Locator {
+func NewLocator(log *slog.Logger, ttl time.Duration) *Locator {
+	if ttl <= 0 {
+		ttl = defaultTTL
+	}
 	l := &Locator{
 		log:    log,
 		cache:  make(map[string]*cacheEntry),
-		ttl:    defaultTTL,
+		ttl:    ttl,
 		stopCh: make(chan struct{}),
 	}
 	go l.sweep()

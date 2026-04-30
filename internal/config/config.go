@@ -128,6 +128,7 @@ type Config struct {
 	WebChat     WebChatConfig   `mapstructure:"webchat"`
 	Messaging   MessagingConfig `mapstructure:"messaging"`
 	AgentConfig AgentConfig     `mapstructure:"agent_config"`
+	Skills      SkillsConfig    `mapstructure:"skills"`
 	Inherits    string          `mapstructure:"inherits"` // path to parent config file; "" = no inheritance
 }
 
@@ -349,11 +350,14 @@ type PoolConfig struct {
 	MaxMemoryPerUser int64 `mapstructure:"max_memory_per_user"` // bytes; 0 = unlimited
 }
 
-// AgentConfig holds agent personality/context configuration settings.
 type AgentConfig struct {
-	Enabled        bool          `mapstructure:"enabled"`          // enable agent config loading
-	ConfigDir      string        `mapstructure:"config_dir"`       // default: ~/.hotplex/agent-configs/
-	SkillsCacheTTL time.Duration `mapstructure:"skills_cache_ttl"` // TTL for skills list cache, default 24h
+	Enabled   bool   `mapstructure:"enabled"`    // enable agent config loading
+	ConfigDir string `mapstructure:"config_dir"` // default: ~/.hotplex/agent-configs/
+}
+
+// SkillsConfig holds skill discovery and caching settings.
+type SkillsConfig struct {
+	CacheTTL time.Duration `mapstructure:"cache_ttl"` // TTL for skills list cache, default 5m
 }
 
 // ─── Defaults ────────────────────────────────────────────────────────────────
@@ -438,6 +442,9 @@ func Default() *Config {
 			Level:  "info",
 			Format: "json",
 		},
+		WebChat: WebChatConfig{
+			Addr: "",
+		},
 		Messaging: MessagingConfig{
 			Feishu: FeishuConfig{
 				RequireMention: true,
@@ -463,9 +470,11 @@ func Default() *Config {
 			},
 		},
 		AgentConfig: AgentConfig{
-			Enabled:        true,
-			ConfigDir:      filepath.Join(HotplexHome(), "agent-configs"),
-			SkillsCacheTTL: 24 * time.Hour,
+			Enabled:   true,
+			ConfigDir: filepath.Join(HotplexHome(), "agent-configs"),
+		},
+		Skills: SkillsConfig{
+			CacheTTL: 5 * time.Minute,
 		},
 	}
 }
@@ -527,6 +536,9 @@ func Load(filePath string, opts LoadOptions) (*Config, error) {
 	_ = v.BindEnv("worker.auto_retry.max_retries")
 	_ = v.BindEnv("security.jwt_audience")
 	_ = v.BindEnv("security.api_key_header")
+	_ = v.BindEnv("agent_config.enabled")
+	_ = v.BindEnv("agent_config.config_dir")
+	_ = v.BindEnv("skills.cache_ttl")
 
 	if err := v.Unmarshal(cfg); err != nil {
 		return nil, fmt.Errorf("config: environment override: %w", err)

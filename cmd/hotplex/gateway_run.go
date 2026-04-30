@@ -23,6 +23,7 @@ import (
 	"github.com/hrygo/hotplex/internal/gateway"
 	"github.com/hrygo/hotplex/internal/security"
 	"github.com/hrygo/hotplex/internal/session"
+	"github.com/hrygo/hotplex/internal/skills"
 	"github.com/hrygo/hotplex/internal/tracing"
 	"github.com/hrygo/hotplex/internal/worker/claudecode"
 	"github.com/hrygo/hotplex/internal/worker/opencodeserver"
@@ -249,16 +250,13 @@ func runGateway(configPath string, devMode bool) (err error) {
 	})
 
 	handler := gateway.NewHandler(gateway.HandlerDeps{
-		Log:          log,
-		Hub:          hub,
-		SM:           sm,
-		JWTValidator: jwtValidator,
-		Bridge:       bridge,
-		ConvStore:    convStore,
-		SkillsLocator: gateway.NewSkillsCache(
-			gateway.NewFileSystemSkillsLocator(cfg),
-			cfg.AgentConfig.SkillsCacheTTL,
-		),
+		Log:           log,
+		Hub:           hub,
+		SM:            sm,
+		JWTValidator:  jwtValidator,
+		Bridge:        bridge,
+		ConvStore:     convStore,
+		SkillsLocator: skills.NewLocator(log, cfg.Skills.CacheTTL),
 	})
 
 	if cfg.Worker.AutoRetry.Enabled {
