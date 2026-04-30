@@ -28,7 +28,7 @@ func BuildSystemdUnit(opts InstallOptions, homeDir string) string {
 		b.WriteString("WorkingDirectory=" + homeDir + "\n")
 	}
 
-	b.WriteString("\nExecStart=" + opts.BinaryPath + " gateway start -config " + opts.ConfigPath + "\n")
+	b.WriteString("\nExecStart=" + opts.BinaryPath + " gateway start --config " + opts.ConfigPath + "\n")
 	b.WriteString("ExecReload=/bin/kill -HUP $MAINPID\n")
 	b.WriteString("TimeoutStopSec=30\n")
 	b.WriteString("KillMode=mixed\n")
@@ -46,6 +46,15 @@ func BuildSystemdUnit(opts InstallOptions, homeDir string) string {
 		b.WriteString("LimitNOFILE=65536\n")
 	} else {
 		b.WriteString("LimitNOFILE=65536\n")
+	}
+
+	envVars := buildServiceEnv(opts.EnvPath)
+	if len(envVars) > 0 {
+		var parts []string
+		for _, k := range sortedEnvKeys(envVars) {
+			parts = append(parts, fmt.Sprintf("%s=%s", k, envVars[k]))
+		}
+		b.WriteString("\nEnvironment=" + strings.Join(parts, " ") + "\n")
 	}
 
 	b.WriteString("\nStandardOutput=journal\n")
@@ -76,20 +85,19 @@ func BuildLaunchdPlist(opts InstallOptions, homeDir string) string {
 	fmt.Fprintf(&b, "    <string>%s</string>\n", opts.BinaryPath)
 	fmt.Fprintf(&b, "    <string>gateway</string>\n")
 	fmt.Fprintf(&b, "    <string>start</string>\n")
-	fmt.Fprintf(&b, "    <string>-config</string>\n")
+	fmt.Fprintf(&b, "    <string>--config</string>\n")
 	fmt.Fprintf(&b, "    <string>%s</string>\n", opts.ConfigPath)
 	b.WriteString("  </array>\n")
 
 	fmt.Fprintf(&b, "  <key>WorkingDirectory</key>\n  <string>%s</string>\n", homeDir)
 
-	envVars := parseEnvFile(opts.EnvPath)
-	if len(envVars) > 0 {
-		b.WriteString("  <key>EnvironmentVariables</key>\n  <dict>\n")
-		for _, k := range sortedEnvKeys(envVars) {
-			fmt.Fprintf(&b, "    <key>%s</key>\n    <string>%s</string>\n", k, envVars[k])
-		}
-		b.WriteString("  </dict>\n")
+	// Merge env: .env vars override caller's PATH; other .env vars append.
+	envVars := buildServiceEnv(opts.EnvPath)
+	b.WriteString("  <key>EnvironmentVariables</key>\n  <dict>\n")
+	for _, k := range sortedEnvKeys(envVars) {
+		fmt.Fprintf(&b, "    <key>%s</key>\n    <string>%s</string>\n", k, envVars[k])
 	}
+	b.WriteString("  </dict>\n")
 
 	b.WriteString("  <key>RunAtLoad</key>\n  <true/>\n")
 	b.WriteString("  <key>KeepAlive</key>\n  <true/>\n")
@@ -120,6 +128,19 @@ func launchdLabel(name string, level Level) string {
 		return "com.hrygo." + name + ".user"
 	}
 	return "com.hrygo." + name
+}
+
+// buildServiceEnv merges the caller's PATH with vars from the .env file.
+// .env PATH overrides the caller PATH; other .env vars are added.
+func buildServiceEnv(envPath string) map[string]string {
+	env := make(map[string]string)
+	if path := os.Getenv("PATH"); path != "" {
+		env["PATH"] = path
+	}
+	for k, v := range parseEnvFile(envPath) {
+		env[k] = v
+	}
+	return env
 }
 
 func parseEnvFile(path string) map[string]string {
