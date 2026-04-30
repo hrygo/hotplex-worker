@@ -257,7 +257,6 @@ func runGateway(configPath string, devMode bool) (err error) {
 		Hub:            hub,
 		SM:             sm,
 		ConvStore:      convStore,
-		EventCollector: eventCollector,
 		RetryCtrl:      retryCtrl,
 		AgentConfigDir: agentConfigDir,
 		TurnTimeout:    cfg.Worker.TurnTimeout,
@@ -303,18 +302,17 @@ func runGateway(configPath string, devMode bool) (err error) {
 
 	mux := http.NewServeMux()
 	deps := &GatewayDeps{
-		Log:            log,
-		Config:         cfg,
-		ConfigStore:    cfgStore,
-		Hub:            hub,
-		SessionMgr:     sm,
-		ConvStore:      convStore,
-		EventStore:     eventStore,
-		EventCollector: eventCollector,
-		Auth:           auth,
-		Handler:        handler,
-		Bridge:         bridge,
-		ConfigWatcher:  configWatcher,
+		Log:           log,
+		Config:        cfg,
+		ConfigStore:   cfgStore,
+		Hub:           hub,
+		SessionMgr:    sm,
+		ConvStore:     convStore,
+		EventStore:    eventStore,
+		Auth:          auth,
+		Handler:       handler,
+		Bridge:        bridge,
+		ConfigWatcher: configWatcher,
 	}
 
 	msgAdapters, adapterStatuses := startMessagingAdapters(ctx, deps)
@@ -415,20 +413,14 @@ func runGateway(configPath string, devMode bool) (err error) {
 		log.Warn("gateway: session manager close", "err", err)
 	}
 
-	if eventCollector != nil {
-		if err := eventCollector.Close(); err != nil {
-			log.Warn("gateway: event collector close", "err", err)
-		}
+	if err := eventCollector.Close(); err != nil {
+		log.Warn("gateway: event collector close", "err", err)
 	}
-	if eventStore != nil {
-		if err := eventStore.Close(); err != nil {
-			log.Warn("gateway: event store close", "err", err)
-		}
+	if err := eventStore.Close(); err != nil {
+		log.Warn("gateway: event store close", "err", err)
 	}
-	if convStore != nil {
-		if err := convStore.Close(); err != nil {
-			log.Warn("gateway: conversation store close", "err", err)
-		}
+	if err := convStore.Close(); err != nil {
+		log.Warn("gateway: conversation store close", "err", err)
 	}
 
 	if err := server.Shutdown(shutdownCtx); err != nil {

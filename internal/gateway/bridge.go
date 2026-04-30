@@ -438,23 +438,14 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 			b.log.Warn("bridge: forward event failed", "err", err, "session_id", sessionID, "worker_type", workerType, "event_type", env.Event.Type)
 		}
 
-		// Capture event for replay storage.
-		if b.collector != nil {
-			if ed, err := json.Marshal(env.Event.Data); err == nil {
-				b.collector.Capture(sessionID, env.Seq, env.Event.Type, ed, "outbound")
-			}
-		}
+		b.captureEvent(sessionID, env.Seq, env.Event.Type, env.Event.Data)
 
 		// Flush buffered error on non-Done events (no retry decision possible yet).
 		if pendingError != nil && env.Event.Type != events.Done {
 			if err := b.hub.SendToSession(context.Background(), pendingError); err != nil {
 				b.log.Warn("bridge: forward buffered error failed", "err", err, "session_id", sessionID, "worker_type", workerType)
 			}
-			if b.collector != nil {
-				if ed, cerr := json.Marshal(pendingError.Event.Data); cerr == nil {
-					b.collector.Capture(sessionID, pendingError.Seq, pendingError.Event.Type, ed, "outbound")
-				}
-			}
+			b.captureEvent(sessionID, pendingError.Seq, pendingError.Event.Type, pendingError.Event.Data)
 			pendingError = nil
 		}
 
@@ -476,11 +467,7 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 				if err := b.hub.SendToSession(context.Background(), pendingError); err != nil {
 					b.log.Warn("bridge: forward buffered error failed", "err", err, "session_id", sessionID, "worker_type", workerType)
 				}
-				if b.collector != nil {
-					if ed, cerr := json.Marshal(pendingError.Event.Data); cerr == nil {
-						b.collector.Capture(sessionID, pendingError.Seq, pendingError.Event.Type, ed, "outbound")
-					}
-				}
+				b.captureEvent(sessionID, pendingError.Seq, pendingError.Event.Type, pendingError.Event.Data)
 				pendingError = nil
 			}
 			b.retryCtrl.RecordSuccess(sessionID)
@@ -1175,6 +1162,17 @@ func (b *Bridge) autoRetry(ctx context.Context, w worker.Worker, sessionID strin
 	if err := w.Input(ctx, b.retryCtrl.RetryInput(), nil); err != nil {
 		b.log.Warn("bridge: auto-retry input failed", "session_id", sessionID, "err", err)
 	}
+}
+
+func (b *Bridge) captureEvent(sessionID string, seq int64, eventType events.Kind, data any) {
+	if b.collector == nil {
+		return
+	}
+	ed, err := json.Marshal(data)
+	if err != nil {
+		return
+	}
+	b.collector.Capture(sessionID, seq, eventType, ed, "outbound")
 }
 
 // extractMessageContent extracts text content from a message or message_delta event.

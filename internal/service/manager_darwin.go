@@ -132,7 +132,7 @@ func (m *darwinManager) Start(name string, level Level) error {
 		return err
 	}
 	if _, err := os.Stat(plistPath); os.IsNotExist(err) {
-		return fmt.Errorf("service not installed (run 'hotplex service install' first)")
+		return ErrNotInstalled
 	}
 
 	label := launchdLabel(name, level)
@@ -155,7 +155,7 @@ func (m *darwinManager) Stop(name string, level Level) error {
 		return err
 	}
 	if _, err := os.Stat(plistPath); os.IsNotExist(err) {
-		return fmt.Errorf("service not installed")
+		return ErrNotInstalled
 	}
 
 	label := launchdLabel(name, level)
@@ -176,7 +176,7 @@ func (m *darwinManager) Restart(name string, level Level) error {
 }
 
 func (m *darwinManager) Logs(name string, level Level, follow bool, lines int) error {
-	dir := m.logDir(level)
+	dir := LogDir(level)
 	stdoutLog := filepath.Join(dir, "launchd.stdout.log")
 	if _, err := os.Stat(stdoutLog); os.IsNotExist(err) {
 		return fmt.Errorf("log file not found: %s", stdoutLog)
@@ -192,14 +192,6 @@ func (m *darwinManager) Logs(name string, level Level, follow bool, lines int) e
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
-}
-
-func (m *darwinManager) logDir(level Level) string {
-	if level == LevelSystem {
-		return "/var/log/hotplex"
-	}
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".hotplex", "logs")
 }
 
 func parseLaunchctlPID(output string) string {

@@ -367,7 +367,8 @@ export function useHotPlexRuntime({
     // Append delta content to the last text part of the last assistant message
     const appendDelta = (content: string) => {
       setMessages((prev) => {
-        const lastMessage = prev[prev.length - 1];
+        const filtered = prev.filter(m => m.id !== 'ghost-assistant');
+        const lastMessage = filtered[filtered.length - 1];
         if (lastMessage?.role === 'assistant' && lastMessage.status === 'streaming') {
           const parts = [...lastMessage.parts];
           // Append to last text part, or add new one
@@ -377,11 +378,11 @@ export function useHotPlexRuntime({
           } else {
             parts.push({ type: 'text', text: content });
           }
-          return [...prev.slice(0, -1), { ...lastMessage, parts }];
+          return [...filtered.slice(0, -1), { ...lastMessage, parts }];
         }
         // No streaming message — create one (message.start may not have been sent)
         return [
-          ...prev,
+          ...filtered,
           {
             id: `assistant-${Date.now()}`,
             role: 'assistant' as const,
@@ -400,7 +401,8 @@ export function useHotPlexRuntime({
       pendingReasoningRef.current += data.content || '';
 
       setMessages((prev) => {
-        const lastMessage = prev[prev.length - 1];
+        const filtered = prev.filter(m => m.id !== 'ghost-assistant');
+        const lastMessage = filtered[filtered.length - 1];
         if (lastMessage?.role === 'assistant' && lastMessage.status === 'streaming') {
           const parts = [...lastMessage.parts];
           // Append to last reasoning part, or add new one
@@ -410,11 +412,11 @@ export function useHotPlexRuntime({
           } else {
             parts.push({ type: 'reasoning', text: pendingReasoningRef.current });
           }
-          return [...prev.slice(0, -1), { ...lastMessage, parts }];
+          return [...filtered.slice(0, -1), { ...lastMessage, parts }];
         }
         // No streaming message yet — create one with reasoning
         return [
-          ...prev,
+          ...filtered,
           {
             id: `assistant-${Date.now()}`,
             role: 'assistant' as const,
@@ -612,16 +614,17 @@ export function useHotPlexRuntime({
     const handleMessageStart = (data: MessageStartData, env: Envelope) => {
       if (!data) return;
       setMessages((prev) => {
-        const existingIdx = prev.findIndex((m) => m.id === env.id);
+        const filtered = prev.filter(m => m.id !== 'ghost-assistant');
+        const existingIdx = filtered.findIndex((m) => m.id === env.id);
         if (existingIdx !== -1) {
           // Message already created (e.g., from reasoning events) — just update status
-          const updated = [...prev];
-          updated[existingIdx] = { ...prev[existingIdx], status: 'streaming' };
+          const updated = [...filtered];
+          updated[existingIdx] = { ...filtered[existingIdx], status: 'streaming' };
           return updated;
         }
         // New message — create with streaming status
         return [
-          ...prev,
+          ...filtered,
           {
             id: env.id,
             role: 'assistant' as const,
@@ -763,7 +766,7 @@ export function useHotPlexRuntime({
       return;
     }
 
-    // Add user message to state
+    // 1. Add user message to state
     const userMessage: HotPlexMessage = {
       id: `user-${Date.now()}`,
       role: 'user',
@@ -772,8 +775,17 @@ export function useHotPlexRuntime({
       status: 'complete',
     };
 
-    setMessages((prev) => [...prev, userMessage]);
-    setIsRunning(true); // Immediate feedback: show thinking indicator
+    // 2. Add optimistic "Ghost" assistant message to provide immediate feedback
+    const ghostMessage: HotPlexMessage = {
+      id: 'ghost-assistant',
+      role: 'assistant',
+      parts: [{ type: 'reasoning', text: 'Initializing HotPlex Agent and analyzing workspace context...' }],
+      createdAt: new Date(),
+      status: 'streaming',
+    };
+
+    setMessages((prev) => [...prev, userMessage, ghostMessage]);
+    setIsRunning(true); 
     startTurn(); // Begin timing for metrics
 
     // Send to HotPlex gateway with error handling
