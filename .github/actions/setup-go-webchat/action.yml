@@ -15,7 +15,7 @@ inputs:
     required: false
     default: '10'
   build-webchat:
-    description: 'Whether to build webchat SPA'
+    description: 'Whether to build webchat SPA (if false, still restores from cache)'
     required: false
     default: 'true'
   download-modules:
@@ -31,25 +31,26 @@ runs:
         go-version: ${{ inputs.go-version }}
         cache: true
 
-    - uses: pnpm/action-setup@v4
-      if: inputs.build-webchat == 'true'
-      with:
-        version: ${{ inputs.pnpm-version }}
-
-    - uses: actions/setup-node@v6
-      if: inputs.build-webchat == 'true'
-      with:
-        node-version: ${{ inputs.node-version }}
-        cache: 'pnpm'
-        cache-dependency-path: webchat/pnpm-lock.yaml
-
-    - name: Cache webchat build output
-      if: inputs.build-webchat == 'true'
+    # Always restore webchat from cache — needed for go vet ./...
+    # which compiles internal/webchat even if we don't test it.
+    - name: Restore webchat build output
       id: webchat-cache
       uses: actions/cache@v4
       with:
         path: internal/webchat/out
         key: webchat-${{ hashFiles('webchat/src/**', 'webchat/next.config.*', 'webchat/package.json', 'webchat/pnpm-lock.yaml') }}
+
+    - uses: pnpm/action-setup@v4
+      if: inputs.build-webchat == 'true' && steps.webchat-cache.outputs.cache-hit != 'true'
+      with:
+        version: ${{ inputs.pnpm-version }}
+
+    - uses: actions/setup-node@v6
+      if: inputs.build-webchat == 'true' && steps.webchat-cache.outputs.cache-hit != 'true'
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: 'pnpm'
+        cache-dependency-path: webchat/pnpm-lock.yaml
 
     - name: Build webchat SPA
       if: inputs.build-webchat == 'true' && steps.webchat-cache.outputs.cache-hit != 'true'
