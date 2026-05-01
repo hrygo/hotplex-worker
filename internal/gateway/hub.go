@@ -623,6 +623,7 @@ type pcEntry struct {
 	pc      messaging.PlatformConn
 	cfg     pcEntryConfig
 	ch      chan *events.Envelope
+	closeCh chan struct{} // signals Close() was called
 	done    chan struct{}
 	closeMu sync.Once
 	log     *slog.Logger
@@ -659,11 +660,12 @@ func defaultPCEntryConfig(cfg *config.Config) pcEntryConfig {
 
 func newPCEntry(pc messaging.PlatformConn, cfg pcEntryConfig, log *slog.Logger) *pcEntry {
 	e := &pcEntry{
-		pc:   pc,
-		ch:   make(chan *events.Envelope, cfg.WriteBuffer),
-		done: make(chan struct{}),
-		cfg:  cfg,
-		log:  log,
+		pc:      pc,
+		ch:      make(chan *events.Envelope, cfg.WriteBuffer),
+		closeCh: make(chan struct{}),
+		done:    make(chan struct{}),
+		cfg:     cfg,
+		log:     log,
 	}
 	go e.writeLoop()
 	return e
@@ -691,6 +693,8 @@ func (e *pcEntry) WriteCtx(_ context.Context, env *events.Envelope) error {
 		return nil
 	case <-ctx.Done():
 		return fmt.Errorf("platform conn write timeout: buffer full")
+	case <-e.closeCh: // check close signal instead of relying solely on done
+		return errors.New("platform conn closed")
 	case <-e.done:
 		return errors.New("platform conn closed")
 	}
@@ -701,7 +705,7 @@ func (e *pcEntry) WriteCtx(_ context.Context, env *events.Envelope) error {
 func (e *pcEntry) Close() error {
 	var err error
 	e.closeMu.Do(func() {
-		close(e.ch)
+		close(e.closeCh) // signal closure without closing data channel
 		<-e.done
 		err = e.pc.Close()
 	})
