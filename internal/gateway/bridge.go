@@ -159,12 +159,12 @@ type forwardOpts struct {
 // Start/Resume → forwardEvents pattern used by StartSession, resumeWithOpts,
 // attemptResumeFallback (fresh start), and SwitchWorkDirInPlace.
 type workerLaunchParams struct {
-	ctx       context.Context
-	sessionID string
-	userID    string
-	wt        worker.WorkerType
-	workerInfo worker.SessionInfo
-	platform  string
+	ctx         context.Context
+	sessionID   string
+	userID      string
+	wt          worker.WorkerType
+	workerInfo  worker.SessionInfo
+	platform    string
 	forwardOpts forwardOpts
 }
 
@@ -1123,12 +1123,12 @@ func (b *Bridge) SwitchWorkDirInPlace(ctx context.Context, sessionID, newWorkDir
 	}
 
 	_, err = b.createAndLaunchWorker(workerLaunchParams{
-		ctx:        ctx,
-		sessionID:  sessionID,
-		userID:     si.UserID,
-		wt:         si.WorkerType,
-		workerInfo: workerInfo,
-		platform:   si.Platform,
+		ctx:         ctx,
+		sessionID:   sessionID,
+		userID:      si.UserID,
+		wt:          si.WorkerType,
+		workerInfo:  workerInfo,
+		platform:    si.Platform,
 		forwardOpts: forwardOpts{workDir: expanded},
 	},
 		func(ctx context.Context, w worker.Worker) error {
