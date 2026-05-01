@@ -3,167 +3,167 @@ name: hotplex-update
 description: HotPlex 二进制更新、发布和服务重启标准化流程。构建、安装、服务重启、验证，完整错误处理和回滚机制。**使用此 skill**：更新 HotPlex、安装新版本、重启服务、回滚版本、服务升级。支持用户级和系统级服务，跨平台兼容（Linux/macOS/Windows）。
 ---
 
-# HotPlex Update & Service Restart Workflow
+# HotPlex 更新与服务重启工作流
 
-## Overview
+## 概述
 
-This skill provides a **standardized, error-safe workflow** for updating HotPlex to a new binary version and restarting the service. It ensures the latest compiled code is deployed with minimal downtime.
+此 skill 提供**标准化、错误安全的工作流**，用于将 HotPlex 更新到新的二进制版本并重启服务。它确保部署最新编译的代码，最小化停机时间。
 
-## Prerequisites
+## 前置条件
 
-- `hotplex` CLI installed and configured
-- `make` and `go` 1.26+ installed
-- Systemd user-level service enabled (`hotplex service install --level user`)
-- Write permissions to `/home/hotplex/.local/bin/`
+- 已安装并配置 `hotplex` CLI
+- 已安装 `make` 和 `go` 1.26+
+- 已启用 systemd 用户级服务（`hotplex service install --level user`）
+- 对 `/home/hotplex/.local/bin/` 的写入权限
 
-## When to Use This Skill
+## 何时使用此 Skill
 
-Invoke this skill when:
-- User says "install new version", "update binary", "deploy latest code"
-- User says "restart service with new changes"
-- After building new code with `make build`
-- After pulling latest changes from git
-- **Any scenario involving binary updates and service restart**
+在以下情况下调用此 skill：
+- 用户说"安装新版本"、"更新二进制"、"部署最新代码"
+- 用户说"用新更改重启服务"
+- 在使用 `make build` 构建新代码后
+- 从 git 拉取最新更改后
+- **任何涉及二进制更新和服务重启的场景**
 
-## Workflow Steps
+## 工作流步骤
 
-### Step 1: Build New Binary
+### 步骤 1：构建新二进制
 
-Compile the latest source code:
+编译最新源代码：
 
 ```bash
 make build
 ```
 
-**Expected Output:**
+**预期输出：**
 ```
 Building...
   ✓ bin/hotplex-linux-amd64
 ```
 
-**Error Handling:**
-- If build fails: Fix compilation errors first, then retry
-- Check for: `go build` errors, missing dependencies, syntax issues
+**错误处理：**
+- 如果构建失败：先修复编译错误，然后重试
+- 检查：`go build` 错误、缺少依赖、语法问题
 
 ---
 
-### Step 2: Verify Binary Timestamp
+### 步骤 2：验证二进制时间戳
 
-Confirm the new binary was just built:
+确认刚构建的新二进制：
 
 ```bash
 ls -lh ./bin/hotplex-linux-amd64 /home/hotplex/.local/bin/hotplex
 ```
 
-**Expected Output:**
-- `./bin/hotplex-linux-amd64`: Recent timestamp (just now)
-- `/home/hotplex/.local/bin/hotplex`: Older timestamp (previous version)
+**预期输出：**
+- `./bin/hotplex-linux-amd64`：最近时间戳（刚刚）
+- `/home/hotplex/.local/bin/hotplex`：较旧时间戳（先前版本）
 
-**What This Tells Us:**
-- Confirms we have a newer binary to deploy
-- Shows the version gap we're about to close
+**这告诉我们什么：**
+- 确认我们有更新的二进制要部署
+- 显示我们将要关闭的版本差距
 
 ---
 
-### Step 3: Stop Service
+### 步骤 3：停止服务
 
-**CRITICAL:** Must stop service before replacing binary to avoid "Text file busy" error.
+**关键：**必须在替换二进制之前停止服务以避免"Text file busy"错误。
 
 ```bash
 hotplex service stop
 ```
 
-**Expected Output:**
+**预期输出：**
 ```
 ✓ Stopped service (user)
 ```
 
-**Error Handling:**
-- If service not running: Proceed to next step (idempotent)
-- If service fails to stop: Check `hotplex service status` and `journalctl --user -u hotplex`
+**错误处理：**
+- 如果服务未运行：继续到下一步（幂等）
+- 如果服务停止失败：检查 `hotplex service status` 和 `journalctl --user -u hotplex`
 
-**Wait for Cleanup:**
+**等待清理：**
 ```bash
 sleep 2
 ```
 
-**Why Wait:** Systemd may take 1-2 seconds to fully release the binary file locks.
+**为什么等待：**Systemd 可能需要 1-2 秒来完全释放二进制文件锁。
 
 ---
 
-### Step 4: Replace Binary
+### 步骤 4：替换二进制
 
-Copy the newly built binary to system location:
+将新构建的二进制复制到系统位置：
 
 ```bash
 cp -f ./bin/hotplex-linux-amd64 /home/hotplex/.local/bin/hotplex
 ```
 
-**Expected Output:** (silent on success)
+**预期输出：**（成功时静默）
 
-**Error Handling:**
-- If `Text file busy`: Service didn't stop fully. Go back to Step 3 and wait longer.
-- If `Permission denied`: Check write permissions to `/home/hotplex/.local/bin/`
+**错误处理：**
+- 如果 `Text file busy`：服务未完全停止。返回步骤 3 并等待更长时间。
+- 如果 `Permission denied`：检查对 `/home/hotplex/.local/bin/` 的写入权限
 
-**Verify Replacement:**
+**验证替换：**
 ```bash
 ls -lh /home/hotplex/.local/bin/hotplex
 ```
 
-**Confirm:** Timestamp should be recent (just now), not the old timestamp.
+**确认：**时间戳应该是最近的（刚刚），而不是旧时间戳。
 
 ---
 
-### Step 5: Start Service
+### 步骤 5：启动服务
 
-Start the service with the new binary:
+使用新二进制启动服务：
 
 ```bash
 hotplex service start
 ```
 
-**Expected Output:**
+**预期输出：**
 ```
 ✓ Service started (user)
 ```
 
-**Error Handling:**
-- If service fails to start: Check logs with `hotplex service logs`
-- Common issues: Port conflicts (8888/9999), config errors, missing dependencies
+**错误处理：**
+- 如果服务启动失败：使用 `hotplex service logs` 检查日志
+- 常见问题：端口冲突（8888/9999）、配置错误、缺少依赖
 
 ---
 
-### Step 6: Verify Service Status
+### 步骤 6：验证服务状态
 
-Confirm service is running with the new binary:
+确认服务正在使用新二进制运行：
 
 ```bash
 hotplex service status
 ```
 
-**Expected Output:**
+**预期输出：**
 ```
 ✓ hotplex (user) active
     PID: <new PID>
     Unit: /home/hotplex/.config/systemd/user/hotplex.service
 ```
 
-**Key Indicators:**
-- Status: `active` (not `failed` or `inactive`)
-- PID: Different from pre-update PID (confirms restart)
-- Unit: Correct systemd user service path
+**关键指示器：**
+- 状态：`active`（而非 `failed` 或 `inactive`）
+- PID：与更新前 PID 不同（确认重启）
+- Unit：正确的 systemd 用户服务路径
 
 ---
 
-### Step 7: Verify Service Health
+### 步骤 7：验证服务健康
 
-Check service logs to ensure clean startup:
+检查服务日志以确保干净启动：
 
 ```bash
 sleep 2 && hotplex service logs | tail -20
 ```
 
-**Expected Output:**
+**预期输出：**
 ```
 HOTPLEX GATEWAY
 Unified AI Coding Agent Access Layer
@@ -174,70 +174,70 @@ Adapters   feishu ✓  slack ✗
 {"time":"...","level":"INFO","msg":"feishu: starting WebSocket connection"...}
 ```
 
-**Success Indicators:**
-- ✅ Banner displays correctly
-- ✅ No error messages in last 20 lines
-- ✅ Feishu adapter shows "connected" (or "starting")
-- ✅ Gateway listening on port 8888
+**成功指示器：**
+- ✅ Banner 正确显示
+- ✅ 最后 20 行中无错误消息
+- ✅ Feishu 适配器显示"connected"（或"starting"）
+- ✅ Gateway 在端口 8888 上监听
 
-**Error Indicators:**
-- ❌ "panic", "fatal", "error" in logs
-- ❌ Adapter connection failures
-- ❌ Port binding errors
+**错误指示器：**
+- ❌ 日志中的"panic"、"fatal"、"error"
+- ❌ 适配器连接失败
+- ❌ 端口绑定错误
 
-**On Errors:**
-- Check full logs: `hotplex service logs -n 100`
-- Check system journal: `journalctl --user -u hotplex -n 50`
-- Rollback: Keep old binary backup before replacing
+**遇到错误时：**
+- 检查完整日志：`hotplex service logs -n 100`
+- 检查系统日志：`journalctl --user -u hotplex -n 50`
+- 回滚：在替换前保留旧二进制备份
 
 ---
 
-### Step 8: Functional Verification (Optional but Recommended)
+### 步骤 8：功能验证（可选但推荐）
 
-If the update includes specific new features, verify them:
+如果更新包括特定新功能，验证它们：
 
-**For Security Policy Updates:**
+**对于安全策略更新：**
 ```bash
-# Test cd command in Feishu
+# 在 Feishu 中测试 cd 命令
 /cd ~/.hotplex/workspace/hotplex
-# Should succeed with new security policy
+# 应该成功使用新的安全策略
 ```
 
-**For Error Message Updates:**
+**对于错误消息更新：**
 ```bash
-# Test invalid directory in Feishu
+# 在 Feishu 中测试无效目录
 /cd /etc/myapp
-# Should show detailed error message
+# 应该显示详细错误消息
 ```
 
 ---
 
-## Rollback Procedure (If Update Fails)
+## 回滚程序（如果更新失败）
 
-If the new binary has issues, roll back to the previous version:
+如果新二进制有问题，回滚到先前版本：
 
-### 1. Stop Service
+### 1. 停止服务
 ```bash
 hotplex service stop
 ```
 
-### 2. Restore Previous Binary
+### 2. 恢复先前二进制
 ```bash
-# If you have a backup:
+# 如果您有备份：
 cp /path/to/backup/hotplex /home/hotplex/.local/bin/hotplex
 
-# Or rebuild from previous commit:
+# 或从先前 commit 重新构建：
 git checkout <previous-commit>
 make build
 cp -f ./bin/hotplex-linux-amd64 /home/hotplex/.local/bin/hotplex
 ```
 
-### 3. Restart Service
+### 3. 重启服务
 ```bash
 hotplex service start
 ```
 
-### 4. Verify Rollback
+### 4. 验证回滚
 ```bash
 hotplex service status
 hotplex service logs | tail -20
@@ -245,100 +245,100 @@ hotplex service logs | tail -20
 
 ---
 
-## Best Practices
+## 最佳实践
 
-### 1. Backup Before Replace
+### 1. 替换前备份
 ```bash
 cp /home/hotplex/.local/bin/hotplex /tmp/hotplex.backup.$(date +%s)
 ```
 
-### 2. Use `cp -f` Force Flag
-Prevents "Text file busy" errors when service didn't fully stop.
+### 2. 使用 `cp -f` 强制标志
+防止服务未完全停止时的"Text file busy"错误。
 
-### 3. Always Wait After Stop
-The `sleep 2` after `service stop` prevents file lock issues.
+### 3. 停止后始终等待
+`service stop` 后的 `sleep 2` 可防止文件锁问题。
 
-### 4. Verify Timestamps
-Comparing timestamps confirms you're deploying the right version.
+### 4. 验证时间戳
+比较时间戳确认您正在部署正确的版本。
 
-### 5. Check Logs After Start
-Don't assume success—verify clean startup in logs.
+### 5. 启动后检查日志
+不要假设成功 — 在日志中验证干净启动。
 
 ---
 
-## Troubleshooting
+## 故障排除
 
-### Issue: "Text file busy" when copying binary
-**Cause:** Service still running or file locks not released
-**Solution:**
+### 问题：复制二进制时"Text file busy"
+**原因：**服务仍在运行或文件锁未释放
+**解决方案：**
 ```bash
 hotplex service stop
-sleep 3  # Wait longer
+sleep 3  # 等待更长时间
 cp -f ./bin/hotplex-linux-amd64 /home/hotplex/.local/bin/hotplex
 ```
 
-### Issue: Service fails to start after update
-**Cause:** New binary has runtime errors
-**Solution:** Check logs, rollback to previous version, fix issue, rebuild
+### 问题：更新后服务启动失败
+**原因：**新二进制有运行时错误
+**解决方案：**检查日志，回滚到先前版本，修复问题，重新构建
 
-### Issue: Old version still running after update
-**Cause:** Binary replacement failed or systemd cached old binary
-**Solution:**
+### 问题：更新后旧版本仍在运行
+**原因：**二进制替换失败或 systemd 缓存了旧二进制
+**解决方案：**
 ```bash
-# Verify binary timestamp
+# 验证二进制时间戳
 ls -lh /home/hotplex/.local/bin/hotplex
 
-# If timestamp is old, repeat Step 4
-# If timestamp is new but old PID, restart systemd
+# 如果时间戳是旧的，重复步骤 4
+# 如果时间戳是新的但 PID 是旧的，重启 systemd
 systemctl --user daemon-reload
 hotplex service restart
 ```
 
-### Issue: New features not working
-**Cause:** Service not fully restarted or config not loaded
-**Solution:**
+### 问题：新功能不工作
+**原因：**服务未完全重启或配置未加载
+**解决方案：**
 ```bash
-# Full restart (not just start)
+# 完全重启（不仅仅是启动）
 hotplex service restart
 
-# Verify config loaded
+# 验证配置已加载
 hotplex service logs | grep "security\|allowed"
 ```
 
 ---
 
-## Quick Reference Command Sequence
+## 快速参考命令序列
 
-For experienced users, the complete workflow:
+对于有经验的用户，完整工作流：
 
 ```bash
-# Build
+# 构建
 make build
 
-# Verify
+# 验证
 ls -lh ./bin/hotplex-linux-amd64 /home/hotplex/.local/bin/hotplex
 
-# Stop and wait
+# 停止并等待
 hotplex service stop
 sleep 2
 
-# Replace
+# 替换
 cp -f ./bin/hotplex-linux-amd64 /home/hotplex/.local/bin/hotplex
 
-# Start
+# 启动
 hotplex service start
 
-# Verify
+# 验证
 hotplex service status
 sleep 2 && hotplex service logs | tail -20
 ```
 
 ---
 
-## Notes
+## 注意事项
 
-- **Downtime:** Typically 3-5 seconds (stop + replace + start)
-- **Impact:** All active sessions are terminated during restart
-- **Safety:** Always backup previous binary before replacing
-- **Logging:** All service operations are logged to systemd journal
-- **User-Level:** Uses systemd user service, no root required
+- **停机时间：**通常 3-5 秒（停止 + 替换 + 启动）
+- **影响：**重启期间所有活动会话都将终止
+- **安全性：**替换前始终备份先前的二进制
+- **日志记录：**所有服务操作都记录到 systemd 日志
+- **用户级：**使用 systemd 用户服务，不需要 root
