@@ -27,6 +27,7 @@ func TestNewSingletonProcessManager(t *testing.T) {
 	require.Equal(t, stateIdle, mgr.state)
 	require.Equal(t, 0, mgr.refs)
 	require.NotNil(t, mgr.client)
+	require.NotNil(t, mgr.sseClient)
 	require.NotNil(t, mgr.crashCh)
 }
 
@@ -209,10 +210,11 @@ func TestSingletonProcessManager_Acquire_StoppedState(t *testing.T) {
 	mgr.state = stateStopped
 	mgr.mu.Unlock()
 
-	addr, client, crash, err := mgr.Acquire(context.Background())
+	addr, client, sseClient, crash, err := mgr.Acquire(context.Background())
 	require.Error(t, err)
 	require.Empty(t, addr)
 	require.Nil(t, client)
+	require.Nil(t, sseClient)
 	require.Nil(t, crash)
 }
 
@@ -232,4 +234,43 @@ func TestShutdownSingleton_Real(t *testing.T) {
 
 	ShutdownSingleton(context.Background())
 	require.Nil(t, singleton.Load())
+}
+
+func TestNewSingletonProcessManager_SSEClient(t *testing.T) {
+	t.Parallel()
+
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	cfg := config.OpenCodeServerConfig{
+		HTTPTimeout: 30 * time.Second,
+	}
+	mgr := NewSingletonProcessManager(log, cfg)
+
+	// Verify sseClient is created without timeout
+	require.NotNil(t, mgr.sseClient)
+	require.Zero(t, mgr.sseClient.Timeout, "sseClient should have no timeout")
+
+	// Verify regular client has timeout
+	require.NotNil(t, mgr.client)
+	require.Equal(t, cfg.HTTPTimeout, mgr.client.Timeout)
+}
+
+func TestSingletonProcessManager_Acquire_ReturnsSSEClient(t *testing.T) {
+	t.Parallel()
+
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	cfg := config.OpenCodeServerConfig{}
+	mgr := NewSingletonProcessManager(log, cfg)
+
+	// Simulate running state
+	mgr.mu.Lock()
+	mgr.state = stateRunning
+	mgr.httpAddr = "http://127.0.0.1:8080"
+	mgr.mu.Unlock()
+
+	addr, client, sseClient, crashCh, err := mgr.Acquire(context.Background())
+	require.NoError(t, err)
+	require.NotEmpty(t, addr)
+	require.NotNil(t, client)
+	require.NotNil(t, sseClient, "sseClient should be returned")
+	require.NotNil(t, crashCh)
 }

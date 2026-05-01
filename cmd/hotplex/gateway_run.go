@@ -349,7 +349,10 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 
 	serverErr := make(chan error, 1)
 	go func() {
-		serverErr <- server.ListenAndServe()
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Error("gateway: server failed to start", "err", err)
+			serverErr <- err
+		}
 	}()
 
 	adminAddr := cfg.Admin.Addr
@@ -371,8 +374,23 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 		RetryDelay:      cfg.Worker.AutoRetry.BaseDelay.String(),
 	}, configPath)
 
-	sig := waitForSignal(stopCh)
-	log.Info("gateway: shutdown", "signal", sig)
+	// Wait for either signal or server error
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+
+	select {
+	case s := <-sig:
+		log.Info("gateway: shutdown", "signal", s)
+	case err := <-serverErr:
+		if err != nil {
+			log.Error("gateway: server failed, exiting", "err", err)
+			return err
+		}
+		// Server closed cleanly (should not happen here)
+		return nil
+	case <-stopCh:
+		log.Info("gateway: shutdown", "signal", "stopCh")
+	}
 
 	cancel()
 
@@ -487,16 +505,5 @@ func loadEnvFile(dir string) {
 	}
 	if loaded > 0 {
 		fmt.Fprintf(os.Stderr, "  env loaded %d vars from %s\n", loaded, envPath)
-	}
-}
-
-func waitForSignal(stopCh <-chan struct{}) os.Signal {
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
-	select {
-	case s := <-sig:
-		return s
-	case <-stopCh:
-		return syscall.SIGTERM
 	}
 }

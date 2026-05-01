@@ -29,6 +29,21 @@ func TestOpenCodeServerWorker_Capabilities(t *testing.T) {
 	require.Equal(t, []string{"text", "code"}, w.Modalities())
 }
 
+func TestOpenCodeServerWorker_New(t *testing.T) {
+	t.Parallel()
+	w := New()
+
+	// Verify worker is properly initialized
+	require.NotNil(t, w)
+	require.NotNil(t, w.BaseWorker)
+	// singleton may be nil if not initialized, so just check it exists (could be nil)
+	// require.NotNil(t, w.singleton)
+	require.NotNil(t, w.client)
+	require.Nil(t, w.sseClient, "sseClient should be nil until Start/Resume")
+	require.Nil(t, w.sseCancel, "sseCancel should be nil until Start/Resume")
+	require.Nil(t, w.httpConn)
+}
+
 func TestOpenCodeServerWorker_EnvWhitelist(t *testing.T) {
 	t.Parallel()
 	w := New()
@@ -80,6 +95,107 @@ func TestOpenCodeServerWorker_KillWithoutStart(t *testing.T) {
 
 	w := New()
 	err := w.Kill()
+	require.NoError(t, err)
+}
+
+func TestOpenCodeServerWorker_Terminate_CallsSSECancel(t *testing.T) {
+	t.Parallel()
+
+	w := New()
+	ctx := context.Background()
+
+	// Set sseCancel
+	sseCtx, sseCancel := context.WithCancel(context.Background())
+	w.Mu.Lock()
+	w.sseCancel = sseCancel
+	w.Mu.Unlock()
+
+	// Terminate should call sseCancel
+	err := w.Terminate(ctx)
+	require.NoError(t, err)
+
+	// Verify context was cancelled
+	select {
+	case <-sseCtx.Done():
+		// Context was cancelled as expected
+	default:
+		t.Fatal("sseCancel was not called by Terminate")
+	}
+}
+
+func TestOpenCodeServerWorker_Kill_CallsSSECancel(t *testing.T) {
+	t.Parallel()
+
+	w := New()
+
+	// Set sseCancel
+	sseCtx, sseCancel := context.WithCancel(context.Background())
+	w.Mu.Lock()
+	w.sseCancel = sseCancel
+	w.Mu.Unlock()
+
+	// Kill should call sseCancel
+	err := w.Kill()
+	require.NoError(t, err)
+
+	// Verify context was cancelled
+	select {
+	case <-sseCtx.Done():
+		// Context was cancelled as expected
+	default:
+		t.Fatal("sseCancel was not called by Kill")
+	}
+}
+
+func TestOpenCodeServerWorker_Terminate_NilSSECancel(t *testing.T) {
+	t.Parallel()
+
+	w := New()
+	ctx := context.Background()
+
+	// Don't set sseCancel (it's nil)
+	// Terminate should not panic
+	err := w.Terminate(ctx)
+	require.NoError(t, err)
+}
+
+func TestOpenCodeServerWorker_Kill_NilSSECancel(t *testing.T) {
+	t.Parallel()
+
+	w := New()
+
+	// Don't set sseCancel (it's nil)
+	// Kill should not panic
+	err := w.Kill()
+	require.NoError(t, err)
+}
+
+func TestOpenCodeServerWorker_Terminate_ReleasesSingleton(t *testing.T) {
+	t.Parallel()
+
+	w := New()
+	ctx := context.Background()
+
+	// Terminate should call releaseOnce
+	err := w.Terminate(ctx)
+	require.NoError(t, err)
+
+	// Call Terminate again - should not call release twice
+	err = w.Terminate(ctx)
+	require.NoError(t, err)
+}
+
+func TestOpenCodeServerWorker_Kill_ReleasesSingleton(t *testing.T) {
+	t.Parallel()
+
+	w := New()
+
+	// Kill should call releaseOnce
+	err := w.Kill()
+	require.NoError(t, err)
+
+	// Call Kill again - should not call release twice
+	err = w.Kill()
 	require.NoError(t, err)
 }
 

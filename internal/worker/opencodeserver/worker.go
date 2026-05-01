@@ -110,8 +110,12 @@ type Worker struct {
 	httpConn  *conn
 	httpAddr  string
 	client    *http.Client
+	sseClient *http.Client // separate client without Timeout for SSE
 	cmd       *ServerCommander
 	crashSub  <-chan struct{} // closed when singleton process crashes
+
+	// sseCancel is used to cancel the SSE request context on Terminate/Kill.
+	sseCancel context.CancelFunc
 
 	// releaseOnce ensures singleton.Release() is called exactly once,
 	// regardless of which method triggers it (Terminate, Kill, or Wait).
@@ -191,12 +195,13 @@ func (w *Worker) Start(ctx context.Context, session worker.SessionInfo) error {
 	w.Mu.Unlock()
 
 	// Acquire ref from singleton (starts process if first session)
-	httpAddr, client, crashSub, err := w.singleton.Acquire(ctx)
+	httpAddr, client, sseClient, crashSub, err := w.singleton.Acquire(ctx)
 	if err != nil {
 		return fmt.Errorf("opencodeserver: acquire server: %w", err)
 	}
 	w.httpAddr = httpAddr
 	w.client = client
+	w.sseClient = sseClient
 	w.crashSub = crashSub
 
 	// Create new session via HTTP API
@@ -208,7 +213,13 @@ func (w *Worker) Start(ctx context.Context, session worker.SessionInfo) error {
 
 	w.initSessionConn(ctx, sessionID, session)
 
-	go w.readSSE(sessionID)
+	// Create cancellable context for SSE request
+	sseCtx, sseCancel := context.WithCancel(context.Background())
+	w.Mu.Lock()
+	w.sseCancel = sseCancel
+	w.Mu.Unlock()
+
+	go w.readSSE(sseCtx, sessionID)
 	return nil
 }
 
@@ -273,23 +284,39 @@ func (w *Worker) Resume(ctx context.Context, session worker.SessionInfo) error {
 	}
 	w.Mu.Unlock()
 
-	httpAddr, client, crashSub, err := w.singleton.Acquire(ctx)
+	httpAddr, client, sseClient, crashSub, err := w.singleton.Acquire(ctx)
 	if err != nil {
 		return fmt.Errorf("opencodeserver: acquire server: %w", err)
 	}
 	w.httpAddr = httpAddr
 	w.client = client
+	w.sseClient = sseClient
 	w.crashSub = crashSub
 
 	w.initSessionConn(ctx, session.SessionID, session)
 
-	go w.readSSE(session.SessionID)
+	// Create cancellable context for SSE request
+	sseCtx, sseCancel := context.WithCancel(context.Background())
+	w.Mu.Lock()
+	w.sseCancel = sseCancel
+	w.Mu.Unlock()
+
+	go w.readSSE(sseCtx, session.SessionID)
 	return nil
 }
 
 // Terminate closes the SSE connection and releases the singleton ref.
 // Does NOT kill the shared server process.
 func (w *Worker) Terminate(_ context.Context) error {
+	w.Mu.Lock()
+	sseCancel := w.sseCancel
+	w.Mu.Unlock()
+
+	// Cancel SSE request to unblock readSSE goroutine
+	if sseCancel != nil {
+		sseCancel()
+	}
+
 	w.releaseOnce.Do(func() {
 		if w.singleton != nil {
 			w.singleton.Release()
@@ -310,6 +337,15 @@ func (w *Worker) Terminate(_ context.Context) error {
 // Kill closes the SSE connection and releases the singleton ref.
 // Does NOT kill the shared server process.
 func (w *Worker) Kill() error {
+	w.Mu.Lock()
+	sseCancel := w.sseCancel
+	w.Mu.Unlock()
+
+	// Cancel SSE request to unblock readSSE goroutine
+	if sseCancel != nil {
+		sseCancel()
+	}
+
 	w.releaseOnce.Do(func() {
 		if w.singleton != nil {
 			w.singleton.Release()
@@ -523,7 +559,7 @@ func (w *Worker) initSessionConn(ctx context.Context, serverSessionID string, se
 	w.Mu.Unlock()
 }
 
-func (w *Worker) readSSE(sessionID string) {
+func (w *Worker) readSSE(ctx context.Context, sessionID string) {
 	defer func() {
 		if r := recover(); r != nil {
 			w.Log.Error("opencodeserver: readSSE panic", "session_id", sessionID, "panic", r, "stack", string(debug.Stack()))
@@ -531,7 +567,7 @@ func (w *Worker) readSSE(sessionID string) {
 	}()
 
 	url := fmt.Sprintf("%s/events?session_id=%s", w.httpAddr, sessionID)
-	req, err := http.NewRequest("GET", url, http.NoBody)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, http.NoBody)
 	if err != nil {
 		w.Log.Error("opencodeserver: create SSE request", "session_id", sessionID, "err", err)
 		return
@@ -539,7 +575,7 @@ func (w *Worker) readSSE(sessionID string) {
 	req.Header.Set("Accept", "text/event-stream")
 	req.Header.Set("Cache-Control", "no-cache")
 
-	resp, err := w.client.Do(req)
+	resp, err := w.sseClient.Do(req)
 	if err != nil {
 		w.Log.Error("opencodeserver: SSE connect", "session_id", sessionID, "err", err)
 		return

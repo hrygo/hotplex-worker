@@ -33,9 +33,10 @@ import (
 // All methods are safe for concurrent use. Acquire serializes process startup
 // via mutex so only the first caller starts the process.
 type SingletonProcessManager struct {
-	log    *slog.Logger
-	client *http.Client
-	cfg    config.OpenCodeServerConfig
+	log       *slog.Logger
+	client    *http.Client // with Timeout for API calls
+	sseClient *http.Client // without Timeout for long-lived SSE streams
+	cfg       config.OpenCodeServerConfig
 
 	mu       sync.Mutex
 	proc     *proc.Manager
@@ -61,24 +62,31 @@ var portRegex = regexp.MustCompile(`listening on http://[\d.]+:(\d+)`)
 
 // NewSingletonProcessManager creates a new singleton process manager.
 func NewSingletonProcessManager(log *slog.Logger, cfg config.OpenCodeServerConfig) *SingletonProcessManager {
+	transport := &http.Transport{
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 100,
+		IdleConnTimeout:     90 * time.Second,
+	}
 	return &SingletonProcessManager{
-		log:     log.With("component", "opencode-server-singleton"),
-		client:  &http.Client{Timeout: cfg.HTTPTimeout},
-		cfg:     cfg,
-		crashCh: make(chan struct{}),
+		log:       log.With("component", "opencode-server-singleton"),
+		client:    &http.Client{Timeout: cfg.HTTPTimeout, Transport: transport},
+		sseClient: &http.Client{Transport: transport}, // no Timeout for SSE
+		cfg:       cfg,
+		crashCh:   make(chan struct{}),
 	}
 }
 
 // Acquire increments the reference count and starts the process if needed.
-// Returns the server HTTP address, HTTP client, and a crash notification channel.
+// Returns the server HTTP address, HTTP client for API calls, HTTP client for SSE (no timeout),
+// and a crash notification channel.
 // The crash channel is closed when the process exits unexpectedly; workers should
 // check it in their Wait() implementation to report the correct exit code.
-func (s *SingletonProcessManager) Acquire(ctx context.Context) (httpAddr string, client *http.Client, crashCh <-chan struct{}, err error) {
+func (s *SingletonProcessManager) Acquire(ctx context.Context) (httpAddr string, client, sseClient *http.Client, crashCh <-chan struct{}, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if s.state == stateStopped {
-		return "", nil, nil, fmt.Errorf("opencode-server-singleton: stopped")
+		return "", nil, nil, nil, fmt.Errorf("opencode-server-singleton: stopped")
 	}
 
 	// Cancel idle drain timer if one is pending.
@@ -90,17 +98,17 @@ func (s *SingletonProcessManager) Acquire(ctx context.Context) (httpAddr string,
 	// Start process on first reference.
 	if s.state == stateIdle {
 		if err := s.startProcessLocked(ctx); err != nil {
-			return "", nil, nil, err
+			return "", nil, nil, nil, err
 		}
 	}
 
 	if s.state != stateRunning {
-		return "", nil, nil, fmt.Errorf("opencode-server-singleton: unexpected state %d", s.state)
+		return "", nil, nil, nil, fmt.Errorf("opencode-server-singleton: unexpected state %d", s.state)
 	}
 
 	s.refs++
 	s.log.Debug("opencode-server-singleton: acquire", "refs", s.refs)
-	return s.httpAddr, s.client, s.crashCh, nil
+	return s.httpAddr, s.client, s.sseClient, s.crashCh, nil
 }
 
 // Release decrements the reference count. When refs reach zero, an idle drain
