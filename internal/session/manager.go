@@ -187,7 +187,7 @@ func (m *Manager) Get(id string) (*SessionInfo, error) {
 }
 
 // updateSession applies a field mutation under ms.mu, persists to DB, and rolls back on error.
-// The apply function must capture previous values and return a rollback closure — all under the lock.
+// The apply closure must capture previous values and return a rollback closure — all under the lock.
 func (m *Manager) updateSession(ctx context.Context, ms *managedSession, apply func(*SessionInfo) func()) error {
 	ms.mu.Lock()
 	rollback := apply(&ms.info)
@@ -213,6 +213,9 @@ func (m *Manager) UpdateWorkDir(ctx context.Context, id, workDir string) error {
 		return ErrSessionNotFound
 	}
 	m.mu.RUnlock()
+	if ms.info.WorkDir == workDir {
+		return nil
+	}
 	return m.updateSession(ctx, ms, func(info *SessionInfo) func() {
 		prev := info.WorkDir
 		info.WorkDir = workDir
@@ -598,7 +601,9 @@ func (m *Manager) ClearContext(ctx context.Context, sessionID string) error {
 	if ms == nil {
 		return ErrSessionNotFound
 	}
-
+	if len(ms.info.Context) == 0 {
+		return nil
+	}
 	return m.updateSession(ctx, ms, func(info *SessionInfo) func() {
 		prev := info.Context
 		info.Context = map[string]any{}

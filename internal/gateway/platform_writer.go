@@ -100,7 +100,7 @@ func (e *pcEntry) WriteCtx(_ context.Context, env *events.Envelope) error {
 		return nil
 	case <-ctx.Done():
 		return fmt.Errorf("platform conn write timeout: buffer full")
-	case <-e.closeCh: // check close signal instead of relying solely on done
+	case <-e.closeCh:
 		return errors.New("platform conn closed")
 	case <-e.done:
 		return errors.New("platform conn closed")
@@ -181,6 +181,12 @@ func (e *pcEntry) writeLoop() {
 					timer = time.NewTimer(e.cfg.CoalesceIntvl)
 					timerCh = timer.C
 				} else {
+					if !timer.Stop() {
+						select {
+						case <-timer.C:
+						default:
+						}
+					}
 					timer.Reset(e.cfg.CoalesceIntvl)
 				}
 			} else {

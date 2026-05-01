@@ -118,8 +118,6 @@ func (b *Bridge) StartSession(ctx context.Context, id, userID, botID string, wt 
 
 	if _, err := b.createAndLaunchWorker(workerLaunchParams{
 		ctx:        ctx,
-		sessionID:  id,
-		userID:     userID,
 		wt:         wt,
 		workerInfo: workerInfo,
 		platform:   platform,
@@ -154,74 +152,55 @@ type forwardOpts struct {
 	lastInput  string // inherited lastInput from previous retry goroutine; used as fallback when retry worker never receives input
 }
 
-// workerLaunchParams holds the parameters for createAndLaunchWorker, the shared
-// helper that encapsulates the NewWorker → noop → AttachWorker → injectAgentConfig →
-// Start/Resume → forwardEvents pattern used by StartSession, resumeWithOpts,
-// attemptResumeFallback (fresh start), and SwitchWorkDirInPlace.
+// workerLaunchParams holds the parameters for createAndLaunchWorker.
 type workerLaunchParams struct {
 	ctx         context.Context
-	sessionID   string
-	userID      string
 	wt          worker.WorkerType
 	workerInfo  worker.SessionInfo
 	platform    string
 	forwardOpts forwardOpts
 }
 
-// workerStartFunc is called by createAndLaunchWorker after AttachWorker and
-// injectAgentConfig. It should call w.Start or w.Resume. If it returns an error,
-// the worker has already been detached by createAndLaunchWorker.
+// workerStartFunc is called after AttachWorker and injectAgentConfig.
+// On startFn failure, the worker is automatically detached.
 type workerStartFunc func(ctx context.Context, w worker.Worker) error
 
-// workerAttachErrFunc is called when AttachWorker fails. It receives the worker
-// and error so callers can perform additional cleanup (e.g., killing the worker,
-// deleting the session record).
+// workerAttachErrFunc is called when AttachWorker fails for caller-specific cleanup.
 type workerAttachErrFunc func(w worker.Worker, err error)
 
-// createAndLaunchWorker encapsulates the shared worker creation + attach + start
-// + forward pattern. It creates a worker, handles the noop.Worker special-case,
-// attaches it to the session manager, injects agent config, calls startFn to
-// Start or Resume the worker, and launches the forwardEvents goroutine.
-// It returns the created worker so callers can perform additional post-launch
-// operations (e.g., re-delivering pending input, sending notifications).
-//
-// On AttachWorker failure, attachErrFn is called for caller-specific cleanup.
-// On startFn failure, the worker is automatically detached before returning.
+// createAndLaunchWorker creates a worker, attaches it, injects config, calls startFn,
+// and launches the forwardEvents goroutine. Returns the worker for post-launch use.
+// On startFn failure, the worker is detached before returning.
 func (b *Bridge) createAndLaunchWorker(params workerLaunchParams, startFn workerStartFunc, attachErrFn workerAttachErrFunc) (worker.Worker, error) {
-	// Create worker.
+	sid := params.workerInfo.SessionID
+
 	w, err := b.wf.NewWorker(params.wt)
 	if err != nil {
 		return nil, fmt.Errorf("bridge: create worker: %w", err)
 	}
 
-	// noop.Worker special-case: set up in-process connection.
 	if noopw, ok := w.(*noop.Worker); ok {
-		noopw.SetConn(noop.NewConn(params.sessionID, params.userID))
+		noopw.SetConn(noop.NewConn(sid, params.workerInfo.UserID))
 	}
 
-	// Attach worker.
-	if err := b.sm.AttachWorker(params.sessionID, w); err != nil {
+	if err := b.sm.AttachWorker(sid, w); err != nil {
 		if attachErrFn != nil {
 			attachErrFn(w, err)
 		}
 		return nil, fmt.Errorf("bridge: attach worker: %w", err)
 	}
 
-	// Inject agent config into session info.
 	b.injectAgentConfig(&params.workerInfo, params.platform)
 
-	// Start or Resume the worker.
 	if err := startFn(params.ctx, w); err != nil {
-		b.sm.DetachWorker(params.sessionID)
+		b.sm.DetachWorker(sid)
 		return nil, err
 	}
 
-	// Forward worker events to hub. Goroutine exits when conn.Recv() is closed
-	// (happens when the worker is killed via poolMgr.Close).
 	b.fwdWg.Add(1)
 	go func() {
 		defer b.fwdWg.Done()
-		b.forwardEvents(w, params.sessionID, params.forwardOpts)
+		b.forwardEvents(w, sid, params.forwardOpts)
 	}()
 
 	return w, nil
@@ -273,8 +252,6 @@ func (b *Bridge) resumeWithOpts(ctx context.Context, id, workDir string, opts fo
 
 	w, err := b.createAndLaunchWorker(workerLaunchParams{
 		ctx:         ctx,
-		sessionID:   id,
-		userID:      si.UserID,
 		wt:          si.WorkerType,
 		workerInfo:  workerInfo,
 		platform:    si.Platform,
@@ -821,8 +798,6 @@ func (b *Bridge) attemptResumeFallback(p fallbackParams) bool {
 
 	w, err := b.createAndLaunchWorker(workerLaunchParams{
 		ctx:        context.Background(),
-		sessionID:  p.sessionID,
-		userID:     si.UserID,
 		wt:         si.WorkerType,
 		workerInfo: workerInfo,
 		platform:   si.Platform,
@@ -1124,8 +1099,6 @@ func (b *Bridge) SwitchWorkDirInPlace(ctx context.Context, sessionID, newWorkDir
 
 	_, err = b.createAndLaunchWorker(workerLaunchParams{
 		ctx:         ctx,
-		sessionID:   sessionID,
-		userID:      si.UserID,
 		wt:          si.WorkerType,
 		workerInfo:  workerInfo,
 		platform:    si.Platform,
