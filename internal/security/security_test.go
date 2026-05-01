@@ -133,7 +133,6 @@ func TestValidateWorkDir(t *testing.T) {
 	tmpDir := t.TempDir()
 	currentUser := getCurrentUser()
 
-
 	tests := []struct {
 		name    string
 		dir     string
