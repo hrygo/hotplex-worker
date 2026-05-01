@@ -390,13 +390,24 @@ func (h *Handler) validateOwner(_ context.Context, env *events.Envelope) (*sessi
 	return si, nil
 }
 
-func (h *Handler) handleReset(ctx context.Context, env *events.Envelope) error {
+// requireActiveOwner validates session ownership and returns the session info.
+// On error it sends an appropriate error to the client and returns the error
+// so the caller can simply do: si, err := h.requireActiveOwner(ctx, env); if err != nil { return err }
+func (h *Handler) requireActiveOwner(ctx context.Context, env *events.Envelope) (*session.SessionInfo, error) {
 	si, err := h.validateOwner(ctx, env)
 	if err != nil {
 		if errors.Is(err, session.ErrSessionNotFound) {
-			return h.sendErrorf(ctx, env, events.ErrCodeSessionNotFound, "session not found")
+			return nil, h.sendErrorf(ctx, env, events.ErrCodeSessionNotFound, "session not found")
 		}
-		return h.sendErrorf(ctx, env, events.ErrCodeUnauthorized, "ownership required")
+		return nil, h.sendErrorf(ctx, env, events.ErrCodeUnauthorized, "ownership required")
+	}
+	return si, nil
+}
+
+func (h *Handler) handleReset(ctx context.Context, env *events.Envelope) error {
+	si, err := h.requireActiveOwner(ctx, env)
+	if err != nil {
+		return err
 	}
 	if !si.State.IsActive() {
 		return h.sendErrorf(ctx, env, events.ErrCodeProtocolViolation, "reset not allowed in state: %s", si.State)
@@ -436,12 +447,9 @@ func (h *Handler) handleReset(ctx context.Context, env *events.Envelope) error {
 }
 
 func (h *Handler) handleGC(ctx context.Context, env *events.Envelope) error {
-	si, err := h.validateOwner(ctx, env)
+	si, err := h.requireActiveOwner(ctx, env)
 	if err != nil {
-		if errors.Is(err, session.ErrSessionNotFound) {
-			return h.sendErrorf(ctx, env, events.ErrCodeSessionNotFound, "session not found")
-		}
-		return h.sendErrorf(ctx, env, events.ErrCodeUnauthorized, "ownership required")
+		return err
 	}
 	if si.State == events.StateTerminated {
 		h.log.Info("gateway: gc idempotent (already terminated)", "session_id", env.SessionID)
@@ -503,12 +511,9 @@ func (h *Handler) handleCD(ctx context.Context, env *events.Envelope) error {
 	path = expanded
 
 	// Validate ownership.
-	si, err := h.validateOwner(ctx, env)
+	si, err := h.requireActiveOwner(ctx, env)
 	if err != nil {
-		if errors.Is(err, session.ErrSessionNotFound) {
-			return h.sendErrorf(ctx, env, events.ErrCodeSessionNotFound, "session not found")
-		}
-		return h.sendErrorf(ctx, env, events.ErrCodeUnauthorized, "ownership required")
+		return err
 	}
 
 	// Delegate to bridge.
@@ -582,12 +587,9 @@ func (h *Handler) handleWorkerCommand(ctx context.Context, env *events.Envelope)
 		return h.sendErrorf(ctx, env, events.ErrCodeInvalidMessage, "worker_command: invalid data")
 	}
 
-	si, err := h.validateOwner(ctx, env)
+	si, err := h.requireActiveOwner(ctx, env)
 	if err != nil {
-		if errors.Is(err, session.ErrSessionNotFound) {
-			return h.sendErrorf(ctx, env, events.ErrCodeSessionNotFound, "session not found")
-		}
-		return h.sendErrorf(ctx, env, events.ErrCodeUnauthorized, "ownership required")
+		return err
 	}
 	if !si.State.IsActive() {
 		return h.sendErrorf(ctx, env, events.ErrCodeSessionBusy, "worker command requires active session, current: %s", si.State)
