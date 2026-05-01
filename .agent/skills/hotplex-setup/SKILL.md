@@ -1,31 +1,121 @@
 ---
-name: setup-env
-description: HotPlex 完整安装与配置指引。当用户需要安装、配置、更新 HotPlex 时使用此 skill — 包括首次安装、配置消息平台（Slack/飞书）、更新密钥、调整访问策略、配置 STT、切换 Worker 类型、调优资源限制、启用可观测性。也适用于用户提到"配置 slack"、"配置飞书"、"安装 hotplex"、"设置消息"、"更新 .env"、"添加白名单"、"获取用户 ID"、"配置 OTel"、"配置 worker"、"调整资源"等场景。不适用于与 HotPlex 无关的一般 .env 编辑。
+name: hotplex-setup
+description: HotPlex 完整环境检查、依赖验证与安装引导。执行系统级环境检测（OS/架构/Go/Python/端口/权限）、引导式安装（二进制/源码）、配置生成与验证（消息平台/STT/Worker/资源限制）、服务部署与验证。**使用此 skill**：首次安装 HotPlex、环境检查、依赖缺失、配置消息平台、端口冲突、权限问题、服务启动失败、升级版本、迁移配置、添加白名单、获取用户 ID。支持 Linux/macOS/Windows 跨平台安装。
 ---
 
-# HotPlex 安装与配置指引
+# HotPlex 环境检查与安装指引
 
-从零开始完成 HotPlex 的安装、配置、服务部署和验证。整个流程是幂等的——重复运行时只处理缺失或需要更新的部分。
+从零开始完成 HotPlex 的环境检测、依赖安装、配置生成、服务部署和验证。整个流程是幂等的——重复运行时只处理缺失或需要更新的部分。
 
-## 第一步：环境检测
+## 第一步：系统级环境检测
 
-检测当前环境，确定安装方式。
+### 1.1 操作系统与架构
 
 ```bash
-# 操作系统与架构
 uname -sm
-# 检查是否已安装
-which hotplex 2>/dev/null && hotplex version || echo "NOT_INSTALLED"
-# 检查 Go（源码构建需要）
-go version 2>/dev/null || echo "NO_GO"
 ```
 
-根据结果向用户推荐安装方式：
-- 已安装 → 跳到第三步（配置），询问是否需要更新版本
-- 有 Go 1.26+ → 可选源码构建或二进制安装
-- 无 Go → 二进制安装
+**支持的系统**：
+- Linux（x86_64/arm64）✅
+- macOS（x86_64/arm64）✅
+- Windows（amd64）✅
 
-## 第二步：安装
+**不支持的系统**：ARMv7、32位系统、FreeBSD
+
+### 1.2 依赖检查
+
+检测必需依赖：
+
+```bash
+# Go（源码构建需要，二进制安装可选）
+go version 2>/dev/null || echo "❌ Go 未安装"
+
+# Python 3.8+（本地 STT 需要）
+python3 --version 2>/dev/null || echo "⚠️  Python3 未安装（STT 功能不可用）"
+
+# Git（源码构建需要）
+git --version 2>/dev/null || echo "❌ Git 未安装"
+```
+
+**依赖要求**：
+- Go 1.26+（源码构建必需）
+- Python 3.8+（本地 STT 必需）
+- Git（源码构建必需）
+
+### 1.3 端口与权限检查
+
+```bash
+# 检查默认端口占用
+netstat -tuln 2>/dev/null | grep -E ":(8888|9999)" || ss -tuln | grep -E ":(8888|9999)" || echo "端口可用"
+
+# 检查写入权限
+touch ~/.hotplex/test-write 2>/dev/null && rm ~/.hotplex/test-write && echo "✅ 写入权限正常" || echo "❌ 无写入权限"
+```
+
+**端口冲突处理**：
+- 8888（Gateway）：修改 `~/.hotplex/config.yaml` 中 `gateway.addr`
+- 9999（Admin API）：修改 `~/.hotplex/config.yaml` 中 `admin.addr`
+
+### 1.4 系统服务检测
+
+```bash
+# 检查是否已安装为服务
+systemctl --user is-enabled hotplex 2>/dev/null && echo "✅ 用户级服务已安装" || echo "未安装用户级服务"
+systemctl is-enabled hotplex 2>/dev/null && echo "✅ 系统级服务已安装" || echo "未安装系统级服务"
+```
+
+### 1.5 当前安装状态
+
+```bash
+which hotplex 2>/dev/null && hotplex version || echo "❌ HotPlex 未安装"
+```
+
+根据检测结果生成状态报告：
+
+| 检查项 | 状态 | 说明 |
+|--------|------|------|
+| 操作系统 | ✅/❌ | Linux/macOS/Windows |
+| Go 1.26+ | ✅/⚠️/❌ | 源码构建必需 |
+| Python 3.8+ | ✅/⚠️/❌ | STT 功能必需 |
+| 端口 8888/9999 | ✅/⚠️ | 冲突需修改配置 |
+| 写入权限 | ✅/❌ | ~/.hotplex 目录 |
+| 系统服务 | ✅/➖ | 用户级/系统级 |
+
+## 第二步：安装方式选择
+
+根据环境检测结果推荐安装方式：
+- **已安装** → 跳到第三步（配置），询问是否需要更新版本
+- **有 Go 1.26+** → 可选源码构建或二进制安装
+- **无 Go** → 二进制安装（推荐）
+- **依赖缺失** → 引导安装依赖（Go/Python）
+
+### 依赖安装指引
+
+**Go 1.26+ 安装**：
+```bash
+# macOS
+brew install go
+
+# Linux (Ubuntu/Debian)
+sudo apt install golang-go
+
+# 验证
+go version
+```
+
+**Python 3.8+ 安装**：
+```bash
+# macOS
+brew install python3
+
+# Linux (Ubuntu/Debian)
+sudo apt install python3 python3-pip
+
+# 验证
+python3 --version
+```
+
+## 第三步：安装
 
 ### 方式 A：一键二进制安装（推荐）
 
@@ -74,7 +164,7 @@ hotplex version           # 应输出版本号
 hotplex config validate   # 检查默认配置是否合法
 ```
 
-## 第三步：评估当前配置
+## 第四步：评估当前配置
 
 1. 检查 `.env` 是否存在。不存在则 `cp configs/env.example .env`。
 2. 读取当前 `.env` 内容。
@@ -94,7 +184,7 @@ hotplex config validate   # 检查默认配置是否合法
 | 可观测性 | `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_SERVICE_NAME` |
 | 资源限制 | `SESSION_MAX_CONCURRENT`, `POOL_MAX_SIZE`, `POOL_MAX_MEMORY_PER_USER` |
 
-## 第四步：收集消息平台凭据
+## 第五步：收集消息平台凭据
 
 使用 `AskUserQuestion` 批量收集缺失的凭据（每次最多 4 个问题）。
 
@@ -108,7 +198,7 @@ hotplex config validate   # 检查默认配置是否合法
 
 让用户通过"Other"输入粘贴值。绝不猜测或伪造 Token。
 
-## 第五步：验证 Token
+## 第六步：验证 Token
 
 收集凭据后，并行调用 API 验证。
 
@@ -130,7 +220,7 @@ curl -s -X POST "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/in
 
 Token 无效时不继续后续步骤。
 
-## 第六步：配置工作目录
+## 第七步：配置工作目录
 
 Worker 进程需要工作目录。优先级：session 级别 > 平台级别 > 全局默认（`~/.hotplex/workspace`）。
 
@@ -149,7 +239,7 @@ HOTPLEX_MESSAGING_FEISHU_WORK_DIR=/path/to/project
 
 用户接受默认值则不设置变量——`worker.default_work_dir` 自动生效。
 
-## 第七步：自动获取用户 ID
+## 第八步：自动获取用户 ID
 
 用已验证的 Token 自动拉取工作区用户 ID。
 
@@ -170,7 +260,7 @@ API 调用失败时提供手动查找指引：
 - Slack：头像 → 三个点 → "Copy member ID"
 - 飞书：管理后台 → 组织架构 → 找到 Open ID
 
-## 第八步：配置访问策略
+## 第九步：配置访问策略
 
 用 `AskUserQuestion` 让用户选择：
 
@@ -189,7 +279,7 @@ API 调用失败时提供手动查找指引：
 
 选择"开放"时警告：工作区所有人都能使用 Bot。只警告一次。
 
-## 第九步：配置语音转文字
+## 第十步：配置语音转文字
 
 两个平台都支持语音转文字：
 
@@ -210,7 +300,7 @@ HOTPLEX_MESSAGING_FEISHU_STT_LOCAL_MODE=ephemeral
 
 用户明确不需要 STT 时跳过此步。
 
-## 第十步：配置 Worker 与 Agent
+## 第十一步：配置 Worker 与 Agent
 
 **Worker 类型** — 询问用户要使用的运行时：
 - `claude_code`（默认）— Claude Code CLI
@@ -240,7 +330,7 @@ HOTPLEX_WORKER_CLAUDE_CODE_COMMAND=claude
 ```
 仅在用户想禁用或使用自定义目录时设置。
 
-## 第十一步：写入 .env
+## 第十二步：写入 .env
 
 组装完整的 `.env` 文件。结构：
 
@@ -316,7 +406,7 @@ openssl rand -base64 32 | tr -d '/+=' | head -c 43  # Admin Token / API Key
 
 保留现有有效值。仅填充缺失字段或更新用户明确要求修改的字段。
 
-## 第十二步：部署为系统服务
+## 第十三步：部署为系统服务
 
 安装完成后，推荐部署为系统服务以实现自动启动和后台运行：
 
@@ -338,7 +428,7 @@ hotplex service status
 
 如果用户更倾向于开发模式，跳过此步，用 `make dev` 前台运行。
 
-## 第十三步：验证
+## 第十四步：验证
 
 逐步验证安装结果：
 
