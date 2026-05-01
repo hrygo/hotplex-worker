@@ -1,0 +1,102 @@
+[
+  {
+    "query": "开发完成了，帮我创建 PR",
+    "should_trigger": true,
+    "note": "直接请求创建 PR，典型场景"
+  },
+  {
+    "query": "我刚修好一个 bug，怎么提交代码到 HotPlex 项目？",
+    "should_trigger": true,
+    "note": "间接请求提交和 PR，自然语言"
+  },
+  {
+    "query": "帮我提交代码并创建 PR",
+    "should_trigger": true,
+    "note": "明确请求提交和创建 PR"
+  },
+  {
+    "query": "CI 红了，帮我看看是什么问题",
+    "should_trigger": true,
+    "note": "CI 失败场景，需要分析"
+  },
+  {
+    "query": "测试失败了，怎么修复？",
+    "should_trigger": true,
+    "note": "测试失败场景"
+  },
+  {
+    "query": "make lint 报错了，帮我修一下",
+    "should_trigger": true,
+    "note": "lint 错误场景"
+  },
+  {
+    "query": "codecov 覆盖率不够，怎么办？",
+    "should_trigger": true,
+    "note": "codecov 问题场景"
+  },
+  {
+    "query": "Windows CI 挂了，但我代码在 Mac 上跑得没问题",
+    "should_trigger": true,
+    "note": "跨平台 CI 失败，HotPlex 特定"
+  },
+  {
+    "query": "我改了 worker/ocs 的代码，准备提交",
+    "should_trigger": true,
+    "note": "架构特定修改，HotPlex 特定"
+  },
+  {
+    "query": "帮我推送到 fork 并创建 pull request",
+    "should_trigger": true,
+    "note": "fork 和 PR，HotPlex 工作流"
+  },
+  {
+    "query": "我刚才提交的 PR 通过了吗？",
+    "should_trigger": false,
+    "note": "仅查询状态，不需要创建 PR"
+  },
+  {
+    "query": "什么是 PR？",
+    "should_trigger": false,
+    "note": "概念性问题，不需要执行 PR 流程"
+  },
+  {
+    "query": "帮我 review 一下这个 PR",
+    "should_trigger": false,
+    "note": "review 是阅读和分析，不是创建 PR"
+  },
+  {
+    "query": "React 项目怎么创建 PR？",
+    "should_trigger": false,
+    "note": "其他项目，不是 HotPlex"
+  },
+  {
+    "query": "git merge 是什么意思？",
+    "should_trigger": false,
+    "note": "git 概念问题，不是创建 PR"
+  },
+  {
+    "query": "怎么克隆一个仓库？",
+    "should_trigger": false,
+    "note": "基本 git 操作，不涉及 PR"
+  },
+  {
+    "query": "查看当前分支",
+    "should_trigger": false,
+    "note": "简单的 git 命令，不涉及 PR"
+  },
+  {
+    "query": "我的代码格式化了一下，需要 commit 吗？",
+    "should_trigger": false,
+    "note": "询问是否需要 commit，不是请求创建 PR"
+  },
+  {
+    "query": "帮我写一个单元测试",
+    "should_trigger": false,
+    "note": "写测试，不是创建 PR"
+  },
+  {
+    "query": "这个函数是什么意思？",
+    "should_trigger": false,
+    "note": "代码解释，不涉及 PR"
+  }
+]
