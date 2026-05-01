@@ -57,6 +57,13 @@ func checkForbidden(path string) error {
 		}
 	}
 
+	// Intelligent user directory analysis (Unix-only, no-op on Windows)
+	// This allows /home/<current_user>/*, /Users/<current_user>/*, /usr/local/<current_user>/*
+	// even if /home or /usr is in the blacklist.
+	if isUserAccessibleDirectory(path) {
+		return nil
+	}
+
 	// Then check blacklist
 	forbiddenDirs := GetForbiddenWorkDirs()
 	for _, forbidden := range forbiddenDirs {
