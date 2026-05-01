@@ -1,6 +1,6 @@
 ---
 name: hotplex-release
-description: Standardized release workflow for HotPlex Worker Gateway. Covers version determination, automated change collection, changelog writing, version unification, verification, tagging, and GitHub Release.
+description: HotPlex Worker Gateway 标准化发布流程。版本号确定、自动化变更收集、Changelog 撰写、版本统一、验证、打标签、GitHub Release。**使用此 skill**：发布新版本、创建 GitHub Release、版本号管理、Changelog 生成、变更收集、版本验证。支持自动化版本发布和完整的变更记录。
 ---
 
 # HotPlex Release Workflow
