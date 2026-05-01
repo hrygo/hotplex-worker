@@ -453,6 +453,10 @@ func loadConfig(configPath string, devMode bool) (*config.Config, error) {
 		cfg.Security.APIKeys = nil
 		cfg.Admin.Tokens = nil
 	}
+
+	// Configure security policies from config file
+	security.ConfigureFromConfig(&cfg.Security)
+
 	return cfg, nil
 }
 

@@ -262,6 +262,16 @@ configs/   config.yaml、config-dev.yaml、env.example
 - **Agent 配置注入**: `agentconfig` 包从 `~/.hotplex/agent-configs/` 加载人格/上下文; B 通道 (SOUL.md、AGENTS.md、SKILLS.md) 在 `<directives>` XML 组; C 通道 (USER.md、MEMORY.md) 在 `<context>` XML 组; 平台变体 (如 SOUL.slack.md) 自动追加; 大小限制: 8K/文件, 40K 总计
 - **Session 物理删除**: `DeletePhysical` 绕过状态机强制删除 — 用于 GatewayAPI 在前一个 session 处于 `deleted` 状态时幂等创建新 session
 - **文档**: 增量文档中文优先，重要文档中英双语。技术术语保留英文原文
+- **跨平台兼容**: 所有涉及路径、进程、信号、系统服务的功能必须考虑跨平台兼容性
+  - **路径分隔符**: 使用 `filepath.Join()`、`filepath.Dir()`、`filepath.Base()`，禁止硬编码 `/` 或 `\`
+  - **文件权限**: 使用 `os.FileMode` 常量（如 `0755`），避免平台特定权限（如 Windows ACL）
+  - **进程管理**: POSIX 用 `syscall.Setpgid` 隔离，Windows 用 `Job Object`；通过 `*_unix.go` / `*_windows.go` build tags 分离实现
+  - **信号处理**: POSIX 支持 SIGTERM/SIGKILL，Windows 无信号；用 `process.Kill()` 跨平台终止进程
+  - **系统服务**: systemd (Linux) / launchd (macOS) / SCM (Windows) 通过 `service.go` + `service_*.go` 平台适配
+  - **环境变量**: `os.Getenv()` / `os.Setenv()` 跨平台，但 `HOME` 在 Windows 可能未设置（用 `userHomeDir()`）
+  - **临时目录**: 使用 `os.TempDir()` 而非 `/tmp` 或 `C:\Temp`
+  - **路径验证**: `security.ValidateWorkDir()` 在 POSIX 和 Windows 有不同实现，必须调用平台特定版本
+  - **测试**: CI 必须在 Linux (GitHub Actions) + macOS + Windows 三平台通过，本地用 `make check` 验证
 - **文件安全 (多 Agent)**: 当前环境存在多 Agent 协同工作，对文件执行还原（`git restore`）、恢复、撤销（`git checkout`）、暂存（`git stash`）等操作前，**必须先在 `/tmp` 下创建备份**（`cp <file> /tmp/<file>.bak.$(date +%s)`），防止其他 Agent 的未提交改动被意外覆盖或丢失
 
 ## 反模式 (本项目)
@@ -277,6 +287,11 @@ configs/   config.yaml、config-dev.yaml、env.example
 - ❌ 跨 Bot 访问 session
 - ❌ 无 mutex 下同时处理 `done` + `input` — 在 `TransitionWithInput` 中必须原子操作
 - ❌ 注册无实现的 ACPX worker 类型 — 目录为空，仅存在类型常量
+- ❌ 硬编码路径分隔符 (`/` 或 `\`) — 使用 `filepath.Join()`、`filepath.Dir()`、`filepath.Base()`
+- ❌ 平台特定路径 (`/tmp`、`/var/hotplex`) — 使用 `os.TempDir()`、`os.UserHomeDir()` 等跨平台函数
+- ❌ 直接使用 POSIX 信号 (`syscall.SIGTERM`) — 用 `process.Kill()` 或通过 `proc/manager.go` 封装
+- ❌ 忽略平台差异的代码实现 — 跨平台功能必须用 `*_unix.go` / `*_windows.go` build tags 分离
+- ❌ 仅在单一平台测试 — CI 必须通过 Linux + macOS + Windows 三平台验证
 
 ## 独特风格
 
@@ -366,7 +381,13 @@ make webchat-stop             # 停止 webchat 开发服务器
 - `CLAUDE.md` 是 `AGENTS.md` 的符号链接 — 只编辑 AGENTS.md，CLAUDE.md 自动跟随
 - `.claude` 是 `.agent` 的符号链接 — 两个目录都存在
 - 无 `api/` 目录 — 项目使用 JSON over WebSocket，不是 protobuf
-- 跨平台支持: POSIX (PGID 隔离 `Setpgid`) + Windows (Job Object `KILL_ON_JOB_CLOSE` 级联终止); 进程管理、安全、配置、服务管理均有平台适配文件 (`*_windows.go` / `*_unix.go`)
+- 跨平台支持:
+  - **支持平台**: Linux (主要)、macOS、Windows (通过 GitHub Actions CI 验证)
+  - **进程隔离**: POSIX 用 `syscall.Setpgid` (PGID)，Windows 用 `Job Object` (KILL_ON_JOB_CLOSE)
+  - **平台适配**: 进程管理 (`proc/manager_*`)、安全 (`security/path_*`)、系统服务 (`service/*_*`)、配置 (`config/*_*`)
+  - **Build Tags**: 使用 `//go:build darwin || linux` 和 `//go:build windows` 分离平台特定代码
+  - **测试要求**: 所有涉及系统调用、路径操作、进程管理的功能必须通过三平台 CI 测试
+  - **已知限制**: Windows 不支持 POSIX 信号 (SIGTERM/SIGKILL)，使用 `process.Kill()` 强制终止；macOS SIP 保护 `/System` 目录
 - 最大文件: `bridge.go` (1256)、`feishu/adapter.go` (1240)、`slack/adapter.go` (1165)、`manager.go` (961)、`config.go` (835)、`opencodeserver/worker.go` (824)、`hub.go` (818)
 - STT 脚本 (`scripts/stt_server.py`、`scripts/fix_onnx_model.py`) 也部署到 `~/.agents/skills/audio-transcribe/scripts/` 供 Claude Code skill 使用
 - STT 模型: `~/.cache/modelscope/hub/models/iic/SenseVoiceSmall` (~900MB)，ONNX FP32 非量化
