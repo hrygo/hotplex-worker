@@ -98,18 +98,18 @@ var (
 	}, []string{"event_type"})
 
 	// GatewayDeltaCoalescedTotal tracks delta events merged by the coalescer.
-	GatewayDeltaCoalescedTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+	GatewayDeltaCoalescedTotal = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: "hotplex",
 		Name:      "gateway_delta_coalesced_total",
 		Help:      "Number of delta events merged by coalescer",
-	}, []string{"session_id"})
+	})
 
 	// GatewayDeltaFlushTotal tracks merged delta flushes sent to platform conns.
-	GatewayDeltaFlushTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+	GatewayDeltaFlushTotal = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: "hotplex",
 		Name:      "gateway_delta_flush_total",
 		Help:      "Number of merged delta flushes sent to platform",
-	}, []string{"session_id"})
+	})
 
 	// GatewayErrorsTotal tracks errors by type.
 	GatewayErrorsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
