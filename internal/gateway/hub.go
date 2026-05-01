@@ -569,4 +569,3 @@ func (h *Hub) Shutdown(ctx context.Context) error {
 	}
 	return nil
 }
-

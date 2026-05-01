@@ -290,4 +290,3 @@ func (s *SQLiteStore) GetSessionsByState(ctx context.Context, state events.Sessi
 	}
 	return ids, rows.Err()
 }
-
