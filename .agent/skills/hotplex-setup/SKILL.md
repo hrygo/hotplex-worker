@@ -35,12 +35,22 @@ python3 --version 2>/dev/null || echo "⚠️  Python3 未安装（STT 功能不
 
 # Git（源码构建需要）
 git --version 2>/dev/null || echo "❌ Git 未安装"
+
+# STT Python 包（本地语音转文字）
+python3 -c "import funasr_onnx" 2>/dev/null && echo "✅ funasr-onnx 已安装" || echo "⚠️  funasr-onnx 未安装"
+python3 -c "import modelscope" 2>/dev/null && echo "✅ modelscope 已安装" || echo "⚠️  modelscope 未安装"
+
+# STT 模型（SenseVoice Small，约 900MB）
+test -d ~/.cache/modelscope/hub/models/iic/SenseVoiceSmall && echo "✅ SenseVoice 模型已下载" || echo "⚠️  SenseVoice 模型未下载"
 ```
 
 **依赖要求**：
 - Go 1.26+（源码构建必需）
 - Python 3.8+（本地 STT 必需）
 - Git（源码构建必需）
+- funasr-onnx（STT 引擎）
+- modelscope（模型下载）
+- SenseVoice Small 模型（约 900MB）
 
 ### 1.3 端口与权限检查
 
@@ -77,6 +87,9 @@ which hotplex 2>/dev/null && hotplex version || echo "❌ HotPlex 未安装"
 | 操作系统 | ✅/❌ | Linux/macOS/Windows |
 | Go 1.26+ | ✅/⚠️/❌ | 源码构建必需 |
 | Python 3.8+ | ✅/⚠️/❌ | STT 功能必需 |
+| funasr-onnx | ✅/⚠️ | STT 引擎 |
+| modelscope | ✅/⚠️ | 模型下载工具 |
+| SenseVoice 模型 | ✅/⚠️ | 约 900MB |
 | 端口 8888/9999 | ✅/⚠️ | 冲突需修改配置 |
 | 写入权限 | ✅/❌ | ~/.hotplex 目录 |
 | 系统服务 | ✅/➖ | 用户级/系统级 |
@@ -84,10 +97,11 @@ which hotplex 2>/dev/null && hotplex version || echo "❌ HotPlex 未安装"
 ## 第二步：安装方式选择
 
 根据环境检测结果推荐安装方式：
-- **已安装** → 跳到第三步（配置），询问是否需要更新版本
+- **已安装** → 跳到第四步（配置），询问是否需要更新版本
 - **有 Go 1.26+** → 可选源码构建或二进制安装
 - **无 Go** → 二进制安装（推荐）
-- **依赖缺失** → 引导安装依赖（Go/Python）
+- **依赖缺失** → 引导安装依赖（Go/Python/STT）
+- **STT 未配置** → 询问是否需要语音转文字功能
 
 ### 依赖安装指引
 
@@ -114,6 +128,29 @@ sudo apt install python3 python3-pip
 # 验证
 python3 --version
 ```
+
+**STT（语音转文字）依赖安装**：
+
+```bash
+# 安装 Python 包
+pip3 install -U funasr-onnx modelscope
+
+# 中国用户推荐使用镜像加速
+pip3 install -U funasr-onnx modelscope -i https://mirror.sjtu.edu.cn/pypi/web/simple
+
+# 下载 SenseVoice Small 模型（约 900MB，首次使用自动下载）
+python3 -c "from modelscope.hub.snapshot_download import snapshot_download; snapshot_download('iic/SenseVoiceSmall', cache_dir='/home/hotplex/.cache/modelscope')"
+
+# 验证模型
+ls -lh ~/.cache/modelscope/hub/models/iic/SenseVoiceSmall/
+```
+
+**STT 模型说明**：
+- 模型大小：约 900MB
+- 存储位置：`~/.cache/modelscope/hub/models/iic/SenseVoiceSmall/`
+- 支持语言：中文、英文、粤语、日语、韩语
+- 首次使用自动下载，也可预下载避免等待
+- 飞书云端 STT 可选（需要申请权限），本地 STT 作为降级
 
 ## 第三步：安装
 
@@ -279,24 +316,51 @@ API 调用失败时提供手动查找指引：
 
 选择"开放"时警告：工作区所有人都能使用 Bot。只警告一次。
 
-## 第十步：配置语音转文字
+## 第十步：配置语音转文字（STT）
 
-两个平台都支持语音转文字：
+### 10.1 STT 方案选择
 
 | 平台 | 推荐方案 | 原因 |
 |------|---------|------|
 | Slack | `local` | Slack 没有云端 STT API |
 | 飞书 | `feishu+local` | 原生云端 API + 本地兜底 |
 
-设置环境变量：
+### 10.2 飞书云端 STT（推荐）
+
+申请权限：https://open.feishu.cn/app/cli_a954eab23678dbb5/auth?q=speech_to_text:speech
+
+优势：无需本地模型（节省 900MB）、速度更快、支持更多语言。
+
+### 10.3 本地 STT 依赖
+
+```bash
+# 安装 Python 包
+pip3 install -U funasr-onnx modelscope
+
+# 下载模型（首次使用自动下载）
+python3 -c "from modelscope.hub.snapshot_download import snapshot_download; snapshot_download('iic/SenseVoiceSmall')"
+
+# 验证
+python3 -c "import funasr_onnx, modelscope" && echo "✅ STT 就绪"
+```
+
+详细配置见 `references/stt.md`。
+
+### 10.4 配置参数
+
+**Slack**：
 ```
 HOTPLEX_MESSAGING_SLACK_STT_PROVIDER=local
 HOTPLEX_MESSAGING_SLACK_STT_LOCAL_MODE=ephemeral
+```
+
+**飞书**：
+```
 HOTPLEX_MESSAGING_FEISHU_STT_PROVIDER=feishu+local
 HOTPLEX_MESSAGING_FEISHU_STT_LOCAL_MODE=ephemeral
 ```
 
-本地模式选项：`ephemeral`（按请求启动进程，默认）或 `persistent`（常驻子进程，预热后延迟更低）。
+本地模式：`ephemeral`（省内存，默认）或 `persistent`（低延迟）。
 
 用户明确不需要 STT 时跳过此步。
 
