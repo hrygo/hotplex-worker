@@ -25,20 +25,6 @@ var ProductionAllowedTools = map[string]bool{
 	"Glob": true,
 }
 
-// DevAllowedTools is the set of tools enabled in development.
-var DevAllowedTools = map[string]bool{
-	"Read":         true,
-	"Edit":         true,
-	"Write":        true,
-	"Bash":         true,
-	"Grep":         true,
-	"Glob":         true,
-	"Agent":        true,
-	"WebFetch":     true,
-	"NotebookEdit": true,
-	"TodoWrite":    true,
-}
-
 // ValidateTools checks that every tool in the list is allowed.
 // Returns nil if all tools are valid, or an error listing the first invalid tool.
 func ValidateTools(tools []string) error {
