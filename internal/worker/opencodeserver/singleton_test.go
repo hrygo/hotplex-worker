@@ -209,10 +209,11 @@ func TestSingletonProcessManager_Acquire_StoppedState(t *testing.T) {
 	mgr.state = stateStopped
 	mgr.mu.Unlock()
 
-	addr, client, crash, err := mgr.Acquire(context.Background())
+	addr, client, sseClient, crash, err := mgr.Acquire(context.Background())
 	require.Error(t, err)
 	require.Empty(t, addr)
 	require.Nil(t, client)
+	require.Nil(t, sseClient)
 	require.Nil(t, crash)
 }
 
