@@ -342,7 +342,7 @@ type SecurityConfig struct {
 
 	// WorkDir security settings
 	WorkDirAllowedBasePatterns []string `mapstructure:"work_dir_allowed_base_patterns"` // extra whitelist patterns (supports ~ and ${VAR})
-	WorkDirForbiddenDirs       []string `mapstructure:"work_dir_forbidden_dirs"`          // extra blacklist directories
+	WorkDirForbiddenDirs       []string `mapstructure:"work_dir_forbidden_dirs"`        // extra blacklist directories
 }
 
 // SessionConfig holds session lifecycle settings.

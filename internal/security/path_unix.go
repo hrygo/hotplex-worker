@@ -40,10 +40,8 @@ func init() {
 	// Initialize user home directory patterns (program convention)
 	initUserHomeDirs()
 
-	// Production base directory (if exists)
-	if _, err := os.Stat("/var/hotplex/projects"); err == nil {
-		allowedBaseDirs["/var/hotplex/projects"] = true
-	}
+	// Production base directory (HotPlex convention)
+	allowedBaseDirs["/var/hotplex/projects"] = true
 }
 
 // initUserHomeDirs adds common user home directory patterns to the whitelist.
@@ -56,10 +54,10 @@ func initUserHomeDirs() {
 
 	// Common project directory patterns under user home
 	patterns := []string{
-		"workspace",       // Common convention: ~/workspace
-		"projects",        // Common convention: ~/projects
-		"work",           // Common convention: ~/work
-		"dev",            // Common convention: ~/dev
+		"workspace",          // Common convention: ~/workspace
+		"projects",           // Common convention: ~/projects
+		"work",               // Common convention: ~/work
+		"dev",                // Common convention: ~/dev
 		".hotplex/workspace", // HotPlex convention: ~/.hotplex/workspace
 	}
 
@@ -80,7 +78,7 @@ func ConfigureFromConfig(cfg *config.SecurityConfig) {
 	for _, pattern := range cfg.WorkDirAllowedBasePatterns {
 		expandedPath := pattern
 		// Expand ~ to user home directory
-		if len(pattern) > 0 && pattern[0] == '~' {
+		if pattern != "" && pattern[0] == '~' {
 			homeDir, err := os.UserHomeDir()
 			if err == nil {
 				if len(pattern) == 1 || pattern[1] == '/' {
