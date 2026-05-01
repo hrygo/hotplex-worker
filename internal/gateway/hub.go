@@ -743,7 +743,7 @@ func (e *pcEntry) writeLoop() {
 				},
 			},
 		}
-		metrics.GatewayDeltaFlushTotal.WithLabelValues(sid).Inc()
+		metrics.GatewayDeltaFlushTotal.Inc()
 		db.Reset()
 		if timer != nil {
 			timer.Stop()
@@ -766,7 +766,7 @@ func (e *pcEntry) writeLoop() {
 					pendingSID = env.SessionID
 				}
 				db.WriteString(content)
-				metrics.GatewayDeltaCoalescedTotal.WithLabelValues(env.SessionID).Inc()
+				metrics.GatewayDeltaCoalescedTotal.Inc()
 
 				if utf8.RuneCountInString(db.String()) >= e.cfg.CoalesceSize {
 					flush(pendingSID)
