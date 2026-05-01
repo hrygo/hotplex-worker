@@ -1,5 +1,5 @@
 ---
-name: pr-quality
+name: hotplex-pr-quality
 version: 2.0.0
 description: "HotPlex 项目 PR 质量保证与 CI 达标助手。自动执行完整的质量检查、代码提交、PR 创建/更新和 CI 监控流程。**使用此 skill**：开发完成、提交代码、创建 PR、更新 PR、创建 commit、推送代码、CI 失败、codecov 覆盖率、测试失败、lint 错误、分支管理、git 合并、fork 仓库、增量推送。**HotPlex 专用**，支持多 channel (Slack/飞书/WebChat)、多 worker (CC/OCS/Pi)、跨平台兼容 (Linux/macOS/Windows)。"
 metadata:
