@@ -46,13 +46,20 @@ func ValidateWorkDir(dir string) error {
 }
 
 // checkForbidden returns an error if path is exactly or under a forbidden directory.
+// Whitelist (allowedBaseDirs) takes priority over blacklist (forbiddenWorkDirs).
 func checkForbidden(path string) error {
-	// Reject root itself — no process should use the root as its working directory.
-	if isRootPath(path) {
-		return fmt.Errorf("security: work dir %q is a forbidden system directory", path)
+	// Check whitelist first (highest priority)
+	allowedDirs := GetAllowedBaseDirs()
+	for allowedDir := range allowedDirs {
+		// If path is exactly an allowed directory or under it, skip forbidden check
+		if path == allowedDir || pathHasPrefix(path, allowedDir+string(filepath.Separator)) {
+			return nil
+		}
 	}
 
-	for _, forbidden := range forbiddenWorkDirs {
+	// Then check blacklist
+	forbiddenDirs := GetForbiddenWorkDirs()
+	for _, forbidden := range forbiddenDirs {
 		if pathEqual(path, forbidden) {
 			return fmt.Errorf("security: work dir %q is a forbidden system directory", path)
 		}
@@ -60,6 +67,12 @@ func checkForbidden(path string) error {
 			return fmt.Errorf("security: work dir %q is under forbidden directory %q", path, forbidden)
 		}
 	}
+
+	// Reject root itself — no process should use the root as its working directory.
+	if isRootPath(path) {
+		return fmt.Errorf("security: work dir %q is a forbidden system directory", path)
+	}
+
 	return nil
 }
 

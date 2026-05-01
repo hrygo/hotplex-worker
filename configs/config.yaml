@@ -74,6 +74,19 @@ security:
     - "*"
   jwt_audience: "hotplex-gateway"
 
+  # Work directory security settings (convention + configuration)
+  # Program defaults (convention over configuration):
+  #   - ~/.hotplex/workspace (HotPlex convention)
+  #   - ~/workspace, ~/projects, ~/work, ~/dev (common developer patterns)
+  #   - /var/hotplex/projects (production, if exists)
+  #   - Temp directories
+  # Config below supplements program defaults (whitelist priority):
+  work_dir_allowed_base_patterns:
+    # - "~/custom_projects"  # Extra whitelist: supports ~ and ${VAR} expansion
+    # - "/opt/projects"       # Absolute path
+  work_dir_forbidden_dirs:
+    # - "/srv/deployments"    # Extra blacklist: explicitly forbidden
+
 # ─────────────────────────────────────────────────────────────────────────────
 # SESSION & RESOURCE POOL
 # ─────────────────────────────────────────────────────────────────────────────

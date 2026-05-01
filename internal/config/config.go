@@ -339,6 +339,10 @@ type SecurityConfig struct {
 	AllowedOrigins []string `mapstructure:"allowed_origins"`
 	JWTSecret      []byte   `mapstructure:"-"` // loaded via SecretsProvider, never from config file
 	JWTAudience    string   `mapstructure:"jwt_audience"`
+
+	// WorkDir security settings
+	WorkDirAllowedBasePatterns []string `mapstructure:"work_dir_allowed_base_patterns"` // extra whitelist patterns (supports ~ and ${VAR})
+	WorkDirForbiddenDirs       []string `mapstructure:"work_dir_forbidden_dirs"`        // extra blacklist directories
 }
 
 // SessionConfig holds session lifecycle settings.
