@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"slices"
 	"strings"
@@ -749,72 +750,89 @@ func aggregateNumberedEnv(existing []string, prefix string) []string {
 // This is needed because Viper's AutomaticEnv cannot map nested keys
 // unless the viper instance has seen them from a config file or SetDefault.
 func applyMessagingEnv(cfg *Config) {
+	// Slack-specific env vars
+	slackStringMapping := []struct{ env, field string }{
+		{"HOTPLEX_MESSAGING_SLACK_BOT_TOKEN", "BotToken"},
+		{"HOTPLEX_MESSAGING_SLACK_APP_TOKEN", "AppToken"},
+		{"HOTPLEX_MESSAGING_SLACK_WORKER_TYPE", "WorkerType"},
+		{"HOTPLEX_MESSAGING_SLACK_WORK_DIR", "WorkDir"},
+		{"HOTPLEX_MESSAGING_SLACK_DM_POLICY", "DMPolicy"},
+		{"HOTPLEX_MESSAGING_SLACK_GROUP_POLICY", "GroupPolicy"},
+	}
+	for _, m := range slackStringMapping {
+		if v := os.Getenv(m.env); v != "" {
+			setField(&cfg.Messaging.Slack, m.field, v)
+		}
+	}
+
+	// Feishu-specific env vars
+	feishuStringMapping := []struct{ env, field string }{
+		{"HOTPLEX_MESSAGING_FEISHU_APP_ID", "AppID"},
+		{"HOTPLEX_MESSAGING_FEISHU_APP_SECRET", "AppSecret"},
+		{"HOTPLEX_MESSAGING_FEISHU_WORKER_TYPE", "WorkerType"},
+		{"HOTPLEX_MESSAGING_FEISHU_WORK_DIR", "WorkDir"},
+		{"HOTPLEX_MESSAGING_FEISHU_DM_POLICY", "DMPolicy"},
+		{"HOTPLEX_MESSAGING_FEISHU_GROUP_POLICY", "GroupPolicy"},
+	}
+	for _, m := range feishuStringMapping {
+		if v := os.Getenv(m.env); v != "" {
+			setField(&cfg.Messaging.Feishu, m.field, v)
+		}
+	}
+
+	// Bool env vars (shared pattern for both platforms)
 	if v := os.Getenv("HOTPLEX_MESSAGING_SLACK_ENABLED"); v != "" {
 		cfg.Messaging.Slack.Enabled = strings.EqualFold(v, "true")
-	}
-	if v := os.Getenv("HOTPLEX_MESSAGING_SLACK_BOT_TOKEN"); v != "" {
-		cfg.Messaging.Slack.BotToken = v
-	}
-	if v := os.Getenv("HOTPLEX_MESSAGING_SLACK_APP_TOKEN"); v != "" {
-		cfg.Messaging.Slack.AppToken = v
-	}
-	if v := os.Getenv("HOTPLEX_MESSAGING_FEISHU_ENABLED"); v != "" {
-		cfg.Messaging.Feishu.Enabled = strings.EqualFold(v, "true")
-	}
-	if v := os.Getenv("HOTPLEX_MESSAGING_FEISHU_APP_ID"); v != "" {
-		cfg.Messaging.Feishu.AppID = v
-	}
-	if v := os.Getenv("HOTPLEX_MESSAGING_FEISHU_APP_SECRET"); v != "" {
-		cfg.Messaging.Feishu.AppSecret = v
-	}
-	if v := os.Getenv("HOTPLEX_MESSAGING_FEISHU_WORKER_TYPE"); v != "" {
-		cfg.Messaging.Feishu.WorkerType = v
-	}
-	if v := os.Getenv("HOTPLEX_MESSAGING_FEISHU_WORK_DIR"); v != "" {
-		cfg.Messaging.Feishu.WorkDir = v
-	}
-	if v := os.Getenv("HOTPLEX_MESSAGING_SLACK_WORKER_TYPE"); v != "" {
-		cfg.Messaging.Slack.WorkerType = v
-	}
-	if v := os.Getenv("HOTPLEX_MESSAGING_SLACK_WORK_DIR"); v != "" {
-		cfg.Messaging.Slack.WorkDir = v
-	}
-	if v := os.Getenv("HOTPLEX_MESSAGING_SLACK_DM_POLICY"); v != "" {
-		cfg.Messaging.Slack.DMPolicy = v
-	}
-	if v := os.Getenv("HOTPLEX_MESSAGING_SLACK_GROUP_POLICY"); v != "" {
-		cfg.Messaging.Slack.GroupPolicy = v
 	}
 	if v := os.Getenv("HOTPLEX_MESSAGING_SLACK_REQUIRE_MENTION"); v != "" {
 		cfg.Messaging.Slack.RequireMention = strings.EqualFold(v, "true")
 	}
-	if v := os.Getenv("HOTPLEX_MESSAGING_SLACK_ALLOW_FROM"); v != "" {
-		cfg.Messaging.Slack.AllowFrom = strings.Split(v, ",")
-	}
-	if v := os.Getenv("HOTPLEX_MESSAGING_SLACK_ALLOW_DM_FROM"); v != "" {
-		cfg.Messaging.Slack.AllowDMFrom = strings.Split(v, ",")
-	}
-	if v := os.Getenv("HOTPLEX_MESSAGING_SLACK_ALLOW_GROUP_FROM"); v != "" {
-		cfg.Messaging.Slack.AllowGroupFrom = strings.Split(v, ",")
-	}
-	if v := os.Getenv("HOTPLEX_MESSAGING_FEISHU_DM_POLICY"); v != "" {
-		cfg.Messaging.Feishu.DMPolicy = v
-	}
-	if v := os.Getenv("HOTPLEX_MESSAGING_FEISHU_GROUP_POLICY"); v != "" {
-		cfg.Messaging.Feishu.GroupPolicy = v
+	if v := os.Getenv("HOTPLEX_MESSAGING_FEISHU_ENABLED"); v != "" {
+		cfg.Messaging.Feishu.Enabled = strings.EqualFold(v, "true")
 	}
 	if v := os.Getenv("HOTPLEX_MESSAGING_FEISHU_REQUIRE_MENTION"); v != "" {
 		cfg.Messaging.Feishu.RequireMention = strings.EqualFold(v, "true")
 	}
-	if v := os.Getenv("HOTPLEX_MESSAGING_FEISHU_ALLOW_FROM"); v != "" {
-		cfg.Messaging.Feishu.AllowFrom = strings.Split(v, ",")
+
+	// Slice env vars (comma-separated)
+	slackSliceMapping := []struct{ env, field string }{
+		{"HOTPLEX_MESSAGING_SLACK_ALLOW_FROM", "AllowFrom"},
+		{"HOTPLEX_MESSAGING_SLACK_ALLOW_DM_FROM", "AllowDMFrom"},
+		{"HOTPLEX_MESSAGING_SLACK_ALLOW_GROUP_FROM", "AllowGroupFrom"},
 	}
-	if v := os.Getenv("HOTPLEX_MESSAGING_FEISHU_ALLOW_DM_FROM"); v != "" {
-		cfg.Messaging.Feishu.AllowDMFrom = strings.Split(v, ",")
+	for _, m := range slackSliceMapping {
+		if v := os.Getenv(m.env); v != "" {
+			setSliceField(&cfg.Messaging.Slack, m.field, v)
+		}
 	}
-	if v := os.Getenv("HOTPLEX_MESSAGING_FEISHU_ALLOW_GROUP_FROM"); v != "" {
-		cfg.Messaging.Feishu.AllowGroupFrom = strings.Split(v, ",")
+
+	feishuSliceMapping := []struct{ env, field string }{
+		{"HOTPLEX_MESSAGING_FEISHU_ALLOW_FROM", "AllowFrom"},
+		{"HOTPLEX_MESSAGING_FEISHU_ALLOW_DM_FROM", "AllowDMFrom"},
+		{"HOTPLEX_MESSAGING_FEISHU_ALLOW_GROUP_FROM", "AllowGroupFrom"},
 	}
+	for _, m := range feishuSliceMapping {
+		if v := os.Getenv(m.env); v != "" {
+			setSliceField(&cfg.Messaging.Feishu, m.field, v)
+		}
+	}
+}
+
+// setField sets a string field on a struct by name using reflection.
+func setField(target any, field string, value string) {
+	v := reflect.ValueOf(target).Elem()
+	v.FieldByName(field).SetString(value)
+}
+
+// setSliceField sets a []string field on a struct by name using reflection.
+func setSliceField(target any, field string, value string) {
+	v := reflect.ValueOf(target).Elem()
+	parts := strings.Split(value, ",")
+	slice := make([]string, len(parts))
+	for i, p := range parts {
+		slice[i] = strings.TrimSpace(p)
+	}
+	v.FieldByName(field).Set(reflect.ValueOf(slice))
 }
 
 // MustLoad is like Load but panics on error.
