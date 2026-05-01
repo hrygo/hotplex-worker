@@ -38,23 +38,6 @@ func Encode(w io.Writer, env *events.Envelope) error {
 	return err
 }
 
-// EncodeChunk is like Encode but for streaming deltas where you want to avoid
-// re-allocating the encoder on each call. Caller must call w.Flush() when done.
-func EncodeChunk(w io.Writer, env *events.Envelope) error {
-	env.Version = events.Version
-	if env.Timestamp == 0 {
-		env.Timestamp = nowMillis()
-	}
-	data, err := json.Marshal(env)
-	if err != nil {
-		return fmt.Errorf("aep: marshal envelope: %w", err)
-	}
-	data = escapeJSTerminators(data)
-	data = append(data, '\n')
-	_, err = w.Write(data)
-	return err
-}
-
 // NDJSONSpec: https://datatracker.ietf.org/doc/html/rfc7464
 // JS JSON.parse accepts U+2028/U+2029 as valid JSON, but they are NOT valid
 // inside JavaScript string literals. A NDJSON consumer that evaluates lines as JS
