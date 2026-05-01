@@ -922,7 +922,9 @@ func (a *Adapter) handleTextControlCommand(ctx context.Context, chatID, userID, 
 	conn := a.GetOrCreateConn(chatID, threadKey)
 	if err := a.Bridge().Handle(ctx, ctrlEnv, conn); err != nil {
 		a.Log.Warn("feishu: text control command failed", "action", result.Label, "err", err)
-		_ = a.replyMessage(ctx, threadKey, fmt.Sprintf("❌ 执行 %s 失败。", result.Label), false)
+		// Provide user-friendly error message with details
+		errMsg := fmt.Sprintf("❌ 执行 %s 失败：%s", result.Label, formatSecurityError(err))
+		_ = a.replyMessage(ctx, threadKey, errMsg, false)
 		return
 	}
 
@@ -1226,6 +1228,64 @@ func buildCardContent(text string) string {
 	enc.SetEscapeHTML(false)
 	_ = enc.Encode(card)
 	return strings.TrimRight(buf.String(), "\n")
+}
+
+// formatSecurityError converts technical security errors into user-friendly messages.
+func formatSecurityError(err error) string {
+	if err == nil {
+		return ""
+	}
+
+	errMsg := err.Error()
+
+	// Security-related errors
+	if strings.Contains(errMsg, "security: work dir") {
+		if strings.Contains(errMsg, "forbidden system directory") {
+			return "🚫 禁止访问系统目录"
+		}
+		if strings.Contains(errMsg, "under forbidden directory") {
+			return "🚫 目录被安全策略禁止（系统关键目录）"
+		}
+		if strings.Contains(errMsg, "not in whitelist") {
+			return "🚫 目录未在允许列表中（需在 config.yaml 中配置 security.work_dir_allowed_base_patterns）"
+		}
+		if strings.Contains(errMsg, "must be absolute") {
+			return "🚫 路径必须是绝对路径（以 / 开头）"
+		}
+		if strings.Contains(errMsg, "must not be empty") {
+			return "🚫 工作目录不能为空"
+		}
+		return "🚫 安全策略拒绝"
+	}
+
+	// Session-related errors
+	if strings.Contains(errMsg, "session not active") {
+		return "⚠️ 会话未激活（请先发送消息启动会话）"
+	}
+	if strings.Contains(errMsg, "get session") {
+		return "⚠️ 会话不存在"
+	}
+
+	// Work directory errors
+	if strings.Contains(errMsg, "expand work dir") {
+		return "📁 路径展开失败（请检查路径格式）"
+	}
+	if strings.Contains(errMsg, "worker terminate failed") {
+		return "⚠️ 停止原工作进程失败"
+	}
+	if strings.Contains(errMsg, "start session") {
+		return "⚠️ 启动新会话失败"
+	}
+
+	// Generic error (return original message for non-security errors)
+	if strings.Contains(errMsg, "switch-workdir") {
+		// Remove technical prefix for cleaner output
+		cleanMsg := strings.ReplaceAll(errMsg, "switch-workdir-inplace: ", "")
+		cleanMsg = strings.ReplaceAll(cleanMsg, "switch-workdir: ", "")
+		return cleanMsg
+	}
+
+	return errMsg
 }
 
 func extractTextFromContent(content string) string {

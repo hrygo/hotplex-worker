@@ -570,7 +570,9 @@ func (a *Adapter) handleTextControlCommand(ctx context.Context, teamID, channelI
 	}
 	if err := a.Bridge().Handle(ctx, ctrlEnv, conn); err != nil {
 		a.Log.Warn("slack: text control command failed", "action", result.Label, "err", err)
-		a.sendEphemeralOrPost(ctx, channelID, threadTS, userID, fmt.Sprintf("❌ Failed to execute %s.", result.Label))
+		// Provide user-friendly error message with details
+		errMsg := fmt.Sprintf("❌ Failed to execute %s: %s", result.Label, formatSecurityErrorSlack(err))
+		a.sendEphemeralOrPost(ctx, channelID, threadTS, userID, errMsg)
 		return
 	}
 
@@ -1160,6 +1162,64 @@ func (c *SlackConn) sendMCPStatus(ctx context.Context, env *events.Envelope) err
 		}
 	}
 	return err
+}
+
+// formatSecurityErrorSlack converts technical security errors into user-friendly messages for Slack.
+func formatSecurityErrorSlack(err error) string {
+	if err == nil {
+		return ""
+	}
+
+	errMsg := err.Error()
+
+	// Security-related errors
+	if strings.Contains(errMsg, "security: work dir") {
+		if strings.Contains(errMsg, "forbidden system directory") {
+			return ":no_entry_sign: Forbidden system directory"
+		}
+		if strings.Contains(errMsg, "under forbidden directory") {
+			return ":no_entry_sign: Directory blocked by security policy (system directory)"
+		}
+		if strings.Contains(errMsg, "not in whitelist") {
+			return ":no_entry_sign: Directory not allowed (configure `security.work_dir_allowed_base_patterns` in config.yaml)"
+		}
+		if strings.Contains(errMsg, "must be absolute") {
+			return ":no_entry_sign: Path must be absolute (start with /)"
+		}
+		if strings.Contains(errMsg, "must not be empty") {
+			return ":no_entry_sign: Work directory cannot be empty"
+		}
+		return ":no_entry_sign: Security policy rejected"
+	}
+
+	// Session-related errors
+	if strings.Contains(errMsg, "session not active") {
+		return ":warning: Session not active (send a message first to start)"
+	}
+	if strings.Contains(errMsg, "get session") {
+		return ":warning: Session not found"
+	}
+
+	// Work directory errors
+	if strings.Contains(errMsg, "expand work dir") {
+		return ":file_folder: Path expansion failed (check path format)"
+	}
+	if strings.Contains(errMsg, "worker terminate failed") {
+		return ":warning: Failed to stop previous worker"
+	}
+	if strings.Contains(errMsg, "start session") {
+		return ":warning: Failed to start new session"
+	}
+
+	// Generic error (return original message for non-security errors)
+	if strings.Contains(errMsg, "switch-workdir") {
+		// Remove technical prefix for cleaner output
+		cleanMsg := strings.ReplaceAll(errMsg, "switch-workdir-inplace: ", "")
+		cleanMsg = strings.ReplaceAll(cleanMsg, "switch-workdir: ", "")
+		return cleanMsg
+	}
+
+	return errMsg
 }
 
 var _ messaging.PlatformConn = (*SlackConn)(nil)
