@@ -132,6 +132,122 @@ scripts/   构建/校验脚本
 configs/   config.yaml、config-dev.yaml、env.example
 ```
 
+## Fork-PR 工作流
+
+HotPlex 项目使用 fork-PR 工作流进行贡献，避免直接推送到上游仓库。
+
+### 工作流步骤
+
+**1. Fork 上游仓库**
+```bash
+# 在 GitHub 上 fork hrygo/hotplex 到你的账号
+# 例如：https://github.com/aaronwong1989/hotplex-1
+```
+
+**2. 添加 fork 远程仓库**
+```bash
+cd /path/to/hotplex
+git remote -v  # 查看当前远程仓库
+git remote add fork https://github.com/<your-username>/hotplex-1.git
+git remote -v  # 应该显示 origin 和 fork
+```
+
+**3. 从 main 创建功能分支**
+```bash
+git fetch origin main
+git checkout main
+git pull origin main
+git checkout -b <branch-name>  # 例如：feat/add-new-feature
+```
+
+**4. 进行开发和提交**
+```bash
+# 进行代码更改
+git add .
+git commit -m "feat(scope): description"
+```
+
+**5. 推送到 fork（不是 origin）**
+```bash
+git push fork <branch-name>
+```
+
+**6. 创建 PR 到上游**
+```bash
+gh pr create \
+  --base main \
+  --head <your-username>:<branch-name> \
+  --title "feat(scope): description" \
+  --body "PR 描述..."
+```
+
+### 重要注意事项
+
+**✅ 正确做法**：
+- 推送到 `fork` 远程仓库
+- 从 `origin/main` 创建功能分支
+- PR 标题和描述遵循 Conventional Commits
+- PR 从 fork 的分支合并到 `origin/main`
+
+**❌ 错误做法**：
+- 直接推送到 `origin`（会被拒绝）
+- 推送到个人远程仓库（不是 fork）
+- 跳过 fork 流程
+
+### 分支管理
+
+**查看所有远程仓库**：
+```bash
+git remote -v
+# origin     https://github.com/hrygo/hotplex.git (fetch)
+# origin     https://github.com/hrygo/hotplex.git (push)
+# fork       https://github.com/<your-username>/hotplex-1.git (fetch)
+# fork       https://github.com/<your-username>/hotplex-1.git (push)
+```
+
+**同步上游最新代码**：
+```bash
+git fetch origin main
+git checkout main
+git merge origin/main
+git push fork main  # 同步 fork 的 main 分支
+```
+
+**清理已合并的分支**：
+```bash
+# 切换到 main
+git checkout main
+
+# 删除本地分支
+git branch -d <branch-name>
+
+# 删除 fork 远程分支
+git push fork --delete <branch-name>
+```
+
+### 命令速查
+
+```bash
+# 初始化 fork 远程
+git remote add fork https://github.com/<your-username>/hotplex-1.git
+
+# 创建功能分支
+git checkout -b feat/<feature-name>
+
+# 推送到 fork
+git push fork feat/<feature-name>
+
+# 创建 PR
+gh pr create --base main --head <your-username>:feat/<feature-name>
+
+# 同步上游
+git pull origin main
+
+# 清理分支
+git branch -d feat/<feature-name>
+git push fork --delete feat/<feature-name>
+```
+
 ## 定位指南
 
 **新增组件**
