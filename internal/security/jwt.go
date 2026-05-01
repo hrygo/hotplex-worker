@@ -141,21 +141,24 @@ func (v *JWTValidator) GenerateToken(userID string, scopes []string, ttl time.Du
 
 // GenerateTokenWithClaims generates a JWT token with the given claims using ES256.
 func (v *JWTValidator) GenerateTokenWithClaims(claims *JWTClaims) (string, error) {
-	var method jwt.SigningMethod
-	var signingKey any
+	signingKey, err := v.resolveSigningKey()
+	if err != nil {
+		return "", err
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodES256, claims)
+	return token.SignedString(signingKey)
+}
+
+// resolveSigningKey returns the ES256 signing key for the configured secret.
+func (v *JWTValidator) resolveSigningKey() (any, error) {
 	switch secret := v.secret.(type) {
 	case *ecdsa.PrivateKey:
-		method = jwt.SigningMethodES256
-		signingKey = secret
+		return secret, nil
 	case []byte:
-		key := deriveECDSAP256Key(secret)
-		method = jwt.SigningMethodES256
-		signingKey = key
+		return deriveECDSAP256Key(secret), nil
 	default:
-		return "", errors.New("security: GenerateTokenWithClaims: invalid secret type")
+		return nil, errors.New("security: invalid secret type")
 	}
-	token := jwt.NewWithClaims(method, claims)
-	return token.SignedString(signingKey)
 }
 
 // deriveECDSAP256Key derives an ECDSA P-256 private key from a byte slice.
@@ -187,19 +190,11 @@ func (v *JWTValidator) GenerateTokenWithJTI(userID string, scopes []string, ttl,
 	}
 	var method jwt.SigningMethod
 	var signingKey any
-	switch secret := v.secret.(type) {
-	case *ecdsa.PrivateKey:
-		method = jwt.SigningMethodES256
-		signingKey = secret
-	case []byte:
-		// SECURITY: Derive ECDSA P-256 key from the raw secret to enforce
-		// ES256-only signing, consistent with GenerateTokenWithClaims and
-		// the project's ES256-only policy (no HS256).
-		signingKey = deriveECDSAP256Key(secret)
-		method = jwt.SigningMethodES256
-	default:
-		return "", "", errors.New("security: GenerateTokenWithJTI: invalid secret type")
+	signingKey, err := v.resolveSigningKey()
+	if err != nil {
+		return "", "", err
 	}
+	method = jwt.SigningMethodES256
 	token := jwt.NewWithClaims(method, claims)
 	signed, err := token.SignedString(signingKey)
 	if err != nil {
