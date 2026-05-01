@@ -23,8 +23,5 @@ func setMemoryLimit(pid int, log *slog.Logger) {
 	//
 	// Re-enable only if targeting embedded systems with <512MB RAM.
 	// For most servers, let the OS page scanner manage memory pressure.
-
-	// const memLimit = 2 * 1024 * 1024 * 1024 // 2 GB - DISABLED
-	// _ = pid // pid unused when limit disabled
 	log.Debug("proc: RLIMIT_AS disabled (modern JIT requires large VA space)")
 }
