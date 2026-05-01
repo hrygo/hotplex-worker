@@ -705,7 +705,8 @@ func (e *pcEntry) WriteCtx(_ context.Context, env *events.Envelope) error {
 func (e *pcEntry) Close() error {
 	var err error
 	e.closeMu.Do(func() {
-		close(e.closeCh) // signal closure without closing data channel
+		close(e.closeCh)
+		close(e.ch) // signal writeLoop to drain and exit
 		<-e.done
 		err = e.pc.Close()
 	})
