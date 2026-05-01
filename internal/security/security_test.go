@@ -181,6 +181,176 @@ func TestValidateWorkDir(t *testing.T) {
 	}
 }
 
+// ─── Intelligent directory access ─────────────────────────────────────────────
+
+func TestMatchesUserHomePattern(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		path     string
+		match    bool
+		username string
+	}{
+		{"/home/alice/project", true, "alice"},
+		{"/home/bob/workspace/test", true, "bob"},
+		{"/Users/charlie/dev", true, "charlie"},
+		{"/Users/charlie", true, "charlie"},
+		{"/home", false, ""},
+		{"/home/", false, ""},
+		{"/usr/local/alice/bin", false, ""},
+		{"/etc/passwd", false, ""},
+		{"/tmp/test", false, ""},
+		{"/home//project", false, ""}, // empty username
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.path, func(t *testing.T) {
+			t.Parallel()
+			match, username := matchesUserHomePattern(tt.path)
+			require.Equal(t, tt.match, match)
+			require.Equal(t, tt.username, username)
+		})
+	}
+}
+
+func TestMatchesUsrLocalPattern(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		path     string
+		match    bool
+		username string
+	}{
+		{"/usr/local/alice/bin", true, "alice"},
+		{"/usr/local/bob/lib", true, "bob"},
+		{"/usr/local/alice", true, "alice"},
+		{"/usr/local", false, ""},
+		{"/usr/local/", false, ""},
+		{"/home/alice/bin", false, ""},
+		{"/usr/bin", false, ""},
+		{"/usr/local//bin", false, ""}, // empty username
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.path, func(t *testing.T) {
+			t.Parallel()
+			match, username := matchesUsrLocalPattern(tt.path)
+			require.Equal(t, tt.match, match)
+			require.Equal(t, tt.username, username)
+		})
+	}
+}
+
+func TestIsOwnedByCurrentUser(t *testing.T) {
+	t.Parallel()
+
+	// Test with existing directory owned by current user
+	tmpDir := t.TempDir()
+	owned, err := isOwnedByCurrentUser(tmpDir)
+	require.NoError(t, err)
+	require.True(t, owned, "temp dir should be owned by current user")
+
+	// Test with non-existent path
+	owned, err = isOwnedByCurrentUser("/nonexistent/path/that/does/not/exist")
+	require.NoError(t, err)
+	require.False(t, owned, "non-existent path should return false")
+
+	// Test with system directory (likely not owned by current user)
+	owned, err = isOwnedByCurrentUser("/etc")
+	require.NoError(t, err)
+	// Result depends on whether we're running as root, so we just check no error
+	require.NotNil(t, owned)
+}
+
+func TestGetCurrentUser(t *testing.T) {
+	t.Parallel()
+
+	// Test that getCurrentUser returns a non-empty string
+	// (either from $USER or os/user.Current)
+	username := getCurrentUser()
+	require.NotEmpty(t, username, "getCurrentUser should return a username")
+
+	// On Unix systems, username should be alphanumeric
+	require.Regexp(t, `^[a-zA-Z0-9_-]+$`, username,
+		"username should contain only alphanumeric characters, hyphens, and underscores")
+
+	// Test fallback to os/user.Current by unsetting $USER
+	// Note: This test cannot be parallel because it modifies environment variables
+	if os.Getenv("USER") != "" {
+		// Save original value
+		originalUser := os.Getenv("USER")
+
+		// Unset $USER and test fallback
+		unsetErr := os.Unsetenv("USER")
+		require.NoError(t, unsetErr, "should be able to unset USER env var")
+
+		// Now getCurrentUser should use os/user.Current fallback
+		fallbackUsername := getCurrentUser()
+		require.NotEmpty(t, fallbackUsername, "getCurrentUser should fallback to os/user.Current")
+		require.Regexp(t, `^[a-zA-Z0-9_-]+$`, fallbackUsername,
+			"fallback username should be alphanumeric")
+
+		// Restore original value (cleanup)
+		restoreErr := os.Setenv("USER", originalUser)
+		require.NoError(t, restoreErr, "should be able to restore USER env var")
+	}
+}
+
+func TestIsUserAccessibleDirectory_Integration(t *testing.T) {
+	t.Parallel()
+
+	currentUser := getCurrentUser()
+	require.NotEmpty(t, currentUser)
+
+	tests := []struct {
+		name     string
+		path     string
+		expected bool
+	}{
+		{
+			name:     "current user home pattern",
+			path:     "/home/" + currentUser + "/workspace",
+			expected: true,
+		},
+		{
+			name:     "current user usr/local pattern",
+			path:     "/usr/local/" + currentUser + "/bin",
+			expected: true,
+		},
+		{
+			name:     "other user home pattern",
+			path:     "/home/otheruser/workspace",
+			expected: false,
+		},
+		{
+			name:     "other user usr/local pattern",
+			path:     "/usr/local/otheruser/bin",
+			expected: false,
+		},
+		{
+			name:     "system directory",
+			path:     "/usr/bin",
+			expected: false,
+		},
+		{
+			name:     "usr/local without username",
+			path:     "/usr/local/bin",
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			result := isUserAccessibleDirectory(tt.path)
+			require.Equal(t, tt.expected, result)
+		})
+	}
+}
+
 // ─── Path safety ─────────────────────────────────────────────────────────────
 
 func TestSafePathJoin(t *testing.T) {
