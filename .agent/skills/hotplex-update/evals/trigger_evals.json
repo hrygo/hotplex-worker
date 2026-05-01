@@ -1,0 +1,105 @@
+{
+  "skill_name": "hotplex-update",
+  "trigger_evals": [
+    {
+      "query": "Deploy the new HotPlex binary",
+      "should_trigger": true,
+      "reason": "Direct request to deploy binary"
+    },
+    {
+      "query": "Install the latest version of HotPlex",
+      "should_trigger": true,
+      "reason": "Install new version is core workflow"
+    },
+    {
+      "query": "Restart the HotPlex service with the new changes",
+      "should_trigger": true,
+      "reason": "Service restart after update"
+    },
+    {
+      "query": "Update HotPlex to the new binary we just built",
+      "should_trigger": true,
+      "reason": "Update binary deployment"
+    },
+    {
+      "query": "Rollback to the previous HotPlex version",
+      "should_trigger": true,
+      "reason": "Rollback is covered in skill"
+    },
+    {
+      "query": "The new binary has issues, revert to the old one",
+      "should_trigger": true,
+      "reason": "Rollback scenario"
+    },
+    {
+      "query": "Build and deploy HotPlex",
+      "should_trigger": true,
+      "reason": "Build + deploy workflow"
+    },
+    {
+      "query": "Replace the HotPlex binary and restart service",
+      "should_trigger": true,
+      "reason": "Core deployment steps"
+    },
+    {
+      "query": "Service is running old version, update it",
+      "should_trigger": true,
+      "reason": "Version update needed"
+    },
+    {
+      "query": "I need to install the HotPlex service",
+      "should_trigger": true,
+      "reason": "Service installation/deployment"
+    },
+    {
+      "query": "Update the dependencies in go.mod",
+      "should_trigger": false,
+      "reason": "Dependency management, not binary deployment"
+    },
+    {
+      "query": "Update the README with new documentation",
+      "should_trigger": false,
+      "reason": "Documentation update, not service deployment"
+    },
+    {
+      "query": "Refresh the page to see the latest changes",
+      "should_trigger": false,
+      "reason": "Browser refresh, not binary update"
+    },
+    {
+      "query": "Update your knowledge about the new API",
+      "should_trigger": false,
+      "reason": "Knowledge update, not software deployment"
+    },
+    {
+      "query": "What's the latest update on the project?",
+      "should_trigger": false,
+      "reason": "Status inquiry, not deployment"
+    },
+    {
+      "query": "The database needs an update",
+      "should_trigger": false,
+      "reason": "Database migration, not HotPlex binary"
+    },
+    {
+      "query": "Update the configuration file",
+      "should_trigger": false,
+      "reason": "Config change, not binary deployment"
+    },
+    {
+      "query": "Git pull to update the repository",
+      "should_trigger": false,
+      "reason": "Git operation, not service deployment"
+    },
+    {
+      "query": "Release the update to users",
+      "should_trigger": false,
+      "reason": "Release management, use hotplex-release skill"
+    },
+    {
+      "query": "When will the next update be ready?",
+      "should_trigger": false,
+      "reason": "Planning question, not deployment action"
+    }
+  ]
+}
