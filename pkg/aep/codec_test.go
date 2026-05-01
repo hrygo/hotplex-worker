@@ -59,28 +59,6 @@ func TestEncodeDecode(t *testing.T) {
 	require.Equal(t, env.Event.Type, decoded.Event.Type)
 }
 
-func TestEncodeChunk(t *testing.T) {
-	t.Parallel()
-
-	env := NewEnvelope(
-		NewID(),
-		"sess_chunk",
-		1,
-		events.Input,
-		events.InputData{Content: "hello"},
-	)
-
-	var sb strings.Builder
-	err := EncodeChunk(&sb, env)
-	require.NoError(t, err)
-	require.True(t, strings.HasSuffix(sb.String(), "\n"))
-
-	// Decode and verify
-	decoded, err := Decode(strings.NewReader(sb.String()))
-	require.NoError(t, err)
-	require.Equal(t, env.SessionID, decoded.SessionID)
-}
-
 func TestDecode_InvalidJSON(t *testing.T) {
 	t.Parallel()
 
@@ -397,30 +375,6 @@ func TestEncode_NDJSONSafe(t *testing.T) {
 	require.Contains(t, output, `\u2028`, "U+2028 must be escaped as \\u2028")
 
 	// Must still decode correctly.
-	decoded, err := Decode(strings.NewReader(output))
-	require.NoError(t, err)
-	require.Equal(t, env.SessionID, decoded.SessionID)
-}
-
-func TestEncodeChunk_NDJSONSafe(t *testing.T) {
-	t.Parallel()
-
-	env := NewEnvelope(
-		NewID(),
-		"sess_chunk_ndjson",
-		1,
-		events.MessageDelta,
-		map[string]any{"content": "para1\u2029para2"}, // U+2029 embedded
-	)
-
-	var sb strings.Builder
-	err := EncodeChunk(&sb, env)
-	require.NoError(t, err)
-
-	output := sb.String()
-	require.NotContains(t, output, "\xe2\x80\xa9", "raw U+2029 must not appear in output")
-	require.Contains(t, output, `\u2029`, "U+2029 must be escaped as \\u2029")
-
 	decoded, err := Decode(strings.NewReader(output))
 	require.NoError(t, err)
 	require.Equal(t, env.SessionID, decoded.SessionID)

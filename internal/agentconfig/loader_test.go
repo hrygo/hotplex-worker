@@ -105,6 +105,19 @@ func TestLoad(t *testing.T) {
 		require.Equal(t, "Rules.", cfg.Agents)
 		require.Empty(t, cfg.User)
 	})
+
+	t.Run("permission denied returns error", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		// Create a file with no read permissions
+		filePath := filepath.Join(dir, "SOUL.md")
+		err := os.WriteFile(filePath, []byte("Content"), 0o000)
+		require.NoError(t, err)
+
+		_, err = Load(dir, "")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "agentconfig: read")
+	})
 }
 
 func TestSizeLimits(t *testing.T) {
