@@ -1,12 +1,41 @@
 ---
 name: hotplex-issue-manager
-description: HotPlex issue batch management and consolidated PR delivery. Analyzes issues, calculates ROI (Impact×Urgency×Effort), selects 1-5 high-priority issues, implements them in ONE branch, and delivers as a SINGLE merged PR. Use whenever: working on HotPlex issues, prioritizing backlog, planning batch fixes, or implementing multiple related issues together. This skill is specifically designed for consolidating multiple issue fixes into one PR — different from traditional one-issue-per-PR workflows.
+description: HotPlex issue batch management and consolidated PR delivery. TRIGGER THIS SKILL when: managing HotPlex issues, prioritizing backlog, planning batch fixes, implementing multiple related issues together, needing to consolidate several fixes into one PR, calculating ROI for issue prioritization, or wanting to reduce merge conflicts and review overhead. This skill transforms scattered GitHub issues into ONE consolidated PR — a deliberate alternative to traditional one-issue-per-PR workflows that often create merge conflicts and review fatigue.
 compatibility: Requires gh CLI, Go 1.26+, golangci-lint, make
 ---
 
 # HotPlex Issue Manager
 
 Batch issue management workflow for HotPlex that transforms scattered GitHub issues into **one consolidated pull request**. This skill analyzes, prioritizes, and implements multiple issues together, reducing merge conflicts and review overhead.
+
+## Common Pitfalls (Read This First!)
+
+Before diving into the workflow, avoid these frequent mistakes that derail batch PRs:
+
+**❌ Selecting unrelated issues together**
+- Mixing CLI features, webchat fixes, and messaging refactors in one batch
+- **Why this fails**: No thematic cohesion makes reviews painful and testing complex
+- **✅ Better approach**: Group by domain — all messaging fixes, or all CLI improvements
+
+**❌ Overloading batches (too many issues)**
+- Trying to cram 8+ issues into "one mega PR"
+- **Why this fails**: Creates unreviewable monsters; if one issue blocks, all block
+- **✅ Better approach**: 2-5 issues max, or split into themed batches (messaging batch 1, batch 2)
+
+**❌ Ignoring dependencies between issues**
+- Implementing issue B that depends on issue A's refactor
+- **Why this fails**: Code won't work, wastes implementation time
+- **✅ Better approach**: Check dependencies first, implement refactors before fixes
+
+**❌ Only running unit tests per issue**
+- Testing each fix in isolation, never together
+- **Why this fails**: Misses integration bugs where issues interact
+- **✅ Better approach**: Run full test suite after all issues implemented
+
+**❌ Vague PR descriptions**
+- Writing "Fixes several issues" as the PR description
+- **Why this fails**: Reviewers can't understand what changed or why
+- **✅ Better approach**: Document each issue separately with problem/solution/impact
 
 ## Why Batch PRs Matter
 
@@ -91,7 +120,7 @@ gh issue edit <number> --add-label "bug,architecture"
 gh issue edit <number> --remove-label "enhancement"
 ```
 
-**Issue Quality Checklist**:
+**Issue Quality Checklist** (consider these before implementing):
 - [ ] Title uses conventional commit format: `scope: description`
 - [ ] Detailed description of problem or feature
 - [ ] Bugs include: reproduction steps, expected vs actual
@@ -99,7 +128,7 @@ gh issue edit <number> --remove-label "enhancement"
 - [ ] Environment/context provided
 - [ ] No duplicates (link related issues)
 
-If issue lacks clarity, add `needs-triage` label or request clarification via comments.
+**Why this matters**: Implementing unclear issues wastes time — you'll discover edge cases mid-work or build the wrong thing. If issue lacks clarity, add `needs-triage` label or request clarification via comments before starting implementation.
 
 ## Phase 2: Prioritization & Scoring
 
@@ -195,16 +224,21 @@ Create `/tmp/issue_ranking.md`:
 
 Select 1-5 issues that will be implemented together in one PR. **Selection quality matters more than quantity** — better to ship 3 issues cleanly than 5 issues messily.
 
-**Selection Criteria**:
+**Selection Criteria** (prioritize in this order):
 
 1. **High ROI** — prioritize maximum impact
+   - **Why**: You want to deliver the most value with your time investment
 2. **Cohesion** — issues should relate to each other
    - Same module (e.g., all messaging issues)
    - Same layer (e.g., all adapter refactors)
    - Related domain (e.g., all performance issues)
+   - **Why**: Cohesive batches are easier to review, test, and understand
 3. **No blocking dependencies** — all can be implemented independently
+   - **Why**: Dependencies complicate implementation order and can block progress
 4. **Manageable scope** — total effort should be 1-3 days
+   - **Why**: Larger batches become unreviewable and riskier to ship
 5. **Strategic balance** — mix quick wins and important fixes
+   - **Why**: Quick wins build momentum while important fixes deliver long-term value
 
 **Why cohesion matters**: Implementing unrelated issues in one PR makes:
 - Code review harder (reviewer context-switches)
@@ -332,13 +366,15 @@ Read carefully. Understand the problem. If unclear, ask in issue comments before
 
 #### Step 2: Implement Fix
 
-Follow HotPlex development standards:
+Following HotPlex development standards helps maintain code quality:
 
 - **Go 1.26+** — Use latest language features
-- **golangci-lint** — Run frequently, fix issues immediately
+- **golangci-lint** — Run frequently, fix issues immediately (catch problems early)
 - **Test FIRST** — Write tests before implementation (TDD when possible)
+  - **Why**: Tests serve as executable specs and prevent regressions
 - **Table-driven tests** — Standard Go pattern
 - **≥80% coverage** — Higher for security/critical paths
+  - **Why**: High coverage gives confidence changes work as intended
 
 #### Step 3: Commit with Conventional Commits
 
@@ -360,11 +396,11 @@ Fixes #88"
 - Body: detailed explanation of changes
 - Footer: reference issue (Fixes #XX)
 
-**Why one commit per issue**:
-- Atomic changes — each commit is independently valid
-- Clear history — git bisect works
-- Easy to revert — if one fix has problems, can revert just that commit
-- Logical grouping — related changes stay together
+**Why one commit per issue** (this pattern pays dividends):
+- **Atomic changes** — each commit is independently valid, could be merged alone
+- **Clear history** — git bisect works, future developers understand what changed
+- **Easy to revert** — if one fix has problems, can revert just that commit without losing others
+- **Logical grouping** — related changes stay together, telling a coherent story
 
 #### Step 4: Verify
 
@@ -580,66 +616,33 @@ Track in `/tmp/pr_tracking.md`:
 
 ### Issue Selection
 - **Cohesion over quantity** — 3 cohesive issues > 5 unrelated ones
+  - **Why**: Cohesive batches tell a clear story and are easier to review
 - **Manageable scope** — If >3 days work, split into multiple batches
+  - **Why**: Large batches become unreviewable and increase shipping risk
 - **Test thoroughly** — More issues = more complex testing
+  - **Why**: Integration bugs emerge when multiple changes interact
 - **Clear communication** — PR description should explain each issue
+  - **Why**: Reviewers need to understand what changed and why to give good feedback
 
 ### Implementation
 - **Sequential commits** — One logical commit per issue
+  - **Why**: Creates clear, reviewable history that tells a story
 - **Atomic changes** — Each commit independently valid
+  - **Why**: Enables selective reverting if one fix causes problems
 - **Test frequently** — Run tests after each commit
+  - **Why**: Catch problems immediately when they're easier to fix
 - **Clean history** — Rebase if commits become messy
+  - **Why**: Clean history helps future debugging and code archaeology
 
 ### PR Hygiene
 - **Comprehensive description** — List all issues and changes
+  - **Why**: Reviewers can't approve what they don't understand
 - **Link all issues** — Use "Closes #X, #Y, #Z" format
+  - **Why**: GitHub auto-closes issues on merge, reducing manual work
 - **Checklist included** — Show what was tested and verified
+  - **Why**: Gives confidence that changes were thoroughly validated
 - **Be responsive** — Address review feedback promptly
-
-## Common Pitfalls
-
-### Pitfall 1: Selecting Unrelated Issues
-
-**Bad**: Batch a CLI feature, a webchat perf fix, and a messaging refactor
-
-**Why bad**: No cohesion, hard to review, hard to test
-
-**Good**: Batch all messaging adapter fixes, or all CLI improvements
-
-### Pitfall 2: Too Many Issues
-
-**Bad**: 8 issues in one batch
-
-**Why bad**: 
-- PR becomes huge and hard to review
-- Testing becomes complex
-- If one issue has problems, blocks all others
-
-**Good**: 2-5 issues max, depending on complexity
-
-### Pitfall 3: Ignoring Dependencies
-
-**Bad**: Implement issue B that depends on issue A, but implement B first
-
-**Why bad**: Won't work, wastes time
-
-**Good**: Check dependencies, implement in order (refactors before fixes)
-
-### Pitfall 4: Not Testing Integration
-
-**Bad**: Only run unit tests for each issue separately
-
-**Why bad**: Miss integration bugs between issues
-
-**Good**: Run full test suite after all issues implemented
-
-### Pitfall 5: Vague PR Description
-
-**Bad**: "Fixes several issues"
-
-**Why bad**: Reviewer has no idea what you changed
-
-**Good**: Detailed description listing each issue and its changes
+  - **Why**: Fast feedback loops keep momentum and prevent stale PRs
 
 ## Output Artifacts
 
@@ -720,13 +723,23 @@ User: "分析 HotPlex issues 并交付最高优先级的修复"
 **Traditional workflow**: One issue → One branch → One PR → One merge
 **This skill**: Multiple issues → One branch → One PR → One merge
 
-**Benefits**:
-- ✅ Reduced merge conflicts
-- ✅ Faster review (one holistic review vs many fragmented ones)
-- ✅ Comprehensive testing (integration tested together)
-- ✅ Single deployment (coordinated release)
-- ✅ Clean history (logical grouping)
+**Why this pattern works**:
+- ✅ **Reduced merge conflicts** — One conflict resolution instead of many
+- ✅ **Faster review** — One holistic review vs many fragmented ones
+- ✅ **Comprehensive testing** — Integration tested together, catches interaction bugs
+- ✅ **Single deployment** — Coordinated release, easier to rollback if needed
+- ✅ **Clean history** — Logical grouping tells a coherent story
 
-**When to use**: When you have 2-5 related issues that can be implemented together in 1-3 days.
+**When to use this skill**:
+- You have 2-5 related issues that can be implemented together in 1-3 days
+- Issues touch similar code areas (same module, layer, or domain)
+- You want to reduce merge conflicts and review overhead
+- You need to prioritize issues by ROI and focus on high-impact work
 
-**When NOT to use**: When issues are unrelated, or would take >3 days, or have complex dependencies.
+**When NOT to use this skill**:
+- Issues are completely unrelated (different modules, no thematic connection)
+- Total effort would exceed 3 days
+- Issues have complex, hard-to-resolve dependencies
+- You need immediate hotfix for a single critical issue
+
+**Remember**: This skill is a tool, not a mandate. Use it when it makes sense for your situation.
