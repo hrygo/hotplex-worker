@@ -629,7 +629,16 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		if streamCtrl != nil && streamCtrl.IsCreated() {
 			_ = streamCtrl.Close(ctx)
 		}
-		// Fall through to extract error text for notification.
+		// Extract error text and send as simple message
+		if errMsg := messaging.ExtractErrorMessage(env); errMsg != "" {
+			c.mu.RLock()
+			platformMsgID := c.platformMsgID
+			c.mu.RUnlock()
+			if platformMsgID != "" {
+				_ = c.adapter.replyMessage(ctx, platformMsgID, errMsg, false)
+			}
+		}
+		return nil
 	case events.ToolCall, events.ToolResult:
 		c.mu.RLock()
 		elapsed := time.Since(c.startedAt)
@@ -924,7 +933,9 @@ func (a *Adapter) handleTextControlCommand(ctx context.Context, chatID, userID, 
 		a.Log.Warn("feishu: text control command failed", "action", result.Label, "err", err)
 		// Provide user-friendly error message with details
 		errMsg := fmt.Sprintf("❌ 执行 %s 失败：%s", result.Label, formatSecurityError(err))
-		_ = a.replyMessage(ctx, threadKey, errMsg, false)
+		if replyErr := a.replyMessage(ctx, platformMsgID, errMsg, false); replyErr != nil {
+			a.Log.Error("feishu: failed to send error message", "action", result.Label, "user", userID, "err", replyErr)
+		}
 		return
 	}
 
