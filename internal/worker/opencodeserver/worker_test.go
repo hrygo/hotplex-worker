@@ -170,6 +170,35 @@ func TestOpenCodeServerWorker_Kill_NilSSECancel(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestOpenCodeServerWorker_Terminate_ReleasesSingleton(t *testing.T) {
+	t.Parallel()
+
+	w := New()
+	ctx := context.Background()
+
+	// Terminate should call releaseOnce
+	err := w.Terminate(ctx)
+	require.NoError(t, err)
+
+	// Call Terminate again - should not call release twice
+	err = w.Terminate(ctx)
+	require.NoError(t, err)
+}
+
+func TestOpenCodeServerWorker_Kill_ReleasesSingleton(t *testing.T) {
+	t.Parallel()
+
+	w := New()
+
+	// Kill should call releaseOnce
+	err := w.Kill()
+	require.NoError(t, err)
+
+	// Call Kill again - should not call release twice
+	err = w.Kill()
+	require.NoError(t, err)
+}
+
 func TestOpenCodeServerWorker_WaitWithoutStart(t *testing.T) {
 	t.Parallel()
 
