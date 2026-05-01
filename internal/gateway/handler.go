@@ -27,7 +27,7 @@ import (
 type Handler struct {
 	log           *slog.Logger
 	hub           *Hub
-	sm            *session.Manager
+	sm            SessionManager
 	jwtValidator  *security.JWTValidator
 	bridge        *Bridge
 	convStore     session.ConversationStore
@@ -789,6 +789,12 @@ type SessionManager interface {
 	ResetExpiry(ctx context.Context, id string) error
 	// UpdateWorkDir updates the workDir for a session in memory and DB.
 	UpdateWorkDir(ctx context.Context, id, workDir string) error
+	// TransitionWithInput transitions a session to a new state with input content.
+	TransitionWithInput(ctx context.Context, id string, to events.SessionState, content string, metadata map[string]any) error
+	// TransitionWithReason transitions a session to a new state with a termination reason.
+	TransitionWithReason(ctx context.Context, id string, to events.SessionState, termReason string) error
+	// ValidateOwnership checks that the session belongs to the given user or admin.
+	ValidateOwnership(ctx context.Context, sessionID, userID, adminUserID string) error
 }
 
 // WorkerFactory creates worker instances. Production code uses defaultWorkerFactory.

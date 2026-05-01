@@ -70,7 +70,7 @@ func setupRoutes(
 
 	mux.Handle("GET /admin/metrics", promhttp.Handler())
 
-	mux.Handle("GET /ws", hub.HandleHTTP(auth, sm, handler, bridge))
+	mux.Handle("GET /ws", hub.HandleHTTP(auth, handler, bridge))
 
 	sessionAdapter := &sessionManagerAdapter{sm: sm}
 	hubAdapter := &hubAdapter{hub: hub}
