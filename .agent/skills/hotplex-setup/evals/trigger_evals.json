@@ -1,0 +1,105 @@
+{
+  "skill_name": "hotplex-setup",
+  "trigger_evals": [
+    {
+      "query": "Set up HotPlex environment",
+      "should_trigger": true,
+      "reason": "Direct setup request"
+    },
+    {
+      "query": "Install HotPlex dependencies",
+      "should_trigger": true,
+      "reason": "Dependency installation"
+    },
+    {
+      "query": "Check if HotPlex is ready to run",
+      "should_trigger": true,
+      "reason": "Environment verification"
+    },
+    {
+      "query": "Configure HotPlex for the first time",
+      "should_trigger": true,
+      "reason": "Initial configuration"
+    },
+    {
+      "query": "STT not working, help me fix it",
+      "should_trigger": true,
+      "reason": "STT troubleshooting"
+    },
+    {
+      "query": "What are the requirements for HotPlex?",
+      "should_trigger": true,
+      "reason": "Requirements inquiry"
+    },
+    {
+      "query": "Verify the environment is set up correctly",
+      "should_trigger": true,
+      "reason": "Environment check"
+    },
+    {
+      "query": "Port 8888 is already in use",
+      "should_trigger": true,
+      "reason": "Port conflict troubleshooting"
+    },
+    {
+      "query": "Install the STT model",
+      "should_trigger": true,
+      "reason": "STT model installation"
+    },
+    {
+      "query": "Setup the .env configuration file",
+      "should_trigger": true,
+      "reason": "Configuration setup"
+    },
+    {
+      "query": "Setup a meeting for tomorrow",
+      "should_trigger": false,
+      "reason": "Meeting scheduling, not HotPlex setup"
+    },
+    {
+      "query": "Set up the database schema",
+      "should_trigger": false,
+      "reason": "Database setup, not HotPlex environment"
+    },
+    {
+      "query": "Install the npm dependencies",
+      "should_trigger": false,
+      "reason": "Node.js/npm, not HotPlex (Go project)"
+    },
+    {
+      "query": "Setup webpack configuration",
+      "should_trigger": false,
+      "reason": "Frontend build tool, not HotPlex environment"
+    },
+    {
+      "query": "Check if the server is running",
+      "should_trigger": false,
+      "reason": "Runtime status check, not setup"
+    },
+    {
+      "query": "What's the setup process for Docker?",
+      "should_trigger": false,
+      "reason": "Docker setup, not HotPlex-specific"
+    },
+    {
+      "query": "Configure the VPN connection",
+      "should_trigger": false,
+      "reason": "Network configuration, not HotPlex"
+    },
+    {
+      "query": "Setup the test environment",
+      "should_trigger": false,
+      "reason": "Generic test setup, not HotPlex installation"
+    },
+    {
+      "query": "I need to set up my development machine",
+      "should_trigger": false,
+      "reason": "Generic dev setup, not HotPlex-specific"
+    },
+    {
+      "query": "Configure Slack bot for another project",
+      "should_trigger": false,
+      "reason": "Different project setup, not HotPlex"
+    }
+  ]
+}

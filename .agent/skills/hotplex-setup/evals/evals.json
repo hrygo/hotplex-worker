@@ -1,0 +1,128 @@
+{
+  "skill_name": "hotplex-setup",
+  "evals": [
+    {
+      "id": 1,
+      "name": "fresh-install-setup",
+      "prompt": "I just cloned HotPlex and need to set up the complete environment. Check all dependencies and guide me through installation.",
+      "expected_output": "Skill should execute comprehensive environment detection: OS/architecture check, Go 1.26+ verification, Python 3.10+ check, port availability (8888/9999), systemd/launchd availability, write permissions, API key presence (.env), STT dependencies (funasr-onnx, modelscope, SenseVoice model), and generate config files. Should provide clear fix instructions for any missing items.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "os-detected",
+          "text": "Operating system and architecture detected",
+          "check_type": "output_contains",
+          "pattern": "OS|architecture|Linux|macOS|Windows|amd64|arm64"
+        },
+        {
+          "name": "go-version-checked",
+          "text": "Go version verified as 1.26+",
+          "check_type": "output_contains",
+          "pattern": "Go|golang|1\\.26|version"
+        },
+        {
+          "name": "ports-checked",
+          "text": "Gateway (8888) and admin (9999) ports checked",
+          "check_type": "output_contains",
+          "pattern": "port|8888|9999|available|occupied"
+        },
+        {
+          "name": "dependencies-verified",
+          "text": "Core dependencies checked (Go, Python, systemd/launchd)",
+          "check_type": "output_contains",
+          "pattern": "Python|systemd|launchd|service"
+        },
+        {
+          "name": "stt-checked",
+          "text": "STT dependencies verified (funasr-onnx, modelscope, model)",
+          "check_type": "output_contains",
+          "pattern": "STT|funasr|modelscope|SenseVoice|model"
+        },
+        {
+          "name": "fix-provided",
+          "text": "Clear fix instructions provided for missing items",
+          "check_type": "output_contains",
+          "pattern": "install|setup|fix|run:|brew|apt|pip"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "stt-troubleshooting",
+      "prompt": "STT isn't working. The error says 'stt_once.py not found'. Help me fix the STT setup.",
+      "expected_output": "Skill should detect STT issue, check Python packages (funasr-onnx, modelscope), verify STT model download status (~897MB in ~/.cache/modelscope), check STT configuration in config.yaml, and provide targeted fix: install missing packages, download model, configure STT provider (feishu_cloud vs local), and test STT functionality.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "stt-issue-detected",
+          "text": "STT problem identified",
+          "check_type": "output_contains",
+          "pattern": "STT|stt_once|not found|error"
+        },
+        {
+          "name": "packages-checked",
+          "text": "Python packages verified (funasr-onnx, modelscope)",
+          "check_type": "output_contains",
+          "pattern": "funasr-onnx|modelscope|pip|package"
+        },
+        {
+          "name": "model-checked",
+          "text": "STT model presence verified",
+          "check_type": "output_contains",
+          "pattern": "SenseVoice|model|~897MB|\\.cache|modelscope"
+        },
+        {
+          "name": "config-verified",
+          "text": "STT configuration checked",
+          "check_type": "output_contains",
+          "pattern": "config\\.yaml|stt_provider|feishu_cloud|local"
+        },
+        {
+          "name": "fix-instructions",
+          "text": "Targeted fix instructions provided",
+          "check_type": "output_contains",
+          "pattern": "install|pip install|python3|modelscope|download"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "name": "minimal-verification",
+      "prompt": "Quick check if HotPlex environment is ready to run.",
+      "expected_output": "Skill should run fast-path checks (QuickChecks): Go version, port availability, .env file presence, and binary existence. Should pass all checks with green checkmarks or report specific blockers.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "quick-checks",
+          "text": "Fast-path verification executed",
+          "check_type": "output_contains",
+          "pattern": "✓|✗|check|verif"
+        },
+        {
+          "name": "go-verified",
+          "text": "Go version checked",
+          "check_type": "output_contains",
+          "pattern": "Go|golang"
+        },
+        {
+          "name": "ports-verified",
+          "text": "Ports availability checked",
+          "check_type": "output_contains",
+          "pattern": "8888|9999|port"
+        },
+        {
+          "name": "env-checked",
+          "text": ".env file presence verified",
+          "check_type": "output_contains",
+          "pattern": "\\.env|environment"
+        },
+        {
+          "name": "result-reported",
+          "text": "Clear pass/fail result reported",
+          "check_type": "output_contains",
+          "pattern": "ready|blocker|issue|pass|fail"
+        }
+      ]
+    }
+  ]
+}

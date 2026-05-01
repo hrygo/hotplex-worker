@@ -1,6 +1,6 @@
 ---
 name: hotplex-update
-description: Standardized HotPlex binary update, release, and service restart workflow. Covers build, install, service restart, and verification with proper error handling.
+description: HotPlex 二进制更新、发布和服务重启标准化流程。构建、安装、服务重启、验证，完整错误处理和回滚机制。**使用此 skill**：更新 HotPlex、安装新版本、重启服务、回滚版本、服务升级。支持用户级和系统级服务，跨平台兼容（Linux/macOS/Windows）。
 ---
 
 # HotPlex Update & Service Restart Workflow

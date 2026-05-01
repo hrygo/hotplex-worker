@@ -1,0 +1,106 @@
+{
+  "skill_name": "hotplex-release",
+  "evals": [
+    {
+      "id": 1,
+      "name": "patch-version-bump",
+      "prompt": "Release a new patch version for HotPlex. The last release was v1.2.0, and we have 3 bug fixes since then. Create the release with proper changelog.",
+      "expected_output": "Skill should determine next version as v1.2.1, collect changes since v1.2.0, write CHANGELOG.md with proper Summary/Added/Changed/Fixed sections, update version in all locations (main.go, Makefile, tracing.go, SDKs, Dockerfile), run verification, create git commit and tag, and prepare for GitHub Release. Branch guard should be checked (main vs feature branch).",
+      "files": [],
+      "assertions": [
+        {
+          "name": "version-determined",
+          "text": "Next version correctly identified as v1.2.1 (patch bump from v1.2.0)",
+          "check_type": "output_contains",
+          "pattern": "v1\\.2\\.1|1\\.2\\.1"
+        },
+        {
+          "name": "changelog-updated",
+          "text": "CHANGELOG.md updated with proper Summary section and categorized entries",
+          "check_type": "file_modified",
+          "file": "CHANGELOG.md",
+          "contains": ["## [1.2.1]", "### Summary", "### Fixed"]
+        },
+        {
+          "name": "version-unified",
+          "text": "Version updated in all required locations (main.go, Makefile, tracing.go, SDKs)",
+          "check_type": "files_modified",
+          "files": ["cmd/hotplex/main.go", "Makefile", "internal/tracing/tracing.go"]
+        },
+        {
+          "name": "branch-guard-checked",
+          "text": "Current branch checked before proceeding with workflow",
+          "check_type": "output_contains",
+          "pattern": "branch|Branch|git branch"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "release-prep-on-feature-branch",
+      "prompt": "Prepare for v1.3.0 release while on feature branch feat/new-feature. Collect changes, write changelog, update versions, but do NOT create tag or push to GitHub.",
+      "expected_output": "Skill should detect non-main branch, execute Steps 1-5 (version determination, change collection, changelog writing, version unification, verification), commit changes as 'chore: prepare release v1.3.0', and inform user that tag and publish should happen after merge to main. No git tag or GitHub release should be created.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "branch-detected",
+          "text": "Skill detects current branch is not main",
+          "check_type": "output_contains",
+          "pattern": "feat/new-feature|not on main|feature branch"
+        },
+        {
+          "name": "preparation-only",
+          "text": "Only preparation steps executed (version, changelog, verification)",
+          "check_type": "output_does_not_contain",
+          "pattern": "git tag|gh release|GitHub Release"
+        },
+        {
+          "name": "commit-created",
+          "text": "Preparation commit created with proper message",
+          "check_type": "output_contains",
+          "pattern": "chore: prepare release|git commit"
+        },
+        {
+          "name": "user-informed",
+          "text": "User informed to tag and publish after merge to main",
+          "check_type": "output_contains",
+          "pattern": "merge to main|after merging|tag and publish"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "name": "full-release-on-main",
+      "prompt": "Create a full release v1.4.0 on main branch. We have 5 new features and 2 breaking changes since v1.3.0.",
+      "expected_output": "Skill should execute complete workflow (Steps 1-8): determine v1.4.0 (minor bump despite breaking changes which should be noted in changelog), collect and categorize changes, write comprehensive CHANGELOG.md with Summary section, unify version across all files, run quality+build verification, create git commit and annotated tag, push to trigger GitHub Release, monitor CI, and replace auto-generated notes with full CHANGELOG content. Post-release verification confirms all artifacts attached.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "complete-workflow",
+          "text": "All 8 steps executed (determine → collect → changelog → unify → verify → commit → tag → release)",
+          "check_type": "output_contains",
+          "pattern": "git tag.*v1\\.4\\.0|gh release edit|GitHub Release"
+        },
+        {
+          "name": "breaking-change-noted",
+          "text": "Breaking changes documented in changelog with clear callout",
+          "check_type": "file_modified",
+          "file": "CHANGELOG.md",
+          "contains": ["BREAKING CHANGE", "### Changed", "⚠️"]
+        },
+        {
+          "name": "notes-replaced",
+          "text": "Auto-generated release notes replaced with full CHANGELOG content",
+          "check_type": "output_contains",
+          "pattern": "gh release edit|notes-file|release-notes\\.md"
+        },
+        {
+          "name": "artifacts-verified",
+          "text": "Release artifacts verified (4 platform binaries + checksums.txt)",
+          "check_type": "output_contains",
+          "pattern": "checksums\\.txt|darwin-amd64|linux-amd64|artifact"
+        }
+      ]
+    }
+  ]
+}
