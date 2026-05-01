@@ -1,0 +1,105 @@
+{
+  "skill_name": "hotplex-arch-analyzer",
+  "trigger_evals": [
+    {
+      "query": "Analyze the HotPlex codebase architecture",
+      "should_trigger": true,
+      "reason": "Direct architecture analysis request"
+    },
+    {
+      "query": "Review the gateway module for SOLID violations",
+      "should_trigger": true,
+      "reason": "Specific module and aspect analysis"
+    },
+    {
+      "query": "Check for code quality issues in HotPlex",
+      "should_trigger": true,
+      "reason": "Code quality analysis is Phase 4 aspect"
+    },
+    {
+      "query": "Audit the session module for concurrency issues",
+      "should_trigger": true,
+      "reason": "Specific module and Phase 2 aspect"
+    },
+    {
+      "query": "Run architecture analysis on internal/messaging",
+      "should_trigger": true,
+      "reason": "Module-specific analysis"
+    },
+    {
+      "query": "Find DRY violations in the codebase",
+      "should_trigger": true,
+      "reason": "DRY is a Phase 1 aspect"
+    },
+    {
+      "query": "Analyze coupling between modules",
+      "should_trigger": true,
+      "reason": "Coupling is a Phase 1 aspect"
+    },
+    {
+      "query": "Check error handling patterns across HotPlex",
+      "should_trigger": true,
+      "reason": "Error handling is a Phase 2 aspect"
+    },
+    {
+      "query": "Audit for resource leaks and cleanup issues",
+      "should_trigger": true,
+      "reason": "Resource management is a Phase 2 aspect"
+    },
+    {
+      "query": "Review scalability of the gateway",
+      "should_trigger": true,
+      "reason": "Scalability is a Phase 3 aspect"
+    },
+    {
+      "query": "Analyze the architecture of this React app",
+      "should_trigger": false,
+      "reason": "Different project (React), not HotPlex"
+    },
+    {
+      "query": "Review my pull request for bugs",
+      "should_trigger": false,
+      "reason": "PR review, use hotplex-pr-quality or code-review skills"
+    },
+    {
+      "query": "Check the code for style issues",
+      "should_trigger": false,
+      "reason": "Style/linting, not deep architecture analysis"
+    },
+    {
+      "query": "What's the architecture of Kubernetes?",
+      "should_trigger": false,
+      "reason": "External system inquiry, not HotPlex analysis"
+    },
+    {
+      "query": "Analyze the performance of this query",
+      "should_trigger": false,
+      "reason": "Database query performance, not codebase architecture"
+    },
+    {
+      "query": "Design an architecture for a new system",
+      "should_trigger": false,
+      "reason": "Greenfield design, not existing codebase analysis"
+    },
+    {
+      "query": "Find security vulnerabilities",
+      "should_trigger": false,
+      "reason": "Security audit is different from architecture analysis"
+    },
+    {
+      "query": "Generate test coverage report",
+      "should_trigger": false,
+      "reason": "Testing coverage, not architecture"
+    },
+    {
+      "query": "Analyze the database schema",
+      "should_trigger": false,
+      "reason": "Database analysis, not code architecture"
+    },
+    {
+      "query": "What are the best practices for Go?",
+      "should_trigger": false,
+      "reason": "General knowledge question, not HotPlex-specific analysis"
+    }
+  ]
+}

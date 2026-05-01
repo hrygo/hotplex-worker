@@ -1,0 +1,116 @@
+{
+  "skill_name": "hotplex-update",
+  "evals": [
+    {
+      "id": 1,
+      "name": "standard-update-workflow",
+      "prompt": "Deploy the newly built HotPlex binary to the system and restart the service.",
+      "expected_output": "Skill should execute the complete 8-step workflow: build new binary (make build), verify binary timestamps, stop service (hotplex service stop), wait 2 seconds, replace binary (cp to ~/.local/bin/hotplex), start service (hotplex service start), verify service status (active with new PID), and check service logs for clean startup. Should handle 'Text file busy' error with longer wait.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "build-executed",
+          "text": "make build executed to compile new binary",
+          "check_type": "output_contains",
+          "pattern": "make build|Building|bin/hotplex"
+        },
+        {
+          "name": "service-stopped",
+          "text": "Service stopped before binary replacement",
+          "check_type": "output_contains",
+          "pattern": "hotplex service stop|Stopped service"
+        },
+        {
+          "name": "wait-applied",
+          "text": "2-second wait applied after service stop",
+          "check_type": "output_contains",
+          "pattern": "sleep|wait"
+        },
+        {
+          "name": "binary-replaced",
+          "text": "New binary copied to ~/.local/bin/hotplex",
+          "check_type": "output_contains",
+          "pattern": "cp.*hotplex.*\\.local/bin|binary.*replaced"
+        },
+        {
+          "name": "service-started",
+          "text": "Service started after binary replacement",
+          "check_type": "output_contains",
+          "pattern": "hotplex service start|Service started"
+        },
+        {
+          "name": "status-verified",
+          "text": "Service status verified as active",
+          "check_type": "output_contains",
+          "pattern": "hotplex service status|active"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "rollback-after-failure",
+      "prompt": "The new HotPlex binary has runtime errors and the service fails to start. Rollback to the previous version.",
+      "expected_output": "Skill should detect service failure in logs, execute rollback workflow: stop service (hotplex service stop), restore previous binary from backup (or rebuild from previous commit), restart service (hotplex service start), and verify rollback success with clean logs.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "failure-detected",
+          "text": "Service failure detected in logs or status",
+          "check_type": "output_contains",
+          "pattern": "fail|error|panic|fatal"
+        },
+        {
+          "name": "stop-before-rollback",
+          "text": "Service stopped before restoring binary",
+          "check_type": "output_contains",
+          "pattern": "hotplex service stop"
+        },
+        {
+          "name": "backup-restored",
+          "text": "Previous binary restored from backup or rebuilt",
+          "check_type": "output_contains",
+          "pattern": "backup|restore|git checkout|rebuild"
+        },
+        {
+          "name": "service-restarted",
+          "text": "Service restarted with restored binary",
+          "check_type": "output_contains",
+          "pattern": "hotplex service start|restart"
+        },
+        {
+          "name": "rollback-verified",
+          "text": "Rollback verified with clean logs and active status",
+          "check_type": "output_contains",
+          "pattern": "verify|success|clean|active"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "name": "update-with-functional-verification",
+      "prompt": "Deploy the HotPlex update that includes security policy fixes for the /cd command. Verify the fix works after deployment.",
+      "expected_output": "Skill should execute standard update workflow (build → stop → wait → replace → start → verify), then perform functional verification by testing the /cd command in Feishu or by checking service logs for security policy messages.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "standard-workflow",
+          "text": "Complete update workflow executed",
+          "check_type": "output_contains",
+          "pattern": "make build.*service stop.*service start"
+        },
+        {
+          "name": "functional-test",
+          "text": "Functional verification performed (testing /cd command or checking logs)",
+          "check_type": "output_contains",
+          "pattern": "/cd|security policy|test|verify.*function"
+        },
+        {
+          "name": "fix-confirmed",
+          "text": "Security policy fix confirmed working",
+          "check_type": "output_contains",
+          "pattern": "success|working|allowed|security.*loaded"
+        }
+      ]
+    }
+  ]
+}
