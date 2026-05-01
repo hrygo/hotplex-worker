@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/hrygo/hotplex/internal/config"
-	"github.com/hrygo/hotplex/internal/sqlutil"
 	"github.com/hrygo/hotplex/pkg/events"
 )
 
@@ -41,25 +40,16 @@ type SQLiteStore struct {
 
 // NewSQLiteStore creates and initializes a new SQLiteStore.
 func NewSQLiteStore(ctx context.Context, cfg *config.Config) (*SQLiteStore, error) {
-	if err := ensureDBDir(cfg.DB.Path); err != nil {
-		return nil, err
-	}
-
-	db, err := sql.Open(sqlutil.DriverName, cfg.DB.Path)
+	db, err := openSQLiteDB(cfg, dbOpenOpts{
+		Label:       "session",
+		MaxOpen:     cfg.DB.MaxOpenConns,
+		MaxIdle:     cfg.DB.MaxOpenConns,
+		MaxLifetime: 0,
+		MaxIdleTime: 5 * time.Minute,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("session store: open db: %w", err)
-	}
-
-	if err := sqlutil.InitSQLiteDB(db, &cfg.DB, "session"); err != nil {
-		_ = db.Close()
 		return nil, err
 	}
-
-	// Session store is read-heavy: allow 2 concurrent connections.
-	db.SetMaxOpenConns(cfg.DB.MaxOpenConns)
-	db.SetMaxIdleConns(cfg.DB.MaxOpenConns)
-	db.SetConnMaxLifetime(0)
-	db.SetConnMaxIdleTime(5 * time.Minute)
 
 	if err := runMigrations(ctx, db); err != nil {
 		_ = db.Close()
