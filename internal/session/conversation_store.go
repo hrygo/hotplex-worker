@@ -16,6 +16,9 @@ import (
 
 var ErrConvNotFound = errors.New("conversation store: no records found")
 
+// ErrWriteBufferFull is returned by Append when the async write channel is full.
+var ErrWriteBufferFull = errors.New("conversation store: write buffer full")
+
 const (
 	RoleUser      = "user"
 	RoleAssistant = "assistant"
@@ -150,7 +153,7 @@ func (s *SQLiteConversationStore) Append(_ context.Context, rec *ConversationRec
 	default:
 		s.log.Warn("conversation store: write channel full, dropping record",
 			"session_id", rec.SessionID, "seq", rec.Seq, "role", rec.Role)
-		return nil
+		return ErrWriteBufferFull
 	}
 }
 
