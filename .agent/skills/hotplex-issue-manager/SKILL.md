@@ -330,323 +330,58 @@ Document the batch in `/tmp/implementation_plan.md`:
 
 ## Phase 4: Implementation & Delivery
 
-### 4.1 Prepare Repository
-
-```bash
-cd /home/hotplex/.hotplex/workspace/hotplex
-git fetch origin main
-git checkout main
-git pull origin main
-```
-
-### 4.2 Create Batch Branch
-
-Naming convention: `batch/<theme>-issues-<numbers>`
-
-```bash
-git checkout -b batch/messaging-cli-fixes-issues-90-78-89-88
-```
-
-**Why descriptive names matter**:
-- Easy to understand what branch contains
-- Easy to find in git history
-- Clear PR title before you even write it
-
-### 4.3 Implement Issues Sequentially
-
-For each issue:
-
-#### Step 1: Understand Issue
-
-```bash
-gh issue view <number> --comments
-```
-
-Read carefully. Understand the problem. If unclear, ask in issue comments before implementing.
-
-#### Step 2: Implement Fix
-
-Following HotPlex development standards helps maintain code quality:
-
-- **Go 1.26+** — Use latest language features
-- **golangci-lint** — Run frequently, fix issues immediately (catch problems early)
-- **Test FIRST** — Write tests before implementation (TDD when possible)
-  - **Why**: Tests serve as executable specs and prevent regressions
-- **Table-driven tests** — Standard Go pattern
-- **≥80% coverage** — Higher for security/critical paths
-  - **Why**: High coverage gives confidence changes work as intended
-
-#### Step 3: Commit with Conventional Commits
-
-```bash
-git commit -m "refactor(messaging): extract BaseAdapter to eliminate duplication
-
-- Extract common adapter logic into BaseAdapter struct
-- Reduce ~300 lines of duplication between Slack and Feishu
-- Improve testability and maintainability
-- Add table-driven tests for adapter methods
-
-Fixes #88"
-```
-
-**Commit message structure**:
-- Type: `refactor`, `fix`, `feat`, `perf`, `docs`
-- Scope: `messaging`, `cli`, `webchat`, etc.
-- Subject: brief description (imperative mood)
-- Body: detailed explanation of changes
-- Footer: reference issue (Fixes #XX)
-
-**Why one commit per issue** (this pattern pays dividends):
-- **Atomic changes** — each commit is independently valid, could be merged alone
-- **Clear history** — git bisect works, future developers understand what changed
-- **Easy to revert** — if one fix has problems, can revert just that commit without losing others
-- **Logical grouping** — related changes stay together, telling a coherent story
-
-#### Step 4: Verify
-
-```bash
-make lint
-make test
-go test -coverprofile=/tmp/coverage.out ./...
-```
-
-**Don't push after each commit** — implement all issues first, then push once.
-
-### 4.4 Final Integration Testing
-
-After all issues implemented:
-
-```bash
-# Run full test suite
-make test
-
-# Run linter
-make lint
-
-# Build project
-make build
-
-# Smoke test
-./hotplex version
-./hotplex --help
-```
-
-**Why integration testing matters**: Unit tests pass doesn't mean system works. Integration tests catch:
-- Module interaction bugs
-- Configuration issues
-- Runtime problems
-- Performance regressions
-
-### 4.5 Push Batch Branch
-
-```bash
-git push origin batch/messaging-cli-fixes-issues-90-78-89-88
-```
-
-### 4.6 Create Consolidated PR
-
-Create **ONE PR** that closes all selected issues:
-
-```bash
-gh pr create \
-  --base main \
-  --title "Batch: fixes and improvements for issues #90, #78, #89, #88" \
-  --body "## Summary
-
-This PR implements 4 high-priority issues in a consolidated batch:
-
-- **#90**: Add `hotplex update` subcommand for self-update
-- **#78**: Fix error handling and concurrency in messaging adapters
-- **#89**: Optimize webchat bundle with code splitting and virtualization
-- **#88**: Refactor messaging adapters to extract BaseAdapter
-
-## Fixes
-
-Closes #90, #78, #89, #88
-
-## Changes by Issue
-
-### #88 — Refactor messaging adapters
-
-**Problem**: Slack and Feishu adapters have ~300 lines of duplicated code.
-
-**Solution**: Extract common logic into BaseAdapter struct.
-
-**Changes**:
-- Extract BaseAdapter with common connection, message handling, events
-- Reduce duplication from ~300 lines to ~50 lines
-- Add comprehensive table-driven tests
-- Improve error handling consistency
-
-**Impact**: Cleaner code, easier to add new adapters, better testability.
-
-### #78 — Fix messaging error handling
-
-**Problem**: Async message handlers don't propagate errors properly. Race condition in ChatQueue.
-
-**Solution**: Add proper error channels, fix WaitGroup usage.
-
-**Changes**:
-- Add error propagation in async message handlers
-- Fix race condition in ChatQueue WaitGroup (Add() called after Close())
-- Improve error recovery and logging
-- Add tests for error scenarios
-
-**Impact**: More reliable messaging, fewer silent failures.
-
-### #90 — Add CLI update subcommand
-
-**Problem**: Users must manually download and install updates.
-
-**Solution**: Add `hotplex update` command that fetches latest release.
-
-**Changes**:
-- Implement `hotplex update` subcommand
-- Fetch latest release from GitHub API
-- Verify signature before replacing binary
-- Add tests for update logic
-- Document update workflow
-
-**Impact**: Better user experience, easier upgrades.
-
-### #89 — Optimize webchat performance
-
-**Problem**: Large bundle size and slow message rendering.
-
-**Solution**: Code splitting + message virtualization + streaming optimization.
-
-**Changes**:
-- Implement code splitting for 40% bundle size reduction
-- Add message virtualization for large conversation history
-- Optimize streaming delta updates
-- Lazy load non-critical components
-
-**Impact**: Faster initial load, smoother chat experience.
-
-## Testing
-
-- [x] Unit tests pass (all packages)
-- [x] Integration tests pass (messaging, webchat, CLI)
-- [x] Linter passes (`make lint`)
-- [x] Manual testing completed:
-  - [x] CLI update command tested locally
-  - [x] Messaging adapters tested with Slack and Feishu
-  - [x] Webchat performance verified (bundle size 40% reduction)
-- [x] Coverage ≥80% (actual: 82%)
-
-## Performance Impact
-
-- **Webchat**: Bundle size 40% reduction, initial load 2x faster
-- **Messaging**: Reduced memory allocations, better error handling
-- **CLI**: New self-update capability
-
-## Breaking Changes
-
-None. All changes are backward compatible.
-
-## Checklist
-
-- [x] Code follows HotPlex style guidelines
-- [x] All commits use Conventional Commits format
-- [x] Linter passes (`make lint`)
-- [x] Tests pass (`make test`)
-- [x] Coverage ≥80%
-- [x] Documentation updated (godoc comments)
-- [x] No merge conflicts with main
-
-## Commits
-
-This PR contains 4 atomic commits, one per issue:
-1. refactor(messaging): extract BaseAdapter to eliminate duplication
-2. fix(messaging): error handling and concurrency findings
-3. feat(cli): add hotplex update subcommand
-4. perf(webchat): bundle code split and message virtualization
-"
-```
-
-**Why comprehensive PR descriptions matter**:
-- Reviewer understands what you changed and why
-- Future you (or others) can understand the history
-- Easier to review — changes organized by issue
-- Easier to test — know what to test
-
-### 4.7 Monitor and Address Feedback
-
-1. **Wait for CI** — GitHub Actions runs automatically
-2. **Review comments** — Respond to feedback thoughtfully
-3. **Make updates** — Push new commits to same branch
-4. **Request merge** — Once approved and CI passes
-
-**Important**: This is a **batch PR** — all issues ship together. Don't split into multiple PRs after the fact.
-
-### 4.8 Track Progress
-
-Track in `/tmp/pr_tracking.md`:
-
-```markdown
-# HotPlex Batch PR Status
-
-## Batch PR: #XX — Batch: fixes for issues #90, #78, #89, #88
-
-| Issue | Type | Status | Commit | ROI |
-|-------|------|--------|---------|-----|
-| #90 | enhancement | ✅ Implemented | a1b2c3d | 72 |
-| #78 | bug | ✅ Implemented | e4f5g6h | 68 |
-| #89 | performance | ✅ Implemented | i7j8k9l | 45 |
-| #88 | refactor | ✅ Implemented | m0n1o2p | 28 |
-
-## PR Status
-
-- **PR Number**: #XX
-- **Branch**: batch/messaging-cli-fixes-issues-90-78-89-88
-- **CI Status**: ✅ Passed
-- **Review Status**: 👀 In Review
-- **Merge Status**: ⏳ Pending
-
-## Timeline
-
-- Created: 2026-05-01 19:00
-- CI complete: 2026-05-01 19:15
-- Review requested: 2026-05-01 19:20
-- Approved: 2026-05-02 10:30
-- Merged: 2026-05-02 11:00 ✅
-```
+**📚 Detailed implementation guide**: See `references/implementation-guide.md` for complete Phase 4 details including:
+- Step-by-step repository preparation
+- Branch creation and naming conventions
+- Sequential issue implementation workflow
+- Conventional commit message templates
+- Integration testing procedures
+- PR creation with complete template
+
+**Quick overview**:
+
+1. **Prepare repository** — Fetch latest main, ensure clean state
+2. **Create batch branch** — `batch/<theme>-issues-<numbers>`
+3. **Implement issues sequentially** — One commit per issue, following HotPlex standards
+4. **Final integration testing** — Full test suite, linter, build verification
+5. **Push and create PR** — ONE consolidated PR with complete description
+
+**Key implementation standards**:
+- **Go 1.26+** with latest language features
+- **golangci-lint** — run frequently, fix immediately
+- **Test FIRST** — write tests before implementation (TDD)
+- **≥80% coverage** — higher for security/critical paths
+- **Conventional commits** — type(scope): description format
+- **Atomic commits** — each commit independently valid
 
 ## Best Practices
 
-### Issue Selection
-- **Cohesion over quantity** — 3 cohesive issues > 5 unrelated ones
-  - **Why**: Cohesive batches tell a clear story and are easier to review
-- **Manageable scope** — If >3 days work, split into multiple batches
-  - **Why**: Large batches become unreviewable and increase shipping risk
-- **Test thoroughly** — More issues = more complex testing
-  - **Why**: Integration bugs emerge when multiple changes interact
-- **Clear communication** — PR description should explain each issue
-  - **Why**: Reviewers need to understand what changed and why to give good feedback
+### Cohesion over Quantity
 
-### Implementation
-- **Sequential commits** — One logical commit per issue
-  - **Why**: Creates clear, reviewable history that tells a story
-- **Atomic changes** — Each commit independently valid
-  - **Why**: Enables selective reverting if one fix causes problems
-- **Test frequently** — Run tests after each commit
-  - **Why**: Catch problems immediately when they're easier to fix
-- **Clean history** — Rebase if commits become messy
-  - **Why**: Clean history helps future debugging and code archaeology
+Better to ship 3 cohesive issues than 5 unrelated ones. Cohesive batches tell a clear story and are easier to review.
 
-### PR Hygiene
-- **Comprehensive description** — List all issues and changes
-  - **Why**: Reviewers can't approve what they don't understand
-- **Link all issues** — Use "Closes #X, #Y, #Z" format
-  - **Why**: GitHub auto-closes issues on merge, reducing manual work
-- **Checklist included** — Show what was tested and verified
-  - **Why**: Gives confidence that changes were thoroughly validated
-- **Be responsive** — Address review feedback promptly
-  - **Why**: Fast feedback loops keep momentum and prevent stale PRs
+### Test FIRST
+
+Write tests before implementation. Tests serve as executable specs and prevent regressions.
+
+### One Commit Per Issue
+
+Each commit should be atomic and independently valid. This enables:
+- Easy git bisect for debugging
+- Selective revert if needed
+- Clear git history
+
+### Run Full Test Suite
+
+Don't rely on unit tests alone. Run integration tests after all issues implemented to catch interaction bugs.
+
+### Document Changes Clearly
+
+PR description should separate changes by issue with Problem/Solution/Impact structure. This helps reviewers understand what changed and why.
 
 ## Output Artifacts
 
-The skill produces these artifacts:
+Batch issue management produces these artifacts:
 
 1. `/tmp/hotplex_issues.json` — Raw issue data
 2. `/tmp/issue_analysis.md` — Detailed analysis per issue
@@ -657,6 +392,14 @@ The skill produces these artifacts:
 
 ## Example Session
 
+**📚 Complete walkthrough**: See `references/example-session.md` for a full example session showing:
+- Real issue analysis and ROI calculation
+- Cohesive batch selection (4 issues, ROI 278)
+- Sequential implementation with commit messages
+- Complete PR description template
+- Final results and time savings (30% faster than traditional workflow)
+
+**Quick preview**:
 ```
 User: "分析 HotPlex issues 并交付最高优先级的修复"
 
@@ -672,51 +415,38 @@ User: "分析 HotPlex issues 并交付最高优先级的修复"
 9. Implement #89 → commit (independent perf)
 10. Run all tests → verify integration
 11. Push branch
-12. Create ONE PR:
-    - Title: "Batch: fixes and improvements for issues #90, #78, #89, #88"
-    - Closes #90, #78, #89, #88
-13. Wait for CI → fix any issues
-14. Address review feedback
-15. PR merged ✅
-16. Result: One merge, 4 issues resolved
+12. Create ONE PR closing all 4 issues
+13. CI passes, review, merge ✅
+Result: One merge, 4 issues resolved, 30% time savings
 ```
 
 ## Troubleshooting
 
-**Problem**: Can't implement issue A because it depends on issue B
+**📚 Complete troubleshooting guide**: See `references/troubleshooting.md` for detailed solutions to common problems:
 
-**Solution**: 
-- Check dependencies before selecting issues
-- Implement dependencies first in the batch
-- Or defer to next batch
+1. **Can't implement issue A because it depends on issue B**
+   - Check dependencies before selecting
+   - Implement dependencies first in batch
+   - Or defer to next batch
 
-**Problem**: Test failures after implementing all issues
+2. **Test failures after implementing all issues**
+   - Run tests after each commit, not just at end
+   - Use git bisect to find problematic commit
+   - Fix that commit specifically
 
-**Solution**:
-- Run tests after each commit, not just at end
-- Isolate which commit introduced failure
-- Fix that commit, don't just add more commits on top
+3. **CI fails for batch PR**
+   - Check GitHub Actions logs
+   - Ensure Go version matches (1.26)
+   - If one issue causes failure, remove from batch
 
-**Problem**: CI fails for batch PR
+4. **Review feedback asks to split PR**
+   - Explain benefits of batch PR
+   - If reviewer insists, split into logical batches
+   - But prefer keeping batch if issues are cohesive
 
-**Solution**:
-- Check GitHub Actions logs
-- Ensure Go version matches (1.26)
-- Check all dependencies installed
-- If one issue's changes cause CI fail, remove that issue from batch
-
-**Problem**: Review feedback asks to split PR
-
-**Solution**:
-- Explain benefits of batch PR
-- If reviewer insists, split into logical batches
-- But prefer keeping batch if issues are cohesive
-
-**Problem**: Batch becomes too large (>5 issues or >3 days)
-
-**Solution**:
-- Split into multiple batches by theme
-- Example: "messaging fixes batch 1", "messaging fixes batch 2"
+5. **Batch becomes too large (>5 issues or >3 days)**
+   - Split into multiple batches by theme
+   - Example: "messaging fixes batch 1", "messaging fixes batch 2"
 
 ## Key Insight
 
