@@ -366,8 +366,9 @@ func (h *Handler) sendErrorf(ctx context.Context, env *events.Envelope, code eve
 }
 
 // classifyWorkerError converts worker errors into AEP error codes.
-// Errors containing "not running" or "closed" are classified as session
-// terminated; all others are internal errors.
+// Worker processes report termination as "not running" or "closed" errors;
+// these map to ErrCodeSessionTerminated so clients can reconnect rather than
+// treating them as transient internal errors.
 func classifyWorkerError(err error) events.ErrorCode {
 	msg := err.Error()
 	if strings.Contains(msg, "not running") || strings.Contains(msg, "closed") {
