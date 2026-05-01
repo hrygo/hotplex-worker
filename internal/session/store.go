@@ -246,11 +246,22 @@ func (s *SQLiteStore) DeleteTerminated(ctx context.Context, cutoff time.Time) er
 }
 
 func (s *SQLiteStore) DeletePhysical(ctx context.Context, id string) error {
-	// Cascade-delete child rows before the parent session.
-	_, _ = s.db.ExecContext(ctx, queries["store.delete_audit_by_session"], id)
-	_, _ = s.db.ExecContext(ctx, queries["conversation.delete_by_session"], id)
-	_, err := s.db.ExecContext(ctx, queries["store.delete_physical"], id)
-	return err
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("session store: delete physical begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.ExecContext(ctx, queries["store.delete_audit_by_session"], id); err != nil {
+		return fmt.Errorf("session store: delete physical audit: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, queries["conversation.delete_by_session"], id); err != nil {
+		return fmt.Errorf("session store: delete physical conversations: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, queries["store.delete_physical"], id); err != nil {
+		return fmt.Errorf("session store: delete physical session: %w", err)
+	}
+	return tx.Commit()
 }
 
 func (s *SQLiteStore) Close() error {
@@ -305,9 +316,17 @@ func (s *SQLiteStore) AppendAudit(ctx context.Context, action, actorID, sessionI
 		detailsStr = string(detailsJSON)
 	}
 
+	// Wrap all three SQL statements in a transaction to prevent hash chain
+	// corruption from concurrent calls.
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("session store: audit begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
 	var previousHash string
 	var lastID int64
-	row := s.db.QueryRowContext(ctx, queries["store.get_last_audit"])
+	row := tx.QueryRowContext(ctx, queries["store.get_last_audit"])
 	if err := row.Scan(&lastID, &previousHash); err != nil && err != sql.ErrNoRows {
 		return fmt.Errorf("session store: get last audit entry: %w", err)
 	}
@@ -317,7 +336,7 @@ func (s *SQLiteStore) AppendAudit(ctx context.Context, action, actorID, sessionI
 
 	timestamp := time.Now().UnixMilli()
 
-	res, err := s.db.ExecContext(ctx, queries["store.append_audit"],
+	res, err := tx.ExecContext(ctx, queries["store.append_audit"],
 		timestamp, action, actorID, sessionID, detailsStr, previousHash)
 	if err != nil {
 		return fmt.Errorf("session store: insert audit: %w", err)
@@ -332,12 +351,12 @@ func (s *SQLiteStore) AppendAudit(ctx context.Context, action, actorID, sessionI
 	hash := sha256.Sum256([]byte(data))
 	currentHash := hex.EncodeToString(hash[:])
 
-	_, err = s.db.ExecContext(ctx, queries["store.update_audit_hash"], currentHash, id)
+	_, err = tx.ExecContext(ctx, queries["store.update_audit_hash"], currentHash, id)
 	if err != nil {
 		return fmt.Errorf("session store: update audit hash: %w", err)
 	}
 
-	return nil
+	return tx.Commit()
 }
 
 type AuditRecord struct {
