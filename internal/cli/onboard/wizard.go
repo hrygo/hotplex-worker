@@ -696,8 +696,15 @@ func stepAgentConfig() (StepResult, []string) {
 			}
 			return StepResult{Name: "agent_config", Status: "warn", Detail: "write " + t.Name + ": " + err.Error()}, created
 		}
-		_, _ = fh.WriteString(t.Content)
-		_ = fh.Close()
+		if _, err := fh.WriteString(t.Content); err != nil {
+			fh.Close()
+			os.Remove(path)
+			return StepResult{Name: "agent_config", Status: "warn", Detail: "write " + t.Name + ": " + err.Error()}, created
+		}
+		if err := fh.Close(); err != nil {
+			os.Remove(path)
+			return StepResult{Name: "agent_config", Status: "warn", Detail: "close " + t.Name + ": " + err.Error()}, created
+		}
 		created = append(created, t.Name)
 	}
 
