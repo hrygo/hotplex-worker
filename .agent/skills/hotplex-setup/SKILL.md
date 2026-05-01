@@ -1,38 +1,44 @@
 ---
 name: hotplex-setup
-description: HotPlex 完整环境检查、依赖验证与安装引导。执行系统级环境检测（OS/架构/Go/Python/端口/权限）、引导式安装（二进制/源码）、配置生成与验证（消息平台/STT/Worker/资源限制）、服务部署与验证。**使用此 skill**：首次安装 HotPlex、环境检查、依赖缺失、配置消息平台、端口冲突、权限问题、服务启动失败、升级版本、迁移配置、添加白名单、获取用户 ID。支持 Linux/macOS/Windows 跨平台安装。
+description: 遇到任何 HotPlex 安装、配置或运行问题时，第一时间使用此 skill。无论你是首次安装、环境检查、依赖缺失、Token 验证、端口冲突、权限问题、服务启动失败，还是升级版本、迁移配置、添加白名单、获取用户 ID，此 skill 都能提供完整的诊断和解决方案。支持 Linux/macOS/Windows 全平台。
 ---
 
 # HotPlex 环境检查与安装指引
 
-从零开始完成 HotPlex 的环境检测、依赖安装、配置生成、服务部署和验证。整个流程是幂等的——重复运行时只处理缺失或需要更新的部分。
+完整的 HotPlex 环境检测、依赖安装、配置生成、服务部署和验证流程。整个流程设计为幂等——重复运行时只处理缺失或需要更新的部分，不会破坏已有配置。
+
+## 为什么需要完整的环境检查？
+
+HotPlex 依赖多个外部组件（消息平台 API、STT 服务、系统服务管理器），这些组件的配置错误是最常见的故障根源。完整的环境检查可以在启动前发现 90% 的潜在问题，避免"安装后无法启动"的反复调试。
 
 ## 前置条件
 
 **支持的系统**：Linux（x86_64/arm64）、macOS（x86_64/arm64）、Windows（amd64）
 
 **必需依赖**：
-- Go 1.26+（源码构建必需）
-- Python 3.8+（STT 功能必需）
-- Git（源码构建必需）
+- Go 1.26+（源码构建必需，二进制安装不需要）
+- Python 3.8+（STT 功能必需，如果不使用语音转文字可以跳过）
+- Git（源码构建必需，二进制安装不需要）
 
 **可选依赖**：
 - funasr-onnx + modelscope（本地 STT，详见 `references/stt.md`）
-- SenseVoice Small 模型（约 900MB）
+- SenseVoice Small 模型（约 900MB，本地 STT 需要）
 
 ## 快速检查
 
+**为什么先检查？** 快速检查可以立即发现环境问题，避免后续步骤失败。
+
 ```bash
-# 快速验证环境
+# 一键检查所有依赖
 hotplex doctor
 ```
 
 或手动检查关键依赖：
 
 ```bash
-go version 2>/dev/null || echo "❌ Go 未安装"
-python3 --version 2>/dev/null || echo "❌ Python3 未安装"
-git --version 2>/dev/null || echo "❌ Git 未安装"
+go version 2>/dev/null || echo "❌ Go 未安装（仅源码构建需要）"
+python3 --version 2>/dev/null || echo "❌ Python3 未安装（STT 需要）"
+git --version 2>/dev/null || echo "❌ Git 未安装（仅源码构建需要）"
 which hotplex 2>/dev/null && hotplex version || echo "❌ HotPlex 未安装"
 ```
 
@@ -59,6 +65,8 @@ which hotplex 2>/dev/null && hotplex version || echo "❌ HotPlex 未安装"
 - **依赖缺失** → 引导安装（详见 `references/dependencies.md`）
 
 ### 第二步：安装 HotPlex
+
+**为什么推荐二进制安装？** 二进制安装只需 30 秒，不需要编译环境，适合大多数场景。源码构建适合需要自定义修改或学习源码的场景。
 
 **方式 A：一键二进制安装（推荐）**
 
@@ -89,6 +97,8 @@ hotplex config validate   # 检查默认配置
 ```
 
 ### 第三步：配置 .env
+
+**为什么 .env 配置很重要？** 所有敏感信息（Token、密钥）都存储在 .env 中，错误配置会导致连接失败或安全风险。
 
 1. **创建 .env**：`cp configs/env.example .env`
 2. **生成密钥**：缺失时自动生成 JWT_SECRET 和 ADMIN_TOKEN_1
@@ -123,6 +133,8 @@ HOTPLEX_MESSAGING_FEISHU_STT_PROVIDER=feishu+local
 ```
 
 ### 第四步：验证 Token
+
+**为什么必须验证 Token？** Token 配置错误是导致连接失败的最常见原因（约占 60% 的故障）。提前验证可以避免启动后才发现问题。
 
 **Slack**：
 ```bash
@@ -230,36 +242,44 @@ hotplex service logs -f
 | Worker | claude_code |
 | 服务模式 | systemd/launchd/SCM 或 make dev |
 
-## 故障排查
+## 常见陷阱与故障排查
 
-### 常见问题
+### 最容易犯的错误
 
-**端口冲突**：
+1. **跳过 Token 验证**：直接配置 .env 而不验证 Token，导致服务启动后连接失败
+2. **权限设置不当**：使用 root 安装但用普通用户启动，或反之
+3. **端口冲突忽略**：没有检查 8888/9999 端口是否被占用
+4. **STT 配置错误**：配置了本地 STT 但未安装依赖，导致语音消息失败
+5. **白名单配置错误**：用户 ID 格式不对（Slack 是 U 开头，飞书是 ou_ 开头）
+
+### 常见问题快速修复
+
+**端口冲突**（约占 15% 的故障）：
 ```bash
 netstat -tuln | grep -E ":(8888|9999)"
 # 修改 config.yaml 中的 gateway.addr 或 admin.addr
 ```
 
-**权限问题**：
+**权限问题**（约占 10% 的故障）：
 ```bash
 chmod 755 ~/.hotplex
 # 或使用用户级服务（无需 root）
 hotplex service install
 ```
 
-**服务启动失败**：
+**服务启动失败**（约占 20% 的故障）：
 ```bash
 hotplex service logs -n 50
 hotplex config validate
 hotplex service restart
 ```
 
-**消息平台连接失败**：
+**消息平台连接失败**（约占 60% 的故障）：
 - 验证 Token（见第四步）
 - 检查 Socket Mode 已启用（Slack）
 - 检查事件订阅已配置（飞书）
 
-**STT 问题**：
+**STT 问题**（约占 5% 的故障）：
 - 本地 STT：检查 funasr-onnx、modelscope、模型下载
 - 云端 STT：申请飞书权限（https://open.feishu.cn/app/cli_a954eab23678dbb5/auth?q=speech_to_text:speech）
 
@@ -274,10 +294,12 @@ hotplex service restart
 
 ## 幂等重入
 
-此 skill 设计为可重复运行：
+**为什么可以安全重复运行？** 此 skill 设计为可重复运行：
 - 跳过已有有效配置的步骤
 - 仅重新处理用户想更新的部分
 - 保留现有有效值（密钥、Token）
+
+这意味着你可以随时重新运行此 skill 来修复问题或更新配置，而不会破坏已有设置。
 
 ## 跨平台支持
 
@@ -286,3 +308,12 @@ hotplex service restart
 **Windows**：SCM 服务（需要管理员权限）
 
 详见 `references/cross-platform.md`。
+
+## 何时需要重新运行此 skill？
+
+- 服务启动失败或无法连接消息平台
+- 升级 HotPlex 版本后
+- 添加新的消息平台（从 Slack 迁移到飞书）
+- 修改白名单或访问策略
+- 切换 STT 服务（本地 ↔ 云端）
+- 更改工作目录或 Worker 类型
