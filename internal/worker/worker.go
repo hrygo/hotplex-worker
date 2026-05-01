@@ -190,6 +190,9 @@ type SessionInfo struct {
 	// ConfigEnv holds extra env vars from worker.environment config. These always
 	// override values from os.Environ(), even for whitelisted keys (e.g. BUN_RUNTIME_NV).
 	ConfigEnv []string
+	// ConfigWhitelist holds additional env var names from worker.env_whitelist config.
+	// These are merged with the hardcoded per-worker whitelist in BuildEnv.
+	ConfigWhitelist []string
 	// PermissionMode controls how the worker handles permission requests.
 	// Valid values: "default", "plan", "auto-accept".
 	PermissionMode string

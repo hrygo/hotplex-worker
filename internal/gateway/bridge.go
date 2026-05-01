@@ -47,9 +47,10 @@ type Bridge struct {
 	retryCancelMu sync.Mutex
 	retryCancel   map[string]chan struct{} // sessionID → cancel channel
 
-	agentConfigDir string        // agent config directory path; "" = disabled
-	turnTimeout    time.Duration // per-turn timeout; 0 = disabled
-	workerEnv      []string      // extra env vars from worker.environment config
+	agentConfigDir     string        // agent config directory path; "" = disabled
+	turnTimeout        time.Duration // per-turn timeout; 0 = disabled
+	workerEnv          []string      // extra env vars from worker.environment config
+	workerEnvWhitelist []string      // extra whitelist entries from worker.env_whitelist config
 
 	accum   map[string]*sessionAccumulator // per-session stats accumulator
 	accumMu sync.Mutex
@@ -71,19 +72,20 @@ const (
 // NewBridge creates a new bridge.
 func NewBridge(deps BridgeDeps) *Bridge {
 	return &Bridge{
-		log:            deps.Log.With("component", "bridge"),
-		hub:            deps.Hub,
-		sm:             deps.SM,
-		wf:             defaultWorkerFactory{},
-		convStore:      deps.ConvStore,
-		collector:      deps.EventCollector,
-		retryCtrl:      deps.RetryCtrl,
-		agentConfigDir: deps.AgentConfigDir,
-		turnTimeout:    deps.TurnTimeout,
-		workerEnv:      deps.WorkerEnv,
-		retryCancel:    make(map[string]chan struct{}),
-		accum:          make(map[string]*sessionAccumulator),
-		crashTracker:   make(map[string]*crashHistory),
+		log:                deps.Log.With("component", "bridge"),
+		hub:                deps.Hub,
+		sm:                 deps.SM,
+		wf:                 defaultWorkerFactory{},
+		convStore:          deps.ConvStore,
+		collector:          deps.EventCollector,
+		retryCtrl:          deps.RetryCtrl,
+		agentConfigDir:     deps.AgentConfigDir,
+		turnTimeout:        deps.TurnTimeout,
+		workerEnv:          deps.WorkerEnv,
+		workerEnvWhitelist: deps.WorkerEnvWhitelist,
+		retryCancel:        make(map[string]chan struct{}),
+		accum:              make(map[string]*sessionAccumulator),
+		crashTracker:       make(map[string]*crashHistory),
 	}
 }
 
@@ -119,11 +121,12 @@ func (b *Bridge) StartSession(ctx context.Context, id, userID, botID string, wt 
 
 	// Start worker.
 	workerInfo := worker.SessionInfo{
-		SessionID:    id,
-		UserID:       userID,
-		ProjectDir:   workDir,
-		AllowedTools: si.AllowedTools,
-		ConfigEnv:    b.workerEnv,
+		SessionID:       id,
+		UserID:          userID,
+		ProjectDir:      workDir,
+		AllowedTools:    si.AllowedTools,
+		ConfigEnv:       b.workerEnv,
+		ConfigWhitelist: b.workerEnvWhitelist,
 	}
 	b.injectAgentConfig(&workerInfo, platform)
 	if err := w.Start(ctx, workerInfo); err != nil {
@@ -219,6 +222,7 @@ func (b *Bridge) resumeWithOpts(ctx context.Context, id, workDir string, opts fo
 		WorkerSessionID: si.WorkerSessionID,
 		ProjectDir:      workDir,
 		ConfigEnv:       b.workerEnv,
+		ConfigWhitelist: b.workerEnvWhitelist,
 	}
 	b.injectAgentConfig(&workerInfo, si.Platform)
 	if err := w.Resume(ctx, workerInfo); err != nil {
@@ -770,6 +774,7 @@ func (b *Bridge) attemptResumeFallback(p fallbackParams) bool {
 		WorkerSessionID: si.WorkerSessionID,
 		ProjectDir:      p.workDir,
 		ConfigEnv:       b.workerEnv,
+		ConfigWhitelist: b.workerEnvWhitelist,
 	}
 	b.injectAgentConfig(&workerInfo, si.Platform)
 	if err := w.Start(context.Background(), workerInfo); err != nil {
@@ -1068,6 +1073,7 @@ func (b *Bridge) SwitchWorkDirInPlace(ctx context.Context, sessionID, newWorkDir
 		AllowedTools:    si.AllowedTools,
 		WorkerSessionID: si.WorkerSessionID,
 		ConfigEnv:       b.workerEnv,
+		ConfigWhitelist: b.workerEnvWhitelist,
 	}
 	b.injectAgentConfig(&workerInfo, si.Platform)
 	if err := w.Start(ctx, workerInfo); err != nil {
