@@ -131,6 +131,8 @@ func TestValidateWorkDir(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := t.TempDir()
+	currentUser := getCurrentUser()
+
 
 	tests := []struct {
 		name    string
@@ -159,9 +161,9 @@ func TestValidateWorkDir(t *testing.T) {
 		{"System forbidden (macOS)", "/System", true},
 		{"tmp dir allowed", tmpDir, false},
 		{"non-existent clean path allowed", filepath.Join(tmpDir, "nonexistent", "project"), false},
-		{"current user home allowed", "/home/hotplex/workspace", false},
-		{"current user home sub allowed", "/home/hotplex/projects/test", false},
-		{"current user usr/local allowed", "/usr/local/hotplex/bin", false},
+		{"current user home allowed", "/home/" + currentUser + "/workspace", false},
+		{"current user home sub allowed", "/home/" + currentUser + "/projects/test", false},
+		{"current user usr/local allowed", "/usr/local/" + currentUser + "/bin", false},
 		{"other user home rejected", "/home/otheruser/workspace", true},
 		{"other user usr/local rejected", "/usr/local/otheruser/bin", true},
 		{"usr/local without username rejected", "/usr/local/bin", true},
