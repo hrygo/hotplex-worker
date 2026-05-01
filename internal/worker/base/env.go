@@ -34,6 +34,15 @@ func BuildEnv(session worker.SessionInfo, whitelist []string, workerTypeLabel st
 		}
 	}
 
+	// Merge config-driven whitelist (worker.env_whitelist) into the set.
+	for _, k := range session.ConfigWhitelist {
+		if strings.HasSuffix(k, "_") {
+			prefixKeys = append(prefixKeys, k)
+		} else {
+			whitelistSet[k] = true
+		}
+	}
+
 	// Iterate os.Environ(), keep if in whitelist (exact or prefix) OR in session.Env.
 	for _, e := range os.Environ() {
 		parts := strings.SplitN(e, "=", 2)

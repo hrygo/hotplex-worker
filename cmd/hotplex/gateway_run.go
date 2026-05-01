@@ -252,14 +252,15 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 	}
 
 	bridge := gateway.NewBridge(gateway.BridgeDeps{
-		Log:            log,
-		Hub:            hub,
-		SM:             sm,
-		ConvStore:      convStore,
-		RetryCtrl:      retryCtrl,
-		AgentConfigDir: agentConfigDir,
-		TurnTimeout:    cfg.Worker.TurnTimeout,
-		WorkerEnv:      cfg.Worker.Environment,
+		Log:                log,
+		Hub:                hub,
+		SM:                 sm,
+		ConvStore:          convStore,
+		RetryCtrl:          retryCtrl,
+		AgentConfigDir:     agentConfigDir,
+		TurnTimeout:        cfg.Worker.TurnTimeout,
+		WorkerEnv:          cfg.Worker.Environment,
+		WorkerEnvWhitelist: cfg.Worker.EnvWhitelist,
 	})
 
 	handler := gateway.NewHandler(gateway.HandlerDeps{
