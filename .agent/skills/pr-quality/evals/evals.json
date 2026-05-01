@@ -1,0 +1,108 @@
+{
+  "skill_name": "pr-quality",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "开发完成了，帮我创建 PR",
+      "expected_output": "AI 应该自动运行 make test 和 make lint，分析架构影响，生成符合 HotPlex 规范的 commit message（架构感知 scope），检测 fork 远程仓库并推送，创建到 hrygo/hotplex 的 PR（标注架构影响），监控跨平台 CI 状态并智能处理失败",
+      "assertions": [
+        {
+          "name": "运行测试",
+          "check": "输出中包含 'make test' 或测试通过的信息"
+        },
+        {
+          "name": "运行 lint",
+          "check": "输出中包含 'make lint' 或 lint 通过的信息"
+        },
+        {
+          "name": "生成 commit message",
+          "check": "生成包含 type(scope): subject 格式的 commit message"
+        },
+        {
+          "name": "创建 PR",
+          "check": "输出中包含 'gh pr create' 或 PR 创建成功的信息"
+        },
+        {
+          "name": "监控 CI",
+          "check": "输出中包含 CI 检查或监控的信息"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "CI 失败了，帮我修复",
+      "expected_output": "AI 应该查看 CI 失败日志，分析错误模式（包括跨平台错误），提供针对性修复建议，特别是跨平台兼容性问题",
+      "assertions": [
+        {
+          "name": "查看 CI 日志",
+          "check": "输出中包含查看日志或分析失败的步骤"
+        },
+        {
+          "name": "分析错误原因",
+          "check": "输出中包含错误分析或失败原因"
+        },
+        {
+          "name": "提供修复建议",
+          "check": "输出中包含修复建议或解决方案"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "codecov 覆盖率不够，怎么办？",
+      "expected_output": "AI 应该分析 codecov 失败原因，判断是否存在实质性障碍，评估 ROI，根据 HotPlex 项目实战经验决策是否需要添加测试或在 PR 中说明",
+      "assertions": [
+        {
+          "name": "分析 codecov 失败",
+          "check": "输出中包含 codecov 分析或覆盖率检查"
+        },
+        {
+          "name": "判断实质性障碍",
+          "check": "输出中包含实质性障碍或 ROI 分析"
+        },
+        {
+          "name": "提供决策建议",
+          "check": "输出中包含是否修复的建议或在 PR 中说明"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "修改了 worker/ocs 的代码，准备提交",
+      "expected_output": "AI 应该自动识别修改影响 OCS worker，生成包含 worker/ocs scope 的 commit message，在 PR 描述中标注架构影响（Worker: OCS）",
+      "assertions": [
+        {
+          "name": "识别架构影响",
+          "check": "输出中包含 'worker/ocs' 或 'OCS worker' 的架构分析"
+        },
+        {
+          "name": "生成架构感知 commit",
+          "check": "commit message 包含 'worker/ocs' scope"
+        },
+        {
+          "name": "标注架构影响",
+          "check": "PR 描述中包含 Worker: OCS 的架构影响标注"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "Windows CI 失败了，怎么办？",
+      "expected_output": "AI 应该分析 Windows 特定的失败原因，检查是否使用了平台特定代码（如硬编码路径分隔符、POSIX 信号等），提供跨平台修复建议（如使用 filepath.Join、process.Kill 等）",
+      "assertions": [
+        {
+          "name": "分析平台特定失败",
+          "check": "输出中包含 Windows 或平台特定的分析"
+        },
+        {
+          "name": "检查跨平台代码",
+          "check": "输出中包含跨平台或平台特定代码的检查"
+        },
+        {
+          "name": "提供跨平台修复建议",
+          "check": "输出中包含跨平台修复建议（如 filepath.Join、process.Kill）"
+        }
+      ]
+    }
+  ]
+}
