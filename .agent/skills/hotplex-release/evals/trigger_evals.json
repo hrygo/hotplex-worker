@@ -1,0 +1,105 @@
+{
+  "skill_name": "hotplex-release",
+  "trigger_evals": [
+    {
+      "query": "Create a new release for HotPlex v1.3.0",
+      "should_trigger": true,
+      "reason": "Direct request to create a release"
+    },
+    {
+      "query": "What's the process for releasing a new version?",
+      "should_trigger": true,
+      "reason": "Asking about release process"
+    },
+    {
+      "query": "Bump the version to v1.2.1 and update the changelog",
+      "should_trigger": true,
+      "reason": "Version bump and changelog update are core release tasks"
+    },
+    {
+      "query": "I need to tag and publish v1.4.0",
+      "should_trigger": true,
+      "reason": "Tag and publish are release workflow steps"
+    },
+    {
+      "query": "Prepare release notes for the upcoming version",
+      "should_trigger": true,
+      "reason": "Release preparation involves changelog/release notes"
+    },
+    {
+      "query": "What changes go into the next release?",
+      "should_trigger": true,
+      "reason": "Release workflow includes change collection"
+    },
+    {
+      "query": "Update version numbers across all files for v2.0.0",
+      "should_trigger": true,
+      "reason": "Version unification is Step 4 of release workflow"
+    },
+    {
+      "query": "Create a git tag for the new version",
+      "should_trigger": true,
+      "reason": "Tag creation is Step 6 of release workflow"
+    },
+    {
+      "query": "Generate GitHub Release from our changelog",
+      "should_trigger": true,
+      "reason": "GitHub Release creation is Step 7"
+    },
+    {
+      "query": "We're ready to ship v1.5.0, help me with the release",
+      "should_trigger": true,
+      "reason": "Shipping/release language"
+    },
+    {
+      "query": "Read the release notes for HotPlex v1.2.0",
+      "should_trigger": false,
+      "reason": "Reading existing release, not creating one"
+    },
+    {
+      "query": "Release the memory cache",
+      "should_trigger": false,
+      "reason": "Memory management, not software release"
+    },
+    {
+      "query": "When did you release the last message?",
+      "should_trigger": false,
+      "reason": "Message sending, not software release"
+    },
+    {
+      "query": "New version of Go released",
+      "should_trigger": false,
+      "reason": "External software release, not HotPlex release"
+    },
+    {
+      "query": "Wait for the mutex lock to be released",
+      "should_trigger": false,
+      "reason": "Lock release, not software release"
+    },
+    {
+      "query": "Press release about the new product",
+      "should_trigger": false,
+      "reason": "PR/Marketing release, not software version release"
+    },
+    {
+      "query": "What's in the latest release of VS Code?",
+      "should_trigger": false,
+      "reason": "Querying external software release, not creating HotPlex release"
+    },
+    {
+      "query": "Release the allocated memory",
+      "should_trigger": false,
+      "reason": "Memory deallocation, not software release"
+    },
+    {
+      "query": "The new movie release date",
+      "should_trigger": false,
+      "reason": "Entertainment release, not software"
+    },
+    {
+      "query": "Depends on the latest release of the library",
+      "should_trigger": false,
+      "reason": "Referencing external dependency, not creating HotPlex release"
+    }
+  ]
+}

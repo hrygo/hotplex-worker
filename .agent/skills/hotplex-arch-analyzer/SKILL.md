@@ -1,6 +1,6 @@
 ---
-name: arch-deep-analyzer
-description: "Deep architecture and non-functional analysis for systematic codebase auditing. Breaks analysis into module-by-module passes, tracks progress across sessions, prioritizes least-analyzed modules, and creates GitHub issues with detailed Acceptance Criteria. Designed for /loop recurring execution. Activate when user says: 'arch analysis', 'analyze architecture', 'audit code', 'code quality review', 'non-functional check', 'deep analysis', '架构分析', '深度分析', '代码审计', '非功能性检查', or when running /loop with any of these phrases. Also triggers when user asks to review module quality, check SOLID/DRY compliance, or systematically improve codebase health."
+name: hotplex-arch-analyzer
+description: HotPlex 项目深度架构和非功能分析，系统性代码库审计。增量式模块分析、跨会话进度追踪、优先分析最少审计模块、自动创建 GitHub Issue 和验收标准。**使用此 skill**：架构分析、代码审计、质量审查、非功能性检查、SOLID/DRY 合规检查、代码健康度改进、模块质量评估。**HotPlex 专用**，针对 Gateway 多层架构（WebSocket/Session/Worker/Messaging）优化分析。支持 /loop 循环执行，适用于大型 Go 代码库的渐进式分析。
 ---
 
 # Architecture Deep Analyzer

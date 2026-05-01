@@ -1,0 +1,128 @@
+{
+  "skill_name": "hotplex-arch-analyzer",
+  "evals": [
+    {
+      "id": 1,
+      "name": "first-analysis-cycle",
+      "prompt": "Analyze the HotPlex gateway module for SOLID violations and DRY issues. This is the first architecture analysis pass.",
+      "expected_output": "Skill should initialize progress file, discover modules, select internal/gateway (analysis_count=0), pick 2-3 aspects from Phase 1 (SOLID, DRY, Coupling), read all gateway source files, identify concrete findings with file:line references, code snippets, and severity ratings, triage by confidence/ROI, create GitHub issue with structured template, update progress.json, and report coverage matrix.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "progress-initialized",
+          "text": "Progress file created at .claude/arch-analysis/progress.json",
+          "check_type": "file_exists",
+          "file": ".claude/arch-analysis/progress.json"
+        },
+        {
+          "name": "modules-discovered",
+          "text": "Modules discovered and listed in progress",
+          "check_type": "output_contains",
+          "pattern": "modules discovered|gateway|session|messaging|worker"
+        },
+        {
+          "name": "aspect-selected",
+          "text": "Phase 1 aspects selected (SOLID, DRY, or Coupling)",
+          "check_type": "output_contains",
+          "pattern": "SOLID|DRY|coupling|Phase 1|aspect"
+        },
+        {
+          "name": "findings-concrete",
+          "text": "Findings include file:line references and code snippets",
+          "check_type": "output_contains",
+          "pattern": "\\.go:\\d+|`.*go`|location|file"
+        },
+        {
+          "name": "issue-created",
+          "text": "GitHub issue created with structured format",
+          "check_type": "output_contains",
+          "pattern": "issue created|gh issue|github\\.com"
+        },
+        {
+          "name": "progress-updated",
+          "text": "Progress updated with analysis_count and aspects_covered",
+          "check_type": "output_contains",
+          "pattern": "progress updated|analysis_count|aspects_covered"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "subsequent-cycle-target-selection",
+      "prompt": "Continue the architecture analysis. Pick the next module that needs analysis.",
+      "expected_output": "Skill should load existing progress.json, select module with lowest analysis_count (preferably 0), select 2-3 pending aspects, execute deep analysis, create GitHub issue, update progress, and show coverage matrix with visual progress of all modules.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "progress-loaded",
+          "text": "Existing progress file loaded",
+          "check_type": "output_contains",
+          "pattern": "progress loaded|analysis_count|existing"
+        },
+        {
+          "name": "module-selected-by-priority",
+          "text": "Module selected based on lowest analysis_count",
+          "check_type": "output_contains",
+          "pattern": "selected|target|analysis_count.*0|least covered"
+        },
+        {
+          "name": "aspects-from-phase",
+          "text": "Aspects selected from appropriate phase",
+          "check_type": "output_contains",
+          "pattern": "Phase|aspects.*pending|selected.*aspect"
+        },
+        {
+          "name": "coverage-matrix-shown",
+          "text": "Coverage matrix displayed with module progress",
+          "check_type": "output_contains",
+          "pattern": "coverage|matrix|Ph1|Ph2|module.*analysis"
+        },
+        {
+          "name": "next-target-identified",
+          "text": "Next target module identified for subsequent cycle",
+          "check_type": "output_contains",
+          "pattern": "next target|next module|subsequent"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "name": "re-analysis-with-depth",
+      "prompt": "The internal/session module has all aspects covered. Re-analyze it for deeper insights.",
+      "expected_output": "Skill should detect all aspects covered for session, select oldest phase (Phase 1) for re-analysis, perform deeper investigation looking for missed issues or new patterns, create GitHub issue with refined findings, increment analysis_count (now 2+), and explain this is a depth pass.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "all-covered-detected",
+          "text": "Detected all aspects previously covered",
+          "check_type": "output_contains",
+          "pattern": "all.*covered|Phase.*done|aspects_covered.*12"
+        },
+        {
+          "name": "re-analysis-selected",
+          "text": "Re-analysis of oldest phase selected",
+          "check_type": "output_contains",
+          "pattern": "re-analy|depth pass|deeper|oldest phase"
+        },
+        {
+          "name": "new-findings-identified",
+          "text": "New or refined findings identified",
+          "check_type": "output_contains",
+          "pattern": "finding|issue|violat|pattern"
+        },
+        {
+          "name": "analysis-count-incremented",
+          "text": "analysis_count incremented (2+)",
+          "check_type": "output_contains",
+          "pattern": "analysis_count.*2|incremented|pass.*2"
+        },
+        {
+          "name": "depth-explained",
+          "text": "Re-analysis purpose explained (deeper insights)",
+          "check_type": "output_contains",
+          "pattern": "deeper|missed|refine|depth"
+        }
+      ]
+    }
+  ]
+}

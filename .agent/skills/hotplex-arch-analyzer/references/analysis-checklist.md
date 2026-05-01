@@ -1,6 +1,22 @@
-# Analysis Aspect Checklists
+# HotPlex Architecture Analysis Checklist
 
-Detailed checklists for each analysis aspect. Reference during Step 4 (Deep Analysis).
+HotPlex Worker Gateway 专用架构分析检查清单。针对以下核心架构层次优化分析：
+
+**核心架构层次**：
+- Gateway 层：WebSocket 连接管理、事件分发、AEP 协议
+- Session 层：5 状态机、SQLite 持久化、PoolManager
+- Worker 层：Claude Code、OpenCode Server、Pi-mono 适配器
+- Messaging 层：Slack、飞书双向消息适配
+- Agent Config 层：B/C 通道人格注入
+
+**关键设计模式**：
+- DI 手动注入（无 wire/dig）
+- BaseWorker 嵌入模式
+- PlatformConn 接口抽象
+- SharedTranscriber 引用计数
+- atomic.Value/atomic.Pointer 无锁单例
+
+---
 
 ## 1. SOLID Principles
 
