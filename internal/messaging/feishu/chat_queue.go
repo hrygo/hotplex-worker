@@ -51,11 +51,11 @@ func (q *ChatQueue) Enqueue(chatID string, task func(ctx context.Context) error)
 			tasks: make(chan func(ctx context.Context) error, 64),
 		}
 		q.workers[chatID] = w
+		q.wg.Add(1) // move inside lock — prevents Close() from seeing worker without wg count
 	}
 	q.mu.Unlock()
 
 	if !exists {
-		q.wg.Add(1)
 		go q.runWorker(chatID, w)
 	}
 

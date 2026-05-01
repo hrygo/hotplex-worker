@@ -290,10 +290,10 @@ func (m *Manager) transitionState(ctx context.Context, ms *managedSession, from,
 	}
 
 	if m.StateNotifier != nil {
-		go m.StateNotifier(ctx, ms.info.ID, to, "")
+		m.safeGo(func() { m.StateNotifier(ctx, ms.info.ID, to, "") })
 	}
 	if (to == events.StateTerminated || to == events.StateDeleted) && m.OnTerminate != nil {
-		go m.OnTerminate(ms.info.ID)
+		m.safeGo(func() { m.OnTerminate(ms.info.ID) })
 	}
 
 	return nil
@@ -526,10 +526,10 @@ func (m *Manager) Delete(ctx context.Context, id string) error {
 	m.mu.Unlock()
 
 	if m.StateNotifier != nil {
-		go m.StateNotifier(ctx, id, events.StateDeleted, "session deleted")
+		m.safeGo(func() { m.StateNotifier(ctx, id, events.StateDeleted, "session deleted") })
 	}
 	if m.OnTerminate != nil {
-		go m.OnTerminate(id)
+		m.safeGo(func() { m.OnTerminate(id) })
 	}
 
 	m.log.Info("session: deleted", "session_id", id)
@@ -942,6 +942,21 @@ func (m *Manager) gc(ctx context.Context) {
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+// safeGo runs fn in a goroutine with panic recovery. Panics are logged with
+// stack trace instead of crashing the entire process.
+func (m *Manager) safeGo(fn func()) {
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				m.log.Error("session: callback panic",
+					"panic", r,
+					"stack", string(debug.Stack()))
+			}
+		}()
+		fn()
+	}()
+}
 
 func (m *Manager) getManagedSession(id string) *managedSession {
 	m.mu.RLock()

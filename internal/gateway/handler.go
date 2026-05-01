@@ -365,6 +365,18 @@ func (h *Handler) sendErrorf(ctx context.Context, env *events.Envelope, code eve
 	return fmt.Errorf("%s: %s", code, fmt.Sprintf(format, args...))
 }
 
+// classifyWorkerError converts worker errors into AEP error codes.
+// Worker processes report termination as "not running" or "closed" errors;
+// these map to ErrCodeSessionTerminated so clients can reconnect rather than
+// treating them as transient internal errors.
+func classifyWorkerError(err error) events.ErrorCode {
+	msg := err.Error()
+	if strings.Contains(msg, "not running") || strings.Contains(msg, "closed") {
+		return events.ErrCodeSessionTerminated
+	}
+	return events.ErrCodeInternalError
+}
+
 // validateOwner checks ownership and returns the session in one call.
 // This avoids the double-fetch that calling ValidateOwnership then Get separately incurs.
 func (h *Handler) validateOwner(_ context.Context, env *events.Envelope) (*session.SessionInfo, error) {
@@ -607,10 +619,7 @@ func (h *Handler) handleWorkerCommand(ctx context.Context, env *events.Envelope)
 	case events.StdioContextUsage:
 		resp, err := cr.SendControlRequest(ctrlCtx, "get_context_usage", nil)
 		if err != nil {
-			code := events.ErrCodeInternalError
-			if strings.Contains(err.Error(), "not running") || strings.Contains(err.Error(), "closed") {
-				code = events.ErrCodeSessionTerminated
-			}
+			code := classifyWorkerError(err)
 			return h.sendErrorf(ctx, env, code, "context query: %v", err)
 		}
 		data := events.MapContextUsageResponse(resp)
@@ -624,10 +633,7 @@ func (h *Handler) handleWorkerCommand(ctx context.Context, env *events.Envelope)
 	case events.StdioMCPStatus:
 		resp, err := cr.SendControlRequest(ctrlCtx, "mcp_status", nil)
 		if err != nil {
-			code := events.ErrCodeInternalError
-			if strings.Contains(err.Error(), "not running") || strings.Contains(err.Error(), "closed") {
-				code = events.ErrCodeSessionTerminated
-			}
+			code := classifyWorkerError(err)
 			return h.sendErrorf(ctx, env, code, "mcp status: %v", err)
 		}
 		data := events.MapMCPStatusResponse(resp)
@@ -648,10 +654,7 @@ func (h *Handler) handleWorkerCommand(ctx context.Context, env *events.Envelope)
 		}
 		_, err := cr.SendControlRequest(ctrlCtx, "set_model", map[string]any{"model": modelName})
 		if err != nil {
-			code := events.ErrCodeInternalError
-			if strings.Contains(err.Error(), "not running") || strings.Contains(err.Error(), "closed") {
-				code = events.ErrCodeSessionTerminated
-			}
+			code := classifyWorkerError(err)
 			return h.sendErrorf(ctx, env, code, "set model: %v", err)
 		}
 
@@ -665,10 +668,7 @@ func (h *Handler) handleWorkerCommand(ctx context.Context, env *events.Envelope)
 		}
 		_, err := cr.SendControlRequest(ctrlCtx, "set_permission_mode", map[string]any{"mode": mode})
 		if err != nil {
-			code := events.ErrCodeInternalError
-			if strings.Contains(err.Error(), "not running") || strings.Contains(err.Error(), "closed") {
-				code = events.ErrCodeSessionTerminated
-			}
+			code := classifyWorkerError(err)
 			return h.sendErrorf(ctx, env, code, "set permission: %v", err)
 		}
 

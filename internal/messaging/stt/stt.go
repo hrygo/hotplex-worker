@@ -388,7 +388,11 @@ func (s *PersistentSTT) idleMonitor(ctx context.Context) {
 			if time.Since(last) > s.idleTTL {
 				s.mu.Lock()
 				s.log.Info("persistent stt: idle timeout, shutting down", "idle_ttl", s.idleTTL)
-				s.terminate(ctx)
+				// Use context.Background() — idle shutdown should not be
+				// cancelled by the monitor's own cancellation.
+				termCtx, termCancel := context.WithTimeout(context.Background(), 10*time.Second)
+				s.terminate(termCtx)
+				termCancel()
 				s.mu.Unlock()
 				return
 			}

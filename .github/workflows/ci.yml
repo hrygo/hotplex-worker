@@ -66,62 +66,107 @@ jobs:
           fi
           echo "No oversized files in HEAD tree."
 
-  # ── Gate: fast checks (快关门) ───────────────────────────────────────────
-  gate:
+  # ── Test: race + coverage (parallel with Build) ────────────────────────
+  # Skips webchat build entirely — tests don't import the embedded SPA.
+  # Runs vet inline for fast failure before expensive compilation.
+  test:
     needs: [large-file-guard]
-    name: Gate
+    name: Test
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
-
-      - uses: ./.github/actions/setup-go-webchat
-
-      - name: Verify module checksums
-        run: go mod verify
-
-      - name: Vet
-        run: go vet ./...
-
-      - name: Build
-        run: go build ./...
-
-      - name: Lint
-        uses: golangci/golangci-lint-action@v9.2.0
         with:
-          version: v2.11.4
-          args: --timeout=10m
-
-  # ── Test: race + coverage in single run ────────────────────────────────
-  test:
-    needs: [gate]
-    name: Test
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v6
+          fetch-depth: 0
 
       - uses: ./.github/actions/setup-go-webchat
+        with:
+          build-webchat: 'false'
+
+      - name: Verify + Vet
+        run: go mod verify && go vet ./...
+
+      - name: Determine test scope
+        id: scope
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT_NAME" = "push" ]; then
+            echo "pkgs=." >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          CHANGED=$(git diff --name-only origin/main... | grep '\.go$' || true)
+          if [ -z "$CHANGED" ]; then
+            echo "pkgs=." >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          AFFECTED=""
+          for f in $CHANGED; do
+            dir=$(dirname "$f")
+            full_pkg="github.com/hrygo/hotplex/$dir"
+            AFFECTED="$AFFECTED $full_pkg"
+          done
+
+          AFFECTED=$(echo "$AFFECTED" | tr ' ' '\n' | sort -u | grep -v '^$' | tr '\n' ' ')
+          if [ -n "$AFFECTED" ]; then
+            echo "pkgs=$AFFECTED" >> "$GITHUB_OUTPUT"
+            echo "Testing affected packages: $AFFECTED"
+          else
+            echo "pkgs=." >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Run tests with race detector + coverage
+        env:
+          SCOPE: ${{ steps.scope.outputs.pkgs }}
         run: |
-          # shellcheck disable=SC2046
-          go test -race -timeout=15m -coverprofile=coverage.out -covermode=atomic \
-            $(go list ./... | grep -v \
-              -e 'internal/worker/proc' \
-              -e 'internal/worker/pi' \
-              -e 'cmd/hotplex' \
-              -e 'e2e')
+          ALL_PKGS=$(go list ./... | grep -v \
+            -e 'internal/worker/proc' \
+            -e 'internal/worker/pi' \
+            -e 'cmd/hotplex' \
+            -e 'e2e')
+
+          if [ "$SCOPE" = "." ]; then
+            TEST_PKGS="$ALL_PKGS"
+          else
+            TEST_PKGS=""
+            for pkg in $ALL_PKGS; do
+              for changed in $SCOPE; do
+                if [ "$pkg" = "$changed" ]; then
+                  TEST_PKGS="$TEST_PKGS $pkg"
+                  break
+                fi
+                # Include packages that import the changed package
+                if go list -f '{{range .Imports}}{{if eq . "'"$changed"'"}}{{.}} {{end}}{{end}}' "$pkg" 2>/dev/null | grep -q "'"$changed"'"; then
+                  TEST_PKGS="$TEST_PKGS $pkg"
+                  break
+                fi
+              done
+            done
+          fi
+
+          if [ -z "$TEST_PKGS" ]; then
+            echo "No test packages affected by this change"
+            printf 'mode: atomic\n' > coverage.out
+            exit 0
+          fi
+
+          # shellcheck disable=SC2086,SC2046
+          go test -race -timeout=10m -coverprofile=coverage.out -covermode=atomic $TEST_PKGS
 
       - name: Display coverage
-        run: go tool cover -func=coverage.out | tail -1
+        if: always()
+        run: go tool cover -func=coverage.out 2>/dev/null | tail -1 || true
 
       - uses: actions/upload-artifact@v6
+        if: always()
         with:
           name: coverage
           path: coverage.out
 
       - name: Upload to Codecov
+        if: always()
         uses: codecov/codecov-action@v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -131,9 +176,40 @@ jobs:
           name: hotplex
           fail_ci_if_error: false
 
+  # ── Build verification + Lint (parallel with Test) ────────────────────
+  # Builds with webchat (uses cached output when available).
+  # Runs vet + build + lint — all static checks in one job.
+  build:
+    needs: [large-file-guard]
+    name: Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: ./.github/actions/setup-go-webchat
+
+      - name: Verify + Vet + Build
+        run: go mod verify && go vet ./... && go build ./...
+
+      - name: Build gateway binary
+        run: |
+          mkdir -p bin
+          go build -o bin/hotplex ./cmd/hotplex
+
+      - name: Verify binary
+        run: test -x ./bin/hotplex && ./bin/hotplex --help
+
+      - name: Lint
+        uses: golangci/golangci-lint-action@v9.2.0
+        with:
+          version: v2.11.4
+          args: --timeout=10m
+
   # ── Coverage gate ───────────────────────────────────────────────────────
   coverage-check:
     needs: [test]
+    if: always() && needs.test.result == 'success'
     name: Coverage Check
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -154,6 +230,12 @@ jobs:
       - name: Check per-package coverage thresholds
         run: |
           COV_FILE="coverage-artifacts/coverage.out"
+
+          # Skip if coverage file is empty (no packages affected)
+          if [ ! -s "$COV_FILE" ] || [ "$(wc -l < "$COV_FILE")" -le 1 ]; then
+            echo "No coverage data (no affected packages). Skipping thresholds."
+            exit 0
+          fi
 
           # Per-package thresholds (longest-prefix match wins).
           declare -A THRESHOLDS
@@ -238,22 +320,3 @@ jobs:
             exit 1
           fi
           echo "All package coverage thresholds met."
-
-  # ── Build verification ──────────────────────────────────────────────────
-  build:
-    needs: [gate]
-    name: Build
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: ./.github/actions/setup-go-webchat
-
-      - name: Build gateway binary
-        run: |
-          mkdir -p bin
-          go build -o bin/hotplex ./cmd/hotplex
-
-      - name: Verify binary
-        run: test -x ./bin/hotplex && ./bin/hotplex --help
