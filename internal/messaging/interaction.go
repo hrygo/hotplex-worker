@@ -147,31 +147,44 @@ func (m *InteractionManager) watchTimeout(pi *PendingInteraction) {
 		"type", pi.Type,
 		"session_id", pi.SessionID)
 
-	// Send auto-deny/reject response based on type
-	switch pi.Type {
-	case events.PermissionRequest:
-		pi.SendResponse(map[string]any{
-			"permission_response": map[string]any{
-				"request_id": pi.ID,
-				"allowed":    false,
-				"reason":     "interaction timed out",
-			},
-		})
-	case events.QuestionRequest:
-		pi.SendResponse(map[string]any{
-			"question_response": map[string]any{
-				"id":      pi.ID,
-				"answers": map[string]string{},
-			},
-		})
-	case events.ElicitationRequest:
-		pi.SendResponse(map[string]any{
-			"elicitation_response": map[string]any{
-				"id":     pi.ID,
-				"action": "cancel",
-			},
-		})
-	}
+	// Recover from panics in SendResponse — platform connection may be closed.
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				m.log.Error("interaction: panic in SendResponse during timeout",
+					"request_id", pi.ID,
+					"type", pi.Type,
+					"session_id", pi.SessionID,
+					"panic", r)
+			}
+		}()
+
+		// Send auto-deny/reject response based on type
+		switch pi.Type {
+		case events.PermissionRequest:
+			pi.SendResponse(map[string]any{
+				"permission_response": map[string]any{
+					"request_id": pi.ID,
+					"allowed":    false,
+					"reason":     "interaction timed out",
+				},
+			})
+		case events.QuestionRequest:
+			pi.SendResponse(map[string]any{
+				"question_response": map[string]any{
+					"id":      pi.ID,
+					"answers": map[string]string{},
+				},
+			})
+		case events.ElicitationRequest:
+			pi.SendResponse(map[string]any{
+				"elicitation_response": map[string]any{
+					"id":     pi.ID,
+					"action": "cancel",
+				},
+			})
+		}
+	}()
 }
 
 // CancelAll removes all pending interactions for a given session.

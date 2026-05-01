@@ -46,7 +46,8 @@ jobs:
           printf '%s' "$PR_BODY" > "$BODY_FILE"
 
           # Check: PR body must contain #<number> in resolve/fix/close/refs pattern
-          if ! grep -Eqi "\*?(resolves|fixes|closes|refs)\*?\s*:?\s*#([0-9]+)" "$BODY_FILE"; then
+          # Support both single issue (#82) and multiple issues (#82, #78, #77)
+          if ! grep -Eqi "\*?(resolves|fixes|closes|refs)\*?\s*:?\s*#([0-9]+)(\s*,\s*#[0-9]+)*" "$BODY_FILE"; then
             echo "::error::PR body must contain an issue link"
             echo ""
             echo "Expected one of:"
