@@ -356,7 +356,7 @@ func setupTestGateway(t *testing.T) *testGateway {
 	auth := security.NewAuthenticator(&cfg.Security, jwtValidator)
 
 	mux := http.NewServeMux()
-	mux.Handle("/ws", hub.HandleHTTP(auth, sm, handler, bridge))
+	mux.Handle("/ws", hub.HandleHTTP(auth, handler, bridge))
 
 	server := httptest.NewServer(mux)
 

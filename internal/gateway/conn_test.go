@@ -1020,6 +1020,21 @@ func (m *mockBridgeSM) UpdateWorkDir(ctx context.Context, id, workDir string) er
 	return args.Error(0)
 }
 
+func (m *mockBridgeSM) TransitionWithInput(ctx context.Context, id string, to events.SessionState, content string, metadata map[string]any) error {
+	args := m.Called(ctx, id, to, content, metadata)
+	return args.Error(0)
+}
+
+func (m *mockBridgeSM) TransitionWithReason(ctx context.Context, id string, to events.SessionState, termReason string) error {
+	args := m.Called(ctx, id, to, termReason)
+	return args.Error(0)
+}
+
+func (m *mockBridgeSM) ValidateOwnership(ctx context.Context, sessionID, userID, adminUserID string) error {
+	args := m.Called(ctx, sessionID, userID, adminUserID)
+	return args.Error(0)
+}
+
 var _ SessionManager = (*mockBridgeSM)(nil)
 
 // mockBridgeWorker is a configurable fake Worker for Bridge tests.

@@ -94,6 +94,18 @@ func (m *mockAPISM) UpdateWorkDir(ctx context.Context, id, workDir string) error
 	return m.Called(ctx, id, workDir).Error(0)
 }
 
+func (m *mockAPISM) TransitionWithInput(ctx context.Context, id string, to events.SessionState, content string, metadata map[string]any) error {
+	return m.Called(ctx, id, to, content, metadata).Error(0)
+}
+
+func (m *mockAPISM) TransitionWithReason(ctx context.Context, id string, to events.SessionState, termReason string) error {
+	return m.Called(ctx, id, to, termReason).Error(0)
+}
+
+func (m *mockAPISM) ValidateOwnership(ctx context.Context, sessionID, userID, adminUserID string) error {
+	return m.Called(ctx, sessionID, userID, adminUserID).Error(0)
+}
+
 // ─── Mock SessionStarter for API tests ─────────────────────────────────────────
 
 type mockAPIBridge struct {

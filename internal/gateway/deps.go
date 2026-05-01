@@ -13,7 +13,7 @@ import (
 type HandlerDeps struct {
 	Log           *slog.Logger
 	Hub           *Hub
-	SM            *session.Manager
+	SM            SessionManager
 	JWTValidator  *security.JWTValidator
 	Bridge        *Bridge
 	ConvStore     session.ConversationStore

@@ -20,7 +20,6 @@ import (
 	"github.com/hrygo/hotplex/internal/messaging"
 	"github.com/hrygo/hotplex/internal/metrics"
 	"github.com/hrygo/hotplex/internal/security"
-	"github.com/hrygo/hotplex/internal/session"
 	"github.com/hrygo/hotplex/internal/tracing"
 	"github.com/hrygo/hotplex/pkg/aep"
 	"github.com/hrygo/hotplex/pkg/events"
@@ -333,13 +332,9 @@ func (h *Hub) sendControlToSession(ctx context.Context, env *events.Envelope) {
 // It authenticates the request, upgrades to WebSocket, and starts read/write pumps.
 func (h *Hub) HandleHTTP(
 	auth *security.Authenticator,
-	sm *session.Manager,
 	handler *Handler,
 	bridge *Bridge,
 ) http.Handler {
-
-	// Give the handler access to sm for the init handshake.
-	handler.sm = sm
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Authenticate at HTTP upgrade time.
