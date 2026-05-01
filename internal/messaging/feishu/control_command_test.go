@@ -6,12 +6,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/hrygo/hotplex/internal/messaging"
 	"github.com/hrygo/hotplex/pkg/events"
-	"github.com/stretchr/testify/require"
 )
-
-
 
 // TestFormatSecurityError 测试安全错误格式化函数
 func TestFormatSecurityError(t *testing.T) {
