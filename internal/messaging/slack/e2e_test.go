@@ -27,10 +27,12 @@ func newTestAdapter(t *testing.T) *Adapter {
 	ctx := context.Background()
 
 	a := &Adapter{
-		PlatformAdapter: messaging.PlatformAdapter{
-			Log:          slog.Default(),
-			Dedup:        messaging.NewDedup(5000, 30*time.Minute),
-			Interactions: messaging.NewInteractionManager(slog.Default()),
+		BaseAdapter: messaging.BaseAdapter[*SlackConn]{
+			PlatformAdapter: messaging.PlatformAdapter{
+				Log:          slog.Default(),
+				Dedup:        messaging.NewDedup(5000, 30*time.Minute),
+				Interactions: messaging.NewInteractionManager(slog.Default()),
+			},
 		},
 		botID:         "B_TEST",
 		teamID:        "T_TEST",
@@ -38,7 +40,7 @@ func newTestAdapter(t *testing.T) *Adapter {
 		rateLimiter:   NewChannelRateLimiter(ctx),
 		activeStreams: make(map[string]*NativeStreamingWriter),
 	}
-	a.connPool = messaging.NewConnPool[*SlackConn](func(key string) *SlackConn {
+	a.ConnPool = messaging.NewConnPool[*SlackConn](func(key string) *SlackConn {
 		parts := strings.SplitN(key, "#", 2)
 		threadTS := ""
 		if len(parts) > 1 {
@@ -569,11 +571,11 @@ func TestE2E_SlackConn_CloseRemovesFromRegistry(t *testing.T) {
 	require.NotNil(t, conn)
 
 	key := "C123#456.789"
-	require.NotNil(t, a.connPool.Get(key), "conn should be registered")
+	require.NotNil(t, a.ConnPool.Get(key), "conn should be registered")
 
 	require.NoError(t, conn.Close())
 
-	require.Nil(t, a.connPool.Get(key), "conn should be removed after Close")
+	require.Nil(t, a.ConnPool.Get(key), "conn should be removed after Close")
 }
 
 func TestE2E_SlackConn_GetOrCreateIsIdempotent(t *testing.T) {
@@ -733,14 +735,16 @@ func TestE2E_AuthTestFailureReturnsError(t *testing.T) {
 	t.Parallel()
 
 	a := &Adapter{
-		PlatformAdapter: messaging.PlatformAdapter{
-			Log:          slog.Default(),
-			Interactions: messaging.NewInteractionManager(slog.Default()),
+		BaseAdapter: messaging.BaseAdapter[*SlackConn]{
+			PlatformAdapter: messaging.PlatformAdapter{
+				Log:          slog.Default(),
+				Interactions: messaging.NewInteractionManager(slog.Default()),
+			},
+			ConnPool: messaging.NewConnPool[*SlackConn](nil),
 		},
 		botToken:      "xoxb-invalid",
 		appToken:      "xapp-invalid",
 		activeStreams: make(map[string]*NativeStreamingWriter),
-		connPool:      messaging.NewConnPool[*SlackConn](nil),
 	}
 
 	err := a.Start(context.Background())

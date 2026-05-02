@@ -94,7 +94,12 @@ func TestExtractResponseText_RawData(t *testing.T) {
 
 func TestFeishuConn_WriteCtx_NilEnvelope(t *testing.T) {
 	t.Parallel()
-	adapter := &Adapter{PlatformAdapter: messaging.PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil)), Dedup: messaging.NewDedup(100, 12*time.Hour)}, connPool: messaging.NewConnPool[*FeishuConn](nil)}
+	adapter := &Adapter{
+		BaseAdapter: messaging.BaseAdapter[*FeishuConn]{
+			PlatformAdapter: messaging.PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil)), Dedup: messaging.NewDedup(100, 12*time.Hour)},
+			ConnPool:        messaging.NewConnPool[*FeishuConn](nil),
+		},
+	}
 	conn := NewFeishuConn(adapter, "test_chat", "", "")
 
 	err := conn.WriteCtx(context.Background(), nil)
@@ -128,14 +133,16 @@ func TestAdapter_Start_MissingCredentials(t *testing.T) {
 func TestAdapter_Close(t *testing.T) {
 	t.Parallel()
 	a := &Adapter{
-		PlatformAdapter: messaging.PlatformAdapter{
-			Log:   slog.New(slog.NewTextHandler(io.Discard, nil)),
-			Dedup: messaging.NewDedup(100, 12*60*60*1e9),
+		BaseAdapter: messaging.BaseAdapter[*FeishuConn]{
+			PlatformAdapter: messaging.PlatformAdapter{
+				Log:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+				Dedup: messaging.NewDedup(100, 12*60*60*1e9),
+			},
+			ConnPool: messaging.NewConnPool[*FeishuConn](nil),
 		},
-		connPool: messaging.NewConnPool[*FeishuConn](nil),
 	}
 	require.NoError(t, a.Close(context.Background()))
-	require.True(t, a.connPool.IsClosed())
+	require.True(t, a.ConnPool.IsClosed())
 	require.Nil(t, a.Dedup)
 }
 
@@ -248,7 +255,7 @@ type mentionStub struct {
 
 func TestDownloadMedia_NilClient(t *testing.T) {
 	t.Parallel()
-	a := &Adapter{PlatformAdapter: messaging.PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil))}}
+	a := &Adapter{BaseAdapter: messaging.BaseAdapter[*FeishuConn]{PlatformAdapter: messaging.PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil))}}}
 	_, err := a.downloadMedia(context.Background(), &MediaInfo{Type: "image", Key: "key", MessageID: "msg"})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "missing lark client")
@@ -256,7 +263,7 @@ func TestDownloadMedia_NilClient(t *testing.T) {
 
 func TestDownloadMedia_NilMedia(t *testing.T) {
 	t.Parallel()
-	a := &Adapter{PlatformAdapter: messaging.PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil))}}
+	a := &Adapter{BaseAdapter: messaging.BaseAdapter[*FeishuConn]{PlatformAdapter: messaging.PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil))}}}
 	_, err := a.downloadMedia(context.Background(), nil)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "missing lark client")
@@ -264,7 +271,7 @@ func TestDownloadMedia_NilMedia(t *testing.T) {
 
 func TestDownloadMedia_EmptyMessageID(t *testing.T) {
 	t.Parallel()
-	a := &Adapter{PlatformAdapter: messaging.PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil))}}
+	a := &Adapter{BaseAdapter: messaging.BaseAdapter[*FeishuConn]{PlatformAdapter: messaging.PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil))}}}
 	_, err := a.downloadMedia(context.Background(), &MediaInfo{Type: "image", Key: "key", MessageID: ""})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "missing")
@@ -272,7 +279,7 @@ func TestDownloadMedia_EmptyMessageID(t *testing.T) {
 
 func TestDownloadMedia_EmptyKey(t *testing.T) {
 	t.Parallel()
-	a := &Adapter{PlatformAdapter: messaging.PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil))}}
+	a := &Adapter{BaseAdapter: messaging.BaseAdapter[*FeishuConn]{PlatformAdapter: messaging.PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil))}}}
 	_, err := a.downloadMedia(context.Background(), &MediaInfo{Type: "image", Key: "", MessageID: "msg"})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "missing")
@@ -285,7 +292,7 @@ func TestDownloadMedia_AllTypes(t *testing.T) {
 	types := []string{"image", "file", "audio", "video", "sticker"}
 	for _, typ := range types {
 		t.Run(typ, func(t *testing.T) {
-			a := &Adapter{PlatformAdapter: messaging.PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil))}}
+			a := &Adapter{BaseAdapter: messaging.BaseAdapter[*FeishuConn]{PlatformAdapter: messaging.PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil))}}}
 			_, err := a.downloadMedia(context.Background(), &MediaInfo{Type: typ, Key: "testkey", MessageID: "msg"})
 			// Without a lark client, all types should fail with "missing lark client"
 			require.Error(t, err)
@@ -298,11 +305,13 @@ func TestAdapter_DoubleStartGuard(t *testing.T) {
 	t.Parallel()
 
 	a := &Adapter{
-		PlatformAdapter: messaging.PlatformAdapter{
-			Log:   slog.New(slog.NewTextHandler(io.Discard, nil)),
-			Dedup: messaging.NewDedup(100, 12*60*60*1e9),
+		BaseAdapter: messaging.BaseAdapter[*FeishuConn]{
+			PlatformAdapter: messaging.PlatformAdapter{
+				Log:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+				Dedup: messaging.NewDedup(100, 12*60*60*1e9),
+			},
+			ConnPool: messaging.NewConnPool[*FeishuConn](nil),
 		},
-		connPool: messaging.NewConnPool[*FeishuConn](nil),
 	}
 
 	// First call: fails due to missing credentials (guard passes, validation fails)
@@ -319,11 +328,13 @@ func TestAdapter_CloseAfterSingleStart(t *testing.T) {
 	t.Parallel()
 
 	a := &Adapter{
-		PlatformAdapter: messaging.PlatformAdapter{
-			Log:   slog.New(slog.NewTextHandler(io.Discard, nil)),
-			Dedup: messaging.NewDedup(100, 12*60*60*1e9),
+		BaseAdapter: messaging.BaseAdapter[*FeishuConn]{
+			PlatformAdapter: messaging.PlatformAdapter{
+				Log:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+				Dedup: messaging.NewDedup(100, 12*60*60*1e9),
+			},
+			ConnPool: messaging.NewConnPool[*FeishuConn](nil),
 		},
-		connPool: messaging.NewConnPool[*FeishuConn](nil),
 	}
 
 	// Start fails (no credentials), but guard is set

@@ -121,12 +121,14 @@ func startRealAdapter(t *testing.T, cfg semiConfig) (*Adapter, *[]capturedCall, 
 	)
 
 	a := &Adapter{
+		BaseAdapter: messaging.BaseAdapter[*SlackConn]{
+			ConnPool: messaging.NewConnPool[*SlackConn](nil),
+		},
 		log:           logger,
 		botToken:      cfg.BotToken,
 		appToken:      cfg.AppToken,
 		bridge:        bridge,
 		activeStreams: make(map[string]*NativeStreamingWriter),
-		connPool:      messaging.NewConnPool[*SlackConn](nil),
 	}
 
 	require.NoError(t, a.Start(ctx), "real Slack adapter should start successfully")
