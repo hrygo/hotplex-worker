@@ -61,8 +61,8 @@
   },
   {
     "query": "帮我 review 一下这个 PR",
-    "should_trigger": false,
-    "note": "review 是阅读和分析，不是创建 PR"
+    "should_trigger": true,
+    "note": "PR 质量审查，应该触发"
   },
   {
     "query": "React 项目怎么创建 PR？",
@@ -98,5 +98,25 @@
     "query": "这个函数是什么意思？",
     "should_trigger": false,
     "note": "代码解释，不涉及 PR"
+  },
+  {
+    "query": "执行 pr 质量审查",
+    "should_trigger": true,
+    "note": "PR 质量审查，典型场景"
+  },
+  {
+    "query": "代码审查一下",
+    "should_trigger": true,
+    "note": "代码审查请求"
+  },
+  {
+    "query": "审查代码质量",
+    "should_trigger": true,
+    "note": "代码质量审查"
+  },
+  {
+    "query": "开发完成，推送 PR",
+    "should_trigger": true,
+    "note": "开发完成推送 PR，典型场景"
   }
 ]
