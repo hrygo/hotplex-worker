@@ -100,7 +100,7 @@ func TestWriteCtx_ErrorEvent_WithMessage(t *testing.T) {
 
 	a := newTestAdapter(t)
 	a.Interactions = messaging.NewInteractionManager(discardLogger)
-	conn := NewFeishuConn(a, "chat123", "")
+	conn := NewFeishuConn(a, "chat123", "", "")
 	conn.mu.Lock()
 	conn.platformMsgID = "msg001"
 	conn.startedAt = time.Now()
@@ -131,7 +131,7 @@ func TestWriteCtx_ErrorEvent_WithoutPlatformMsgID(t *testing.T) {
 
 	a := newTestAdapter(t)
 	a.Interactions = messaging.NewInteractionManager(discardLogger)
-	conn := NewFeishuConn(a, "chat123", "")
+	conn := NewFeishuConn(a, "chat123", "", "")
 	conn.mu.Lock()
 	conn.startedAt = time.Now()
 	// 不设置 platformMsgID
@@ -162,7 +162,7 @@ func TestWriteCtx_ErrorEvent_WithStreamCtrl(t *testing.T) {
 
 	a := newTestAdapter(t)
 	a.Interactions = messaging.NewInteractionManager(discardLogger)
-	conn := NewFeishuConn(a, "chat123", "")
+	conn := NewFeishuConn(a, "chat123", "", "")
 
 	// 创建一个测试用的 streaming controller
 	ctrl := newTestStreamingCtrl()
@@ -198,7 +198,7 @@ func TestWriteCtx_ErrorEvent_EmptyMessage(t *testing.T) {
 
 	a := newTestAdapter(t)
 	a.Interactions = messaging.NewInteractionManager(discardLogger)
-	conn := NewFeishuConn(a, "chat123", "")
+	conn := NewFeishuConn(a, "chat123", "", "")
 	conn.mu.Lock()
 	conn.platformMsgID = "msg001"
 	conn.startedAt = time.Now()

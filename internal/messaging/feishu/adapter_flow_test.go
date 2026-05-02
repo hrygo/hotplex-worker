@@ -45,7 +45,7 @@ func TestAdapterFlow_HandleTextMessage_WithInteractionConsumed(t *testing.T) {
 func TestAdapterFlow_WriteCtx_DoneEvent_WithStreamCtrl(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
-	conn := NewFeishuConn(a, "chat123", "")
+	conn := NewFeishuConn(a, "chat123", "", "")
 
 	ctrl := newTestStreamingCtrl()
 	// Transition to creating then completed (Close will be a no-op).
@@ -68,7 +68,7 @@ func TestAdapterFlow_WriteCtx_ErrorEvent_WithStreamCtrl(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
 	a.Interactions = messaging.NewInteractionManager(discardLogger)
-	conn := NewFeishuConn(a, "chat123", "")
+	conn := NewFeishuConn(a, "chat123", "", "")
 
 	ctrl := newTestStreamingCtrl()
 	conn.EnableStreaming(ctrl)
@@ -89,7 +89,7 @@ func TestAdapterFlow_WriteCtx_ErrorEvent_WithStreamCtrl(t *testing.T) {
 func TestAdapterFlow_WriteCtx_ToolCallEvent(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
-	conn := NewFeishuConn(a, "chat123", "")
+	conn := NewFeishuConn(a, "chat123", "", "")
 	conn.mu.Lock()
 	conn.startedAt = time.Now()
 	conn.mu.Unlock()
@@ -110,7 +110,7 @@ func TestAdapterFlow_WriteCtx_ToolCallEvent(t *testing.T) {
 func TestAdapterFlow_WriteCtx_ToolResultEvent(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
-	conn := NewFeishuConn(a, "chat123", "")
+	conn := NewFeishuConn(a, "chat123", "", "")
 	conn.mu.Lock()
 	conn.startedAt = time.Now()
 	conn.mu.Unlock()
@@ -131,7 +131,7 @@ func TestAdapterFlow_WriteCtx_ToolResultEvent(t *testing.T) {
 func TestAdapterFlow_WriteCtx_ContextUsageEvent_NilClient(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
-	conn := NewFeishuConn(a, "chat123", "")
+	conn := NewFeishuConn(a, "chat123", "", "")
 	conn.mu.Lock()
 	conn.platformMsgID = "msg123"
 	conn.mu.Unlock()
@@ -155,7 +155,7 @@ func TestAdapterFlow_WriteCtx_ContextUsageEvent_NilClient(t *testing.T) {
 func TestAdapterFlow_WriteCtx_MCPStatusEvent_NilClient(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
-	conn := NewFeishuConn(a, "chat123", "")
+	conn := NewFeishuConn(a, "chat123", "", "")
 	conn.mu.Lock()
 	conn.platformMsgID = "msg123"
 	conn.mu.Unlock()
@@ -181,7 +181,7 @@ func TestAdapterFlow_WriteCtx_MCPStatusEvent_NilClient(t *testing.T) {
 func TestAdapterFlow_WriteCtx_SkillsListEvent_NilClient(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
-	conn := NewFeishuConn(a, "chat123", "")
+	conn := NewFeishuConn(a, "chat123", "", "")
 	conn.mu.Lock()
 	conn.platformMsgID = "msg123"
 	conn.mu.Unlock()
@@ -210,7 +210,7 @@ func TestAdapterFlow_WriteCtx_MessageDelta_NoStreamingCtrl(t *testing.T) {
 	t.Cleanup(func() { limiter.Stop() })
 	a.rateLimiter = limiter
 
-	conn := NewFeishuConn(a, "chat123", "")
+	conn := NewFeishuConn(a, "chat123", "", "")
 	conn.mu.Lock()
 	conn.replyToMsgID = "msg_reply"
 	conn.platformMsgID = "msg123"
@@ -236,7 +236,7 @@ func TestAdapterFlow_WriteCtx_MessageDelta_NoStreamingCtrl(t *testing.T) {
 func TestAdapterFlow_FeishuConn_Close_WithStreamCtrl(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
-	conn := NewFeishuConn(a, "chat123", "")
+	conn := NewFeishuConn(a, "chat123", "", "")
 
 	ctrl := newTestStreamingCtrl()
 	conn.EnableStreaming(ctrl)
@@ -252,7 +252,7 @@ func TestAdapterFlow_FeishuConn_Close_WithStreamCtrl(t *testing.T) {
 func TestAdapterFlow_FeishuConn_Close_WithReactionIDs(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
-	conn := NewFeishuConn(a, "chat123", "")
+	conn := NewFeishuConn(a, "chat123", "", "")
 
 	conn.mu.Lock()
 	conn.typingRid = "typing_rid"
@@ -273,7 +273,7 @@ func TestAdapterFlow_FeishuConn_Close_WithReactionIDs(t *testing.T) {
 func TestAdapterFlow_ClearProcessingReaction_EmptyRID(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
-	conn := NewFeishuConn(a, "chat123", "")
+	conn := NewFeishuConn(a, "chat123", "", "")
 
 	// Empty RID → early return, no panic.
 	conn.clearProcessingReaction(context.Background(), "")
@@ -282,7 +282,7 @@ func TestAdapterFlow_ClearProcessingReaction_EmptyRID(t *testing.T) {
 func TestAdapterFlow_ClearProcessingReaction_EmptyMsgID(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
-	conn := NewFeishuConn(a, "chat123", "")
+	conn := NewFeishuConn(a, "chat123", "", "")
 
 	// RID set but no platformMsgID → early return.
 	conn.clearProcessingReaction(context.Background(), "rid123")
@@ -291,7 +291,7 @@ func TestAdapterFlow_ClearProcessingReaction_EmptyMsgID(t *testing.T) {
 func TestAdapterFlow_ClearProcessingReaction_NilClient(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
-	conn := NewFeishuConn(a, "chat123", "")
+	conn := NewFeishuConn(a, "chat123", "", "")
 	conn.mu.Lock()
 	conn.platformMsgID = "msg123"
 	conn.mu.Unlock()
@@ -303,7 +303,7 @@ func TestAdapterFlow_ClearProcessingReaction_NilClient(t *testing.T) {
 func TestAdapterFlow_SetProcessingReaction_EmptyMsgID(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
-	conn := NewFeishuConn(a, "chat123", "")
+	conn := NewFeishuConn(a, "chat123", "", "")
 
 	rid := conn.setProcessingReaction(context.Background())
 	require.Empty(t, rid)
@@ -312,7 +312,7 @@ func TestAdapterFlow_SetProcessingReaction_EmptyMsgID(t *testing.T) {
 func TestAdapterFlow_SetProcessingReaction_NilClient(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
-	conn := NewFeishuConn(a, "chat123", "")
+	conn := NewFeishuConn(a, "chat123", "", "")
 	conn.mu.Lock()
 	conn.platformMsgID = "msg123"
 	conn.mu.Unlock()
@@ -325,7 +325,7 @@ func TestAdapterFlow_SetProcessingReaction_NilClient(t *testing.T) {
 func TestAdapterFlow_CycleReaction_EmptyPlatformMsgID(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
-	conn := NewFeishuConn(a, "chat123", "")
+	conn := NewFeishuConn(a, "chat123", "", "")
 
 	// No platformMsgID → early return.
 	conn.cycleReaction(context.Background(), "THINKING")
@@ -334,7 +334,7 @@ func TestAdapterFlow_CycleReaction_EmptyPlatformMsgID(t *testing.T) {
 func TestAdapterFlow_CycleReaction_DifferentEmoji_NilClient(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
-	conn := NewFeishuConn(a, "chat123", "")
+	conn := NewFeishuConn(a, "chat123", "", "")
 	conn.mu.Lock()
 	conn.platformMsgID = "msg123"
 	conn.toolEmoji = "YEAH"
@@ -421,7 +421,7 @@ func TestAdapterFlow_HandleTextWorkerCommand_NilBridge(t *testing.T) {
 func TestAdapterFlow_WriteCtx_NilEnvelope(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
-	conn := NewFeishuConn(a, "chat123", "")
+	conn := NewFeishuConn(a, "chat123", "", "")
 
 	err := conn.WriteCtx(context.Background(), nil)
 	require.Error(t, err)
@@ -431,7 +431,7 @@ func TestAdapterFlow_WriteCtx_NilEnvelope(t *testing.T) {
 func TestAdapterFlow_WriteCtx_PermissionRequest_ExtractFail(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
-	conn := NewFeishuConn(a, "chat123", "")
+	conn := NewFeishuConn(a, "chat123", "", "")
 
 	env := &events.Envelope{
 		Version:   events.Version,
@@ -449,7 +449,7 @@ func TestAdapterFlow_WriteCtx_PermissionRequest_ExtractFail(t *testing.T) {
 func TestAdapterFlow_WriteCtx_QuestionRequest_ExtractFail(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
-	conn := NewFeishuConn(a, "chat123", "")
+	conn := NewFeishuConn(a, "chat123", "", "")
 
 	env := &events.Envelope{
 		Version:   events.Version,
@@ -467,7 +467,7 @@ func TestAdapterFlow_WriteCtx_QuestionRequest_ExtractFail(t *testing.T) {
 func TestAdapterFlow_WriteCtx_ElicitationRequest_ExtractFail(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
-	conn := NewFeishuConn(a, "chat123", "")
+	conn := NewFeishuConn(a, "chat123", "", "")
 
 	env := &events.Envelope{
 		Version:   events.Version,
@@ -486,7 +486,7 @@ func TestAdapterFlow_WriteCtx_Done_NoStreamCtrl(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
 	a.Interactions = messaging.NewInteractionManager(discardLogger)
-	conn := NewFeishuConn(a, "chat123", "")
+	conn := NewFeishuConn(a, "chat123", "", "")
 
 	env := &events.Envelope{
 		Version:   events.Version,
@@ -505,7 +505,7 @@ func TestAdapterFlow_WriteCtx_Error_NoStreamCtrl(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
 	a.Interactions = messaging.NewInteractionManager(discardLogger)
-	conn := NewFeishuConn(a, "chat123", "")
+	conn := NewFeishuConn(a, "chat123", "", "")
 
 	env := &events.Envelope{
 		Version:   events.Version,
@@ -523,7 +523,7 @@ func TestAdapterFlow_WriteCtx_Error_NoStreamCtrl(t *testing.T) {
 func TestAdapterFlow_WriteCtx_MessageDelta_StaticPath(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
-	conn := NewFeishuConn(a, "chat123", "")
+	conn := NewFeishuConn(a, "chat123", "", "")
 	conn.mu.Lock()
 	conn.replyToMsgID = "msg_reply"
 	conn.startedAt = time.Now()
@@ -548,7 +548,7 @@ func TestAdapterFlow_WriteCtx_MessageDelta_StaticPath(t *testing.T) {
 func TestAdapterFlow_WriteCtx_Message_StaticPath_NoReplyTo(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
-	conn := NewFeishuConn(a, "chat123", "")
+	conn := NewFeishuConn(a, "chat123", "", "")
 	conn.mu.Lock()
 	conn.startedAt = time.Now()
 	// No replyToMsgID → uses sendTextMessage path.
@@ -571,7 +571,7 @@ func TestAdapterFlow_WriteCtx_Message_StaticPath_NoReplyTo(t *testing.T) {
 func TestAdapterFlow_WriteCtx_RawEvent_WithText(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
-	conn := NewFeishuConn(a, "chat123", "")
+	conn := NewFeishuConn(a, "chat123", "", "")
 	conn.mu.Lock()
 	conn.replyToMsgID = "msg_raw"
 	conn.startedAt = time.Now()
@@ -595,7 +595,7 @@ func TestAdapterFlow_WriteCtx_RawEvent_WithText(t *testing.T) {
 func TestAdapterFlow_WriteCtx_Done_WithReactionCleanup(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
-	conn := NewFeishuConn(a, "chat123", "")
+	conn := NewFeishuConn(a, "chat123", "", "")
 	conn.mu.Lock()
 	conn.typingRid = "typing_rid"
 	conn.toolRid = "tool_rid"
@@ -624,7 +624,7 @@ func TestAdapterFlow_WriteCtx_Error_WithReactionCleanup(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
 	a.Interactions = messaging.NewInteractionManager(discardLogger)
-	conn := NewFeishuConn(a, "chat123", "")
+	conn := NewFeishuConn(a, "chat123", "", "")
 	conn.mu.Lock()
 	conn.typingRid = "typing_rid"
 	conn.toolRid = "tool_rid"
@@ -665,7 +665,7 @@ func TestAdapterFlow_WriteCtx_StreamCtrl_WriteFlush(t *testing.T) {
 	a := newTestAdapter(t)
 	limiter := NewFeishuRateLimiter()
 	t.Cleanup(func() { limiter.Stop() })
-	conn := NewFeishuConn(a, "chat123", "")
+	conn := NewFeishuConn(a, "chat123", "", "")
 
 	ctrl := NewStreamingCardController(nil, limiter, discardLogger)
 	ctrl.transition(PhaseCreating)

@@ -840,7 +840,7 @@ func (b *Bridge) attemptResumeFallback(p fallbackParams) bool {
 
 	b.log.Info("bridge: fresh worker started after resume failure", "session_id", p.sessionID, "worker_type", p.workerType)
 	notifyMsg := buildNotifyEnvelope(p.sessionID,
-		fmt.Sprintf("Session data lost (exit %d), starting fresh session.", p.exitCode),
+		"🔄 会话已重新启动，上下文已重置。",
 		b.hub.NextSeq(p.sessionID))
 	_ = b.hub.SendToSession(context.Background(), notifyMsg)
 	return true
@@ -978,11 +978,14 @@ type SwitchWorkDirResult struct {
 	OldSessionID string
 	NewSessionID string
 	WorkDir      string
+	Resumed      bool // true = resumed existing session with conversation history
 }
 
 // SwitchWorkDir terminates the current session's worker, transitions it to idle,
 // and creates a new session with the given workDir. The new session inherits
 // the same user, bot, worker type, and platform context.
+// If the target directory has an existing session, it is resumed to preserve
+// conversation history. Otherwise a fresh session is created.
 func (b *Bridge) SwitchWorkDir(ctx context.Context, oldSessionID, newWorkDir string) (*SwitchWorkDirResult, error) {
 	si, err := b.sm.Get(oldSessionID)
 	if err != nil {
@@ -1001,6 +1004,7 @@ func (b *Bridge) SwitchWorkDir(ctx context.Context, oldSessionID, newWorkDir str
 		return nil, fmt.Errorf("switch-workdir: %w", err)
 	}
 
+	// Terminate old worker and park old session.
 	if w := b.sm.GetWorker(oldSessionID); w != nil {
 		if err := w.Terminate(ctx); err != nil {
 			b.log.Warn("switch-workdir: worker terminate failed", "session_id", oldSessionID, "err", err)
@@ -1012,130 +1016,54 @@ func (b *Bridge) SwitchWorkDir(ctx context.Context, oldSessionID, newWorkDir str
 		b.log.Warn("switch-workdir: transition to idle failed", "session_id", oldSessionID, "err", err)
 	}
 
+	// Derive target session key using the new workDir.
 	var newID string
 	if si.Platform != "" && len(si.PlatformKey) > 0 {
-		pc := session.PlatformContext{Platform: si.Platform, WorkDir: expanded}
-		for k, v := range si.PlatformKey {
-			switch k {
-			case "team_id":
-				pc.TeamID = v
-			case "channel_id":
-				pc.ChannelID = v
-			case "thread_ts":
-				pc.ThreadTS = v
-			case "chat_id":
-				pc.ChatID = v
-			case "user_id":
-				pc.UserID = v
-			}
-		}
+		var pc session.PlatformContext
+		pc.Platform = si.Platform
+		pc.WorkDir = expanded
+		pc.FromMap(si.PlatformKey)
 		newID = session.DerivePlatformSessionKey(si.UserID, si.WorkerType, pc)
 	} else {
 		newID = aep.NewSessionID()
 	}
 
-	if err := b.StartSession(ctx, newID, si.UserID, si.BotID, si.WorkerType, si.AllowedTools, expanded, si.Platform, si.PlatformKey, si.Title); err != nil {
-		return nil, fmt.Errorf("switch-workdir: start session: %w", err)
+	// Try to resume existing target session first (preserve conversation history).
+	resumed := false
+	targetSI, err := b.sm.Get(newID)
+	if err == nil && targetSI.State != events.StateDeleted {
+		if b.sm.GetWorker(newID) != nil {
+			b.log.Warn("switch-workdir: target session already has active worker", "session_id", newID)
+		} else if err := b.ResumeSession(ctx, newID, expanded); err != nil {
+			b.log.Warn("switch-workdir: resume failed, creating fresh session",
+				"session_id", newID, "state", targetSI.State, "err", err)
+		} else {
+			resumed = true
+			b.log.Info("switch-workdir: resumed existing session",
+				"old_session_id", oldSessionID,
+				"new_session_id", newID,
+				"work_dir", expanded,
+			)
+		}
 	}
 
-	b.log.Info("switch-workdir: session switched",
-		"old_session_id", oldSessionID,
-		"new_session_id", newID,
-		"work_dir", expanded,
-	)
+	if !resumed {
+		if err := b.StartSession(ctx, newID, si.UserID, si.BotID, si.WorkerType, si.AllowedTools, expanded, si.Platform, si.PlatformKey, si.Title); err != nil {
+			return nil, fmt.Errorf("switch-workdir: start session: %w", err)
+		}
+		b.log.Info("switch-workdir: created fresh session",
+			"old_session_id", oldSessionID,
+			"new_session_id", newID,
+			"work_dir", expanded,
+		)
+	}
 
 	return &SwitchWorkDirResult{
 		OldSessionID: oldSessionID,
 		NewSessionID: newID,
 		WorkDir:      expanded,
+		Resumed:      resumed,
 	}, nil
-}
-
-// SwitchWorkDirInPlace switches the workDir of an existing session without
-// creating a new session. Used for platform sessions (Slack/Feishu) where
-// the session ID must remain stable so the platform conn stays valid.
-func (b *Bridge) SwitchWorkDirInPlace(ctx context.Context, sessionID, newWorkDir string) (string, error) {
-	if b.closed.Load() {
-		return "", fmt.Errorf("switch-workdir-inplace: rejecting during shutdown")
-	}
-
-	si, err := b.sm.Get(sessionID)
-	if err != nil {
-		return "", fmt.Errorf("switch-workdir-inplace: get session: %w", err)
-	}
-
-	if !si.State.IsActive() {
-		return "", fmt.Errorf("switch-workdir-inplace: session not active (state: %s)", si.State)
-	}
-
-	expanded, err := config.ExpandAndAbs(newWorkDir)
-	if err != nil {
-		return "", fmt.Errorf("switch-workdir-inplace: expand work dir: %w", err)
-	}
-	if err := security.ValidateWorkDir(expanded); err != nil {
-		return "", fmt.Errorf("switch-workdir-inplace: %w", err)
-	}
-
-	if w := b.sm.GetWorker(sessionID); w != nil {
-		if err := w.Terminate(ctx); err != nil {
-			b.log.Warn("switch-workdir-inplace: worker terminate failed", "session_id", sessionID, "err", err)
-		}
-		b.sm.DetachWorker(sessionID)
-	}
-
-	if err := b.sm.UpdateWorkDir(ctx, sessionID, expanded); err != nil {
-		return "", fmt.Errorf("switch-workdir-inplace: update workdir: %w", err)
-	}
-
-	workerInfo := worker.SessionInfo{
-		SessionID:       sessionID,
-		UserID:          si.UserID,
-		ProjectDir:      expanded,
-		AllowedTools:    si.AllowedTools,
-		WorkerSessionID: si.WorkerSessionID,
-		ConfigEnv:       b.workerEnv,
-		ConfigWhitelist: b.workerEnvWhitelist,
-	}
-
-	_, err = b.createAndLaunchWorker(workerLaunchParams{
-		ctx:         ctx,
-		wt:          si.WorkerType,
-		workerInfo:  workerInfo,
-		platform:    si.Platform,
-		forwardOpts: forwardOpts{workDir: expanded},
-	},
-		func(ctx context.Context, w worker.Worker) error {
-			if err := w.Start(ctx, workerInfo); err != nil {
-				if rollbackErr := b.sm.UpdateWorkDir(ctx, sessionID, si.WorkDir); rollbackErr != nil {
-					b.log.Warn("switch-workdir-inplace: rollback workdir failed", "session_id", sessionID, "err", rollbackErr)
-				}
-				return fmt.Errorf("switch-workdir-inplace: start worker: %w", err)
-			}
-			return nil
-		},
-		func(w worker.Worker, _ error) {
-			_ = w.Kill()
-		},
-	)
-	if err != nil {
-		return "", err
-	}
-
-	// Refresh ExpiresAt so reactivated session isn't killed by GC.
-	if err := b.sm.ResetExpiry(ctx, sessionID); err != nil {
-		b.log.Warn("switch-workdir-inplace: reset expiry failed", "session_id", sessionID, "err", err)
-	}
-
-	if err := b.sm.Transition(ctx, sessionID, events.StateRunning); err != nil {
-		b.log.Warn("switch-workdir-inplace: transition to running failed", "session_id", sessionID, "err", err)
-	}
-
-	b.log.Info("switch-workdir-inplace: switched",
-		"session_id", sessionID,
-		"work_dir", expanded,
-	)
-
-	return expanded, nil
 }
 
 // isWorkerInUseError checks if the worker rejected the session because its

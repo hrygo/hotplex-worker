@@ -95,7 +95,7 @@ func TestExtractResponseText_RawData(t *testing.T) {
 func TestFeishuConn_WriteCtx_NilEnvelope(t *testing.T) {
 	t.Parallel()
 	adapter := &Adapter{PlatformAdapter: messaging.PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil)), Dedup: messaging.NewDedup(100, 12*time.Hour)}, connPool: messaging.NewConnPool[*FeishuConn](nil)}
-	conn := NewFeishuConn(adapter, "test_chat", "")
+	conn := NewFeishuConn(adapter, "test_chat", "", "")
 
 	err := conn.WriteCtx(context.Background(), nil)
 	require.Error(t, err)

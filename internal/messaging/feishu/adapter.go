@@ -87,7 +87,7 @@ func (a *Adapter) Start(ctx context.Context) error {
 		if len(parts) > 1 {
 			threadKey = parts[1]
 		}
-		return NewFeishuConn(a, parts[0], threadKey)
+		return NewFeishuConn(a, parts[0], threadKey, a.Bridge().WorkDir())
 	})
 	a.chatQueue = NewChatQueue(a.Log)
 	a.rateLimiter = NewFeishuRateLimiter()
@@ -399,7 +399,9 @@ func (a *Adapter) handleTextMessage(ctx context.Context, platformMsgID, channelI
 		return nil
 	}
 
-	envelope := a.Bridge().MakeFeishuEnvelope(channelID, threadKey, userID, text)
+	conn := a.GetOrCreateConn(channelID, threadKey)
+
+	envelope := a.Bridge().MakeFeishuEnvelope(channelID, threadKey, userID, text, conn.WorkDir())
 	if envelope == nil {
 		return fmt.Errorf("feishu: failed to build envelope")
 	}
@@ -408,9 +410,6 @@ func (a *Adapter) handleTextMessage(ctx context.Context, platformMsgID, channelI
 		md["platform_msg_id"] = platformMsgID
 		md["reply_to_msg_id"] = replyToMsgID
 	}
-
-	// Pre-create conn so its fields are ready before the bridge forwards to the handler.
-	conn := a.GetOrCreateConn(channelID, threadKey)
 
 	// Check if this text is a response to a pending interaction.
 	if a.checkPendingInteraction(ctx, text, conn) {
@@ -521,10 +520,23 @@ type FeishuConn struct {
 	toolRid       string
 	toolEmoji     string    // current timeline emoji, for dedup
 	startedAt     time.Time // when the user sent the current message
+	workDir       string    // current workDir identity for session key derivation
 }
 
-func NewFeishuConn(adapter *Adapter, chatID, threadKey string) *FeishuConn {
-	return &FeishuConn{adapter: adapter, chatID: chatID, threadKey: threadKey}
+func NewFeishuConn(adapter *Adapter, chatID, threadKey, workDir string) *FeishuConn {
+	return &FeishuConn{adapter: adapter, chatID: chatID, threadKey: threadKey, workDir: workDir}
+}
+
+func (c *FeishuConn) WorkDir() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.workDir
+}
+
+func (c *FeishuConn) SetWorkDir(dir string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.workDir = dir
 }
 
 func (c *FeishuConn) EnableStreaming(ctrl *StreamingCardController) {
@@ -889,7 +901,8 @@ var _ messaging.PlatformConn = (*FeishuConn)(nil)
 // handleTextControlCommand sends a control event derived from a text message
 // through the bridge, then sends feedback via card message.
 func (a *Adapter) handleTextControlCommand(ctx context.Context, chatID, userID, threadKey, platformMsgID string, result *messaging.ControlCommandResult) {
-	envelope := a.Bridge().MakeFeishuEnvelope(chatID, threadKey, userID, "")
+	conn := a.GetOrCreateConn(chatID, threadKey)
+	envelope := a.Bridge().MakeFeishuEnvelope(chatID, threadKey, userID, "", conn.WorkDir())
 	if envelope == nil {
 		a.Log.Warn("feishu: text control command failed to derive session", "action", result.Label)
 		return
@@ -911,7 +924,15 @@ func (a *Adapter) handleTextControlCommand(ctx context.Context, chatID, userID, 
 		OwnerID: userID,
 	}
 
-	conn := a.GetOrCreateConn(chatID, threadKey)
+	// CD sends progress feedback before execution; other actions send completion feedback after.
+	if result.Action == events.ControlActionCD {
+		if platformMsgID != "" {
+			_ = a.replyMessage(ctx, platformMsgID, controlFeedbackMessageCN(result.Action), false)
+		} else {
+			_ = a.sendTextMessage(ctx, chatID, controlFeedbackMessageCN(result.Action))
+		}
+	}
+
 	if err := a.Bridge().Handle(ctx, ctrlEnv, conn); err != nil {
 		a.Log.Warn("feishu: text control command failed", "action", result.Label, "err", err)
 		// Provide user-friendly error message with details
@@ -923,6 +944,14 @@ func (a *Adapter) handleTextControlCommand(ctx context.Context, chatID, userID, 
 	}
 
 	a.Log.Info("feishu: text control command sent", "action", result.Label, "user", userID, "session_id", envelope.SessionID)
+
+	// After a successful CD, update conn's workDir so subsequent messages
+	// derive the correct session ID for the target directory.
+	if result.Action == events.ControlActionCD && result.Arg != "" {
+		if expanded, err := config.ExpandAndAbs(result.Arg); err == nil {
+			conn.SetWorkDir(expanded)
+		}
+	}
 
 	// Reset/GC kills the worker without a guaranteed done event, so stale
 	// pending interactions (permission/question/elicitation) may survive.
@@ -940,15 +969,19 @@ func (a *Adapter) handleTextControlCommand(ctx context.Context, chatID, userID, 
 		}
 	}
 
-	if platformMsgID != "" {
-		_ = a.replyMessage(ctx, platformMsgID, controlFeedbackMessageCN(result.Action), false)
-	} else {
-		_ = a.sendTextMessage(ctx, chatID, controlFeedbackMessageCN(result.Action))
+	// Completion feedback for non-CD actions (CD feedback was sent before execution).
+	if result.Action != events.ControlActionCD {
+		if platformMsgID != "" {
+			_ = a.replyMessage(ctx, platformMsgID, controlFeedbackMessageCN(result.Action), false)
+		} else {
+			_ = a.sendTextMessage(ctx, chatID, controlFeedbackMessageCN(result.Action))
+		}
 	}
 }
 
 func (a *Adapter) handleTextWorkerCommand(ctx context.Context, chatID, chatType, userID, threadKey, platformMsgID, replyToMsgID string, result *messaging.WorkerCommandResult) {
-	envelope := a.Bridge().MakeFeishuEnvelope(chatID, threadKey, userID, "")
+	conn := a.GetOrCreateConn(chatID, threadKey)
+	envelope := a.Bridge().MakeFeishuEnvelope(chatID, threadKey, userID, "", conn.WorkDir())
 	if envelope == nil {
 		a.Log.Warn("feishu: worker command failed to derive session", "command", result.Label)
 		return
@@ -968,8 +1001,6 @@ func (a *Adapter) handleTextWorkerCommand(ctx context.Context, chatID, chatType,
 		},
 		OwnerID: userID,
 	}
-
-	conn := a.GetOrCreateConn(chatID, threadKey)
 
 	// Set conn fields for async response delivery.
 	conn.mu.Lock()
