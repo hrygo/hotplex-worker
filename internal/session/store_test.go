@@ -75,8 +75,6 @@ func TestSQLiteStore_Compact_BelowThreshold(t *testing.T) {
 
 // ─── SQLiteStore: Upsert with Context and PlatformKey ────────────────────────
 
-// NOTE: AppendAudit / GetAuditTrail tests removed — audit_log is dead code (AppendAudit never called in production).
-
 func TestSQLiteStore_Upsert_WithContext(t *testing.T) {
 	store := helperDB(t)
 	ctx := context.Background()
@@ -220,9 +218,10 @@ func helperStoreWithConv(t *testing.T) (*SQLiteStore, *SQLiteConversationStore) 
 // ─── ConversationStore: Append + GetBySession ─────────────────────────────────
 
 func TestConversationStore_Append_GetBySession(t *testing.T) {
-	_, cs := helperStoreWithConv(t)
+	store, cs := helperStoreWithConv(t)
 	ctx := context.Background()
 
+	helperUpsert(t, store, "sess_conv", "user1", events.StateRunning)
 	success := true
 	require.NoError(t, cs.Append(ctx, &ConversationRecord{
 		SessionID: "sess_conv", Seq: 1, Role: RoleUser, Content: "hello",
@@ -248,9 +247,10 @@ func TestConversationStore_Append_GetBySession(t *testing.T) {
 }
 
 func TestConversationStore_Append_WithToolsAndMeta(t *testing.T) {
-	_, cs := helperStoreWithConv(t)
+	store, cs := helperStoreWithConv(t)
 	ctx := context.Background()
 
+	helperUpsert(t, store, "sess_tools", "user1", events.StateRunning)
 	require.NoError(t, cs.Append(ctx, &ConversationRecord{
 		SessionID: "sess_tools", Seq: 1, Role: RoleAssistant, Content: "done",
 		Tools: map[string]int{"Read": 3, "Edit": 1}, ToolCallCount: 4,
@@ -276,9 +276,10 @@ func TestConversationStore_GetBySession_NotFound(t *testing.T) {
 }
 
 func TestConversationStore_Append_AutoID(t *testing.T) {
-	_, cs := helperStoreWithConv(t)
+	store, cs := helperStoreWithConv(t)
 	ctx := context.Background()
 
+	helperUpsert(t, store, "sess_autoid", "user1", events.StateRunning)
 	require.NoError(t, cs.Append(ctx, &ConversationRecord{
 		SessionID: "sess_autoid", Seq: 5, Role: RoleUser, Content: "test",
 	}))
@@ -310,9 +311,10 @@ func TestConversationStore_DeleteBySession(t *testing.T) {
 // ─── ConversationStore: DeleteExpired ──────────────────────────────────────────
 
 func TestConversationStore_DeleteExpired(t *testing.T) {
-	_, cs := helperStoreWithConv(t)
+	store, cs := helperStoreWithConv(t)
 	ctx := context.Background()
 
+	helperUpsert(t, store, "sess_exp", "user1", events.StateRunning)
 	require.NoError(t, cs.Append(ctx, &ConversationRecord{
 		SessionID: "sess_exp", Seq: 1, Role: RoleUser, Content: "old",
 	}))
@@ -374,8 +376,9 @@ func TestPoolUpdateLimits(t *testing.T) {
 func TestConversationStore_GetBySessionBefore(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	_, convStore := helperStoreWithConv(t)
+	store, convStore := helperStoreWithConv(t)
 
+	helperUpsert(t, store, "sess-1", "user1", events.StateRunning)
 	// Seed 5 records with seq 1-5 for session "sess-1"
 	for i := 1; i <= 5; i++ {
 		rec := &ConversationRecord{
@@ -426,8 +429,10 @@ func TestConversationStore_GetBySessionBefore(t *testing.T) {
 func TestConversationStore_GetBySessionBefore_SessionIsolation(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	_, convStore := helperStoreWithConv(t)
+	store, convStore := helperStoreWithConv(t)
 
+	helperUpsert(t, store, "sess-a", "user1", events.StateRunning)
+	helperUpsert(t, store, "sess-b", "user1", events.StateRunning)
 	// Seed records for two sessions
 	for _, sid := range []string{"sess-a", "sess-b"} {
 		rec := &ConversationRecord{
@@ -451,9 +456,10 @@ func TestConversationStore_GetBySessionBefore_SessionIsolation(t *testing.T) {
 }
 
 func TestConversationStore_Append_UnmarshallableMetadata(t *testing.T) {
-	_, cs := helperStoreWithConv(t)
+	store, cs := helperStoreWithConv(t)
 	ctx := context.Background()
 
+	helperUpsert(t, store, "sess-bad-meta", "user1", events.StateRunning)
 	// json.Marshal cannot encode a channel → triggers the error fallback path.
 	ch := make(chan int)
 	require.NoError(t, cs.Append(ctx, &ConversationRecord{
