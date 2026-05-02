@@ -127,6 +127,13 @@ func (a *sessionAccumulator) computeContextPct() float64 {
 // snapshot returns the current accumulator state as a map for injection into DoneData.Stats["_session"].
 func (a *sessionAccumulator) snapshot() map[string]any {
 	ctxPct := a.computeContextPct()
+	var toolNames map[string]int
+	if len(a.ToolNames) > 0 {
+		toolNames = make(map[string]int, len(a.ToolNames))
+		for k, v := range a.ToolNames {
+			toolNames[k] = v
+		}
+	}
 	return map[string]any{
 		"turn_count":       a.TurnCount,
 		"tool_call_count":  a.ToolCallCount,
@@ -142,7 +149,7 @@ func (a *sessionAccumulator) snapshot() map[string]any {
 		"turn_input_tok":   a.PerTurnInput,
 		"turn_output_tok":  a.PerTurnOutput,
 		"turn_cost_usd":    a.PerTurnCost,
-		"tool_names":       a.ToolNames,
+		"tool_names":       toolNames,
 	}
 }
 
