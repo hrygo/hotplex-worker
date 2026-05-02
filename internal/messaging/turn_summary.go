@@ -76,10 +76,10 @@ func ExtractTurnSummary(env *events.Envelope) TurnSummaryData {
 		TurnDurationMs:  events.ToInt64(m["turn_duration_ms"]),
 		TurnCount:       int(events.ToInt64(m["turn_count"])),
 		TurnInputTok:    events.ToInt64(m["turn_input_tok"]),
-		TurnOutputTok:    events.ToInt64(m["turn_output_tok"]),
-		SessionDuration:  events.ToFloat64(m["duration_seconds"]),
-		WorkDir:          events.StrVal(m["work_dir"]),
-		GitBranch:        events.StrVal(m["git_branch"]),
+		TurnOutputTok:   events.ToInt64(m["turn_output_tok"]),
+		SessionDuration: events.ToFloat64(m["duration_seconds"]),
+		WorkDir:         events.StrVal(m["work_dir"]),
+		GitBranch:       events.StrVal(m["git_branch"]),
 	}
 }
 

@@ -989,7 +989,6 @@ func (a *Adapter) cleanupMediaInDir(dir string) {
 	})
 }
 
-
 func (c *SlackConn) sendTurnSummary(_ context.Context, env *events.Envelope) {
 	if c.adapter == nil || c.adapter.client == nil {
 		return

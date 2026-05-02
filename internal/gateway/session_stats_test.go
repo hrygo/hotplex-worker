@@ -97,8 +97,8 @@ func TestSessionAccumulator_MergePerTurnStats(t *testing.T) {
 			},
 		})
 
-		require.Equal(t, int64(5000), acc.ContextFill)   // latest turn only
-		require.Equal(t, int64(15000), acc.TotalInput)    // cumulative
+		require.Equal(t, int64(5000), acc.ContextFill) // latest turn only
+		require.Equal(t, int64(15000), acc.TotalInput) // cumulative
 		require.Equal(t, int64(3000), acc.TotalOutput)
 		require.Equal(t, int64(200000), acc.ContextWindow)
 		require.Equal(t, "Opus", acc.ModelName)
@@ -130,6 +130,8 @@ func TestSessionAccumulator_ComputeContextPct(t *testing.T) {
 			require.Equal(t, tt.wantPct, got)
 		})
 	}
+	t.Parallel()
+}
 
 func TestSessionAccumulator_Snapshot(t *testing.T) {
 	acc := &sessionAccumulator{
