@@ -1004,28 +1004,14 @@ func (c *SlackConn) sendContextUsage(ctx context.Context, env *events.Envelope) 
 		return fmt.Errorf("slack: client not initialized")
 	}
 
-	var d events.ContextUsageData
-	switch v := env.Event.Data.(type) {
-	case events.ContextUsageData:
-		d = v
-	case map[string]any:
-		raw, _ := json.Marshal(v)
-		_ = json.Unmarshal(raw, &d)
-	default:
+	d, err := messaging.ExtractContextUsageData(env)
+	if err != nil {
 		return nil
 	}
-
-	plainText := fmt.Sprintf("📊 Context Usage — %d%% (%d / %d)", d.Percentage, d.TotalTokens, d.MaxTokens)
-	if d.Model != "" {
-		plainText += fmt.Sprintf("\n🤖 Model: %s", d.Model)
-	}
-	catParts := formatCategoryParts(d.Categories)
-	if len(catParts) > 0 {
-		plainText += "\n📂 " + strings.Join(catParts, " · ")
-	}
+	plainText := messaging.FormatCanonicalText(d)
 
 	// Primary: TableBlock (may be rejected by workspaces without the beta feature)
-	blocks := c.buildContextUsageTable(d, catParts)
+	blocks := c.buildContextUsageTable(d)
 	opts := []slack.MsgOption{
 		slack.MsgOptionBlocks(blocks...),
 		slack.MsgOptionText(plainText, false),
@@ -1033,17 +1019,17 @@ func (c *SlackConn) sendContextUsage(ctx context.Context, env *events.Envelope) 
 	if c.threadTS != "" {
 		opts = append(opts, slack.MsgOptionTS(c.threadTS))
 	}
-	_, _, err := c.adapter.client.PostMessageContext(ctx, c.channelID, opts...)
-	if err == nil {
+	_, _, pErr := c.adapter.client.PostMessageContext(ctx, c.channelID, opts...)
+	if pErr == nil {
 		return nil
 	}
-	if !strings.Contains(err.Error(), "invalid_blocks") {
-		return err
+	if !strings.Contains(pErr.Error(), "invalid_blocks") {
+		return pErr
 	}
 
 	// Fallback: ContextBlock (universally supported)
-	c.adapter.Log.Warn("slack: context usage TableBlock rejected, falling back to ContextBlock", "err", err)
-	fbBlocks := c.buildContextUsageFallback(d, catParts)
+	c.adapter.Log.Warn("slack: context usage TableBlock rejected, falling back to ContextBlock", "err", pErr)
+	fbBlocks := c.buildContextUsageFallback(d)
 	fbOpts := []slack.MsgOption{
 		slack.MsgOptionBlocks(fbBlocks...),
 		slack.MsgOptionText(plainText, false),
@@ -1056,51 +1042,37 @@ func (c *SlackConn) sendContextUsage(ctx context.Context, env *events.Envelope) 
 }
 
 // buildContextUsageTable builds a TableBlock for context usage (primary format).
-func (c *SlackConn) buildContextUsageTable(d events.ContextUsageData, catParts []string) []slack.Block {
+func (c *SlackConn) buildContextUsageTable(d events.ContextUsageData) []slack.Block {
+	info := messaging.BuildContextDisplay(d)
 	table := slack.NewTableBlock("context_usage")
 	table = table.WithColumnSettings(
 		slack.ColumnSetting{Align: slack.ColumnAlignmentLeft, IsWrapped: false},
 		slack.ColumnSetting{Align: slack.ColumnAlignmentLeft, IsWrapped: true},
 	)
 
-	table.AddRow(richTextCell("📊 Usage"), richTextCell(fmt.Sprintf("%d%% (%d / %d)", d.Percentage, d.TotalTokens, d.MaxTokens)))
-	if d.Model != "" {
-		table.AddRow(richTextCell("🤖 Model"), richTextCell(d.Model))
+	table.AddRow(richTextCell(info.Icon+" Usage"), richTextCell(fmt.Sprintf("%s %s  %s", info.ProgressBar, info.TokenDisplay, info.Label)))
+	if info.Model != "" {
+		table.AddRow(richTextCell("Model"), richTextCell(info.Model))
 	}
-	if len(catParts) > 0 {
-		table.AddRow(richTextCell("📂 Context"), richTextCell(strings.Join(catParts, " · ")))
-	}
-	if d.MemoryFiles > 0 {
-		table.AddRow(richTextCell("📁 Memory"), richTextCell(fmt.Sprintf("%d files", d.MemoryFiles)))
-	}
-	if d.MCPTools > 0 {
-		table.AddRow(richTextCell("🔧 MCP"), richTextCell(fmt.Sprintf("%d tools", d.MCPTools)))
-	}
-	if d.Agents > 0 {
-		table.AddRow(richTextCell("🤖 Agents"), richTextCell(fmt.Sprintf("%d", d.Agents)))
-	}
-	if d.Skills.Total > 0 {
-		table.AddRow(richTextCell("⚡ Skills"), richTextCell(fmt.Sprintf("%d (%d included, %d tokens)", d.Skills.Total, d.Skills.Included, d.Skills.Tokens)))
-		if len(d.Skills.Names) > 0 {
-			table.AddRow(richTextCell("📜 Skill List"), richTextCell(strings.Join(d.Skills.Names, ", ")))
+	if len(info.TopCategories) > 0 {
+		catParts := make([]string, len(info.TopCategories))
+		for i, cat := range info.TopCategories {
+			catParts[i] = fmt.Sprintf("%s: %s", cat.Name, messaging.FormatTokenCount(cat.Tokens))
 		}
+		table.AddRow(richTextCell("Top Context"), richTextCell(strings.Join(catParts, ", ")))
+	}
+	if info.ExtrasLine != "" {
+		table.AddRow(richTextCell("Extras"), richTextCell(info.ExtrasLine))
+	}
+	if info.ActionTip != "" {
+		table.AddRow(richTextCell("Tip"), richTextCell(info.ActionTip))
 	}
 	return []slack.Block{table}
 }
 
 // buildContextUsageFallback builds ContextBlock fallback when TableBlock is rejected.
-func (c *SlackConn) buildContextUsageFallback(d events.ContextUsageData, catParts []string) []slack.Block {
-	parts := []string{fmt.Sprintf("📊 *Context Usage* — %d%% (%d / %d)", d.Percentage, d.TotalTokens, d.MaxTokens)}
-	if d.Model != "" {
-		parts = append(parts, fmt.Sprintf("🤖 Model: %s", d.Model))
-	}
-	if len(catParts) > 0 {
-		parts = append(parts, "📂 "+strings.Join(catParts, " · "))
-	}
-	if len(d.Skills.Names) > 0 {
-		parts = append(parts, "📜 *Skills*: "+strings.Join(d.Skills.Names, ", "))
-	}
-	text := slack.NewTextBlockObject("mrkdwn", strings.Join(parts, "\n"), false, false)
+func (c *SlackConn) buildContextUsageFallback(d events.ContextUsageData) []slack.Block {
+	text := slack.NewTextBlockObject("mrkdwn", messaging.FormatCanonicalText(d), false, false)
 	return []slack.Block{slack.NewContextBlock("", text)}
 }
 
@@ -1110,15 +1082,6 @@ func richTextCell(text string) *slack.RichTextBlock {
 		slack.NewRichTextSectionTextElement(text, nil),
 	)
 	return slack.NewRichTextBlock("", section)
-}
-
-// formatCategoryParts formats context categories as "Name: Tokens" pairs.
-func formatCategoryParts(categories []events.ContextCategory) []string {
-	parts := make([]string, 0, len(categories))
-	for _, cat := range categories {
-		parts = append(parts, fmt.Sprintf("%s: %d", cat.Name, cat.Tokens))
-	}
-	return parts
 }
 
 // mcpServerIcon returns the status icon for an MCP server.

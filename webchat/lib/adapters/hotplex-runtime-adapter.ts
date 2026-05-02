@@ -15,6 +15,7 @@ import { useMetrics } from '@/lib/hooks/useMetrics';
 import { getSessionHistory, type ConversationRecord } from '@/lib/api/sessions';
 import { saveMessages, loadMessages, clearMessages, type CacheableMessage } from '@/lib/cache/message-cache';
 import { conversationTurnsToMessages } from '@/lib/utils/turn-replay';
+import { formatContextMessage } from '@/lib/utils/context-format';
 import type {
   Envelope,
   MessageDeltaData,
@@ -651,6 +652,19 @@ export function useHotPlexRuntime({
     const handleContextUsage = (data: ContextUsageData) => {
       const names = data?.skills?.names ?? [];
       onSkillsChangeRef.current?.(names);
+
+      // Inject context usage as a visible assistant message
+      const text = formatContextMessage(data);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `context-${Date.now()}`,
+          role: 'assistant' as const,
+          parts: [{ type: 'text' as const, text }],
+          createdAt: new Date(),
+          status: 'complete' as const,
+        },
+      ]);
     };
     client.on('contextUsage', handleContextUsage);
 

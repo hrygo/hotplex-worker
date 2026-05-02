@@ -833,54 +833,12 @@ func (c *FeishuConn) writeContent(ctx context.Context, env *events.Envelope, tex
 }
 
 func (c *FeishuConn) sendContextUsage(ctx context.Context, env *events.Envelope) error {
-	var d events.ContextUsageData
-	switch v := env.Event.Data.(type) {
-	case events.ContextUsageData:
-		d = v
-	case map[string]any:
-		raw, _ := json.Marshal(v)
-		_ = json.Unmarshal(raw, &d)
-	default:
+	d, err := messaging.ExtractContextUsageData(env)
+	if err != nil {
 		return nil
 	}
 
-	var sb strings.Builder
-	fmt.Fprintf(&sb, "📊 Context Usage — %d%% (%d / %d)", d.Percentage, d.TotalTokens, d.MaxTokens)
-	if d.Model != "" {
-		fmt.Fprintf(&sb, "\n🤖 Model: %s", d.Model)
-	}
-	if len(d.Categories) > 0 {
-		var catParts []string
-		for _, cat := range d.Categories {
-			if d.Skills.Total > 0 && strings.EqualFold(cat.Name, "Skills") {
-				continue
-			}
-			catParts = append(catParts, fmt.Sprintf("%s: %d", cat.Name, cat.Tokens))
-		}
-		if len(catParts) > 0 {
-			sb.WriteString("\n📂 " + strings.Join(catParts, " · "))
-		}
-	}
-	var extras []string
-	if d.MemoryFiles > 0 {
-		extras = append(extras, fmt.Sprintf("📁 %d memory files", d.MemoryFiles))
-	}
-	if d.MCPTools > 0 {
-		extras = append(extras, fmt.Sprintf("🔧 %d MCP tools", d.MCPTools))
-	}
-	if d.Agents > 0 {
-		extras = append(extras, fmt.Sprintf("🤖 %d agents", d.Agents))
-	}
-	if d.Skills.Total > 0 {
-		skillsStr := fmt.Sprintf("⚡ %d skills (%d included, %d tokens)", d.Skills.Total, d.Skills.Included, d.Skills.Tokens)
-		if len(d.Skills.Names) > 0 {
-			skillsStr += "\n📜 " + strings.Join(d.Skills.Names, ", ")
-		}
-		extras = append(extras, skillsStr)
-	}
-	if len(extras) > 0 {
-		sb.WriteString("\n" + strings.Join(extras, " · "))
-	}
+	text := messaging.FormatCanonicalText(d)
 
 	c.mu.RLock()
 	chatID := c.chatID
@@ -888,9 +846,9 @@ func (c *FeishuConn) sendContextUsage(ctx context.Context, env *events.Envelope)
 	c.mu.RUnlock()
 
 	if replyToMsgID != "" {
-		return c.adapter.replyMessage(ctx, replyToMsgID, sb.String(), false)
+		return c.adapter.replyMessage(ctx, replyToMsgID, text, false)
 	}
-	return c.adapter.sendTextMessage(ctx, chatID, sb.String())
+	return c.adapter.sendTextMessage(ctx, chatID, text)
 }
 
 func (c *FeishuConn) sendMCPStatus(ctx context.Context, env *events.Envelope) error {
