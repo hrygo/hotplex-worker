@@ -22,10 +22,11 @@ type sessionAccumulator struct {
 	StartedAt     time.Time
 
 	// Per-turn tracking (reset after each done).
-	ToolNames     map[string]int // tool name -> call count this turn
-	PerTurnInput  int64
-	PerTurnOutput int64
-	PerTurnCost   float64
+	ToolNames      map[string]int // tool name -> call count this turn
+	PerTurnInput   int64
+	PerTurnOutput  int64
+	PerTurnCost    float64
+	TurnDurationMs int64 // current turn duration in milliseconds
 
 	// Cumulative totals at the end of the previous turn (for delta computation).
 	PrevTotalIn   int64
@@ -104,6 +105,7 @@ func (a *sessionAccumulator) resetPerTurn() {
 	a.PerTurnInput = 0
 	a.PerTurnOutput = 0
 	a.PerTurnCost = 0
+	a.TurnDurationMs = 0
 }
 
 // computeContextPct calculates context window usage percentage.
@@ -125,6 +127,13 @@ func (a *sessionAccumulator) computeContextPct() float64 {
 // snapshot returns the current accumulator state as a map for injection into DoneData.Stats["_session"].
 func (a *sessionAccumulator) snapshot() map[string]any {
 	ctxPct := a.computeContextPct()
+	var toolNames map[string]int
+	if len(a.ToolNames) > 0 {
+		toolNames = make(map[string]int, len(a.ToolNames))
+		for k, v := range a.ToolNames {
+			toolNames[k] = v
+		}
+	}
 	return map[string]any{
 		"turn_count":       a.TurnCount,
 		"tool_call_count":  a.ToolCallCount,
@@ -136,6 +145,11 @@ func (a *sessionAccumulator) snapshot() map[string]any {
 		"context_pct":      ctxPct,
 		"total_cost_usd":   a.TotalCostUSD,
 		"model_name":       a.ModelName,
+		"turn_duration_ms": a.TurnDurationMs,
+		"turn_input_tok":   a.PerTurnInput,
+		"turn_output_tok":  a.PerTurnOutput,
+		"turn_cost_usd":    a.PerTurnCost,
+		"tool_names":       toolNames,
 	}
 }
 
