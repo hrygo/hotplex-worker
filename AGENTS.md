@@ -1,6 +1,6 @@
 # HotPlex 项目知识库
 
-**最后更新**: 2026-05-01 · **分支**: main · **版本**: v1.3.0
+**最后更新**: 2026-05-02 · **分支**: main · **版本**: v1.3.0
 
 ---
 
@@ -46,6 +46,7 @@ make dev-status  # 查看运行服务
 - `make lint` - golangci-lint 检查
 - `make dev` - 启动开发环境
 - `hotplex service start` - 启动系统服务
+- `hotplex update` - 自更新到最新版本
 
 ---
 
@@ -108,6 +109,7 @@ cp configs/env.example .env
 | `routes.go` | 197 | HTTP 路由注册 |
 | `messaging_init.go` | 233 | 消息适配器生命周期 |
 | `service_*.go` | - | 系统服务管理（systemd/launchd/SCM） |
+| `update.go` | 168 | 自更新命令：GitHub API、下载、校验、替换 |
 
 ### 核心模块 (`internal/`)
 
@@ -145,6 +147,7 @@ cp configs/env.example .env
 - `skills/` - Skills 发现
 - `metrics/` - Prometheus 指标
 - `service/` - 系统服务管理
+- `updater/` - 自更新（GitHub API、sha256 校验、原子替换）
 
 ### 公共包 (`pkg/`)
 
@@ -166,82 +169,55 @@ configs/   - 配置文件
 
 ## 贡献工作流
 
-HotPlex 项目使用 **fork-PR 工作流**进行贡献。
+### Admin（仓库管理员）
 
-### 工作流步骤
+拥有仓库 write/admin 权限的协作者直接在 origin 仓库创建分支和 PR。
 
-**1. Fork 上游仓库**
 ```bash
-# 在 GitHub 上 fork hrygo/hotplex
-# 例如：https://github.com/aaronwong1989/hotplex-1
-```
-
-**2. 添加 fork 远程仓库**
-```bash
-cd /path/to/hotplex
-git remote add fork https://github.com/<your-username>/hotplex-1.git
-git remote -v  # 应显示 origin 和 fork
-```
-
-**3. 创建功能分支**
-```bash
+# 1. 从最新 main 创建功能分支
 git fetch origin main
-git checkout main
-git pull origin main
-git checkout -b feat/<feature-name>
-```
+git checkout -b feat/<feature-name> origin/main
 
-**4. 开发和提交**
-```bash
-# 进行代码更改
-git add .
+# 2. 开发和提交
+git add <files>
 git commit -m "feat(scope): description"
+
+# 3. 推送并创建 PR
+git push -u origin feat/<feature-name>
+gh pr create --title "feat(scope): description"
+
+# 4. 合并后清理
+git checkout main && git pull origin main
+git branch -d feat/<feature-name>
+git push origin --delete feat/<feature-name>
 ```
 
-**5. 推送到 fork**
-```bash
-git push fork feat/<feature-name>
-```
+### 外部贡献者（Fork-PR）
 
-**6. 创建 PR**
-```bash
-gh pr create \
-  --base main \
-  --head <your-username>:feat/<feature-name> \
-  --title "feat(scope): description"
-```
+无仓库直接权限的外部贡献者使用 fork-PR 工作流。
 
-### 分支管理
-
-**查看远程仓库**：
 ```bash
-git remote -v
-```
+# 1. Fork 并添加远程
+git remote add fork https://github.com/<your-username>/hotplex.git
 
-**同步上游**：
-```bash
+# 2. 创建功能分支
 git fetch origin main
-git checkout main
-git merge origin/main
-git push fork main
-```
+git checkout -b feat/<feature-name> origin/main
 
-**清理分支**：
-```bash
+# 3. 推送到 fork 并创建 PR
+git push -u fork feat/<feature-name>
+gh pr create --base main --head <your-username>:feat/<feature-name> --title "feat(scope): description"
+
+# 4. 合并后清理
 git branch -d feat/<feature-name>
 git push fork --delete feat/<feature-name>
 ```
 
-### ⚠️ 重要注意事项
+### 通用规范
 
-✅ **正确做法**：
-- 推送到 `fork` 远程仓库
-- 从 `origin/main` 创建功能分支
+- 所有变更通过 PR 合并，不直接推送到 main
 - 遵循 Conventional Commits 格式
-
-❌ **错误做法**：
-- 直接推送到 `origin`（会被拒绝）
-- 跳过 fork 流程
+- PR 必须通过 CI（lint + test + build）
 
 ---
 
@@ -398,6 +374,15 @@ hotplex service status
 hotplex service logs -f
 ```
 
+### 自更新
+
+```bash
+hotplex update                # 交互式更新
+hotplex update --check        # 仅检查，不下载
+hotplex update -y             # 跳过确认提示
+hotplex update --restart      # 更新后自动重启网关
+```
+
 ---
 
 ## 备注
@@ -413,6 +398,7 @@ hotplex service logs -f
 - Postgres store 仅为桩（仅 SQLite 可用于生产）
 - OpenCode CLI 适配器已移除（由 OCS 替代）
 - ACPX 适配器仅存在类型常量（无实现）
+- Windows 自更新不支持（exe 运行时被锁，使用 `scripts/install.ps1` 替代）
 
 ### 跨平台支持
 
