@@ -3,6 +3,7 @@ package service
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 )
 
@@ -52,6 +53,20 @@ type Manager interface {
 }
 
 func ResolveBinaryPath() (string, error) {
+	// Prefer the binary found in PATH (standard deployment location).
+	// This avoids capturing a build-directory path when the user runs
+	// ./bin/hotplex-linux-amd64 service install.
+	if p, err := exec.LookPath("hotplex"); err == nil {
+		if abs, err := filepath.Abs(p); err == nil {
+			if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+				return resolved, nil
+			}
+			return abs, nil
+		}
+		return p, nil
+	}
+
+	// Fallback: resolve the currently running executable.
 	exe, err := os.Executable()
 	if err != nil {
 		return "", fmt.Errorf("resolve binary: %w", err)
