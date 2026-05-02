@@ -337,6 +337,9 @@ func (m *Manager) TransitionWithReason(ctx context.Context, id string, to events
 	defer ms.mu.Unlock()
 
 	from := ms.info.State
+	if from == to {
+		return nil // idempotent: already in target state
+	}
 	if !events.IsValidTransition(from, to) {
 		return fmt.Errorf("%w: %s → %s", ErrInvalidTransition, from, to)
 	}
