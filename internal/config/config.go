@@ -23,7 +23,7 @@ var envVarRe = regexp.MustCompile(`\$\{([^}:]+)(?::-([^}]*))?\}`)
 //
 //	db_password: "${DB_PASSWORD:-}"
 //
-// Unset variables without defaults are left as the literal string.
+// Unset variables without defaults expand to empty string.
 func ExpandEnv(s string) string {
 	return envVarRe.ReplaceAllStringFunc(s, func(match string) string {
 		parts := envVarRe.FindStringSubmatch(match)
