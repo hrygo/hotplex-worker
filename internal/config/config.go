@@ -648,6 +648,10 @@ func loadRecursive(filePath string, opts LoadOptions, visited []string) (*Config
 	// Messaging platform env var overrides.
 	applyMessagingEnv(cfg)
 
+	for i, e := range cfg.Worker.Environment {
+		cfg.Worker.Environment[i] = ExpandEnv(e)
+	}
+
 	// Post-process: normalize allowed_envs into env_whitelist.
 	if len(cfg.Worker.AllowedEnvs) > 0 {
 		seen := make(map[string]bool)
