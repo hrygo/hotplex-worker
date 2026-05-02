@@ -840,7 +840,7 @@ func (b *Bridge) attemptResumeFallback(p fallbackParams) bool {
 
 	b.log.Info("bridge: fresh worker started after resume failure", "session_id", p.sessionID, "worker_type", p.workerType)
 	notifyMsg := buildNotifyEnvelope(p.sessionID,
-		fmt.Sprintf("Session data lost (exit %d), starting fresh session.", p.exitCode),
+		fmt.Sprintf("🔄 会话已重新启动，上下文已重置。"),
 		b.hub.NextSeq(p.sessionID))
 	_ = b.hub.SendToSession(context.Background(), notifyMsg)
 	return true

@@ -408,7 +408,7 @@ func Default() *Config {
 			MaxLifetime:      24 * time.Hour,
 			IdleTimeout:      60 * time.Minute,
 			ExecutionTimeout: 30 * time.Minute,
-			TurnTimeout:      15 * time.Minute,
+			TurnTimeout:      0, // disabled by default; execution_timeout catches zombies
 			AllowedEnvs:      nil,
 			EnvWhitelist:     nil,
 			DefaultWorkDir:   filepath.Join(HotplexHome(), "workspace"),

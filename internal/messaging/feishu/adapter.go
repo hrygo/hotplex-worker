@@ -954,6 +954,16 @@ func (a *Adapter) handleTextControlCommand(ctx context.Context, chatID, userID, 
 	}
 
 	conn := a.GetOrCreateConn(chatID, threadKey)
+
+	// CD sends progress feedback before execution; other actions send completion feedback after.
+	if result.Action == events.ControlActionCD {
+		if platformMsgID != "" {
+			_ = a.replyMessage(ctx, platformMsgID, controlFeedbackMessageCN(result.Action), false)
+		} else {
+			_ = a.sendTextMessage(ctx, chatID, controlFeedbackMessageCN(result.Action))
+		}
+	}
+
 	if err := a.Bridge().Handle(ctx, ctrlEnv, conn); err != nil {
 		a.Log.Warn("feishu: text control command failed", "action", result.Label, "err", err)
 		// Provide user-friendly error message with details
@@ -982,10 +992,13 @@ func (a *Adapter) handleTextControlCommand(ctx context.Context, chatID, userID, 
 		}
 	}
 
-	if platformMsgID != "" {
-		_ = a.replyMessage(ctx, platformMsgID, controlFeedbackMessageCN(result.Action), false)
-	} else {
-		_ = a.sendTextMessage(ctx, chatID, controlFeedbackMessageCN(result.Action))
+	// Completion feedback for non-CD actions (CD feedback was sent before execution).
+	if result.Action != events.ControlActionCD {
+		if platformMsgID != "" {
+			_ = a.replyMessage(ctx, platformMsgID, controlFeedbackMessageCN(result.Action), false)
+		} else {
+			_ = a.sendTextMessage(ctx, chatID, controlFeedbackMessageCN(result.Action))
+		}
 	}
 }
 

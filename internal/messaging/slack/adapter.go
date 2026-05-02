@@ -568,6 +568,12 @@ func (a *Adapter) handleTextControlCommand(ctx context.Context, teamID, channelI
 		a.Log.Warn("slack: adapter closed, dropping control command", "action", result.Label)
 		return
 	}
+
+	// CD sends progress feedback before execution; other actions send completion feedback after.
+	if result.Action == events.ControlActionCD {
+		a.sendEphemeralOrPost(ctx, channelID, threadTS, userID, controlFeedbackMessage(result.Action))
+	}
+
 	if err := a.Bridge().Handle(ctx, ctrlEnv, conn); err != nil {
 		a.Log.Warn("slack: text control command failed", "action", result.Label, "err", err)
 		// Provide user-friendly error message with details
@@ -590,7 +596,10 @@ func (a *Adapter) handleTextControlCommand(ctx context.Context, teamID, channelI
 		}
 	}
 
-	a.sendEphemeralOrPost(ctx, channelID, threadTS, userID, controlFeedbackMessage(result.Action))
+	// Completion feedback for non-CD actions (CD feedback was sent before execution).
+	if result.Action != events.ControlActionCD {
+		a.sendEphemeralOrPost(ctx, channelID, threadTS, userID, controlFeedbackMessage(result.Action))
+	}
 }
 
 func (a *Adapter) handleTextWorkerCommand(ctx context.Context, teamID, channelID, threadTS, userID string, result *messaging.WorkerCommandResult) {
