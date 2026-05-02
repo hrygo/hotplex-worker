@@ -393,12 +393,14 @@ var discardLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
 func newTestAdapter(t *testing.T) *Adapter {
 	t.Helper()
 	a := &Adapter{
-		PlatformAdapter: messaging.PlatformAdapter{
-			Log:   discardLogger,
-			Dedup: messaging.NewDedup(100, time.Hour),
+		BaseAdapter: messaging.BaseAdapter[*FeishuConn]{
+			PlatformAdapter: messaging.PlatformAdapter{
+				Log:   discardLogger,
+				Dedup: messaging.NewDedup(100, time.Hour),
+			},
 		},
 	}
-	a.connPool = messaging.NewConnPool[*FeishuConn](func(key string) *FeishuConn {
+	a.InitConnPool(func(key string) *FeishuConn {
 		parts := strings.SplitN(key, "#", 2)
 		threadKey := ""
 		if len(parts) > 1 {

@@ -15,7 +15,7 @@ import (
 
 func TestAdapter_ConfigureWith_ReconnectDelays(t *testing.T) {
 	t.Parallel()
-	a := &Adapter{PlatformAdapter: messaging.PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil))}}
+	a := &Adapter{BaseAdapter: messaging.BaseAdapter[*FeishuConn]{PlatformAdapter: messaging.PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil))}}}
 
 	require.Equal(t, time.Duration(0), a.BackoffBaseDelay)
 	require.Equal(t, time.Duration(0), a.BackoffMaxDelay)
@@ -38,7 +38,7 @@ func TestAdapter_GetOrCreateConn_SameKeyReturnsSame(t *testing.T) {
 	conn1 := a.GetOrCreateConn("chat123", "thread1")
 	conn2 := a.GetOrCreateConn("chat123", "thread1")
 	require.Same(t, conn1, conn2)
-	require.Equal(t, 1, a.connPool.Len())
+	require.Equal(t, 1, a.ConnPool.Len())
 }
 
 func TestAdapter_GetOrCreateConn_DifferentKeyReturnsDifferent(t *testing.T) {
@@ -51,7 +51,7 @@ func TestAdapter_GetOrCreateConn_DifferentKeyReturnsDifferent(t *testing.T) {
 	require.NotSame(t, conn1, conn2)
 	require.NotSame(t, conn1, conn3)
 	require.NotSame(t, conn2, conn3)
-	require.Equal(t, 3, a.connPool.Len())
+	require.Equal(t, 3, a.ConnPool.Len())
 }
 
 func TestAdapter_GetOrCreateConn_ThreadKeyPassedThrough(t *testing.T) {
@@ -87,7 +87,7 @@ func TestFeishuConn_Close_ClearsFields(t *testing.T) {
 	require.Empty(t, conn.toolEmoji)
 	conn.mu.RUnlock()
 
-	require.Nil(t, a.connPool.Get("chat123#"))
+	require.Nil(t, a.ConnPool.Get("chat123#"))
 }
 
 func TestFeishuConn_Close_NilStreamCtrl(t *testing.T) {
@@ -104,12 +104,14 @@ func TestFeishuConn_Close_NilStreamCtrl(t *testing.T) {
 func TestFeishuConn_Close_NilLarkClient(t *testing.T) {
 	t.Parallel()
 	a := &Adapter{
-		PlatformAdapter: messaging.PlatformAdapter{
-			Log:          slog.New(slog.NewTextHandler(io.Discard, nil)),
-			Dedup:        messaging.NewDedup(100, time.Hour),
-			Interactions: messaging.NewInteractionManager(slog.New(slog.NewTextHandler(io.Discard, nil))),
+		BaseAdapter: messaging.BaseAdapter[*FeishuConn]{
+			PlatformAdapter: messaging.PlatformAdapter{
+				Log:          slog.New(slog.NewTextHandler(io.Discard, nil)),
+				Dedup:        messaging.NewDedup(100, time.Hour),
+				Interactions: messaging.NewInteractionManager(slog.New(slog.NewTextHandler(io.Discard, nil))),
+			},
+			ConnPool: messaging.NewConnPool[*FeishuConn](nil),
 		},
-		connPool: messaging.NewConnPool[*FeishuConn](nil),
 	}
 
 	conn := NewFeishuConn(a, "chat_close", "", "")
@@ -125,7 +127,7 @@ func TestFeishuConn_Close_NilLarkClient(t *testing.T) {
 
 func TestAdapter_HandleTextMessage_NilBridge(t *testing.T) {
 	t.Parallel()
-	a := &Adapter{PlatformAdapter: messaging.PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil))}}
+	a := &Adapter{BaseAdapter: messaging.BaseAdapter[*FeishuConn]{PlatformAdapter: messaging.PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil))}}}
 	err := a.HandleTextMessage(context.Background(), "msg1", "ch1", "team1", "thread1", "user1", "hello")
 	require.NoError(t, err)
 }
@@ -133,12 +135,14 @@ func TestAdapter_HandleTextMessage_NilBridge(t *testing.T) {
 func TestFeishuConn_WriteCtx_PermissionRequest_NilClient(t *testing.T) {
 	t.Parallel()
 	a := &Adapter{
-		PlatformAdapter: messaging.PlatformAdapter{
-			Log:          slog.New(slog.NewTextHandler(io.Discard, nil)),
-			Dedup:        messaging.NewDedup(100, time.Hour),
-			Interactions: messaging.NewInteractionManager(slog.New(slog.NewTextHandler(io.Discard, nil))),
+		BaseAdapter: messaging.BaseAdapter[*FeishuConn]{
+			PlatformAdapter: messaging.PlatformAdapter{
+				Log:          slog.New(slog.NewTextHandler(io.Discard, nil)),
+				Dedup:        messaging.NewDedup(100, time.Hour),
+				Interactions: messaging.NewInteractionManager(slog.New(slog.NewTextHandler(io.Discard, nil))),
+			},
+			ConnPool: messaging.NewConnPool[*FeishuConn](nil),
 		},
-		connPool: messaging.NewConnPool[*FeishuConn](nil),
 	}
 
 	conn := NewFeishuConn(a, "chat123", "", "")
@@ -166,12 +170,14 @@ func TestFeishuConn_WriteCtx_PermissionRequest_NilClient(t *testing.T) {
 func TestFeishuConn_WriteCtx_QuestionRequest_NilClient(t *testing.T) {
 	t.Parallel()
 	a := &Adapter{
-		PlatformAdapter: messaging.PlatformAdapter{
-			Log:          slog.New(slog.NewTextHandler(io.Discard, nil)),
-			Dedup:        messaging.NewDedup(100, time.Hour),
-			Interactions: messaging.NewInteractionManager(slog.New(slog.NewTextHandler(io.Discard, nil))),
+		BaseAdapter: messaging.BaseAdapter[*FeishuConn]{
+			PlatformAdapter: messaging.PlatformAdapter{
+				Log:          slog.New(slog.NewTextHandler(io.Discard, nil)),
+				Dedup:        messaging.NewDedup(100, time.Hour),
+				Interactions: messaging.NewInteractionManager(slog.New(slog.NewTextHandler(io.Discard, nil))),
+			},
+			ConnPool: messaging.NewConnPool[*FeishuConn](nil),
 		},
-		connPool: messaging.NewConnPool[*FeishuConn](nil),
 	}
 
 	conn := NewFeishuConn(a, "chat123", "", "")
@@ -197,12 +203,14 @@ func TestFeishuConn_WriteCtx_QuestionRequest_NilClient(t *testing.T) {
 func TestFeishuConn_WriteCtx_ElicitationRequest_NilClient(t *testing.T) {
 	t.Parallel()
 	a := &Adapter{
-		PlatformAdapter: messaging.PlatformAdapter{
-			Log:          slog.New(slog.NewTextHandler(io.Discard, nil)),
-			Dedup:        messaging.NewDedup(100, time.Hour),
-			Interactions: messaging.NewInteractionManager(slog.New(slog.NewTextHandler(io.Discard, nil))),
+		BaseAdapter: messaging.BaseAdapter[*FeishuConn]{
+			PlatformAdapter: messaging.PlatformAdapter{
+				Log:          slog.New(slog.NewTextHandler(io.Discard, nil)),
+				Dedup:        messaging.NewDedup(100, time.Hour),
+				Interactions: messaging.NewInteractionManager(slog.New(slog.NewTextHandler(io.Discard, nil))),
+			},
+			ConnPool: messaging.NewConnPool[*FeishuConn](nil),
 		},
-		connPool: messaging.NewConnPool[*FeishuConn](nil),
 	}
 
 	conn := NewFeishuConn(a, "chat123", "", "")

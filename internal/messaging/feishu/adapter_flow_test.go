@@ -363,11 +363,13 @@ func TestAdapterFlow_ReplyMessage_NilClient(t *testing.T) {
 func TestAdapterFlow_DedupCleanupLoop_Exit(t *testing.T) {
 	t.Parallel()
 	a := &Adapter{
-		PlatformAdapter: messaging.PlatformAdapter{
-			Log:   discardLogger,
-			Dedup: messaging.NewDedup(10, time.Millisecond),
+		BaseAdapter: messaging.BaseAdapter[*FeishuConn]{
+			PlatformAdapter: messaging.PlatformAdapter{
+				Log:   discardLogger,
+				Dedup: messaging.NewDedup(10, time.Millisecond),
+			},
+			ConnPool: messaging.NewConnPool[*FeishuConn](nil),
 		},
-		connPool: messaging.NewConnPool[*FeishuConn](nil),
 	}
 	a.Dedup.StartCleanup()
 	a.Dedup.Close() // should not panic
@@ -384,7 +386,7 @@ func TestAdapterFlow_Close_WithConnections(t *testing.T) {
 	err := a.Close(context.Background())
 	require.NoError(t, err)
 
-	require.Nil(t, a.connPool.Get("chat_cleanup#"))
+	require.Nil(t, a.ConnPool.Get("chat_cleanup#"))
 }
 
 func TestAdapterFlow_Start_AlreadyStarted(t *testing.T) {
