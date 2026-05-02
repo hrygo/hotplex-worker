@@ -44,7 +44,7 @@ gh issue list --limit 20 --state open --json number,title,labels,body \
 - 影响：High（用户体验）
 - 紧急度：Medium（不阻塞）
 - 工作量：2 天
-- ROI = (8×5×2) / 100 = 0.8 → **80**
+- ROI = (8×5×10) / 10 = **40.0**
 
 **#78 分析**：
 - ✅ 问题清晰：错误处理不当
@@ -54,7 +54,7 @@ gh issue list --limit 20 --state open --json number,title,labels,body \
 - 影响：High（影响调试和可靠性）
 - 紧急度：High（生产问题）
 - 工作量：1 天
-- ROI = (8×9×1) / 100 = 0.72 → **72**
+- ROI = (8×9×8) / 10 = **57.6**
 
 **#89 分析**：
 - ✅ 问题清晰：bundle 太大
@@ -64,7 +64,7 @@ gh issue list --limit 20 --state open --json number,title,labels,body \
 - 影响：High（用户体验）
 - 紧急度：Medium（不阻塞）
 - 工作量：2 天
-- ROI = (8×6×2) / 100 = 0.96 → **96**
+- ROI = (8×6×7) / 10 = **33.6**
 
 **#88 分析**：
 - ✅ 问题清晰：代码重复
@@ -74,7 +74,7 @@ gh issue list --limit 20 --state open --json number,title,labels,body \
 - 影响：Medium（可维护性）
 - 紧急度：Medium（技术债）
 - 工作量：1 天
-- ROI = (5×6×1) / 100 = 0.30 → **30**
+- ROI = (5×6×8) / 10 = **24.0**
 
 ... (继续分析其他 16 个 issues)
 
@@ -86,12 +86,12 @@ gh issue list --limit 20 --state open --json number,title,labels,body \
 
 | Issue | ROI | Type | Priority |
 |-------|-----|------|----------|
-| #89 | 96 | perf | P1 |
-| #90 | 80 | feat | P1 |
-| #78 | 72 | fix | P2 |
-| #88 | 30 | refactor | P2 |
-| #85 | 28 | chore | P3 |
-| #82 | 25 | feat | P3 |
+| #78 | 57.6 | fix | P1 |
+| #90 | 40.0 | feat | P2 |
+| #89 | 33.6 | perf | P2 |
+| #88 | 24.0 | refactor | P3 |
+| #85 | 21.0 | chore | P3 |
+| #82 | 18.0 | feat | P3 |
 | ... | ... | ... | ... |
 
 **输出排名**：`/tmp/issue_ranking.md`
@@ -101,10 +101,10 @@ gh issue list --limit 20 --state open --json number,title,labels,body \
 **选择策略**：选择 top 4 高 ROI issues
 
 **选定 Issues**：
-1. #89 (ROI 96) - webchat 性能优化
-2. #90 (ROI 80) - CLI 自更新
-3. #78 (ROI 72) - messaging 错误处理
-4. #88 (ROI 30) - messaging adapter 重构
+1. #78 (ROI 57.6) - messaging 错误处理
+2. #90 (ROI 40.0) - CLI 自更新
+3. #89 (ROI 33.6) - webchat 性能优化
+4. #88 (ROI 24.0) - messaging adapter 重构
 
 **连贯性分析**：
 - **模块分布**：
@@ -128,7 +128,7 @@ gh issue list --limit 20 --state open --json number,title,labels,body \
 #### 步骤 4.1: 准备仓库
 
 ```bash
-cd /home/hotplex/.hotplex/workspace/hotplex
+cd $(git rev-parse --show-toplevel)
 git fetch origin main
 git checkout main
 git pull origin main
@@ -457,7 +457,7 @@ PR 经过审查，一些小的建议被采纳，最终合并。
 
 **解决统计**：
 - **Issues 解决**: 4 个（#90, #78, #89, #88）
-- **总 ROI**: 278（96+80+72+30）
+- **总 ROI**: 155.2（57.6+40.0+33.6+24.0）
 - **Commits**: 4 个（每个 issue 一个）
 - **代码更改**: +850 / -320 行
 - **测试覆盖率**: 82% → 85%

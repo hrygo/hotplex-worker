@@ -5,7 +5,7 @@
 ## 4.1 准备仓库
 
 ```bash
-cd /home/hotplex/.hotplex/workspace/hotplex
+cd $(git rev-parse --show-toplevel)
 git fetch origin main
 git checkout main
 git pull origin main
