@@ -103,6 +103,29 @@
           "check": "输出中包含跨平台修复建议（如 filepath.Join、process.Kill）"
         }
       ]
+    },
+    {
+      "id": 6,
+      "prompt": "执行 pr 质量审查",
+      "expected_output": "AI 应该检查 PR 资格，启动 5 个并行审查代理（CLAUDE.md 合规、浅层 bug 扫描、git 历史上下文、历史 PR 评论、代码注释合规），汇总并评分 issues，过滤 <80 分后发布审查评论或报告无问题",
+      "assertions": [
+        {
+          "name": "检查 PR 资格",
+          "check": "检查 PR 是否 open/draft/已有 review"
+        },
+        {
+          "name": "启动并行审查",
+          "check": "启动 5 个审查代理"
+        },
+        {
+          "name": "评分和过滤",
+          "check": "对每个 issue 评分 0-100 并过滤"
+        },
+        {
+          "name": "发布结果",
+          "check": "发布审查评论或报告无问题"
+        }
+      ]
     }
   ]
 }
