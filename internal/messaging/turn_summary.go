@@ -127,7 +127,10 @@ func formatToolNames(names map[string]int, total int) string {
 		sorted = append(sorted, kv{k, v})
 	}
 	sort.Slice(sorted, func(i, j int) bool {
-		return sorted[i].count > sorted[j].count
+		if sorted[i].count != sorted[j].count {
+			return sorted[i].count > sorted[j].count
+		}
+		return sorted[i].name < sorted[j].name
 	})
 	parts := make([]string, len(sorted))
 	for i, s := range sorted {
