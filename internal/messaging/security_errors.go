@@ -54,6 +54,29 @@ var SecurityMessagesEN = map[SecurityErrorCode]string{
 	SecErrStartSession:     ":warning: Failed to start new session",
 }
 
+// Pre-compiled pattern tables to avoid per-call allocation.
+var securityChecks = []struct {
+	substr string
+	code   SecurityErrorCode
+}{
+	{"forbidden system directory", SecErrForbiddenDir},
+	{"under forbidden directory", SecErrUnderDir},
+	{"not in whitelist", SecErrNotInWhitelist},
+	{"must be absolute", SecErrMustBeAbsolute},
+	{"must not be empty", SecErrMustNotBeEmpty},
+}
+
+var errorChecks = []struct {
+	substr string
+	code   SecurityErrorCode
+}{
+	{"session not active", SecErrSessionNotActive},
+	{"get session", SecErrSessionNotFound},
+	{"expand work dir", SecErrExpandWorkDir},
+	{"worker terminate failed", SecErrWorkerTerminate},
+	{"start session", SecErrStartSession},
+}
+
 // FormatSecurityError converts a technical error into a user-friendly message
 // using the provided locale message map. Returns the original error message
 // as fallback when no known pattern matches.
@@ -63,18 +86,7 @@ func FormatSecurityError(err error, msgs map[SecurityErrorCode]string) string {
 	}
 	errMsg := err.Error()
 
-	// Security-related errors (nested pattern matching)
 	if strings.Contains(errMsg, "security: work dir") {
-		securityChecks := []struct {
-			substr string
-			code   SecurityErrorCode
-		}{
-			{"forbidden system directory", SecErrForbiddenDir},
-			{"under forbidden directory", SecErrUnderDir},
-			{"not in whitelist", SecErrNotInWhitelist},
-			{"must be absolute", SecErrMustBeAbsolute},
-			{"must not be empty", SecErrMustNotBeEmpty},
-		}
 		for _, check := range securityChecks {
 			if strings.Contains(errMsg, check.substr) {
 				return msgs[check.code]
@@ -83,17 +95,6 @@ func FormatSecurityError(err error, msgs map[SecurityErrorCode]string) string {
 		return msgs[SecErrPolicyRejected]
 	}
 
-	// Session and work directory errors
-	errorChecks := []struct {
-		substr string
-		code   SecurityErrorCode
-	}{
-		{"session not active", SecErrSessionNotActive},
-		{"get session", SecErrSessionNotFound},
-		{"expand work dir", SecErrExpandWorkDir},
-		{"worker terminate failed", SecErrWorkerTerminate},
-		{"start session", SecErrStartSession},
-	}
 	for _, check := range errorChecks {
 		if strings.Contains(errMsg, check.substr) {
 			return msgs[check.code]

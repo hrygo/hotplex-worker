@@ -14,7 +14,6 @@ type TurnSummaryData struct {
 	TotalInputTok  int64
 	ModelName      string
 	ToolCallCount  int
-	ToolNames      map[string]int
 	TurnDurationMs int64
 	TurnCount      int
 	TurnInputTok   int64
@@ -50,18 +49,17 @@ func ExtractTurnSummary(env *events.Envelope) TurnSummaryData {
 	}
 
 	return TurnSummaryData{
-		ContextPct:     toFloat64Msg(m["context_pct"]),
-		ContextWindow:  toInt64Msg(m["context_window"]),
-		TotalInputTok:  toInt64Msg(m["total_input_tok"]),
-		ModelName:      toString(m["model_name"]),
-		ToolCallCount:  int(toInt64Msg(m["tool_call_count"])),
-		ToolNames:      toToolNames(m["tool_names"]),
-		TurnDurationMs: toInt64Msg(m["turn_duration_ms"]),
-		TurnCount:      int(toInt64Msg(m["turn_count"])),
-		TurnInputTok:   toInt64Msg(m["turn_input_tok"]),
-		TurnOutputTok:  toInt64Msg(m["turn_output_tok"]),
-		TurnCostUSD:    toFloat64Msg(m["turn_cost_usd"]),
-		TotalCostUSD:   toFloat64Msg(m["total_cost_usd"]),
+		ContextPct:     events.ToFloat64(m["context_pct"]),
+		ContextWindow:  events.ToInt64(m["context_window"]),
+		TotalInputTok:  events.ToInt64(m["total_input_tok"]),
+		ModelName:      events.StrVal(m["model_name"]),
+		ToolCallCount:  int(events.ToInt64(m["tool_call_count"])),
+		TurnDurationMs: events.ToInt64(m["turn_duration_ms"]),
+		TurnCount:      int(events.ToInt64(m["turn_count"])),
+		TurnInputTok:   events.ToInt64(m["turn_input_tok"]),
+		TurnOutputTok:  events.ToInt64(m["turn_output_tok"]),
+		TurnCostUSD:    events.ToFloat64(m["turn_cost_usd"]),
+		TotalCostUSD:   events.ToFloat64(m["total_cost_usd"]),
 	}
 }
 
@@ -93,7 +91,7 @@ func FormatTurnSummary(d TurnSummaryData) string {
 
 	// Tools segment
 	if d.ToolCallCount > 0 {
-		parts = append(parts, fmt.Sprintf("\U0001f6e0 %d tools", d.ToolCallCount))
+		parts = append(parts, fmt.Sprintf("🛠 %d tools", d.ToolCallCount))
 	}
 
 	// Duration segment
@@ -124,47 +122,4 @@ func formatDuration(ms int64) string {
 
 func formatCost(usd float64) string {
 	return fmt.Sprintf("$%.2f", usd)
-}
-
-func toInt64Msg(v any) int64 {
-	switch n := v.(type) {
-	case float64:
-		return int64(n)
-	case int:
-		return int64(n)
-	case int64:
-		return n
-	default:
-		return 0
-	}
-}
-
-func toFloat64Msg(v any) float64 {
-	switch n := v.(type) {
-	case float64:
-		return n
-	case int:
-		return float64(n)
-	case int64:
-		return float64(n)
-	default:
-		return 0
-	}
-}
-
-func toString(v any) string {
-	s, _ := v.(string)
-	return s
-}
-
-func toToolNames(v any) map[string]int {
-	m, ok := v.(map[string]any)
-	if !ok {
-		return nil
-	}
-	result := make(map[string]int, len(m))
-	for k, val := range m {
-		result[k] = int(toInt64Msg(val))
-	}
-	return result
 }

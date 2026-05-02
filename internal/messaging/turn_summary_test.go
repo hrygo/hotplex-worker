@@ -16,17 +16,11 @@ func TestExtractTurnSummary_Full(t *testing.T) {
 			Data: events.DoneData{
 				Stats: map[string]any{
 					"_session": map[string]any{
-						"context_pct":     24.2,
-						"context_window":  float64(200000),
-						"total_input_tok": float64(48434),
-						"model_name":      "Sonnet",
-						"tool_call_count": float64(12),
-						"tool_names": map[string]any{
-							"Read": float64(5),
-							"Bash": float64(3),
-							"Edit": float64(2),
-							"Grep": float64(2),
-						},
+						"context_pct":      24.2,
+						"context_window":   float64(200000),
+						"total_input_tok":  float64(48434),
+						"model_name":       "Sonnet",
+						"tool_call_count":  float64(12),
 						"turn_duration_ms": float64(42000),
 						"turn_count":       float64(3),
 						"turn_input_tok":   float64(12000),
@@ -50,7 +44,6 @@ func TestExtractTurnSummary_Full(t *testing.T) {
 	require.Equal(t, int64(2000), d.TurnOutputTok)
 	require.InDelta(t, 0.04, d.TurnCostUSD, 0.001)
 	require.InDelta(t, 0.12, d.TotalCostUSD, 0.001)
-	require.Equal(t, map[string]int{"Read": 5, "Bash": 3, "Edit": 2, "Grep": 2}, d.ToolNames)
 }
 
 func TestExtractTurnSummary_NilSession(t *testing.T) {
@@ -91,7 +84,7 @@ func TestFormatTurnSummary_Full(t *testing.T) {
 		TurnCostUSD:    0.04,
 	}
 	got := FormatTurnSummary(d)
-	require.Equal(t, "🟢 Context 24% (~48.4K/200K) | Sonnet | \U0001f6e0 12 tools | ⏱ 42s | $0.04", got)
+	require.Equal(t, "🟢 Context 24% (~48.4K/200K) | Sonnet | 🛠 12 tools | ⏱ 42s | $0.04", got)
 }
 
 func TestFormatTurnSummary_NoContext(t *testing.T) {
@@ -102,7 +95,7 @@ func TestFormatTurnSummary_NoContext(t *testing.T) {
 		TurnDurationMs: 12000,
 	}
 	got := FormatTurnSummary(d)
-	require.Equal(t, "Sonnet | \U0001f6e0 5 tools | ⏱ 12s", got)
+	require.Equal(t, "Sonnet | 🛠 5 tools | ⏱ 12s", got)
 }
 
 func TestFormatTurnSummary_NoModel(t *testing.T) {
