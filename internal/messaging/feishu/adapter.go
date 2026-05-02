@@ -675,6 +675,29 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		slErr := c.sendSkillsList(ctx, env)
 		c.clearProcessingReaction(ctx, rid)
 		return slErr
+	case events.Message:
+		// Handler/bridge-originated standalone messages (cd confirmation,
+		// command feedback, help text, retry notifications). Workers send
+		// message.delta for streaming content, not message, so these are
+		// never duplicates of streamed output.
+		var content string
+		if msgData, ok := env.Event.Data.(events.MessageData); ok {
+			content = msgData.Content
+		} else if m, ok := env.Event.Data.(map[string]any); ok {
+			content, _ = m["content"].(string)
+		}
+		if content == "" {
+			return nil
+		}
+		content = OptimizeMarkdownStyle(SanitizeForCard(messaging.SanitizeText(content)))
+		c.mu.RLock()
+		replyToMsgID := c.replyToMsgID
+		chatID := c.chatID
+		c.mu.RUnlock()
+		if replyToMsgID != "" {
+			return c.adapter.replyMessage(ctx, replyToMsgID, content, false)
+		}
+		return c.adapter.sendTextMessage(ctx, chatID, content)
 	}
 
 	text, ok := messaging.ExtractResponseText(env)

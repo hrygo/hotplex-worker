@@ -741,6 +741,21 @@ func (c *SlackConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		}
 		c.adapter.Log.Warn("slack: skills blocks rejected, falling back to plain text", "err", slErr)
 		return c.postSkillsMessageFallback(ctx, env)
+	case events.Message:
+		// Handler/bridge-originated standalone messages (cd confirmation,
+		// command feedback, help text, retry notifications). Workers send
+		// message.delta for streaming content, not message, so these are
+		// never duplicates of streamed output.
+		if msgData, ok := env.Event.Data.(events.MessageData); ok && msgData.Content != "" {
+			text := messaging.SanitizeText(msgData.Content)
+			go func() { _ = c.writeWithPostMessage(ctx, FormatMrkdwn(text), false) }()
+		} else if m, ok := env.Event.Data.(map[string]any); ok {
+			if content, ok := m["content"].(string); ok && content != "" {
+				text := messaging.SanitizeText(content)
+				go func() { _ = c.writeWithPostMessage(ctx, FormatMrkdwn(text), false) }()
+			}
+		}
+		return nil
 	}
 
 	text, ok := messaging.ExtractResponseText(env)
