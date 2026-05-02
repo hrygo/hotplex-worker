@@ -159,14 +159,26 @@ func FormatSessionDuration(secs float64) string {
 
 // TruncatePath shortens a file path for display, keeping the last n path components.
 // Returns empty string if maxComponents <= 0. If the path is already short enough,
-// it is returned unchanged.
+// it is returned unchanged. Uses "/" as separator for cross-platform display in
+// messaging (Slack/Feishu). Preserves Windows drive letters (e.g. "C:").
 func TruncatePath(p string, maxComponents int) string {
 	if p == "" || maxComponents <= 0 {
 		return ""
 	}
+	// Normalize to forward slashes for cross-platform display.
+	// Do this before filepath.Clean so Windows backslashes are handled on Linux too.
+	p = strings.ReplaceAll(p, "\\", "/")
 	p = filepath.Clean(p)
-	// Split and filter empty parts from leading/trailing separators.
-	raw := strings.Split(p, string(filepath.Separator))
+
+	// Detect and preserve Windows drive letter (e.g. "C:").
+	drive := ""
+	if len(p) >= 2 && p[1] == ':' && (p[0] >= 'A' && p[0] <= 'Z' || p[0] >= 'a' && p[0] <= 'z') {
+		drive = p[:2]
+		p = p[2:]
+	}
+
+	// Split and filter empty parts.
+	raw := strings.Split(strings.Trim(p, "/"), "/")
 	parts := make([]string, 0, len(raw))
 	for _, s := range raw {
 		if s != "" {
@@ -174,10 +186,10 @@ func TruncatePath(p string, maxComponents int) string {
 		}
 	}
 	if len(parts) <= maxComponents {
-		return p
+		return drive + "/" + strings.Join(parts, "/")
 	}
 	kept := parts[len(parts)-maxComponents:]
-	return string(filepath.Separator) + filepath.Join(kept...)
+	return drive + "/" + strings.Join(kept, "/")
 }
 
 // FormatTurnSummaryRich produces a multi-line turn summary with emoji-prefixed fields.

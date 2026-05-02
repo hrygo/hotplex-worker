@@ -240,6 +240,8 @@ func TestTruncatePath(t *testing.T) {
 		{"long", "/home/user/workspace/project", 3, "/user/workspace/project"},
 		{"one component", "/home/user/workspace/project", 1, "/project"},
 		{"zero max", "/home/user", 0, ""},
+		{"windows absolute", "C:\\Users\\admin\\workspace\\project", 2, "C:/workspace/project"},
+		{"windows short", "D:\\dev\\app", 5, "D:/dev/app"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
