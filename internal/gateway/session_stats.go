@@ -105,6 +105,7 @@ func (a *sessionAccumulator) resetPerTurn() {
 	a.PerTurnInput = 0
 	a.PerTurnOutput = 0
 	a.PerTurnCost = 0
+	a.TurnDurationMs = 0
 }
 
 // computeContextPct calculates context window usage percentage.

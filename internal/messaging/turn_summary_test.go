@@ -169,6 +169,36 @@ func TestFormatTurnSummary_DurationFormats(t *testing.T) {
 	}
 }
 
+func TestExtractTurnSummary_CloneRoundTrip(t *testing.T) {
+	t.Parallel()
+	original := &events.Envelope{
+		Event: events.Event{
+			Type: events.Done,
+			Data: events.DoneData{
+				Stats: map[string]any{
+					"_session": map[string]any{
+						"context_pct":      50.0,
+						"context_window":   float64(200000),
+						"total_input_tok":  float64(100000),
+						"model_name":       "Opus",
+						"tool_call_count":  float64(5),
+						"turn_duration_ms": float64(8000),
+						"turn_cost_usd":    0.12,
+					},
+				},
+			},
+		},
+	}
+	cloned := events.Clone(original)
+	d := ExtractTurnSummary(cloned)
+	require.InDelta(t, 50.0, d.ContextPct, 0.01)
+	require.Equal(t, int64(200000), d.ContextWindow)
+	require.Equal(t, "Opus", d.ModelName)
+	require.Equal(t, 5, d.ToolCallCount)
+	require.Equal(t, int64(8000), d.TurnDurationMs)
+	require.InDelta(t, 0.12, d.TurnCostUSD, 0.001)
+}
+
 func TestFormatTurnSummary_CostThreshold(t *testing.T) {
 	t.Parallel()
 	t.Run("below threshold", func(t *testing.T) {

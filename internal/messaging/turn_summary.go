@@ -123,9 +123,6 @@ func formatDuration(ms int64) string {
 }
 
 func formatCost(usd float64) string {
-	if usd < 1 {
-		return fmt.Sprintf("$%.2f", usd)
-	}
 	return fmt.Sprintf("$%.2f", usd)
 }
 

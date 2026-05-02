@@ -1027,6 +1027,9 @@ func (a *Adapter) cleanupMediaInDir(dir string) {
 }
 
 func (c *SlackConn) sendTurnSummary(ctx context.Context, env *events.Envelope) {
+	if c.adapter == nil || c.adapter.client == nil {
+		return
+	}
 	d := messaging.ExtractTurnSummary(env)
 	text := messaging.FormatTurnSummary(d)
 	if text == "" {
