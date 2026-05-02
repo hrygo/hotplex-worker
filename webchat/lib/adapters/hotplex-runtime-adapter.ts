@@ -15,7 +15,6 @@ import { useMetrics } from '@/lib/hooks/useMetrics';
 import { getSessionHistory, type ConversationRecord } from '@/lib/api/sessions';
 import { saveMessages, loadMessages, clearMessages, type CacheableMessage } from '@/lib/cache/message-cache';
 import { conversationTurnsToMessages } from '@/lib/utils/turn-replay';
-import { formatContextMessage } from '@/lib/utils/context-format';
 import type {
   Envelope,
   MessageDeltaData,
@@ -74,7 +73,12 @@ interface ToolSummaryPart {
   count: number;
 }
 
-type MessagePart = TextPart | ReasoningPart | ToolCallPart | ToolSummaryPart;
+interface ContextUsagePart {
+  type: 'context-usage';
+  data: ContextUsageData;
+}
+
+type MessagePart = TextPart | ReasoningPart | ToolCallPart | ToolSummaryPart | ContextUsagePart;
 
 // Internal message format for our store
 interface HotPlexMessage {
@@ -94,10 +98,13 @@ interface HotPlexMessage {
  * Handles both old format (content: string) and new format (parts: MessagePart[]).
  */
 function convertToThreadMessage(message: HotPlexMessage): ThreadMessageLike {
-  // Filter out ToolSummaryPart — not recognized by assistant-ui's ThreadMessageLike type
-  const content = message.parts.filter((p): p is TextPart | ReasoningPart | ToolCallPart => p.type !== 'tool-summary');
+  // Filter out ToolSummaryPart and ContextUsagePart — not recognized by assistant-ui's ThreadMessageLike type
+  const content = message.parts.filter((p): p is TextPart | ReasoningPart | ToolCallPart => p.type !== 'tool-summary' && p.type !== 'context-usage');
 
   const role = (message.role as string) === 'user' ? 'user' : 'assistant';
+
+  // Extract context usage data for card rendering
+  const contextUsagePart = message.parts.find((p): p is ContextUsagePart => p.type === 'context-usage');
 
   const result: ThreadMessageLike = {
     id: message.id,
@@ -105,7 +112,7 @@ function convertToThreadMessage(message: HotPlexMessage): ThreadMessageLike {
     content,
     createdAt: message.createdAt,
     attachments: [],
-    metadata: {},
+    metadata: contextUsagePart ? { contextUsage: contextUsagePart.data } as any : {},
   };
 
   // Status is only supported for assistant messages
@@ -653,14 +660,13 @@ export function useHotPlexRuntime({
       const names = data?.skills?.names ?? [];
       onSkillsChangeRef.current?.(names);
 
-      // Inject context usage as a visible assistant message
-      const text = formatContextMessage(data);
+      // Inject context usage as a special part type for card rendering
       setMessages((prev) => [
         ...prev,
         {
           id: `context-${Date.now()}`,
           role: 'assistant' as const,
-          parts: [{ type: 'text' as const, text }],
+          parts: [{ type: 'context-usage' as const, data }],
           createdAt: new Date(),
           status: 'complete' as const,
         },
