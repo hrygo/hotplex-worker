@@ -4,17 +4,18 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/hrygo/hotplex/pkg/events"
 )
 
 func TestFormatSecurityError_Nil(t *testing.T) {
-	got := FormatSecurityError(nil, SecurityMessagesCN)
-	if got != "" {
-		t.Fatalf("expected empty string for nil error, got %q", got)
-	}
+	t.Parallel()
+	require.Empty(t, FormatSecurityError(nil, SecurityMessagesCN))
 }
 
 func TestFormatSecurityError_CN(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		err  error
@@ -37,15 +38,14 @@ func TestFormatSecurityError_CN(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := FormatSecurityError(tt.err, SecurityMessagesCN)
-			if got != tt.want {
-				t.Errorf("FormatSecurityError(CN) = %q, want %q", got, tt.want)
-			}
+			t.Parallel()
+			require.Equal(t, tt.want, FormatSecurityError(tt.err, SecurityMessagesCN))
 		})
 	}
 }
 
 func TestFormatSecurityError_EN(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		err  error
@@ -59,15 +59,14 @@ func TestFormatSecurityError_EN(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := FormatSecurityError(tt.err, SecurityMessagesEN)
-			if got != tt.want {
-				t.Errorf("FormatSecurityError(EN) = %q, want %q", got, tt.want)
-			}
+			t.Parallel()
+			require.Equal(t, tt.want, FormatSecurityError(tt.err, SecurityMessagesEN))
 		})
 	}
 }
 
 func TestMCPServerIcon(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		status string
 		want   string
@@ -80,9 +79,8 @@ func TestMCPServerIcon(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.status, func(t *testing.T) {
-			if got := MCPServerIcon(tt.status); got != tt.want {
-				t.Errorf("MCPServerIcon(%q) = %q, want %q", tt.status, got, tt.want)
-			}
+			t.Parallel()
+			require.Equal(t, tt.want, MCPServerIcon(tt.status))
 		})
 	}
 }
@@ -91,41 +89,37 @@ func TestExtractMCPStatusData(t *testing.T) {
 	t.Parallel()
 
 	t.Run("typed data", func(t *testing.T) {
+		t.Parallel()
 		env := &events.Envelope{Event: events.Event{Data: events.MCPStatusData{
 			Servers: []events.MCPServerInfo{{Name: "test", Status: "connected"}},
 		}}}
 		d, ok := ExtractMCPStatusData(env)
-		if !ok {
-			t.Fatal("expected ok=true")
-		}
-		if len(d.Servers) != 1 || d.Servers[0].Name != "test" {
-			t.Fatalf("unexpected data: %+v", d)
-		}
+		require.True(t, ok)
+		require.Len(t, d.Servers, 1)
+		require.Equal(t, "test", d.Servers[0].Name)
 	})
 
 	t.Run("map data", func(t *testing.T) {
+		t.Parallel()
 		env := &events.Envelope{Event: events.Event{Data: map[string]any{
 			"servers": []any{map[string]any{"name": "srv", "status": "ok"}},
 		}}}
 		d, ok := ExtractMCPStatusData(env)
-		if !ok {
-			t.Fatal("expected ok=true")
-		}
-		if len(d.Servers) != 1 || d.Servers[0].Name != "srv" {
-			t.Fatalf("unexpected data: %+v", d)
-		}
+		require.True(t, ok)
+		require.Len(t, d.Servers, 1)
+		require.Equal(t, "srv", d.Servers[0].Name)
 	})
 
 	t.Run("unsupported type", func(t *testing.T) {
+		t.Parallel()
 		env := &events.Envelope{Event: events.Event{Data: "string"}}
 		_, ok := ExtractMCPStatusData(env)
-		if ok {
-			t.Fatal("expected ok=false for string data")
-		}
+		require.False(t, ok)
 	})
 }
 
 func TestControlFeedbackMessage(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		action   events.ControlAction
 		msgs     map[events.ControlAction]string
@@ -138,10 +132,8 @@ func TestControlFeedbackMessage(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(string(tt.action), func(t *testing.T) {
-			got := ControlFeedbackMessage(tt.action, tt.msgs, tt.fallback)
-			if got != tt.want {
-				t.Errorf("ControlFeedbackMessage() = %q, want %q", got, tt.want)
-			}
+			t.Parallel()
+			require.Equal(t, tt.want, ControlFeedbackMessage(tt.action, tt.msgs, tt.fallback))
 		})
 	}
 }
