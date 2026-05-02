@@ -553,7 +553,7 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 				ToolCallCount: acc.ToolCallCount,
 				TokensIn:      acc.PerTurnInput,
 				TokensOut:     acc.PerTurnOutput,
-				DurationMs:    time.Since(turnStartTime).Milliseconds(),
+				DurationMs:    acc.TurnDurationMs,
 				CostUSD:       acc.PerTurnCost,
 			})
 			acc.resetPerTurn()

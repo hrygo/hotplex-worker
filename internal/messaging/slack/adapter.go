@@ -3,7 +3,6 @@ package slack
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -16,7 +15,6 @@ import (
 	"github.com/hrygo/hotplex/internal/config"
 	"github.com/hrygo/hotplex/internal/messaging"
 	"github.com/hrygo/hotplex/internal/messaging/stt"
-	"github.com/hrygo/hotplex/pkg/aep"
 	"github.com/hrygo/hotplex/pkg/events"
 
 	"runtime/debug"
@@ -556,21 +554,7 @@ func (a *Adapter) handleTextControlCommand(ctx context.Context, teamID, channelI
 		return
 	}
 
-	ctrlData := events.ControlData{Action: result.Action}
-	if result.Arg != "" {
-		ctrlData.Details = map[string]any{"path": result.Arg}
-	}
-
-	ctrlEnv := &events.Envelope{
-		Version:   events.Version,
-		ID:        aep.NewID(),
-		SessionID: env.SessionID,
-		Event: events.Event{
-			Type: events.Control,
-			Data: ctrlData,
-		},
-		OwnerID: userID,
-	}
+	ctrlEnv := messaging.BuildControlEnvelope(result, env.SessionID, userID)
 
 	// CD sends progress feedback before execution; other actions send completion feedback after.
 	if result.Action == events.ControlActionCD {
@@ -626,20 +610,7 @@ func (a *Adapter) handleTextWorkerCommand(ctx context.Context, teamID, channelID
 		return
 	}
 
-	cmdEnv := &events.Envelope{
-		Version:   events.Version,
-		ID:        aep.NewID(),
-		SessionID: envelope.SessionID,
-		Event: events.Event{
-			Type: events.WorkerCmd,
-			Data: events.WorkerCommandData{
-				Command: result.Command,
-				Args:    result.Args,
-				Extra:   result.Extra,
-			},
-		},
-		OwnerID: userID,
-	}
+	cmdEnv := messaging.BuildWorkerCommandEnvelope(result, envelope.SessionID, userID)
 
 	if err := a.Bridge().Handle(ctx, cmdEnv, conn); err != nil {
 		a.Log.Warn("slack: worker command failed", "command", result.Label, "err", err)
@@ -651,16 +622,7 @@ func (a *Adapter) handleTextWorkerCommand(ctx context.Context, teamID, channelID
 }
 
 func controlFeedbackMessage(action events.ControlAction) string {
-	switch action {
-	case events.ControlActionGC:
-		return "🗑️ Session parked. Send a message to resume."
-	case events.ControlActionReset:
-		return "🔄 Context reset."
-	case events.ControlActionCD:
-		return "📁 Switching work directory..."
-	default:
-		return "✅ Done."
-	}
+	return messaging.ControlFeedbackMessage(action, messaging.ControlFeedbackEN, "✅ Done.")
 }
 
 // SlackConn wraps the adapter with channel/thread routing info
@@ -1127,34 +1089,20 @@ func richTextCell(text string) *slack.RichTextBlock {
 	return slack.NewRichTextBlock("", section)
 }
 
-// mcpServerIcon returns the status icon for an MCP server.
-func mcpServerIcon(status string) string {
-	if status == "connected" || status == "ok" {
-		return "✅"
-	}
-	return "❌"
-}
-
 func (c *SlackConn) sendMCPStatus(ctx context.Context, env *events.Envelope) error {
 	if c.adapter == nil || c.adapter.client == nil {
 		return fmt.Errorf("slack: client not initialized")
 	}
 
-	var d events.MCPStatusData
-	switch v := env.Event.Data.(type) {
-	case events.MCPStatusData:
-		d = v
-	case map[string]any:
-		raw, _ := json.Marshal(v)
-		_ = json.Unmarshal(raw, &d)
-	default:
+	d, ok := messaging.ExtractMCPStatusData(env)
+	if !ok {
 		return nil
 	}
 
 	var sb strings.Builder
 	sb.WriteString("🔌 MCP Server Status\n")
 	for _, s := range d.Servers {
-		fmt.Fprintf(&sb, "%s %s — %s\n", mcpServerIcon(s.Status), s.Name, s.Status)
+		fmt.Fprintf(&sb, "%s %s — %s\n", messaging.MCPServerIcon(s.Status), s.Name, s.Status)
 	}
 	plainText := sb.String()
 
@@ -1165,7 +1113,7 @@ func (c *SlackConn) sendMCPStatus(ctx context.Context, env *events.Envelope) err
 	)
 	table.AddRow(richTextCell("🔌 MCP Status"), richTextCell(fmt.Sprintf("%d servers", len(d.Servers))))
 	for _, s := range d.Servers {
-		table.AddRow(richTextCell(mcpServerIcon(s.Status)+" "+s.Name), richTextCell(s.Status))
+		table.AddRow(richTextCell(messaging.MCPServerIcon(s.Status)+" "+s.Name), richTextCell(s.Status))
 	}
 
 	blocks := []slack.Block{table}
@@ -1193,60 +1141,7 @@ func (c *SlackConn) sendMCPStatus(ctx context.Context, env *events.Envelope) err
 
 // formatSecurityErrorSlack converts technical security errors into user-friendly messages for Slack.
 func formatSecurityErrorSlack(err error) string {
-	if err == nil {
-		return ""
-	}
-
-	errMsg := err.Error()
-
-	// Security-related errors
-	if strings.Contains(errMsg, "security: work dir") {
-		if strings.Contains(errMsg, "forbidden system directory") {
-			return ":no_entry_sign: Forbidden system directory"
-		}
-		if strings.Contains(errMsg, "under forbidden directory") {
-			return ":no_entry_sign: Directory blocked by security policy (system directory)"
-		}
-		if strings.Contains(errMsg, "not in whitelist") {
-			return ":no_entry_sign: Directory not allowed (configure `security.work_dir_allowed_base_patterns` in config.yaml)"
-		}
-		if strings.Contains(errMsg, "must be absolute") {
-			return ":no_entry_sign: Path must be absolute (start with /)"
-		}
-		if strings.Contains(errMsg, "must not be empty") {
-			return ":no_entry_sign: Work directory cannot be empty"
-		}
-		return ":no_entry_sign: Security policy rejected"
-	}
-
-	// Session-related errors
-	if strings.Contains(errMsg, "session not active") {
-		return ":warning: Session not active (send a message first to start)"
-	}
-	if strings.Contains(errMsg, "get session") {
-		return ":warning: Session not found"
-	}
-
-	// Work directory errors
-	if strings.Contains(errMsg, "expand work dir") {
-		return ":file_folder: Path expansion failed (check path format)"
-	}
-	if strings.Contains(errMsg, "worker terminate failed") {
-		return ":warning: Failed to stop previous worker"
-	}
-	if strings.Contains(errMsg, "start session") {
-		return ":warning: Failed to start new session"
-	}
-
-	// Generic error (return original message for non-security errors)
-	if strings.Contains(errMsg, "switch-workdir") {
-		// Remove technical prefix for cleaner output
-		cleanMsg := strings.ReplaceAll(errMsg, "switch-workdir-inplace: ", "")
-		cleanMsg = strings.ReplaceAll(cleanMsg, "switch-workdir: ", "")
-		return cleanMsg
-	}
-
-	return errMsg
+	return messaging.FormatSecurityError(err, messaging.SecurityMessagesEN)
 }
 
 var _ messaging.PlatformConn = (*SlackConn)(nil)
