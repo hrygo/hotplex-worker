@@ -631,9 +631,11 @@ func TestUserCache_ResolveMentions_MixedFormats(t *testing.T) {
 func TestAssistantAPIEnabled_ControlsProbe(t *testing.T) {
 	t.Parallel()
 	a := &Adapter{
-		PlatformAdapter: messaging.PlatformAdapter{Log: slog.Default()},
-		activeStreams:   make(map[string]*NativeStreamingWriter),
-		connPool:        messaging.NewConnPool[*SlackConn](nil),
+		BaseAdapter: messaging.BaseAdapter[*SlackConn]{
+			PlatformAdapter: messaging.PlatformAdapter{Log: slog.Default()},
+			ConnPool:        messaging.NewConnPool[*SlackConn](nil),
+		},
+		activeStreams: make(map[string]*NativeStreamingWriter),
 	}
 
 	// Default (nil) → enabled
@@ -660,9 +662,11 @@ func TestAssistantAPIEnabled_ControlsProbe(t *testing.T) {
 func TestHandleCapabilityError_Degrades(t *testing.T) {
 	t.Parallel()
 	a := &Adapter{
-		PlatformAdapter: messaging.PlatformAdapter{Log: slog.Default()},
-		activeStreams:   make(map[string]*NativeStreamingWriter),
-		connPool:        messaging.NewConnPool[*SlackConn](nil),
+		BaseAdapter: messaging.BaseAdapter[*SlackConn]{
+			PlatformAdapter: messaging.PlatformAdapter{Log: slog.Default()},
+			ConnPool:        messaging.NewConnPool[*SlackConn](nil),
+		},
+		activeStreams: make(map[string]*NativeStreamingWriter),
 	}
 
 	// Set to capable
@@ -854,9 +858,11 @@ func TestAdapter_DoubleStartGuard(t *testing.T) {
 	t.Parallel()
 
 	a := &Adapter{
-		PlatformAdapter: messaging.PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil))},
-		activeStreams:   make(map[string]*NativeStreamingWriter),
-		connPool:        messaging.NewConnPool[*SlackConn](nil),
+		BaseAdapter: messaging.BaseAdapter[*SlackConn]{
+			PlatformAdapter: messaging.PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil))},
+			ConnPool:        messaging.NewConnPool[*SlackConn](nil),
+		},
+		activeStreams: make(map[string]*NativeStreamingWriter),
 	}
 
 	// First call: fails due to missing tokens (guard passes, validation fails)
@@ -873,11 +879,13 @@ func TestAdapter_DoubleStartGuard_WithTokens(t *testing.T) {
 	t.Parallel()
 
 	a := &Adapter{
-		PlatformAdapter: messaging.PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil))},
-		botToken:        "xoxb-fake",
-		appToken:        "xapp-fake",
-		activeStreams:   make(map[string]*NativeStreamingWriter),
-		connPool:        messaging.NewConnPool[*SlackConn](nil),
+		BaseAdapter: messaging.BaseAdapter[*SlackConn]{
+			PlatformAdapter: messaging.PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil))},
+			ConnPool:        messaging.NewConnPool[*SlackConn](nil),
+		},
+		botToken:      "xoxb-fake",
+		appToken:      "xapp-fake",
+		activeStreams: make(map[string]*NativeStreamingWriter),
 	}
 
 	// First call: fails at auth test (guard passes, Slack API fails)
@@ -893,9 +901,11 @@ func TestAdapter_CloseAfterSingleStart(t *testing.T) {
 	t.Parallel()
 
 	a := &Adapter{
-		PlatformAdapter: messaging.PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil))},
-		activeStreams:   make(map[string]*NativeStreamingWriter),
-		connPool:        messaging.NewConnPool[*SlackConn](nil),
+		BaseAdapter: messaging.BaseAdapter[*SlackConn]{
+			PlatformAdapter: messaging.PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil))},
+			ConnPool:        messaging.NewConnPool[*SlackConn](nil),
+		},
+		activeStreams: make(map[string]*NativeStreamingWriter),
 	}
 
 	// Start fails (no tokens), but guard is set
@@ -1000,9 +1010,11 @@ func TestSlackConn_Close_CleansUpStreamWriter(t *testing.T) {
 	t.Parallel()
 
 	adapter := &Adapter{
-		PlatformAdapter: messaging.PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil))},
-		connPool:        messaging.NewConnPool[*SlackConn](nil),
-		activeStreams:   make(map[string]*NativeStreamingWriter),
+		BaseAdapter: messaging.BaseAdapter[*SlackConn]{
+			PlatformAdapter: messaging.PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil))},
+			ConnPool:        messaging.NewConnPool[*SlackConn](nil),
+		},
+		activeStreams: make(map[string]*NativeStreamingWriter),
 	}
 
 	conn := &SlackConn{
@@ -1284,7 +1296,7 @@ func TestAC16_NonStreamingEventsUsePostMessage(t *testing.T) {
 func TestCleanupMedia(t *testing.T) {
 	// Creating a logger that discards output for the test
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	a := &Adapter{PlatformAdapter: messaging.PlatformAdapter{Log: logger}}
+	a := &Adapter{BaseAdapter: messaging.BaseAdapter[*SlackConn]{PlatformAdapter: messaging.PlatformAdapter{Log: logger}}}
 
 	tmpDir := t.TempDir()
 
@@ -1495,10 +1507,12 @@ func TestClearStatus_CleansEmojiEvenWhenAssistantCapable(t *testing.T) {
 // exercises its full code path. PostMessageContext will fail with invalid_auth.
 func testAdapter() *Adapter {
 	return &Adapter{
-		PlatformAdapter: messaging.PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil))},
-		client:          slack.New("x-test-token"),
-		activeStreams:   make(map[string]*NativeStreamingWriter),
-		connPool:        messaging.NewConnPool[*SlackConn](nil),
+		BaseAdapter: messaging.BaseAdapter[*SlackConn]{
+			PlatformAdapter: messaging.PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil))},
+			ConnPool:        messaging.NewConnPool[*SlackConn](nil),
+		},
+		client:        slack.New("x-test-token"),
+		activeStreams: make(map[string]*NativeStreamingWriter),
 	}
 }
 
@@ -1580,7 +1594,14 @@ func TestSlackConn_SendContextUsage(t *testing.T) {
 		{
 			name: "nil client",
 			conn: &SlackConn{
-				adapter:   &Adapter{PlatformAdapter: messaging.PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil))}, client: nil, activeStreams: make(map[string]*NativeStreamingWriter), connPool: messaging.NewConnPool[*SlackConn](nil)},
+				adapter: &Adapter{
+					BaseAdapter: messaging.BaseAdapter[*SlackConn]{
+						PlatformAdapter: messaging.PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil))},
+						ConnPool:        messaging.NewConnPool[*SlackConn](nil),
+					},
+					client:        nil,
+					activeStreams: make(map[string]*NativeStreamingWriter),
+				},
 				channelID: "C123", threadTS: "123.456",
 			},
 			env:     &events.Envelope{Event: events.Event{Type: events.ContextUsage, Data: events.ContextUsageData{TotalTokens: 100, MaxTokens: 200, Percentage: 50}}},
@@ -1674,7 +1695,14 @@ func TestSlackConn_SendMCPStatus(t *testing.T) {
 		{
 			name: "nil client",
 			conn: &SlackConn{
-				adapter:   &Adapter{PlatformAdapter: messaging.PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil))}, client: nil, activeStreams: make(map[string]*NativeStreamingWriter), connPool: messaging.NewConnPool[*SlackConn](nil)},
+				adapter: &Adapter{
+					BaseAdapter: messaging.BaseAdapter[*SlackConn]{
+						PlatformAdapter: messaging.PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil))},
+						ConnPool:        messaging.NewConnPool[*SlackConn](nil),
+					},
+					client:        nil,
+					activeStreams: make(map[string]*NativeStreamingWriter),
+				},
 				channelID: "C123", threadTS: "123.456",
 			},
 			env:     &events.Envelope{Event: events.Event{Type: events.MCPStatus, Data: events.MCPStatusData{Servers: []events.MCPServerInfo{{Name: "fs", Status: "connected"}}}}},

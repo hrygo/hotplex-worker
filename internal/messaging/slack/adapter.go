@@ -46,13 +46,17 @@ var blockedSubtypes = map[string]bool{
 
 func init() {
 	messaging.Register(messaging.PlatformSlack, func(log *slog.Logger) messaging.PlatformAdapterInterface {
-		return &Adapter{PlatformAdapter: messaging.PlatformAdapter{Log: log.With("channel", string(messaging.PlatformSlack))}}
+		return &Adapter{
+			BaseAdapter: messaging.BaseAdapter[*SlackConn]{
+				PlatformAdapter: messaging.PlatformAdapter{Log: log.With("channel", string(messaging.PlatformSlack))},
+			},
+		}
 	})
 }
 
 // Adapter implements messaging.PlatformAdapterInterface for Slack Socket Mode.
 type Adapter struct {
-	messaging.PlatformAdapter
+	messaging.BaseAdapter[*SlackConn]
 
 	mu sync.RWMutex
 
@@ -71,7 +75,6 @@ type Adapter struct {
 	rateLimiter   *ChannelRateLimiter
 	slashLimiter  *SlashRateLimiter
 	activeStreams map[string]*NativeStreamingWriter // messageTS -> writer
-	connPool      *messaging.ConnPool[*SlackConn]   // "channelID#threadTS" -> conn
 }
 
 func (a *Adapter) Platform() messaging.PlatformType { return messaging.PlatformSlack }
@@ -131,7 +134,7 @@ func (a *Adapter) Start(ctx context.Context) error {
 	a.statusMgr = NewStatusManager(a, a.Log)
 	a.Interactions = messaging.NewInteractionManager(a.Log)
 	a.activeStreams = make(map[string]*NativeStreamingWriter)
-	a.connPool = messaging.NewConnPool[*SlackConn](func(key string) *SlackConn {
+	a.InitConnPool(func(key string) *SlackConn {
 		parts := strings.SplitN(key, "#", 2)
 		threadTS := ""
 		if len(parts) > 1 {
@@ -419,8 +422,7 @@ func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsA
 // or creates and registers a new one. This ensures the same conn is reused
 // across multiple messages in the same thread, so Hub.Shutdown can close it.
 func (a *Adapter) GetOrCreateConn(channelID, threadTS string) *SlackConn {
-	key := channelID + "#" + threadTS
-	return a.connPool.GetOrCreate(key)
+	return a.BaseAdapter.GetOrCreateConn(channelID, threadTS)
 }
 
 func (a *Adapter) HandleTextMessage(ctx context.Context, platformMsgID, channelID, teamID, threadTS, userID, text string) error {
@@ -481,7 +483,7 @@ func (a *Adapter) Close(ctx context.Context) error {
 	}
 	a.mu.Unlock()
 
-	conns := a.connPool.ClearAndClose()
+	conns := a.DrainConns()
 	for _, c := range conns {
 		_ = c.Close()
 	}
@@ -983,8 +985,7 @@ func (c *SlackConn) closeStreamWriter() {
 
 // Close removes the conn from the adapter registry and cleans up the stream writer.
 func (c *SlackConn) Close() error {
-	key := c.channelID + "#" + c.threadTS
-	c.adapter.connPool.Delete(key)
+	c.adapter.DeleteConn(c.channelID, c.threadTS)
 
 	c.closeStreamWriter()
 

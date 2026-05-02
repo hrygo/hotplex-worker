@@ -30,12 +30,16 @@ import (
 
 func init() {
 	messaging.Register(messaging.PlatformFeishu, func(log *slog.Logger) messaging.PlatformAdapterInterface {
-		return &Adapter{PlatformAdapter: messaging.PlatformAdapter{Log: log.With("channel", string(messaging.PlatformFeishu))}}
+		return &Adapter{
+			BaseAdapter: messaging.BaseAdapter[*FeishuConn]{
+				PlatformAdapter: messaging.PlatformAdapter{Log: log.With("channel", string(messaging.PlatformFeishu))},
+			},
+		}
 	})
 }
 
 type Adapter struct {
-	messaging.PlatformAdapter
+	messaging.BaseAdapter[*FeishuConn]
 
 	appID       string
 	appSecret   string
@@ -45,7 +49,6 @@ type Adapter struct {
 	transcriber Transcriber
 
 	mu          sync.RWMutex
-	connPool    *messaging.ConnPool[*FeishuConn]
 	chatQueue   *ChatQueue
 	rateLimiter *FeishuRateLimiter
 }
@@ -81,7 +84,7 @@ func (a *Adapter) Start(ctx context.Context) error {
 	}
 
 	a.InitSharedState()
-	a.connPool = messaging.NewConnPool[*FeishuConn](func(key string) *FeishuConn {
+	a.InitConnPool(func(key string) *FeishuConn {
 		parts := strings.SplitN(key, "#", 2)
 		threadKey := ""
 		if len(parts) > 1 {
@@ -465,8 +468,7 @@ func (a *Adapter) HandleTextMessage(ctx context.Context, platformMsgID, channelI
 }
 
 func (a *Adapter) GetOrCreateConn(chatID, threadKey string) *FeishuConn {
-	key := chatID + "#" + threadKey
-	return a.connPool.GetOrCreate(key)
+	return a.BaseAdapter.GetOrCreateConn(chatID, threadKey)
 }
 
 func (a *Adapter) Close(ctx context.Context) error {
@@ -487,7 +489,7 @@ func (a *Adapter) Close(ctx context.Context) error {
 	}
 
 	// Drain conn pool — ConnPool manages its own lock, no deadlock with FeishuConn.Close().
-	conns := a.connPool.ClearAndClose()
+	conns := a.DrainConns()
 
 	a.mu.Lock()
 	a.CloseSharedState()
@@ -748,7 +750,7 @@ func (c *FeishuConn) Close() error {
 	if toolRid != "" && c.adapter.larkClient != nil {
 		_ = c.adapter.removeReaction(context.Background(), platformMsgID, toolRid)
 	}
-	c.adapter.connPool.Delete(c.chatID + "#" + c.threadKey)
+	c.adapter.DeleteConn(c.chatID, c.threadKey)
 	return nil
 }
 
