@@ -14,10 +14,12 @@ type testConn struct{ key string }
 
 func newTestBaseAdapter(t *testing.T) *BaseAdapter[*testConn] {
 	t.Helper()
-	return NewBaseAdapter[*testConn](slog.New(slog.NewTextHandler(io.Discard, nil)))
+	return &BaseAdapter[*testConn]{
+		PlatformAdapter: PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil))},
+	}
 }
 
-func TestBaseAdapter_NewBaseAdapter(t *testing.T) {
+func TestBaseAdapter_Construct(t *testing.T) {
 	t.Parallel()
 
 	b := newTestBaseAdapter(t)
