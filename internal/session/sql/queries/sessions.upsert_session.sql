@@ -1,9 +1,9 @@
 INSERT INTO sessions (id, user_id, owner_id, bot_id, worker_session_id, worker_type, state, platform, platform_key_json, work_dir, title, created_at, updated_at, expires_at, idle_expires_at, context_json)
  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
  ON CONFLICT(id) DO UPDATE SET
-   state=excluded.state,
-   updated_at=excluded.updated_at,
-   expires_at=excluded.expires_at,
-   idle_expires_at=excluded.idle_expires_at,
-   title=CASE WHEN excluded.title != '' THEN excluded.title ELSE sessions.title END,
-   context_json=excluded.context_json;
+  state=excluded.state,
+  updated_at=excluded.updated_at,
+  expires_at=excluded.expires_at,
+  idle_expires_at=excluded.idle_expires_at,
+  title=CASE WHEN excluded.title != '' THEN excluded.title ELSE sessions.title END,
+  context_json=excluded.context_json;
