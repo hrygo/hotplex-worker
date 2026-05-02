@@ -574,6 +574,8 @@ func Load(filePath string, opts LoadOptions) (*Config, error) {
 	_ = v.BindEnv("agent_config.enabled")
 	_ = v.BindEnv("agent_config.config_dir")
 	_ = v.BindEnv("skills.cache_ttl")
+	_ = v.BindEnv("messaging.slack.work_dir")
+	_ = v.BindEnv("messaging.feishu.work_dir")
 
 	if err := v.Unmarshal(cfg); err != nil {
 		return nil, fmt.Errorf("config: environment override: %w", err)
@@ -700,6 +702,8 @@ func loadRecursive(filePath string, opts LoadOptions, visited []string) (*Config
 		&cfg.Worker.DefaultWorkDir,
 		&cfg.Worker.PIDDir,
 		&cfg.AgentConfig.ConfigDir,
+		&cfg.Messaging.Slack.WorkDir,
+		&cfg.Messaging.Feishu.WorkDir,
 	} {
 		if *pf != "" {
 			absPath, err := ExpandAndAbs(*pf)

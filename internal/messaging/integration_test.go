@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/hrygo/hotplex/internal/config"
 	"github.com/hrygo/hotplex/internal/session"
 	"github.com/hrygo/hotplex/pkg/events"
 )
@@ -145,7 +146,7 @@ func TestBridge_MakeSlackEnvelope(t *testing.T) {
 		ChannelID: channelID,
 		ThreadTS:  threadTS,
 		UserID:    userID,
-		WorkDir:   DefaultWorkerWorkDir, // "" is replaced by NewBridge
+		WorkDir:   config.Default().Worker.DefaultWorkDir,
 	})
 	require.Equal(t, expected, env.SessionID)
 
@@ -190,7 +191,7 @@ func TestBridge_MakeFeishuEnvelope(t *testing.T) {
 		ChatID:   chatID,
 		ThreadTS: threadTS,
 		UserID:   userID,
-		WorkDir:  DefaultWorkerWorkDir, // "" is replaced by NewBridge
+		WorkDir:  config.Default().Worker.DefaultWorkDir,
 	})
 	require.Equal(t, expected, env.SessionID)
 
