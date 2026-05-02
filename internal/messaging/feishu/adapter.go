@@ -700,10 +700,12 @@ func (c *FeishuConn) Close() error {
 	c.toolRid = ""
 	c.mu.Unlock()
 
-	// Best-effort cleanup: Abort uses Background since this Close path is
-	// called during shutdown (no deadline needed for graceful teardown).
+	// Best-effort cleanup: try Close() for proper final flush.
+	// Falls back silently if already in a terminal phase (Completed/Aborted).
+	closeCtx, closeCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer closeCancel()
 	if streamCtrl != nil {
-		_ = streamCtrl.Abort(context.Background())
+		_ = streamCtrl.Close(closeCtx)
 	}
 	if typingRid != "" && c.adapter.larkClient != nil {
 		_ = c.adapter.RemoveTypingIndicator(context.Background(), platformMsgID, typingRid)
@@ -756,10 +758,10 @@ func (c *FeishuConn) writeContent(ctx context.Context, env *events.Envelope, tex
 	// Feishu's 10-minute server limit kicks in.
 	if streamCtrl != nil && streamCtrl.IsCreated() && streamCtrl.Expired() {
 		oldMsgID := streamCtrl.MsgID()
-		abortCtx, abortCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		closeCtx, closeCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		go func() {
-			defer abortCancel()
-			_ = streamCtrl.Abort(abortCtx)
+			defer closeCancel()
+			_ = streamCtrl.Close(closeCtx)
 		}()
 		c.adapter.Log.Info("feishu: streaming card rotated",
 			"old_msg_id", oldMsgID)
@@ -789,9 +791,9 @@ func (c *FeishuConn) writeContent(ctx context.Context, env *events.Envelope, tex
 		} else {
 			// Subsequent content: write + flush.
 			if err := streamCtrl.Write(text); err != nil {
-				// Streaming failed — close and fall back to static delivery.
+				// Streaming failed — flush buffered content and fall back to static delivery.
 				c.adapter.Log.Warn("feishu: streaming write failed, falling back to static", "err", err)
-				_ = streamCtrl.Abort(context.Background())
+				_ = streamCtrl.Close(context.Background())
 				c.mu.Lock()
 				c.streamCtrl = nil
 				c.mu.Unlock()
