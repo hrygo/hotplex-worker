@@ -7,6 +7,13 @@ import (
 	"strings"
 )
 
+func resolveWorkDir(opts InstallOptions, homeDir string) string {
+	if opts.WorkDir != "" {
+		return opts.WorkDir
+	}
+	return homeDir
+}
+
 func BuildSystemdUnit(opts InstallOptions, homeDir string) string {
 	var b strings.Builder
 
@@ -19,13 +26,16 @@ func BuildSystemdUnit(opts InstallOptions, homeDir string) string {
 	b.WriteString("[Service]\n")
 	b.WriteString("Type=simple\n")
 
+	workDir := resolveWorkDir(opts, homeDir)
+
 	if opts.Level == LevelSystem {
 		b.WriteString("User=hotplex\n")
 		b.WriteString("Group=hotplex\n")
-		b.WriteString("WorkingDirectory=/var/lib/hotplex\n")
-	} else {
-		b.WriteString("WorkingDirectory=" + homeDir + "\n")
+		if workDir == homeDir {
+			workDir = "/var/lib/hotplex"
+		}
 	}
+	b.WriteString("WorkingDirectory=" + workDir + "\n")
 
 	b.WriteString("\nExecStart=" + opts.BinaryPath + " gateway start --config " + opts.ConfigPath + "\n")
 	b.WriteString("ExecReload=/bin/kill -HUP $MAINPID\n")
@@ -83,7 +93,7 @@ func BuildLaunchdPlist(opts InstallOptions, homeDir string) string {
 	fmt.Fprintf(&b, "    <string>%s</string>\n", opts.ConfigPath)
 	b.WriteString("  </array>\n")
 
-	fmt.Fprintf(&b, "  <key>WorkingDirectory</key>\n  <string>%s</string>\n", homeDir)
+	fmt.Fprintf(&b, "  <key>WorkingDirectory</key>\n  <string>%s</string>\n", resolveWorkDir(opts, homeDir))
 
 	if path := os.Getenv("PATH"); path != "" {
 		b.WriteString("  <key>EnvironmentVariables</key>\n  <dict>\n")
