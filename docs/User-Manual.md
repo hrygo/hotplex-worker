@@ -294,6 +294,9 @@ hotplex status               查看运行状态
 hotplex config validate      验证配置文件
 hotplex security             安全审计
 hotplex version              查看版本
+hotplex update               自更新到最新版本
+hotplex update --check       仅检查更新
+hotplex update -y            跳过确认提示
 
 # 网关管理
 hotplex gateway start        前台启动网关

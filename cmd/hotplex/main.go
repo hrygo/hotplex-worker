@@ -49,6 +49,7 @@ Quick start:
 		newConfigCmd(),
 		newStatusCmd(),
 		newServiceCmd(),
+		newUpdateCmd(),
 	)
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "Error:", err)
