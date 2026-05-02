@@ -235,6 +235,9 @@ func (u *Updater) Replace(newBinaryPath string) error {
 	backupPath := currentExe + ".old"
 	_ = os.Remove(backupPath)
 	if err := os.Rename(currentExe, backupPath); err != nil {
+		if runtime.GOOS == "windows" {
+			return fmt.Errorf("cannot replace running binary on Windows: %w\n  Use the install script: scripts/install.ps1", err)
+		}
 		return fmt.Errorf("backup current binary: %w\n  Try: sudo hotplex update", err)
 	}
 
