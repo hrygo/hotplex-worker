@@ -13,7 +13,6 @@ CREATE TABLE IF NOT EXISTS sessions (
     updated_at DATETIME NOT NULL,
     expires_at DATETIME,
     idle_expires_at DATETIME,
-    is_active INTEGER NOT NULL DEFAULT 0,
     context_json TEXT,
     work_dir TEXT,
     title TEXT NOT NULL DEFAULT ''
@@ -24,7 +23,6 @@ CREATE INDEX IF NOT EXISTS idx_sessions_owner_id ON sessions(owner_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_bot_id ON sessions(bot_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
 CREATE INDEX IF NOT EXISTS idx_sessions_idle_expires_at ON sessions(idle_expires_at);
-CREATE INDEX IF NOT EXISTS idx_sessions_platform ON sessions(platform);
 
 CREATE TABLE IF NOT EXISTS conversation (
     id TEXT PRIMARY KEY,
