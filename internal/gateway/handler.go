@@ -498,7 +498,7 @@ func (h *Handler) handleCD(ctx context.Context, env *events.Envelope) error {
 		workDir := si.WorkDir
 		msgEnv := events.NewEnvelope(
 			aep.NewID(), env.SessionID, h.hub.NextSeq(env.SessionID),
-			events.Message, events.MessageData{Content: workDir},
+			events.Message, events.MessageData{Content: fmt.Sprintf("📂 当前工作目录: %s", workDir)},
 		)
 		return h.hub.SendToSession(ctx, msgEnv)
 	}
@@ -529,7 +529,7 @@ func (h *Handler) handleCD(ctx context.Context, env *events.Envelope) error {
 		if err != nil {
 			return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "切换失败：%v", err)
 		}
-		msg := fmt.Sprintf("已切换到 %s", workDir)
+		msg := fmt.Sprintf("✅ 已切换到 %s", workDir)
 		msgEnv := events.NewEnvelope(
 			aep.NewID(), env.SessionID, h.hub.NextSeq(env.SessionID),
 			events.Message, events.MessageData{Content: msg},
@@ -543,7 +543,7 @@ func (h *Handler) handleCD(ctx context.Context, env *events.Envelope) error {
 		return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "切换失败：%v", err)
 	}
 
-	msg := fmt.Sprintf("已切换到 %s（新会话 %s）", result.WorkDir, result.NewSessionID)
+	msg := fmt.Sprintf("✅ 已切换到 %s（新会话 %s）", result.WorkDir, result.NewSessionID)
 	msgEnv := events.NewEnvelope(
 		aep.NewID(), result.NewSessionID, h.hub.NextSeq(result.NewSessionID),
 		events.Message, events.MessageData{Content: msg},
