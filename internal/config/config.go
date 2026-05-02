@@ -39,6 +39,21 @@ func ExpandEnv(s string) string {
 	})
 }
 
+// expandEnvEntry expands ${VAR} references in a KEY=VALUE environment entry.
+// Entries that reference unset variables without a default clause are excluded
+// (returned as false) so the entry is omitted from the worker environment.
+func expandEnvEntry(entry string) (string, bool) {
+	for _, m := range envVarRe.FindAllStringSubmatch(entry, -1) {
+		if strings.Contains(m[0], ":-") {
+			continue // has :-default clause, always included
+		}
+		if len(m) >= 2 && os.Getenv(m[1]) == "" {
+			return "", false // unset var, no default → exclude
+		}
+	}
+	return ExpandEnv(entry), true
+}
+
 // SecretsProvider abstracts how secrets are retrieved.
 type SecretsProvider interface {
 	// Get returns the secret value for the given key, or "" if not found.
@@ -648,9 +663,13 @@ func loadRecursive(filePath string, opts LoadOptions, visited []string) (*Config
 	// Messaging platform env var overrides.
 	applyMessagingEnv(cfg)
 
-	for i, e := range cfg.Worker.Environment {
-		cfg.Worker.Environment[i] = ExpandEnv(e)
+	expanded := make([]string, 0, len(cfg.Worker.Environment))
+	for _, e := range cfg.Worker.Environment {
+		if entry, ok := expandEnvEntry(e); ok {
+			expanded = append(expanded, entry)
+		}
 	}
+	cfg.Worker.Environment = expanded
 
 	// Post-process: normalize allowed_envs into env_whitelist.
 	if len(cfg.Worker.AllowedEnvs) > 0 {
