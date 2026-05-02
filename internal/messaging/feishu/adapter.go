@@ -24,7 +24,6 @@ import (
 	"github.com/hrygo/hotplex/internal/config"
 	"github.com/hrygo/hotplex/internal/messaging"
 	"github.com/hrygo/hotplex/internal/messaging/stt"
-	"github.com/hrygo/hotplex/pkg/aep"
 	"github.com/hrygo/hotplex/pkg/events"
 )
 
@@ -885,25 +884,15 @@ func (c *FeishuConn) sendContextUsage(ctx context.Context, env *events.Envelope)
 }
 
 func (c *FeishuConn) sendMCPStatus(ctx context.Context, env *events.Envelope) error {
-	var d events.MCPStatusData
-	switch v := env.Event.Data.(type) {
-	case events.MCPStatusData:
-		d = v
-	case map[string]any:
-		raw, _ := json.Marshal(v)
-		_ = json.Unmarshal(raw, &d)
-	default:
+	d, ok := messaging.ExtractMCPStatusData(env)
+	if !ok {
 		return nil
 	}
 
 	var sb strings.Builder
 	sb.WriteString("🔌 MCP Server Status")
 	for _, s := range d.Servers {
-		icon := "✅"
-		if s.Status != "connected" && s.Status != "ok" {
-			icon = "❌"
-		}
-		fmt.Fprintf(&sb, "\n%s %s — %s", icon, s.Name, s.Status)
+		fmt.Fprintf(&sb, "\n%s %s — %s", messaging.MCPServerIcon(s.Status), s.Name, s.Status)
 	}
 
 	c.mu.RLock()
@@ -929,21 +918,7 @@ func (a *Adapter) handleTextControlCommand(ctx context.Context, chatID, userID, 
 		return
 	}
 
-	ctrlData := events.ControlData{Action: result.Action}
-	if result.Arg != "" {
-		ctrlData.Details = map[string]any{"path": result.Arg}
-	}
-
-	ctrlEnv := &events.Envelope{
-		Version:   events.Version,
-		ID:        aep.NewID(),
-		SessionID: envelope.SessionID,
-		Event: events.Event{
-			Type: events.Control,
-			Data: ctrlData,
-		},
-		OwnerID: userID,
-	}
+	ctrlEnv := messaging.BuildControlEnvelope(result, envelope.SessionID, userID)
 
 	// CD sends progress feedback before execution; other actions send completion feedback after.
 	if result.Action == events.ControlActionCD {
@@ -1008,20 +983,7 @@ func (a *Adapter) handleTextWorkerCommand(ctx context.Context, chatID, chatType,
 		return
 	}
 
-	cmdEnv := &events.Envelope{
-		Version:   events.Version,
-		ID:        aep.NewID(),
-		SessionID: envelope.SessionID,
-		Event: events.Event{
-			Type: events.WorkerCmd,
-			Data: events.WorkerCommandData{
-				Command: result.Command,
-				Args:    result.Args,
-				Extra:   result.Extra,
-			},
-		},
-		OwnerID: userID,
-	}
+	cmdEnv := messaging.BuildWorkerCommandEnvelope(result, envelope.SessionID, userID)
 
 	// Set conn fields for async response delivery.
 	conn.mu.Lock()
@@ -1045,16 +1007,7 @@ func (a *Adapter) handleTextWorkerCommand(ctx context.Context, chatID, chatType,
 }
 
 func controlFeedbackMessageCN(action events.ControlAction) string {
-	switch action {
-	case events.ControlActionGC:
-		return "✅ 会话已休眠，发消息即可恢复。"
-	case events.ControlActionReset:
-		return "✅ 上下文已重置。"
-	case events.ControlActionCD:
-		return "📁 正在切换工作目录..."
-	default:
-		return "✅ 已完成。"
-	}
+	return messaging.ControlFeedbackMessage(action, messaging.ControlFeedbackCN, "✅ 已完成。")
 }
 
 func (a *Adapter) sendTextMessage(ctx context.Context, chatID, text string) error {
@@ -1278,60 +1231,7 @@ func buildCardContent(text string) string {
 
 // formatSecurityError converts technical security errors into user-friendly messages.
 func formatSecurityError(err error) string {
-	if err == nil {
-		return ""
-	}
-
-	errMsg := err.Error()
-
-	// Security-related errors
-	if strings.Contains(errMsg, "security: work dir") {
-		if strings.Contains(errMsg, "forbidden system directory") {
-			return "🚫 禁止访问系统目录"
-		}
-		if strings.Contains(errMsg, "under forbidden directory") {
-			return "🚫 目录被安全策略禁止（系统关键目录）"
-		}
-		if strings.Contains(errMsg, "not in whitelist") {
-			return "🚫 目录未在允许列表中（需在 config.yaml 中配置 security.work_dir_allowed_base_patterns）"
-		}
-		if strings.Contains(errMsg, "must be absolute") {
-			return "🚫 路径必须是绝对路径（以 / 开头）"
-		}
-		if strings.Contains(errMsg, "must not be empty") {
-			return "🚫 工作目录不能为空"
-		}
-		return "🚫 安全策略拒绝"
-	}
-
-	// Session-related errors
-	if strings.Contains(errMsg, "session not active") {
-		return "⚠️ 会话未激活（请先发送消息启动会话）"
-	}
-	if strings.Contains(errMsg, "get session") {
-		return "⚠️ 会话不存在"
-	}
-
-	// Work directory errors
-	if strings.Contains(errMsg, "expand work dir") {
-		return "📁 路径展开失败（请检查路径格式）"
-	}
-	if strings.Contains(errMsg, "worker terminate failed") {
-		return "⚠️ 停止原工作进程失败"
-	}
-	if strings.Contains(errMsg, "start session") {
-		return "⚠️ 启动新会话失败"
-	}
-
-	// Generic error (return original message for non-security errors)
-	if strings.Contains(errMsg, "switch-workdir") {
-		// Remove technical prefix for cleaner output
-		cleanMsg := strings.ReplaceAll(errMsg, "switch-workdir-inplace: ", "")
-		cleanMsg = strings.ReplaceAll(cleanMsg, "switch-workdir: ", "")
-		return cleanMsg
-	}
-
-	return errMsg
+	return messaging.FormatSecurityError(err, messaging.SecurityMessagesCN)
 }
 
 func extractTextFromContent(content string) string {
