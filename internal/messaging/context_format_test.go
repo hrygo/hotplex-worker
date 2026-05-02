@@ -251,11 +251,8 @@ func TestFormatCanonicalText(t *testing.T) {
 	}
 
 	result := FormatCanonicalText(d)
-	require.Contains(t, result, "🟢 Context: 38% — Comfortable")
-	require.Contains(t, result, "[███░░░░░░░] ~76.3K / 200K")
+	require.Contains(t, result, "🟢 [███░░░░░░░] ~76.3K / 200K")
 	require.Contains(t, result, "Model: claude-sonnet-4")
-	require.Contains(t, result, "Top: Messages: ~55.2K, System Prompt: 603")
-	require.Contains(t, result, "⚡ 8 skills · 3 memory files · 5 MCP tools")
 }
 
 func TestFormatCanonicalTextCritical(t *testing.T) {
@@ -268,7 +265,7 @@ func TestFormatCanonicalTextCritical(t *testing.T) {
 	}
 
 	result := FormatCanonicalText(d)
-	require.Contains(t, result, "🔴 Context: 93% — Critical")
+	require.Contains(t, result, "🔴 [█████████░] 185K / 200K")
 	require.Contains(t, result, "/compact")
 	require.Contains(t, result, "/reset")
 }
@@ -282,8 +279,7 @@ func TestFormatCanonicalTextMinimal(t *testing.T) {
 	}
 
 	result := FormatCanonicalText(d)
-	require.Contains(t, result, "🟢 Context: 0% — Comfortable")
-	require.Contains(t, result, "[░░░░░░░░░░] 500 / 200K")
+	require.Contains(t, result, "🟢 [░░░░░░░░░░] 500 / 200K")
 	require.NotContains(t, result, "Model:")
 	require.NotContains(t, result, "Top:")
 	require.NotContains(t, result, "⚡")

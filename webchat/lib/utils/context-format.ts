@@ -66,8 +66,7 @@ export function formatContextMessage(data: ContextUsageData): string {
   const tip = getContextTip(severity);
 
   const lines = [
-    `${icon} Context: ${data.percentage}% — ${label}`,
-    `${bar} ${display}`,
+    `${icon} ${bar} ${display}`,
   ];
   if (data.model) lines.push(`Model: ${data.model}`);
   if (tip) lines.push(tip);

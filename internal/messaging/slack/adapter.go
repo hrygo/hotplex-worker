@@ -1050,7 +1050,7 @@ func (c *SlackConn) buildContextUsageTable(d events.ContextUsageData) []slack.Bl
 		slack.ColumnSetting{Align: slack.ColumnAlignmentLeft, IsWrapped: true},
 	)
 
-	table.AddRow(richTextCell(info.Icon+" Usage"), richTextCell(fmt.Sprintf("%s %s  %s", info.ProgressBar, info.TokenDisplay, info.Label)))
+	table.AddRow(richTextCell(info.Icon+" Context"), richTextCell(fmt.Sprintf("%s %s", info.ProgressBar, info.TokenDisplay)))
 	if info.Model != "" {
 		table.AddRow(richTextCell("Model"), richTextCell(info.Model))
 	}

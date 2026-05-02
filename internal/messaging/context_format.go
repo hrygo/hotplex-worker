@@ -206,10 +206,8 @@ func FormatCanonicalText(d events.ContextUsageData) string {
 	info := BuildContextDisplay(d)
 
 	var b strings.Builder
-	// Header: icon + percentage + severity label
-	fmt.Fprintf(&b, "%s Context: %d%% — %s", info.Icon, info.Percentage, info.Label)
-	// Progress bar + tokens
-	fmt.Fprintf(&b, "\n%s %s", info.ProgressBar, info.TokenDisplay)
+	// Header: icon + progress bar + tokens (single line)
+	fmt.Fprintf(&b, "%s %s %s", info.Icon, info.ProgressBar, info.TokenDisplay)
 	// Model
 	if info.Model != "" {
 		fmt.Fprintf(&b, "\nModel: %s", info.Model)
