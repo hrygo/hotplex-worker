@@ -445,16 +445,31 @@ export function useHotPlexRuntime({
 
     const handleMessage = (data: MessageData, env: Envelope) => {
       const role: 'user' | 'assistant' = data?.role === 'user' ? 'user' : 'assistant';
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: data.id || env.id,
-          role,
-          parts: [{ type: 'text', text: data?.content || '' }],
-          createdAt: new Date(env.timestamp || Date.now()),
-          status: 'complete',
-        },
-      ]);
+      const msgId = data.id || env.id;
+      setMessages((prev) => {
+        const existingIdx = prev.findIndex((m) => m.id === msgId);
+        if (existingIdx !== -1) {
+          // Update existing message (e.g., streaming placeholder → complete)
+          const updated = [...prev];
+          updated[existingIdx] = {
+            ...prev[existingIdx],
+            role,
+            parts: [{ type: 'text', text: data?.content || '' }],
+            status: 'complete',
+          };
+          return updated;
+        }
+        return [
+          ...prev,
+          {
+            id: msgId,
+            role,
+            parts: [{ type: 'text', text: data?.content || '' }],
+            createdAt: new Date(env.timestamp || Date.now()),
+            status: 'complete',
+          },
+        ];
+      });
       setIsRunning(false);
     };
 
@@ -869,10 +884,19 @@ export function useHotPlexRuntime({
   // Memoized thread messages conversion (spec §7.1)
   // Filter out malformed messages and guard against undefined roles to prevent
   // assistant-ui's internal converter from crashing with "Unknown message role".
+  // Dedup by ID to prevent MessageRepository "same id" errors.
   const threadMessages = useMemo(
-    () => messages
-      .filter((m): m is HotPlexMessage => !!m && (m.role === 'user' || m.role === 'assistant'))
-      .map((m) => convertToThreadMessage(m)),
+    () => {
+      const seen = new Set<string>();
+      return messages
+        .filter((m): m is HotPlexMessage => !!m && (m.role === 'user' || m.role === 'assistant'))
+        .filter((m) => {
+          if (seen.has(m.id)) return false;
+          seen.add(m.id);
+          return true;
+        })
+        .map((m) => convertToThreadMessage(m));
+    },
     [messages]
   );
 
