@@ -120,8 +120,8 @@ worker:
   # Extra environment variables for all worker processes (highest priority).
   # These override whitelisted keys from os.Environ().
   environment:
-    - GH_TOKEN=${GH_TOKEN}
-    - GITHUB_TOKEN=${GITHUB_TOKEN}
+    - GH_TOKEN=${HOTPLEX_WORKER_GH_TOKEN}
+    - GITHUB_TOKEN=${HOTPLEX_WORKER_GITHUB_TOKEN}
   # - BUN_JSC_useJIT=0  # JIT workaround for Bun SIGILL on broken AVX VPS (severe perf penalty)
 
   auto_retry:
