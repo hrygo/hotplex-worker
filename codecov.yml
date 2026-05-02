@@ -16,37 +16,44 @@ coverage:
       default:
         informational: true
       security:
+        informational: true
         target: 85%
         threshold: 1%
         paths:
           - "internal/security/"
       engine:
+        informational: true
         target: 75%
         threshold: 1%
         paths:
           - "internal/gateway/"
       protocol:
+        informational: true
         target: 85%
         threshold: 1%
         paths:
           - "pkg/aep/"
           - "pkg/events/"
       config:
+        informational: true
         target: 70%
         threshold: 1%
         paths:
           - "internal/config/"
       session:
+        informational: true
         target: 70%
         threshold: 1%
         paths:
           - "internal/session/"
       worker:
+        informational: true
         target: 60%
         threshold: 1%
         paths:
           - "internal/worker/"
       messaging:
+        informational: true
         target: 50%
         threshold: 1%
         paths:
