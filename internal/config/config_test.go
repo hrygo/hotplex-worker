@@ -828,5 +828,5 @@ db:
 
 func TestMustLoad_WithEnvVars(t *testing.T) {
 	t.Parallel()
-	t.Skip("Environment variable expansion in YAML not currently supported by config loader")
+	t.Skip("Only worker.environment supports ${VAR} expansion; general YAML field expansion not yet implemented")
 }
