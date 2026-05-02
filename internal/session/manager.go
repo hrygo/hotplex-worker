@@ -186,6 +186,24 @@ func (m *Manager) Get(id string) (*SessionInfo, error) {
 	return info, nil
 }
 
+// updateSession applies a field mutation under ms.mu, persists to DB, and rolls back on error.
+// The apply closure must capture previous values and return a rollback closure — all under the lock.
+func (m *Manager) updateSession(ctx context.Context, ms *managedSession, apply func(*SessionInfo) func()) error {
+	ms.mu.Lock()
+	rollback := apply(&ms.info)
+	ms.info.UpdatedAt = time.Now()
+	info := ms.info
+	ms.mu.Unlock()
+
+	if err := m.store.Upsert(ctx, &info); err != nil {
+		ms.mu.Lock()
+		rollback()
+		ms.mu.Unlock()
+		return err
+	}
+	return nil
+}
+
 // UpdateWorkDir updates the workDir for an active session in memory and persists to DB.
 func (m *Manager) UpdateWorkDir(ctx context.Context, id, workDir string) error {
 	m.mu.RLock()
@@ -194,21 +212,18 @@ func (m *Manager) UpdateWorkDir(ctx context.Context, id, workDir string) error {
 		m.mu.RUnlock()
 		return ErrSessionNotFound
 	}
-	ms.mu.Lock()
 	m.mu.RUnlock()
-	prevWorkDir := ms.info.WorkDir
-	ms.info.WorkDir = workDir
-	ms.info.UpdatedAt = time.Now()
-	info := ms.info
-	ms.mu.Unlock()
-
-	if err := m.store.Upsert(ctx, &info); err != nil {
-		ms.mu.Lock()
-		ms.info.WorkDir = prevWorkDir
-		ms.mu.Unlock()
-		return err
+	ms.mu.RLock()
+	same := ms.info.WorkDir == workDir
+	ms.mu.RUnlock()
+	if same {
+		return nil
 	}
-	return nil
+	return m.updateSession(ctx, ms, func(info *SessionInfo) func() {
+		prev := info.WorkDir
+		info.WorkDir = workDir
+		return func() { info.WorkDir = prev }
+	})
 }
 
 // ─── State transitions ───────────────────────────────────────────────────────
@@ -589,21 +604,17 @@ func (m *Manager) ClearContext(ctx context.Context, sessionID string) error {
 	if ms == nil {
 		return ErrSessionNotFound
 	}
-
-	ms.mu.Lock()
-	prevCtx := ms.info.Context
-	ms.info.Context = map[string]any{}
-	ms.info.UpdatedAt = time.Now()
-	info := ms.info
-	ms.mu.Unlock()
-
-	if err := m.store.Upsert(ctx, &info); err != nil {
-		ms.mu.Lock()
-		ms.info.Context = prevCtx
-		ms.mu.Unlock()
-		return err
+	ms.mu.RLock()
+	empty := len(ms.info.Context) == 0
+	ms.mu.RUnlock()
+	if empty {
+		return nil
 	}
-	return nil
+	return m.updateSession(ctx, ms, func(info *SessionInfo) func() {
+		prev := info.Context
+		info.Context = map[string]any{}
+		return func() { info.Context = prev }
+	})
 }
 
 // UpdateWorkerSessionID persists the worker-internal session ID for resume support.
@@ -623,19 +634,13 @@ func (m *Manager) UpdateWorkerSessionID(ctx context.Context, id, workerSessionID
 		ms.mu.Unlock()
 		return nil
 	}
-	prevID := ms.info.WorkerSessionID
-	ms.info.WorkerSessionID = workerSessionID
-	ms.info.UpdatedAt = time.Now()
-	info := ms.info
 	ms.mu.Unlock()
 
-	if err := m.store.Upsert(ctx, &info); err != nil {
-		ms.mu.Lock()
-		ms.info.WorkerSessionID = prevID
-		ms.mu.Unlock()
-		return err
-	}
-	return nil
+	return m.updateSession(ctx, ms, func(info *SessionInfo) func() {
+		prev := info.WorkerSessionID
+		info.WorkerSessionID = workerSessionID
+		return func() { info.WorkerSessionID = prev }
+	})
 }
 
 // DebugSessionSnapshot holds safe-to-expose debug info for a managed session.
@@ -733,21 +738,12 @@ func (m *Manager) ResetExpiry(ctx context.Context, id string) error {
 		m.mu.RUnlock()
 		return ErrSessionNotFound
 	}
-	ms.mu.Lock()
 	m.mu.RUnlock()
-	prevExpiresAt := ms.info.ExpiresAt
-	ms.info.ExpiresAt = ptr(time.Now().Add(m.cfg.Session.RetentionPeriod))
-	ms.info.UpdatedAt = time.Now()
-	info := ms.info
-	ms.mu.Unlock()
-
-	if err := m.store.Upsert(ctx, &info); err != nil {
-		ms.mu.Lock()
-		ms.info.ExpiresAt = prevExpiresAt
-		ms.mu.Unlock()
-		return err
-	}
-	return nil
+	return m.updateSession(ctx, ms, func(info *SessionInfo) func() {
+		prev := info.ExpiresAt
+		info.ExpiresAt = ptr(time.Now().Add(m.cfg.Session.RetentionPeriod))
+		return func() { info.ExpiresAt = prev }
+	})
 }
 
 // WorkerHealthStatuses returns a snapshot of health for all active worker processes.

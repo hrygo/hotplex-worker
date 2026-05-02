@@ -107,19 +107,6 @@ func (b *Bridge) StartSession(ctx context.Context, id, userID, botID string, wt 
 		return fmt.Errorf("bridge: create session: %w", err)
 	}
 
-	// Create worker.
-	w, err := b.wf.NewWorker(wt)
-	if err != nil {
-		return fmt.Errorf("bridge: create worker: %w", err)
-	}
-
-	// Attach worker.
-	if err := b.sm.AttachWorker(id, w); err != nil {
-		_ = b.sm.Delete(ctx, id)
-		return fmt.Errorf("bridge: attach worker: %w", err)
-	}
-
-	// Start worker.
 	workerInfo := worker.SessionInfo{
 		SessionID:       id,
 		UserID:          userID,
@@ -128,25 +115,31 @@ func (b *Bridge) StartSession(ctx context.Context, id, userID, botID string, wt 
 		ConfigEnv:       b.workerEnv,
 		ConfigWhitelist: b.workerEnvWhitelist,
 	}
-	b.injectAgentConfig(&workerInfo, platform)
-	if err := w.Start(ctx, workerInfo); err != nil {
-		b.sm.DetachWorker(id)
-		_ = b.sm.Delete(ctx, id)
-		return fmt.Errorf("bridge: start worker: %w", err)
+
+	if _, err := b.createAndLaunchWorker(workerLaunchParams{
+		ctx:        ctx,
+		wt:         wt,
+		workerInfo: workerInfo,
+		platform:   platform,
+	},
+		func(ctx context.Context, w worker.Worker) error {
+			if err := w.Start(ctx, workerInfo); err != nil {
+				_ = b.sm.Delete(ctx, id)
+				return fmt.Errorf("bridge: start worker: %w", err)
+			}
+			return nil
+		},
+		func(_ worker.Worker, _ error) {
+			_ = b.sm.Delete(ctx, id)
+		},
+	); err != nil {
+		return err
 	}
 
 	// Transition to RUNNING. (StateNotifier will emit state event automatically)
 	if err := b.sm.Transition(ctx, id, events.StateRunning); err != nil {
 		b.log.Warn("bridge: transition to running failed", "session_id", id, "worker_type", wt, "err", err)
 	}
-
-	// Forward worker events to hub. Goroutine exits when conn.Recv() is closed
-	// (happens when the worker is killed via poolMgr.Close).
-	b.fwdWg.Add(1)
-	go func() {
-		defer b.fwdWg.Done()
-		b.forwardEvents(w, id, forwardOpts{})
-	}()
 
 	return nil
 }
@@ -157,6 +150,60 @@ type forwardOpts struct {
 	workDir    string // workDir to use for resume retry
 	retryDepth int    // number of resume retries attempted (limits to 1)
 	lastInput  string // inherited lastInput from previous retry goroutine; used as fallback when retry worker never receives input
+}
+
+// workerLaunchParams holds the parameters for createAndLaunchWorker.
+type workerLaunchParams struct {
+	ctx         context.Context
+	wt          worker.WorkerType
+	workerInfo  worker.SessionInfo
+	platform    string
+	forwardOpts forwardOpts
+}
+
+// workerStartFunc is called after AttachWorker and injectAgentConfig.
+// On startFn failure, the worker is automatically detached.
+type workerStartFunc func(ctx context.Context, w worker.Worker) error
+
+// workerAttachErrFunc is called when AttachWorker fails for caller-specific cleanup.
+type workerAttachErrFunc func(w worker.Worker, err error)
+
+// createAndLaunchWorker creates a worker, attaches it, injects config, calls startFn,
+// and launches the forwardEvents goroutine. Returns the worker for post-launch use.
+// On startFn failure, the worker is detached before returning.
+func (b *Bridge) createAndLaunchWorker(params workerLaunchParams, startFn workerStartFunc, attachErrFn workerAttachErrFunc) (worker.Worker, error) {
+	sid := params.workerInfo.SessionID
+
+	w, err := b.wf.NewWorker(params.wt)
+	if err != nil {
+		return nil, fmt.Errorf("bridge: create worker: %w", err)
+	}
+
+	if noopw, ok := w.(*noop.Worker); ok {
+		noopw.SetConn(noop.NewConn(sid, params.workerInfo.UserID))
+	}
+
+	if err := b.sm.AttachWorker(sid, w); err != nil {
+		if attachErrFn != nil {
+			attachErrFn(w, err)
+		}
+		return nil, fmt.Errorf("bridge: attach worker: %w", err)
+	}
+
+	b.injectAgentConfig(&params.workerInfo, params.platform)
+
+	if err := startFn(params.ctx, w); err != nil {
+		b.sm.DetachWorker(sid)
+		return nil, err
+	}
+
+	b.fwdWg.Add(1)
+	go func() {
+		defer b.fwdWg.Done()
+		b.forwardEvents(w, sid, params.forwardOpts)
+	}()
+
+	return w, nil
 }
 
 // ResumeSession reattaches to an existing session.
@@ -193,28 +240,6 @@ func (b *Bridge) resumeWithOpts(ctx context.Context, id, workDir string, opts fo
 		b.sm.DetachWorker(id)
 	}
 
-	// Create worker.
-	w, err := b.wf.NewWorker(si.WorkerType)
-	if err != nil {
-		return fmt.Errorf("bridge: create worker: %w", err)
-	}
-	if noopw, ok := w.(*noop.Worker); ok {
-		conn := noop.NewConn(id, si.UserID)
-		noopw.SetConn(conn)
-	}
-	// Attach worker with quota.
-	if err := b.sm.AttachWorker(id, w); err != nil {
-		return fmt.Errorf("bridge: attach worker: %w", err)
-	}
-
-	// Transition IDLE/RESUMED/TERMINATED sessions to RUNNING.
-	if si.State != events.StateRunning {
-		if err := b.sm.Transition(ctx, id, events.StateRunning); err != nil {
-			return err
-		}
-	}
-
-	// Start worker.
 	workerInfo := worker.SessionInfo{
 		SessionID:       si.ID,
 		UserID:          si.UserID,
@@ -224,10 +249,30 @@ func (b *Bridge) resumeWithOpts(ctx context.Context, id, workDir string, opts fo
 		ConfigEnv:       b.workerEnv,
 		ConfigWhitelist: b.workerEnvWhitelist,
 	}
-	b.injectAgentConfig(&workerInfo, si.Platform)
-	if err := w.Resume(ctx, workerInfo); err != nil {
-		b.sm.DetachWorker(id)
-		return fmt.Errorf("bridge: resume start: %w", err)
+
+	w, err := b.createAndLaunchWorker(workerLaunchParams{
+		ctx:         ctx,
+		wt:          si.WorkerType,
+		workerInfo:  workerInfo,
+		platform:    si.Platform,
+		forwardOpts: opts,
+	},
+		func(ctx context.Context, w worker.Worker) error {
+			// Transition IDLE/RESUMED/TERMINATED sessions to RUNNING.
+			if si.State != events.StateRunning {
+				if err := b.sm.Transition(ctx, id, events.StateRunning); err != nil {
+					return err
+				}
+			}
+			if err := w.Resume(ctx, workerInfo); err != nil {
+				return fmt.Errorf("bridge: resume start: %w", err)
+			}
+			return nil
+		},
+		nil, // no extra cleanup on attach failure for resume
+	)
+	if err != nil {
+		return err
 	}
 
 	// Refresh ExpiresAt so a reactivated session isn't immediately killed by GC max_lifetime.
@@ -259,14 +304,6 @@ func (b *Bridge) resumeWithOpts(ctx context.Context, id, workDir string, opts fo
 	if err := b.hub.SendToSession(ctx, stateEvt); err != nil {
 		b.log.Warn("bridge: resume state notify failed", "session_id", id, "err", err)
 	}
-
-	// Forward worker events to hub. Same as StartSession — goroutine exits when
-	// conn.Recv() closes (worker killed via poolMgr.Close or worker exit).
-	b.fwdWg.Add(1)
-	go func() {
-		defer b.fwdWg.Done()
-		b.forwardEvents(w, id, opts)
-	}()
 
 	return nil
 }
@@ -749,24 +786,6 @@ func (b *Bridge) attemptResumeFallback(p fallbackParams) bool {
 		return false
 	}
 
-	w, err := b.wf.NewWorker(si.WorkerType)
-	if err != nil {
-		b.log.Error("bridge: create worker for fresh start", "session_id", p.sessionID, "err", err)
-		return false
-	}
-	if noopw, ok := w.(*noop.Worker); ok {
-		noopw.SetConn(noop.NewConn(si.ID, si.UserID))
-	}
-
-	if err := b.sm.AttachWorker(p.sessionID, w); err != nil {
-		b.log.Error("bridge: attach worker for fresh start", "session_id", p.sessionID, "err", err)
-		return false
-	}
-
-	if err := b.sm.Transition(context.Background(), p.sessionID, events.StateRunning); err != nil {
-		b.log.Warn("bridge: transition to running for fresh start", "session_id", p.sessionID, "err", err)
-	}
-
 	workerInfo := worker.SessionInfo{
 		SessionID:       si.ID,
 		UserID:          si.UserID,
@@ -776,18 +795,30 @@ func (b *Bridge) attemptResumeFallback(p fallbackParams) bool {
 		ConfigEnv:       b.workerEnv,
 		ConfigWhitelist: b.workerEnvWhitelist,
 	}
-	b.injectAgentConfig(&workerInfo, si.Platform)
-	if err := w.Start(context.Background(), workerInfo); err != nil {
-		b.sm.DetachWorker(p.sessionID)
-		b.log.Warn("bridge: fresh worker start failed", "session_id", p.sessionID, "err", err)
+
+	w, err := b.createAndLaunchWorker(workerLaunchParams{
+		ctx:        context.Background(),
+		wt:         si.WorkerType,
+		workerInfo: workerInfo,
+		platform:   si.Platform,
+	},
+		func(ctx context.Context, w worker.Worker) error {
+			if err := b.sm.Transition(ctx, p.sessionID, events.StateRunning); err != nil {
+				b.log.Warn("bridge: transition to running for fresh start", "session_id", p.sessionID, "err", err)
+			}
+			if err := w.Start(ctx, workerInfo); err != nil {
+				b.log.Warn("bridge: fresh worker start failed", "session_id", p.sessionID, "err", err)
+				return err
+			}
+			return nil
+		},
+		func(_ worker.Worker, err error) {
+			b.log.Error("bridge: attach worker for fresh start", "session_id", p.sessionID, "err", err)
+		},
+	)
+	if err != nil {
 		return false
 	}
-
-	b.fwdWg.Add(1)
-	go func() {
-		defer b.fwdWg.Done()
-		b.forwardEvents(w, p.sessionID, forwardOpts{})
-	}()
 
 	// Re-deliver the original input that was lost when the first worker crashed.
 	if p.lastInput != "" {
@@ -1056,16 +1087,6 @@ func (b *Bridge) SwitchWorkDirInPlace(ctx context.Context, sessionID, newWorkDir
 		return "", fmt.Errorf("switch-workdir-inplace: update workdir: %w", err)
 	}
 
-	w, err := b.wf.NewWorker(si.WorkerType)
-	if err != nil {
-		return "", fmt.Errorf("switch-workdir-inplace: create worker: %w", err)
-	}
-
-	if err := b.sm.AttachWorker(sessionID, w); err != nil {
-		_ = w.Kill()
-		return "", fmt.Errorf("switch-workdir-inplace: attach worker: %w", err)
-	}
-
 	workerInfo := worker.SessionInfo{
 		SessionID:       sessionID,
 		UserID:          si.UserID,
@@ -1075,13 +1096,29 @@ func (b *Bridge) SwitchWorkDirInPlace(ctx context.Context, sessionID, newWorkDir
 		ConfigEnv:       b.workerEnv,
 		ConfigWhitelist: b.workerEnvWhitelist,
 	}
-	b.injectAgentConfig(&workerInfo, si.Platform)
-	if err := w.Start(ctx, workerInfo); err != nil {
-		b.sm.DetachWorker(sessionID)
-		if rollbackErr := b.sm.UpdateWorkDir(ctx, sessionID, si.WorkDir); rollbackErr != nil {
-			b.log.Warn("switch-workdir-inplace: rollback workdir failed", "session_id", sessionID, "err", rollbackErr)
-		}
-		return "", fmt.Errorf("switch-workdir-inplace: start worker: %w", err)
+
+	_, err = b.createAndLaunchWorker(workerLaunchParams{
+		ctx:         ctx,
+		wt:          si.WorkerType,
+		workerInfo:  workerInfo,
+		platform:    si.Platform,
+		forwardOpts: forwardOpts{workDir: expanded},
+	},
+		func(ctx context.Context, w worker.Worker) error {
+			if err := w.Start(ctx, workerInfo); err != nil {
+				if rollbackErr := b.sm.UpdateWorkDir(ctx, sessionID, si.WorkDir); rollbackErr != nil {
+					b.log.Warn("switch-workdir-inplace: rollback workdir failed", "session_id", sessionID, "err", rollbackErr)
+				}
+				return fmt.Errorf("switch-workdir-inplace: start worker: %w", err)
+			}
+			return nil
+		},
+		func(w worker.Worker, _ error) {
+			_ = w.Kill()
+		},
+	)
+	if err != nil {
+		return "", err
 	}
 
 	// Refresh ExpiresAt so reactivated session isn't killed by GC.
@@ -1092,12 +1129,6 @@ func (b *Bridge) SwitchWorkDirInPlace(ctx context.Context, sessionID, newWorkDir
 	if err := b.sm.Transition(ctx, sessionID, events.StateRunning); err != nil {
 		b.log.Warn("switch-workdir-inplace: transition to running failed", "session_id", sessionID, "err", err)
 	}
-
-	b.fwdWg.Add(1)
-	go func() {
-		defer b.fwdWg.Done()
-		b.forwardEvents(w, sessionID, forwardOpts{workDir: expanded})
-	}()
 
 	b.log.Info("switch-workdir-inplace: switched",
 		"session_id", sessionID,

@@ -1,7 +1,7 @@
 ---
 name: hotplex-pr-quality
 version: 2.0.0
-description: "HotPlex 项目的 PR 质量保证与 CI 达标助手。当你完成开发、需要提交代码、创建或更新 PR、遇到 CI 失败、需要 codecov 分析、处理测试或 lint 错误、管理分支或推送代码时，使用此 skill。它自动执行质量检查、代码提交、PR 创建/更新和 CI 监控，确保你的变更符合 HotPlex 的多 channel (Slack/飞书/WebChat)、多 worker (CC/OCS/Pi)、跨平台 (Linux/macOS/Windows) 架构要求。**HotPlex 项目专用**，hrygo/hotplex 仓库。"
+description: "HotPlex 项目（hrygo/hotplex）专用。当你需要提交代码、创建或更新 PR、推送代码到 fork、审查 PR 代码质量、修复 CI 失败（测试报错、lint 错误、codecov 覆盖率不足、跨平台构建失败如 Windows/macOS 挂掉）、或监控 CI 状态时，使用此 skill。覆盖开发完成后的完整工作流：质量检查 → 提交 → 推送 → PR 创建/更新 → 代码审查 → CI 监控与修复。确保在涉及 HotPlex 项目的代码提交、PR 操作、质量审查或 CI 问题时使用此 skill，即使用户没有明确说「创建 PR」。"
 metadata:
   requires:
     bins: ["gh", "git"]
@@ -223,6 +223,32 @@ skill 会自动：
 - Fixes #123
 - Closes #456
 ```
+
+### 阶段 4.5：PR 代码质量审查
+
+**触发条件**：用户请求"审查代码"、"质量审查"、"review PR"等。
+
+**工作流**：
+
+1. **检查 PR 资格**：OPEN、非 draft、无已有 AI review
+2. **获取 PR diff + CLAUDE.md**
+3. **启动 5 个并行审查代理**（Sonnet）：
+   - CLAUDE.md / .agent/rules/ 合规
+   - 浅层 bug 扫描（**必须读实际源码验证**，不信任 diff 描述）
+   - Git 历史上下文（检查预存行为 vs 新引入问题）
+   - 历史 PR 评论（人工审查指导意见）
+   - 代码注释合规（锁排序、不变量、约束注释）
+4. **汇总去重** issues
+5. **每个独立 issue 用 Haiku 评分**（0-100，≥80 阈值）
+6. **过滤 <80 分**，无达标 issue 则不发布评论
+7. **重新检查 PR 资格**（防止竞态）
+8. **发布审查评论**（含 SHA 链接）或报告"无问题"
+
+**关键教训**（来自实战）：
+- 浅层扫描代理可能误描述锁语义，必须要求读实际源码
+- 区分 `m.mu`（map 锁）和 `ms.mu`（session 锁），保护不同资源
+- 预存行为（pre-existing）不算新 issue
+- data race 要区分"理论 TOCTOU"和"Go race detector 实际会报的"
 
 ### 阶段 5：监控 CI 状态
 
