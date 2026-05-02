@@ -213,7 +213,10 @@ func (m *Manager) UpdateWorkDir(ctx context.Context, id, workDir string) error {
 		return ErrSessionNotFound
 	}
 	m.mu.RUnlock()
-	if ms.info.WorkDir == workDir {
+	ms.mu.RLock()
+	same := ms.info.WorkDir == workDir
+	ms.mu.RUnlock()
+	if same {
 		return nil
 	}
 	return m.updateSession(ctx, ms, func(info *SessionInfo) func() {
@@ -601,7 +604,10 @@ func (m *Manager) ClearContext(ctx context.Context, sessionID string) error {
 	if ms == nil {
 		return ErrSessionNotFound
 	}
-	if len(ms.info.Context) == 0 {
+	ms.mu.RLock()
+	empty := len(ms.info.Context) == 0
+	ms.mu.RUnlock()
+	if empty {
 		return nil
 	}
 	return m.updateSession(ctx, ms, func(info *SessionInfo) func() {
