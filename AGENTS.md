@@ -46,6 +46,7 @@ make dev-status  # 查看运行服务
 - `make lint` - golangci-lint 检查
 - `make dev` - 启动开发环境
 - `hotplex service start` - 启动系统服务
+- `hotplex update` - 自更新到最新版本
 
 ---
 
@@ -108,6 +109,7 @@ cp configs/env.example .env
 | `routes.go` | 197 | HTTP 路由注册 |
 | `messaging_init.go` | 233 | 消息适配器生命周期 |
 | `service_*.go` | - | 系统服务管理（systemd/launchd/SCM） |
+| `update.go` | 168 | 自更新命令：GitHub API、下载、校验、替换 |
 
 ### 核心模块 (`internal/`)
 
@@ -145,6 +147,7 @@ cp configs/env.example .env
 - `skills/` - Skills 发现
 - `metrics/` - Prometheus 指标
 - `service/` - 系统服务管理
+- `updater/` - 自更新（GitHub API、sha256 校验、原子替换）
 
 ### 公共包 (`pkg/`)
 
@@ -371,6 +374,15 @@ hotplex service status
 hotplex service logs -f
 ```
 
+### 自更新
+
+```bash
+hotplex update                # 交互式更新
+hotplex update --check        # 仅检查，不下载
+hotplex update -y             # 跳过确认提示
+hotplex update --restart      # 更新后自动重启网关
+```
+
 ---
 
 ## 备注
@@ -386,6 +398,7 @@ hotplex service logs -f
 - Postgres store 仅为桩（仅 SQLite 可用于生产）
 - OpenCode CLI 适配器已移除（由 OCS 替代）
 - ACPX 适配器仅存在类型常量（无实现）
+- Windows 自更新不支持（exe 运行时被锁，使用 `scripts/install.ps1` 替代）
 
 ### 跨平台支持
 

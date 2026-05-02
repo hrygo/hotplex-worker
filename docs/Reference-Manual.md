@@ -397,6 +397,7 @@ hotplex [command]
 | `config dump` | Dump resolved config |
 | `security` | Security validation commands |
 | `onboard` | Interactive setup wizard |
+| `update` | Self-update to latest version (`--check`, `-y`, `--restart`) |
 
 ### Common Flags
 

@@ -28,6 +28,10 @@ hotplex
 │   └── --category     # 只检查指定分类
 ├── security           # 安全审计
 │   └── --fix          # 自动修复安全问题
+├── update             # 自更新（从 GitHub Releases 下载最新版本）
+│   └── --check        # 仅检查，不下载
+│   └── -y, --yes      # 跳过确认提示
+│   └── --restart      # 更新后自动重启网关
 └── version            # 版本信息
 ```
 
@@ -43,6 +47,7 @@ cmd/
     onboard.go           # onboard 子命令
     doctor.go            # doctor 子命令
     security.go          # security 子命令
+    update.go            # update 子命令（自更新）
 
 internal/
   cli/
@@ -60,6 +65,8 @@ internal/
     output/
       printer.go         # 统一输出格式（✓/⚠/✗ + ANSI 颜色）
       report.go          # JSON/report 输出
+  updater/
+    updater.go           # 自更新核心：GitHub API、下载、sha256 校验、原子替换
 ```
 
 ## 3. 核心类型
@@ -332,7 +339,6 @@ rootCmd.RunE = runServe  // 默认行为 = serve
 
 - 运行时连接检查（连 Admin API 做运行时诊断）
 - 交互式 TUI 界面
-- 自动更新/升级功能
 - 远程诊断报告上传
 - 多语言支持（仅英文输出）
 - Windows 支持（项目仅支持 POSIX）
