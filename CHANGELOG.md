@@ -1,5 +1,52 @@
 # Changelog
 
+## [1.4.0] - 2026-05-02
+
+### Summary
+
+v1.4.0 是一次 minor 版本更新，聚焦于 **运维自服务能力、Gateway 稳定性与并发安全、SQLite OOM 韧性、Messaging 层架构治理**。新增 CLI 自更新命令（GitHub Releases API + SHA256 校验 + 原子替换）、智能目录切换安全策略、config-driven Worker 环境变量注入、SQLite CGo 双驱动自动降级。Gateway 全面加固并发安全（pcEntry race condition、Session panic recovery、WriteBufferFull 信号化），Messaging 层提取 BaseAdapter 消除 connPool 重复、统一 `$context` 命令输出。CI 流水线并行化和缓存优化显著缩短构建时间。
+
+### Added
+
+- **CLI**: `hotplex update` 自更新命令 — GitHub Releases API 集成、SHA256 校验验证、原子二进制替换、服务自动重启支持（`--check`、`-y`、`--restart` 标志）。(#115)
+- **Security**: 智能目录切换安全策略 — 支持用户主目录和 `/usr/local` 约定优于配置的智能判断，跨平台路径验证。(#110 相关)
+- **Configuration**: Worker 环境变量注入 — `worker.environment` 配置驱动，支持 `${VAR}` 展开和 `env_whitelist` 过滤，默认注入 `BUN_RUNTIME_NV=disable_avx512`。
+- **Configuration**: `db.events_path` 可配置 — events.db 路径支持自定义，脱离默认数据目录。
+- **SQLite**: CGo 双驱动自动降级 — CGo 构建使用 mattn/go-sqlite3（性能优先），纯 Go 构建使用 modernc.org/sqlite（OOM 韧性），build tag 自动选择。
+- **Messaging**: `$context` 命令输出美化 — 共享格式化层（severity 级别、进度条、友好 token 计数、操作建议），Slack/飞书/WebChat 统一输出。WebChat 新增 ContextUsageCard 玻璃态组件。(#110)
+- **Messaging**: events.Message 处理 — 飞书和 Slack 适配器新增 handler/bridge 发起的独立消息处理（cd 确认、命令反馈）。
+- **Messaging**: 控制命令详细错误消息 — 用户友好的错误提示替代静默失败。
+
+### Changed
+
+- **Messaging**: 提取 BaseAdapter[C] 泛型结构体 — 消除 Slack/飞书适配器约 30 行 connPool 重复代码，提供 `InitConnPool`/`GetOrCreateConn`/`DrainConns`/`DeleteConn` 统一生命周期管理。(#114)
+- **Gateway**: 模块拆分 — 从 hub.go 提取 SeqGen 和 pcEntry 到独立文件，提取 `createAndLaunchWorker`、`requireActiveOwner` 辅助函数，Handler 改用 SessionManager 接口替代具体类型。
+- **Session**: 提取 `audit_store.go`（审计追踪方法）、`stores.go`（store 工厂）、`updateSession` 辅助函数，store.go 减少 182 行。
+- **SQLite**: 提取 `sqlutil` 包统一 DB 初始化和 PRAGMA 调优，消除冗余零值回退。
+- **Security**: 提取 `resolveSigningKey` 辅助函数，移除无用的 `DevAllowedTools`。
+- **Admin**: 提取 CORS 处理到中间件。
+- **Metrics**: 移除 `session_id` label 防止 delta 指标基数无限增长。
+- **CI**: 流水线优化 — 移除 Gate 阶段、步骤并行化、Go/WebChat 缓存。
+- **Messaging**: 关闭 turn_timeout 默认值（原 15m 过于激进，execution_timeout 30m 已足够捕获僵尸会话）。
+- **Service**: systemd WorkingDirectory 对齐 worker.default_work_dir 而非硬编码 `$HOME`。(#109)
+
+### Fixed
+
+- **Service**: ExecStart 路径解析 — `ResolveBinaryPath()` 优先使用 PATH 查找（`exec.LookPath`），修复 build 目录路径写入 systemd unit 的问题。(#113)
+- **Configuration**: `${VAR}` 环境变量展开 — ExpandEnv 已定义但未在加载路径中调用，worker.environment 值注入为字面量而非展开值。(#111)
+- **Gateway**: pcEntry WriteCtx/Close race condition — 并发写入和关闭导致 panic，新增错误分类辅助函数。关闭 data channel 解除 writeLoop 阻塞。
+- **Session**: 并发安全加固 — UpdateWorkDir/ClearContext 添加 RLock 保护早期返回字段读取；回调函数添加 panic recovery；级联删除包裹在事务中；WriteBuffer 满时返回 `ErrWriteBufferFull` 替代静默丢弃。
+- **Worker**: RLIMIT_AS 自限 bug 修复 — 网关进程被自身内存限制崩溃；禁用 RLIMIT_AS 修复 Bun 运行时崩溃。(#112 相关)
+- **Worker**: OCS SSE 超时和启动问题修复；releaseOnce 行为测试覆盖。(#112 相关)
+- **Messaging**: watchTimeout panic recovery 和 idleMonitor context race 修复。
+- **Messaging/Feishu**: ChatQueue `wg.Add` 移入 mutex lock 内防止 race；非用户流式卡片清理路径用 Close() 替代 Abort()；控制命令错误静默失败修复。
+- **Agent Config**: `readFile` 区分 IsNotExist 和其他错误类型。
+- **CLI**: wizard stepAgentConfig 写入和关闭错误处理。
+
+### Security
+
+- **Configuration**: GH_TOKEN/GITHUB_TOKEN 重命名为 HOTPLEX_WORKER_GH_TOKEN/HOTPLEX_WORKER_GITHUB_TOKEN 前缀，防止 shell 环境污染影响 `gh` CLI keyring 认证。(#111)
+
 ## [1.3.0] - 2026-04-30
 
 ### Summary
