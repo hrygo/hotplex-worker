@@ -125,7 +125,7 @@ func TestBridge_MakeSlackEnvelope(t *testing.T) {
 		nil,
 		nil,
 		"claude_code",
-		"",
+		config.Default().Worker.DefaultWorkDir,
 	)
 
 	env := br.MakeSlackEnvelope(teamID, channelID, threadTS, userID, text, "")
@@ -172,7 +172,7 @@ func TestBridge_MakeFeishuEnvelope(t *testing.T) {
 		nil,
 		nil,
 		"claude_code",
-		"",
+		config.Default().Worker.DefaultWorkDir,
 	)
 
 	env := br.MakeFeishuEnvelope(chatID, threadTS, userID, text, "")

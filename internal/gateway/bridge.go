@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"os/exec"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -49,7 +50,6 @@ type Bridge struct {
 
 	agentConfigDir     string        // agent config directory path; "" = disabled
 	turnTimeout        time.Duration // per-turn timeout; 0 = disabled
-	turnIdleTimeout    time.Duration // idle detection for synthetic Done; 0 = disabled
 	workerEnv          []string      // extra env vars from worker.environment config
 	workerEnvWhitelist []string      // extra whitelist entries from worker.env_whitelist config
 
@@ -82,7 +82,6 @@ func NewBridge(deps BridgeDeps) *Bridge {
 		retryCtrl:          deps.RetryCtrl,
 		agentConfigDir:     deps.AgentConfigDir,
 		turnTimeout:        deps.TurnTimeout,
-		turnIdleTimeout:    deps.TurnIdleTimeout,
 		workerEnv:          deps.WorkerEnv,
 		workerEnvWhitelist: deps.WorkerEnvWhitelist,
 		retryCancel:        make(map[string]chan struct{}),
@@ -393,20 +392,6 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 		defer turnTimer.Stop()
 	}
 
-	// Idle detection: generate synthetic Done when worker is silent during agentic processing.
-	var idleTimer *time.Timer
-	var idleCh <-chan time.Time
-	turnHasOutput := false
-
-	stopIdleTimer := func() {
-		if idleTimer != nil {
-			idleTimer.Stop()
-			idleTimer = nil
-			idleCh = nil
-		}
-	}
-	defer stopIdleTimer()
-
 	recvCh := w.Conn().Recv()
 
 loop:
@@ -447,25 +432,6 @@ loop:
 			env = events.Clone(env)
 			env.SessionID = sessionID
 
-			// Idle detection: start/reset timer when worker produces output events.
-			if isTurnOutputEvent(env.Event.Type) {
-				turnHasOutput = true
-			}
-			if turnHasOutput && b.turnIdleTimeout > 0 {
-				if idleTimer == nil {
-					idleTimer = time.NewTimer(b.turnIdleTimeout)
-					idleCh = idleTimer.C
-				} else {
-					if !idleTimer.Stop() {
-						select {
-						case <-idleTimer.C:
-						default:
-						}
-					}
-					idleTimer.Reset(b.turnIdleTimeout)
-				}
-			}
-
 			if env.Event.Type == events.MessageDelta || env.Event.Type == events.Message {
 				if content := extractMessageContent(env); content != "" {
 					turnText.WriteString(content)
@@ -475,7 +441,7 @@ loop:
 			// Stats accumulation: track tool calls and merge per-turn stats on done.
 			switch env.Event.Type {
 			case events.ToolCall:
-				acc := b.getOrInitAccum(sessionID)
+				acc := b.getOrInitAccum(sessionID, "")
 				acc.ToolCallCount++
 				if tc, ok := asToolCallData(env.Event.Data); ok {
 					if acc.ToolNames == nil {
@@ -487,9 +453,7 @@ loop:
 				if turnTimer != nil {
 					turnTimer.Stop()
 				}
-				stopIdleTimer()
-				turnHasOutput = false
-				acc := b.getOrInitAccum(sessionID)
+				acc := b.getOrInitAccum(sessionID, opts.workDir)
 				if dd, ok := asDoneData(env.Event.Data); ok {
 					acc.mergePerTurnStats(dd)
 				}
@@ -566,7 +530,7 @@ loop:
 			// Record assistant response to conversation store after retry decision.
 			if env.Event.Type == events.Done && b.convStore != nil {
 				dd, _ := asDoneData(env.Event.Data)
-				acc := b.getOrInitAccum(sessionID)
+				acc := b.getOrInitAccum(sessionID, "")
 				success := dd.Success
 				_ = b.convStore.Append(context.Background(), &session.ConversationRecord{
 					SessionID:     sessionID,
@@ -592,58 +556,6 @@ loop:
 				turnText.Reset()
 				turnStartTime = time.Now()
 			}
-
-		case <-idleCh:
-			idleTimer = nil
-			idleCh = nil
-			turnHasOutput = false
-
-			// Generate synthetic idle Done with session stats.
-			acc := b.getOrInitAccum(sessionID)
-			acc.TurnCount++
-			acc.TurnDurationMs = time.Since(turnStartTime).Milliseconds()
-			acc.computePerTurnDeltas()
-
-			idleEnv := events.NewEnvelope(aep.NewID(), sessionID,
-				b.hub.NextSeq(sessionID), events.Done,
-				events.DoneData{Success: true, Stats: map[string]any{"idle": true}},
-			)
-			b.injectSessionStats(idleEnv, acc)
-
-			b.log.Info("bridge: idle timeout, generating synthetic Done",
-				"session_id", sessionID, "worker_type", workerType,
-				"turn", acc.TurnCount, "idle_timeout", b.turnIdleTimeout,
-				"duration_ms", acc.TurnDurationMs, "text_len", turnText.Len())
-
-			if err := b.hub.SendToSession(context.Background(), idleEnv); err != nil {
-				b.log.Warn("bridge: forward idle Done failed", "err", err, "session_id", sessionID)
-			}
-			b.captureEvent(sessionID, idleEnv.Seq, events.Done, idleEnv.Event.Data)
-
-			if b.convStore != nil {
-				success := true
-				_ = b.convStore.Append(context.Background(), &session.ConversationRecord{
-					SessionID:     sessionID,
-					Seq:           idleEnv.Seq,
-					Role:          session.RoleAssistant,
-					Content:       turnText.String(),
-					Platform:      sessPlatform,
-					UserID:        sessOwner,
-					Model:         acc.ModelName,
-					Success:       &success,
-					Source:        session.SourceNormal,
-					Tools:         acc.ToolNames,
-					ToolCallCount: acc.ToolCallCount,
-					TokensIn:      acc.PerTurnInput,
-					TokensOut:     acc.PerTurnOutput,
-					DurationMs:    acc.TurnDurationMs,
-					CostUSD:       acc.PerTurnCost,
-				})
-			}
-
-			acc.resetPerTurn()
-			turnText.Reset()
-			turnStartTime = time.Now()
 		}
 	}
 
@@ -743,7 +655,7 @@ loop:
 
 	// SIGTERM (143) and Kill (-1) are intentional, not crashes.
 	if exitCode != 0 && exitCode != 143 && exitCode != -1 {
-		acc := b.getOrInitAccum(sessionID)
+		acc := b.getOrInitAccum(sessionID, "")
 		b.log.Warn("bridge: worker exited with non-zero code, sending crash done",
 			"session_id", sessionID, "worker_type", workerType, "exit_code", exitCode,
 			"duration", time.Since(startTime).Round(time.Millisecond), "turn_count", acc.TurnCount)
@@ -777,7 +689,7 @@ loop:
 	// Record partial assistant response on crash/timeout (Path 3).
 	workerCrashed := (exitCode != 0 && exitCode != 143 && exitCode != -1) || (!doneReceived && turnTimerFired.Load())
 	if b.convStore != nil && turnText.Len() > 0 && workerCrashed {
-		acc := b.getOrInitAccum(sessionID)
+		acc := b.getOrInitAccum(sessionID, "")
 		src := session.SourceCrash
 		if turnTimerFired.Load() {
 			src = session.SourceTimeout
@@ -937,7 +849,7 @@ func (b *Bridge) cleanupCrashedWorker(sessionID string, crashedWorker worker.Wor
 	// Read turn_count without deleting — the accumulator is cleaned up when the
 	// session is physically deleted, not here. This avoids reading TurnCount=0
 	// after resetPerTurn() has already cleared it at done.
-	acc := b.getOrInitAccum(sessionID)
+	acc := b.getOrInitAccum(sessionID, "")
 	b.log.Debug("bridge: cleaning up crashed worker", "session_id", sessionID, "turn_count", acc.TurnCount)
 	if b.sm == nil {
 		return
@@ -1256,16 +1168,6 @@ func (b *Bridge) captureEvent(sessionID string, seq int64, eventType events.Kind
 	b.collector.Capture(sessionID, seq, eventType, ed, "outbound")
 }
 
-// isTurnOutputEvent reports whether the event type represents worker output
-// that should trigger the idle timer (as opposed to metadata like state/init).
-func isTurnOutputEvent(t events.Kind) bool {
-	switch t {
-	case events.MessageDelta, events.Message, events.ToolCall, events.ToolResult, events.Reasoning:
-		return true
-	}
-	return false
-}
-
 // extractMessageContent extracts text content from a message or message_delta event.
 func extractMessageContent(env *events.Envelope) string {
 	switch env.Event.Type {
@@ -1285,13 +1187,17 @@ func buildNotifyEnvelope(sessionID, msg string, seq int64) *events.Envelope {
 }
 
 // getOrInitAccum returns the session accumulator, creating one if needed.
-func (b *Bridge) getOrInitAccum(sessionID string) *sessionAccumulator {
+func (b *Bridge) getOrInitAccum(sessionID string, workDir string) *sessionAccumulator {
 	b.accumMu.Lock()
 	defer b.accumMu.Unlock()
 	if acc, ok := b.accum[sessionID]; ok {
 		return acc
 	}
 	acc := &sessionAccumulator{StartedAt: time.Now()}
+	if workDir != "" {
+		acc.WorkDir = workDir
+		acc.GitBranch = gitBranchOf(workDir)
+	}
 	b.accum[sessionID] = acc
 	return acc
 }
@@ -1368,4 +1274,34 @@ func (b *Bridge) resetCrashLoop(sessionID string) {
 	b.crashTrackerMu.Lock()
 	defer b.crashTrackerMu.Unlock()
 	delete(b.crashTracker, sessionID)
+}
+
+// gitAvailable is checked once via sync.Once. If git is not on PATH,
+// branch detection is skipped entirely for all sessions.
+var (
+	gitAvailable bool
+	gitOnce      sync.Once
+)
+
+func checkGitAvailable() bool {
+	gitOnce.Do(func() {
+		_, err := exec.LookPath("git")
+		gitAvailable = err == nil
+	})
+	return gitAvailable
+}
+
+// gitBranchOf returns the current git branch name for the given directory, or empty string.
+// Best-effort: 2s timeout, skips if git is not installed, errors silently ignored.
+func gitBranchOf(dir string) string {
+	if !checkGitAvailable() {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "git", "rev-parse", "--abbrev-ref", "HEAD").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
