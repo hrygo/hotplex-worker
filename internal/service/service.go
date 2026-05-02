@@ -29,6 +29,7 @@ type InstallOptions struct {
 	ConfigPath string
 	Level      Level
 	Name       string
+	WorkDir    string // resolved worker default_work_dir for WorkingDirectory
 }
 
 type Status struct {

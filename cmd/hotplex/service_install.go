@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -37,6 +38,13 @@ func newServiceInstallCmd() *cobra.Command {
 				return fmt.Errorf("config not found: %s (run 'hotplex onboard' first)", configPath)
 			}
 
+			loadEnvFile(filepath.Dir(configPath))
+
+			cfg, err := config.Load(configPath, config.LoadOptions{})
+			if err != nil {
+				return fmt.Errorf("load config: %w", err)
+			}
+
 			if level == service.LevelSystem && !service.IsPrivileged() {
 				return fmt.Errorf("system-level service requires root (use sudo or --level user)")
 			}
@@ -52,6 +60,7 @@ func newServiceInstallCmd() *cobra.Command {
 				ConfigPath: configPath,
 				Level:      level,
 				Name:       "hotplex",
+				WorkDir:    cfg.Worker.DefaultWorkDir,
 			}
 
 			if err := mgr.Install(opts); err != nil {

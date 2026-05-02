@@ -8,6 +8,8 @@ Wants=network-online.target
 Type=notify
 User=hotplex
 Group=hotplex
+# WorkingDirectory should match worker.default_work_dir in config.yaml.
+# The default is /var/lib/hotplex for system-level installations.
 WorkingDirectory=/var/lib/hotplex
 
 # Load environment variables from secrets file

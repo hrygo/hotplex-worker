@@ -41,6 +41,47 @@ func TestBuildSystemdUnit_UserLevel(t *testing.T) {
 	require.NotContains(t, result, "NoNewPrivileges=true")
 }
 
+func TestBuildSystemdUnit_UserLevel_WithWorkDir(t *testing.T) {
+	t.Parallel()
+	result := BuildSystemdUnit(InstallOptions{
+		BinaryPath: "/home/user/bin/hotplex",
+		ConfigPath: "/home/user/.hotplex/config.yaml",
+		Level:      LevelUser,
+		Name:       "hotplex",
+		WorkDir:    "/home/user/.hotplex/workspace",
+	}, "/home/user")
+
+	require.Contains(t, result, "WorkingDirectory=/home/user/.hotplex/workspace")
+	require.Contains(t, result, "WantedBy=default.target")
+}
+
+func TestBuildSystemdUnit_SystemLevel_WithWorkDir(t *testing.T) {
+	t.Parallel()
+	result := BuildSystemdUnit(InstallOptions{
+		BinaryPath: "/usr/local/bin/hotplex",
+		ConfigPath: "/etc/hotplex/config.yaml",
+		Level:      LevelSystem,
+		Name:       "hotplex",
+		WorkDir:    "/opt/hotplex/workspace",
+	}, "/root")
+
+	require.Contains(t, result, "WorkingDirectory=/opt/hotplex/workspace")
+	require.Contains(t, result, "User=hotplex")
+	require.Contains(t, result, "Group=hotplex")
+}
+
+func TestBuildSystemdUnit_SystemLevel_DefaultWorkDir(t *testing.T) {
+	t.Parallel()
+	result := BuildSystemdUnit(InstallOptions{
+		BinaryPath: "/usr/local/bin/hotplex",
+		ConfigPath: "/etc/hotplex/config.yaml",
+		Level:      LevelSystem,
+		Name:       "hotplex",
+	}, "/root")
+
+	require.Contains(t, result, "WorkingDirectory=/var/lib/hotplex")
+}
+
 func TestBuildSystemdUnit_InjectsPath(t *testing.T) {
 	t.Parallel()
 	result := BuildSystemdUnit(InstallOptions{
@@ -82,6 +123,20 @@ func TestBuildLaunchdPlist_UserLevel(t *testing.T) {
 
 	require.Contains(t, result, "<string>com.hrygo.hotplex.user</string>")
 	require.Contains(t, result, "/Users/test/.hotplex/logs/launchd.stdout.log")
+}
+
+func TestBuildLaunchdPlist_UserLevel_WithWorkDir(t *testing.T) {
+	t.Parallel()
+	result := BuildLaunchdPlist(InstallOptions{
+		BinaryPath: "/usr/local/bin/hotplex",
+		ConfigPath: "/Users/test/.hotplex/config.yaml",
+		Level:      LevelUser,
+		Name:       "hotplex",
+		WorkDir:    "/Users/test/.hotplex/workspace",
+	}, "/Users/test")
+
+	require.Contains(t, result, "<key>WorkingDirectory</key>")
+	require.Contains(t, result, "<string>/Users/test/.hotplex/workspace</string>")
 }
 
 func TestBuildLaunchdPlist_ContainsGatewayStartArgs(t *testing.T) {
