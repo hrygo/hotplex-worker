@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -37,6 +38,22 @@ func ExpandEnv(s string) string {
 		}
 		return val
 	})
+}
+
+// expandEnvEntry expands ${VAR} references in an environment entry.
+// Entries that reference unset variables without a default clause are excluded
+// (returned as false) so the entry is omitted from the worker environment.
+// A variable set to empty string is treated as unset; use ${VAR:-default} to preserve such entries.
+func expandEnvEntry(entry string) (string, bool) {
+	for _, m := range envVarRe.FindAllStringSubmatch(entry, -1) {
+		if strings.Contains(m[0], ":-") {
+			continue // has :-default clause, skip exclusion check
+		}
+		if len(m) >= 2 && os.Getenv(m[1]) == "" {
+			return "", false // unset var, no default → exclude
+		}
+	}
+	return ExpandEnv(entry), true
 }
 
 // SecretsProvider abstracts how secrets are retrieved.
@@ -648,9 +665,16 @@ func loadRecursive(filePath string, opts LoadOptions, visited []string) (*Config
 	// Messaging platform env var overrides.
 	applyMessagingEnv(cfg)
 
-	for i, e := range cfg.Worker.Environment {
-		cfg.Worker.Environment[i] = ExpandEnv(e)
+	// Expand env entries and drop those referencing unset vars without defaults.
+	expanded := make([]string, 0, len(cfg.Worker.Environment))
+	for _, e := range cfg.Worker.Environment {
+		if entry, ok := expandEnvEntry(e); ok {
+			expanded = append(expanded, entry)
+		} else {
+			slog.Warn("excluding env entry: references unset variable", "entry", e)
+		}
 	}
+	cfg.Worker.Environment = expanded
 
 	// Post-process: normalize allowed_envs into env_whitelist.
 	if len(cfg.Worker.AllowedEnvs) > 0 {
