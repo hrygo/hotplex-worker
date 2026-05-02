@@ -746,14 +746,20 @@ func (c *SlackConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		// command feedback, help text, retry notifications). Workers send
 		// message.delta for streaming content, not message, so these are
 		// never duplicates of streamed output.
+		var text string
 		if msgData, ok := env.Event.Data.(events.MessageData); ok && msgData.Content != "" {
-			text := messaging.SanitizeText(msgData.Content)
-			go func() { _ = c.writeWithPostMessage(ctx, FormatMrkdwn(text), false) }()
+			text = messaging.SanitizeText(msgData.Content)
 		} else if m, ok := env.Event.Data.(map[string]any); ok {
-			if content, ok := m["content"].(string); ok && content != "" {
-				text := messaging.SanitizeText(content)
-				go func() { _ = c.writeWithPostMessage(ctx, FormatMrkdwn(text), false) }()
+			if c, ok := m["content"].(string); ok && c != "" {
+				text = messaging.SanitizeText(c)
 			}
+		}
+		if text != "" {
+			go func() {
+				if err := c.writeWithPostMessage(ctx, FormatMrkdwn(text), false); err != nil {
+					c.adapter.Log.Debug("slack: failed to send message event", "err", err)
+				}
+			}()
 		}
 		return nil
 	}
