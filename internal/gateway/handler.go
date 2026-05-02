@@ -27,7 +27,7 @@ import (
 type Handler struct {
 	log           *slog.Logger
 	hub           *Hub
-	sm            *session.Manager
+	sm            SessionManager
 	jwtValidator  *security.JWTValidator
 	bridge        *Bridge
 	convStore     session.ConversationStore
@@ -390,13 +390,24 @@ func (h *Handler) validateOwner(_ context.Context, env *events.Envelope) (*sessi
 	return si, nil
 }
 
-func (h *Handler) handleReset(ctx context.Context, env *events.Envelope) error {
+// requireActiveOwner validates session ownership and returns the session info.
+// On error it sends an appropriate error to the client and returns the error
+// so the caller can simply do: si, err := h.requireActiveOwner(ctx, env); if err != nil { return err }
+func (h *Handler) requireActiveOwner(ctx context.Context, env *events.Envelope) (*session.SessionInfo, error) {
 	si, err := h.validateOwner(ctx, env)
 	if err != nil {
 		if errors.Is(err, session.ErrSessionNotFound) {
-			return h.sendErrorf(ctx, env, events.ErrCodeSessionNotFound, "session not found")
+			return nil, h.sendErrorf(ctx, env, events.ErrCodeSessionNotFound, "session not found")
 		}
-		return h.sendErrorf(ctx, env, events.ErrCodeUnauthorized, "ownership required")
+		return nil, h.sendErrorf(ctx, env, events.ErrCodeUnauthorized, "ownership required")
+	}
+	return si, nil
+}
+
+func (h *Handler) handleReset(ctx context.Context, env *events.Envelope) error {
+	si, err := h.requireActiveOwner(ctx, env)
+	if err != nil {
+		return err
 	}
 	if !si.State.IsActive() {
 		return h.sendErrorf(ctx, env, events.ErrCodeProtocolViolation, "reset not allowed in state: %s", si.State)
@@ -436,12 +447,9 @@ func (h *Handler) handleReset(ctx context.Context, env *events.Envelope) error {
 }
 
 func (h *Handler) handleGC(ctx context.Context, env *events.Envelope) error {
-	si, err := h.validateOwner(ctx, env)
+	si, err := h.requireActiveOwner(ctx, env)
 	if err != nil {
-		if errors.Is(err, session.ErrSessionNotFound) {
-			return h.sendErrorf(ctx, env, events.ErrCodeSessionNotFound, "session not found")
-		}
-		return h.sendErrorf(ctx, env, events.ErrCodeUnauthorized, "ownership required")
+		return err
 	}
 	if si.State == events.StateTerminated {
 		h.log.Info("gateway: gc idempotent (already terminated)", "session_id", env.SessionID)
@@ -490,7 +498,7 @@ func (h *Handler) handleCD(ctx context.Context, env *events.Envelope) error {
 		workDir := si.WorkDir
 		msgEnv := events.NewEnvelope(
 			aep.NewID(), env.SessionID, h.hub.NextSeq(env.SessionID),
-			events.Message, events.MessageData{Content: workDir},
+			events.Message, events.MessageData{Content: fmt.Sprintf("📂 当前工作目录: %s", workDir)},
 		)
 		return h.hub.SendToSession(ctx, msgEnv)
 	}
@@ -503,12 +511,9 @@ func (h *Handler) handleCD(ctx context.Context, env *events.Envelope) error {
 	path = expanded
 
 	// Validate ownership.
-	si, err := h.validateOwner(ctx, env)
+	si, err := h.requireActiveOwner(ctx, env)
 	if err != nil {
-		if errors.Is(err, session.ErrSessionNotFound) {
-			return h.sendErrorf(ctx, env, events.ErrCodeSessionNotFound, "session not found")
-		}
-		return h.sendErrorf(ctx, env, events.ErrCodeUnauthorized, "ownership required")
+		return err
 	}
 
 	// Delegate to bridge.
@@ -524,7 +529,7 @@ func (h *Handler) handleCD(ctx context.Context, env *events.Envelope) error {
 		if err != nil {
 			return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "切换失败：%v", err)
 		}
-		msg := fmt.Sprintf("已切换到 %s", workDir)
+		msg := fmt.Sprintf("✅ 已切换到 %s", workDir)
 		msgEnv := events.NewEnvelope(
 			aep.NewID(), env.SessionID, h.hub.NextSeq(env.SessionID),
 			events.Message, events.MessageData{Content: msg},
@@ -538,7 +543,7 @@ func (h *Handler) handleCD(ctx context.Context, env *events.Envelope) error {
 		return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "切换失败：%v", err)
 	}
 
-	msg := fmt.Sprintf("已切换到 %s（新会话 %s）", result.WorkDir, result.NewSessionID)
+	msg := fmt.Sprintf("✅ 已切换到 %s（新会话 %s）", result.WorkDir, result.NewSessionID)
 	msgEnv := events.NewEnvelope(
 		aep.NewID(), result.NewSessionID, h.hub.NextSeq(result.NewSessionID),
 		events.Message, events.MessageData{Content: msg},
@@ -582,12 +587,9 @@ func (h *Handler) handleWorkerCommand(ctx context.Context, env *events.Envelope)
 		return h.sendErrorf(ctx, env, events.ErrCodeInvalidMessage, "worker_command: invalid data")
 	}
 
-	si, err := h.validateOwner(ctx, env)
+	si, err := h.requireActiveOwner(ctx, env)
 	if err != nil {
-		if errors.Is(err, session.ErrSessionNotFound) {
-			return h.sendErrorf(ctx, env, events.ErrCodeSessionNotFound, "session not found")
-		}
-		return h.sendErrorf(ctx, env, events.ErrCodeUnauthorized, "ownership required")
+		return err
 	}
 	if !si.State.IsActive() {
 		return h.sendErrorf(ctx, env, events.ErrCodeSessionBusy, "worker command requires active session, current: %s", si.State)
@@ -789,6 +791,12 @@ type SessionManager interface {
 	ResetExpiry(ctx context.Context, id string) error
 	// UpdateWorkDir updates the workDir for a session in memory and DB.
 	UpdateWorkDir(ctx context.Context, id, workDir string) error
+	// TransitionWithInput transitions a session to a new state with input content.
+	TransitionWithInput(ctx context.Context, id string, to events.SessionState, content string, metadata map[string]any) error
+	// TransitionWithReason transitions a session to a new state with a termination reason.
+	TransitionWithReason(ctx context.Context, id string, to events.SessionState, termReason string) error
+	// ValidateOwnership checks that the session belongs to the given user or admin.
+	ValidateOwnership(ctx context.Context, sessionID, userID, adminUserID string) error
 }
 
 // WorkerFactory creates worker instances. Production code uses defaultWorkerFactory.

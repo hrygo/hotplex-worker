@@ -11,10 +11,12 @@ import (
 	"time"
 
 	"github.com/hrygo/hotplex/internal/config"
-	"github.com/hrygo/hotplex/internal/sqlutil"
 )
 
 var ErrConvNotFound = errors.New("conversation store: no records found")
+
+// ErrWriteBufferFull is returned by Append when the async write channel is full.
+var ErrWriteBufferFull = errors.New("conversation store: write buffer full")
 
 const (
 	RoleUser      = "user"
@@ -108,24 +110,16 @@ var _ ConversationStore = (*SQLiteConversationStore)(nil)
 
 // NewSQLiteConversationStore creates a conversation store backed by the same DB path.
 func NewSQLiteConversationStore(ctx context.Context, cfg *config.Config) (*SQLiteConversationStore, error) {
-	if err := ensureDBDir(cfg.DB.Path); err != nil {
-		return nil, err
-	}
-
-	db, err := sql.Open(sqlutil.DriverName, cfg.DB.Path)
+	db, err := openSQLiteDB(cfg, dbOpenOpts{
+		Label:       "conversation",
+		MaxOpen:     1,
+		MaxIdle:     1,
+		MaxLifetime: 0,
+		MaxIdleTime: 5 * time.Minute,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("conversation store: open db: %w", err)
-	}
-
-	if err := sqlutil.InitSQLiteDB(db, &cfg.DB, "conversation"); err != nil {
-		_ = db.Close()
 		return nil, err
 	}
-
-	db.SetMaxOpenConns(1)
-	db.SetMaxIdleConns(1)
-	db.SetConnMaxLifetime(0)
-	db.SetConnMaxIdleTime(5 * time.Minute)
 
 	s := &SQLiteConversationStore{
 		db:     db,
@@ -150,7 +144,7 @@ func (s *SQLiteConversationStore) Append(_ context.Context, rec *ConversationRec
 	default:
 		s.log.Warn("conversation store: write channel full, dropping record",
 			"session_id", rec.SessionID, "seq", rec.Seq, "role", rec.Role)
-		return nil
+		return ErrWriteBufferFull
 	}
 }
 
