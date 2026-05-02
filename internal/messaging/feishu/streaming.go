@@ -252,7 +252,7 @@ func (c *StreamingCardController) Flush(ctx context.Context) error {
 		"content_len", len(content),
 		"seq", seq)
 
-	if c.cardKitOK && c.limiter.AllowCardKit(c.cardID) {
+	if c.cardKitOK && c.cardID != "" && c.limiter.AllowCardKit(c.cardID) {
 		if err := c.flushCardKitWithRetry(ctx, content, seq); err != nil {
 			// failedFlushes tracks all CardKit failures including rate-limit silent drops.
 			// It is used for integrity checks and logging; rate-limit drops do NOT
