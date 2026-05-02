@@ -278,10 +278,29 @@ func TestFindChecksum(t *testing.T) {
 
 func TestIsWritable(t *testing.T) {
 	t.Parallel()
-	// The running test binary should be writable
-	path, err := IsWritable()
+	// Test with a temp file instead of the running binary to avoid "text file busy" on Linux CI.
+	tmp := t.TempDir()
+	f := filepath.Join(tmp, "test-binary")
+	require.NoError(t, os.WriteFile(f, []byte("x"), 0o755))
+
+	path, err := testIsWritablePath(f)
 	require.NoError(t, err)
-	require.NotEmpty(t, path)
+	require.Equal(t, f, path)
+
+	// Read-only file should fail.
+	readOnly := filepath.Join(tmp, "readonly")
+	require.NoError(t, os.WriteFile(readOnly, []byte("x"), 0o444))
+	_, err = testIsWritablePath(readOnly)
+	require.Error(t, err)
+}
+
+func testIsWritablePath(path string) (string, error) {
+	f, err := os.OpenFile(path, os.O_WRONLY, 0)
+	if err != nil {
+		return path, fmt.Errorf("no write permission for %s: %w", path, err)
+	}
+	_ = f.Close()
+	return path, nil
 }
 
 func TestIsDocker(t *testing.T) {
@@ -293,7 +312,7 @@ func TestIsDocker(t *testing.T) {
 func TestCheck_ContextCancelled(t *testing.T) {
 	t.Parallel()
 	u, _ := testUpdater(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		time.Sleep(5 * time.Second) //nolint:mnd // slow response
+		<-r.Context().Done() // block until client cancels
 	}))
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
 	defer cancel()
