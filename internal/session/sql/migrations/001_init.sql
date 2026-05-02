@@ -1,6 +1,4 @@
 -- +goose Up
--- Complete schema with all current columns and indexes.
--- Uses IF NOT EXISTS for idempotency on existing databases.
 CREATE TABLE IF NOT EXISTS sessions (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
@@ -17,7 +15,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     idle_expires_at DATETIME,
     is_active INTEGER NOT NULL DEFAULT 0,
     context_json TEXT,
-    work_dir TEXT
+    work_dir TEXT,
+    title TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_state ON sessions(state);
 CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
@@ -27,19 +26,30 @@ CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
 CREATE INDEX IF NOT EXISTS idx_sessions_idle_expires_at ON sessions(idle_expires_at);
 CREATE INDEX IF NOT EXISTS idx_sessions_platform ON sessions(platform);
 
-CREATE TABLE IF NOT EXISTS audit_log (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    timestamp INTEGER NOT NULL,
-    action TEXT NOT NULL,
-    actor_id TEXT NOT NULL,
+CREATE TABLE IF NOT EXISTS conversation (
+    id TEXT PRIMARY KEY,
     session_id TEXT NOT NULL,
-    details TEXT,
-    previous_hash TEXT NOT NULL,
-    current_hash TEXT NOT NULL
+    seq INTEGER NOT NULL,
+    role TEXT NOT NULL CHECK(role IN ('user', 'assistant')),
+    content TEXT NOT NULL,
+    platform TEXT NOT NULL DEFAULT '',
+    user_id TEXT NOT NULL DEFAULT '',
+    model TEXT NOT NULL DEFAULT '',
+    success INTEGER,
+    source TEXT NOT NULL DEFAULT 'normal',
+    tools_json TEXT,
+    tool_call_count INTEGER DEFAULT 0,
+    tokens_in INTEGER DEFAULT 0,
+    tokens_out INTEGER DEFAULT 0,
+    duration_ms INTEGER DEFAULT 0,
+    cost_usd REAL DEFAULT 0,
+    metadata_json TEXT,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
-CREATE INDEX IF NOT EXISTS idx_audit_session_id ON audit_log(session_id);
-CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_log(timestamp);
+CREATE INDEX IF NOT EXISTS idx_conv_session ON conversation(session_id, seq);
+CREATE INDEX IF NOT EXISTS idx_conv_user ON conversation(user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_conv_platform ON conversation(platform, created_at);
 
 -- +goose Down
-DROP TABLE IF EXISTS audit_log;
+DROP TABLE IF EXISTS conversation;
 DROP TABLE IF EXISTS sessions;
