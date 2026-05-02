@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 )
 
 const defaultRepo = "hrygo/hotplex"
@@ -56,7 +57,7 @@ func New(currentVersion string) *Updater {
 	return &Updater{
 		CurrentVersion: currentVersion,
 		Repo:           defaultRepo,
-		Client:         &http.Client{Timeout: 30 * 1e9}, // 30s
+		Client:         &http.Client{Timeout: 30 * time.Second},
 		BaseURL:        defaultBaseURL,
 		GOOS:           runtime.GOOS,
 		GOARCH:         runtime.GOARCH,
@@ -136,7 +137,7 @@ func (u *Updater) Download(ctx context.Context, url string) (string, error) {
 	}
 
 	// Use a longer timeout for binary download.
-	dlClient := &http.Client{Timeout: 120 * 1e9} // 120s
+	dlClient := &http.Client{Timeout: 3 * time.Minute}
 	resp, err := dlClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("download binary: %w", err)

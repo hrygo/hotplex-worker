@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -33,7 +34,7 @@ windows/amd64, windows/arm64.`,
   hotplex update -y           # Skip confirmation prompt
   hotplex update --restart    # Restart service after update`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx, cancel := context.WithTimeout(cmd.Context(), 60*time.Second)
+			ctx, cancel := context.WithTimeout(cmd.Context(), 3*time.Minute)
 			defer cancel()
 
 			u := updater.New(versionString())
@@ -67,7 +68,7 @@ windows/amd64, windows/arm64.`,
 				fmt.Fprintf(os.Stderr, "  Do you want to update to %s? [y/N] ", result.LatestVersion)
 				reader := bufio.NewReader(os.Stdin)
 				input, _ := reader.ReadString('\n')
-				if input != "y\n" && input != "Y\n" && input != "yes\n" && input != "YES\n" {
+				if strings.ToLower(strings.TrimSpace(input)) != "y" && strings.ToLower(strings.TrimSpace(input)) != "yes" {
 					fmt.Fprintf(os.Stderr, "  Update cancelled\n")
 					return nil
 				}
@@ -114,7 +115,7 @@ windows/amd64, windows/arm64.`,
 				fmt.Fprintf(os.Stderr, "  Gateway is running (PID %d). Restart now? [y/N] ", gatewayInst.PID)
 				reader := bufio.NewReader(os.Stdin)
 				input, _ := reader.ReadString('\n')
-				shouldRestart = input == "y\n" || input == "Y\n"
+				shouldRestart = strings.EqualFold(strings.TrimSpace(input), "y")
 			}
 
 			if !shouldRestart {
