@@ -162,7 +162,7 @@ func TestAdapter_ConfigureWith_Fields(t *testing.T) {
 func TestNewFeishuConn(t *testing.T) {
 	t.Parallel()
 	adapter := newTestAdapter(t)
-	conn := NewFeishuConn(adapter, "chat123", "")
+	conn := NewFeishuConn(adapter, "chat123", "", "")
 
 	require.Equal(t, "chat123", conn.chatID)
 	require.Same(t, adapter, conn.adapter)
@@ -171,7 +171,7 @@ func TestNewFeishuConn(t *testing.T) {
 func TestFeishuConn_EnableStreaming(t *testing.T) {
 	t.Parallel()
 	adapter := newTestAdapter(t)
-	conn := NewFeishuConn(adapter, "chat123", "")
+	conn := NewFeishuConn(adapter, "chat123", "", "")
 
 	// nil controller should not panic
 	conn.EnableStreaming(nil)
@@ -184,7 +184,7 @@ func TestFeishuConn_EnableStreaming(t *testing.T) {
 func TestFeishuConn_SetTypingReactionID(t *testing.T) {
 	t.Parallel()
 	adapter := newTestAdapter(t)
-	conn := NewFeishuConn(adapter, "chat123", "")
+	conn := NewFeishuConn(adapter, "chat123", "", "")
 
 	// Set and clear should not panic
 	conn.SetTypingReactionID("msg123")
@@ -215,7 +215,7 @@ func strPtr(s string) *string { return &s }
 func TestFeishuConn_CycleReaction_NoOp(t *testing.T) {
 	t.Parallel()
 	adapter := newTestAdapter(t)
-	conn := NewFeishuConn(adapter, "chat123", "")
+	conn := NewFeishuConn(adapter, "chat123", "", "")
 
 	// cycleReaction with no existing state should not panic
 	conn.cycleReaction(context.Background(), "TOOL_USE")
@@ -224,7 +224,7 @@ func TestFeishuConn_CycleReaction_NoOp(t *testing.T) {
 func TestFeishuConn_CycleReaction_SameEmojiDedup(t *testing.T) {
 	t.Parallel()
 	adapter := newTestAdapter(t)
-	conn := NewFeishuConn(adapter, "chat123", "")
+	conn := NewFeishuConn(adapter, "chat123", "", "")
 
 	// Set platformMsgID so the early return (platformMsgID=="") is skipped,
 	// but same emoji means no API calls happen.
@@ -404,7 +404,7 @@ func newTestAdapter(t *testing.T) *Adapter {
 		if len(parts) > 1 {
 			threadKey = parts[1]
 		}
-		return NewFeishuConn(a, parts[0], threadKey)
+		return NewFeishuConn(a, parts[0], threadKey, "")
 	})
 	return a
 }
@@ -414,7 +414,7 @@ func newTestStreamingCtrl() *StreamingCardController {
 }
 
 func newTestConn(adapter *Adapter, replyToMsgID string) *FeishuConn {
-	conn := NewFeishuConn(adapter, "chat123", "")
+	conn := NewFeishuConn(adapter, "chat123", "", "")
 	conn.replyToMsgID = replyToMsgID
 	return conn
 }

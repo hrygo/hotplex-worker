@@ -511,8 +511,7 @@ func (h *Handler) handleCD(ctx context.Context, env *events.Envelope) error {
 	path = expanded
 
 	// Validate ownership.
-	si, err := h.requireActiveOwner(ctx, env)
-	if err != nil {
+	if _, err := h.requireActiveOwner(ctx, env); err != nil {
 		return err
 	}
 
@@ -521,31 +520,22 @@ func (h *Handler) handleCD(ctx context.Context, env *events.Envelope) error {
 		return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "cd not available")
 	}
 
-	// Platform sessions (Slack/Feishu) use in-place switch to keep the same
-	// session ID, so the platform conn stays valid and subsequent messages
-	// route correctly. WebSocket/REST sessions create a new session.
-	if si.Platform != "" {
-		workDir, err := h.bridge.SwitchWorkDirInPlace(ctx, env.SessionID, path)
-		if err != nil {
-			return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "切换失败：%v", err)
-		}
-		msg := fmt.Sprintf("✅ 已切换到 %s", workDir)
-		msgEnv := events.NewEnvelope(
-			aep.NewID(), env.SessionID, h.hub.NextSeq(env.SessionID),
-			events.Message, events.MessageData{Content: msg},
-		)
-		_ = h.hub.SendToSession(ctx, msgEnv)
-		return nil
-	}
-
 	result, err := h.bridge.SwitchWorkDir(ctx, env.SessionID, path)
 	if err != nil {
 		return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "切换失败：%v", err)
 	}
 
-	msg := fmt.Sprintf("✅ 已切换到 %s（新会话 %s）", result.WorkDir, result.NewSessionID)
+	// Send notification on the OLD session ID so the platform conn (still
+	// registered with the old session) receives it. The next message will
+	// derive the new session ID from the updated conn workDir.
+	var msg string
+	if result.Resumed {
+		msg = fmt.Sprintf("📂 已切换到 %s（已恢复会话）", result.WorkDir)
+	} else {
+		msg = fmt.Sprintf("📂 已切换到 %s（新会话，上下文已重置）", result.WorkDir)
+	}
 	msgEnv := events.NewEnvelope(
-		aep.NewID(), result.NewSessionID, h.hub.NextSeq(result.NewSessionID),
+		aep.NewID(), env.SessionID, h.hub.NextSeq(env.SessionID),
 		events.Message, events.MessageData{Content: msg},
 	)
 	_ = h.hub.SendToSession(ctx, msgEnv)
