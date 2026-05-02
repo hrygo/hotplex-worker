@@ -70,11 +70,6 @@ func (s *SQLiteStore) Upsert(ctx context.Context, info *SessionInfo) error {
 		}
 	}
 
-	isActive := 0
-	if info.State.IsActive() {
-		isActive = 1
-	}
-
 	var platformKeyJSON []byte
 	if info.PlatformKey != nil {
 		var err2 error
@@ -88,7 +83,7 @@ func (s *SQLiteStore) Upsert(ctx context.Context, info *SessionInfo) error {
 		info.ID, info.UserID, info.OwnerID, info.BotID, info.WorkerSessionID, info.WorkerType, string(info.State),
 		info.Platform, string(platformKeyJSON), info.WorkDir, info.Title,
 		info.CreatedAt, info.UpdatedAt, info.ExpiresAt, info.IdleExpiresAt,
-		isActive, string(ctxJSON),
+		string(ctxJSON),
 	)
 	return err
 }

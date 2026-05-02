@@ -14,8 +14,7 @@ import (
 	"github.com/hrygo/hotplex/pkg/events"
 )
 
-// helperDB creates a real SQLiteStore for integration tests.
-func helperDB(t *testing.T) *SQLiteStore {
+func helperDB(t *testing.T) (*SQLiteStore, *config.Config) {
 	t.Helper()
 	cfg := config.Default()
 	cfg.DB.Path = filepath.Join(t.TempDir(), "test.db")
@@ -24,7 +23,7 @@ func helperDB(t *testing.T) *SQLiteStore {
 	store, err := NewSQLiteStore(context.Background(), cfg)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
-	return store
+	return store, cfg
 }
 
 func helperUpsert(t *testing.T, store *SQLiteStore, id, userID string, state events.SessionState) {
@@ -44,7 +43,7 @@ func helperUpsert(t *testing.T, store *SQLiteStore, id, userID string, state eve
 // ─── SQLiteStore: DeletePhysical ─────────────────────────────────────────────
 
 func TestSQLiteStore_DeletePhysical(t *testing.T) {
-	store := helperDB(t)
+	store, _ := helperDB(t)
 	ctx := context.Background()
 
 	helperUpsert(t, store, "sess_del_phys", "user1", events.StateTerminated)
@@ -57,7 +56,7 @@ func TestSQLiteStore_DeletePhysical(t *testing.T) {
 }
 
 func TestSQLiteStore_DeletePhysical_NotFound(t *testing.T) {
-	store := helperDB(t)
+	store, _ := helperDB(t)
 
 	err := store.DeletePhysical(context.Background(), "nonexistent")
 	require.NoError(t, err)
@@ -66,7 +65,7 @@ func TestSQLiteStore_DeletePhysical_NotFound(t *testing.T) {
 // ─── SQLiteStore: Compact ────────────────────────────────────────────────────
 
 func TestSQLiteStore_Compact_BelowThreshold(t *testing.T) {
-	store := helperDB(t)
+	store, _ := helperDB(t)
 	ctx := context.Background()
 
 	err := store.Compact(ctx, 0.99)
@@ -76,7 +75,7 @@ func TestSQLiteStore_Compact_BelowThreshold(t *testing.T) {
 // ─── SQLiteStore: Upsert with Context and PlatformKey ────────────────────────
 
 func TestSQLiteStore_Upsert_WithContext(t *testing.T) {
-	store := helperDB(t)
+	store, _ := helperDB(t)
 	ctx := context.Background()
 
 	info := &SessionInfo{
@@ -111,7 +110,7 @@ func TestSQLiteStore_Upsert_WithContext(t *testing.T) {
 // ─── SQLiteStore: List with pagination ───────────────────────────────────────
 
 func TestSQLiteStore_List_DefaultLimit(t *testing.T) {
-	store := helperDB(t)
+	store, _ := helperDB(t)
 	ctx := context.Background()
 
 	helperUpsert(t, store, "sess_list1", "user1", events.StateRunning)
@@ -126,7 +125,7 @@ func TestSQLiteStore_List_DefaultLimit(t *testing.T) {
 // ─── SQLiteStore: GetExpiredMaxLifetime / GetExpiredIdle ──────────────────────
 
 func TestSQLiteStore_GetExpiredMaxLifetime(t *testing.T) {
-	store := helperDB(t)
+	store, _ := helperDB(t)
 	ctx := context.Background()
 
 	now := time.Now()
@@ -148,7 +147,7 @@ func TestSQLiteStore_GetExpiredMaxLifetime(t *testing.T) {
 }
 
 func TestSQLiteStore_GetExpiredIdle(t *testing.T) {
-	store := helperDB(t)
+	store, _ := helperDB(t)
 	ctx := context.Background()
 
 	past := time.Now().Add(-2 * time.Hour)
@@ -172,7 +171,7 @@ func TestSQLiteStore_GetExpiredIdle(t *testing.T) {
 // ─── SQLiteStore: DeleteTerminated ───────────────────────────────────────────
 
 func TestSQLiteStore_DeleteTerminated(t *testing.T) {
-	store := helperDB(t)
+	store, _ := helperDB(t)
 	ctx := context.Background()
 
 	helperUpsert(t, store, "sess_term", "user1", events.StateTerminated)
@@ -185,7 +184,7 @@ func TestSQLiteStore_DeleteTerminated(t *testing.T) {
 // ─── SQLiteStore: GetSessionsByState ─────────────────────────────────────────
 
 func TestSQLiteStore_GetSessionsByState(t *testing.T) {
-	store := helperDB(t)
+	store, _ := helperDB(t)
 	ctx := context.Background()
 
 	helperUpsert(t, store, "sess_state_r", "user1", events.StateRunning)
@@ -201,13 +200,7 @@ func TestSQLiteStore_GetSessionsByState(t *testing.T) {
 
 func helperStoreWithConv(t *testing.T) (*SQLiteStore, *SQLiteConversationStore) {
 	t.Helper()
-	cfg := config.Default()
-	cfg.DB.Path = filepath.Join(t.TempDir(), "conv_test.db")
-	cfg.DB.WALMode = true
-
-	store, err := NewSQLiteStore(context.Background(), cfg)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = store.Close() })
+	store, cfg := helperDB(t)
 
 	cs, err := NewSQLiteConversationStore(context.Background(), cfg)
 	require.NoError(t, err)

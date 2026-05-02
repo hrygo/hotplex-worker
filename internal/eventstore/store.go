@@ -8,8 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -128,19 +126,14 @@ type SQLiteStore struct {
 
 var _ EventStore = (*SQLiteStore)(nil)
 
-// NewSQLiteStore creates a new event store backed by an independent SQLite file.
 func NewSQLiteStore(ctx context.Context, dbPath string, dbCfg *config.DBConfig) (*SQLiteStore, error) {
-	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
-		return nil, fmt.Errorf("eventstore: create dir: %w", err)
-	}
-
-	db, err := sql.Open(sqlutil.DriverName, dbPath)
+	db, err := sqlutil.OpenDB(dbPath, dbCfg, "eventstore", sqlutil.PoolOpts{
+		MaxOpen:     1,
+		MaxIdle:     1,
+		MaxLifetime: 0,
+		MaxIdleTime: 5 * time.Minute,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("eventstore: open db: %w", err)
-	}
-
-	if err := sqlutil.InitSQLiteDB(db, dbCfg, "eventstore"); err != nil {
-		_ = db.Close()
 		return nil, err
 	}
 
@@ -153,11 +146,6 @@ func NewSQLiteStore(ctx context.Context, dbPath string, dbCfg *config.DBConfig) 
 		_ = db.Close()
 		return nil, fmt.Errorf("eventstore: apply schema: %w", err)
 	}
-
-	db.SetMaxOpenConns(1)
-	db.SetMaxIdleConns(1)
-	db.SetConnMaxLifetime(0)
-	db.SetConnMaxIdleTime(5 * time.Minute)
 
 	return &SQLiteStore{db: db}, nil
 }
