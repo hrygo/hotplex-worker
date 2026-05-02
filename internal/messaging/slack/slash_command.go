@@ -182,7 +182,12 @@ func (a *Adapter) sendEphemeralOrPost(ctx context.Context, channelID, threadTS, 
 }
 
 func (a *Adapter) deriveSessionIDFromCommand(cmd slack.SlashCommand) string {
-	envelope := a.Bridge().MakeSlackEnvelope(cmd.TeamID, cmd.ChannelID, "", cmd.UserID, "")
+	conn := a.GetOrCreateConn(cmd.ChannelID, "")
+	workDir := ""
+	if conn != nil {
+		workDir = conn.WorkDir()
+	}
+	envelope := a.Bridge().MakeSlackEnvelope(cmd.TeamID, cmd.ChannelID, "", cmd.UserID, "", workDir)
 	if envelope == nil {
 		return ""
 	}

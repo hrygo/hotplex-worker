@@ -39,6 +39,15 @@ type PlatformContext struct {
 	WorkDir string
 }
 
+// FromMap populates PlatformContext from a serialized PlatformKey map.
+func (pc *PlatformContext) FromMap(m map[string]string) {
+	pc.TeamID = m["team_id"]
+	pc.ChannelID = m["channel_id"]
+	pc.ThreadTS = m["thread_ts"]
+	pc.ChatID = m["chat_id"]
+	pc.UserID = m["user_id"]
+}
+
 // DerivePlatformSessionKey generates a deterministic UUIDv5 for a messaging platform session.
 // Inputs are intentionally narrow: (ownerID, workerType, platformContext) — all platform identity
 // fields are namespaced by platform type, so Feishu and Slack never collide even if raw IDs match.

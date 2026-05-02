@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/hrygo/hotplex/internal/config"
 	"github.com/hrygo/hotplex/internal/messaging"
 	"github.com/hrygo/hotplex/internal/messaging/stt"
 	"github.com/hrygo/hotplex/pkg/aep"
@@ -136,7 +137,7 @@ func (a *Adapter) Start(ctx context.Context) error {
 		if len(parts) > 1 {
 			threadTS = parts[1]
 		}
-		return NewSlackConn(a, parts[0], threadTS)
+		return NewSlackConn(a, parts[0], threadTS, a.Bridge().WorkDir())
 	})
 
 	a.Log.Info("slack: starting Socket Mode", "bot_id", a.botID)
@@ -428,14 +429,14 @@ func (a *Adapter) HandleTextMessage(ctx context.Context, platformMsgID, channelI
 		return nil
 	}
 
-	envelope := a.Bridge().MakeSlackEnvelope(teamID, channelID, threadTS, userID, text)
-	if envelope == nil {
-		return fmt.Errorf("slack: failed to build envelope")
-	}
-
 	conn := a.GetOrCreateConn(channelID, threadTS)
 	if conn == nil {
 		return fmt.Errorf("slack: adapter closed, dropping message for channel %s", channelID)
+	}
+
+	envelope := a.Bridge().MakeSlackEnvelope(teamID, channelID, threadTS, userID, text, conn.WorkDir())
+	if envelope == nil {
+		return fmt.Errorf("slack: failed to build envelope")
 	}
 
 	conn.handlerMu.Lock()
@@ -541,7 +542,13 @@ func (a *Adapter) handleAudioMessage(ctx context.Context, m *MediaInfo) (string,
 // handleTextControlCommand sends a control event derived from a text message
 // through the bridge, then sends ephemeral feedback to the user.
 func (a *Adapter) handleTextControlCommand(ctx context.Context, teamID, channelID, threadTS, userID string, result *messaging.ControlCommandResult) {
-	env := a.Bridge().MakeSlackEnvelope(teamID, channelID, threadTS, userID, "")
+	conn := a.GetOrCreateConn(channelID, threadTS)
+	if conn == nil {
+		a.Log.Warn("slack: adapter closed, dropping control command", "action", result.Label)
+		return
+	}
+
+	env := a.Bridge().MakeSlackEnvelope(teamID, channelID, threadTS, userID, "", conn.WorkDir())
 	if env == nil {
 		a.Log.Warn("slack: text control command failed to derive session", "action", result.Label)
 		return
@@ -563,11 +570,11 @@ func (a *Adapter) handleTextControlCommand(ctx context.Context, teamID, channelI
 		OwnerID: userID,
 	}
 
-	conn := a.GetOrCreateConn(channelID, threadTS)
-	if conn == nil {
-		a.Log.Warn("slack: adapter closed, dropping control command", "action", result.Label)
-		return
+	// CD sends progress feedback before execution; other actions send completion feedback after.
+	if result.Action == events.ControlActionCD {
+		a.sendEphemeralOrPost(ctx, channelID, threadTS, userID, controlFeedbackMessage(result.Action))
 	}
+
 	if err := a.Bridge().Handle(ctx, ctrlEnv, conn); err != nil {
 		a.Log.Warn("slack: text control command failed", "action", result.Label, "err", err)
 		// Provide user-friendly error message with details
@@ -577,6 +584,14 @@ func (a *Adapter) handleTextControlCommand(ctx context.Context, teamID, channelI
 	}
 
 	a.Log.Info("slack: text control command sent", "action", result.Label, "user", userID, "session_id", env.SessionID)
+
+	// After a successful CD, update conn's workDir so subsequent messages
+	// derive the correct session ID for the target directory.
+	if result.Action == events.ControlActionCD && result.Arg != "" {
+		if expanded, err := config.ExpandAndAbs(result.Arg); err == nil {
+			conn.SetWorkDir(expanded)
+		}
+	}
 
 	// Reset/GC kills the worker without a guaranteed done event, so stale
 	// pending interactions (permission/question/elicitation) may survive.
@@ -590,11 +605,20 @@ func (a *Adapter) handleTextControlCommand(ctx context.Context, teamID, channelI
 		}
 	}
 
-	a.sendEphemeralOrPost(ctx, channelID, threadTS, userID, controlFeedbackMessage(result.Action))
+	// Completion feedback for non-CD actions (CD feedback was sent before execution).
+	if result.Action != events.ControlActionCD {
+		a.sendEphemeralOrPost(ctx, channelID, threadTS, userID, controlFeedbackMessage(result.Action))
+	}
 }
 
 func (a *Adapter) handleTextWorkerCommand(ctx context.Context, teamID, channelID, threadTS, userID string, result *messaging.WorkerCommandResult) {
-	envelope := a.Bridge().MakeSlackEnvelope(teamID, channelID, threadTS, userID, "")
+	conn := a.GetOrCreateConn(channelID, threadTS)
+	if conn == nil {
+		a.Log.Warn("slack: adapter closed, dropping worker command", "command", result.Label)
+		return
+	}
+
+	envelope := a.Bridge().MakeSlackEnvelope(teamID, channelID, threadTS, userID, "", conn.WorkDir())
 	if envelope == nil {
 		a.Log.Warn("slack: worker command failed to derive session", "command", result.Label)
 		return
@@ -613,12 +637,6 @@ func (a *Adapter) handleTextWorkerCommand(ctx context.Context, teamID, channelID
 			},
 		},
 		OwnerID: userID,
-	}
-
-	conn := a.GetOrCreateConn(channelID, threadTS)
-	if conn == nil {
-		a.Log.Warn("slack: adapter closed, dropping worker command", "command", result.Label)
-		return
 	}
 
 	if err := a.Bridge().Handle(ctx, cmdEnv, conn); err != nil {
@@ -654,12 +672,17 @@ type SlackConn struct {
 	handlerMu      sync.Mutex // serializes control commands and message handling per thread
 	streamWriter   *NativeStreamingWriter
 	streamWriterMu sync.Mutex
+	workDir        string // current workDir identity for session key derivation
 }
 
 // NewSlackConn creates a platform connection bound to a channel/thread.
-func NewSlackConn(adapter *Adapter, channelID, threadTS string) *SlackConn {
-	return &SlackConn{adapter: adapter, channelID: channelID, threadTS: threadTS}
+func NewSlackConn(adapter *Adapter, channelID, threadTS, workDir string) *SlackConn {
+	return &SlackConn{adapter: adapter, channelID: channelID, threadTS: threadTS, workDir: workDir}
 }
+
+func (c *SlackConn) WorkDir() string { return c.workDir }
+
+func (c *SlackConn) SetWorkDir(dir string) { c.workDir = dir }
 
 // notifyStatus sets processing status (nil-safe for tests).
 func (c *SlackConn) notifyStatus(ctx context.Context, text string) {

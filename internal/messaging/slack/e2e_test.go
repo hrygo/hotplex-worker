@@ -44,7 +44,7 @@ func newTestAdapter(t *testing.T) *Adapter {
 		if len(parts) > 1 {
 			threadTS = parts[1]
 		}
-		return NewSlackConn(a, parts[0], threadTS)
+		return NewSlackConn(a, parts[0], threadTS, "")
 	})
 	// StatusManager needs the adapter pointer; set after struct creation.
 	a.statusMgr = NewStatusManager(a, slog.Default())
@@ -523,7 +523,7 @@ func TestE2E_ConvertMessage_EmptyNoFiles(t *testing.T) {
 func TestE2E_SlackConn_WriteCtx_NilEnvelope(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
-	conn := NewSlackConn(a, "C123", "123.456")
+	conn := NewSlackConn(a, "C123", "123.456", "")
 
 	err := conn.WriteCtx(context.Background(), nil)
 	require.Error(t, err)
@@ -533,7 +533,7 @@ func TestE2E_SlackConn_WriteCtx_NilEnvelope(t *testing.T) {
 func TestE2E_SlackConn_WriteCtx_StatusUpdates(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
-	conn := NewSlackConn(a, "C123", "123.456")
+	conn := NewSlackConn(a, "C123", "123.456", "")
 	ctx := context.Background()
 
 	// ToolCall → status update (adapter is nil, SetStatus is no-op)

@@ -112,7 +112,7 @@ func TestFeishuConn_Close_NilLarkClient(t *testing.T) {
 		connPool: messaging.NewConnPool[*FeishuConn](nil),
 	}
 
-	conn := NewFeishuConn(a, "chat_close", "")
+	conn := NewFeishuConn(a, "chat_close", "", "")
 	conn.mu.Lock()
 	conn.typingRid = "typing_rid"
 	conn.toolRid = "tool_rid"
@@ -141,7 +141,7 @@ func TestFeishuConn_WriteCtx_PermissionRequest_NilClient(t *testing.T) {
 		connPool: messaging.NewConnPool[*FeishuConn](nil),
 	}
 
-	conn := NewFeishuConn(a, "chat123", "")
+	conn := NewFeishuConn(a, "chat123", "", "")
 	conn.platformMsgID = "msg123"
 
 	env := &events.Envelope{
@@ -174,7 +174,7 @@ func TestFeishuConn_WriteCtx_QuestionRequest_NilClient(t *testing.T) {
 		connPool: messaging.NewConnPool[*FeishuConn](nil),
 	}
 
-	conn := NewFeishuConn(a, "chat123", "")
+	conn := NewFeishuConn(a, "chat123", "", "")
 	conn.platformMsgID = "msg123"
 
 	env := &events.Envelope{
@@ -205,7 +205,7 @@ func TestFeishuConn_WriteCtx_ElicitationRequest_NilClient(t *testing.T) {
 		connPool: messaging.NewConnPool[*FeishuConn](nil),
 	}
 
-	conn := NewFeishuConn(a, "chat123", "")
+	conn := NewFeishuConn(a, "chat123", "", "")
 	conn.platformMsgID = "msg123"
 
 	env := &events.Envelope{
