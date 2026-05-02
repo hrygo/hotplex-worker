@@ -1,6 +1,6 @@
 # HotPlex 项目知识库
 
-**最后更新**: 2026-05-01 · **分支**: main · **版本**: v1.3.0
+**最后更新**: 2026-05-02 · **分支**: main · **版本**: v1.3.0
 
 ---
 
@@ -166,82 +166,55 @@ configs/   - 配置文件
 
 ## 贡献工作流
 
-HotPlex 项目使用 **fork-PR 工作流**进行贡献。
+### Admin（仓库管理员）
 
-### 工作流步骤
+拥有仓库 write/admin 权限的协作者直接在 origin 仓库创建分支和 PR。
 
-**1. Fork 上游仓库**
 ```bash
-# 在 GitHub 上 fork hrygo/hotplex
-# 例如：https://github.com/aaronwong1989/hotplex-1
-```
-
-**2. 添加 fork 远程仓库**
-```bash
-cd /path/to/hotplex
-git remote add fork https://github.com/<your-username>/hotplex-1.git
-git remote -v  # 应显示 origin 和 fork
-```
-
-**3. 创建功能分支**
-```bash
+# 1. 从最新 main 创建功能分支
 git fetch origin main
-git checkout main
-git pull origin main
-git checkout -b feat/<feature-name>
-```
+git checkout -b feat/<feature-name> origin/main
 
-**4. 开发和提交**
-```bash
-# 进行代码更改
-git add .
+# 2. 开发和提交
+git add <files>
 git commit -m "feat(scope): description"
+
+# 3. 推送并创建 PR
+git push -u origin feat/<feature-name>
+gh pr create --title "feat(scope): description"
+
+# 4. 合并后清理
+git checkout main && git pull origin main
+git branch -d feat/<feature-name>
+git push origin --delete feat/<feature-name>
 ```
 
-**5. 推送到 fork**
-```bash
-git push fork feat/<feature-name>
-```
+### 外部贡献者（Fork-PR）
 
-**6. 创建 PR**
-```bash
-gh pr create \
-  --base main \
-  --head <your-username>:feat/<feature-name> \
-  --title "feat(scope): description"
-```
+无仓库直接权限的外部贡献者使用 fork-PR 工作流。
 
-### 分支管理
-
-**查看远程仓库**：
 ```bash
-git remote -v
-```
+# 1. Fork 并添加远程
+git remote add fork https://github.com/<your-username>/hotplex.git
 
-**同步上游**：
-```bash
+# 2. 创建功能分支
 git fetch origin main
-git checkout main
-git merge origin/main
-git push fork main
-```
+git checkout -b feat/<feature-name> origin/main
 
-**清理分支**：
-```bash
+# 3. 推送到 fork 并创建 PR
+git push -u fork feat/<feature-name>
+gh pr create --base main --head <your-username>:feat/<feature-name> --title "feat(scope): description"
+
+# 4. 合并后清理
 git branch -d feat/<feature-name>
 git push fork --delete feat/<feature-name>
 ```
 
-### ⚠️ 重要注意事项
+### 通用规范
 
-✅ **正确做法**：
-- 推送到 `fork` 远程仓库
-- 从 `origin/main` 创建功能分支
+- 所有变更通过 PR 合并，不直接推送到 main
 - 遵循 Conventional Commits 格式
-
-❌ **错误做法**：
-- 直接推送到 `origin`（会被拒绝）
-- 跳过 fork 流程
+- PR 必须通过 CI（lint + test + build）
 
 ---
 
