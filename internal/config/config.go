@@ -294,6 +294,7 @@ type WorkerConfig struct {
 	IdleTimeout      time.Duration        `mapstructure:"idle_timeout"`
 	ExecutionTimeout time.Duration        `mapstructure:"execution_timeout"`
 	TurnTimeout      time.Duration        `mapstructure:"turn_timeout"`
+	TurnIdleTimeout  time.Duration        `mapstructure:"turn_idle_timeout"`
 	AllowedEnvs      []string             `mapstructure:"allowed_envs"`
 	EnvWhitelist     []string             `mapstructure:"env_whitelist"`
 	DefaultWorkDir   string               `mapstructure:"default_work_dir"`
@@ -425,7 +426,8 @@ func Default() *Config {
 			MaxLifetime:      24 * time.Hour,
 			IdleTimeout:      60 * time.Minute,
 			ExecutionTimeout: 30 * time.Minute,
-			TurnTimeout:      0, // disabled by default; execution_timeout catches zombies
+			TurnTimeout:      0,                   // disabled by default; execution_timeout catches zombies
+			TurnIdleTimeout:  15 * time.Second,   // generate synthetic Done when worker is silent in agentic mode
 			AllowedEnvs:      nil,
 			EnvWhitelist:     nil,
 			DefaultWorkDir:   filepath.Join(HotplexHome(), "workspace"),

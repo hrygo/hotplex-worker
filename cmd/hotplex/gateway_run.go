@@ -259,6 +259,7 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 		RetryCtrl:          retryCtrl,
 		AgentConfigDir:     agentConfigDir,
 		TurnTimeout:        cfg.Worker.TurnTimeout,
+		TurnIdleTimeout:    cfg.Worker.TurnIdleTimeout,
 		WorkerEnv:          cfg.Worker.Environment,
 		WorkerEnvWhitelist: cfg.Worker.EnvWhitelist,
 	})

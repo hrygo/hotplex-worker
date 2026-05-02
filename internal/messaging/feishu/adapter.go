@@ -853,6 +853,15 @@ func (c *FeishuConn) sendTurnSummary(ctx context.Context, env *events.Envelope) 
 	if text == "" {
 		return
 	}
+	c.adapter.Log.Info("turn summary",
+		"turn_count", d.TurnCount,
+		"duration_ms", d.TurnDurationMs,
+		"model", d.ModelName,
+		"tool_calls", d.ToolCallCount,
+		"input_tok", d.TotalInputTok,
+		"cost", d.TurnCostUSD,
+		"text_len", len(text),
+	)
 	c.mu.RLock()
 	replyToMsgID := c.replyToMsgID
 	chatID := c.chatID

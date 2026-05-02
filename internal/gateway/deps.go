@@ -30,6 +30,7 @@ type BridgeDeps struct {
 	RetryCtrl          *LLMRetryController
 	AgentConfigDir     string
 	TurnTimeout        time.Duration
-	WorkerEnv          []string // extra env vars from worker.environment config
+	TurnIdleTimeout    time.Duration // generate synthetic Done when worker is silent in agentic mode
+	WorkerEnv          []string     // extra env vars from worker.environment config
 	WorkerEnvWhitelist []string // extra whitelist entries from worker.env_whitelist config
 }

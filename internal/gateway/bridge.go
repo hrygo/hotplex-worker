@@ -49,6 +49,7 @@ type Bridge struct {
 
 	agentConfigDir     string        // agent config directory path; "" = disabled
 	turnTimeout        time.Duration // per-turn timeout; 0 = disabled
+	turnIdleTimeout    time.Duration // idle detection for synthetic Done; 0 = disabled
 	workerEnv          []string      // extra env vars from worker.environment config
 	workerEnvWhitelist []string      // extra whitelist entries from worker.env_whitelist config
 
@@ -81,6 +82,7 @@ func NewBridge(deps BridgeDeps) *Bridge {
 		retryCtrl:          deps.RetryCtrl,
 		agentConfigDir:     deps.AgentConfigDir,
 		turnTimeout:        deps.TurnTimeout,
+		turnIdleTimeout:    deps.TurnIdleTimeout,
 		workerEnv:          deps.WorkerEnv,
 		workerEnvWhitelist: deps.WorkerEnvWhitelist,
 		retryCancel:        make(map[string]chan struct{}),
@@ -391,175 +393,255 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 		defer turnTimer.Stop()
 	}
 
-	for env := range w.Conn().Recv() {
-		if env.Event.Type == events.Error {
-			b.log.Warn("bridge: received error from worker", "session_id", sessionID, "worker_type", workerType, "data", env.Event.Data)
-			// Capture last error for retry detection.
-			if ed, ok := env.Event.Data.(events.ErrorData); ok {
-				lastError = &ed
+	// Idle detection: generate synthetic Done when worker is silent during agentic processing.
+	var idleTimer *time.Timer
+	var idleCh <-chan time.Time
+	turnHasOutput := false
+
+	stopIdleTimer := func() {
+		if idleTimer != nil {
+			idleTimer.Stop()
+			idleTimer = nil
+			idleCh = nil
+		}
+	}
+	defer stopIdleTimer()
+
+	recvCh := w.Conn().Recv()
+
+loop:
+	for {
+		select {
+		case env, ok := <-recvCh:
+			if !ok {
+				break loop
 			}
-			// When retry is enabled, buffer the error event instead of forwarding
-			// immediately. If the subsequent Done triggers a retry, the error is
-			// suppressed (user sees the notify message instead of raw LLM error).
-			// If no retry triggers, the error is forwarded after Done.
-			if b.retryCtrl != nil {
-				cloned := events.Clone(env)
-				cloned.SessionID = sessionID
-				pendingError = cloned
+
+			if env.Event.Type == events.Error {
+				b.log.Warn("bridge: received error from worker", "session_id", sessionID, "worker_type", workerType, "data", env.Event.Data)
+				if ed, ok := env.Event.Data.(events.ErrorData); ok {
+					lastError = &ed
+				}
+				if b.retryCtrl != nil {
+					cloned := events.Clone(env)
+					cloned.SessionID = sessionID
+					pendingError = cloned
+					continue
+				}
+			} else if b.log.Enabled(context.Background(), slog.LevelDebug) {
+				b.log.Debug("bridge: received event from worker", "session_id", sessionID, "worker_type", workerType, "event_type", env.Event.Type)
+			}
+
+			if firstEvent {
+				b.persistWorkerSessionID(w, sessionID)
+				firstEvent = false
+			}
+
+			if turnTimer != nil && !turnTimerFired.Load() {
+				turnTimer.Reset(b.turnTimeout)
+			}
+			if turnTimerFired.Load() {
 				continue
 			}
-		} else if b.log.Enabled(context.Background(), slog.LevelDebug) {
-			b.log.Debug("bridge: received event from worker", "session_id", sessionID, "worker_type", workerType, "event_type", env.Event.Type)
-		}
-		// Capture and persist worker-internal session ID on first event
-		if firstEvent {
-			b.persistWorkerSessionID(w, sessionID)
-			firstEvent = false
-		}
 
-		// Turn timeout: reset timer on every received event (turn is still alive).
-		// Skip if timer already fired (worker is being terminated).
-		if turnTimer != nil && !turnTimerFired.Load() {
-			turnTimer.Reset(b.turnTimeout)
-		}
-		// If turn timer fired, drain remaining events without processing.
-		if turnTimerFired.Load() {
-			continue
-		}
+			env = events.Clone(env)
+			env.SessionID = sessionID
 
-		// Make a defensive copy before mutating SessionID to avoid a data race
-		// with Hub.Run which reads env during JSON encoding (hub mutates Seq).
-		env = events.Clone(env)
-		env.SessionID = sessionID
-		// Seq is assigned by hub.SendToSession via SeqGen (seq=0 triggers auto-assignment).
-
-		// LLM retry: accumulate text from streaming output.
-		if env.Event.Type == events.MessageDelta || env.Event.Type == events.Message {
-			if content := extractMessageContent(env); content != "" {
-				turnText.WriteString(content)
+			// Idle detection: start/reset timer when worker produces output events.
+			if isTurnOutputEvent(env.Event.Type) {
+				turnHasOutput = true
 			}
-		}
-
-		// Stats accumulation: track tool calls and merge per-turn stats on done.
-		switch env.Event.Type {
-		case events.ToolCall:
-			acc := b.getOrInitAccum(sessionID)
-			acc.ToolCallCount++
-			if tc, ok := asToolCallData(env.Event.Data); ok {
-				if acc.ToolNames == nil {
-					acc.ToolNames = make(map[string]int)
-				}
-				acc.ToolNames[tc.Name]++
-			}
-		case events.Done:
-			if turnTimer != nil {
-				turnTimer.Stop()
-			}
-			acc := b.getOrInitAccum(sessionID)
-			if dd, ok := asDoneData(env.Event.Data); ok {
-				acc.mergePerTurnStats(dd)
-			}
-			acc.TurnCount++
-			acc.TurnDurationMs = time.Since(turnStartTime).Milliseconds()
-			acc.computePerTurnDeltas()
-			b.injectSessionStats(env, acc)
-			if b.log.Enabled(context.Background(), slog.LevelDebug) {
-				b.log.Debug("bridge: turn completed",
-					"session_id", sessionID, "worker_type", workerType, "turn", acc.TurnCount,
-					"duration", time.Since(startTime).Round(time.Millisecond),
-					"text_len", turnText.Len(), "tools", acc.ToolCallCount)
-			}
-		}
-
-		// UI Reconciliation (Fallback full message if silent dropped)
-		if env.Event.Type == events.Done {
-			doneReceived = true
-			b.resetCrashLoop(sessionID)
-			if b.hub.GetAndClearDropped(sessionID) {
-				b.log.Warn("bridge: handling dropped deltas before done", "session_id", sessionID, "worker_type", workerType)
-
-				if dataMap, ok := env.Event.Data.(map[string]any); ok {
-					if stats, ok := dataMap["stats"].(map[string]any); ok {
-						stats["dropped"] = true
-					} else {
-						dataMap["stats"] = map[string]any{"dropped": true}
+			if turnHasOutput && b.turnIdleTimeout > 0 {
+				if idleTimer == nil {
+					idleTimer = time.NewTimer(b.turnIdleTimeout)
+					idleCh = idleTimer.C
+				} else {
+					if !idleTimer.Stop() {
+						select {
+						case <-idleTimer.C:
+						default:
+						}
 					}
-				} else if doneData, ok := env.Event.Data.(events.DoneData); ok {
-					doneData.Dropped = true
-					env.Event.Data = doneData
-				} else if doneDataPtr, ok := env.Event.Data.(*events.DoneData); ok {
-					doneDataPtr.Dropped = true
-					env.Event.Data = doneDataPtr
+					idleTimer.Reset(b.turnIdleTimeout)
 				}
 			}
-		}
 
-		if err := b.hub.SendToSession(context.Background(), env); err != nil {
-			b.log.Warn("bridge: forward event failed", "err", err, "session_id", sessionID, "worker_type", workerType, "event_type", env.Event.Type)
-		}
-
-		b.captureEvent(sessionID, env.Seq, env.Event.Type, env.Event.Data)
-
-		// Flush buffered error on non-Done events (no retry decision possible yet).
-		if pendingError != nil && env.Event.Type != events.Done {
-			if err := b.hub.SendToSession(context.Background(), pendingError); err != nil {
-				b.log.Warn("bridge: forward buffered error failed", "err", err, "session_id", sessionID, "worker_type", workerType)
+			if env.Event.Type == events.MessageDelta || env.Event.Type == events.Message {
+				if content := extractMessageContent(env); content != "" {
+					turnText.WriteString(content)
+				}
 			}
-			b.captureEvent(sessionID, pendingError.Seq, pendingError.Event.Type, pendingError.Event.Data)
-			pendingError = nil
-		}
 
-		// LLM retry: check after Done is forwarded.
-		// Skip for resumed workers with no output — these are resume failures
-		// (e.g., "No conversation found"), not transient LLM errors. The resume
-		// fallback mechanism handles these cases with its own retry logic.
-		if env.Event.Type == events.Done && b.retryCtrl != nil && (!opts.resumed || turnText.Len() > 0) {
-			if shouldRetry, attempt := b.retryCtrl.ShouldRetry(sessionID, lastError); shouldRetry {
-				// Suppress buffered error — user sees the notify message instead of raw LLM error.
-				pendingError = nil
-				b.autoRetry(context.Background(), w, sessionID, attempt)
-				turnText.Reset()
-				lastError = nil
-				continue
+			// Stats accumulation: track tool calls and merge per-turn stats on done.
+			switch env.Event.Type {
+			case events.ToolCall:
+				acc := b.getOrInitAccum(sessionID)
+				acc.ToolCallCount++
+				if tc, ok := asToolCallData(env.Event.Data); ok {
+					if acc.ToolNames == nil {
+						acc.ToolNames = make(map[string]int)
+					}
+					acc.ToolNames[tc.Name]++
+				}
+			case events.Done:
+				if turnTimer != nil {
+					turnTimer.Stop()
+				}
+				stopIdleTimer()
+				turnHasOutput = false
+				acc := b.getOrInitAccum(sessionID)
+				if dd, ok := asDoneData(env.Event.Data); ok {
+					acc.mergePerTurnStats(dd)
+				}
+				acc.TurnCount++
+				acc.TurnDurationMs = time.Since(turnStartTime).Milliseconds()
+				acc.computePerTurnDeltas()
+				b.injectSessionStats(env, acc)
+				if b.log.Enabled(context.Background(), slog.LevelDebug) {
+					b.log.Debug("bridge: turn completed",
+						"session_id", sessionID, "worker_type", workerType, "turn", acc.TurnCount,
+						"duration", time.Since(startTime).Round(time.Millisecond),
+						"text_len", turnText.Len(), "tools", acc.ToolCallCount)
+				}
 			}
-			// No retry — flush buffered error event to client.
-			if pendingError != nil {
+
+			// UI Reconciliation (Fallback full message if silent dropped)
+			if env.Event.Type == events.Done {
+				doneReceived = true
+				b.resetCrashLoop(sessionID)
+				if b.hub.GetAndClearDropped(sessionID) {
+					b.log.Warn("bridge: handling dropped deltas before done", "session_id", sessionID, "worker_type", workerType)
+
+					if dataMap, ok := env.Event.Data.(map[string]any); ok {
+						if stats, ok := dataMap["stats"].(map[string]any); ok {
+							stats["dropped"] = true
+						} else {
+							dataMap["stats"] = map[string]any{"dropped": true}
+						}
+					} else if doneData, ok := env.Event.Data.(events.DoneData); ok {
+						doneData.Dropped = true
+						env.Event.Data = doneData
+					} else if doneDataPtr, ok := env.Event.Data.(*events.DoneData); ok {
+						doneDataPtr.Dropped = true
+						env.Event.Data = doneDataPtr
+					}
+				}
+			}
+
+			if err := b.hub.SendToSession(context.Background(), env); err != nil {
+				b.log.Warn("bridge: forward event failed", "err", err, "session_id", sessionID, "worker_type", workerType, "event_type", env.Event.Type)
+			}
+
+			b.captureEvent(sessionID, env.Seq, env.Event.Type, env.Event.Data)
+
+			// Flush buffered error on non-Done events (no retry decision possible yet).
+			if pendingError != nil && env.Event.Type != events.Done {
 				if err := b.hub.SendToSession(context.Background(), pendingError); err != nil {
 					b.log.Warn("bridge: forward buffered error failed", "err", err, "session_id", sessionID, "worker_type", workerType)
 				}
 				b.captureEvent(sessionID, pendingError.Seq, pendingError.Event.Type, pendingError.Event.Data)
 				pendingError = nil
 			}
-			b.retryCtrl.RecordSuccess(sessionID)
-			lastError = nil
-		}
 
-		// Record assistant response to conversation store after retry decision.
-		if env.Event.Type == events.Done && b.convStore != nil {
-			dd, _ := asDoneData(env.Event.Data)
+			// LLM retry: check after Done is forwarded.
+			if env.Event.Type == events.Done && b.retryCtrl != nil && (!opts.resumed || turnText.Len() > 0) {
+				if shouldRetry, attempt := b.retryCtrl.ShouldRetry(sessionID, lastError); shouldRetry {
+					pendingError = nil
+					b.autoRetry(context.Background(), w, sessionID, attempt)
+					turnText.Reset()
+					lastError = nil
+					continue
+				}
+				if pendingError != nil {
+					if err := b.hub.SendToSession(context.Background(), pendingError); err != nil {
+						b.log.Warn("bridge: forward buffered error failed", "err", err, "session_id", sessionID, "worker_type", workerType)
+					}
+					b.captureEvent(sessionID, pendingError.Seq, pendingError.Event.Type, pendingError.Event.Data)
+					pendingError = nil
+				}
+				b.retryCtrl.RecordSuccess(sessionID)
+				lastError = nil
+			}
+
+			// Record assistant response to conversation store after retry decision.
+			if env.Event.Type == events.Done && b.convStore != nil {
+				dd, _ := asDoneData(env.Event.Data)
+				acc := b.getOrInitAccum(sessionID)
+				success := dd.Success
+				_ = b.convStore.Append(context.Background(), &session.ConversationRecord{
+					SessionID:     sessionID,
+					Seq:           env.Seq,
+					Role:          session.RoleAssistant,
+					Content:       turnText.String(),
+					Platform:      sessPlatform,
+					UserID:        sessOwner,
+					Model:         acc.ModelName,
+					Success:       &success,
+					Source:        session.SourceNormal,
+					Tools:         acc.ToolNames,
+					ToolCallCount: acc.ToolCallCount,
+					TokensIn:      acc.PerTurnInput,
+					TokensOut:     acc.PerTurnOutput,
+					DurationMs:    acc.TurnDurationMs,
+					CostUSD:       acc.PerTurnCost,
+				})
+				acc.resetPerTurn()
+			}
+
+			if env.Event.Type == events.Done {
+				turnText.Reset()
+				turnStartTime = time.Now()
+			}
+
+		case <-idleCh:
+			idleTimer = nil
+			idleCh = nil
+			turnHasOutput = false
+
+			// Generate synthetic idle Done with session stats.
 			acc := b.getOrInitAccum(sessionID)
-			success := dd.Success
-			_ = b.convStore.Append(context.Background(), &session.ConversationRecord{
-				SessionID:     sessionID,
-				Seq:           env.Seq,
-				Role:          session.RoleAssistant,
-				Content:       turnText.String(),
-				Platform:      sessPlatform,
-				UserID:        sessOwner,
-				Model:         acc.ModelName,
-				Success:       &success,
-				Source:        session.SourceNormal,
-				Tools:         acc.ToolNames,
-				ToolCallCount: acc.ToolCallCount,
-				TokensIn:      acc.PerTurnInput,
-				TokensOut:     acc.PerTurnOutput,
-				DurationMs:    acc.TurnDurationMs,
-				CostUSD:       acc.PerTurnCost,
-			})
-			acc.resetPerTurn()
-		}
+			acc.TurnCount++
+			acc.TurnDurationMs = time.Since(turnStartTime).Milliseconds()
+			acc.computePerTurnDeltas()
 
-		if env.Event.Type == events.Done {
+			idleEnv := events.NewEnvelope(aep.NewID(), sessionID,
+				b.hub.NextSeq(sessionID), events.Done,
+				events.DoneData{Success: true, Stats: map[string]any{"idle": true}},
+			)
+			b.injectSessionStats(idleEnv, acc)
+
+			b.log.Info("bridge: idle timeout, generating synthetic Done",
+				"session_id", sessionID, "worker_type", workerType,
+				"turn", acc.TurnCount, "idle_timeout", b.turnIdleTimeout,
+				"duration_ms", acc.TurnDurationMs, "text_len", turnText.Len())
+
+			if err := b.hub.SendToSession(context.Background(), idleEnv); err != nil {
+				b.log.Warn("bridge: forward idle Done failed", "err", err, "session_id", sessionID)
+			}
+			b.captureEvent(sessionID, idleEnv.Seq, events.Done, idleEnv.Event.Data)
+
+			if b.convStore != nil {
+				success := true
+				_ = b.convStore.Append(context.Background(), &session.ConversationRecord{
+					SessionID:     sessionID,
+					Seq:           idleEnv.Seq,
+					Role:          session.RoleAssistant,
+					Content:       turnText.String(),
+					Platform:      sessPlatform,
+					UserID:        sessOwner,
+					Model:         acc.ModelName,
+					Success:       &success,
+					Source:        session.SourceNormal,
+					Tools:         acc.ToolNames,
+					ToolCallCount: acc.ToolCallCount,
+					TokensIn:      acc.PerTurnInput,
+					TokensOut:     acc.PerTurnOutput,
+					DurationMs:    acc.TurnDurationMs,
+					CostUSD:       acc.PerTurnCost,
+				})
+			}
+
+			acc.resetPerTurn()
 			turnText.Reset()
 			turnStartTime = time.Now()
 		}
@@ -1172,6 +1254,16 @@ func (b *Bridge) captureEvent(sessionID string, seq int64, eventType events.Kind
 		return
 	}
 	b.collector.Capture(sessionID, seq, eventType, ed, "outbound")
+}
+
+// isTurnOutputEvent reports whether the event type represents worker output
+// that should trigger the idle timer (as opposed to metadata like state/init).
+func isTurnOutputEvent(t events.Kind) bool {
+	switch t {
+	case events.MessageDelta, events.Message, events.ToolCall, events.ToolResult, events.Reasoning:
+		return true
+	}
+	return false
 }
 
 // extractMessageContent extracts text content from a message or message_delta event.
