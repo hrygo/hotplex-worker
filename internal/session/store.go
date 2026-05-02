@@ -203,7 +203,7 @@ func (s *SQLiteStore) DeleteTerminated(ctx context.Context, cutoff time.Time) er
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	// Collect session IDs to cascade-delete their events and audit entries.
+	// Collect session IDs to cascade-delete their conversation entries.
 	rows, err := tx.QueryContext(ctx, "SELECT id FROM sessions WHERE state = ? AND updated_at <= ?",
 		events.StateTerminated, cutoff)
 	if err != nil {
@@ -219,7 +219,6 @@ func (s *SQLiteStore) DeleteTerminated(ctx context.Context, cutoff time.Time) er
 	_ = rows.Close()
 
 	for _, id := range ids {
-		_, _ = tx.ExecContext(ctx, queries["store.delete_audit_by_session"], id)
 		_, _ = tx.ExecContext(ctx, queries["conversation.delete_by_session"], id)
 	}
 
@@ -237,9 +236,6 @@ func (s *SQLiteStore) DeletePhysical(ctx context.Context, id string) error {
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	if _, err := tx.ExecContext(ctx, queries["store.delete_audit_by_session"], id); err != nil {
-		return fmt.Errorf("session store: delete physical audit: %w", err)
-	}
 	if _, err := tx.ExecContext(ctx, queries["conversation.delete_by_session"], id); err != nil {
 		return fmt.Errorf("session store: delete physical conversations: %w", err)
 	}

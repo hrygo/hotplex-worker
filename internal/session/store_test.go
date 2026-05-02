@@ -73,52 +73,9 @@ func TestSQLiteStore_Compact_BelowThreshold(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// ─── SQLiteStore: AppendAudit / GetAuditTrail ────────────────────────────────
-
-func TestSQLiteStore_AppendAudit_GetAuditTrail(t *testing.T) {
-	store := helperDB(t)
-	ctx := context.Background()
-	helperUpsert(t, store, "sess_audit", "user1", events.StateRunning)
-
-	err := store.AppendAudit(ctx, "session.create", "actor1", "sess_audit", map[string]any{"source": "test"})
-	require.NoError(t, err)
-
-	err = store.AppendAudit(ctx, "session.transition", "actor1", "sess_audit", map[string]any{"from": "created", "to": "running"})
-	require.NoError(t, err)
-
-	records, err := store.GetAuditTrail(ctx, "sess_audit")
-	require.NoError(t, err)
-	require.Len(t, records, 2)
-	require.Equal(t, "session.create", records[0].Action)
-	require.Equal(t, "session.transition", records[1].Action)
-	require.Equal(t, "actor1", records[0].ActorID)
-	require.Equal(t, "sess_audit", records[0].SessionID)
-}
-
-func TestSQLiteStore_AppendAudit_NilDetails(t *testing.T) {
-	store := helperDB(t)
-	ctx := context.Background()
-	helperUpsert(t, store, "sess_audit_nil", "user1", events.StateRunning)
-
-	err := store.AppendAudit(ctx, "session.create", "actor1", "sess_audit_nil", nil)
-	require.NoError(t, err)
-
-	records, err := store.GetAuditTrail(ctx, "sess_audit_nil")
-	require.NoError(t, err)
-	require.Len(t, records, 1)
-	require.Nil(t, records[0].Details)
-}
-
-func TestSQLiteStore_GetAuditTrail_Empty(t *testing.T) {
-	store := helperDB(t)
-	ctx := context.Background()
-
-	records, err := store.GetAuditTrail(ctx, "nonexistent")
-	require.NoError(t, err)
-	require.Len(t, records, 0)
-}
-
 // ─── SQLiteStore: Upsert with Context and PlatformKey ────────────────────────
+
+// NOTE: AppendAudit / GetAuditTrail tests removed — audit_log is dead code (AppendAudit never called in production).
 
 func TestSQLiteStore_Upsert_WithContext(t *testing.T) {
 	store := helperDB(t)
