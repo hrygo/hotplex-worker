@@ -24,8 +24,12 @@ func (b *BaseAdapter[C]) InitConnPool(factory func(key string) C) {
 }
 
 // GetOrCreateConn returns an existing connection or creates a new one using
-// the composite key format "id#thread".
+// the composite key format "id#thread". Returns zero value if pool is nil.
 func (b *BaseAdapter[C]) GetOrCreateConn(id, thread string) C {
+	if b.ConnPool == nil {
+		var zero C
+		return zero
+	}
 	return b.ConnPool.GetOrCreate(id + "#" + thread)
 }
 

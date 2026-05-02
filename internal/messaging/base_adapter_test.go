@@ -109,6 +109,14 @@ func TestBaseAdapter_DeleteConn_NilPool(t *testing.T) {
 	require.NotPanics(t, func() { b.DeleteConn("a", "b") })
 }
 
+func TestBaseAdapter_GetOrCreateConn_NilPool(t *testing.T) {
+	t.Parallel()
+
+	b := newTestBaseAdapter(t)
+	result := b.GetOrCreateConn("a", "b")
+	require.Nil(t, result)
+}
+
 func TestBaseAdapter_PromotedPlatformAdapter(t *testing.T) {
 	t.Parallel()
 
