@@ -460,6 +460,8 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 				acc.mergePerTurnStats(dd)
 			}
 			acc.TurnCount++
+			acc.TurnDurationMs = time.Since(turnStartTime).Milliseconds()
+			acc.computePerTurnDeltas()
 			b.injectSessionStats(env, acc)
 			if b.log.Enabled(context.Background(), slog.LevelDebug) {
 				b.log.Debug("bridge: turn completed",
@@ -536,7 +538,6 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 		if env.Event.Type == events.Done && b.convStore != nil {
 			dd, _ := asDoneData(env.Event.Data)
 			acc := b.getOrInitAccum(sessionID)
-			acc.computePerTurnDeltas()
 			success := dd.Success
 			_ = b.convStore.Append(context.Background(), &session.ConversationRecord{
 				SessionID:     sessionID,

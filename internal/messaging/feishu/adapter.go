@@ -633,10 +633,12 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 	case events.Done:
 		streamCtrl := c.clearActiveIndicators(ctx)
 		c.adapter.Interactions.CancelAll(env.SessionID)
+		var closeErr error
 		if streamCtrl != nil && streamCtrl.IsCreated() {
-			return streamCtrl.Close(ctx)
+			closeErr = streamCtrl.Close(ctx)
 		}
-		return nil
+		go c.sendTurnSummary(ctx, env)
+		return closeErr
 	case events.Error:
 		streamCtrl := c.clearActiveIndicators(ctx)
 		c.adapter.Interactions.CancelAll(env.SessionID)
@@ -844,6 +846,23 @@ func (c *FeishuConn) writeContent(ctx context.Context, env *events.Envelope, tex
 		return c.adapter.replyMessage(ctx, replyToMsgID, OptimizeMarkdownStyle(SanitizeForCard(text)), false)
 	}
 	return c.adapter.sendTextMessage(ctx, chatID, OptimizeMarkdownStyle(SanitizeForCard(text)))
+}
+
+func (c *FeishuConn) sendTurnSummary(ctx context.Context, env *events.Envelope) {
+	d := messaging.ExtractTurnSummary(env)
+	text := messaging.FormatTurnSummary(d)
+	if text == "" {
+		return
+	}
+	c.mu.RLock()
+	replyToMsgID := c.replyToMsgID
+	chatID := c.chatID
+	c.mu.RUnlock()
+	if replyToMsgID != "" {
+		_ = c.adapter.replyMessage(ctx, replyToMsgID, text, false)
+	} else {
+		_ = c.adapter.sendTextMessage(ctx, chatID, text)
+	}
 }
 
 func (c *FeishuConn) sendContextUsage(ctx context.Context, env *events.Envelope) error {

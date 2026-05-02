@@ -725,6 +725,9 @@ func (c *SlackConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		c.clearStatus(ctx)
 		c.adapter.Interactions.CancelAll(env.SessionID)
 		c.closeStreamWriter()
+		if env.Event.Type == events.Done {
+			go c.sendTurnSummary(ctx, env)
+		}
 		if env.Event.Type == events.Error {
 			if errMsg := messaging.ExtractErrorMessage(env); errMsg != "" {
 				// Async: PostMessage is synchronous HTTP and must not block Hub broadcast.
@@ -1021,6 +1024,19 @@ func (a *Adapter) cleanupMediaInDir(dir string) {
 		}
 		return nil
 	})
+}
+
+func (c *SlackConn) sendTurnSummary(ctx context.Context, env *events.Envelope) {
+	d := messaging.ExtractTurnSummary(env)
+	text := messaging.FormatTurnSummary(d)
+	if text == "" {
+		return
+	}
+	opts := []slack.MsgOption{slack.MsgOptionText(text, false)}
+	if c.threadTS != "" {
+		opts = append(opts, slack.MsgOptionTS(c.threadTS))
+	}
+	_, _, _ = c.adapter.client.PostMessageContext(ctx, c.channelID, opts...)
 }
 
 func (c *SlackConn) sendContextUsage(ctx context.Context, env *events.Envelope) error {

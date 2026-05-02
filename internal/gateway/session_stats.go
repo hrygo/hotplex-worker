@@ -22,10 +22,11 @@ type sessionAccumulator struct {
 	StartedAt     time.Time
 
 	// Per-turn tracking (reset after each done).
-	ToolNames     map[string]int // tool name -> call count this turn
-	PerTurnInput  int64
-	PerTurnOutput int64
-	PerTurnCost   float64
+	ToolNames      map[string]int // tool name -> call count this turn
+	PerTurnInput   int64
+	PerTurnOutput  int64
+	PerTurnCost    float64
+	TurnDurationMs int64 // current turn duration in milliseconds
 
 	// Cumulative totals at the end of the previous turn (for delta computation).
 	PrevTotalIn   int64
@@ -136,6 +137,11 @@ func (a *sessionAccumulator) snapshot() map[string]any {
 		"context_pct":      ctxPct,
 		"total_cost_usd":   a.TotalCostUSD,
 		"model_name":       a.ModelName,
+		"turn_duration_ms": a.TurnDurationMs,
+		"turn_input_tok":   a.PerTurnInput,
+		"turn_output_tok":  a.PerTurnOutput,
+		"turn_cost_usd":    a.PerTurnCost,
+		"tool_names":       a.ToolNames,
 	}
 }
 
