@@ -161,14 +161,7 @@ func (s *SQLiteStore) List(ctx context.Context, userID, platform string, limit, 
 	return sessions, rows.Err()
 }
 
-func (s *SQLiteStore) GetExpiredMaxLifetime(ctx context.Context, now time.Time) ([]string, error) {
-	rows, err := s.db.QueryContext(ctx, queries["store.get_expired_max_lifetime"],
-		string(events.StateCreated), string(events.StateRunning), string(events.StateIdle), now)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-
+func collectIDs(rows *sql.Rows) ([]string, error) {
 	var ids []string
 	for rows.Next() {
 		var id string
@@ -177,6 +170,16 @@ func (s *SQLiteStore) GetExpiredMaxLifetime(ctx context.Context, now time.Time) 
 		}
 	}
 	return ids, rows.Err()
+}
+
+func (s *SQLiteStore) GetExpiredMaxLifetime(ctx context.Context, now time.Time) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, queries["store.get_expired_max_lifetime"],
+		string(events.StateCreated), string(events.StateRunning), string(events.StateIdle), now)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	return collectIDs(rows)
 }
 
 func (s *SQLiteStore) GetExpiredIdle(ctx context.Context, now time.Time) ([]string, error) {
@@ -185,64 +188,24 @@ func (s *SQLiteStore) GetExpiredIdle(ctx context.Context, now time.Time) ([]stri
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
-
-	var ids []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err == nil {
-			ids = append(ids, id)
-		}
-	}
-	return ids, rows.Err()
+	return collectIDs(rows)
 }
 
+// FK CASCADE handles conversation cleanup automatically.
 func (s *SQLiteStore) DeleteTerminated(ctx context.Context, cutoff time.Time) error {
-	tx, err := s.db.BeginTx(ctx, nil)
+	_, err := s.db.ExecContext(ctx, queries["store.delete_terminated"], events.StateTerminated, cutoff)
 	if err != nil {
-		return fmt.Errorf("session store: delete terminated begin: %w", err)
+		return fmt.Errorf("session store: delete terminated: %w", err)
 	}
-	defer func() { _ = tx.Rollback() }()
-
-	// Collect session IDs to cascade-delete their conversation entries.
-	rows, err := tx.QueryContext(ctx, "SELECT id FROM sessions WHERE state = ? AND updated_at <= ?",
-		events.StateTerminated, cutoff)
-	if err != nil {
-		return fmt.Errorf("session store: delete terminated query: %w", err)
-	}
-	var ids []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err == nil {
-			ids = append(ids, id)
-		}
-	}
-	_ = rows.Close()
-
-	for _, id := range ids {
-		_, _ = tx.ExecContext(ctx, queries["conversation.delete_by_session"], id)
-	}
-
-	_, err = tx.ExecContext(ctx, queries["store.delete_terminated"], events.StateTerminated, cutoff)
-	if err != nil {
-		return fmt.Errorf("session store: delete terminated exec: %w", err)
-	}
-	return tx.Commit()
+	return nil
 }
 
 func (s *SQLiteStore) DeletePhysical(ctx context.Context, id string) error {
-	tx, err := s.db.BeginTx(ctx, nil)
+	_, err := s.db.ExecContext(ctx, queries["store.delete_physical"], id)
 	if err != nil {
-		return fmt.Errorf("session store: delete physical begin: %w", err)
+		return fmt.Errorf("session store: delete physical: %w", err)
 	}
-	defer func() { _ = tx.Rollback() }()
-
-	if _, err := tx.ExecContext(ctx, queries["conversation.delete_by_session"], id); err != nil {
-		return fmt.Errorf("session store: delete physical conversations: %w", err)
-	}
-	if _, err := tx.ExecContext(ctx, queries["store.delete_physical"], id); err != nil {
-		return fmt.Errorf("session store: delete physical session: %w", err)
-	}
-	return tx.Commit()
+	return nil
 }
 
 func (s *SQLiteStore) Close() error {
@@ -276,13 +239,5 @@ func (s *SQLiteStore) GetSessionsByState(ctx context.Context, state events.Sessi
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
-
-	var ids []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err == nil {
-			ids = append(ids, id)
-		}
-	}
-	return ids, rows.Err()
+	return collectIDs(rows)
 }

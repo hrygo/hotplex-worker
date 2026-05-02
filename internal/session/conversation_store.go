@@ -380,9 +380,13 @@ func (s *SQLiteConversationStore) flushBatch(batch []*convWriteReq) {
 			}
 		}
 
+		source := r.Source
+		if source == "" {
+			source = SourceNormal
+		}
 		if _, execErr := stmt.Exec(
 			r.ID, r.SessionID, r.Seq, r.Role, r.Content,
-			r.Platform, r.UserID, r.Model, success, r.Source,
+			r.Platform, r.UserID, r.Model, success, source,
 			toolsJSON, r.ToolCallCount,
 			r.TokensIn, r.TokensOut, r.DurationMs, r.CostUSD,
 			metaJSON,
