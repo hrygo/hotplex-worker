@@ -228,6 +228,20 @@ func TestExpandEnvEntry(t *testing.T) {
 			want:     "",
 			included: false,
 		},
+		{
+			name:     "set variable with default uses actual value",
+			input:    "KEY=${TEST_HAS_DEFAULT:-fallback}",
+			setup:    func() { os.Setenv("TEST_HAS_DEFAULT", "real_value") },
+			want:     "KEY=real_value",
+			included: true,
+		},
+		{
+			name:     "multiple vars all set expands all",
+			input:    "PATH=${TEST_A}:${TEST_B}",
+			setup:    func() { os.Setenv("TEST_A", "/usr/bin"); os.Setenv("TEST_B", "/usr/local/bin") },
+			want:     "PATH=/usr/bin:/usr/local/bin",
+			included: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -239,6 +253,9 @@ func TestExpandEnvEntry(t *testing.T) {
 			os.Unsetenv("TEST_MISSING_DEBUG")
 			os.Unsetenv("TEST_SET_VAR")
 			os.Unsetenv("TEST_UNSET_VAR")
+			os.Unsetenv("TEST_HAS_DEFAULT")
+			os.Unsetenv("TEST_A")
+			os.Unsetenv("TEST_B")
 			tt.setup()
 			got, ok := expandEnvEntry(tt.input)
 			require.Equal(t, tt.included, ok)
