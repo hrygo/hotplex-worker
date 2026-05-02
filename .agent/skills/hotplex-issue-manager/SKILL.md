@@ -1,68 +1,68 @@
 ---
 name: hotplex-issue-manager
-description: HotPlex issue batch management and consolidated PR delivery. TRIGGER THIS SKILL when: managing HotPlex issues, prioritizing backlog, planning batch fixes, implementing multiple related issues together, needing to consolidate several fixes into one PR, calculating ROI for issue prioritization, or wanting to reduce merge conflicts and review overhead. This skill transforms scattered GitHub issues into ONE consolidated PR — a deliberate alternative to traditional one-issue-per-PR workflows that often create merge conflicts and review fatigue.
+description: HotPlex issue 批量管理与合并 PR 交付。当需要管理 HotPlex issues、排列优先级、规划批量修复、批量实施多个相关 issue、将多个修复合并到一个 PR、计算 issue 优先级 ROI、或减少合并冲突和审查开销时触发此 skill。此 skill 将分散的 GitHub issues 转化为一个合并 PR — 这是对传统一个-issue-一个-PR 工作流的刻意替代，后者经常导致合并冲突和审查疲劳。
 compatibility: Requires gh CLI, Go 1.26+, golangci-lint, make
 ---
 
 # HotPlex Issue Manager
 
-Batch issue management workflow for HotPlex that transforms scattered GitHub issues into **one consolidated pull request**. This skill analyzes, prioritizes, and implements multiple issues together, reducing merge conflicts and review overhead.
+HotPlex 的批量 issue 管理工作流，将分散的 GitHub issues 转化为**一个合并 Pull Request**。此 skill 分析、排序并批量实施多个 issue，减少合并冲突和审查开销。
 
-## Common Pitfalls (Read This First!)
+## 常见陷阱（务必先读！）
 
-Before diving into the workflow, avoid these frequent mistakes that derail batch PRs:
+深入工作流之前，避免这些毁掉批量 PR 的常见错误：
 
-**❌ Selecting unrelated issues together**
-- Mixing CLI features, webchat fixes, and messaging refactors in one batch
-- **Why this fails**: No thematic cohesion makes reviews painful and testing complex
-- **✅ Better approach**: Group by domain — all messaging fixes, or all CLI improvements
+**❌ 将不相关的 issue 放在一起**
+- 把 CLI 功能、webchat 修复和 messaging 重构混在一个批量里
+- **为什么不行**：缺乏主题连贯性，审查痛苦、测试复杂
+- **✅ 正确做法**：按领域分组 — 全部 messaging 修复，或全部 CLI 改进
 
-**❌ Overloading batches (too many issues)**
-- Trying to cram 8+ issues into "one mega PR"
-- **Why this fails**: Creates unreviewable monsters; if one issue blocks, all block
-- **✅ Better approach**: 2-5 issues max, or split into themed batches (messaging batch 1, batch 2)
+**❌ 批量过载（太多 issue）**
+- 试图把 8+ 个 issue 塞进"一个巨型 PR"
+- **为什么不行**：变成无法审查的怪物；一个 issue 卡住，全部卡住
+- **✅ 正确做法**：最多 2-5 个 issue，或按主题拆分（messaging 批次 1、批次 2）
 
-**❌ Ignoring dependencies between issues**
-- Implementing issue B that depends on issue A's refactor
-- **Why this fails**: Code won't work, wastes implementation time
-- **✅ Better approach**: Check dependencies first, implement refactors before fixes
+**❌ 忽略 issue 间的依赖**
+- 实施 issue B 时发现它依赖 issue A 的重构
+- **为什么不行**：代码跑不起来，浪费实施时间
+- **✅ 正确做法**：先检查依赖，先实施重构再修 bug
 
-**❌ Only running unit tests per issue**
-- Testing each fix in isolation, never together
-- **Why this fails**: Misses integration bugs where issues interact
-- **✅ Better approach**: Run full test suite after all issues implemented
+**❌ 每个 issue 只跑单元测试**
+- 隔离测试每个修复，从不一起测试
+- **为什么不行**：错过 issue 交互产生的集成 bug
+- **✅ 正确做法**：所有 issue 实施完毕后运行完整测试套件
 
-**❌ Vague PR descriptions**
-- Writing "Fixes several issues" as the PR description
-- **Why this fails**: Reviewers can't understand what changed or why
-- **✅ Better approach**: Document each issue separately with problem/solution/impact
+**❌ PR 描述含糊**
+- 写 "Fixes several issues" 作为 PR 描述
+- **为什么不行**：审查者无法理解改了什么或为什么改
+- **✅ 正确做法**：按 issue 分别文档化，包含 problem/solution/impact 结构
 
-## Why Batch PRs Matter
+## 为什么批量 PR 重要
 
-Traditional one-issue-per-PR workflows create problems:
-- Multiple merge conflicts when touching similar code
-- Review fatigue from seeing many small related PRs
-- Deployment overhead from many individual merges
-- Fragmented git history
+传统的"一个 issue 一个 PR"工作流会产生问题：
+- 触及相似代码时产生多次合并冲突
+- 多个小而相关的 PR 造成审查疲劳
+- 多次单独合并带来部署开销
+- 碎片化的 git 历史
 
-**Batch PRs solve these** by grouping related fixes:
-- One branch = one merge conflict resolution
-- One review = holistic understanding of changes
-- One deployment = coordinated release
-- Clean history = logical grouping of related work
+**批量 PR 解决这些问题**，通过将相关修复分组：
+- 一个分支 = 一次合并冲突解决
+- 一次审查 = 对变更的全局理解
+- 一次部署 = 协调发布
+- 清洁历史 = 相关工作的逻辑分组
 
-## Workflow Overview
+## 工作流概览
 
-Four phases guide you from raw issues to merged PR:
+从原始 issues 到合并 PR，四个阶段引导你：
 
-1. **Analysis & Verification** — Understand what issues actually need
-2. **Prioritization** — Score issues by ROI to focus on high-impact work
-3. **Selection** — Choose 1-5 issues that work well together
-4. **Implementation & Delivery** — Build and deliver one consolidated PR
+1. **分析与验证** — 理解 issue 到底需要什么
+2. **优先级排序** — 按 ROI 评分，聚焦高影响工作
+3. **选择** — 挑选 1-5 个能良好协作的 issue
+4. **实施与交付** — 构建并交付一个合并 PR
 
-## Phase 1: Analysis & Verification
+## Phase 1: 分析与验证
 
-### 1.1 Fetch Issues
+### 1.1 获取 Issues
 
 ```bash
 cd /home/hotplex/.hotplex/workspace/hotplex
@@ -71,405 +71,489 @@ gh issue list --limit 100 --state open \
   > /tmp/hotplex_issues.json
 ```
 
-### 1.2 Analyze Each Issue
+### 1.2 分析每个 Issue
 
-For each issue, check:
+对每个 issue 检查：
 
-**Completeness** — Can you implement this from the description?
-- Clear problem statement or feature request?
-- Reproduction steps (for bugs)?
-- Acceptance criteria (for features)?
-- Environment/context details?
+**完整性** — 能否根据描述实施？
+- 有清晰的问题陈述或功能请求？
+- 有复现步骤（bug）？
+- 有验收标准（功能）？
+- 有环境/上下文信息？
 
-**Validity** — Is this a real issue?
-- Can it be reproduced?
-- Is the feature scoped and actionable?
-- Or is it vague, needs clarification?
+**有效性** — 这是真正的 issue 吗？
+- 能否复现？
+- 功能需求是否明确且可执行？
+- 还是模糊不清、需要澄清？
 
-**Duplication** — Has this been reported?
-- Search for similar issues by keywords
-- Check if already fixed in another branch
-- Link duplicates instead of implementing
+**重复性** — 是否已被报告？
+- 按关键词搜索相似 issue
+- 检查是否已在其他分支修复
+- 链接重复 issue 而非重新实施
 
-**Technical Feasibility** — Can this be implemented?
-- Fits within architecture?
-- Has blocking dependencies?
-- Requires research/unknowns?
+**技术可行性** — 能否实施？
+- 是否符合现有架构？
+- 有阻塞性依赖？
+- 是否需要调研/存在未知因素？
 
-### 1.3 Apply Labels
+### 1.3 标签分类管理（Admin 专属）
 
-Labels help categorize and prioritize issues:
+> **前置条件**：比较当前 gh 用户与 repo owner，相同则为 Admin。
+> ```bash
+> REPO_OWNER=$(gh repo view --json owner --jq '.owner.login')
+> CURRENT_USER=$(gh api user --jq '.login')
+> [ "$REPO_OWNER" = "$CURRENT_USER" ] && echo "ADMIN" || echo "NOT_ADMIN"
+> # 输出 ADMIN 时执行以下管理操作，NOT_ADMIN 则跳过。
+> ```
 
-**Type Labels** (choose one that best fits):
-- `bug` — Broken functionality, crashes, incorrect behavior
-- `enhancement` — New features or capabilities
-- `documentation` — Docs, README, examples
-- `performance` — Speed, memory, optimization
-- `refactor` — Code quality, DRY, SOLID improvements
-- `security` — Vulnerabilities, security hardening
+以下操作**仅限 Admin 用户**执行，普通贡献者仅做分析不做标签/关闭操作。
 
-**Domain Labels** (can apply multiple):
-- `architecture` — Design patterns, coupling, separation of concerns
-- `race-condition` — Concurrency bugs, data races
-- `goroutine` — Goroutine leaks, lifecycle management
-- `resource-leak` — Memory leaks, file descriptor leaks
-- `reliability` — Availability, error handling, recoverability
+#### 1.3.1 应用分类标签
 
-```bash
-gh issue edit <number> --add-label "bug,architecture"
-gh issue edit <number> --remove-label "enhancement"
-```
+标签体系共 6 类 27 个标签，遵循 GitHub 最佳实践：
 
-**Issue Quality Checklist** (consider these before implementing):
-- [ ] Title uses conventional commit format: `scope: description`
-- [ ] Detailed description of problem or feature
-- [ ] Bugs include: reproduction steps, expected vs actual
-- [ ] Features include: acceptance criteria, use cases
-- [ ] Environment/context provided
-- [ ] No duplicates (link related issues)
+**类型标签**（选一个最合适的，紫色 `#5319e7`）：
+- `bug` — 功能损坏、崩溃、行为异常
+- `enhancement` — 新功能或能力
+- `documentation` — 文档、README、示例
+- `performance` — 速度、内存、优化
+- `refactor` — 代码质量、DRY、SOLID 改进
+- `security` — 漏洞、安全加固
 
-**Why this matters**: Implementing unclear issues wastes time — you'll discover edge cases mid-work or build the wrong thing. If issue lacks clarity, add `needs-triage` label or request clarification via comments before starting implementation.
+**优先级标签**（ROI 计算后分配，红→黄色阶）：
+- `P1` — 关键（ROI ≥ 50，`#b60205`）
+- `P2` — 高（ROI 30-49，`#d93f0b`）
+- `P3` — 中（ROI 15-29，`#fbca04`）
 
-## Phase 2: Prioritization & Scoring
+**领域标签**（可多选，灰色 `#c5def5`）：
+- `architecture` — 设计模式、耦合、关注点分离
+- `race-condition` — 并发 bug、数据竞争
+- `goroutine` — Goroutine 泄漏、生命周期管理
+- `resource-leak` — 内存泄漏、文件描述符泄漏
+- `reliability` — 可用性、错误处理、可恢复性
+- `DoS` — 拒绝服务攻击面
 
-### 2.1 ROI Scoring System
+**模块标签**（可多选，蓝色 `#0075ca`）：
+- `area/gateway` — WebSocket 网关、Hub、Conn
+- `area/session` — Session 状态机、GC、配额
+- `area/messaging` — Slack/飞书消息适配器
+- `area/worker` — Worker 进程管理（Claude Code/OCS/Pi）
+- `area/cli` — Cobra CLI 命令
+- `area/webchat` — Next.js Web Chat UI
+- `area/config` — 配置加载、热重载
+- `area/updater` — 自更新机制
 
-ROI (Return on Investment) helps focus on high-impact work. Score each issue 1-10 on three dimensions:
+**状态标签**（特殊状态标记，黄色 `#fbca04`）：
+- `needs-triage` — 需要初步分类
+- `blocked` — 被外部依赖阻塞
+- `breaking-change` — 包含破坏性变更
 
-**Impact (I)**: How much does this matter to users?
-- 10: Critical bug affecting all users, security issue, data loss
-- 7-8: High-impact bug, major performance win, highly-requested feature
-- 5-6: Medium impact, noticeable improvement
-- 3-4: Low impact, minor improvement
-- 1-2: Nice to have, minimal user-facing effect
-
-**Urgency (U)**: How time-sensitive is this?
-- 10: Production outage, security vulnerability, blocking release
-- 7-8: Affecting many users daily, degrading experience
-- 5-6: Should fix soon, but not urgent
-- 3-4: Whenever we get to it
-- 1-2: No deadline
-
-**Effort (E)**: How complex to implement? (inverted — higher = easier)
-- 10: Trivial (1-2 hours, simple fix, well-understood)
-- 7-8: Easy (half day, minimal complexity)
-- 5-6: Medium (1-2 days, some complexity)
-- 3-4: Hard (3-5 days, significant complexity)
-- 1-2: Very hard (1+ week, research required, architectural changes)
-
-**ROI Formula**:
-```
-ROI = (Impact × Urgency × Effort) / 100
-```
-
-**Why this formula works**:
-- High-impact issues get priority (Impact numerator)
-- Urgent issues get priority (Urgency numerator)
-- Easy fixes get priority (Effort numerator — inverted scoring)
-- Result: prioritize work that delivers maximum value fast
-
-### 2.2 Assign Priority Labels
-
-Based on ROI score and issue type:
-
-- **P1** (Critical): ROI ≥ 50, OR security/crash/data-loss issues
-- **P2** (High): ROI 30-49, OR high-impact bugs
-- **P3** (Medium): ROI 15-29, OR technical debt/refactoring
+**关闭原因标签**（关闭 issue 时附加，灰色 `#cfd3d7`）：
+- `duplicate` — 重复 issue
+- `wontfix` — 不予修复
+- `invalid` — 无效 issue
+- `fixed` — 已修复
+- `not-reproducible` — 无法复现
 
 ```bash
-gh issue edit <number> --add-label "P1"  # Critical
-gh issue edit <number> --add-label "P2"  # High
-gh issue edit <number> --add-label "P3"  # Medium
+# 标签组合示例：类型 + 领域 + 模块
+gh issue edit <number> --add-label "bug,race-condition,area/gateway"
+gh issue edit <number> --add-label "enhancement,area/cli"
+gh issue edit <number> --remove-label "needs-triage"
 ```
 
-### 2.3 Check Dependencies
+#### 1.3.2 关闭无效 Issue
 
-Issues often depend on each other:
+对以下类型的 issue，Admin 应**直接关闭**并附带说明评论：
+
+**关闭条件**（满足任一即关闭）：
+
+| 条件 | 关闭标签 | 评论模板 |
+|------|---------|---------|
+| 已在代码中修复，只是 issue 未关闭 | `fixed` | `已在 <commit/PR> 中修复，关闭此 issue。` |
+| 与现有 issue 完全重复 | `duplicate` | `与 #<原issue> 重复，关闭此 issue。` |
+| 描述不清且长期无回应（>30天无更新） | `wontfix` | `此 issue 缺少足够信息且长期无更新，关闭。如有新信息请重新打开。` |
+| 不属于项目范围或不合理的需求 | `wontfix` | `此需求不在当前项目范围内，关闭。` |
+| 无法复现且无足够信息排查 | `not-reproducible` | `无法在当前版本复现此问题，关闭。如能提供复现步骤请重新打开。` |
+| 已通过其他重构/改进间接解决 | `fixed` | `此问题已通过 <PR/commit> 间接解决，关闭。` |
+
+**关闭流程**：
 
 ```bash
-# Find referenced issues in body
+# 1. 添加关闭标签
+gh issue edit <number> --add-label "duplicate"
+
+# 2. 添加关闭评论（说明原因）
+gh issue comment <number> --body "与 #<原issue> 重复，关闭此 issue。"
+
+# 3. 关闭 issue
+gh issue close <number>
+```
+
+**关闭统计**：在分析报告中记录关闭数量：
+```
+Phase 1 完成: 分析 20 个 open issues
+- 分类标签: 15 个已标注
+- 关闭无效: 5 个（duplicate: 2, wontfix: 2, fixed: 1）
+- 剩余有效: 15 个进入 Phase 2 排序
+```
+
+#### 1.3.3 Issue 质量检查清单
+
+**实施前逐条检查**：
+- [ ] 标题使用 conventional commit 格式：`scope: description`
+- [ ] 详细描述问题或功能
+- [ ] Bug 包含：复现步骤、预期 vs 实际行为
+- [ ] 功能包含：验收标准、使用场景
+- [ ] 提供环境/上下文信息
+- [ ] 无重复（链接相关 issue）
+
+**质量不足时的处理**：
+- 信息可补充 → 添加 `needs-triage` 标签 + 评论请求澄清
+- 长期无回应 → Admin 直接关闭（见 1.3.2）
+
+**为什么重要**：实施不清晰的 issue 会浪费时间 — 你会在工作中途发现边界情况或构建错误的东西。Admin 的标签分类和无效 issue 清理确保后续 Phase 只处理真正有价值的工作。
+
+## Phase 2: 优先级排序与评分
+
+### 2.1 ROI 评分体系
+
+ROI（投资回报率）帮助聚焦高影响工作。按三个维度对每个 issue 打分（1-10）：
+
+**影响力 (I)**：对用户有多重要？
+- 10：影响所有用户的关键 bug、安全问题、数据丢失
+- 7-8：高影响 bug、重大性能提升、高频需求的功能
+- 5-6：中等影响、可感知的改进
+- 3-4：低影响、小幅改进
+- 1-2：锦上添花、用户感知极小
+
+**紧急度 (U)**：时间敏感度如何？
+- 10：生产故障、安全漏洞、阻塞发布
+- 7-8：每日影响大量用户、体验持续恶化
+- 5-6：应该尽快修复，但不紧急
+- 3-4：有空就修
+- 1-2：无截止日期
+
+**工作量 (E)**：实施复杂度？（反向 — 越高越容易）
+- 10：琐碎（1-2 小时，简单修复，思路清晰）
+- 7-8：容易（半天，最小复杂度）
+- 5-6：中等（1-2 天，一定复杂度）
+- 3-4：困难（3-5 天，显著复杂度）
+- 1-2：非常困难（1+ 周，需要调研、架构变更）
+
+**ROI 公式**：
+```
+ROI = (影响力 × 紧急度 × 工作量) / 100
+```
+
+**为什么这个公式有效**：
+- 高影响 issue 优先（影响力在分子）
+- 紧急 issue 优先（紧急度在分子）
+- 简单修复优先（工作量在分子 — 反向评分）
+- 结果：优先交付最大价值最快的工作
+
+### 2.2 分配优先级标签
+
+根据 ROI 分数和 issue 类型：
+
+- **P1**（关键）：ROI ≥ 50，或安全/崩溃/数据丢失 issue
+- **P2**（高）：ROI 30-49，或高影响 bug
+- **P3**（中）：ROI 15-29，或技术债/重构
+
+```bash
+gh issue edit <number> --add-label "P1"  # 关键
+gh issue edit <number> --add-label "P2"  # 高
+gh issue edit <number> --add-label "P3"  # 中
+```
+
+### 2.3 检查依赖
+
+Issue 之间常有依赖关系：
+
+```bash
+# 在 issue body 中查找引用的 issue
 gh issue view <number> --json body --jq '.body' | grep -o '#[0-9]\+'
 ```
 
-Build dependency graph. Issues blocked by unresolved dependencies should be marked `blocked` and deprioritized — you can't implement them yet anyway.
+构建依赖图。被未解决依赖阻塞的 issue 应标记 `blocked` 并降低优先级 — 反正现在也无法实施。
 
-### 2.4 Generate Ranked List
+### 2.4 生成排序列表
 
-Create `/tmp/issue_ranking.md`:
+创建 `/tmp/issue_ranking.md`：
 
 ```markdown
-# HotPlex Issues — Prioritized by ROI
+# HotPlex Issues — 按 ROI 排序
 
-## P1 — Critical (ROI 50+)
+## P1 — 关键 (ROI 50+)
 - [ ] #90 — feat(cli): add `hotplex update` subcommand (ROI: 72)
-  - Impact: 8 (highly-requested feature)
-  - Urgency: 9 (users asking for it)
-  - Effort: 10 (trivial, 4 hours)
+  - 影响力: 8 (高频需求功能)
+  - 紧急度: 9 (用户要求)
+  - 工作量: 10 (琐碎, 4 小时)
   
 - [ ] #78 — fix(messaging): error handling (ROI: 68)
-  - Impact: 8 (affects many users)
-  - Urgency: 8 (daily occurrences)
-  - Effort: 9 (easy, 6 hours)
+  - 影响力: 8 (影响大量用户)
+  - 紧急度: 8 (每日发生)
+  - 工作量: 9 (容易, 6 小时)
 
-## P2 — High Priority (ROI 30-49)
+## P2 — 高优先级 (ROI 30-49)
 - [ ] #89 — perf(webchat): bundle code split (ROI: 45)
-  - Impact: 7 (performance win for all webchat users)
-  - Urgency: 6 (degradation over time)
-  - Effort: 8 (medium, 1 day)
+  - 影响力: 7 (所有 webchat 用户的性能提升)
+  - 紧急度: 6 (持续恶化)
+  - 工作量: 8 (中等, 1 天)
 ```
 
-## Phase 3: Selection
+## Phase 3: 选择
 
-### 3.1 Choose Issues for Batch PR
+### 3.1 为批量 PR 选择 Issue
 
-Select 1-5 issues that will be implemented together in one PR. **Selection quality matters more than quantity** — better to ship 3 issues cleanly than 5 issues messily.
+选择 1-5 个将在一个 PR 中一起实施的 issue。**选择质量比数量更重要** — 干净交付 3 个 issue 比混乱交付 5 个更好。
 
-**Selection Criteria** (prioritize in this order):
+**选择标准**（按此顺序优先）：
 
-1. **High ROI** — prioritize maximum impact
-   - **Why**: You want to deliver the most value with your time investment
-2. **Cohesion** — issues should relate to each other
-   - Same module (e.g., all messaging issues)
-   - Same layer (e.g., all adapter refactors)
-   - Related domain (e.g., all performance issues)
-   - **Why**: Cohesive batches are easier to review, test, and understand
-3. **No blocking dependencies** — all can be implemented independently
-   - **Why**: Dependencies complicate implementation order and can block progress
-4. **Manageable scope** — total effort should be 1-3 days
-   - **Why**: Larger batches become unreviewable and riskier to ship
-5. **Strategic balance** — mix quick wins and important fixes
-   - **Why**: Quick wins build momentum while important fixes deliver long-term value
+1. **高 ROI** — 优先选择最大影响力
+   - **原因**：你希望时间投入产出最大价值
+2. **连贯性** — issue 之间应该相互关联
+   - 同一模块（如：全部 messaging issue）
+   - 同一层级（如：全部 adapter 重构）
+   - 相关领域（如：全部性能 issue）
+   - **原因**：连贯的批量更容易审查、测试和理解
+3. **无阻塞依赖** — 全部可以独立实施
+   - **原因**：依赖会复杂化实施顺序并可能阻塞进展
+4. **可控范围** — 总工作量应在 1-3 天
+   - **原因**：更大的批量变得无法审查且风险更高
+5. **战略平衡** — 混合快速收益和重要修复
+   - **原因**：快速收益建立势能，重要修复交付长期价值
 
-**Why cohesion matters**: Implementing unrelated issues in one PR makes:
-- Code review harder (reviewer context-switches)
-- Testing harder (need to test unrelated things)
-- Rollback harder (can't revert one fix without reverting others)
-- Understanding harder (git history tells no clear story)
+**为什么连贯性重要**：在一个 PR 中实施不相关的 issue 会导致：
+- 代码审查更难（审查者需要频繁切换上下文）
+- 测试更难（需要测试不相关的东西）
+- 回滚更难（无法只回滚一个修复而不影响其他）
+- 理解更难（git 历史讲不出清晰的故事）
 
-**Selection Strategies**:
+**选择策略**：
 
-**Conservative** (2 issues, low risk):
-- Top 1 P1 + 1 high-ROI P2
-- Quick wins, thoroughly tested
-- Good when: unsure, want to validate workflow
+**保守策略**（2 个 issue，低风险）：
+- 排名第 1 的 P1 + 1 个高 ROI 的 P2
+- 快速收益，充分测试
+- 适用于：不确定时，想验证工作流
 
-**Balanced** (3-4 issues, mixed complexity):
-- 1 P1 + 2 P2 + 1 P3
-- Good balance of impact and effort
-- Good when: confident in issues, have 2-3 days
+**平衡策略**（3-4 个 issue，混合复杂度）：
+- 1 个 P1 + 2 个 P2 + 1 个 P3
+- 影响力和工作量的良好平衡
+- 适用于：对 issue 有信心，有 2-3 天时间
 
-**Aggressive** (5 issues, maximize throughput):
-- All P1 + top P2 issues
-- Only if total effort ≤ 3 days AND high cohesion
-- Good when: issues are simple and highly related
+**激进策略**（5 个 issue，最大化吞吐量）：
+- 全部 P1 + 排名靠前的 P2
+- 仅当总工作量 ≤ 3 天且高连贯性时
+- 适用于：issue 简单且高度相关
 
-### 3.2 Create Implementation Plan
+### 3.2 创建实施计划
 
-Document the batch in `/tmp/implementation_plan.md`:
+在 `/tmp/implementation_plan.md` 中记录批量计划：
 
 ```markdown
-# HotPlex Batch Implementation Plan
+# HotPlex 批量实施计划
 
-## Selected Issues (4 issues, Total ROI: 198)
+## 选定 Issues（4 个，总 ROI: 198）
 
 1. **#90** — feat(cli): add `hotplex update` subcommand (ROI: 72)
-   - Type: enhancement
-   - Scope: CLI
-   - Effort: 4 hours
+   - 类型: enhancement
+   - 范围: CLI
+   - 工作量: 4 小时
    
 2. **#78** — fix(messaging): error handling (ROI: 68)
-   - Type: bug
-   - Scope: messaging/adapters
-   - Effort: 6 hours
+   - 类型: bug
+   - 范围: messaging/adapters
+   - 工作量: 6 小时
    
 3. **#89** — perf(webchat): bundle code split (ROI: 45)
-   - Type: performance
-   - Scope: webchat
-   - Effort: 8 hours
+   - 类型: performance
+   - 范围: webchat
+   - 工作量: 8 小时
    
 4. **#88** — refactor(messaging): extract BaseAdapter (ROI: 28)
-   - Type: refactor
-   - Scope: messaging/adapters
-   - Effort: 4 hours
+   - 类型: refactor
+   - 范围: messaging/adapters
+   - 工作量: 4 小时
 
-## Cohesion Analysis
+## 连贯性分析
 
-- #88 and #78: Both messaging adapters, highly cohesive
-- #90: CLI work, independent but low effort
-- #89: Webchat performance, independent
+- #88 和 #78: 都是 messaging adapter，高度连贯
+- #90: CLI 工作，独立但工作量低
+- #89: Webchat 性能，独立
 
-**Risk**: Medium — mixing modules (messaging + CLI + webchat)
+**风险**: 中等 — 混合模块（messaging + CLI + webchat）
 
-## Implementation Order
+## 实施顺序
 
-1. #88 (refactor) — Foundation, other issues may depend on clean structure
-2. #78 (bug fix) — Depends on #88 refactoring
-3. #90 (feature) — Independent, can be done anytime
-4. #89 (performance) — Independent, can be done anytime
+1. #88 (refactor) — 基础重构，其他 issue 可能依赖清晰结构
+2. #78 (bug fix) — 依赖 #88 的重构
+3. #90 (feature) — 独立，随时可做
+4. #89 (performance) — 独立，随时可做
 
-## Branch Strategy
+## 分支策略
 
-- Branch: `batch/messaging-cli-webchat-fixes-issues-90-78-89-88`
-- Base: `main`
-- All fixes in one branch
-- One commit per issue
+- 分支: `batch/messaging-cli-webchat-fixes-issues-90-78-89-88`
+- 基准: `main`
+- 所有修复在同一分支
+- 每个 issue 一个 commit
 
-## Testing Strategy
+## 测试策略
 
-- Unit tests for each fix
-- Integration tests for messaging changes
-- Manual testing for CLI and webchat
-- Coverage target: ≥80%
+- 每个修复的单元测试
+- messaging 变更的集成测试
+- CLI 和 webchat 的手动测试
+- 覆盖率目标: ≥80%
 
-## Timeline
+## 时间线
 
-- Total effort: 22 hours (~3 days)
-- Implementation: 18 hours
-- Testing: 4 hours
+- 总工作量: 22 小时（约 3 天）
+- 实施: 18 小时
+- 测试: 4 小时
 ```
 
-## Phase 4: Implementation & Delivery
+## Phase 4: 实施与交付
 
-**📚 Detailed implementation guide**: See `references/implementation-guide.md` for complete Phase 4 details including:
-- Step-by-step repository preparation
-- Branch creation and naming conventions
-- Sequential issue implementation workflow
-- Conventional commit message templates
-- Integration testing procedures
-- PR creation with complete template
+**📚 详细实施指南**：完整 Phase 4 细节见 `references/implementation-guide.md`，包括：
+- 逐步的仓库准备工作
+- 分支创建和命名约定
+- 按序实施 issue 的工作流
+- Conventional commit 消息模板
+- 集成测试流程
+- 附带完整模板的 PR 创建
 
-**Quick overview**:
+**快速概览**：
 
-1. **Prepare repository** — Fetch latest main, ensure clean state
-2. **Create batch branch** — `batch/<theme>-issues-<numbers>`
-3. **Implement issues sequentially** — One commit per issue, following HotPlex standards
-4. **Final integration testing** — Full test suite, linter, build verification
-5. **Push and create PR** — ONE consolidated PR with complete description
+1. **准备仓库** — 拉取最新 main，确保干净状态
+2. **创建批量分支** — `batch/<theme>-issues-<numbers>`
+3. **按序实施 issue** — 每个 issue 一个 commit，遵循 HotPlex 标准
+4. **最终集成测试** — 完整测试套件、linter、构建验证
+5. **推送并创建 PR** — 一个附带完整描述的合并 PR
 
-**Key implementation standards**:
-- **Go 1.26+** with latest language features
-- **golangci-lint** — run frequently, fix immediately
-- **Test FIRST** — write tests before implementation (TDD)
-- **≥80% coverage** — higher for security/critical paths
-- **Conventional commits** — type(scope): description format
-- **Atomic commits** — each commit independently valid
+**关键实施标准**：
+- **Go 1.26+** 使用最新语言特性
+- **golangci-lint** — 频繁运行，立即修复
+- **测试优先** — 实施前编写测试（TDD）
+- **≥80% 覆盖率** — 安全/关键路径更高
+- **Conventional commits** — type(scope): description 格式
+- **原子提交** — 每个 commit 独立有效
 
-## Best Practices
+## 最佳实践
 
-### Cohesion over Quantity
+### 连贯性优于数量
 
-Better to ship 3 cohesive issues than 5 unrelated ones. Cohesive batches tell a clear story and are easier to review.
+干净交付 3 个连贯的 issue 胜过混乱交付 5 个不相关的。连贯的批量讲述清晰的故事，更容易审查。
 
-### Test FIRST
+### 测试优先
 
-Write tests before implementation. Tests serve as executable specs and prevent regressions.
+实施前编写测试。测试作为可执行规范并防止回归。
 
-### One Commit Per Issue
+### 每个 issue 一个 Commit
 
-Each commit should be atomic and independently valid. This enables:
-- Easy git bisect for debugging
-- Selective revert if needed
-- Clear git history
+每个 commit 应该是原子的、独立有效的。这支持：
+- 方便 git bisect 调试
+- 需要时可选择性回滚
+- 清晰的 git 历史
 
-### Run Full Test Suite
+### 运行完整测试套件
 
-Don't rely on unit tests alone. Run integration tests after all issues implemented to catch interaction bugs.
+不要只依赖单元测试。所有 issue 实施完毕后运行集成测试，捕获交互 bug。
 
-### Document Changes Clearly
+### 清晰记录变更
 
-PR description should separate changes by issue with Problem/Solution/Impact structure. This helps reviewers understand what changed and why.
+PR 描述应按 issue 分别记录变更，包含 Problem/Solution/Impact 结构。帮助审查者理解改了什么和为什么改。
 
-## Output Artifacts
+## 输出产物
 
-Batch issue management produces these artifacts:
+批量 issue 管理产生以下产物：
 
-1. `/tmp/hotplex_issues.json` — Raw issue data
-2. `/tmp/issue_analysis.md` — Detailed analysis per issue
-3. `/tmp/issue_ranking.md` — Prioritized list with ROI scores
-4. `/tmp/implementation_plan.md` — Batch implementation plan
-5. `/tmp/pr_tracking.md` — Single PR status tracker
-6. **ONE merged PR** — Final deliverable containing all issue fixes
+1. `/tmp/hotplex_issues.json` — 原始 issue 数据
+2. `/tmp/issue_analysis.md` — 每个 issue 的详细分析
+3. `/tmp/issue_ranking.md` — 附 ROI 分数的排序列表
+4. `/tmp/implementation_plan.md` — 批量实施计划
+5. `/tmp/pr_tracking.md` — 单个 PR 状态追踪器
+6. **一个合并 PR** — 包含所有 issue 修复的最终交付物
 
-## Example Session
+## 示例会话
 
-**📚 Complete walkthrough**: See `references/example-session.md` for a full example session showing:
-- Real issue analysis and ROI calculation
-- Cohesive batch selection (4 issues, ROI 278)
-- Sequential implementation with commit messages
-- Complete PR description template
-- Final results and time savings (30% faster than traditional workflow)
+**📚 完整演练**：完整示例会话见 `references/example-session.md`，展示：
+- 真实 issue 分析和 ROI 计算
+- 连贯批量选择（4 个 issue，ROI 278）
+- 附 commit 消息的按序实施
+- 完整 PR 描述模板
+- 最终结果和时间节省（比传统工作流快 30%）
 
-**Quick preview**:
+**快速预览**：
 ```
-User: "分析 HotPlex issues 并交付最高优先级的修复"
+用户: "分析 HotPlex issues 并交付最高优先级的修复"
 
-1. Fetch 20 open issues
-2. Analyze, categorize, score ROI
-3. Select top 4: #90 (CLI update), #78 (messaging errors), 
+1. 获取 20 个 open issues
+2. 分析、分类、计算 ROI
+3. 选择 top 4: #90 (CLI update), #78 (messaging errors), 
    #89 (webchat perf), #88 (adapter refactor)
-4. Verify cohesion: 3 messaging issues + 1 CLI issue = acceptable
-5. Create branch: batch/messaging-cli-fixes-issues-90-78-89-88
-6. Implement #88 → commit (refactor first)
-7. Implement #78 → commit (fix depends on refactor)
-8. Implement #90 → commit (independent feature)
-9. Implement #89 → commit (independent perf)
-10. Run all tests → verify integration
-11. Push branch
-12. Create ONE PR closing all 4 issues
-13. CI passes, review, merge ✅
-Result: One merge, 4 issues resolved, 30% time savings
+4. 验证连贯性: 3 个 messaging issue + 1 个 CLI issue = 可接受
+5. 创建分支: batch/messaging-cli-fixes-issues-90-78-89-88
+6. 实施 #88 → commit (先重构)
+7. 实施 #78 → commit (修复依赖重构)
+8. 实施 #90 → commit (独立功能)
+9. 实施 #89 → commit (独立性能优化)
+10. 运行所有测试 → 验证集成
+11. 推送分支
+12. 创建一个关闭 4 个 issue 的 PR
+13. CI 通过、审查、合并 ✅
+结果: 一次合并，解决 4 个 issue，节省 30% 时间
 ```
 
-## Troubleshooting
+## 故障排除
 
-**📚 Complete troubleshooting guide**: See `references/troubleshooting.md` for detailed solutions to common problems:
+**📚 完整故障排除指南**：详细解决方案见 `references/troubleshooting.md`：
 
-1. **Can't implement issue A because it depends on issue B**
-   - Check dependencies before selecting
-   - Implement dependencies first in batch
-   - Or defer to next batch
+1. **无法实施 issue A 因为它依赖 issue B**
+   - 选择前检查依赖
+   - 在批量中优先实施依赖项
+   - 或推迟到下一批
 
-2. **Test failures after implementing all issues**
-   - Run tests after each commit, not just at end
-   - Use git bisect to find problematic commit
-   - Fix that commit specifically
+2. **实施所有 issue 后测试失败**
+   - 每次 commit 后运行测试，而非只在最后
+   - 使用 git bisect 查找问题 commit
+   - 专门修复那个 commit
 
-3. **CI fails for batch PR**
-   - Check GitHub Actions logs
-   - Ensure Go version matches (1.26)
-   - If one issue causes failure, remove from batch
+3. **批量 PR 的 CI 失败**
+   - 检查 GitHub Actions 日志
+   - 确保 Go 版本匹配（1.26）
+   - 如果某个 issue 导致失败，从批量中移除
 
-4. **Review feedback asks to split PR**
-   - Explain benefits of batch PR
-   - If reviewer insists, split into logical batches
-   - But prefer keeping batch if issues are cohesive
+4. **审查反馈要求拆分 PR**
+   - 解释批量 PR 的好处
+   - 如果审查者坚持，按逻辑主题拆分
+   - 但如果 issue 连贯，优先保持批量
 
-5. **Batch becomes too large (>5 issues or >3 days)**
-   - Split into multiple batches by theme
-   - Example: "messaging fixes batch 1", "messaging fixes batch 2"
+5. **批量变得太大（>5 个 issue 或 >3 天）**
+   - 按主题拆分为多个批次
+   - 例如："messaging 修复批次 1"、"messaging 修复批次 2"
 
-## Key Insight
+## 核心洞察
 
-**Traditional workflow**: One issue → One branch → One PR → One merge
-**This skill**: Multiple issues → One branch → One PR → One merge
+**传统工作流**：一个 issue → 一个分支 → 一个 PR → 一次合并
+**此 skill**：多个 issue → 一个分支 → 一个 PR → 一次合并
 
-**Why this pattern works**:
-- ✅ **Reduced merge conflicts** — One conflict resolution instead of many
-- ✅ **Faster review** — One holistic review vs many fragmented ones
-- ✅ **Comprehensive testing** — Integration tested together, catches interaction bugs
-- ✅ **Single deployment** — Coordinated release, easier to rollback if needed
-- ✅ **Clean history** — Logical grouping tells a coherent story
+**为什么这个模式有效**：
+- ✅ **减少合并冲突** — 一次冲突解决代替多次
+- ✅ **更快审查** — 一次全局审查 vs 多次碎片化审查
+- ✅ **全面测试** — 一起做集成测试，捕获交互 bug
+- ✅ **单次部署** — 协调发布，需要时更容易回滚
+- ✅ **清洁历史** — 逻辑分组讲述连贯的故事
 
-**When to use this skill**:
-- You have 2-5 related issues that can be implemented together in 1-3 days
-- Issues touch similar code areas (same module, layer, or domain)
-- You want to reduce merge conflicts and review overhead
-- You need to prioritize issues by ROI and focus on high-impact work
+**何时使用此 skill**：
+- 有 2-5 个相关 issue 可以在 1-3 天内一起实施
+- Issue 触及相似的代码区域（同一模块、层级或领域）
+- 想减少合并冲突和审查开销
+- 需要按 ROI 排列 issue 优先级并聚焦高影响工作
 
-**When NOT to use this skill**:
-- Issues are completely unrelated (different modules, no thematic connection)
-- Total effort would exceed 3 days
-- Issues have complex, hard-to-resolve dependencies
-- You need immediate hotfix for a single critical issue
+**何时不用此 skill**：
+- Issue 完全不相关（不同模块、无主题关联）
+- 总工作量超过 3 天
+- Issue 有复杂的、难以解决的依赖
+- 需要立即对单个关键问题做 hotfix
 
-**Remember**: This skill is a tool, not a mandate. Use it when it makes sense for your situation.
+**记住**：此 skill 是工具，不是强制要求。在适合你的情况时使用它。
