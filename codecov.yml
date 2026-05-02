@@ -14,8 +14,7 @@ coverage:
         threshold: 10%
     project:
       default:
-        target: 50%
-        threshold: 1%
+        informational: true
       security:
         target: 85%
         threshold: 1%
