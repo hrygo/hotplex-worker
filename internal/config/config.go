@@ -573,7 +573,15 @@ func Load(filePath string, opts LoadOptions) (*Config, error) {
 	_ = v.BindEnv("agent_config.config_dir")
 	_ = v.BindEnv("skills.cache_ttl")
 	_ = v.BindEnv("messaging.slack.work_dir")
+	_ = v.BindEnv("messaging.slack.stt_provider")
+	_ = v.BindEnv("messaging.slack.stt_local_cmd")
+	_ = v.BindEnv("messaging.slack.stt_local_mode")
+	_ = v.BindEnv("messaging.slack.stt_local_idle_ttl")
 	_ = v.BindEnv("messaging.feishu.work_dir")
+	_ = v.BindEnv("messaging.feishu.stt_provider")
+	_ = v.BindEnv("messaging.feishu.stt_local_cmd")
+	_ = v.BindEnv("messaging.feishu.stt_local_mode")
+	_ = v.BindEnv("messaging.feishu.stt_local_idle_ttl")
 
 	if err := v.Unmarshal(cfg); err != nil {
 		return nil, fmt.Errorf("config: environment override: %w", err)
