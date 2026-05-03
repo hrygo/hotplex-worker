@@ -283,8 +283,9 @@ All interactive requests auto-deny after 5 minutes of inactivity.
   "oauth_config": {
     "scopes": {
       "bot": [
-        "assistant:write",
+        "search:read.files",
         "app_mentions:read",
+        "assistant:write",
         "bookmarks:read",
         "bookmarks:write",
         "canvases:read",
@@ -319,9 +320,13 @@ All interactive requests auto-deny after 5 minutes of inactivity.
         "remote_files:write",
         "team:read",
         "usergroups:read",
-        "users:read"
+        "users:read",
+        "search:read.im",
+        "search:read.users",
+        "search:read.public"
       ]
-    }
+    },
+    "pkce_enabled": false
   },
   "settings": {
     "event_subscriptions": {
@@ -394,6 +399,10 @@ All interactive requests auto-deny after 5 minutes of inactivity.
 
 | Scope | Purpose | Necessity |
 |-------|---------|-----------|
+| `search:read.files` | Search files | Recommended |
+| `search:read.im` | Search DM messages | Recommended |
+| `search:read.users` | Search users | Recommended |
+| `search:read.public` | Search public channel messages | Recommended |
 | `pins:read` / `pins:write` | Pin messages | Optional |
 | `bookmarks:read` / `bookmarks:write` | Channel bookmarks | Optional |
 | `links:read` / `links:write` | Link unfurling | Optional |

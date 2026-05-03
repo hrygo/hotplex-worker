@@ -22,6 +22,7 @@ import (
 	"github.com/hrygo/hotplex/internal/config"
 	"github.com/hrygo/hotplex/internal/eventstore"
 	"github.com/hrygo/hotplex/internal/gateway"
+	"github.com/hrygo/hotplex/internal/messaging"
 	"github.com/hrygo/hotplex/internal/security"
 	"github.com/hrygo/hotplex/internal/session"
 	"github.com/hrygo/hotplex/internal/skills"
@@ -58,7 +59,7 @@ func configFlag(cmd *cobra.Command, target *string) {
 func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err error) {
 	defer func() {
 		if err != nil {
-			removeGatewayPID()
+			removeGatewayState()
 		}
 	}()
 
@@ -76,94 +77,26 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 		fmt.Fprintf(os.Stderr, "warning: assets: script extraction failed: %s\n", err)
 	}
 
-	cfgStore := config.NewConfigStore(cfg, slog.Default())
-
-	var logHandler slog.Handler
-	levelVar := &slog.LevelVar{}
-	if err := levelVar.UnmarshalText([]byte(cfg.Log.Level)); err != nil {
-		levelVar.Set(slog.LevelInfo)
-	}
-
-	opts := &slog.HandlerOptions{
-		Level: levelVar,
-		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
-			if len(groups) == 0 && a.Key == slog.TimeKey {
-				return slog.String(slog.TimeKey, a.Value.Time().Format("2006-01-02T15:04:05.0000"))
-			}
-			return a
-		},
-	}
-	if cfg.Log.Format == "text" {
-		logHandler = slog.NewTextHandler(os.Stderr, opts)
-	} else {
-		logHandler = slog.NewJSONHandler(os.Stderr, opts)
-	}
-
-	log := slog.New(logHandler).With(
-		"service", "hotplex-gateway",
-		"version", versionString(),
-	)
-	slog.SetDefault(log)
-
-	pidDir := cfg.Worker.PIDDir
-	pidTracker := proc.InitTracker(pidDir, log)
-	var cleanupWG sync.WaitGroup
-	if err := pidTracker.EnsureDir(); err != nil {
-		log.Warn("gateway: pid dir setup failed, orphan cleanup disabled", "dir", pidDir, "err", err)
-	} else {
-		cleanupWG.Add(1)
-		go func() {
-			defer cleanupWG.Done()
-			cleanupCtx, cleanupCancel := context.WithTimeout(ctx, 2*time.Minute)
-			defer cleanupCancel()
-			results := pidTracker.CleanupOrphans(cleanupCtx, 3, 5*time.Second)
-			killed := 0
-			for _, r := range results {
-				if r.Err != nil {
-					log.Warn("gateway: orphan cleanup error", "key", r.Key, "pgid", r.PGID, "err", r.Err)
-				} else if r.Killed {
-					log.Info("gateway: killed orphan process", "key", r.Key, "pgid", r.PGID)
-					killed++
-				}
-			}
-			if len(results) > 0 {
-				log.Info("gateway: orphan cleanup complete", "scanned", len(results), "killed", killed)
-			}
-		}()
-	}
+	log, cfgStore, levelVar := initLogging(cfg)
+	pidTracker, cleanupWG := initOrphanCleanup(ctx, cfg, log)
 
 	tracing.Init(ctx, log, "hotplex-gateway")
-
 	log.Info("gateway: starting",
 		"go", runtime.Version(),
 		"addr", cfg.Gateway.Addr,
 		"config", configPath,
 	)
 
-	store, err := session.NewSQLiteStore(ctx, cfg)
+	stores, err := initStores(ctx, cfg, log)
 	if err != nil {
 		return err
 	}
+	defer stores.close(log)
 
-	convStore, err := session.NewSQLiteConversationStore(ctx, cfg)
-	if err != nil {
-		_ = store.Close()
-		return fmt.Errorf("gateway: init conversation store: %w", err)
-	}
-
-	eventStore, err := eventstore.NewSQLiteStore(ctx, cfg.DB.EventsPath, &cfg.DB)
-	if err != nil {
-		_ = store.Close()
-		_ = convStore.Close()
-		return fmt.Errorf("gateway: init event store: %w", err)
-	}
-	eventCollector := eventstore.NewCollector(eventStore, log)
-
-	sm, err := session.NewManager(ctx, log, cfg, cfgStore, store)
+	sm, err := session.NewManager(ctx, log, cfg, cfgStore, stores.session)
 	if err != nil {
 		return err
 	}
-
 	sm.OnTerminate = func(sessionID string) {
 		log.Info("gateway: session terminated", "session_id", sessionID)
 	}
@@ -171,10 +104,6 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 	// Wait for orphan process cleanup to finish before repairing sessions.
 	cleanupWG.Wait()
 
-	// Repair sessions orphaned by previous gateway crash/restart.
-	// Sessions stuck in RUNNING state have no live worker — their processes
-	// were killed by CleanupOrphans above. Transition them to TERMINATED so
-	// clients get a clean reconnect instead of crash-looping on resume.
 	repaired, repairErr := sm.RepairRunningSessions(ctx)
 	if repairErr != nil {
 		log.Warn("gateway: session state repair failed", "err", repairErr)
@@ -183,7 +112,6 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 	}
 
 	hub := gateway.NewHub(log, cfgStore)
-
 	hub.LogHandler = func(level, msg, sessionID string) {
 		admin.AddLog(level, msg, sessionID)
 	}
@@ -207,6 +135,7 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 		configWatcher.SetInitial(cfg)
 	}
 
+	// Config hot-reload callbacks
 	cfgStore.RegisterFunc(func(prev, next *config.Config) {
 		if prev.Log.Level != next.Log.Level {
 			var newLevel slog.Level
@@ -216,13 +145,11 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 			}
 		}
 	})
-
 	cfgStore.RegisterFunc(func(prev, next *config.Config) {
 		if prev.Pool.MaxSize != next.Pool.MaxSize || prev.Pool.MaxIdlePerUser != next.Pool.MaxIdlePerUser {
 			sm.Pool().UpdateLimits(next.Pool.MaxSize, next.Pool.MaxIdlePerUser)
 		}
 	})
-
 	cfgStore.RegisterFunc(func(prev, next *config.Config) {
 		if prev.Session.GCScanInterval != next.Session.GCScanInterval {
 			sm.ResetGCInterval(next.Session.GCScanInterval)
@@ -241,7 +168,6 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 	if len(cfg.Security.JWTSecret) > 0 {
 		jwtValidator = security.NewJWTValidator(cfg.Security.JWTSecret, cfg.Security.JWTAudience)
 	}
-
 	auth := security.NewAuthenticator(&cfg.Security, jwtValidator)
 
 	retryCtrl := gateway.NewLLMRetryController(cfg.Worker.AutoRetry, log)
@@ -256,7 +182,7 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 		Log:                log,
 		Hub:                hub,
 		SM:                 sm,
-		ConvStore:          convStore,
+		ConvStore:          stores.conversation,
 		RetryCtrl:          retryCtrl,
 		AgentConfigDir:     agentConfigDir,
 		TurnTimeout:        cfg.Worker.TurnTimeout,
@@ -270,7 +196,7 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 		SM:            sm,
 		JWTValidator:  jwtValidator,
 		Bridge:        bridge,
-		ConvStore:     convStore,
+		ConvStore:     stores.conversation,
 		SkillsLocator: skills.NewLocator(log, cfg.Skills.CacheTTL),
 	})
 
@@ -278,10 +204,7 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 		log.Info("gateway: LLM auto-retry enabled", "max_retries", cfg.Worker.AutoRetry.MaxRetries, "base_delay", cfg.Worker.AutoRetry.BaseDelay)
 	}
 
-	// Initialize OpenCode Server singleton process manager.
 	opencodeserver.InitSingleton(log, cfg.Worker.OpenCodeServer)
-
-	// Initialize Claude Code worker with configured command.
 	claudecode.InitConfig(cfg.Worker.ClaudeCode)
 
 	cfgStore.RegisterFunc(func(prev, next *config.Config) {
@@ -289,40 +212,38 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 			retryCtrl.UpdateConfig(next.Worker.AutoRetry)
 		}
 	})
-
 	cfgStore.RegisterFunc(func(prev, next *config.Config) {
 		if !reflect.DeepEqual(prev.Security.APIKeys, next.Security.APIKeys) {
 			auth.ReloadKeys(&next.Security)
 		}
 	})
-
 	cfgStore.RegisterFunc(func(prev, next *config.Config) {
 		if prev.Worker.ClaudeCode.Command != next.Worker.ClaudeCode.Command {
 			claudecode.InitConfig(next.Worker.ClaudeCode)
 		}
 	})
 
+	// Assemble deps and start HTTP + messaging
 	mux := http.NewServeMux()
 	deps := &GatewayDeps{
-		Log:           log,
-		Config:        cfg,
-		ConfigStore:   cfgStore,
-		Hub:           hub,
-		SessionMgr:    sm,
-		ConvStore:     convStore,
-		EventStore:    eventStore,
-		Auth:          auth,
-		Handler:       handler,
-		Bridge:        bridge,
-		ConfigWatcher: configWatcher,
+		Log:            log,
+		Config:         cfg,
+		ConfigStore:    cfgStore,
+		Hub:            hub,
+		SessionMgr:     sm,
+		ConvStore:      stores.conversation,
+		EventStore:     stores.event,
+		EventCollector: stores.collector,
+		Auth:           auth,
+		Handler:        handler,
+		Bridge:         bridge,
+		ConfigWatcher:  configWatcher,
 	}
 
 	msgAdapters, adapterStatuses := startMessagingAdapters(ctx, deps)
-
 	setupRoutes(mux, deps)
 
-	// Wrap mux with webchat SPA fallback: API/WS routes are handled by the
-	// mux first; unmatched paths fall through to the embedded webchat handler.
+	// Webchat SPA fallback
 	var rootHandler http.Handler = mux
 	if cfg.WebChat.Enabled {
 		spa := webchat.Handler()
@@ -376,7 +297,7 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 		RetryDelay:      cfg.Worker.AutoRetry.BaseDelay.String(),
 	}, configPath)
 
-	// Wait for either signal or server error
+	// Wait for shutdown signal
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 
@@ -388,14 +309,148 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 			log.Error("gateway: server failed, exiting", "err", err)
 			return err
 		}
-		// Server closed cleanly (should not happen here)
 		return nil
 	case <-stopCh:
 		log.Info("gateway: shutdown", "signal", "stopCh")
 	}
 
 	cancel()
+	shutdownGateway(ctx, log, deps, msgAdapters, server, jwtValidator, pidTracker, cleanupWG)
+	return nil
+}
 
+// --- Decomposed helpers ---
+
+func initLogging(cfg *config.Config) (*slog.Logger, *config.ConfigStore, *slog.LevelVar) {
+	cfgStore := config.NewConfigStore(cfg, slog.Default())
+
+	levelVar := &slog.LevelVar{}
+	if err := levelVar.UnmarshalText([]byte(cfg.Log.Level)); err != nil {
+		levelVar.Set(slog.LevelInfo)
+	}
+
+	opts := &slog.HandlerOptions{
+		Level: levelVar,
+		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+			if len(groups) == 0 && a.Key == slog.TimeKey {
+				return slog.String(slog.TimeKey, a.Value.Time().Format("2006-01-02T15:04:05.0000"))
+			}
+			return a
+		},
+	}
+
+	var logHandler slog.Handler
+	if cfg.Log.Format == "text" {
+		logHandler = slog.NewTextHandler(os.Stderr, opts)
+	} else {
+		logHandler = slog.NewJSONHandler(os.Stderr, opts)
+	}
+
+	log := slog.New(logHandler).With(
+		"service", "hotplex-gateway",
+		"version", versionString(),
+	)
+	slog.SetDefault(log)
+
+	return log, cfgStore, levelVar
+}
+
+func initOrphanCleanup(ctx context.Context, cfg *config.Config, log *slog.Logger) (*proc.Tracker, *sync.WaitGroup) {
+	pidTracker := proc.InitTracker(cfg.Worker.PIDDir, log)
+	var cleanupWG sync.WaitGroup
+	if err := pidTracker.EnsureDir(); err != nil {
+		log.Warn("gateway: pid dir setup failed, orphan cleanup disabled", "dir", cfg.Worker.PIDDir, "err", err)
+	} else {
+		cleanupWG.Add(1)
+		go func() {
+			defer cleanupWG.Done()
+			cleanupCtx, cleanupCancel := context.WithTimeout(ctx, 2*time.Minute)
+			defer cleanupCancel()
+			results := pidTracker.CleanupOrphans(cleanupCtx, 3, 5*time.Second)
+			killed := 0
+			for _, r := range results {
+				if r.Err != nil {
+					log.Warn("gateway: orphan cleanup error", "key", r.Key, "pgid", r.PGID, "err", r.Err)
+				} else if r.Killed {
+					log.Info("gateway: killed orphan process", "key", r.Key, "pgid", r.PGID)
+					killed++
+				}
+			}
+			if len(results) > 0 {
+				log.Info("gateway: orphan cleanup complete", "scanned", len(results), "killed", killed)
+			}
+		}()
+	}
+	return pidTracker, &cleanupWG
+}
+
+type gatewayStores struct {
+	session      *session.SQLiteStore
+	conversation session.ConversationStore
+	event        *eventstore.SQLiteStore
+	collector    *eventstore.Collector
+}
+
+func initStores(ctx context.Context, cfg *config.Config, log *slog.Logger) (*gatewayStores, error) {
+	sessionStore, err := session.NewSQLiteStore(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	convStore, err := session.NewSQLiteConversationStore(ctx, cfg)
+	if err != nil {
+		_ = sessionStore.Close()
+		return nil, fmt.Errorf("gateway: init conversation store: %w", err)
+	}
+
+	eventStore, err := eventstore.NewSQLiteStore(ctx, cfg.DB.EventsPath, &cfg.DB)
+	if err != nil {
+		_ = sessionStore.Close()
+		_ = convStore.Close()
+		return nil, fmt.Errorf("gateway: init event store: %w", err)
+	}
+
+	return &gatewayStores{
+		session:      sessionStore,
+		conversation: convStore,
+		event:        eventStore,
+		collector:    eventstore.NewCollector(eventStore, log),
+	}, nil
+}
+
+func (s *gatewayStores) close(log *slog.Logger) {
+	if s.collector != nil {
+		if err := s.collector.Close(); err != nil {
+			log.Warn("gateway: event collector close", "err", err)
+		}
+	}
+	if s.event != nil {
+		if err := s.event.Close(); err != nil {
+			log.Warn("gateway: event store close", "err", err)
+		}
+	}
+	if s.conversation != nil {
+		if err := s.conversation.Close(); err != nil {
+			log.Warn("gateway: conversation store close", "err", err)
+		}
+	}
+	if s.session != nil {
+		if err := s.session.Close(); err != nil {
+			log.Warn("gateway: session store close", "err", err)
+		}
+	}
+}
+
+func shutdownGateway(
+	_ context.Context,
+	log *slog.Logger,
+	deps *GatewayDeps,
+	msgAdapters []messaging.PlatformAdapterInterface,
+	server *http.Server,
+	jwtValidator *security.JWTValidator,
+	pidTracker *proc.Tracker,
+	cleanupWG *sync.WaitGroup,
+) {
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer func() {
 		if err := tracing.Shutdown(shutdownCtx); err != nil {
@@ -404,12 +459,12 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 		shutdownCancel()
 	}()
 
-	if err := hub.Shutdown(shutdownCtx); err != nil {
+	if err := deps.Hub.Shutdown(shutdownCtx); err != nil {
 		log.Warn("gateway: hub shutdown", "err", err)
 	}
 
-	if configWatcher != nil {
-		_ = configWatcher.Close()
+	if deps.ConfigWatcher != nil {
+		_ = deps.ConfigWatcher.Close()
 	}
 
 	for _, adapter := range msgAdapters {
@@ -421,12 +476,11 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 	closeSTTCache(shutdownCtx, log)
 
 	// Terminate all workers BEFORE bridge.Shutdown() so forwardEvents
-	// goroutines (blocked on worker stdout) can exit. Without this,
-	// bridge.Shutdown() waits 30s for fwdWg while nobody kills workers.
-	sm.TerminateAllWorkers()
+	// goroutines (blocked on worker stdout) can exit.
+	deps.SessionMgr.TerminateAllWorkers()
 	opencodeserver.ShutdownSingleton(shutdownCtx)
 
-	bridge.Shutdown(shutdownCtx)
+	deps.Bridge.Shutdown(shutdownCtx)
 
 	if jwtValidator != nil {
 		jwtValidator.Stop()
@@ -435,18 +489,8 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 	cleanupWG.Wait()
 	pidTracker.RemoveAll()
 
-	if err := sm.Close(); err != nil {
+	if err := deps.SessionMgr.Close(); err != nil {
 		log.Warn("gateway: session manager close", "err", err)
-	}
-
-	if err := eventCollector.Close(); err != nil {
-		log.Warn("gateway: event collector close", "err", err)
-	}
-	if err := eventStore.Close(); err != nil {
-		log.Warn("gateway: event store close", "err", err)
-	}
-	if err := convStore.Close(); err != nil {
-		log.Warn("gateway: conversation store close", "err", err)
 	}
 
 	if err := server.Shutdown(shutdownCtx); err != nil {
@@ -454,8 +498,9 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 	}
 
 	log.Info("gateway: stopped")
-	return nil
 }
+
+// --- Config helpers ---
 
 func loadConfig(configPath string, devMode bool) (*config.Config, error) {
 	absPath, err := config.ExpandAndAbs(configPath)
@@ -474,7 +519,6 @@ func loadConfig(configPath string, devMode bool) (*config.Config, error) {
 		cfg.Admin.Tokens = nil
 	}
 
-	// Configure security policies from config file
 	security.ConfigureFromConfig(&cfg.Security)
 
 	return cfg, nil
@@ -510,8 +554,6 @@ func loadEnvFile(dir string) {
 	}
 }
 
-// warnDeprecatedSuffixFiles checks for old-style SOUL.<platform>.md files
-// that are no longer loaded by the 3-level directory fallback system.
 func warnDeprecatedSuffixFiles(dir string, log *slog.Logger) {
 	if dir == "" {
 		return

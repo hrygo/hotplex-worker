@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -10,7 +11,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/hrygo/hotplex/internal/config"
-	"github.com/hrygo/hotplex/internal/worker/proc"
 )
 
 func newGatewayCmd() *cobra.Command {
@@ -48,7 +48,7 @@ Use -d to run as a background daemon.`,
 			if daemon {
 				return startDaemon(configPath, devMode)
 			}
-			if err := writeGatewayPID(); err != nil {
+			if err := writeGatewayState(configPath, devMode); err != nil {
 				fmt.Fprintf(os.Stderr, "warning: could not write PID file: %s\n", err)
 			}
 			return runGateway(configPath, devMode, nil)
@@ -101,23 +101,24 @@ Use -d to restart as a background daemon.`,
 				}
 
 				if inst.Source == sourcePID {
-					removeGatewayPID()
-					deadline := time.Now().Add(5 * time.Second)
-					for time.Now().Before(deadline) {
-						if err := proc.IsProcessAlive(inst.PID); err != nil {
-							break
-						}
-						time.Sleep(100 * time.Millisecond)
-					}
+					waitForProcessExit(inst.PID, 5*time.Second)
 				} else {
 					time.Sleep(2 * time.Second)
+				}
+
+				// Use the running instance's config if user didn't specify one.
+				if configPath == defaultConfigPath && inst.ConfigPath != "" {
+					configPath = inst.ConfigPath
+				}
+				if !devMode && inst.DevMode {
+					devMode = true
 				}
 			}
 
 			if daemon {
 				return startDaemon(configPath, devMode)
 			}
-			if err := writeGatewayPID(); err != nil {
+			if err := writeGatewayState(configPath, devMode); err != nil {
 				fmt.Fprintf(os.Stderr, "warning: could not write PID file: %s\n", err)
 			}
 			return runGateway(configPath, devMode, nil)
@@ -158,25 +159,27 @@ func startDaemon(configPath string, devMode bool) error {
 	}
 	defer func() { _ = logFile.Close() }()
 
-	cmd := exec.Command(self, daemonArgs...)
-	cmd.Stdout = logFile
-	cmd.Stderr = logFile
-	cmd.Stdin = nil
-	cmd.SysProcAttr = daemonSysProcAttr()
+	daemonCmd := exec.Command(self, daemonArgs...)
+	daemonCmd.Stdout = logFile
+	daemonCmd.Stderr = logFile
+	daemonCmd.Stdin = nil
+	daemonCmd.SysProcAttr = daemonSysProcAttr()
 
-	if err := cmd.Start(); err != nil {
+	if err := daemonCmd.Start(); err != nil {
 		return fmt.Errorf("start daemon: %w", err)
 	}
 
-	// Write child PID
-	childPID := cmd.Process.Pid
+	// Write child state (PID + config path + dev mode)
+	childPID := daemonCmd.Process.Pid
 	pidPath := gatewayPIDPath()
 	if err := os.MkdirAll(filepath.Dir(pidPath), 0o755); err == nil {
-		_ = os.WriteFile(pidPath, []byte(fmt.Sprintf("%d", childPID)), 0o644)
+		state := gatewayState{PID: childPID, ConfigPath: configPath, DevMode: devMode}
+		data, _ := json.Marshal(state)
+		_ = os.WriteFile(pidPath, data, 0o644)
 	}
 
 	// Release the child so it survives parent exit
-	_ = cmd.Process.Release()
+	_ = daemonCmd.Process.Release()
 
 	fmt.Fprintf(os.Stderr, "gateway: started as daemon (PID %d, log: %s)\n", childPID, logPath)
 	return nil

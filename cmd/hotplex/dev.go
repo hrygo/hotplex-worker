@@ -18,7 +18,7 @@ func newDevCmd() *cobra.Command {
 		Example: `  hotplex dev                        # Start in dev mode
   hotplex dev -c /path/to/config.yaml`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := writeGatewayPID(); err != nil {
+			if err := writeGatewayState(configPath, true); err != nil {
 				fmt.Fprintf(os.Stderr, "warning: could not write PID file: %s\n", err)
 			}
 			return runGateway(configPath, true, nil)

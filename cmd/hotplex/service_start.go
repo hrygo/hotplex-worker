@@ -8,7 +8,6 @@ import (
 
 	"github.com/hrygo/hotplex/internal/cli/output"
 	"github.com/hrygo/hotplex/internal/service"
-	"github.com/hrygo/hotplex/internal/worker/proc"
 )
 
 func newServiceActionCmd(use, short, verb string, action func(service.Manager, string, service.Level) error) *cobra.Command {
@@ -31,7 +30,6 @@ func newServiceActionCmd(use, short, verb string, action func(service.Manager, s
 			return nil
 		},
 	}
-
 	cmd.Flags().StringVar(&levelStr, "level", "user", "service level: user or system")
 
 	return cmd
@@ -58,16 +56,17 @@ func newServiceStopCmd() *cobra.Command {
 
 			mgr := service.NewManager()
 			if err := mgr.Stop("hotplex", level); err != nil {
-				// Fallback: try PID-based stop
-				if pid, pidErr := readGatewayPID(); pidErr == nil {
-					if termErr := proc.GracefulTerminate(pid); termErr != nil {
-						return fmt.Errorf("service stop failed: %w; PID stop also failed: %w", err, termErr)
-					}
-					removeGatewayPID()
-					fmt.Fprintf(os.Stderr, "  %s Stopped via PID %d (service stop unavailable)\n", output.StatusSymbol("pass"), pid)
-					return nil
+				// Fallback: try unified gateway discovery + stop
+				inst, findErr := findRunningGateway()
+				if findErr != nil {
+					return err
 				}
-				return err
+				if stopErr := stopGateway(inst); stopErr != nil {
+					return fmt.Errorf("service stop failed: %w; PID stop also failed: %w", err, stopErr)
+				}
+				fmt.Fprintf(os.Stderr, "  %s Stopped via %s (PID %d, service stop unavailable)\n",
+					output.StatusSymbol("pass"), inst.Source, inst.PID)
+				return nil
 			}
 
 			fmt.Fprintf(os.Stderr, "  %s Stopped service %s\n", output.StatusSymbol("pass"), output.Dim(fmt.Sprintf("(%s)", level)))

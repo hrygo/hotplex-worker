@@ -13,7 +13,6 @@ import (
 	"github.com/hrygo/hotplex/internal/cli/output"
 	"github.com/hrygo/hotplex/internal/service"
 	"github.com/hrygo/hotplex/internal/updater"
-	"github.com/hrygo/hotplex/internal/worker/proc"
 )
 
 func newUpdateCmd() *cobra.Command {
@@ -139,18 +138,14 @@ func restartAfterUpdate(inst *gatewayInstance) error {
 	}
 	fmt.Fprintf(os.Stderr, "  Stopped gateway (PID %d)\n", inst.PID)
 
-	// Wait for process to exit.
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		if inst.Source == sourcePID {
-			if err := proc.IsProcessAlive(inst.PID); err != nil {
-				break
-			}
-		}
-		time.Sleep(100 * time.Millisecond)
+	// Wait for process to exit (PID source only — service manager handles its own lifecycle).
+	if inst.Source == sourcePID {
+		waitForProcessExit(inst.PID, 5*time.Second)
+	} else {
+		time.Sleep(2 * time.Second)
 	}
 
-	// Restart using the appropriate mechanism.
+	// Restart using the appropriate mechanism, preserving original config.
 	switch inst.Source {
 	case sourceService:
 		mgr := service.NewManager()
@@ -159,7 +154,7 @@ func restartAfterUpdate(inst *gatewayInstance) error {
 		}
 		fmt.Fprintf(os.Stderr, "  %s Service restarted\n", output.StatusSymbol("pass"))
 	case sourcePID:
-		if err := startDaemon("", false); err != nil {
+		if err := startDaemon(inst.ConfigPath, inst.DevMode); err != nil {
 			return fmt.Errorf("start daemon: %w", err)
 		}
 		fmt.Fprintf(os.Stderr, "  %s Gateway restarted\n", output.StatusSymbol("pass"))
