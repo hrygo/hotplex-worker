@@ -51,7 +51,7 @@ Oracle 自动发现并挂载本机底层的 **Obsidian 专属技能引擎 (Skill
 - **文件系统**: `files:read`, `files:write`, `remote_files:read`, `remote_files:write`
 - **消息与会话**: `chat:write`, `chat:write.customize`, `chat:write.public`, `im:read`, `im:write`, `im:history`, `channels:read`, `channels:history`, `channels:manage`, `groups:read`, `groups:history`, `mpim:read`, `mpim:write`, `mpim:history`
 - **画布、书签与资源**: `canvases:read`, `canvases:write`, `bookmarks:read`, `bookmarks:write`, `links:read`, `links:write`, `pins:read`, `pins:write`
-- **互动、成员与命令**: `assistant:write`, `commands`, `app_mentions:read`, `reactions:read`, `reactions:write`, `dnd:read`, `emoji:read`, `metadata.message:read`, `team:read`, `usergroups:read`, `users:read`
+- **互动、成员与命令**: `assistant:write`, `commands`, `app_mentions:read`, `reactions:read`, `reactions:write`, `dnd:read`, `emoji:read`, `metadata.message:read`, `search:read.files`, `search:read.im`, `search:read.users`, `search:read.public`, `team:read`, `usergroups:read`, `users:read`
 
 ### 运行配置 (System Settings)
 - **Socket Mode**: `Enabled`
@@ -165,8 +165,9 @@ Oracle 自动发现并挂载本机底层的 **Obsidian 专属技能引擎 (Skill
   "oauth_config": {
     "scopes": {
       "bot": [
-        "assistant:write",
+        "search:read.files",
         "app_mentions:read",
+        "assistant:write",
         "bookmarks:read",
         "bookmarks:write",
         "canvases:read",
@@ -201,9 +202,13 @@ Oracle 自动发现并挂载本机底层的 **Obsidian 专属技能引擎 (Skill
         "remote_files:write",
         "team:read",
         "usergroups:read",
-        "users:read"
+        "users:read",
+        "search:read.im",
+        "search:read.users",
+        "search:read.public"
       ]
-    }
+    },
+    "pkce_enabled": false
   },
   "settings": {
     "event_subscriptions": {

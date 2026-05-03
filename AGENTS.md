@@ -400,10 +400,9 @@ hotplex slack update-message --channel <id> --ts <ts> --text "Updated"
 hotplex slack schedule-message --text "Reminder" --at "2026-05-04T09:00:00+08:00"
 hotplex slack download-file --file-id <id> --output ./save.pdf
 hotplex slack list-channels --types im,public_channel --json
-hotplex slack search --query "keyword" --type messages
-hotplex slack canvas create --title "Doc" --content "# Title\nContent"
-hotplex slack canvas edit --canvas-id <id> --content "New content"
 hotplex slack bookmark add --channel <id> --title "Link" --url <url>
+hotplex slack bookmark list --channel <id>
+hotplex slack bookmark remove --channel <id> --bookmark-id <id>
 hotplex slack react add --channel <id> --ts <ts> --emoji white_check_mark
 ```
 

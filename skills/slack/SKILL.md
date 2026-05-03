@@ -1,7 +1,7 @@
 ---
 name: slack
 description: Send messages, upload files, and interact with Slack via hotplex CLI
-version: 1.0.0
+version: 1.1.0
 ---
 
 # Slack Integration
@@ -12,9 +12,7 @@ Send messages, upload files, and interact with Slack workspaces via `hotplex sla
 
 - User says "send to Slack", "slack send", "发到 Slack"
 - Content generated and needs delivery (podcasts, reports, images, videos)
-- Need persistent Slack documents (Canvas)
 - Need to add bookmarks/links in a channel
-- Need to search Slack history
 
 ## Command Reference
 
@@ -26,11 +24,11 @@ Send messages, upload files, and interact with Slack workspaces via `hotplex sla
 | Schedule message | `hotplex slack schedule-message --text "reminder" --at "09:00"` |
 | Download file | `hotplex slack download-file --file-id <id> --output ./path` |
 | List channels | `hotplex slack list-channels --types im,public_channel` |
-| Search | `hotplex slack search --query "keyword" --type messages` |
-| Create Canvas | `hotplex slack canvas create --title "title" --content "# content"` |
-| Edit Canvas | `hotplex slack canvas edit --canvas-id <id> --content "new"` |
 | Add bookmark | `hotplex slack bookmark add --channel <id> --title "title" --url <url>` |
+| List bookmarks | `hotplex slack bookmark list --channel <id>` |
+| Remove bookmark | `hotplex slack bookmark remove --channel <id> --bookmark-id <id>` |
 | Add reaction | `hotplex slack react add --channel <id> --ts <ts> --emoji white_check_mark` |
+| Remove reaction | `hotplex slack react remove --channel <id> --ts <ts> --emoji white_check_mark` |
 
 ## Default Behavior
 
@@ -46,10 +44,9 @@ notebooklm download audio ./podcast.mp3 -n <notebook_id>
 hotplex slack upload-file --file ./podcast.mp3 --title "Podcast"
 ```
 
-### Report → Canvas + Bookmark
+### Report → Bookmark
 ```bash
-hotplex slack canvas create --title "Research Report" --file ./report.md --channel C0ABC
-hotplex slack bookmark add --channel C0ABC --title "Report" --url "https://hotplex.slack.com/docs/<canvas_id>"
+hotplex slack bookmark add --channel C0ABC --title "Report" --url "https://example.com/report"
 ```
 
 ### Task Complete → Visual Feedback

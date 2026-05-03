@@ -18,8 +18,6 @@ Uses the same configuration as the gateway (~/.hotplex/.env).`,
 		newSlackUploadFileCmd(),
 		newSlackDownloadFileCmd(),
 		newSlackListChannelsCmd(),
-		newSlackSearchCmd(),
-		newSlackCanvasCmd(),
 		newSlackBookmarkCmd(),
 		newSlackReactCmd(),
 	)

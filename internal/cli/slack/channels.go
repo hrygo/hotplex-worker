@@ -9,12 +9,13 @@ import (
 )
 
 type ChannelInfo struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	IsDM     bool   `json:"is_dm"`
-	IsGroup  bool   `json:"is_group"`
-	IsIM     bool   `json:"is_im"`
-	NumMembers int  `json:"num_members,omitempty"`
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	User       string `json:"user,omitempty"`
+	IsDM       bool   `json:"is_dm"`
+	IsGroup    bool   `json:"is_group"`
+	IsIM       bool   `json:"is_im"`
+	NumMembers int    `json:"num_members,omitempty"`
 }
 
 func ListChannels(ctx context.Context, client *slack.Client, types string, limit int) ([]ChannelInfo, error) {
@@ -39,6 +40,7 @@ func ListChannels(ctx context.Context, client *slack.Client, types string, limit
 			result = append(result, ChannelInfo{
 				ID:         ch.ID,
 				Name:       ch.Name,
+				User:       ch.User,
 				IsDM:       ch.IsIM,
 				IsGroup:    ch.IsGroup,
 				IsIM:       ch.IsIM,
