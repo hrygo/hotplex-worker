@@ -83,7 +83,7 @@ export function useSessions({
       }
 
       // 2. Try to restore from localStorage for persistence
-      const savedId = localStorage.getItem(STORAGE_KEY);
+      const savedId = localStorage.getItem(STORAGE_KEY)?.trim();
       if (savedId) {
         const found = filtered.find(s => s.id === savedId);
         if (found) {

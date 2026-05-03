@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -523,4 +525,49 @@ func TestControlHandler_SendElicitationResponse(t *testing.T) {
 	require.NoError(t, json.Unmarshal(buf.Bytes(), &resp))
 	require.Equal(t, "req_e1", resp.Response.RequestID)
 	require.Equal(t, "accept", resp.Response.Response["action"])
+}
+
+func TestSessionFileGlobs(t *testing.T) {
+	t.Parallel()
+
+	patterns := sessionFileGlobs("/home/user", "abc-123")
+	require.Len(t, patterns, 3)
+	require.Contains(t, patterns[0], "projects/*/abc-123.jsonl")
+	require.Contains(t, patterns[1], "projects/*/abc-123")
+	require.Contains(t, patterns[2], "session-env/abc-123")
+}
+
+func TestSessionFileGlobs_Matches(t *testing.T) {
+	t.Parallel()
+
+	t.Run("matches transcript file", func(t *testing.T) {
+		t.Parallel()
+
+		homeDir := t.TempDir()
+		projectDir := filepath.Join(homeDir, ".claude", "projects", "hash")
+		require.NoError(t, os.MkdirAll(projectDir, 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(projectDir, "test-uuid-1234.jsonl"), []byte("{}"), 0o644))
+
+		matches, _ := filepath.Glob(sessionFileGlobs(homeDir, "test-uuid-1234")[0])
+		require.Len(t, matches, 1)
+	})
+
+	t.Run("matches env file", func(t *testing.T) {
+		t.Parallel()
+
+		homeDir := t.TempDir()
+		envDir := filepath.Join(homeDir, ".claude", "session-env")
+		require.NoError(t, os.MkdirAll(envDir, 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(envDir, "test-uuid-1234"), []byte("env"), 0o644))
+
+		matches, _ := filepath.Glob(sessionFileGlobs(homeDir, "test-uuid-1234")[2])
+		require.Len(t, matches, 1)
+	})
+}
+
+func TestHasSessionFiles_NoFiles(t *testing.T) {
+	t.Parallel()
+
+	w := New()
+	require.False(t, w.HasSessionFiles("sess_test-uuid-1234"))
 }
