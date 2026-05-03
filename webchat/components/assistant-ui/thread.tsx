@@ -18,6 +18,7 @@ import { getToolCategory } from "@/lib/tool-categories";
 import { CommandMenu } from "./CommandMenu";
 import { CompactToolTab } from "./tools/CompactToolTab";
 import { ContextUsageCard } from "./ContextUsageCard";
+import { TurnSummaryCard } from "./TurnSummaryCard";
 import { ListTool } from "./tools/ListTool";
 import { TodoTool } from "./tools/TodoTool";
 import { AgentTool } from "./tools/AgentTool";
@@ -241,6 +242,9 @@ function AssistantMessage({ message }: { message: any }) {
           </MessagePrimitive.Parts>
           {(message as any)?.metadata?.contextUsage && (
             <ContextUsageCard data={(message as any).metadata.contextUsage} />
+          )}
+          {(message as any)?.metadata?.turnSummary && (
+            <TurnSummaryCard data={(message as any).metadata.turnSummary} />
           )}
         </div>
         <MessageActions message={message} />

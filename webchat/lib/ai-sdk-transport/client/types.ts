@@ -90,6 +90,28 @@ export interface DoneStats {
   cost_usd?: number;
   model?: string;
   context_used_percent?: number;
+  _session?: TurnSessionStats;
+}
+
+export interface TurnSessionStats {
+  turn_count: number;
+  tool_call_count: number;
+  duration: string;
+  duration_seconds: number;
+  total_input_tok: number;
+  total_output_tok: number;
+  context_fill: number;
+  context_window: number;
+  context_pct: number;
+  total_cost_usd: number;
+  model_name: string;
+  turn_duration_ms: number;
+  turn_input_tok: number;
+  turn_output_tok: number;
+  turn_cost_usd: number;
+  tool_names: Record<string, number> | null;
+  work_dir: string;
+  git_branch: string;
 }
 
 export interface MessageData {

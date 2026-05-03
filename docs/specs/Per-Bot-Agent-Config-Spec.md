@@ -359,7 +359,7 @@ Three `createAndLaunchWorker` call sites must pass botID:
 - Update `cmd/hotplex/onboard.go` `displayAgentConfigPanel()`: update guidance text
 - Update `.agent/skills/hotplex-setup/SKILL.md`: directory structure, bot subdirectories, env vars
 - Add deprecation warning in `cmd/hotplex/gateway_run.go`: one-time scan for `*.{platform}.md` suffix files at startup
-- Add `AgentConfigChecker` to `internal/cli/checkers/`: detect old suffix files, validate directory structure
+- Add `agentConfigSuffixChecker` to `internal/cli/checkers/`: detect old suffix files and suggest migration
 
 ### Phase 6: Documentation & Rules — Use Section 7 as Checklist
 - Update all files listed in Section 7 below
@@ -422,7 +422,7 @@ Three `createAndLaunchWorker` call sites must pass botID:
 | `internal/cli/onboard/wizard.go` | `stepAgentConfig()` 更新：说明目录结构（平台子目录、bot 子目录） |
 | `internal/cli/onboard/agentconfig_templates.go` | 保持不变（全局模板仍在根目录生成） |
 | `cmd/hotplex/onboard.go` | `displayAgentConfigPanel()` 更新说明文案，引导用户了解目录结构 |
-| `internal/cli/checkers/` **新增** | `AgentConfigChecker` — 检测旧 suffix 文件并提示迁移，验证目录结构合法性 |
+| `internal/cli/checkers/` **新增** | `agentConfigSuffixChecker` — 检测旧 suffix 文件并提示迁移 |
 
 ### 7.3 Skills Changes
 
@@ -438,7 +438,7 @@ Three `createAndLaunchWorker` call sites must pass botID:
 |------|--------|
 | `.agent/rules/agentconfig.md` | **核心更新**: 替换 suffix-append 文档为目录 fallback 文档，更新目录结构图、加载逻辑说明、大小限制 |
 | `.agent/rules/golang.md` | 更新 cross-reference |
-| `.agent/rules/cli.md` | 更新 checker 列表（新增 AgentConfigChecker） |
+| `.agent/rules/cli.md` | 更新 checker 列表（新增 agentConfigSuffixChecker） |
 | `.agent/rules/session.md` | 更新 session key 派生说明（+botID） |
 
 ### 7.5 Embedded Content Changes
@@ -498,7 +498,7 @@ vim ~/.hotplex/agent-configs/slack/U12345/SOUL.md
 ### Step 3: Verify with doctor
 
 ```bash
-hotplex doctor  # AgentConfigChecker detects old suffix files and suggests migration
+hotplex doctor  # agentConfigSuffixChecker detects old suffix files and suggests migration
 ```
 
 ### Session ID Impact

@@ -63,3 +63,62 @@ func TestAgentConfigSuffixChecker(t *testing.T) {
 		require.Equal(t, cli.StatusPass, d.Status)
 	})
 }
+
+func TestAgentConfigDirChecker(t *testing.T) {
+	t.Parallel()
+
+	t.Run("valid structure passes", func(t *testing.T) {
+		t.Parallel()
+		cfgDir := t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Join(cfgDir, "slack"), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(cfgDir, "slack", "SOUL.md"), []byte("soul"), 0o644))
+		require.NoError(t, os.WriteFile(filepath.Join(cfgDir, "slack", "AGENTS.md"), []byte("agents"), 0o644))
+
+		c := agentConfigDirChecker{dir: cfgDir}
+		d := c.Check(context.Background())
+		require.Equal(t, cli.StatusPass, d.Status)
+	})
+
+	t.Run("valid with bot subdirectory", func(t *testing.T) {
+		t.Parallel()
+		cfgDir := t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Join(cfgDir, "slack", "U12345"), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(cfgDir, "slack", "U12345", "SOUL.md"), []byte("bot soul"), 0o644))
+
+		c := agentConfigDirChecker{dir: cfgDir}
+		d := c.Check(context.Background())
+		require.Equal(t, cli.StatusPass, d.Status)
+	})
+
+	t.Run("unrecognized md file in platform dir warns", func(t *testing.T) {
+		t.Parallel()
+		cfgDir := t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Join(cfgDir, "slack"), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(cfgDir, "slack", "custom.md"), []byte("custom"), 0o644))
+
+		c := agentConfigDirChecker{dir: cfgDir}
+		d := c.Check(context.Background())
+		require.Equal(t, cli.StatusWarn, d.Status)
+		require.Contains(t, d.Message, "custom.md")
+	})
+
+	t.Run("ignored files are allowed", func(t *testing.T) {
+		t.Parallel()
+		cfgDir := t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Join(cfgDir, "slack"), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(cfgDir, "slack", ".gitkeep"), []byte(""), 0o644))
+		require.NoError(t, os.WriteFile(filepath.Join(cfgDir, "slack", "README.md"), []byte("readme"), 0o644))
+
+		c := agentConfigDirChecker{dir: cfgDir}
+		d := c.Check(context.Background())
+		require.Equal(t, cli.StatusPass, d.Status)
+	})
+
+	t.Run("nonexistent directory warns", func(t *testing.T) {
+		t.Parallel()
+		c := agentConfigDirChecker{dir: filepath.Join(t.TempDir(), "nonexistent")}
+		d := c.Check(context.Background())
+		require.Equal(t, cli.StatusWarn, d.Status)
+		require.Contains(t, d.Message, "Cannot read")
+	})
+}
