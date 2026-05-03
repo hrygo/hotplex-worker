@@ -1209,13 +1209,13 @@ func TestBridge_ForwardEvents_CrashExitCode(t *testing.T) {
 		close(done)
 	}()
 
-	// Read the crash done event.
+	// Read the crash error event.
 	_ = server.SetReadDeadline(time.Now().Add(3 * time.Second))
 	_, data, err := server.ReadMessage()
-	require.NoError(t, err, "forwardEvents should have sent crash done after Wait()")
-	require.Contains(t, string(data), `"type":"done"`)
-	require.Contains(t, string(data), `"success":false`)
-	require.Contains(t, string(data), `"crash_exit_code":1`)
+	require.NoError(t, err, "forwardEvents should have sent crash error after Wait()")
+	require.Contains(t, string(data), `"type":"error"`)
+	require.Contains(t, string(data), `"code":"WORKER_CRASH"`)
+	require.Contains(t, string(data), "exit code 1")
 
 	<-done
 }

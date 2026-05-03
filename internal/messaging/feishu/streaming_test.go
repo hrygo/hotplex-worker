@@ -381,7 +381,6 @@ func TestStreamingCardController_IntegrityCheck(t *testing.T) {
 	require.True(t, c.transition(PhaseCreating))
 	c.mu.Lock()
 	c.bytesWritten = 0
-	c.bytesFlushed = 0
 	c.mu.Unlock()
 
 	// Close should not panic with zero bytes.
