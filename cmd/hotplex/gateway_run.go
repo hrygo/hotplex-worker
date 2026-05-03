@@ -176,6 +176,7 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 	if cfg.AgentConfig.Enabled {
 		agentConfigDir = cfg.AgentConfig.ConfigDir
 		warnDeprecatedSuffixFiles(agentConfigDir, log)
+		log.Debug("config: agent config resolved", "dir", agentConfigDir)
 	}
 
 	bridge := gateway.NewBridge(gateway.BridgeDeps{
