@@ -1,7 +1,7 @@
 # Per-Bot Agent Config Specification
 
 > Issue: #127
-> Status: Draft
+> Status: Final
 > Created: 2026-05-03
 > Reviewed: 2026-05-03
 
