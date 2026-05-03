@@ -34,3 +34,35 @@ func init() {
 		filepath.Join(sysDrive, "System Volume Information"),
 	}
 }
+
+// GetAllowedBaseDirs returns a copy of the current allowed base directories map.
+func GetAllowedBaseDirs() map[string]bool {
+	result := make(map[string]bool, len(allowedBaseDirs))
+	for k, v := range allowedBaseDirs {
+		result[k] = v
+	}
+	return result
+}
+
+// GetForbiddenWorkDirs returns a copy of the current forbidden work directories slice.
+func GetForbiddenWorkDirs() []string {
+	result := make([]string, len(forbiddenWorkDirs))
+	copy(result, forbiddenWorkDirs)
+	return result
+}
+
+// ConfigureFromConfig applies security settings from the configuration file.
+func ConfigureFromConfig(cfg *config.SecurityConfig) {
+	for _, pattern := range cfg.WorkDirAllowedBasePatterns {
+		expandedPath := os.ExpandEnv(pattern)
+		if expandedPath != "" {
+			allowedBaseDirs[expandedPath] = true
+		}
+	}
+	for _, dir := range cfg.WorkDirForbiddenDirs {
+		expandedPath := os.ExpandEnv(dir)
+		if expandedPath != "" && !allowedBaseDirs[expandedPath] {
+			forbiddenWorkDirs = append(forbiddenWorkDirs, expandedPath)
+		}
+	}
+}
