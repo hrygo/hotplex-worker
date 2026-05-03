@@ -1,15 +1,16 @@
 # cmd/hotplex — Gateway CLI Commands
 
 ## OVERVIEW
-Cobra CLI entry points for the HotPlex gateway binary. Root command in main.go, subcommands in dedicated files. Gateway startup/DI concentrated in gateway_run.go + serve.go.
+Cobra CLI entry points for the HotPlex gateway binary. Root command in main.go, subcommands in dedicated files. Gateway startup/DI in gateway_run.go, CLI lifecycle in gateway_cmd.go.
 
 ## STRUCTURE
 ```
 cmd/hotplex/
   main.go            (~54 lines)  cobra root: register gateway, doctor, security, onboard, version subcommands
-  gateway_run.go     (~393 lines) gateway run: full DI pipeline, signal handler, hub/session/bridge creation, HTTP server start
-  serve.go           (~110 lines) serve subcommand: flag parsing, config loading, GatewayDeps assembly, startMessagingAdapters
-  routes.go          (~197 lines) HTTP route registration: /ws (gateway), /admin/*, /health, /metrics
+  gateway_run.go     (~530 lines) gateway run: DI pipeline decomposed into initLogging, initOrphanCleanup, initStores, shutdownGateway
+  gateway_cmd.go     (~185 lines) gateway subcommand: start/stop/restart + daemon launcher; preserves config path across restarts
+  routes.go          (~127 lines) HTTP route registration: /ws (gateway), /admin/*, /health, /metrics
+  admin_adapters.go  (~116 lines) admin provider adapters: bridge concrete types to admin.Provider interfaces
   messaging_init.go  (~233 lines) messaging adapter lifecycle: iterate enabled platforms → New → Configure → SetHub/SetSM → Start; STT engine setup
   doctor.go          (~150 lines) doctor subcommand: run DefaultRegistry checkers, render structured report
   security.go        (~182 lines) security subcommand: path validation, env isolation checks
@@ -18,7 +19,7 @@ cmd/hotplex/
   status.go          (~95 lines)  status subcommand: check gateway process status via PID file
   banner.go          (~167 lines) startup banner: ASCII art + config summary + endpoint URLs
   dev.go             (~29 lines)  dev subcommand: start gateway + webchat concurrently
-  pid.go             (~50 lines)  PID file helpers: write/remove PID for gateway process management
+  pid.go             (~124 lines) gateway state management: JSON PID file with config path + dev mode, discovery, stop, waitForProcessExit
   version.go         (~46 lines)  version subcommand: print version string
   banner_art.txt                  ASCII art banner content
 ```
