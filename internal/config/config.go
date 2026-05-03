@@ -579,6 +579,10 @@ func Load(filePath string, opts LoadOptions) (*Config, error) {
 		return nil, fmt.Errorf("config: environment override: %w", err)
 	}
 
+	// Normalize path fields AFTER env overrides, because Viper's env binding
+	// writes raw values (e.g. "~/.hotplex/...") that bypass ExpandAndAbs.
+	cfg.normalizePaths()
+
 	return cfg, nil
 }
 
@@ -693,26 +697,31 @@ func loadRecursive(filePath string, opts LoadOptions, visited []string) (*Config
 		}
 	}
 
-	// Normalize all path fields — Viper does not expand ~ in YAML values.
+	cfg.normalizePaths()
+
+	return cfg, nil
+}
+
+// normalizePaths expands ~ and resolves relative paths for all config path fields.
+func (c *Config) normalizePaths() {
 	for _, pf := range []*string{
-		&cfg.DB.Path,
-		&cfg.DB.EventsPath,
-		&cfg.Worker.DefaultWorkDir,
-		&cfg.Worker.PIDDir,
-		&cfg.AgentConfig.ConfigDir,
-		&cfg.Messaging.Slack.WorkDir,
-		&cfg.Messaging.Feishu.WorkDir,
+		&c.DB.Path,
+		&c.DB.EventsPath,
+		&c.Worker.DefaultWorkDir,
+		&c.Worker.PIDDir,
+		&c.AgentConfig.ConfigDir,
+		&c.Messaging.Slack.WorkDir,
+		&c.Messaging.Feishu.WorkDir,
 	} {
 		if *pf != "" {
 			absPath, err := ExpandAndAbs(*pf)
 			if err != nil {
-				return nil, fmt.Errorf("config: normalize path %q: %w", *pf, err)
+				slog.Warn("config: normalize path", "path", *pf, "err", err)
+				continue
 			}
 			*pf = absPath
 		}
 	}
-
-	return cfg, nil
 }
 
 // ExpandAndAbs returns an absolute path, resolving ~ and relative paths.
