@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -988,22 +989,143 @@ func (a *Adapter) cleanupMediaInDir(dir string) {
 	})
 }
 
-func (c *SlackConn) sendTurnSummary(ctx context.Context, env *events.Envelope) {
+func (c *SlackConn) sendTurnSummary(_ context.Context, env *events.Envelope) {
 	if c.adapter == nil || c.adapter.client == nil {
 		return
 	}
 	d := messaging.ExtractTurnSummary(env)
-	text := messaging.FormatTurnSummary(d)
-	if text == "" {
+	plainText := messaging.FormatTurnSummary(d)
+	if plainText == "" {
 		return
 	}
-	opts := []slack.MsgOption{slack.MsgOptionText(text, false)}
+
+	// Primary: TableBlock with rich per-field layout.
+	blocks := c.buildTurnSummaryTable(d)
+	richText := messaging.FormatTurnSummaryRich(d)
+	if richText == "" {
+		richText = plainText
+	}
+	opts := []slack.MsgOption{
+		slack.MsgOptionBlocks(blocks...),
+		slack.MsgOptionText(richText, false),
+	}
 	if c.threadTS != "" {
 		opts = append(opts, slack.MsgOptionTS(c.threadTS))
 	}
-	_, _, _ = c.adapter.client.PostMessageContext(ctx, c.channelID, opts...)
+	sendCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_, _, err := c.adapter.client.PostMessageContext(sendCtx, c.channelID, opts...)
+	if err == nil {
+		return
+	}
+
+	if !strings.Contains(err.Error(), "invalid_blocks") {
+		c.adapter.Log.Warn("turn summary send failed", "err", err)
+		return
+	}
+
+	// Fallback: rich plain text with emoji-prefixed fields.
+	c.adapter.Log.Warn("slack: turn summary TableBlock rejected, falling back to rich text", "err", err)
+	fbOpts := []slack.MsgOption{slack.MsgOptionText(richText, false)}
+	if c.threadTS != "" {
+		fbOpts = append(fbOpts, slack.MsgOptionTS(c.threadTS))
+	}
+	_, _, fbErr := c.adapter.client.PostMessageContext(sendCtx, c.channelID, fbOpts...)
+	if fbErr != nil {
+		c.adapter.Log.Warn("turn summary fallback send failed", "err", fbErr)
+	}
 }
 
+func (c *SlackConn) buildTurnSummaryTable(d messaging.TurnSummaryData) []slack.Block {
+	table := slack.NewTableBlock("turn_summary")
+	table = table.WithColumnSettings(
+		slack.ColumnSetting{Align: slack.ColumnAlignmentLeft, IsWrapped: false},
+		slack.ColumnSetting{Align: slack.ColumnAlignmentLeft, IsWrapped: true},
+	)
+
+	if d.TurnCount > 0 {
+		table.AddRow(richTextCell("🔄 Turn"), richTextCell(fmt.Sprintf("#%d", d.TurnCount)))
+	}
+	if d.ModelName != "" {
+		table.AddRow(richTextCell("🤖 Model"), richTextCell(d.ModelName))
+	}
+	if d.ContextWindow > 0 && d.ContextFill > 0 {
+		pct := int(d.ContextPct + 0.5)
+		if pct > 100 {
+			pct = 100
+		}
+		max := messaging.FormatTokenCount(int(d.ContextWindow))
+		bar := messaging.BuildProgressBar(pct, 10)
+		table.AddRow(richTextCell("🧠 Context"), richTextCell(fmt.Sprintf("%s %s", bar, max)))
+	}
+	if d.TurnDurationMs > 0 {
+		table.AddRow(richTextCell("⏱️ Duration"), richTextCell(formatDurationSlack(d.TurnDurationMs)))
+	}
+	if d.ToolCallCount > 0 {
+		toolStr := formatToolNamesSlack(d.ToolNames, d.ToolCallCount)
+		table.AddRow(richTextCell("🔧 Tools"), richTextCell(toolStr))
+	}
+	if d.TurnInputTok > 0 || d.TurnOutputTok > 0 {
+		parts := make([]string, 0, 2)
+		if d.TurnInputTok > 0 {
+			parts = append(parts, fmt.Sprintf("%s in", messaging.FormatTokenCount(int(d.TurnInputTok))))
+		}
+		if d.TurnOutputTok > 0 {
+			parts = append(parts, fmt.Sprintf("%s out", messaging.FormatTokenCount(int(d.TurnOutputTok))))
+		}
+		table.AddRow(richTextCell("💎 Tokens"), richTextCell(strings.Join(parts, " · ")))
+	}
+
+	if d.WorkDir != "" {
+		table.AddRow(richTextCell("📂 Dir"), richTextCell(messaging.TruncatePath(d.WorkDir, 3)))
+	}
+	if d.GitBranch != "" {
+		table.AddRow(richTextCell("🌿 Branch"), richTextCell(d.GitBranch))
+	}
+	if sessDur := messaging.FormatSessionDuration(d.SessionDuration); sessDur != "" {
+		table.AddRow(richTextCell("⏳ Session"), richTextCell(sessDur))
+	}
+
+	return []slack.Block{table}
+}
+
+func formatToolNamesSlack(names map[string]int, total int) string {
+	if len(names) == 0 {
+		return fmt.Sprintf("%d calls", total)
+	}
+	type kv struct {
+		name  string
+		count int
+	}
+	sorted := make([]kv, 0, len(names))
+	for k, v := range names {
+		sorted = append(sorted, kv{k, v})
+	}
+	sort.Slice(sorted, func(i, j int) bool {
+		if sorted[i].count != sorted[j].count {
+			return sorted[i].count > sorted[j].count
+		}
+		return sorted[i].name < sorted[j].name
+	})
+	parts := make([]string, len(sorted))
+	for i, s := range sorted {
+		parts[i] = fmt.Sprintf("%s×%d", s.name, s.count)
+	}
+	return fmt.Sprintf("%d calls (%s)", total, strings.Join(parts, ", "))
+}
+
+func formatDurationSlack(ms int64) string {
+	switch {
+	case ms < 1000:
+		return fmt.Sprintf("%dms", ms)
+	case ms < 60_000:
+		return fmt.Sprintf("%ds", ms/1000)
+	case ms < 3_600_000:
+		return fmt.Sprintf("%dm%ds", ms/60_000, (ms%60_000)/1000)
+	default:
+		return fmt.Sprintf("%dh%dm", ms/3_600_000, (ms%3_600_000)/60_000)
+	}
+}
 func (c *SlackConn) sendContextUsage(ctx context.Context, env *events.Envelope) error {
 	if c.adapter == nil || c.adapter.client == nil {
 		return fmt.Errorf("slack: client not initialized")

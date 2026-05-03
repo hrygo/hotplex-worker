@@ -62,6 +62,9 @@ func startMessagingAdapters(ctx context.Context, deps *GatewayDeps) ([]messaging
 			workerType = appCfg.Messaging.Feishu.WorkerType
 			workDir = appCfg.Messaging.Feishu.WorkDir
 		}
+		if workDir == "" {
+			workDir = appCfg.Worker.DefaultWorkDir
+		}
 
 		adapter, err := messaging.New(pt, log)
 		if err != nil {

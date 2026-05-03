@@ -4,18 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"path/filepath"
 	"strings"
 
-	"github.com/hrygo/hotplex/internal/config"
 	"github.com/hrygo/hotplex/internal/session"
 	"github.com/hrygo/hotplex/internal/worker"
 	"github.com/hrygo/hotplex/pkg/aep"
 	"github.com/hrygo/hotplex/pkg/events"
 )
-
-// DefaultWorkerWorkDir is the fallback working directory when workDir is not configured.
-var DefaultWorkerWorkDir = filepath.Join(config.HotplexHome(), "workspace")
 
 // Bridge orchestrates platform messages and gateway sessions.
 // It is the counterpart of gateway.Bridge for messaging platforms.
@@ -34,9 +29,6 @@ type Bridge struct {
 func NewBridge(log *slog.Logger, platform PlatformType, hub HubInterface,
 	sm SessionManager, handler HandlerInterface, starter SessionStarter, workerType, workDir string,
 ) *Bridge {
-	if workDir == "" {
-		workDir = DefaultWorkerWorkDir
-	}
 	return &Bridge{
 		log:        log.With("component", "messaging_bridge", "platform", string(platform)),
 		platform:   platform,
