@@ -714,7 +714,7 @@ func stepAgentConfig() (StepResult, []string) {
 	return StepResult{
 		Name:   "agent_config",
 		Status: "pass",
-		Detail: fmt.Sprintf("%s (%s)", dir, strings.Join(created, ", ")),
+		Detail: fmt.Sprintf("%s (%s) — per-bot: %s/<platform>/<botID>/SOUL.md", dir, strings.Join(created, ", "), dir),
 	}, created
 }
 

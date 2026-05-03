@@ -13,11 +13,11 @@ import (
 
 // AgentConfigs holds loaded content for all agent config files.
 type AgentConfigs struct {
-	Soul   string // SOUL.md + SOUL.<platform>.md  (B channel)
-	Agents string // AGENTS.md + AGENTS.<platform>.md (B channel)
-	Skills string // SKILLS.md + SKILLS.<platform>.md (B channel)
-	User   string // USER.md + USER.<platform>.md  (C channel)
-	Memory string // MEMORY.md + MEMORY.<platform>.md (C channel)
+	Soul   string // SOUL.md   (B channel)
+	Agents string // AGENTS.md (B channel)
+	Skills string // SKILLS.md (B channel)
+	User   string // USER.md   (C channel)
+	Memory string // MEMORY.md (C channel)
 }
 
 // MaxFileChars is the maximum character limit per file.
@@ -26,26 +26,35 @@ const MaxFileChars = 8_000
 // MaxTotalChars is the maximum combined character limit across all files.
 const MaxTotalChars = 40_000
 
-// Load reads all config files from dir, appending platform-specific variants.
+// Load reads all config files from dir using 3-level per-file fallback:
+//
+//  1. dir/{platform}/{botID}/{file}    — bot-level (highest priority)
+//  2. dir/{platform}/{file}            — platform-level
+//  3. dir/{file}                       — global-level
+//
+// Each file resolves independently. Missing files fall through to the next level.
+// Platform can be "slack", "feishu", "webchat", or "" (no platform-level lookup).
+// botID is used directly as directory name (e.g., Slack UserID, Feishu OpenID).
 // Returns AgentConfigs with frontmatter stripped and size limits enforced.
-// Platform can be "slack", "feishu", or "" (websocket/gateway direct).
-// Missing files are silently skipped. Non-NotExist errors (permission denied, I/O errors) are returned.
-func Load(dir, platform string) (*AgentConfigs, error) {
+func Load(dir, platform, botID string) (*AgentConfigs, error) {
 	if dir == "" {
 		return &AgentConfigs{}, nil
+	}
+
+	// Path safety: botID must not contain path traversal components.
+	if botID != "" && filepath.Base(botID) != botID {
+		return nil, fmt.Errorf("agentconfig: invalid botID %q: path separators not allowed", botID)
 	}
 
 	c := &AgentConfigs{}
 	var total int
 
 	load := func(baseName string, target *string) error {
-		content, n, err := loadFileWithErrorCount(dir, baseName, platform)
+		content, err := resolveFile(dir, platform, botID, baseName)
 		if err != nil {
-			if !os.IsNotExist(err) {
-				return err
-			}
-			return nil // missing file is expected
+			return err
 		}
+		n := len(content)
 		if n == 0 {
 			return nil
 		}
@@ -80,40 +89,34 @@ func Load(dir, platform string) (*AgentConfigs, error) {
 	return c, nil
 }
 
-// loadFileWithErrorCount is a helper that wraps loadFile and returns character count.
-func loadFileWithErrorCount(dir, baseName, platform string) (string, int, error) {
-	content, err := loadFile(dir, baseName, platform)
-	if err != nil {
-		return "", 0, err
-	}
-	return content, len(content), nil
-}
-
-// loadFile reads a base file and appends its platform variant.
-// Returns the combined content and total character count.
-// Propagates non-NotExist errors from readFile (permission denied, I/O errors).
-func loadFile(dir, baseName, platform string) (string, error) {
-	content, err := readFile(dir, baseName)
-	if err != nil {
-		return "", err
-	}
-	if platform != "" {
-		ext := filepath.Ext(baseName)
-		prefix := strings.TrimSuffix(baseName, ext)
-		variantName := prefix + "." + platform + ext
-		variant, err := readFile(dir, variantName)
-		if err != nil && !os.IsNotExist(err) {
+// resolveFile implements the 3-level per-file fallback.
+// Returns the content of the first non-empty file found, or ("", nil) if none exist.
+// Non-NotExist I/O errors (e.g., permission denied) are propagated immediately
+// rather than falling through — a file that exists but is unreadable indicates
+// a real configuration problem that should not be silently masked.
+func resolveFile(dir, platform, botID, fileName string) (string, error) {
+	// 1. Bot-level: dir/platform/botID/fileName
+	if botID != "" && platform != "" {
+		content, err := readFile(filepath.Join(dir, platform, botID), fileName)
+		if err != nil {
 			return "", err
 		}
-		if variant != "" {
-			if content != "" {
-				content += "\n\n" + variant
-			} else {
-				content = variant
-			}
+		if content != "" {
+			return content, nil
 		}
 	}
-	return content, nil
+	// 2. Platform-level: dir/platform/fileName
+	if platform != "" {
+		content, err := readFile(filepath.Join(dir, platform), fileName)
+		if err != nil {
+			return "", err
+		}
+		if content != "" {
+			return content, nil
+		}
+	}
+	// 3. Global-level: dir/fileName
+	return readFile(dir, fileName)
 }
 
 // readFile reads a file, strips YAML frontmatter, and enforces per-file size limit.

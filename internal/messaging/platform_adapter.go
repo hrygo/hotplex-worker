@@ -47,6 +47,10 @@ func (p PlatformType) ExtractPlatformKeys(md map[string]any) map[string]string {
 			pk["user_id"] = v
 		}
 	}
+	// bot_id is platform-agnostic — extracted for all platform types.
+	if v, ok := md["bot_id"].(string); ok && v != "" {
+		pk["bot_id"] = v
+	}
 	return pk
 }
 
@@ -69,6 +73,9 @@ type PlatformAdapterInterface interface {
 
 	// ConfigureWith applies a unified configuration to the adapter.
 	ConfigureWith(config AdapterConfig) error
+
+	// GetBotID returns the platform bot identity (Slack UserID, Feishu OpenID, etc.).
+	GetBotID() string
 }
 
 // AdapterBuilder creates a new adapter instance.
@@ -151,7 +158,7 @@ type SessionManager any
 // SessionStarter creates a new gateway session for a platform message.
 // Implemented by gateway.Bridge and injected during wiring.
 type SessionStarter interface {
-	StartPlatformSession(ctx context.Context, sessionID, ownerID, workerType, workDir, platform string, platformKey map[string]string) error
+	StartPlatformSession(ctx context.Context, sessionID, ownerID, workerType, workDir, platform string, platformKey map[string]string, botID string) error
 }
 
 // Bridge returns the messaging bridge.

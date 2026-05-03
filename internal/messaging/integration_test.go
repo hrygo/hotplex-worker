@@ -128,7 +128,7 @@ func TestBridge_MakeSlackEnvelope(t *testing.T) {
 		config.Default().Worker.DefaultWorkDir,
 	)
 
-	env := br.MakeSlackEnvelope(teamID, channelID, threadTS, userID, text, "")
+	env := br.MakeSlackEnvelope(teamID, channelID, threadTS, userID, text, "", "")
 	require.NotNil(t, env)
 
 	// Session ID is now a UUIDv5 derived from platform context.
@@ -136,7 +136,7 @@ func TestBridge_MakeSlackEnvelope(t *testing.T) {
 	require.Equal(t, userID, env.OwnerID)
 
 	// Deterministic: same inputs produce the same UUIDv5.
-	env2 := br.MakeSlackEnvelope(teamID, channelID, threadTS, userID, text, "")
+	env2 := br.MakeSlackEnvelope(teamID, channelID, threadTS, userID, text, "", "")
 	require.Equal(t, env.SessionID, env2.SessionID)
 
 	// Matches the underlying derivation function.
@@ -175,14 +175,14 @@ func TestBridge_MakeFeishuEnvelope(t *testing.T) {
 		config.Default().Worker.DefaultWorkDir,
 	)
 
-	env := br.MakeFeishuEnvelope(chatID, threadTS, userID, text, "")
+	env := br.MakeFeishuEnvelope(chatID, threadTS, userID, text, "", "")
 	require.NotNil(t, env)
 
 	// Session ID is now a UUIDv5 derived from platform context.
 	require.Regexp(t, uuidV5Regex, env.SessionID)
 
 	// Deterministic: same inputs produce the same UUIDv5.
-	env2 := br.MakeFeishuEnvelope(chatID, threadTS, userID, text, "")
+	env2 := br.MakeFeishuEnvelope(chatID, threadTS, userID, text, "", "")
 	require.Equal(t, env.SessionID, env2.SessionID)
 
 	// Matches the underlying derivation function.

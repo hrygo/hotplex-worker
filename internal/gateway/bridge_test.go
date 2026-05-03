@@ -3,6 +3,8 @@ package gateway
 import (
 	"context"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -253,4 +255,107 @@ func TestInjectSessionStats_NonDoneData(t *testing.T) {
 	// Should be a no-op — no panic, data unchanged.
 	b.injectSessionStats(env, acc)
 	assert.Equal(t, "hello", env.Event.Data)
+}
+
+// ─── PBAC-015: injectAgentConfig BotID Resolution ─────────────────────────────
+
+func writeAgentConfigFile(t *testing.T, dir, name, content string) {
+	t.Helper()
+	fullPath := filepath.Join(dir, name)
+	require.NoError(t, os.MkdirAll(filepath.Dir(fullPath), 0o755))
+	require.NoError(t, os.WriteFile(fullPath, []byte(content), 0o644))
+}
+
+func TestBridge_InjectAgentConfig_BotIDResolution(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		setup       func(t *testing.T) string // returns config dir
+		platform    string
+		botID       string
+		wantContain string
+		wantEmpty   bool
+	}{
+		{
+			name: "bot-level overrides platform",
+			setup: func(t *testing.T) string {
+				dir := t.TempDir()
+				writeAgentConfigFile(t, dir, "webchat/SOUL.md", "Platform soul.")
+				writeAgentConfigFile(t, dir, "webchat/my-bot/SOUL.md", "Bot soul.")
+				return dir
+			},
+			platform:    "webchat",
+			botID:       "my-bot",
+			wantContain: "Bot soul.",
+		},
+		{
+			name: "empty bot uses platform",
+			setup: func(t *testing.T) string {
+				dir := t.TempDir()
+				writeAgentConfigFile(t, dir, "SOUL.md", "Global soul.")
+				writeAgentConfigFile(t, dir, "webchat/SOUL.md", "Platform soul.")
+				return dir
+			},
+			platform:    "webchat",
+			botID:       "",
+			wantContain: "Platform soul.",
+		},
+		{
+			name: "falls to global",
+			setup: func(t *testing.T) string {
+				dir := t.TempDir()
+				writeAgentConfigFile(t, dir, "SOUL.md", "Global soul.")
+				return dir
+			},
+			platform:    "webchat",
+			botID:       "some-bot",
+			wantContain: "Global soul.",
+		},
+		{
+			name: "disabled when empty dir",
+			setup: func(t *testing.T) string {
+				return t.TempDir()
+			},
+			platform:  "webchat",
+			botID:     "bot",
+			wantEmpty: true,
+		},
+		{
+			name: "path traversal rejected",
+			setup: func(t *testing.T) string {
+				dir := t.TempDir()
+				writeAgentConfigFile(t, dir, "webchat/SOUL.md", "Platform soul.")
+				return dir
+			},
+			platform:  "webchat",
+			botID:     "../etc",
+			wantEmpty: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			dir := tt.setup(t)
+			hub := newTestHub(t)
+			sm := new(mockBridgeSM)
+			b := NewBridge(BridgeDeps{
+				Log:            slog.Default(),
+				Hub:            hub,
+				SM:             sm,
+				AgentConfigDir: dir,
+			})
+
+			info := &worker.SessionInfo{}
+			b.injectAgentConfig(info, tt.platform, tt.botID)
+
+			if tt.wantEmpty {
+				assert.Empty(t, info.SystemPrompt)
+			} else {
+				assert.Contains(t, info.SystemPrompt, tt.wantContain)
+			}
+		})
+	}
 }

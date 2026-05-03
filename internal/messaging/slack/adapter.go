@@ -78,6 +78,10 @@ type Adapter struct {
 
 func (a *Adapter) Platform() messaging.PlatformType { return messaging.PlatformSlack }
 
+var _ messaging.PlatformAdapterInterface = (*Adapter)(nil)
+
+func (a *Adapter) GetBotID() string { return a.botID }
+
 func (a *Adapter) ConfigureWith(config messaging.AdapterConfig) error {
 	// Call base to set hub/sm/handler/bridge.
 	_ = a.PlatformAdapter.ConfigureWith(config)
@@ -435,7 +439,7 @@ func (a *Adapter) HandleTextMessage(ctx context.Context, platformMsgID, channelI
 		return fmt.Errorf("slack: adapter closed, dropping message for channel %s", channelID)
 	}
 
-	envelope := a.Bridge().MakeSlackEnvelope(teamID, channelID, threadTS, userID, text, conn.WorkDir())
+	envelope := a.Bridge().MakeSlackEnvelope(teamID, channelID, threadTS, userID, text, conn.WorkDir(), a.botID)
 	if envelope == nil {
 		return fmt.Errorf("slack: failed to build envelope")
 	}
@@ -549,7 +553,7 @@ func (a *Adapter) handleTextControlCommand(ctx context.Context, teamID, channelI
 		return
 	}
 
-	env := a.Bridge().MakeSlackEnvelope(teamID, channelID, threadTS, userID, "", conn.WorkDir())
+	env := a.Bridge().MakeSlackEnvelope(teamID, channelID, threadTS, userID, "", conn.WorkDir(), a.botID)
 	if env == nil {
 		a.Log.Warn("slack: text control command failed to derive session", "action", result.Label)
 		return
@@ -605,7 +609,7 @@ func (a *Adapter) handleTextWorkerCommand(ctx context.Context, teamID, channelID
 		return
 	}
 
-	envelope := a.Bridge().MakeSlackEnvelope(teamID, channelID, threadTS, userID, "", conn.WorkDir())
+	envelope := a.Bridge().MakeSlackEnvelope(teamID, channelID, threadTS, userID, "", conn.WorkDir(), a.botID)
 	if envelope == nil {
 		a.Log.Warn("slack: worker command failed to derive session", "command", result.Label)
 		return

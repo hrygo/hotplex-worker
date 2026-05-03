@@ -122,6 +122,7 @@ func (b *Bridge) StartSession(ctx context.Context, id, userID, botID string, wt 
 		wt:         wt,
 		workerInfo: workerInfo,
 		platform:   platform,
+		botID:      botID,
 	},
 		func(ctx context.Context, w worker.Worker) error {
 			if err := w.Start(ctx, workerInfo); err != nil {
@@ -159,6 +160,7 @@ type workerLaunchParams struct {
 	wt          worker.WorkerType
 	workerInfo  worker.SessionInfo
 	platform    string
+	botID       string
 	forwardOpts forwardOpts
 }
 
@@ -191,7 +193,7 @@ func (b *Bridge) createAndLaunchWorker(params workerLaunchParams, startFn worker
 		return nil, fmt.Errorf("bridge: attach worker: %w", err)
 	}
 
-	b.injectAgentConfig(&params.workerInfo, params.platform)
+	b.injectAgentConfig(&params.workerInfo, params.platform, params.botID)
 
 	if err := startFn(params.ctx, w); err != nil {
 		b.sm.DetachWorker(sid)
@@ -256,6 +258,7 @@ func (b *Bridge) resumeWithOpts(ctx context.Context, id, workDir string, opts fo
 		wt:          si.WorkerType,
 		workerInfo:  workerInfo,
 		platform:    si.Platform,
+		botID:       si.BotID,
 		forwardOpts: opts,
 	},
 		func(ctx context.Context, w worker.Worker) error {
@@ -775,6 +778,7 @@ func (b *Bridge) attemptResumeFallback(p fallbackParams) bool {
 		wt:         si.WorkerType,
 		workerInfo: workerInfo,
 		platform:   si.Platform,
+		botID:      si.BotID,
 	},
 		func(ctx context.Context, w worker.Worker) error {
 			if err := b.sm.Transition(ctx, p.sessionID, events.StateRunning); err != nil {
@@ -855,8 +859,8 @@ func (b *Bridge) cleanupCrashedWorker(sessionID string, crashedWorker worker.Wor
 //  3. No worker, state=CREATED → Start (--session-id)
 //  4. No worker, state=RUNNING/IDLE/TERMINATED → Resume (--resume)
 //     If Resume fails (files gone/corrupted), fall back to Start (--session-id)
-func (b *Bridge) StartPlatformSession(ctx context.Context, sessionID, ownerID, workerType, workDir, platform string, platformKey map[string]string) error {
-	b.log.Debug("bridge: StartPlatformSession called", "session_id", sessionID, "owner_id", ownerID, "worker_type", workerType, "work_dir", workDir, "platform", platform, "platform_key", platformKey)
+func (b *Bridge) StartPlatformSession(ctx context.Context, sessionID, ownerID, workerType, workDir, platform string, platformKey map[string]string, botID string) error {
+	b.log.Debug("bridge: StartPlatformSession called", "session_id", sessionID, "owner_id", ownerID, "worker_type", workerType, "work_dir", workDir, "platform", platform, "platform_key", platformKey, "bot_id", botID)
 	si, err := b.sm.Get(sessionID)
 	if err == nil {
 		if w := b.sm.GetWorker(sessionID); w != nil {
@@ -871,7 +875,7 @@ func (b *Bridge) StartPlatformSession(ctx context.Context, sessionID, ownerID, w
 		// Orphan: session record exists but worker is gone.
 		if si.State == events.StateCreated {
 			b.log.Info("bridge: orphan platform session unstarted, starting fresh", "session_id", sessionID)
-			return b.startOrResumeOnInUse(ctx, sessionID, ownerID, worker.WorkerType(workerType), workDir, platform, platformKey)
+			return b.startOrResumeOnInUse(ctx, sessionID, ownerID, worker.WorkerType(workerType), workDir, platform, platformKey, botID)
 		}
 		// RUNNING/IDLE/TERMINATED — try Resume to preserve conversation history.
 		// If Resume fails (session files deleted or corrupted), fall back to Start.
@@ -879,7 +883,7 @@ func (b *Bridge) StartPlatformSession(ctx context.Context, sessionID, ownerID, w
 		if err := b.ResumeSession(ctx, sessionID, workDir); err != nil {
 			b.log.Warn("bridge: resume failed, falling back to new session",
 				"session_id", sessionID, "state", si.State, "err", err)
-			return b.startOrResumeOnInUse(ctx, sessionID, ownerID, worker.WorkerType(workerType), workDir, platform, platformKey)
+			return b.startOrResumeOnInUse(ctx, sessionID, ownerID, worker.WorkerType(workerType), workDir, platform, platformKey, botID)
 		}
 		return nil
 	}
@@ -889,14 +893,14 @@ func (b *Bridge) StartPlatformSession(ctx context.Context, sessionID, ownerID, w
 		return fmt.Errorf("bridge: no worker_type configured for platform session %s", sessionID)
 	}
 
-	return b.startOrResumeOnInUse(ctx, sessionID, ownerID, wt, workDir, platform, platformKey)
+	return b.startOrResumeOnInUse(ctx, sessionID, ownerID, wt, workDir, platform, platformKey, botID)
 }
 
 // startOrResumeOnInUse attempts StartSession; if the worker reports its session
 // files are already in use (leftover from a crashed session), falls back to
 // ResumeSession to recover the existing conversation history.
-func (b *Bridge) startOrResumeOnInUse(ctx context.Context, sessionID, ownerID string, wt worker.WorkerType, workDir, platform string, platformKey map[string]string) error {
-	if err := b.StartSession(ctx, sessionID, ownerID, "", wt, nil, workDir, platform, platformKey, ""); err != nil {
+func (b *Bridge) startOrResumeOnInUse(ctx context.Context, sessionID, ownerID string, wt worker.WorkerType, workDir, platform string, platformKey map[string]string, botID string) error {
+	if err := b.StartSession(ctx, sessionID, ownerID, botID, wt, nil, workDir, platform, platformKey, ""); err != nil {
 		if isWorkerInUseError(err) {
 			b.log.Info("bridge: worker rejected as in-use, switching to resume", "session_id", sessionID, "err", err)
 			return b.ResumeSession(ctx, sessionID, workDir)
@@ -1077,13 +1081,19 @@ func (b *Bridge) CancelRetry(sessionID string) {
 // injectAgentConfig loads agent config files and injects the unified system
 // prompt into session info. A no-op when config dir is empty or agent config
 // is not configured.
-func (b *Bridge) injectAgentConfig(info *worker.SessionInfo, platform string) {
+func (b *Bridge) injectAgentConfig(info *worker.SessionInfo, platform, botID string) {
 	if b.agentConfigDir == "" {
 		return
 	}
-	configs, err := agentconfig.Load(b.agentConfigDir, platform)
+	configs, err := agentconfig.Load(b.agentConfigDir, platform, botID)
 	if err != nil {
-		b.log.Warn("bridge: agent config load failed", "dir", b.agentConfigDir, "err", err)
+		if strings.Contains(err.Error(), "invalid botID") {
+			b.log.Error("bridge: agent config rejected botID",
+				"dir", b.agentConfigDir, "platform", platform, "bot_id", botID, "err", err)
+		} else {
+			b.log.Warn("bridge: agent config load failed",
+				"dir", b.agentConfigDir, "platform", platform, "bot_id", botID, "err", err)
+		}
 		return
 	}
 	if configs.IsEmpty() {

@@ -28,6 +28,7 @@ func DeriveSessionKey(ownerID string, wt worker.WorkerType, clientKey, workDir s
 // ThreadTS is cross-platform: used by both Slack threads and Feishu chat threads.
 type PlatformContext struct {
 	Platform string
+	BotID    string // Bot identity (Slack UserID, Feishu OpenID, WebChat JWT bot_id)
 	// Slack fields
 	TeamID    string
 	ChannelID string
@@ -41,6 +42,7 @@ type PlatformContext struct {
 
 // FromMap populates PlatformContext from a serialized PlatformKey map.
 func (pc *PlatformContext) FromMap(m map[string]string) {
+	pc.BotID = m["bot_id"]
 	pc.TeamID = m["team_id"]
 	pc.ChannelID = m["channel_id"]
 	pc.ThreadTS = m["thread_ts"]
@@ -73,6 +75,10 @@ func DerivePlatformSessionKey(ownerID string, wt worker.WorkerType, ctx Platform
 	b.WriteString(string(wt))
 	b.WriteByte('|')
 	b.WriteString(ctx.Platform)
+	if ctx.BotID != "" {
+		b.WriteByte('|')
+		b.WriteString(ctx.BotID)
+	}
 	switch ctx.Platform {
 	case "slack":
 		if ctx.TeamID != "" {

@@ -249,6 +249,7 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 	agentConfigDir := ""
 	if cfg.AgentConfig.Enabled {
 		agentConfigDir = cfg.AgentConfig.ConfigDir
+		warnDeprecatedSuffixFiles(agentConfigDir, log)
 	}
 
 	bridge := gateway.NewBridge(gateway.BridgeDeps{
@@ -506,5 +507,25 @@ func loadEnvFile(dir string) {
 	}
 	if loaded > 0 {
 		fmt.Fprintf(os.Stderr, "  env loaded %d vars from %s\n", loaded, envPath)
+	}
+}
+
+// warnDeprecatedSuffixFiles checks for old-style SOUL.<platform>.md files
+// that are no longer loaded by the 3-level directory fallback system.
+func warnDeprecatedSuffixFiles(dir string, log *slog.Logger) {
+	if dir == "" {
+		return
+	}
+	platforms := []string{"slack", "feishu", "webchat"}
+	bases := []string{"SOUL", "AGENTS", "SKILLS", "USER", "MEMORY"}
+	for _, p := range platforms {
+		for _, b := range bases {
+			suffix := b + "." + p + ".md"
+			if _, err := os.Stat(filepath.Join(dir, suffix)); err == nil {
+				log.Warn("agent-config: deprecated suffix file found; use directory-based layout instead",
+					"file", suffix,
+					"migration", "move to "+p+"/"+b+".md")
+			}
+		}
 	}
 }

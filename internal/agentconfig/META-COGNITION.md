@@ -41,13 +41,13 @@ HotPlex Gateway 元认知。
 
 - B 通道（SOUL/AGENTS/SKILLS）：合并注入 system prompt（S3 尾部 for CC，body.system for OCS），无 hedging，优先级高
 - C 通道（USER/MEMORY）：注入 <context> section
-- 平台变体：SOUL.slack.md / SOUL.feishu.md 追加到基础文件（追加模式，非替换）
+- 三级目录 fallback：每个文件独立解析，bot 级 > 平台级 > 全局级（替换模式，非追加）
+  - 全局：SOUL.md / 平台：slack/SOUL.md / Bot：slack/U12345/SOUL.md
 - frontmatter（--- 包裹的 YAML 元数据）自动剥离；每文件最大 8K，全部最大 40K
 
 ## 控制命令
 
-  /gc, $gc：         清理 Session（→ TERMINATED，释放 Worker）
-  /reset, $reset：   重置（Terminate + fresh Worker，保留 Session）
-  /park, $park：     休眠（→ IDLE，Worker 暂停）
-  /new, $new：       新建 Session（不同 Session Key）
+  /gc：              清理 Session（→ TERMINATED，释放 Worker）
+  /reset：           重置（Terminate + fresh Worker，复用 Session ID）
   /cd <路径>：       SwitchWorkDir（新 workDir 推导新 Session Key）
+  自然语言前缀 $：    $gc, $休眠, $挂起 → gc；$reset, $重置 → reset

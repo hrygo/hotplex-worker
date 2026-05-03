@@ -8,16 +8,33 @@ paths:
 > 加载 personality/context 配置，构建统一 system prompt
 > 参考：`internal/agentconfig/loader.go`、`internal/agentconfig/prompt.go`
 
-## B/C 双通道架构
+## 三级目录 Fallback 架构
+
+每个配置文件独立解析，按以下优先级查找：
 
 ```
-~/.hotplex/agent-configs/           配置文件根目录
-├── SOUL.md                         B 通道：身份定义（高优先级、无hedging）
-├── SOUL.slack.md                   B 通道平台变体（自动追加到 SOUL.md）
-├── AGENTS.md                       B 通道：Agent 行为规范
-├── SKILLS.md                       B 通道：可用技能列表
-├── USER.md                         C 通道：用户个人信息（背景参考）
-└── MEMORY.md                       C 通道：记忆/上下文（背景参考）
+1. dir/{platform}/{botID}/{file}    — Bot 级（最高优先级）
+2. dir/{platform}/{file}            — 平台级
+3. dir/{file}                       — 全局级（兜底）
+```
+
+```
+~/.hotplex/agent-configs/
+├── SOUL.md                         ← 全局默认
+├── AGENTS.md
+├── SKILLS.md
+├── USER.md
+├── MEMORY.md
+├── slack/                          ← Slack 平台级
+│   ├── SOUL.md
+│   └── U12345/                     ← Slack Bot 级（UserID from auth.test）
+│       └── SOUL.md
+├── feishu/                         ← 飞书平台级
+│   └── ou_abc123/                  ← 飞书 Bot 级（OpenID from Bot API）
+│       └── SOUL.md
+└── webchat/                        ← WebChat 平台级
+    └── my-bot/                     ← WebChat Bot 级（JWT bot_id）
+        └── SOUL.md
 ```
 
 ### B 通道（`<directives>`）— 高优先级指令
@@ -30,6 +47,17 @@ paths:
 - **USER.md**：用户角色、偏好、背景（降低幻觉）
 - **MEMORY.md**：长期记忆、会话历史摘要
 - 注入位置：`<context>` XML 组内，作为参考信息
+
+## 加载逻辑
+
+```go
+// loader.go — Load(dir, platform, botID)
+// resolveFile: 按优先级查找文件，找到第一个非空文件即返回
+// 空 frontmatter-only 文件视为"未找到"，继续 fallthrough
+// botID 安全校验：filepath.Base(botID) == botID（防路径穿越）
+```
+
+**旧后缀格式已废弃**：`SOUL.slack.md` 不再加载。启动时扫描并输出 deprecation warning。
 
 ## META-COGNITION.md（Agent 自画像）
 
@@ -46,12 +74,10 @@ paths:
 
 ## 统一 System Prompt 构建
 
-```go
-// prompt.go — BuildSystemPrompt
-// B 通道 + C 通道合并为单一 prompt，统一注入 CC 和 OCS
+```xml
 <agent-configuration>
   <directives>
-    <soul>        ← SOUL.md（+ SOUL.<platform>.md）
+    <soul>        ← SOUL.md
     <agents>      ← AGENTS.md
     <skills>      ← SKILLS.md
   </directives>
@@ -66,22 +92,14 @@ paths:
 **CC 注入**：`--append-system-prompt` flag
 **OCS 注入**：`system` 字段（HTTP 请求体）
 
-## 平台变体
+## BotID 传播路径
 
-配置加载时自动追加平台特定文件（无平台文件时跳过）：
-
-```go
-// loader.go — Load
-platformVariants := []string{"SOUL." + platform + ".md"}
-for _, name := range platformVariants {
-    path := filepath.Join(dir, name)
-    if data, err := os.ReadFile(path); err == nil {
-        content += "\n" + stripFrontmatter(string(data))
-    }
-}
 ```
-
-**示例**：Slack 平台 → `SOUL.slack.md` 追加到 `SOUL.md` 后；其他平台同理。
+Adapter.Start() → adapter.botID / adapter.botOpenID
+  → GetBotID() → Bridge.Handle() → StartPlatformSession(..., botID)
+    → gateway.Bridge → injectAgentConfig(info, platform, botID)
+      → agentconfig.Load(dir, platform, botID) → resolveFile per file
+```
 
 ## 大小限制
 
@@ -89,7 +107,6 @@ for _, name := range platformVariants {
 |------|-----|------|
 | 单文件上限 | 8KB | 防止 prompt 爆炸 |
 | 总量上限 | 40KB | Gateway 内存 + Token 成本 |
-| 数量限制 | 6 个文件 | SOUL + AGENTS + SKILLS + USER + MEMORY + 变体 |
 
 超限 → `ErrConfigFileTooLarge` / `ErrTotalConfigTooLarge`。
 

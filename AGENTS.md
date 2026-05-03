@@ -419,7 +419,7 @@ hotplex update --restart      # 更新后自动重启网关
 - Agent 配置目录：`~/.hotplex/agent-configs/`
 - B 通道：SOUL.md、AGENTS.md、SKILLS.md
 - C 通道：USER.md、MEMORY.md
-- 平台变体：SOUL.slack.md（自动追加）
+- 三级 fallback：全局 → 平台（slack/）→ Bot（slack/U12345/），每文件独立解析
 
 ### 最大文件
 

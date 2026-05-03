@@ -108,3 +108,39 @@ func TestPlatformAdapter_Bridge(t *testing.T) {
 	a := &PlatformAdapter{Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
 	require.Nil(t, a.Bridge())
 }
+
+// PBAC-024: ExtractPlatformKeys extracts bot_id from metadata for Slack and Feishu.
+func TestPlatformType_ExtractPlatformKeys_BotID(t *testing.T) {
+	t.Parallel()
+
+	t.Run("slack with bot_id", func(t *testing.T) {
+		t.Parallel()
+		pk := PlatformSlack.ExtractPlatformKeys(map[string]any{
+			"team_id":    "T1",
+			"channel_id": "C1",
+			"user_id":    "U1",
+			"bot_id":     "U_BOT_123",
+		})
+		require.Equal(t, "U_BOT_123", pk["bot_id"])
+	})
+
+	t.Run("feishu with bot_id", func(t *testing.T) {
+		t.Parallel()
+		pk := PlatformFeishu.ExtractPlatformKeys(map[string]any{
+			"chat_id": "oc1",
+			"user_id": "ou1",
+			"bot_id":  "ou_bot_456",
+		})
+		require.Equal(t, "ou_bot_456", pk["bot_id"])
+	})
+
+	t.Run("no bot_id", func(t *testing.T) {
+		t.Parallel()
+		pk := PlatformSlack.ExtractPlatformKeys(map[string]any{
+			"team_id":    "T1",
+			"channel_id": "C1",
+		})
+		_, ok := pk["bot_id"]
+		require.False(t, ok, "bot_id should not be present when not provided")
+	})
+}
