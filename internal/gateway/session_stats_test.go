@@ -30,8 +30,8 @@ func TestSessionAccumulator_MergePerTurnStats(t *testing.T) {
 			},
 		})
 
-		require.Equal(t, int64(15234+8200+0), acc.TotalInput)
-		require.Equal(t, int64(15234+8200+0), acc.ContextFill)
+		require.Equal(t, int64(15234), acc.TotalInput)
+		require.Equal(t, int64(15234), acc.ContextFill)
 		require.Equal(t, int64(3821), acc.TotalOutput)
 		require.Equal(t, int64(200000), acc.ContextWindow)
 		require.Equal(t, "Sonnet", acc.ModelName)
