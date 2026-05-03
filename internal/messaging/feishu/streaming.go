@@ -84,7 +84,7 @@ type StreamingCardController struct {
 
 	// Reliability tracking.
 	streamStartTime time.Time
-	streamExpired   bool
+	ttlWarnOnce     sync.Once
 	bytesWritten    int64
 	bufRunes        int // running rune count for flush threshold
 	failedFlushes   int
@@ -231,11 +231,10 @@ func (c *StreamingCardController) Write(text string) error {
 	}
 	elapsed := time.Since(c.streamStartTime)
 	if elapsed > StreamTTL {
-		if !c.streamExpired {
-			c.streamExpired = true
+		c.ttlWarnOnce.Do(func() {
 			c.log.Warn("feishu: streaming TTL exceeded, rejecting further writes",
 				"elapsed", elapsed.Round(time.Second))
-		}
+		})
 		c.mu.Unlock()
 		return fmt.Errorf("feishu: streaming expired after %v", StreamTTL)
 	}
