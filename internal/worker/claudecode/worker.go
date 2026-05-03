@@ -435,8 +435,7 @@ func (w *Worker) ResetContext(ctx context.Context) error {
 	return w.Start(ctx, orig)
 }
 
-// deleteSessionFiles removes Claude session files to prevent "already in use" errors on reset.
-// sessionFileGlobs returns the glob patterns for Claude Code session files.
+// sessionFileGlobs returns glob patterns for Claude Code session files.
 func sessionFileGlobs(homeDir, parsedID string) []string {
 	return []string{
 		filepath.Join(homeDir, ".claude", "projects", "*", parsedID+".jsonl"),
@@ -445,14 +444,12 @@ func sessionFileGlobs(homeDir, parsedID string) []string {
 	}
 }
 
-// HasSessionFiles checks whether session files still exist on disk for the
-// given session ID. It uses the same glob patterns as deleteSessionFiles.
+// HasSessionFiles checks whether session files still exist on disk.
 func (w *Worker) HasSessionFiles(sessionID string) bool {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		// Fail-open: assume files exist so the normal resume path is attempted.
-		// If files are truly missing, the existing crash-detection fallback handles it.
-		w.Log.Warn("claudecode: HasSessionFiles cannot resolve home dir, assuming files exist",
+		// Fail-open: assume files exist so normal resume path is attempted.
+		w.Log.Warn("claudecode: cannot resolve home dir, assuming files exist",
 			"session_id", sessionID, "err", err)
 		return true
 	}
@@ -466,12 +463,7 @@ func (w *Worker) HasSessionFiles(sessionID string) bool {
 	return false
 }
 
-// Claude Code stores session data at:
-//   - ~/.claude/projects/<hash>/<uuid>.jsonl  (conversation transcript)
-//   - ~/.claude/projects/<hash>/<uuid>         (session metadata directory)
-//   - ~/.claude/session-env/<uuid>              (session environment)
-//
-// The glob spans all project hashes since the hash algorithm is internal to Claude Code.
+// deleteSessionFiles removes Claude session files to prevent "already in use" errors on reset.
 func (w *Worker) deleteSessionFiles() error {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {

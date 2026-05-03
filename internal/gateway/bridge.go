@@ -271,16 +271,13 @@ func (b *Bridge) resumeWithOpts(ctx context.Context, id, workDir string, opts fo
 					return err
 				}
 			}
-			// Check if session files still exist before attempting resume.
-			// Zombie GC may have deleted them, causing --resume to fail immediately.
+			// Zombie GC may delete session files; fall back to fresh start if missing.
 			if fc, ok := w.(worker.SessionFileChecker); ok && !fc.HasSessionFiles(workerInfo.SessionID) {
 				b.log.Info("bridge: session files missing, falling back to fresh start",
 					"session_id", id)
 				if err := w.Start(ctx, workerInfo); err != nil {
 					return fmt.Errorf("bridge: fresh start after missing files: %w", err)
 				}
-				// Clear resumed flag so forwardEvents treats this as a fresh session,
-				// ensuring retry and fallback logic work correctly.
 				opts.resumed = false
 				return nil
 			}

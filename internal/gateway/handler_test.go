@@ -181,8 +181,7 @@ func (h *testableHandler) handleGC(ctx context.Context, sessionID, ownerID strin
 		_ = w.Terminate(ctx)
 		h.sm.DetachWorker(sessionID)
 	}
-	// 4. Re-read state after worker cleanup to avoid stale snapshot race
-	// with concurrent cleanupCrashedWorker transitions.
+	// 4. Re-read after worker cleanup to avoid stale-snapshot race.
 	if fresh, err := h.sm.Get(sessionID); err == nil && fresh.State == events.StateTerminated {
 		return nil
 	}

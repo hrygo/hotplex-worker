@@ -101,7 +101,7 @@ export async function getSessionHistory(
   sessionId: string,
   options?: { beforeSeq?: number; limit?: number }
 ): Promise<GetHistoryResponse> {
-  if (!sessionId || sessionId.trim() === '') {
+  if (!sessionId?.trim()) {
     throw new Error('getSessionHistory: empty session ID');
   }
   const limit = options?.limit ?? 50;

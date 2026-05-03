@@ -537,41 +537,37 @@ func TestSessionFileGlobs(t *testing.T) {
 	require.Contains(t, patterns[2], "session-env/abc-123")
 }
 
-func TestHasSessionFiles(t *testing.T) {
+func TestSessionFileGlobs_Matches(t *testing.T) {
+	t.Parallel()
+
+	t.Run("matches transcript file", func(t *testing.T) {
+		t.Parallel()
+
+		homeDir := t.TempDir()
+		projectDir := filepath.Join(homeDir, ".claude", "projects", "hash")
+		require.NoError(t, os.MkdirAll(projectDir, 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(projectDir, "test-uuid-1234.jsonl"), []byte("{}"), 0o644))
+
+		matches, _ := filepath.Glob(sessionFileGlobs(homeDir, "test-uuid-1234")[0])
+		require.Len(t, matches, 1)
+	})
+
+	t.Run("matches env file", func(t *testing.T) {
+		t.Parallel()
+
+		homeDir := t.TempDir()
+		envDir := filepath.Join(homeDir, ".claude", "session-env")
+		require.NoError(t, os.MkdirAll(envDir, 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(envDir, "test-uuid-1234"), []byte("env"), 0o644))
+
+		matches, _ := filepath.Glob(sessionFileGlobs(homeDir, "test-uuid-1234")[2])
+		require.Len(t, matches, 1)
+	})
+}
+
+func TestHasSessionFiles_NoFiles(t *testing.T) {
 	t.Parallel()
 
 	w := New()
-	sessionID := "sess_test-uuid-1234"
-
-	t.Run("returns false when no files exist", func(t *testing.T) {
-		t.Parallel()
-		require.False(t, w.HasSessionFiles(sessionID))
-	})
-
-	t.Run("returns true when transcript exists", func(t *testing.T) {
-		t.Parallel()
-
-		homeDir := t.TempDir()
-		projectDir := homeDir + "/.claude/projects/hash"
-		require.NoError(t, os.MkdirAll(projectDir, 0o755))
-		require.NoError(t, os.WriteFile(projectDir+"/test-uuid-1234.jsonl", []byte("{}"), 0o644))
-
-		// Override home dir by testing via sessionFileGlobs directly
-		patterns := sessionFileGlobs(homeDir, "test-uuid-1234")
-		matches, _ := filepath.Glob(patterns[0])
-		require.Len(t, matches, 1)
-	})
-
-	t.Run("returns true when env dir exists", func(t *testing.T) {
-		t.Parallel()
-
-		homeDir := t.TempDir()
-		envDir := homeDir + "/.claude/session-env"
-		require.NoError(t, os.MkdirAll(envDir, 0o755))
-		require.NoError(t, os.WriteFile(envDir+"/test-uuid-1234", []byte("env"), 0o644))
-
-		patterns := sessionFileGlobs(homeDir, "test-uuid-1234")
-		matches, _ := filepath.Glob(patterns[2])
-		require.Len(t, matches, 1)
-	})
+	require.False(t, w.HasSessionFiles("sess_test-uuid-1234"))
 }

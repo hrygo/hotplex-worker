@@ -144,7 +144,7 @@ type InputRecoverer interface {
 
 // SessionFileChecker is an optional interface for workers that can verify
 // whether session files still exist on disk. Bridge uses this before resume
-// to avoid passing --resume to a CLI when files have been garbage-collected.
+// to fall back to a fresh start when files have been garbage-collected.
 type SessionFileChecker interface {
 	HasSessionFiles(sessionID string) bool
 }
