@@ -152,5 +152,6 @@ func displayAgentConfigPanel(created []string) {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintf(os.Stderr, "  %s\n", output.Dim("根据需要编辑这些文件来定制 Agent 行为。"))
-	fmt.Fprintf(os.Stderr, "  %s\n\n", output.Dim("修改后自动生效（支持热重载），无需重启网关。"))
+	fmt.Fprintf(os.Stderr, "  %s\n", output.Dim("修改后自动生效（支持热重载），无需重启网关。"))
+	fmt.Fprintf(os.Stderr, "  %s\n\n", output.Dim("支持平台和 Bot 级覆盖：slack/SOUL.md、slack/U12345/SOUL.md"))
 }

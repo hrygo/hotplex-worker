@@ -41,7 +41,8 @@ HotPlex Gateway 元认知。
 
 - B 通道（SOUL/AGENTS/SKILLS）：合并注入 system prompt（S3 尾部 for CC，body.system for OCS），无 hedging，优先级高
 - C 通道（USER/MEMORY）：注入 <context> section
-- 平台变体：SOUL.slack.md / SOUL.feishu.md 追加到基础文件（追加模式，非替换）
+- 三级目录 fallback：每个文件独立解析，bot 级 > 平台级 > 全局级（替换模式，非追加）
+  - 全局：SOUL.md / 平台：slack/SOUL.md / Bot：slack/U12345/SOUL.md
 - frontmatter（--- 包裹的 YAML 元数据）自动剥离；每文件最大 8K，全部最大 40K
 
 ## 控制命令
