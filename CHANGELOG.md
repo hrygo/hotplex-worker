@@ -1,5 +1,37 @@
 # Changelog
 
+## [1.5.0] - 2026-05-03
+
+### Summary
+
+v1.5.0 是一次 minor 版本更新，聚焦于 **Slack 运维自服务、Agent 配置灵活性、反馈连续性诊断、Session 生命周期可靠性**。新增 `hotplex slack` CLI 子命令组（10 个命令），Agent 配置升级为 per-bot 3-level 目录 fallback（BREAKING：session ID 变化），hotplex-diagnostics skill 引入反馈链路时间线交叉验证检测静默中断。Gateway 修复了 resume 盲重试导致的 5 秒延迟（P0），飞书流式卡片解耦 Write/Flush 消除速率限制丢帧。
+
+### Added
+
+- **CLI**: `hotplex slack` 子命令组 — 10 个命令（send-message, update-message, schedule-message, upload-file, download-file, list-channels, search, canvas, bookmark, react），支持 env var 自动解析 channel/thread 上下文。Gateway 通过 bridge 注入 `HOTPLEX_SLACK_CHANNEL_ID`/`HOTPLEX_SLACK_THREAD_TS` 到 Worker 环境。(#137, #131)
+- **Configuration**: Per-bot 3-level 目录 fallback — Agent 配置按文件独立解析 `global → platform/<platform>/ → <platform>/<botID>/`，替代旧的后缀追加机制（`SOUL.slack.md`）。BotID 贯穿 Slack/飞书全链路并纳入 session key 派生。新增 `agentConfigSuffixChecker` 检测废弃后缀文件。(#129)
+- **Skills**: hotplex-diagnostics 运行时诊断 skill — 7 步方法论（进程 → Session → 反馈连续性 → 日志 → 适配器 → 源码 → Issue），FEEDBACK_STALL 分类（PIPELINE_STALL/BACKPRESSURE_DROP/ADAPTER_FAILURE/CLIENT_DISCONNECT），时间线交叉验证检测静默中断。
+- **Gateway**: 精确 context 用量 — `get_context_usage` control channel 查询替代聚合 Done 事件统计，消除跨 turn 累积导致的 context fill 虚高。Turn summary 工具名显示限制为 top 5（"+N" 提示）。(#132)
+- **CLI**: Gateway 子命令分解 — `runGateway()` 拆分为 initLogging/initOrphanCleanup/initStores/shutdownGateway，PID 文件升级为 JSON 格式存储 config path 和 dev mode。admin_adapters.go 从 routes.go 提取。
+- **WebChat**: TurnSummaryCard 组件 — 前端渲染 per-turn session 数据（模型、context fill、时长、工具调用）。
+
+### Changed
+
+- **Gateway**: Worker 清理事件改为 Error 替代合成 Done — 语义正确，相同的 UI 清理（清除指示器、关闭流式卡片）但不触发 turn summary。提取 `sendError` 辅助函数替换 7 处内联 Error 信封创建。新增 `ErrCodeTurnTimeout` 常量。
+- **Agent Config**: Context fill 计算修正 — Claude Code SDK `usage.input_tokens` 已含 cached tokens（billing breakdown 非叠加），移除重复计数消除 ContextFill 超过 ContextWindow 的不可能值。
+- **Configuration**: `Bridge.adapter` 改用 `atomic.Value` 保证线程安全；`SetAdapter` 在 platform mismatch 时返回 error 而非仅日志 Warn。
+- **CI**: GitHub Actions 升级至 Node.js 24 兼容版本 — actions/cache v5, upload/download-artifact v7。
+
+### Fixed
+
+- **Gateway**: Session 生命周期修复 — resume 盲重试消除（P0: 新增 `SessionFileChecker` 接口，bridge 恢复前检查 session 文件存在性，zombie GC 删除文件时自动降级为全新启动）；GC race 修复（handleGC 原子重读 session state 避免与 cleanupCrashedWorker 竞争）；空 session ID 验证。(#135, #133, #134)
+- **Messaging/Feishu**: Write/Flush 解耦为后台 150ms timer loop — 防止 CardKit 100ms 速率限制静默丢帧和误报 integrity warning，修复 `bufRunes` 计数器 flush 后未重置。(#128)
+- **WebChat**: 消息去重 — adapter 层在传入 assistant-ui ExternalStoreAdapter 前按 ID 去重，修复事件处理器竞争导致的 `MessageRepository same id already exists` 错误。
+
+### Security
+
+- **CLI/Slack**: `loadEnvFile` 防止覆盖已有环境变量；Worker 白名单使用精确条目替代宽泛前缀匹配；`download-file` 使用认证的 `client.GetFileContext` 替代裸 `http.Get`；rune 截断确保 CJK 字符正确处理。
+
 ## [1.4.0] - 2026-05-03
 
 ### Summary
