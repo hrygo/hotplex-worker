@@ -114,6 +114,7 @@ func FormatTurnSummary(d TurnSummaryData) string {
 }
 
 // formatToolNames produces "N (Tool×M, ...)" sorted by count descending.
+// Shows at most top 5 tools; remaining tools are summarized as "+N".
 func formatToolNames(names map[string]int, total int) string {
 	if len(names) == 0 {
 		return fmt.Sprintf("%d", total)
@@ -132,11 +133,21 @@ func formatToolNames(names map[string]int, total int) string {
 		}
 		return sorted[i].name < sorted[j].name
 	})
-	parts := make([]string, len(sorted))
-	for i, s := range sorted {
+	const topN = 5
+	shown := sorted
+	remaining := len(sorted) - topN
+	if remaining > 0 {
+		shown = sorted[:topN]
+	}
+	parts := make([]string, len(shown))
+	for i, s := range shown {
 		parts[i] = fmt.Sprintf("%s×%d", s.name, s.count)
 	}
-	return fmt.Sprintf("%d (%s)", total, strings.Join(parts, ", "))
+	result := fmt.Sprintf("%d (%s)", total, strings.Join(parts, ", "))
+	if remaining > 0 {
+		result += fmt.Sprintf(" +%d", remaining)
+	}
+	return result
 }
 
 func formatDuration(ms int64) string {

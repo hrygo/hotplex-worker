@@ -116,7 +116,6 @@ func TestSessionAccumulator_ComputeContextPct(t *testing.T) {
 		{"zero usage", 0, 200000, 0},
 		{"50% usage", 100000, 200000, 50},
 		{"with exact", 48000, 200000, 24},
-		{"over 100 clamped", 300000, 200000, 100},
 		{"no window", 50000, 0, 0},
 	}
 
@@ -131,6 +130,60 @@ func TestSessionAccumulator_ComputeContextPct(t *testing.T) {
 		})
 	}
 	t.Parallel()
+}
+
+func TestSessionAccumulator_MergeContextUsage(t *testing.T) {
+	t.Parallel()
+
+	t.Run("precise data overrides aggregated", func(t *testing.T) {
+		acc := &sessionAccumulator{StartedAt: time.Now()}
+		// First: simulated aggregated Done data (inflated)
+		acc.ContextFill = 260000
+		acc.ContextWindow = 200000
+
+		// Then: precise control channel data overrides it
+		acc.mergeContextUsage(&events.ContextUsageData{
+			TotalTokens: 58000,
+			MaxTokens:   200000,
+			Percentage:  29,
+		})
+
+		require.Equal(t, int64(58000), acc.ContextFill)
+		require.Equal(t, int64(200000), acc.ContextWindow)
+		require.InDelta(t, 29.0, acc.computeContextPct(), 0.1)
+	})
+
+	t.Run("nil data ignored", func(t *testing.T) {
+		acc := &sessionAccumulator{
+			ContextFill:   100000,
+			ContextWindow: 200000,
+			StartedAt:     time.Now(),
+		}
+		acc.mergeContextUsage(nil)
+		require.Equal(t, int64(100000), acc.ContextFill, "nil ContextUsageData must not change accumulator")
+	})
+
+	t.Run("zero max tokens ignored", func(t *testing.T) {
+		acc := &sessionAccumulator{
+			ContextFill:   100000,
+			ContextWindow: 200000,
+			StartedAt:     time.Now(),
+		}
+		acc.mergeContextUsage(&events.ContextUsageData{TotalTokens: 50000, MaxTokens: 0})
+		require.Equal(t, int64(100000), acc.ContextFill, "zero MaxTokens must not change accumulator")
+	})
+}
+
+func TestSessionAccumulator_Snapshot_Precise(t *testing.T) {
+	t.Parallel()
+	acc := &sessionAccumulator{
+		ContextFill:   58000,
+		ContextWindow: 200000,
+		StartedAt:     time.Now(),
+	}
+	snap := acc.snapshot()
+	require.Equal(t, int64(58000), snap["context_fill"])
+	require.InDelta(t, 29.0, snap["context_pct"], 0.1)
 }
 
 func TestSessionAccumulator_Snapshot(t *testing.T) {

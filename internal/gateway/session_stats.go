@@ -113,20 +113,23 @@ func (a *sessionAccumulator) resetPerTurn() {
 	a.TurnDurationMs = 0
 }
 
+// mergeContextUsage updates ContextFill and ContextWindow from precise worker control data.
+// Called after get_context_usage returns; overrides the aggregated Done event values.
+func (a *sessionAccumulator) mergeContextUsage(cu *events.ContextUsageData) {
+	if cu == nil || cu.MaxTokens <= 0 {
+		return
+	}
+	a.ContextFill = int64(cu.TotalTokens)
+	a.ContextWindow = int64(cu.MaxTokens)
+}
+
 // computeContextPct returns context window usage percentage (0-100).
-// Follows Claude Code's formula: latest turn input / contextWindow.
+// Data comes from get_context_usage control channel (precise) or Done event usage (fallback).
 func (a *sessionAccumulator) computeContextPct() float64 {
 	if a.ContextWindow <= 0 || a.ContextFill <= 0 {
 		return 0
 	}
-	pct := float64(a.ContextFill) / float64(a.ContextWindow) * 100
-	if pct > 100 {
-		pct = 100
-	}
-	if pct < 0 {
-		pct = 0
-	}
-	return pct
+	return float64(a.ContextFill) / float64(a.ContextWindow) * 100
 }
 
 // snapshot returns the current accumulator state as a map for injection into DoneData.Stats["_session"].
