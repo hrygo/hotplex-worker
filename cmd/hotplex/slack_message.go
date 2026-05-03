@@ -52,7 +52,7 @@ func newSlackSendMessageCmd() *cobra.Command {
 	cmd.Flags().StringVar(&threadTS, "thread-ts", "", "thread timestamp for reply")
 	cmd.Flags().BoolVar(&useJSON, "json", false, "JSON output")
 	configFlag(cmd, &configPath)
-	cmd.MarkFlagRequired("text")
+	_ = cmd.MarkFlagRequired("text")
 
 	return cmd
 }
@@ -89,9 +89,9 @@ func newSlackUpdateMessageCmd() *cobra.Command {
 	cmd.Flags().StringVar(&ts, "ts", "", "message timestamp")
 	cmd.Flags().BoolVar(&useJSON, "json", false, "JSON output")
 	configFlag(cmd, &configPath)
-	cmd.MarkFlagRequired("text")
-	cmd.MarkFlagRequired("channel")
-	cmd.MarkFlagRequired("ts")
+	_ = cmd.MarkFlagRequired("text")
+	_ = cmd.MarkFlagRequired("channel")
+	_ = cmd.MarkFlagRequired("ts")
 
 	return cmd
 }
@@ -132,10 +132,10 @@ func newSlackScheduleMessageCmd() *cobra.Command {
 
 			if useJSON {
 				return json.NewEncoder(os.Stdout).Encode(map[string]any{
-					"ok": true,
+					"ok":                   true,
 					"scheduled_message_id": scheduledID,
-					"channel": ch,
-					"post_at": postAt,
+					"channel":              ch,
+					"post_at":              postAt,
 				})
 			}
 			fmt.Printf("ok  scheduled_id=%s  channel=%s  post_at=%d\n", scheduledID, ch, postAt)
@@ -148,8 +148,8 @@ func newSlackScheduleMessageCmd() *cobra.Command {
 	cmd.Flags().StringVar(&at, "at", "", "send time (ISO 8601 or Unix timestamp)")
 	cmd.Flags().BoolVar(&useJSON, "json", false, "JSON output")
 	configFlag(cmd, &configPath)
-	cmd.MarkFlagRequired("text")
-	cmd.MarkFlagRequired("at")
+	_ = cmd.MarkFlagRequired("text")
+	_ = cmd.MarkFlagRequired("at")
 
 	return cmd
 }

@@ -66,7 +66,7 @@ func newSlackUploadFileCmd() *cobra.Command {
 	cmd.Flags().Int64Var(&maxSize, "max-size", 0, "max file size in bytes (default 50MB)")
 	cmd.Flags().BoolVar(&useJSON, "json", false, "JSON output")
 	configFlag(cmd, &configPath)
-	cmd.MarkFlagRequired("file")
+	_ = cmd.MarkFlagRequired("file")
 
 	return cmd
 }

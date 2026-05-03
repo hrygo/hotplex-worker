@@ -1354,18 +1354,3 @@ func gitBranchOf(dir string) string {
 	}
 	return strings.TrimSpace(string(out))
 }
-
-func injectSlackContext(info *worker.SessionInfo, pk map[string]string) {
-	if pk == nil {
-		return
-	}
-	if chID, ok := pk["channel_id"]; ok && chID != "" {
-		if info.Env == nil {
-			info.Env = make(map[string]string)
-		}
-		info.Env["HOTPLEX_SLACK_CHANNEL_ID"] = chID
-		if threadTS, ok := pk["thread_ts"]; ok && threadTS != "" {
-			info.Env["HOTPLEX_SLACK_THREAD_TS"] = threadTS
-		}
-	}
-}

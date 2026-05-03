@@ -57,8 +57,8 @@ func newSlackBookmarkAddCmd() *cobra.Command {
 	cmd.Flags().StringVar(&emoji, "emoji", "", "bookmark icon emoji")
 	cmd.Flags().BoolVar(&useJSON, "json", false, "JSON output")
 	configFlag(cmd, &configPath)
-	cmd.MarkFlagRequired("channel")
-	cmd.MarkFlagRequired("title")
+	_ = cmd.MarkFlagRequired("channel")
+	_ = cmd.MarkFlagRequired("title")
 
 	return cmd
 }
@@ -101,7 +101,7 @@ func newSlackBookmarkListCmd() *cobra.Command {
 	cmd.Flags().StringVar(&channel, "channel", "", "channel ID")
 	cmd.Flags().BoolVar(&useJSON, "json", false, "JSON output")
 	configFlag(cmd, &configPath)
-	cmd.MarkFlagRequired("channel")
+	_ = cmd.MarkFlagRequired("channel")
 
 	return cmd
 }
@@ -130,8 +130,8 @@ func newSlackBookmarkRemoveCmd() *cobra.Command {
 	cmd.Flags().StringVar(&channel, "channel", "", "channel ID")
 	cmd.Flags().StringVar(&bookmarkID, "bookmark-id", "", "bookmark ID")
 	configFlag(cmd, &configPath)
-	cmd.MarkFlagRequired("channel")
-	cmd.MarkFlagRequired("bookmark-id")
+	_ = cmd.MarkFlagRequired("channel")
+	_ = cmd.MarkFlagRequired("bookmark-id")
 
 	return cmd
 }

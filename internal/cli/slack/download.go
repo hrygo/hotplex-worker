@@ -23,7 +23,7 @@ func DownloadFile(ctx context.Context, client *slack.Client, fileID, outputPath 
 	if err != nil {
 		return fmt.Errorf("create output file: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	if err := client.GetFileContext(ctx, info.URLPrivateDownload, f); err != nil {
 		return fmt.Errorf("download file: %w", err)

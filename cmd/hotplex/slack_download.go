@@ -33,8 +33,8 @@ func newSlackDownloadFileCmd() *cobra.Command {
 	cmd.Flags().StringVar(&fileID, "file-id", "", "Slack file ID")
 	cmd.Flags().StringVarP(&output, "output", "o", "", "local save path")
 	configFlag(cmd, &configPath)
-	cmd.MarkFlagRequired("file-id")
-	cmd.MarkFlagRequired("output")
+	_ = cmd.MarkFlagRequired("file-id")
+	_ = cmd.MarkFlagRequired("output")
 
 	return cmd
 }

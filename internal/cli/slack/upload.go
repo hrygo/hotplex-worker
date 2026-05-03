@@ -10,12 +10,12 @@ import (
 )
 
 type UploadParams struct {
-	FilePath  string
-	Title     string
-	Comment   string
-	Channel   string
-	ThreadTS  string
-	MaxSize   int64
+	FilePath string
+	Title    string
+	Comment  string
+	Channel  string
+	ThreadTS string
+	MaxSize  int64
 }
 
 type UploadResult struct {
@@ -41,12 +41,12 @@ func UploadFile(ctx context.Context, client *slack.Client, params *UploadParams)
 	}
 
 	uploadParams := slack.UploadFileParameters{
-		Filename:       filepath.Base(params.FilePath),
-		File:           params.FilePath,
-		FileSize:       int(stat.Size()),
-		Title:          title,
-		InitialComment: params.Comment,
-		Channel:        params.Channel,
+		Filename:        filepath.Base(params.FilePath),
+		File:            params.FilePath,
+		FileSize:        int(stat.Size()),
+		Title:           title,
+		InitialComment:  params.Comment,
+		Channel:         params.Channel,
 		ThreadTimestamp: params.ThreadTS,
 	}
 

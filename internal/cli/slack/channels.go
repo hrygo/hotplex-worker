@@ -25,8 +25,8 @@ func ListChannels(ctx context.Context, client *slack.Client, types string, limit
 	}
 
 	params := &slack.GetConversationsParameters{
-		Types:  typeSlice,
-		Limit:  limit,
+		Types: typeSlice,
+		Limit: limit,
 	}
 
 	var result []ChannelInfo

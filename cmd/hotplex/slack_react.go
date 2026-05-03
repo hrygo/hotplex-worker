@@ -25,8 +25,8 @@ func newSlackReactAddCmd() *cobra.Command {
 	var channel, ts, emoji, configPath string
 
 	cmd := &cobra.Command{
-		Use:   "add",
-		Short: "Add a reaction",
+		Use:     "add",
+		Short:   "Add a reaction",
 		Example: `  hotplex slack react add --channel D0AQJ5CLZN0 --ts 1777797319.120439 --emoji white_check_mark`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			_, client, err := slackcli.LoadConfigAndClient(configPath)
@@ -47,9 +47,9 @@ func newSlackReactAddCmd() *cobra.Command {
 	cmd.Flags().StringVar(&ts, "ts", "", "message timestamp")
 	cmd.Flags().StringVarP(&emoji, "emoji", "e", "", "emoji name (without colons)")
 	configFlag(cmd, &configPath)
-	cmd.MarkFlagRequired("channel")
-	cmd.MarkFlagRequired("ts")
-	cmd.MarkFlagRequired("emoji")
+	_ = cmd.MarkFlagRequired("channel")
+	_ = cmd.MarkFlagRequired("ts")
+	_ = cmd.MarkFlagRequired("emoji")
 
 	return cmd
 }
@@ -79,9 +79,9 @@ func newSlackReactRemoveCmd() *cobra.Command {
 	cmd.Flags().StringVar(&ts, "ts", "", "message timestamp")
 	cmd.Flags().StringVarP(&emoji, "emoji", "e", "", "emoji name (without colons)")
 	configFlag(cmd, &configPath)
-	cmd.MarkFlagRequired("channel")
-	cmd.MarkFlagRequired("ts")
-	cmd.MarkFlagRequired("emoji")
+	_ = cmd.MarkFlagRequired("channel")
+	_ = cmd.MarkFlagRequired("ts")
+	_ = cmd.MarkFlagRequired("emoji")
 
 	return cmd
 }
