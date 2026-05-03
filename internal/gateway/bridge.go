@@ -381,12 +381,7 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 			}
 			b.log.Warn("bridge: turn timeout exceeded, terminating worker",
 				"session_id", sessionID, "worker_type", workerType, "turn_timeout", b.turnTimeout)
-			timeoutEvt := events.NewEnvelope(aep.NewID(), sessionID,
-				b.hub.NextSeq(sessionID), events.Error, events.ErrorData{
-					Code:    "TURN_TIMEOUT",
-					Message: fmt.Sprintf("Turn exceeded %v time limit and was terminated.", b.turnTimeout),
-				})
-			_ = b.hub.SendToSession(context.Background(), timeoutEvt)
+			b.sendError(sessionID, events.ErrCodeTurnTimeout, "Turn exceeded %v time limit and was terminated.", b.turnTimeout)
 			_ = w.Terminate(context.Background())
 		})
 		defer turnTimer.Stop()
@@ -655,24 +650,14 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 			"session_id", sessionID, "worker_type", workerType, "exit_code", exitCode,
 			"duration", time.Since(startTime).Round(time.Millisecond), "turn_count", acc.TurnCount)
 		metrics.WorkerCrashesTotal.WithLabelValues(string(workerType), fmt.Sprintf("%d", exitCode)).Inc()
-		crashErr := events.NewEnvelope(aep.NewID(), sessionID, b.hub.NextSeq(sessionID), events.Error, events.ErrorData{
-			Code:    events.ErrCodeWorkerCrash,
-			Message: fmt.Sprintf("worker crashed (exit code %d)", exitCode),
-		})
-		_ = b.hub.SendToSession(context.Background(), crashErr)
-	} else if exitCode == 143 || exitCode == -1 {
-		termErr := events.NewEnvelope(aep.NewID(), sessionID, b.hub.NextSeq(sessionID), events.Error, events.ErrorData{
-			Code:    events.ErrCodeSessionTerminated,
-			Message: fmt.Sprintf("worker terminated (signal %d)", -exitCode),
-		})
-		_ = b.hub.SendToSession(context.Background(), termErr)
+		b.sendError(sessionID, events.ErrCodeWorkerCrash, "worker crashed (exit code %d)", exitCode)
+	} else if exitCode == 143 {
+		b.sendError(sessionID, events.ErrCodeSessionTerminated, "worker terminated (SIGTERM)")
+	} else if exitCode == -1 {
+		b.sendError(sessionID, events.ErrCodeSessionTerminated, "worker terminated (killed)")
 	} else if !doneReceived {
 		b.log.Debug("bridge: sending error for platform cleanup (no done received)", "session_id", sessionID, "worker_type", workerType)
-		exitErr := events.NewEnvelope(aep.NewID(), sessionID, b.hub.NextSeq(sessionID), events.Error, events.ErrorData{
-			Code:    events.ErrCodeWorkerCrash,
-			Message: "worker exited without sending done",
-		})
-		_ = b.hub.SendToSession(context.Background(), exitErr)
+		b.sendError(sessionID, events.ErrCodeWorkerCrash, "worker exited without sending done")
 	}
 
 	// Record partial assistant response on crash/timeout (Path 3).
@@ -733,11 +718,7 @@ func (b *Bridge) attemptResumeFallback(p fallbackParams) bool {
 	if b.recordCrashLoop(p.sessionID) {
 		b.log.Error("bridge: crash loop detected, aborting retry to protect gateway",
 			"session_id", p.sessionID, "worker_type", p.workerType, "max", crashLoopMax, "window", crashLoopWindow)
-		errEvt := events.NewEnvelope(aep.NewID(), p.sessionID, b.hub.NextSeq(p.sessionID), events.Error, events.ErrorData{
-			Code:    events.ErrCodeWorkerCrash,
-			Message: fmt.Sprintf("Worker crashed %d times in %v. Stopping retry to protect gateway stability.", crashLoopMax, crashLoopWindow),
-		})
-		_ = b.hub.SendToSession(context.Background(), errEvt)
+		b.sendError(p.sessionID, events.ErrCodeWorkerCrash, "Worker crashed %d times in %v. Stopping retry to protect gateway stability.", crashLoopMax, crashLoopWindow)
 		return false
 	}
 
@@ -751,11 +732,7 @@ func (b *Bridge) attemptResumeFallback(p fallbackParams) bool {
 			// Synchronous failure — fall through to fresh start below.
 		} else {
 			b.log.Info("bridge: resume retry succeeded", "session_id", p.sessionID, "worker_type", p.workerType)
-			warnEvt := events.NewEnvelope(aep.NewID(), p.sessionID, b.hub.NextSeq(p.sessionID), events.Error, events.ErrorData{
-				Code:    events.ErrCodeResumeRetry,
-				Message: fmt.Sprintf("Worker crashed after resume (exit %d), retried resume to preserve conversation.", p.exitCode),
-			})
-			_ = b.hub.SendToSession(context.Background(), warnEvt)
+			b.sendError(p.sessionID, events.ErrCodeResumeRetry, "Worker crashed after resume (exit %d), retried resume to preserve conversation.", p.exitCode)
 			return true
 		}
 	}
@@ -1263,6 +1240,14 @@ func (b *Bridge) resetCrashLoop(sessionID string) {
 	b.crashTrackerMu.Lock()
 	defer b.crashTrackerMu.Unlock()
 	delete(b.crashTracker, sessionID)
+}
+
+func (b *Bridge) sendError(sessionID string, code events.ErrorCode, format string, args ...any) {
+	env := events.NewEnvelope(aep.NewID(), sessionID, b.hub.NextSeq(sessionID), events.Error, events.ErrorData{
+		Code:    code,
+		Message: fmt.Sprintf(format, args...),
+	})
+	_ = b.hub.SendToSession(context.Background(), env)
 }
 
 // gitAvailable is checked once via sync.Once. If git is not on PATH,
