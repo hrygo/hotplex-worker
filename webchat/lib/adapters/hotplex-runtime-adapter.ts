@@ -468,7 +468,6 @@ export function useHotPlexRuntime({
       if (!deltaRafId) {
         deltaRafId = requestAnimationFrame(flushDelta);
       }
-      setIsRunning(true);
     };
 
     const handleMessage = (data: MessageData, env: Envelope) => {

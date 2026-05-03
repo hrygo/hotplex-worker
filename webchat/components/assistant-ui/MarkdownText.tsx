@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useCopyToClipboard } from "@/lib/hooks/useCopyToClipboard";
-import { getHighlighter } from "@/lib/highlight";
+import { getHighlighter, type Highlighter } from "@/lib/highlight";
 
 function escapeHtml(text: string): string {
   return text
@@ -96,7 +96,7 @@ function CodeBlock({ raw, lang, highlighted }: { raw: string; lang: string; high
 }
 
 export function MarkdownText({ text }: { text: string }) {
-  const [hljs, setHljs] = useState<any>(null);
+  const [hljs, setHljs] = useState<Highlighter | null>(null);
 
   useEffect(() => {
     getHighlighter().then(setHljs);
