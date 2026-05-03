@@ -89,6 +89,19 @@ func Load(dir, platform, botID string) (*AgentConfigs, error) {
 	return c, nil
 }
 
+// configFiles lists recognized agent config file names.
+var configFiles = []string{"SOUL.md", "AGENTS.md", "SKILLS.md", "USER.md", "MEMORY.md"}
+
+// HasGlobalFiles reports whether any config file exists at the global level (dir/<file>).
+func HasGlobalFiles(dir string) bool {
+	for _, name := range configFiles {
+		if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
 // resolveFile implements the 3-level per-file fallback.
 // Returns the content of the first non-empty file found, or ("", nil) if none exist.
 // Non-NotExist I/O errors (e.g., permission denied) are propagated immediately

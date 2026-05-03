@@ -87,6 +87,7 @@ func (c agentConfigSuffixChecker) Check(_ context.Context) cli.Diagnostic {
 func init() {
 	cli.DefaultRegistry.Register(agentConfigSuffixChecker{})
 	cli.DefaultRegistry.Register(agentConfigDirChecker{})
+	cli.DefaultRegistry.Register(agentConfigGlobalFilesChecker{})
 }
 
 // agentConfigDirChecker validates the agent-configs directory structure,
@@ -176,5 +177,51 @@ func (c agentConfigDirChecker) checkSubdir(platformDir, platformName string, war
 		if strings.HasSuffix(name, ".md") {
 			*warnings = append(*warnings, filepath.Join(platformName, name))
 		}
+	}
+}
+
+// agentConfigGlobalFilesChecker detects config files at the global level
+// that lack a per-bot directory, meaning they are shared across all bots.
+type agentConfigGlobalFilesChecker struct {
+	dir string
+}
+
+func (c agentConfigGlobalFilesChecker) Name() string     { return "agent.global_files" }
+func (c agentConfigGlobalFilesChecker) Category() string { return "agent_config" }
+
+func (c agentConfigGlobalFilesChecker) scanDir() string {
+	if c.dir != "" {
+		return c.dir
+	}
+	return filepath.Join(config.HotplexHome(), "agent-configs")
+}
+
+func (c agentConfigGlobalFilesChecker) Check(_ context.Context) cli.Diagnostic {
+	dir := c.scanDir()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return cli.Diagnostic{Name: c.Name(), Category: c.Category(), Status: cli.StatusPass, Message: "Agent config directory not yet created"}
+		}
+		return cli.Diagnostic{Name: c.Name(), Category: c.Category(), Status: cli.StatusWarn, Message: "Cannot read: " + err.Error()}
+	}
+
+	var global []string
+	for _, e := range entries {
+		if !e.IsDir() && validConfigFiles[e.Name()] {
+			global = append(global, e.Name())
+		}
+	}
+	if len(global) == 0 {
+		return cli.Diagnostic{Name: c.Name(), Category: c.Category(), Status: cli.StatusPass, Message: "No global agent-config files (using per-bot configs)"}
+	}
+
+	return cli.Diagnostic{
+		Name:     c.Name(),
+		Category: c.Category(),
+		Status:   cli.StatusWarn,
+		Message:  fmt.Sprintf("Global config files apply to all bots: %s", strings.Join(global, ", ")),
+		Detail:   dir,
+		FixHint:  fmt.Sprintf("Move to per-bot directory for isolation:\n  mkdir -p %s/slack/<BOT_ID>\n  mv %s %s/slack/<BOT_ID>/", dir, filepath.Join(dir, global[0]), dir),
 	}
 }
