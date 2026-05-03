@@ -302,6 +302,7 @@ func (c *StreamingCardController) Flush(ctx context.Context) error {
 		} else {
 			c.mu.Lock()
 			c.lastFlushed = content
+			c.bufRunes = 0
 			c.mu.Unlock()
 			return nil
 		}
@@ -317,6 +318,7 @@ func (c *StreamingCardController) Flush(ctx context.Context) error {
 		}
 		c.mu.Lock()
 		c.lastFlushed = content
+		c.bufRunes = 0
 		c.mu.Unlock()
 	}
 

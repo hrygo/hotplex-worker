@@ -633,12 +633,12 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 	}
 
 	// If session is already TERMINATED (e.g., handler client_kill), the handler
-	// already sends error + done events. Skip sending redundant crash/synthetic
-	// done — only detach and clean up.
+	// already sent an error event. Skip sending redundant crash error — only
+	// detach and clean up.
 	if b.sm != nil {
 		si, smErr := b.sm.Get(sessionID)
 		if smErr == nil && si.State == events.StateTerminated {
-			b.log.Debug("bridge: session already terminated, skipping done for handler-killed worker", "session_id", sessionID, "worker_type", workerType)
+			b.log.Debug("bridge: session already terminated, skipping error for handler-killed worker", "session_id", sessionID, "worker_type", workerType)
 			if !fallbackAttempted {
 				b.cleanupCrashedWorker(sessionID, w)
 			}
@@ -646,37 +646,33 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 		}
 	}
 
-	// SIGTERM (143) and Kill (-1) are intentional, not crashes.
+	// Send Error events for cleanup — platform adapters handle Error the same as Done
+	// (clear indicators, cancel interactions, close streaming cards) but without
+	// triggering turn summary, which requires _session data from a real worker Done.
 	if exitCode != 0 && exitCode != 143 && exitCode != -1 {
 		acc := b.getOrInitAccum(sessionID, "")
-		b.log.Warn("bridge: worker exited with non-zero code, sending crash done",
+		b.log.Warn("bridge: worker exited with non-zero code, sending crash error",
 			"session_id", sessionID, "worker_type", workerType, "exit_code", exitCode,
 			"duration", time.Since(startTime).Round(time.Millisecond), "turn_count", acc.TurnCount)
 		metrics.WorkerCrashesTotal.WithLabelValues(string(workerType), fmt.Sprintf("%d", exitCode)).Inc()
-		crashDone := events.NewEnvelope(aep.NewID(), sessionID, b.hub.NextSeq(sessionID), events.Done, events.DoneData{
-			Success: false,
-			Stats:   map[string]any{"crash_exit_code": exitCode},
+		crashErr := events.NewEnvelope(aep.NewID(), sessionID, b.hub.NextSeq(sessionID), events.Error, events.ErrorData{
+			Code:    events.ErrCodeWorkerCrash,
+			Message: fmt.Sprintf("worker crashed (exit code %d)", exitCode),
 		})
-		_ = b.hub.SendToSession(context.Background(), crashDone)
+		_ = b.hub.SendToSession(context.Background(), crashErr)
 	} else if exitCode == 143 || exitCode == -1 {
-		// Worker was intentionally terminated (SIGTERM) or killed — not a crash.
-		// Send a clean done so platform connections (Slack/Feishu) clean up
-		// typing indicators and streaming UI.
-		syntheticDone := events.NewEnvelope(aep.NewID(), sessionID, b.hub.NextSeq(sessionID), events.Done, events.DoneData{
-			Success: false,
-			Stats:   map[string]any{"exit_code": exitCode},
+		termErr := events.NewEnvelope(aep.NewID(), sessionID, b.hub.NextSeq(sessionID), events.Error, events.ErrorData{
+			Code:    events.ErrCodeSessionTerminated,
+			Message: fmt.Sprintf("worker terminated (signal %d)", -exitCode),
 		})
-		_ = b.hub.SendToSession(context.Background(), syntheticDone)
+		_ = b.hub.SendToSession(context.Background(), termErr)
 	} else if !doneReceived {
-		// Worker exited without sending a done event (e.g., ResetContext consumed
-		// the exit code). Send a synthetic done so platform connections clean up
-		// typing indicators, streaming cards, and tool reactions.
-		b.log.Debug("bridge: sending synthetic done for platform cleanup", "session_id", sessionID, "worker_type", workerType)
-		syntheticDone := events.NewEnvelope(aep.NewID(), sessionID, b.hub.NextSeq(sessionID), events.Done, events.DoneData{
-			Success: false,
-			Stats:   map[string]any{"synthetic": true},
+		b.log.Debug("bridge: sending error for platform cleanup (no done received)", "session_id", sessionID, "worker_type", workerType)
+		exitErr := events.NewEnvelope(aep.NewID(), sessionID, b.hub.NextSeq(sessionID), events.Error, events.ErrorData{
+			Code:    events.ErrCodeWorkerCrash,
+			Message: "worker exited without sending done",
 		})
-		_ = b.hub.SendToSession(context.Background(), syntheticDone)
+		_ = b.hub.SendToSession(context.Background(), exitErr)
 	}
 
 	// Record partial assistant response on crash/timeout (Path 3).
