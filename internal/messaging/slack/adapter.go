@@ -1107,11 +1107,21 @@ func formatToolNamesSlack(names map[string]int, total int) string {
 		}
 		return sorted[i].name < sorted[j].name
 	})
-	parts := make([]string, len(sorted))
-	for i, s := range sorted {
+	const topN = 5
+	shown := sorted
+	remaining := len(sorted) - topN
+	if remaining > 0 {
+		shown = sorted[:topN]
+	}
+	parts := make([]string, len(shown))
+	for i, s := range shown {
 		parts[i] = fmt.Sprintf("%s×%d", s.name, s.count)
 	}
-	return fmt.Sprintf("%d calls (%s)", total, strings.Join(parts, ", "))
+	result := fmt.Sprintf("%d calls (%s)", total, strings.Join(parts, ", "))
+	if remaining > 0 {
+		result += fmt.Sprintf(" +%d", remaining)
+	}
+	return result
 }
 
 func formatDurationSlack(ms int64) string {

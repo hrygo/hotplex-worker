@@ -226,6 +226,22 @@ func TestFormatToolNames_Sorted(t *testing.T) {
 	require.Equal(t, "9 (Read×5, Bash×3, Edit×1)", got)
 }
 
+func TestFormatToolNames_Top5(t *testing.T) {
+	t.Parallel()
+	names := map[string]int{
+		"Read": 10, "Edit": 8, "Bash": 5, "Grep": 4, "Glob": 3, "Agent": 2, "Write": 1,
+	}
+	got := formatToolNames(names, 33)
+	require.Equal(t, "33 (Read×10, Edit×8, Bash×5, Grep×4, Glob×3) +2", got)
+}
+
+func TestFormatToolNames_Exactly5(t *testing.T) {
+	t.Parallel()
+	names := map[string]int{"Read": 5, "Edit": 3, "Bash": 2, "Grep": 2, "Glob": 1}
+	got := formatToolNames(names, 13)
+	require.Equal(t, "13 (Read×5, Edit×3, Bash×2, Grep×2, Glob×1)", got)
+}
+
 func TestTruncatePath(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

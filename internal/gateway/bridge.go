@@ -449,6 +449,19 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 			acc.TurnCount++
 			acc.TurnDurationMs = time.Since(turnStartTime).Milliseconds()
 			acc.computePerTurnDeltas()
+
+			// Query precise context usage from worker via control channel.
+			// Silently falls back to aggregated Done stats on failure.
+			if cr, ok := w.(ControlRequester); ok {
+				ctrlCtx, ctrlCancel := context.WithTimeout(context.Background(), 5*time.Second)
+				if resp, err := cr.SendControlRequest(ctrlCtx, "get_context_usage", nil); err == nil {
+					if cu := events.MapContextUsageResponse(resp); cu.MaxTokens > 0 {
+						acc.mergeContextUsage(cu)
+					}
+				}
+				ctrlCancel()
+			}
+
 			b.injectSessionStats(env, acc)
 			if b.log.Enabled(context.Background(), slog.LevelDebug) {
 				b.log.Debug("bridge: turn completed",
