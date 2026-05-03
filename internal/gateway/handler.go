@@ -276,16 +276,7 @@ func (h *Handler) handleControl(ctx context.Context, env *events.Envelope) error
 			}
 			return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "terminate failed: %v", err)
 		}
-		// Send error + done to client.
-		errEnv := events.NewEnvelope(aep.NewID(), env.SessionID, h.hub.NextSeq(env.SessionID), events.Error, events.ErrorData{
-			Code:    events.ErrCodeSessionTerminated,
-			Message: "session terminated by client",
-		})
-		doneEnv := events.NewEnvelope(aep.NewID(), env.SessionID, h.hub.NextSeq(env.SessionID), events.Done, events.DoneData{
-			Success: false,
-		})
-		_ = h.hub.SendToSession(ctx, errEnv)
-		_ = h.hub.SendToSession(ctx, doneEnv)
+		_ = h.sendErrorf(ctx, env, events.ErrCodeSessionTerminated, "session terminated by client")
 		return nil
 
 	case events.ControlActionDelete:

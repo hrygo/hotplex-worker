@@ -35,7 +35,7 @@ runs:
     # which compiles internal/webchat even if we don't test it.
     - name: Restore webchat build output
       id: webchat-cache
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: internal/webchat/out
         key: webchat-${{ hashFiles('webchat/src/**', 'webchat/next.config.*', 'webchat/package.json', 'webchat/pnpm-lock.yaml') }}
