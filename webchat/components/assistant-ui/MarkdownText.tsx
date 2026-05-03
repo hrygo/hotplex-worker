@@ -1,11 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useCopyToClipboard } from "@/lib/hooks/useCopyToClipboard";
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const hljs = require("highlight.js");
+import { getHighlighter } from "@/lib/highlight";
 
 function escapeHtml(text: string): string {
   return text
@@ -97,6 +96,12 @@ function CodeBlock({ raw, lang, highlighted }: { raw: string; lang: string; high
 }
 
 export function MarkdownText({ text }: { text: string }) {
+  const [hljs, setHljs] = useState<any>(null);
+
+  useEffect(() => {
+    getHighlighter().then(setHljs);
+  }, []);
+
   if (!text) return null;
 
   return (
@@ -119,7 +124,7 @@ export function MarkdownText({ text }: { text: string }) {
             }
 
             let highlighted: string;
-            if (lang && hljs.getLanguage(lang)) {
+            if (hljs && lang && hljs.getLanguage(lang)) {
               highlighted = hljs.highlight(raw, {
                 language: lang,
                 ignoreIllegals: true,
