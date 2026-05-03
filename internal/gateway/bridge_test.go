@@ -199,13 +199,13 @@ func TestGetOrInitAccum(t *testing.T) {
 		accumMu: sync.Mutex{},
 	}
 
-	acc1 := b.getOrInitAccum("sess-1")
+	acc1 := b.getOrInitAccum("sess-1", "")
 	require.NotNil(t, acc1)
 
-	acc2 := b.getOrInitAccum("sess-1")
+	acc2 := b.getOrInitAccum("sess-1", "")
 	assert.Same(t, acc1, acc2)
 
-	acc3 := b.getOrInitAccum("sess-2")
+	acc3 := b.getOrInitAccum("sess-2", "")
 	assert.NotSame(t, acc1, acc3)
 }
 
@@ -217,7 +217,7 @@ func TestInjectSessionStats(t *testing.T) {
 	hub := newTestHub(t)
 	b := NewBridge(BridgeDeps{Log: log, Hub: hub, SM: sm})
 
-	acc := b.getOrInitAccum("sess-1")
+	acc := b.getOrInitAccum("sess-1", "")
 	acc.ToolCallCount = 4
 
 	env := &events.Envelope{
@@ -242,7 +242,7 @@ func TestInjectSessionStats_NonDoneData(t *testing.T) {
 	hub := newTestHub(t)
 	b := NewBridge(BridgeDeps{Log: log, Hub: hub, SM: sm})
 
-	acc := b.getOrInitAccum("sess-1")
+	acc := b.getOrInitAccum("sess-1", "")
 	env := &events.Envelope{
 		Event: events.Event{
 			Type: events.Message,

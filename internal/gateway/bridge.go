@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os/exec"
 	"runtime/debug"
 	"strings"
 	"sync"
@@ -391,17 +392,15 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 		defer turnTimer.Stop()
 	}
 
-	for env := range w.Conn().Recv() {
+	recvCh := w.Conn().Recv()
+
+	for env := range recvCh {
+
 		if env.Event.Type == events.Error {
 			b.log.Warn("bridge: received error from worker", "session_id", sessionID, "worker_type", workerType, "data", env.Event.Data)
-			// Capture last error for retry detection.
 			if ed, ok := env.Event.Data.(events.ErrorData); ok {
 				lastError = &ed
 			}
-			// When retry is enabled, buffer the error event instead of forwarding
-			// immediately. If the subsequent Done triggers a retry, the error is
-			// suppressed (user sees the notify message instead of raw LLM error).
-			// If no retry triggers, the error is forwarded after Done.
 			if b.retryCtrl != nil {
 				cloned := events.Clone(env)
 				cloned.SessionID = sessionID
@@ -411,29 +410,22 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 		} else if b.log.Enabled(context.Background(), slog.LevelDebug) {
 			b.log.Debug("bridge: received event from worker", "session_id", sessionID, "worker_type", workerType, "event_type", env.Event.Type)
 		}
-		// Capture and persist worker-internal session ID on first event
+
 		if firstEvent {
 			b.persistWorkerSessionID(w, sessionID)
 			firstEvent = false
 		}
 
-		// Turn timeout: reset timer on every received event (turn is still alive).
-		// Skip if timer already fired (worker is being terminated).
 		if turnTimer != nil && !turnTimerFired.Load() {
 			turnTimer.Reset(b.turnTimeout)
 		}
-		// If turn timer fired, drain remaining events without processing.
 		if turnTimerFired.Load() {
 			continue
 		}
 
-		// Make a defensive copy before mutating SessionID to avoid a data race
-		// with Hub.Run which reads env during JSON encoding (hub mutates Seq).
 		env = events.Clone(env)
 		env.SessionID = sessionID
-		// Seq is assigned by hub.SendToSession via SeqGen (seq=0 triggers auto-assignment).
 
-		// LLM retry: accumulate text from streaming output.
 		if env.Event.Type == events.MessageDelta || env.Event.Type == events.Message {
 			if content := extractMessageContent(env); content != "" {
 				turnText.WriteString(content)
@@ -443,7 +435,7 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 		// Stats accumulation: track tool calls and merge per-turn stats on done.
 		switch env.Event.Type {
 		case events.ToolCall:
-			acc := b.getOrInitAccum(sessionID)
+			acc := b.getOrInitAccum(sessionID, "")
 			acc.ToolCallCount++
 			if tc, ok := asToolCallData(env.Event.Data); ok {
 				if acc.ToolNames == nil {
@@ -455,7 +447,7 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 			if turnTimer != nil {
 				turnTimer.Stop()
 			}
-			acc := b.getOrInitAccum(sessionID)
+			acc := b.getOrInitAccum(sessionID, opts.workDir)
 			if dd, ok := asDoneData(env.Event.Data); ok {
 				acc.mergePerTurnStats(dd)
 			}
@@ -510,19 +502,14 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 		}
 
 		// LLM retry: check after Done is forwarded.
-		// Skip for resumed workers with no output — these are resume failures
-		// (e.g., "No conversation found"), not transient LLM errors. The resume
-		// fallback mechanism handles these cases with its own retry logic.
 		if env.Event.Type == events.Done && b.retryCtrl != nil && (!opts.resumed || turnText.Len() > 0) {
 			if shouldRetry, attempt := b.retryCtrl.ShouldRetry(sessionID, lastError); shouldRetry {
-				// Suppress buffered error — user sees the notify message instead of raw LLM error.
 				pendingError = nil
 				b.autoRetry(context.Background(), w, sessionID, attempt)
 				turnText.Reset()
 				lastError = nil
 				continue
 			}
-			// No retry — flush buffered error event to client.
 			if pendingError != nil {
 				if err := b.hub.SendToSession(context.Background(), pendingError); err != nil {
 					b.log.Warn("bridge: forward buffered error failed", "err", err, "session_id", sessionID, "worker_type", workerType)
@@ -537,7 +524,7 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 		// Record assistant response to conversation store after retry decision.
 		if env.Event.Type == events.Done && b.convStore != nil {
 			dd, _ := asDoneData(env.Event.Data)
-			acc := b.getOrInitAccum(sessionID)
+			acc := b.getOrInitAccum(sessionID, "")
 			success := dd.Success
 			_ = b.convStore.Append(context.Background(), &session.ConversationRecord{
 				SessionID:     sessionID,
@@ -661,7 +648,7 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 
 	// SIGTERM (143) and Kill (-1) are intentional, not crashes.
 	if exitCode != 0 && exitCode != 143 && exitCode != -1 {
-		acc := b.getOrInitAccum(sessionID)
+		acc := b.getOrInitAccum(sessionID, "")
 		b.log.Warn("bridge: worker exited with non-zero code, sending crash done",
 			"session_id", sessionID, "worker_type", workerType, "exit_code", exitCode,
 			"duration", time.Since(startTime).Round(time.Millisecond), "turn_count", acc.TurnCount)
@@ -695,7 +682,7 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 	// Record partial assistant response on crash/timeout (Path 3).
 	workerCrashed := (exitCode != 0 && exitCode != 143 && exitCode != -1) || (!doneReceived && turnTimerFired.Load())
 	if b.convStore != nil && turnText.Len() > 0 && workerCrashed {
-		acc := b.getOrInitAccum(sessionID)
+		acc := b.getOrInitAccum(sessionID, "")
 		src := session.SourceCrash
 		if turnTimerFired.Load() {
 			src = session.SourceTimeout
@@ -855,7 +842,7 @@ func (b *Bridge) cleanupCrashedWorker(sessionID string, crashedWorker worker.Wor
 	// Read turn_count without deleting — the accumulator is cleaned up when the
 	// session is physically deleted, not here. This avoids reading TurnCount=0
 	// after resetPerTurn() has already cleared it at done.
-	acc := b.getOrInitAccum(sessionID)
+	acc := b.getOrInitAccum(sessionID, "")
 	b.log.Debug("bridge: cleaning up crashed worker", "session_id", sessionID, "turn_count", acc.TurnCount)
 	if b.sm == nil {
 		return
@@ -1193,13 +1180,17 @@ func buildNotifyEnvelope(sessionID, msg string, seq int64) *events.Envelope {
 }
 
 // getOrInitAccum returns the session accumulator, creating one if needed.
-func (b *Bridge) getOrInitAccum(sessionID string) *sessionAccumulator {
+func (b *Bridge) getOrInitAccum(sessionID, workDir string) *sessionAccumulator {
 	b.accumMu.Lock()
 	defer b.accumMu.Unlock()
 	if acc, ok := b.accum[sessionID]; ok {
 		return acc
 	}
 	acc := &sessionAccumulator{StartedAt: time.Now()}
+	if workDir != "" {
+		acc.WorkDir = workDir
+		acc.GitBranch = gitBranchOf(workDir)
+	}
 	b.accum[sessionID] = acc
 	return acc
 }
@@ -1276,4 +1267,36 @@ func (b *Bridge) resetCrashLoop(sessionID string) {
 	b.crashTrackerMu.Lock()
 	defer b.crashTrackerMu.Unlock()
 	delete(b.crashTracker, sessionID)
+}
+
+// gitAvailable is checked once via sync.Once. If git is not on PATH,
+// branch detection is skipped entirely for all sessions.
+var (
+	gitAvailable bool
+	gitOnce      sync.Once
+)
+
+func checkGitAvailable() bool {
+	gitOnce.Do(func() {
+		_, err := exec.LookPath("git")
+		gitAvailable = err == nil
+	})
+	return gitAvailable
+}
+
+// gitBranchOf returns the current git branch name for the given directory, or empty string.
+// Best-effort: 2s timeout, skips if git is not installed, errors silently ignored.
+func gitBranchOf(dir string) string {
+	if !checkGitAvailable() {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "rev-parse", "--abbrev-ref", "HEAD")
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }

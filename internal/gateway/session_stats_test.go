@@ -31,6 +31,7 @@ func TestSessionAccumulator_MergePerTurnStats(t *testing.T) {
 		})
 
 		require.Equal(t, int64(15234+8200+0), acc.TotalInput)
+		require.Equal(t, int64(15234+8200+0), acc.ContextFill)
 		require.Equal(t, int64(3821), acc.TotalOutput)
 		require.Equal(t, int64(200000), acc.ContextWindow)
 		require.Equal(t, "Sonnet", acc.ModelName)
@@ -52,6 +53,7 @@ func TestSessionAccumulator_MergePerTurnStats(t *testing.T) {
 		})
 
 		require.Equal(t, int64(8400+2000+500), acc.TotalInput)
+		require.Equal(t, int64(8400+2000+500), acc.ContextFill)
 		require.Equal(t, int64(3634), acc.TotalOutput)
 		require.InDelta(t, 0.0234, acc.TotalCostUSD, 0.0001)
 	})
@@ -63,10 +65,10 @@ func TestSessionAccumulator_MergePerTurnStats(t *testing.T) {
 		require.Equal(t, int64(0), acc.TotalOutput)
 	})
 
-	t.Run("accumulates across multiple turns", func(t *testing.T) {
+	t.Run("context fill overwritten by latest turn", func(t *testing.T) {
 		acc := &sessionAccumulator{StartedAt: time.Now()}
 
-		// Turn 1: Claude Code
+		// Turn 1
 		acc.mergePerTurnStats(events.DoneData{
 			Stats: map[string]any{
 				"usage": map[string]any{
@@ -81,8 +83,10 @@ func TestSessionAccumulator_MergePerTurnStats(t *testing.T) {
 				"total_cost_usd": 0.05,
 			},
 		})
+		require.Equal(t, int64(10000), acc.ContextFill)
+		require.Equal(t, int64(10000), acc.TotalInput)
 
-		// Turn 2: Claude Code
+		// Turn 2: smaller input — ContextFill reflects latest, TotalInput accumulates
 		acc.mergePerTurnStats(events.DoneData{
 			Stats: map[string]any{
 				"usage": map[string]any{
@@ -93,7 +97,8 @@ func TestSessionAccumulator_MergePerTurnStats(t *testing.T) {
 			},
 		})
 
-		require.Equal(t, int64(15000), acc.TotalInput)
+		require.Equal(t, int64(5000), acc.ContextFill) // latest turn only
+		require.Equal(t, int64(15000), acc.TotalInput) // cumulative
 		require.Equal(t, int64(3000), acc.TotalOutput)
 		require.Equal(t, int64(200000), acc.ContextWindow)
 		require.Equal(t, "Opus", acc.ModelName)
@@ -104,35 +109,28 @@ func TestSessionAccumulator_MergePerTurnStats(t *testing.T) {
 func TestSessionAccumulator_ComputeContextPct(t *testing.T) {
 	tests := []struct {
 		name          string
-		totalInput    int64
+		contextFill   int64
 		contextWindow int64
 		wantPct       float64
 	}{
 		{"zero usage", 0, 200000, 0},
 		{"50% usage", 100000, 200000, 50},
 		{"with exact", 48000, 200000, 24},
-		{"over 100 clamped", 300000, 200000, 100}, // 150% unclamped, clamped to 100
+		{"over 100 clamped", 300000, 200000, 100},
 		{"no window", 50000, 0, 0},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			acc := &sessionAccumulator{
-				TotalInput:    tt.totalInput,
+				ContextFill:   tt.contextFill,
 				ContextWindow: tt.contextWindow,
 			}
 			got := acc.computeContextPct()
 			require.Equal(t, tt.wantPct, got)
 		})
 	}
-
-	t.Run("over 100% clamped", func(t *testing.T) {
-		acc := &sessionAccumulator{
-			TotalInput:    250000,
-			ContextWindow: 200000,
-		}
-		require.Equal(t, float64(100), acc.computeContextPct())
-	})
+	t.Parallel()
 }
 
 func TestSessionAccumulator_Snapshot(t *testing.T) {
@@ -141,6 +139,7 @@ func TestSessionAccumulator_Snapshot(t *testing.T) {
 		ToolCallCount: 12,
 		TotalInput:    48434,
 		TotalOutput:   7821,
+		ContextFill:   48434,
 		ContextWindow: 200000,
 		TotalCostUSD:  0.084,
 		ModelName:     "Sonnet",
@@ -153,38 +152,13 @@ func TestSessionAccumulator_Snapshot(t *testing.T) {
 	require.Equal(t, int64(48434), snap["total_input_tok"])
 	require.Equal(t, int64(7821), snap["total_output_tok"])
 	require.Equal(t, int64(200000), snap["context_window"])
+	require.Equal(t, int64(48434), snap["context_fill"])
 	require.InDelta(t, 0.084, snap["total_cost_usd"], 0.001)
 	require.Equal(t, "Sonnet", snap["model_name"])
 
 	ctxPct, ok := snap["context_pct"].(float64)
 	require.True(t, ok)
 	require.InDelta(t, 24.2, ctxPct, 0.1)
-}
-
-func TestToInt64(t *testing.T) {
-	tests := []struct {
-		name  string
-		input any
-		want  int64
-	}{
-		{"float64", float64(12345), 12345},
-		{"int", 12345, 12345},
-		{"int64", int64(12345), 12345},
-		{"nil", nil, 0},
-		{"string", "abc", 0},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, toInt64(tt.input))
-		})
-	}
-}
-
-func TestToFloat64(t *testing.T) {
-	require.Equal(t, float64(42), toFloat64(float64(42)))
-	require.Equal(t, float64(42), toFloat64(42))
-	require.Equal(t, float64(42), toFloat64(int64(42)))
-	require.Equal(t, float64(0), toFloat64("x"))
 }
 
 func TestShortModelName(t *testing.T) {
@@ -194,11 +168,24 @@ func TestShortModelName(t *testing.T) {
 	require.Equal(t, "gpt-4o", shortModelName("gpt-4o"))
 }
 
-func TestFormatTokenCount(t *testing.T) {
-	require.Equal(t, "500", formatTokenCount(500))
-	require.Equal(t, "1.5K", formatTokenCount(1500))
-	require.Equal(t, "45.2K", formatTokenCount(45200))
-	require.Equal(t, "1.2M", formatTokenCount(1200000))
+// extractSessionStats is a test-only helper that extracts the _session map from a Done envelope.
+func extractSessionStats(env *events.Envelope) map[string]any {
+	dd, ok := asDoneData(env.Event.Data)
+	if !ok {
+		return nil
+	}
+	if dd.Stats == nil {
+		return nil
+	}
+	ss, ok := dd.Stats["_session"]
+	if !ok {
+		return nil
+	}
+	m, ok := ss.(map[string]any)
+	if !ok {
+		return nil
+	}
+	return m
 }
 
 func TestExtractSessionStats(t *testing.T) {
@@ -241,7 +228,6 @@ func TestExtractSessionStats(t *testing.T) {
 	})
 
 	t.Run("cloned envelope map string any", func(t *testing.T) {
-		// Simulates Event.Data after events.Clone JSON round-trip.
 		env := &events.Envelope{
 			Event: events.Event{
 				Type: events.Done,
@@ -257,7 +243,6 @@ func TestExtractSessionStats(t *testing.T) {
 		}
 		ss := extractSessionStats(env)
 		require.NotNil(t, ss)
-		// JSON unmarshal converts all numbers to float64.
 		require.Equal(t, float64(3), ss["turn_count"])
 	})
 }

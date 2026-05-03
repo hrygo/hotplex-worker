@@ -632,11 +632,28 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 	case events.Done:
 		streamCtrl := c.clearActiveIndicators(ctx)
 		c.adapter.Interactions.CancelAll(env.SessionID)
+
+		d := messaging.ExtractTurnSummary(env)
+		summaryText := messaging.FormatTurnSummary(d)
+		if summaryText != "" {
+			c.adapter.Log.Info("turn summary",
+				"turn_count", d.TurnCount,
+				"duration_ms", d.TurnDurationMs,
+				"model", d.ModelName,
+				"tool_calls", d.ToolCallCount,
+				"input_tok", d.TotalInputTok,
+			)
+			if streamCtrl != nil && streamCtrl.IsCreated() {
+				_ = streamCtrl.Write("\n\n---\n_" + summaryText + "_")
+			} else {
+				go c.sendTurnSummaryText(summaryText)
+			}
+		}
+
 		var closeErr error
 		if streamCtrl != nil && streamCtrl.IsCreated() {
 			closeErr = streamCtrl.Close(ctx)
 		}
-		go c.sendTurnSummary(ctx, env)
 		return closeErr
 	case events.Error:
 		streamCtrl := c.clearActiveIndicators(ctx)
@@ -847,20 +864,21 @@ func (c *FeishuConn) writeContent(ctx context.Context, env *events.Envelope, tex
 	return c.adapter.sendTextMessage(ctx, chatID, OptimizeMarkdownStyle(SanitizeForCard(text)))
 }
 
-func (c *FeishuConn) sendTurnSummary(ctx context.Context, env *events.Envelope) {
-	d := messaging.ExtractTurnSummary(env)
-	text := messaging.FormatTurnSummary(d)
-	if text == "" {
-		return
-	}
+func (c *FeishuConn) sendTurnSummaryText(text string) {
+	sendCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 	c.mu.RLock()
 	replyToMsgID := c.replyToMsgID
 	chatID := c.chatID
 	c.mu.RUnlock()
+	var err error
 	if replyToMsgID != "" {
-		_ = c.adapter.replyMessage(ctx, replyToMsgID, text, false)
+		err = c.adapter.replyMessage(sendCtx, replyToMsgID, text, false)
 	} else {
-		_ = c.adapter.sendTextMessage(ctx, chatID, text)
+		err = c.adapter.sendTextMessage(sendCtx, chatID, text)
+	}
+	if err != nil {
+		c.adapter.Log.Warn("turn summary send failed", "err", err)
 	}
 }
 
