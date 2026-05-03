@@ -356,7 +356,18 @@ Place these files in `config_dir` (missing files are silently skipped):
 | `USER.md` | C | User profile, preferences |
 | `MEMORY.md` | C | Persistent cross-session memory |
 
-Platform variants (e.g. `SOUL.slack.md`) are automatically appended to the base file.
+Platform variants use a **per-bot 3-level directory fallback**:
+
+```
+~/.hotplex/agent-configs/
+  SOUL.md                    ← global default
+  slack/SOUL.md              ← Slack platform-level
+  slack/U12345/SOUL.md       ← Slack per-bot level (highest priority)
+  feishu/SOUL.md             ← Feishu platform-level
+  feishu/ou_abc123/SOUL.md   ← Feishu per-bot level
+```
+
+Each file is resolved independently: `<platform>/<botID>/<file>` → `<platform>/<file>` → `<file>`. First non-empty file wins.
 
 ### 5.4 Size Limits
 
@@ -398,6 +409,19 @@ hotplex [command]
 | `security` | Security validation commands |
 | `onboard` | Interactive setup wizard |
 | `update` | Self-update to latest version (`--check`, `-y`, `--restart`) |
+| `service install` | Install as system service (systemd/launchd/SCM) |
+| `service uninstall` | Uninstall system service |
+| `service start/stop/restart` | Manage system service |
+| `service status` | Check service status |
+| `service logs` | View service logs |
+| `slack send-message` | Send a Slack message (`--text`, `--channel`, `--thread-ts`) |
+| `slack update-message` | Update a Slack message (`--channel`, `--ts`, `--text`) |
+| `slack schedule-message` | Schedule a Slack message (`--text`, `--at`) |
+| `slack upload-file` | Upload file to Slack (`--file`, `--title`, `--channel`) |
+| `slack download-file` | Download file from Slack (`--file-id`, `--output`) |
+| `slack list-channels` | List channels and DMs (`--types`, `--limit`) |
+| `slack bookmark add/list/remove` | Manage channel bookmarks |
+| `slack react add/remove` | Add or remove emoji reactions |
 
 ### Common Flags
 

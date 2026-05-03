@@ -103,6 +103,7 @@ log:
 | 字段 | 类型 | 默认值 | 热重载 | 说明 |
 |:-----|:-----|:-------|:------:|:-----|
 | `path` | string | `~/.hotplex/data/hotplex.db` | — | SQLite 数据库文件路径。`~` 自动展开为用户主目录。文件不存在时自动创建。加载时自动转为绝对路径 |
+| `events_path` | string | `~/.hotplex/data/events.db` | — | SQLite 事件数据库文件路径。独立于 `path`，存储事件级持久化数据（AEP Envelope）。默认与主数据库同目录 |
 | `wal_mode` | bool | `true` | — | 启用 Write-Ahead Logging 模式。WAL 允许并发读写（读不阻塞写），是单写 goroutine 架构的前提。**禁止关闭**，否则写性能急剧下降且并发读不可用 |
 | `busy_timeout` | duration | `500ms` | — | SQLite 锁等待超时。当另一个写操作持有时，当前操作在此时间内重试。500ms 在单写 goroutine 模型下足够覆盖一次批量刷盘 |
 | `max_open_conns` | int | `1` | — | 最大数据库连接数。SQLite 的并发写入受限于单连接，设为 1 确保所有操作在同一连接上串行化 |
@@ -170,6 +171,7 @@ Worker 进程启动时的工作目录遵循以下优先级覆盖逻辑：
 | `pid_dir` | string | `~/.hotplex/.pids/` | — | PID 文件目录。proc.Manager 在启动 Worker 时写入 PID 文件用于孤儿进程清理。网关重启时自动扫描此目录，杀死不再有父进程的孤儿 Worker |
 | `allowed_envs` | []string | `[]` | — | 额外透传给 Worker 的环境变量名白名单。这些环境变量从网关进程继承到 Worker 子进程。与 `env_whitelist` 合并去重 |
 | `env_whitelist` | []string | `["PATH", "HOME", ...]` | — | 安全透传的环境变量白名单。Worker 进程默认**不继承**网关的任何环境变量（安全隔离），仅白名单中的变量会被透传。`allowed_envs` 会被合并到此列表 |
+| `environment` | []string | `[]` | ✅ | 额外注入 Worker 进程的环境变量列表。每个条目支持 `KEY=VALUE` 或 `KEY=${VAR}` 格式。这是唯一支持 `${VAR}` 展开的配置字段，引用未设置变量（无默认值）的条目会被静默丢弃。与 `env_whitelist` 合并生效 |
 
 ### worker.auto_retry — LLM 自动重试
 
@@ -187,6 +189,15 @@ Worker 进程启动时的工作目录遵循以下优先级覆盖逻辑：
 | `notify_user` | bool | `true` | ✅ | 重试期间是否通知用户。启用时在重试前发送一条 `message` 事件（如"🔄 正在自动重试 (1/9)..."），替代原始 LLM 错误信息。关闭后用户看不到任何重试提示，但错误信息仍然会被拦截 |
 | `patterns` | []string | `[]` | ✅ | **追加模式 (Append Mode)**。在此定义的正则表达式将追加到内置模式（如 429, 5xx, 网络超时等）之后。自定义模式与内置模式共同生效，不会覆盖内置逻辑。 |
 
+### webchat — 嵌入式 Web Chat
+
+控制网关内嵌的 Web Chat SPA 服务。Next.js 静态导出通过 `go:embed` 编译时嵌入二进制，网关同时托管 API 和前端。
+
+| 字段 | 类型 | 默认值 | 热重载 | 说明 |
+|:-----|:-----|:-------|:------:|:-----|
+| `enabled` | bool | `true` | — | 启用 Web Chat SPA 托管。设为 `false` 则网关仅提供 WebSocket/API 端点，不提供前端静态文件 |
+| `addr` | string | `""` | — | Web Chat 地址（信息展示用）。用于启动 Banner 显示，不控制实际监听端口。Web Chat 由 Gateway 的 HTTP Server 在同一端口托管 |
+
 ### agent_config — Agent 角色配置 (B/C Channels)
 
 定义 Agent 的“人格（Persona）”与“上下文（Context）”。系统自动将这些 Markdown 文件注入到系统提示词的 XML 标签中。
@@ -194,7 +205,7 @@ Worker 进程启动时的工作目录遵循以下优先级覆盖逻辑：
 | 字段 | 类型 | 默认值 | 热重载 | 说明 |
 |:-----|:-----|:-------|:------:|:-----|
 | `enabled` | bool | `true` | — | 是否启用 Agent 配置注入。关闭后 Agent 将仅使用代码内建的通用提示词。 |
-| `config_dir` | string | `~/.hotplex/agent-configs` | — | 配置文件根目录。系统会扫描其中的 `SOUL.md`, `AGENTS.md`, `SKILLS.md` (B-Channel) 以及 `USER.md`, `MEMORY.md` (C-Channel)。 |
+| `config_dir` | string | `~/.hotplex/agent-configs` | — | 配置文件根目录。支持 **per-bot 3 级目录 fallback**，按文件独立解析：`<config_dir>/<platform>/<botID>/<file>` → `<config_dir>/<platform>/<file>` → `<config_dir>/<file>`，命中第一个非空文件即停止。有效平台值：`slack`、`feishu`、`webchat`、`""`（仅全局级） |
 
 ### skills — 技能管理
 
