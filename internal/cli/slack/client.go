@@ -81,6 +81,9 @@ func loadEnvFile(dir string) {
 		}
 		key := strings.TrimSpace(line[:idx])
 		val := strings.TrimSpace(line[idx+1:])
+		if len(val) >= 2 && ((val[0] == '"' && val[len(val)-1] == '"') || (val[0] == '\'' && val[len(val)-1] == '\'')) {
+			val = val[1 : len(val)-1]
+		}
 		if os.Getenv(key) == "" {
 			os.Setenv(key, val)
 		}

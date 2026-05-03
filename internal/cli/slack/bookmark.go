@@ -55,5 +55,8 @@ func ListBookmarks(ctx context.Context, client *slack.Client, channel string) ([
 }
 
 func RemoveBookmark(ctx context.Context, client *slack.Client, channel, bookmarkID string) error {
-	return client.RemoveBookmarkContext(ctx, channel, bookmarkID)
+	if err := client.RemoveBookmarkContext(ctx, channel, bookmarkID); err != nil {
+		return fmt.Errorf("remove bookmark: %w", err)
+	}
+	return nil
 }

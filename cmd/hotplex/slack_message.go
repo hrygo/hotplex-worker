@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -118,7 +119,7 @@ func newSlackScheduleMessageCmd() *cobra.Command {
 			if t, err := time.Parse(time.RFC3339, at); err == nil {
 				postAt = t.Unix()
 			} else {
-				_, err := fmt.Sscanf(at, "%d", &postAt)
+				postAt, err = strconv.ParseInt(at, 10, 64)
 				if err != nil {
 					return fmt.Errorf("--at must be ISO 8601 or Unix timestamp")
 				}

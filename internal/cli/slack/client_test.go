@@ -99,4 +99,20 @@ func TestLoadEnvFile(t *testing.T) {
 		dir := t.TempDir()
 		loadEnvFile(dir)
 	})
+
+	t.Run("strips double quotes from values", func(t *testing.T) {
+		dir := t.TempDir()
+		envPath := filepath.Join(dir, ".env")
+		require.NoError(t, os.WriteFile(envPath, []byte(`DQ_KEY="quoted_value"`+"\n"), 0o644))
+		loadEnvFile(dir)
+		require.Equal(t, "quoted_value", os.Getenv("DQ_KEY"))
+	})
+
+	t.Run("strips single quotes from values", func(t *testing.T) {
+		dir := t.TempDir()
+		envPath := filepath.Join(dir, ".env")
+		require.NoError(t, os.WriteFile(envPath, []byte("SQ_KEY='single_quoted'\n"), 0o644))
+		loadEnvFile(dir)
+		require.Equal(t, "single_quoted", os.Getenv("SQ_KEY"))
+	})
 }
