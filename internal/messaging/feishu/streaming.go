@@ -82,10 +82,11 @@ type StreamingCardController struct {
 	cardKitOK       bool
 	streamingActive bool // true once enableStreaming succeeds; disables on disableStreaming
 
-	// Reliability tracking (mirrors Slack NativeStreamingWriter).
+	// Reliability tracking.
 	streamStartTime time.Time
 	streamExpired   bool
 	bytesWritten    int64
+	bufRunes        int // running rune count for flush threshold
 	failedFlushes   int
 
 	chatType     string
@@ -94,7 +95,6 @@ type StreamingCardController struct {
 	client       *lark.Client
 	log          *slog.Logger
 
-	// Background flush loop (decoupled from Write, like Slack NativeStreamingWriter).
 	flushDone    chan struct{}
 	flushStop    sync.Once
 	flushWg      sync.WaitGroup
@@ -241,11 +241,11 @@ func (c *StreamingCardController) Write(text string) error {
 	}
 	c.buf.WriteString(text)
 	c.bytesWritten += int64(len(text))
-	bufLen := utf8.RuneCountInString(c.buf.String())
+	c.bufRunes += utf8.RuneCountInString(text)
+	needFlush := c.bufRunes >= flushSize
 	c.mu.Unlock()
 
-	// Trigger immediate flush when buffer exceeds rune threshold.
-	if bufLen >= flushSize {
+	if needFlush {
 		select {
 		case c.flushTrigger <- struct{}{}:
 		default:
@@ -259,7 +259,10 @@ func (c *StreamingCardController) Flush(ctx context.Context) error {
 	content := c.buf.String()
 	c.mu.Unlock()
 
-	// Proactively sanitize to prevent CardKit table-limit errors.
+	if content == c.lastFlushed {
+		return nil
+	}
+
 	content = SanitizeForCard(content)
 
 	if content == c.lastFlushed {
@@ -371,19 +374,16 @@ func (c *StreamingCardController) MsgID() string {
 }
 
 func (c *StreamingCardController) Close(ctx context.Context) error {
-	// Idempotency: if already in a terminal state, skip.
 	if !c.transition(PhaseCompleted) {
 		return nil
 	}
 
-	// Stop background flush loop first so it doesn't race with final flush.
 	c.stopFlushLoop()
 
 	c.mu.Lock()
 	content := c.buf.String()
 	c.mu.Unlock()
 
-	// Final content: sanitize then optimize for best rendering.
 	content = OptimizeMarkdownStyle(SanitizeForCard(content))
 
 	c.log.Debug("feishu: streaming card close",
@@ -393,7 +393,6 @@ func (c *StreamingCardController) Close(ctx context.Context) error {
 		"content_len", len(content),
 		"last_flushed_len", len(c.lastFlushed))
 
-	// Final flush: push complete content to the card.
 	finalFlushOK := false
 	if c.cardKitOK && c.cardID != "" {
 		seq := int(c.sequence.Add(1))
@@ -415,34 +414,22 @@ func (c *StreamingCardController) Close(ctx context.Context) error {
 		}
 	}
 
-	// Integrity check: compare last successfully flushed content against final buffer.
-	// Only warn if the final flush itself failed to deliver full content.
 	c.mu.Lock()
-	if !finalFlushOK || len(c.lastFlushed) < len(SanitizeForCard(c.buf.String()))*9/10 {
-		if c.bytesWritten > 0 {
-			c.log.Warn("feishu: streaming integrity check failed",
-				"bytes_written", c.bytesWritten,
-				"last_flushed_len", len(c.lastFlushed),
-				"buffer_len", len(c.buf.String()),
-				"failed_flushes", c.failedFlushes,
-				"final_flush_ok", finalFlushOK)
-			content += "\n\n> ⚠️ _部分输出可能因速率限制而丢失。_"
-		}
+	integrityFailed := !finalFlushOK || len(c.lastFlushed) < len(content)*9/10
+	if integrityFailed && c.bytesWritten > 0 {
+		c.log.Warn("feishu: streaming integrity check failed",
+			"bytes_written", c.bytesWritten,
+			"last_flushed_len", len(c.lastFlushed),
+			"content_len", len(content),
+			"failed_flushes", c.failedFlushes,
+			"final_flush_ok", finalFlushOK)
+		content += "\n\n> ⚠️ _部分输出可能因速率限制而丢失。_"
 	}
-	c.mu.Unlock()
-
-	// Update lastFlushed so disableStreaming can use it for the summary preview.
-	c.mu.Lock()
 	c.lastFlushed = content
+	cardID := c.cardID
 	c.mu.Unlock()
 
-	// Always disable streaming if it was enabled, even after cardKitOK degraded.
-	// Without this, the card stays in "generating" state permanently.
 	if c.streamingActive {
-		c.mu.Lock()
-		cardID := c.cardID
-		c.mu.Unlock()
-
 		if cardID != "" {
 			if err := c.disableStreaming(ctx); err != nil {
 				c.log.Warn("feishu: disable streaming failed", "err", err)
