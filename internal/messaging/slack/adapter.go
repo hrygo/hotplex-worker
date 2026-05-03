@@ -78,6 +78,8 @@ type Adapter struct {
 
 func (a *Adapter) Platform() messaging.PlatformType { return messaging.PlatformSlack }
 
+var _ messaging.PlatformAdapterInterface = (*Adapter)(nil)
+
 func (a *Adapter) GetBotID() string { return a.botID }
 
 func (a *Adapter) ConfigureWith(config messaging.AdapterConfig) error {

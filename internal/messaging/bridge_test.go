@@ -2,6 +2,7 @@ package messaging
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"testing"
@@ -83,7 +84,7 @@ func TestBridge_Handle_ExtractsBotID(t *testing.T) {
 	t.Parallel()
 
 	b := newTestBridge()
-	b.adapter = &mockBotIDAdapter{botID: "U_ADAPTER_BOT"}
+	b.adapter.Store(&mockBotIDAdapter{botID: "U_ADAPTER_BOT"})
 	b.handler = &mockHandler{}
 
 	var capturedBotID string
@@ -135,4 +136,56 @@ func (s *mockStarter) StartPlatformSession(ctx context.Context, sessionID, owner
 		return s.startFn(ctx, sessionID, ownerID, workerType, workDir, platform, platformKey, botID)
 	}
 	return nil
+}
+
+// I5: nil adapter passes empty botID to StartPlatformSession.
+func TestBridge_Handle_NilAdapter_EmptyBotID(t *testing.T) {
+	t.Parallel()
+
+	b := newTestBridge()
+	b.handler = &mockHandler{}
+
+	var capturedBotID string
+	b.starter = &mockStarter{
+		startFn: func(_ context.Context, _ string, _ string, _ string, _ string, _ string, _ map[string]string, botID string) error {
+			capturedBotID = botID
+			return nil
+		},
+	}
+
+	env := &events.Envelope{
+		SessionID: "sid1",
+		OwnerID:   "owner1",
+		Event: events.Event{
+			Type: events.Input,
+			Data: map[string]any{"content": "test"},
+		},
+	}
+	_ = b.Handle(context.Background(), env, nil)
+	require.Equal(t, "", capturedBotID, "nil adapter must pass empty botID")
+}
+
+// C2: Handle() returns error when StartPlatformSession fails.
+func TestBridge_Handle_StartError(t *testing.T) {
+	t.Parallel()
+
+	b := newTestBridge()
+	b.handler = &mockHandler{}
+	b.starter = &mockStarter{
+		startFn: func(_ context.Context, _ string, _ string, _ string, _ string, _ string, _ map[string]string, _ string) error {
+			return fmt.Errorf("pool exhausted")
+		},
+	}
+
+	env := &events.Envelope{
+		SessionID: "sid1",
+		OwnerID:   "owner1",
+		Event: events.Event{
+			Type: events.Input,
+			Data: map[string]any{"content": "test"},
+		},
+	}
+	err := b.Handle(context.Background(), env, nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "session start failed")
 }

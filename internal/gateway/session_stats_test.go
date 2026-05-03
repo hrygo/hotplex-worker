@@ -65,6 +65,27 @@ func TestSessionAccumulator_MergePerTurnStats(t *testing.T) {
 		require.Equal(t, int64(0), acc.TotalOutput)
 	})
 
+	t.Run("cache tokens not double-counted", func(t *testing.T) {
+		acc := &sessionAccumulator{StartedAt: time.Now()}
+		acc.mergePerTurnStats(events.DoneData{
+			Stats: map[string]any{
+				"usage": map[string]any{
+					"input_tokens":                float64(50000),
+					"cache_creation_input_tokens": float64(30000),
+					"cache_read_input_tokens":     float64(10000),
+					"output_tokens":               float64(5000),
+				},
+				"model_usage": map[string]any{
+					"claude-sonnet-4-6": map[string]any{"contextWindow": float64(200000)},
+				},
+			},
+		})
+		require.Equal(t, int64(50000), acc.ContextFill, "ContextFill must equal input_tokens only")
+		require.Equal(t, int64(50000), acc.TotalInput, "TotalInput must not add cache tokens")
+		pct := acc.computeContextPct()
+		require.Equal(t, 25.0, pct, "context % must be 50000/200000 = 25%%, not inflated by cache")
+	})
+
 	t.Run("context fill overwritten by latest turn", func(t *testing.T) {
 		acc := &sessionAccumulator{StartedAt: time.Now()}
 

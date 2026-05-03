@@ -182,6 +182,31 @@ func TestLoad(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "agentconfig: read")
 	})
+
+	t.Run("permission denied at bot-level returns error", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		writeFile(t, dir, "slack/U12345/SOUL.md", "Bot soul.")
+		writeFile(t, dir, "slack/SOUL.md", "Platform soul.")
+
+		botFile := filepath.Join(dir, "slack", "U12345", "SOUL.md")
+		require.NoError(t, os.Chmod(botFile, 0o000))
+		t.Cleanup(func() { _ = os.Chmod(botFile, 0o644) })
+
+		_, err := Load(dir, "slack", "U12345")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "agentconfig: read")
+	})
+
+	t.Run("botID ignored when platform is empty", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		writeFile(t, dir, "SOUL.md", "Global soul.")
+
+		cfg, err := Load(dir, "", "U12345")
+		require.NoError(t, err)
+		require.Equal(t, "Global soul.", cfg.Soul)
+	})
 }
 
 func TestSizeLimits(t *testing.T) {

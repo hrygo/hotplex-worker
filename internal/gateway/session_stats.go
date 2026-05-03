@@ -71,7 +71,9 @@ func (a *sessionAccumulator) mergePerTurnStats(data events.DoneData) {
 		}
 	}
 
-	// OpenCode format: tokens.input + cache tokens
+	// OpenCode format: tokens.input does NOT include cache tokens.
+	// Unlike Claude Code, OpenCode reports input, cache_read, and cache_write
+	// as separate additive fields. Summing them gives the true total input.
 	if tokens, ok := data.Stats["tokens"].(map[string]any); ok {
 		input := events.ToInt64(tokens["input"]) +
 			events.ToInt64(tokens["cache_read"]) +

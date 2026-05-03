@@ -54,6 +54,8 @@ type Adapter struct {
 
 func (a *Adapter) Platform() messaging.PlatformType { return messaging.PlatformFeishu }
 
+var _ messaging.PlatformAdapterInterface = (*Adapter)(nil)
+
 func (a *Adapter) GetBotID() string { return a.botOpenID }
 
 func (a *Adapter) ConfigureWith(config messaging.AdapterConfig) error {
@@ -102,7 +104,7 @@ func (a *Adapter) Start(ctx context.Context) error {
 	)
 
 	if err := a.fetchBotOpenID(ctx); err != nil {
-		a.Log.Warn("feishu: failed to fetch bot open_id, mention detection disabled", "err", err)
+		return fmt.Errorf("feishu: failed to resolve bot identity: %w", err)
 	}
 
 	a.Log.Info("feishu: starting WebSocket connection")

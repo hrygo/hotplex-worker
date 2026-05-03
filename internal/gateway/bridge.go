@@ -1087,7 +1087,13 @@ func (b *Bridge) injectAgentConfig(info *worker.SessionInfo, platform, botID str
 	}
 	configs, err := agentconfig.Load(b.agentConfigDir, platform, botID)
 	if err != nil {
-		b.log.Warn("bridge: agent config load failed", "dir", b.agentConfigDir, "err", err)
+		if strings.Contains(err.Error(), "invalid botID") {
+			b.log.Error("bridge: agent config rejected botID",
+				"dir", b.agentConfigDir, "platform", platform, "bot_id", botID, "err", err)
+		} else {
+			b.log.Warn("bridge: agent config load failed",
+				"dir", b.agentConfigDir, "platform", platform, "bot_id", botID, "err", err)
+		}
 		return
 	}
 	if configs.IsEmpty() {

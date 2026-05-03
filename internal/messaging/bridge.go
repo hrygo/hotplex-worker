@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync/atomic"
 
 	"github.com/hrygo/hotplex/internal/session"
 	"github.com/hrygo/hotplex/internal/worker"
@@ -23,7 +24,7 @@ type Bridge struct {
 	starter    SessionStarter
 	workerType string
 	workDir    string
-	adapter    PlatformAdapterInterface // set after adapter.Start() via SetAdapter
+	adapter    atomic.Value // stores PlatformAdapterInterface; set after adapter.Start() via SetAdapter
 }
 
 // NewBridge creates a new platform bridge.
@@ -46,8 +47,24 @@ func NewBridge(log *slog.Logger, platform PlatformType, hub HubInterface,
 func (b *Bridge) WorkDir() string { return b.workDir }
 
 // SetAdapter injects the platform adapter for lazy botID resolution.
-// Called after adapter.Start() succeeds in messaging_init.go.
-func (b *Bridge) SetAdapter(a PlatformAdapterInterface) { b.adapter = a }
+// Must be called after adapter.Start() succeeds and before any Handle() calls.
+func (b *Bridge) SetAdapter(a PlatformAdapterInterface) {
+	if a != nil && a.Platform() != b.platform {
+		b.log.Warn("messaging bridge: adapter platform mismatch",
+			"expected", b.platform, "got", a.Platform())
+	}
+	b.adapter.Store(a)
+}
+
+// getAdapter returns the stored adapter or nil if not yet set.
+func (b *Bridge) getAdapter() PlatformAdapterInterface {
+	v := b.adapter.Load()
+	if v == nil {
+		return nil
+	}
+	a, _ := v.(PlatformAdapterInterface)
+	return a
+}
 
 // Handle routes a platform message through the AEP handler.
 // pc is the already-created PlatformConn for the platform session.
@@ -63,12 +80,11 @@ func (b *Bridge) Handle(ctx context.Context, env *events.Envelope, pc PlatformCo
 		// Extract platform key from envelope metadata for persistence.
 		platform, platformKey := b.extractPlatformKey(env)
 		var botID string
-		if b.adapter != nil {
-			botID = b.adapter.GetBotID()
+		if a := b.getAdapter(); a != nil {
+			botID = a.GetBotID()
 		}
 		if err := b.starter.StartPlatformSession(ctx, env.SessionID, env.OwnerID, b.workerType, b.workDir, platform, platformKey, botID); err != nil {
-			b.log.Warn("messaging bridge: session start failed",
-				"session_id", env.SessionID, "worker_type", b.workerType, "err", err)
+			return fmt.Errorf("messaging bridge: session start failed: %w", err)
 		}
 	}
 
