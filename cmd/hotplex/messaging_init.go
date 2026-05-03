@@ -12,6 +12,7 @@ import (
 
 	lark "github.com/larksuite/oapi-sdk-go/v3"
 
+	"github.com/hrygo/hotplex/internal/agentconfig"
 	"github.com/hrygo/hotplex/internal/config"
 	"github.com/hrygo/hotplex/internal/messaging"
 	"github.com/hrygo/hotplex/internal/messaging/feishu"
@@ -128,6 +129,20 @@ func startMessagingAdapters(ctx context.Context, deps *GatewayDeps) ([]messaging
 			statuses = append(statuses, AdapterStatus{Name: string(pt), Started: false})
 			continue
 		}
+
+		// Hint: global agent-config files without bot-level directory.
+		if appCfg.AgentConfig.Enabled && appCfg.AgentConfig.ConfigDir != "" {
+			if botID := adapter.GetBotID(); botID != "" {
+				botDir := filepath.Join(appCfg.AgentConfig.ConfigDir, string(pt), botID)
+				if _, err := os.Stat(botDir); os.IsNotExist(err) && agentconfig.HasGlobalFiles(appCfg.AgentConfig.ConfigDir) {
+					log.Warn("agent-config: global files found but no bot-level directory",
+						"platform", pt,
+						"bot_id", botID,
+						"bot_dir", botDir)
+				}
+			}
+		}
+
 		if err := msgBridge.SetAdapter(adapter); err != nil {
 			log.Error("messaging: adapter platform mismatch", "platform", pt, "err", err)
 		}

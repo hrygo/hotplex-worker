@@ -567,17 +567,34 @@ func Load(filePath string, opts LoadOptions) (*Config, error) {
 	_ = v.BindEnv("worker.execution_timeout")
 	_ = v.BindEnv("worker.auto_retry.enabled")
 	_ = v.BindEnv("worker.auto_retry.max_retries")
+	_ = v.BindEnv("worker.claude_code.command")
+	_ = v.BindEnv("worker.opencode_server.idle_drain_period")
+	_ = v.BindEnv("worker.opencode_server.ready_timeout")
+	_ = v.BindEnv("worker.opencode_server.ready_poll_interval")
+	_ = v.BindEnv("worker.opencode_server.http_timeout")
 	_ = v.BindEnv("security.jwt_audience")
 	_ = v.BindEnv("security.api_key_header")
 	_ = v.BindEnv("agent_config.enabled")
 	_ = v.BindEnv("agent_config.config_dir")
 	_ = v.BindEnv("skills.cache_ttl")
 	_ = v.BindEnv("messaging.slack.work_dir")
+	_ = v.BindEnv("messaging.slack.stt_provider")
+	_ = v.BindEnv("messaging.slack.stt_local_cmd")
+	_ = v.BindEnv("messaging.slack.stt_local_mode")
+	_ = v.BindEnv("messaging.slack.stt_local_idle_ttl")
 	_ = v.BindEnv("messaging.feishu.work_dir")
+	_ = v.BindEnv("messaging.feishu.stt_provider")
+	_ = v.BindEnv("messaging.feishu.stt_local_cmd")
+	_ = v.BindEnv("messaging.feishu.stt_local_mode")
+	_ = v.BindEnv("messaging.feishu.stt_local_idle_ttl")
 
 	if err := v.Unmarshal(cfg); err != nil {
 		return nil, fmt.Errorf("config: environment override: %w", err)
 	}
+
+	// Normalize path fields AFTER env overrides, because Viper's env binding
+	// writes raw values (e.g. "~/.hotplex/...") that bypass ExpandAndAbs.
+	cfg.normalizePaths()
 
 	return cfg, nil
 }
@@ -693,26 +710,31 @@ func loadRecursive(filePath string, opts LoadOptions, visited []string) (*Config
 		}
 	}
 
-	// Normalize all path fields — Viper does not expand ~ in YAML values.
+	cfg.normalizePaths()
+
+	return cfg, nil
+}
+
+// normalizePaths expands ~ and resolves relative paths for all config path fields.
+func (c *Config) normalizePaths() {
 	for _, pf := range []*string{
-		&cfg.DB.Path,
-		&cfg.DB.EventsPath,
-		&cfg.Worker.DefaultWorkDir,
-		&cfg.Worker.PIDDir,
-		&cfg.AgentConfig.ConfigDir,
-		&cfg.Messaging.Slack.WorkDir,
-		&cfg.Messaging.Feishu.WorkDir,
+		&c.DB.Path,
+		&c.DB.EventsPath,
+		&c.Worker.DefaultWorkDir,
+		&c.Worker.PIDDir,
+		&c.AgentConfig.ConfigDir,
+		&c.Messaging.Slack.WorkDir,
+		&c.Messaging.Feishu.WorkDir,
 	} {
 		if *pf != "" {
 			absPath, err := ExpandAndAbs(*pf)
 			if err != nil {
-				return nil, fmt.Errorf("config: normalize path %q: %w", *pf, err)
+				slog.Warn("config: normalize path", "path", *pf, "err", err)
+				continue
 			}
 			*pf = absPath
 		}
 	}
-
-	return cfg, nil
 }
 
 // ExpandAndAbs returns an absolute path, resolving ~ and relative paths.

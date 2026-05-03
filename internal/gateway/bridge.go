@@ -1147,6 +1147,8 @@ func (b *Bridge) injectAgentConfig(info *worker.SessionInfo, platform, botID str
 		return
 	}
 	if configs.IsEmpty() {
+		b.log.Warn("bridge: agent config empty, no files found",
+			"dir", b.agentConfigDir, "platform", platform, "bot_id", botID)
 		return
 	}
 
