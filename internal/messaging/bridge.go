@@ -23,6 +23,7 @@ type Bridge struct {
 	starter    SessionStarter
 	workerType string
 	workDir    string
+	adapter    PlatformAdapterInterface // set after adapter.Start() via SetAdapter
 }
 
 // NewBridge creates a new platform bridge.
@@ -44,6 +45,10 @@ func NewBridge(log *slog.Logger, platform PlatformType, hub HubInterface,
 // WorkDir returns the configured worker working directory.
 func (b *Bridge) WorkDir() string { return b.workDir }
 
+// SetAdapter injects the platform adapter for lazy botID resolution.
+// Called after adapter.Start() succeeds in messaging_init.go.
+func (b *Bridge) SetAdapter(a PlatformAdapterInterface) { b.adapter = a }
+
 // Handle routes a platform message through the AEP handler.
 // pc is the already-created PlatformConn for the platform session.
 // It is registered with the hub so worker output is routed back to the platform.
@@ -57,7 +62,11 @@ func (b *Bridge) Handle(ctx context.Context, env *events.Envelope, pc PlatformCo
 	if b.starter != nil {
 		// Extract platform key from envelope metadata for persistence.
 		platform, platformKey := b.extractPlatformKey(env)
-		if err := b.starter.StartPlatformSession(ctx, env.SessionID, env.OwnerID, b.workerType, b.workDir, platform, platformKey); err != nil {
+		var botID string
+		if b.adapter != nil {
+			botID = b.adapter.GetBotID()
+		}
+		if err := b.starter.StartPlatformSession(ctx, env.SessionID, env.OwnerID, b.workerType, b.workDir, platform, platformKey, botID); err != nil {
 			b.log.Warn("messaging bridge: session start failed",
 				"session_id", env.SessionID, "worker_type", b.workerType, "err", err)
 		}
@@ -98,6 +107,9 @@ func (b *Bridge) makeEnvelope(sessionID, ownerID, text string, metadata map[stri
 func (b *Bridge) MakeEnvelope(userID, text string, pctx session.PlatformContext) *events.Envelope {
 	sessionID := session.DerivePlatformSessionKey(userID, worker.WorkerType(b.workerType), pctx)
 	md := map[string]any{"platform": pctx.Platform}
+	if pctx.BotID != "" {
+		md["bot_id"] = pctx.BotID
+	}
 	if pctx.TeamID != "" {
 		md["team_id"] = pctx.TeamID
 	}
@@ -118,12 +130,13 @@ func (b *Bridge) MakeEnvelope(userID, text string, pctx session.PlatformContext)
 
 // MakeSlackEnvelope converts a Slack message to an AEP input envelope.
 // workDir overrides the bridge's default workDir for session key derivation; empty falls back to b.workDir.
-func (b *Bridge) MakeSlackEnvelope(teamID, channelID, threadTS, userID, text, workDir string) *events.Envelope {
+func (b *Bridge) MakeSlackEnvelope(teamID, channelID, threadTS, userID, text, workDir, botID string) *events.Envelope {
 	if workDir == "" {
 		workDir = b.workDir
 	}
 	return b.MakeEnvelope(userID, text, session.PlatformContext{
 		Platform:  string(PlatformSlack),
+		BotID:     botID,
 		TeamID:    teamID,
 		ChannelID: channelID,
 		ThreadTS:  threadTS,
@@ -134,12 +147,13 @@ func (b *Bridge) MakeSlackEnvelope(teamID, channelID, threadTS, userID, text, wo
 
 // MakeFeishuEnvelope converts a Feishu message to an AEP input envelope.
 // workDir overrides the bridge's default workDir for session key derivation; empty falls back to b.workDir.
-func (b *Bridge) MakeFeishuEnvelope(chatID, threadTS, userID, text, workDir string) *events.Envelope {
+func (b *Bridge) MakeFeishuEnvelope(chatID, threadTS, userID, text, workDir, botID string) *events.Envelope {
 	if workDir == "" {
 		workDir = b.workDir
 	}
 	return b.MakeEnvelope(userID, text, session.PlatformContext{
 		Platform: string(PlatformFeishu),
+		BotID:    botID,
 		ChatID:   chatID,
 		ThreadTS: threadTS,
 		UserID:   userID,

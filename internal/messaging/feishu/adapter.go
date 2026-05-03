@@ -54,6 +54,8 @@ type Adapter struct {
 
 func (a *Adapter) Platform() messaging.PlatformType { return messaging.PlatformFeishu }
 
+func (a *Adapter) GetBotID() string { return a.botOpenID }
+
 func (a *Adapter) ConfigureWith(config messaging.AdapterConfig) error {
 	// Call base to set hub/sm/handler/bridge.
 	_ = a.PlatformAdapter.ConfigureWith(config)
@@ -403,7 +405,7 @@ func (a *Adapter) handleTextMessage(ctx context.Context, platformMsgID, channelI
 
 	conn := a.GetOrCreateConn(channelID, threadKey)
 
-	envelope := a.Bridge().MakeFeishuEnvelope(channelID, threadKey, userID, text, conn.WorkDir())
+	envelope := a.Bridge().MakeFeishuEnvelope(channelID, threadKey, userID, text, conn.WorkDir(), a.botOpenID)
 	if envelope == nil {
 		return fmt.Errorf("feishu: failed to build envelope")
 	}
@@ -929,7 +931,7 @@ var _ messaging.PlatformConn = (*FeishuConn)(nil)
 // through the bridge, then sends feedback via card message.
 func (a *Adapter) handleTextControlCommand(ctx context.Context, chatID, userID, threadKey, platformMsgID string, result *messaging.ControlCommandResult) {
 	conn := a.GetOrCreateConn(chatID, threadKey)
-	envelope := a.Bridge().MakeFeishuEnvelope(chatID, threadKey, userID, "", conn.WorkDir())
+	envelope := a.Bridge().MakeFeishuEnvelope(chatID, threadKey, userID, "", conn.WorkDir(), a.botOpenID)
 	if envelope == nil {
 		a.Log.Warn("feishu: text control command failed to derive session", "action", result.Label)
 		return
@@ -994,7 +996,7 @@ func (a *Adapter) handleTextControlCommand(ctx context.Context, chatID, userID, 
 
 func (a *Adapter) handleTextWorkerCommand(ctx context.Context, chatID, chatType, userID, threadKey, platformMsgID, replyToMsgID string, result *messaging.WorkerCommandResult) {
 	conn := a.GetOrCreateConn(chatID, threadKey)
-	envelope := a.Bridge().MakeFeishuEnvelope(chatID, threadKey, userID, "", conn.WorkDir())
+	envelope := a.Bridge().MakeFeishuEnvelope(chatID, threadKey, userID, "", conn.WorkDir(), a.botOpenID)
 	if envelope == nil {
 		a.Log.Warn("feishu: worker command failed to derive session", "command", result.Label)
 		return

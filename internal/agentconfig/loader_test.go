@@ -15,21 +15,21 @@ func TestLoad(t *testing.T) {
 	t.Run("empty dir returns empty configs", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
-		cfg, err := Load(dir, "")
+		cfg, err := Load(dir, "", "")
 		require.NoError(t, err)
 		require.True(t, cfg.IsEmpty())
 	})
 
 	t.Run("nonexistent dir returns empty configs", func(t *testing.T) {
 		t.Parallel()
-		cfg, err := Load("/nonexistent/path", "")
+		cfg, err := Load("/nonexistent/path", "", "")
 		require.NoError(t, err)
 		require.True(t, cfg.IsEmpty())
 	})
 
 	t.Run("empty dir string returns empty configs", func(t *testing.T) {
 		t.Parallel()
-		cfg, err := Load("", "")
+		cfg, err := Load("", "", "")
 		require.NoError(t, err)
 		require.True(t, cfg.IsEmpty())
 	})
@@ -41,7 +41,7 @@ func TestLoad(t *testing.T) {
 		writeFile(t, dir, "AGENTS.md", "Workspace rules here.")
 		writeFile(t, dir, "USER.md", "User profile data.")
 
-		cfg, err := Load(dir, "")
+		cfg, err := Load(dir, "", "")
 		require.NoError(t, err)
 		require.False(t, cfg.IsEmpty())
 		require.Equal(t, "I am an AI assistant.", cfg.Soul)
@@ -56,42 +56,107 @@ func TestLoad(t *testing.T) {
 		dir := t.TempDir()
 		writeFile(t, dir, "SOUL.md", "---\nversion: 1\ndescription: test\n---\nActual content.")
 
-		cfg, err := Load(dir, "")
+		cfg, err := Load(dir, "", "")
 		require.NoError(t, err)
 		require.Equal(t, "Actual content.", cfg.Soul)
 	})
 
-	t.Run("appends platform variant", func(t *testing.T) {
+	t.Run("platform directory overrides global", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		writeFile(t, dir, "SOUL.md", "Global soul.")
+		writeFile(t, dir, "slack/SOUL.md", "Slack soul.")
+
+		cfg, err := Load(dir, "slack", "")
+		require.NoError(t, err)
+		require.Equal(t, "Slack soul.", cfg.Soul)
+	})
+
+	t.Run("bot-level overrides platform-level", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		writeFile(t, dir, "SOUL.md", "Global soul.")
+		writeFile(t, dir, "slack/SOUL.md", "Platform soul.")
+		writeFile(t, dir, "slack/U12345/SOUL.md", "Bot soul.")
+
+		cfg, err := Load(dir, "slack", "U12345")
+		require.NoError(t, err)
+		require.Equal(t, "Bot soul.", cfg.Soul)
+	})
+
+	t.Run("falls back to global when platform dir missing", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		writeFile(t, dir, "SOUL.md", "Global soul.")
+
+		cfg, err := Load(dir, "slack", "")
+		require.NoError(t, err)
+		require.Equal(t, "Global soul.", cfg.Soul)
+	})
+
+	t.Run("each file resolves independently", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		writeFile(t, dir, "SOUL.md", "Global soul.")
+		writeFile(t, dir, "AGENTS.md", "Global agents.")
+		writeFile(t, dir, "slack/SOUL.md", "Slack soul.")
+		// AGENTS.md not in slack/ — should use global.
+
+		cfg, err := Load(dir, "slack", "")
+		require.NoError(t, err)
+		require.Equal(t, "Slack soul.", cfg.Soul)
+		require.Equal(t, "Global agents.", cfg.Agents)
+	})
+
+	t.Run("suffix files are not loaded", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
 		writeFile(t, dir, "SOUL.md", "Base soul.")
-		writeFile(t, dir, "SOUL.slack.md", "Slack specifics.")
+		writeFile(t, dir, "SOUL.slack.md", "Old-style variant.")
 
-		cfg, err := Load(dir, "slack")
-		require.NoError(t, err)
-		require.Contains(t, cfg.Soul, "Base soul.")
-		require.Contains(t, cfg.Soul, "Slack specifics.")
-	})
-
-	t.Run("platform variant only without base", func(t *testing.T) {
-		t.Parallel()
-		dir := t.TempDir()
-		writeFile(t, dir, "SOUL.slack.md", "Slack only.")
-
-		cfg, err := Load(dir, "slack")
-		require.NoError(t, err)
-		require.Equal(t, "Slack only.", cfg.Soul)
-	})
-
-	t.Run("no platform variant when empty", func(t *testing.T) {
-		t.Parallel()
-		dir := t.TempDir()
-		writeFile(t, dir, "SOUL.md", "Base soul.")
-		writeFile(t, dir, "SOUL.slack.md", "Slack specifics.")
-
-		cfg, err := Load(dir, "")
+		cfg, err := Load(dir, "slack", "")
 		require.NoError(t, err)
 		require.Equal(t, "Base soul.", cfg.Soul)
+		// SOUL.slack.md is NOT loaded — old suffix mechanism removed.
+	})
+
+	t.Run("path traversal botID rejected", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		_, err := Load(dir, "slack", "../etc")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid botID")
+	})
+
+	t.Run("path traversal with dots rejected", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		_, err := Load(dir, "slack", "foo/bar")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid botID")
+	})
+
+	t.Run("empty file falls through to next level", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		writeFile(t, dir, "SOUL.md", "Global soul.")
+		writeFile(t, dir, "slack/SOUL.md", "---\n---\n") // frontmatter only = empty content
+
+		cfg, err := Load(dir, "slack", "")
+		require.NoError(t, err)
+		require.Equal(t, "Global soul.", cfg.Soul)
+	})
+
+	t.Run("flat directory backward compatible", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		writeFile(t, dir, "SOUL.md", "Soul content.")
+		writeFile(t, dir, "AGENTS.md", "Agents content.")
+
+		cfg, err := Load(dir, "", "")
+		require.NoError(t, err)
+		require.Equal(t, "Soul content.", cfg.Soul)
+		require.Equal(t, "Agents content.", cfg.Agents)
 	})
 
 	t.Run("missing files are skipped", func(t *testing.T) {
@@ -99,7 +164,7 @@ func TestLoad(t *testing.T) {
 		dir := t.TempDir()
 		writeFile(t, dir, "AGENTS.md", "Rules.")
 
-		cfg, err := Load(dir, "")
+		cfg, err := Load(dir, "", "")
 		require.NoError(t, err)
 		require.Empty(t, cfg.Soul)
 		require.Equal(t, "Rules.", cfg.Agents)
@@ -109,12 +174,11 @@ func TestLoad(t *testing.T) {
 	t.Run("permission denied returns error", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
-		// Create a file with no read permissions
 		filePath := filepath.Join(dir, "SOUL.md")
 		err := os.WriteFile(filePath, []byte("Content"), 0o000)
 		require.NoError(t, err)
 
-		_, err = Load(dir, "")
+		_, err = Load(dir, "", "")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "agentconfig: read")
 	})
@@ -129,7 +193,7 @@ func TestSizeLimits(t *testing.T) {
 		longContent := strings.Repeat("x", MaxFileChars+1000)
 		writeFile(t, dir, "SOUL.md", longContent)
 
-		cfg, err := Load(dir, "")
+		cfg, err := Load(dir, "", "")
 		require.NoError(t, err)
 		require.Equal(t, MaxFileChars, len(cfg.Soul))
 	})
@@ -137,12 +201,11 @@ func TestSizeLimits(t *testing.T) {
 	t.Run("total limit enforced", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
-		// Write files that individually are under limit but combined exceed total.
 		content := strings.Repeat("a", MaxTotalChars/2+1)
 		writeFile(t, dir, "SOUL.md", content)
 		writeFile(t, dir, "AGENTS.md", content)
 
-		cfg, err := Load(dir, "")
+		cfg, err := Load(dir, "", "")
 		require.NoError(t, err)
 		total := len(cfg.Soul) + len(cfg.Agents) + len(cfg.Skills) + len(cfg.User) + len(cfg.Memory)
 		require.LessOrEqual(t, total, MaxTotalChars)
@@ -210,7 +273,6 @@ func TestBuildSystemPrompt(t *testing.T) {
 		require.Contains(t, prompt, "<directives>")
 		require.Contains(t, prompt, "<rules>")
 		require.NotContains(t, prompt, "<persona>")
-		// hotplex metacognition is always injected into <context> regardless of user config
 		require.Contains(t, prompt, "<context>")
 		require.Contains(t, prompt, "<hotplex>")
 		require.NotContains(t, prompt, "<user>")
@@ -251,6 +313,8 @@ func TestBuildSystemPrompt(t *testing.T) {
 
 func writeFile(t *testing.T, dir, name, content string) {
 	t.Helper()
-	err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644)
+	fullPath := filepath.Join(dir, name)
+	require.NoError(t, os.MkdirAll(filepath.Dir(fullPath), 0o755))
+	err := os.WriteFile(fullPath, []byte(content), 0o644)
 	require.NoError(t, err)
 }
