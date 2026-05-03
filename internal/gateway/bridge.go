@@ -161,7 +161,7 @@ type workerLaunchParams struct {
 	workerInfo  worker.SessionInfo
 	platform    string
 	botID       string
-	forwardOpts forwardOpts
+	forwardOpts *forwardOpts
 }
 
 // workerStartFunc is called after AttachWorker and injectAgentConfig.
@@ -176,6 +176,9 @@ type workerAttachErrFunc func(w worker.Worker, err error)
 // On startFn failure, the worker is detached before returning.
 func (b *Bridge) createAndLaunchWorker(params workerLaunchParams, startFn workerStartFunc, attachErrFn workerAttachErrFunc) (worker.Worker, error) {
 	sid := params.workerInfo.SessionID
+	if params.forwardOpts == nil {
+		params.forwardOpts = &forwardOpts{}
+	}
 
 	w, err := b.wf.NewWorker(params.wt)
 	if err != nil {
@@ -203,7 +206,7 @@ func (b *Bridge) createAndLaunchWorker(params workerLaunchParams, startFn worker
 	b.fwdWg.Add(1)
 	go func() {
 		defer b.fwdWg.Done()
-		b.forwardEvents(w, sid, params.forwardOpts)
+		b.forwardEvents(w, sid, *params.forwardOpts)
 	}()
 
 	return w, nil
@@ -259,7 +262,7 @@ func (b *Bridge) resumeWithOpts(ctx context.Context, id, workDir string, opts fo
 		workerInfo:  workerInfo,
 		platform:    si.Platform,
 		botID:       si.BotID,
-		forwardOpts: opts,
+		forwardOpts: &opts,
 	},
 		func(ctx context.Context, w worker.Worker) error {
 			// Transition IDLE/RESUMED/TERMINATED sessions to RUNNING.
@@ -276,6 +279,9 @@ func (b *Bridge) resumeWithOpts(ctx context.Context, id, workDir string, opts fo
 				if err := w.Start(ctx, workerInfo); err != nil {
 					return fmt.Errorf("bridge: fresh start after missing files: %w", err)
 				}
+				// Clear resumed flag so forwardEvents treats this as a fresh session,
+				// ensuring retry and fallback logic work correctly.
+				opts.resumed = false
 				return nil
 			}
 			if err := w.Resume(ctx, workerInfo); err != nil {

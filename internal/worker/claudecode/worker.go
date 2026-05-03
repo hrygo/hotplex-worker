@@ -450,7 +450,11 @@ func sessionFileGlobs(homeDir, parsedID string) []string {
 func (w *Worker) HasSessionFiles(sessionID string) bool {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		return false
+		// Fail-open: assume files exist so the normal resume path is attempted.
+		// If files are truly missing, the existing crash-detection fallback handles it.
+		w.Log.Warn("claudecode: HasSessionFiles cannot resolve home dir, assuming files exist",
+			"session_id", sessionID, "err", err)
+		return true
 	}
 	parsedID := aep.ParseSessionID(sessionID)
 	for _, pattern := range sessionFileGlobs(homeDir, parsedID) {

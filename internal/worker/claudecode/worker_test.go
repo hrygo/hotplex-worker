@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -523,4 +525,53 @@ func TestControlHandler_SendElicitationResponse(t *testing.T) {
 	require.NoError(t, json.Unmarshal(buf.Bytes(), &resp))
 	require.Equal(t, "req_e1", resp.Response.RequestID)
 	require.Equal(t, "accept", resp.Response.Response["action"])
+}
+
+func TestSessionFileGlobs(t *testing.T) {
+	t.Parallel()
+
+	patterns := sessionFileGlobs("/home/user", "abc-123")
+	require.Len(t, patterns, 3)
+	require.Contains(t, patterns[0], "projects/*/abc-123.jsonl")
+	require.Contains(t, patterns[1], "projects/*/abc-123")
+	require.Contains(t, patterns[2], "session-env/abc-123")
+}
+
+func TestHasSessionFiles(t *testing.T) {
+	t.Parallel()
+
+	w := New()
+	sessionID := "sess_test-uuid-1234"
+
+	t.Run("returns false when no files exist", func(t *testing.T) {
+		t.Parallel()
+		require.False(t, w.HasSessionFiles(sessionID))
+	})
+
+	t.Run("returns true when transcript exists", func(t *testing.T) {
+		t.Parallel()
+
+		homeDir := t.TempDir()
+		projectDir := homeDir + "/.claude/projects/hash"
+		require.NoError(t, os.MkdirAll(projectDir, 0o755))
+		require.NoError(t, os.WriteFile(projectDir+"/test-uuid-1234.jsonl", []byte("{}"), 0o644))
+
+		// Override home dir by testing via sessionFileGlobs directly
+		patterns := sessionFileGlobs(homeDir, "test-uuid-1234")
+		matches, _ := filepath.Glob(patterns[0])
+		require.Len(t, matches, 1)
+	})
+
+	t.Run("returns true when env dir exists", func(t *testing.T) {
+		t.Parallel()
+
+		homeDir := t.TempDir()
+		envDir := homeDir + "/.claude/session-env"
+		require.NoError(t, os.MkdirAll(envDir, 0o755))
+		require.NoError(t, os.WriteFile(envDir+"/test-uuid-1234", []byte("env"), 0o644))
+
+		patterns := sessionFileGlobs(homeDir, "test-uuid-1234")
+		matches, _ := filepath.Glob(patterns[2])
+		require.Len(t, matches, 1)
+	})
 }

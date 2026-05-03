@@ -181,7 +181,12 @@ func (h *testableHandler) handleGC(ctx context.Context, sessionID, ownerID strin
 		_ = w.Terminate(ctx)
 		h.sm.DetachWorker(sessionID)
 	}
-	// 4. Transition to TERMINATED
+	// 4. Re-read state after worker cleanup to avoid stale snapshot race
+	// with concurrent cleanupCrashedWorker transitions.
+	if fresh, err := h.sm.Get(sessionID); err == nil && fresh.State == events.StateTerminated {
+		return nil
+	}
+	// 5. Transition to TERMINATED
 	if err := h.sm.TransitionWithReason(ctx, sessionID, events.StateTerminated, "gc"); err != nil {
 		return err
 	}

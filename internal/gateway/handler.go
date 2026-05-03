@@ -459,6 +459,8 @@ func (h *Handler) handleGC(ctx context.Context, env *events.Envelope) error {
 	if fresh, err := h.sm.Get(env.SessionID); err == nil && fresh.State == events.StateTerminated {
 		h.log.Info("gateway: gc idempotent (concurrently terminated)", "session_id", env.SessionID)
 		return nil
+	} else if err != nil {
+		h.log.Debug("gateway: gc re-read failed, proceeding with transition", "session_id", env.SessionID, "err", err)
 	}
 
 	if err := h.sm.TransitionWithReason(ctx, env.SessionID, events.StateTerminated, "gc"); err != nil {
