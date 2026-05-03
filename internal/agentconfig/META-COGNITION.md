@@ -47,8 +47,7 @@ HotPlex Gateway 元认知。
 
 ## 控制命令
 
-  /gc, $gc：         清理 Session（→ TERMINATED，释放 Worker）
-  /reset, $reset：   重置（Terminate + fresh Worker，保留 Session）
-  /park, $park：     休眠（→ IDLE，Worker 暂停）
-  /new, $new：       新建 Session（不同 Session Key）
+  /gc：              清理 Session（→ TERMINATED，释放 Worker）
+  /reset：           重置（Terminate + fresh Worker，复用 Session ID）
   /cd <路径>：       SwitchWorkDir（新 workDir 推导新 Session Key）
+  自然语言前缀 $：    $gc, $休眠, $挂起 → gc；$reset, $重置 → reset
