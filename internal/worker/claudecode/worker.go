@@ -8,7 +8,6 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"os/user"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -437,6 +436,32 @@ func (w *Worker) ResetContext(ctx context.Context) error {
 }
 
 // deleteSessionFiles removes Claude session files to prevent "already in use" errors on reset.
+// sessionFileGlobs returns the glob patterns for Claude Code session files.
+func sessionFileGlobs(homeDir, parsedID string) []string {
+	return []string{
+		filepath.Join(homeDir, ".claude", "projects", "*", parsedID+".jsonl"),
+		filepath.Join(homeDir, ".claude", "projects", "*", parsedID),
+		filepath.Join(homeDir, ".claude", "session-env", parsedID),
+	}
+}
+
+// HasSessionFiles checks whether session files still exist on disk for the
+// given session ID. It uses the same glob patterns as deleteSessionFiles.
+func (w *Worker) HasSessionFiles(sessionID string) bool {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return false
+	}
+	parsedID := aep.ParseSessionID(sessionID)
+	for _, pattern := range sessionFileGlobs(homeDir, parsedID) {
+		matches, _ := filepath.Glob(pattern)
+		if len(matches) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // Claude Code stores session data at:
 //   - ~/.claude/projects/<hash>/<uuid>.jsonl  (conversation transcript)
 //   - ~/.claude/projects/<hash>/<uuid>         (session metadata directory)
@@ -444,19 +469,13 @@ func (w *Worker) ResetContext(ctx context.Context) error {
 //
 // The glob spans all project hashes since the hash algorithm is internal to Claude Code.
 func (w *Worker) deleteSessionFiles() error {
-	currentUser, err := user.Current()
+	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return fmt.Errorf("get home dir: %w", err)
 	}
-	homeDir := currentUser.HomeDir
 
 	parsedID := aep.ParseSessionID(w.sessionID)
-
-	patterns := []string{
-		filepath.Join(homeDir, ".claude", "projects", "*", parsedID+".jsonl"), // transcript
-		filepath.Join(homeDir, ".claude", "projects", "*", parsedID),          // metadata dir
-		filepath.Join(homeDir, ".claude", "session-env", parsedID),            // env
-	}
+	patterns := sessionFileGlobs(homeDir, parsedID)
 
 	var (
 		firstErr error

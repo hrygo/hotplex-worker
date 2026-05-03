@@ -454,6 +454,13 @@ func (h *Handler) handleGC(ctx context.Context, env *events.Envelope) error {
 		h.sm.DetachWorker(env.SessionID)
 	}
 
+	// Re-read state after worker cleanup to avoid stale snapshot race
+	// with concurrent cleanupCrashedWorker transitions.
+	if fresh, err := h.sm.Get(env.SessionID); err == nil && fresh.State == events.StateTerminated {
+		h.log.Info("gateway: gc idempotent (concurrently terminated)", "session_id", env.SessionID)
+		return nil
+	}
+
 	if err := h.sm.TransitionWithReason(ctx, env.SessionID, events.StateTerminated, "gc"); err != nil {
 		return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "gc transition failed: %v", err)
 	}

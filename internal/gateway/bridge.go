@@ -268,6 +268,16 @@ func (b *Bridge) resumeWithOpts(ctx context.Context, id, workDir string, opts fo
 					return err
 				}
 			}
+			// Check if session files still exist before attempting resume.
+			// Zombie GC may have deleted them, causing --resume to fail immediately.
+			if fc, ok := w.(worker.SessionFileChecker); ok && !fc.HasSessionFiles(workerInfo.SessionID) {
+				b.log.Info("bridge: session files missing, falling back to fresh start",
+					"session_id", id)
+				if err := w.Start(ctx, workerInfo); err != nil {
+					return fmt.Errorf("bridge: fresh start after missing files: %w", err)
+				}
+				return nil
+			}
 			if err := w.Resume(ctx, workerInfo); err != nil {
 				return fmt.Errorf("bridge: resume start: %w", err)
 			}
@@ -469,7 +479,7 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 			if b.log.Enabled(context.Background(), slog.LevelDebug) {
 				b.log.Debug("bridge: turn completed",
 					"session_id", sessionID, "worker_type", workerType, "turn", acc.TurnCount,
-					"duration", time.Since(startTime).Round(time.Millisecond),
+					"duration", time.Since(turnStartTime).Round(time.Millisecond),
 					"text_len", turnText.Len(), "tools", acc.ToolCallCount)
 			}
 		}

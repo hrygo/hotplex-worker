@@ -142,6 +142,13 @@ type InputRecoverer interface {
 	LastInput() string
 }
 
+// SessionFileChecker is an optional interface for workers that can verify
+// whether session files still exist on disk. Bridge uses this before resume
+// to avoid passing --resume to a CLI when files have been garbage-collected.
+type SessionFileChecker interface {
+	HasSessionFiles(sessionID string) bool
+}
+
 // InPlaceReseter is an optional interface for workers whose ResetContext
 // resets state in-place without replacing the Conn or restarting the process.
 // Bridge.ResetSession uses this to decide whether to spawn a new forwardEvents
