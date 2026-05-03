@@ -167,8 +167,77 @@ Oracle 自动发现并挂载本机底层的 **Obsidian 专属技能引擎 (Skill
         "should_escape": false
       },
       {
+        "command": "/gc",
+        "description": "休眠会话（停止 Worker，保留上下文，同 /park）",
+        "should_escape": false
+      },
+      {
         "command": "/new",
         "description": "重置当前知识检索的对话上下文，开启一段全新对话",
+        "should_escape": false
+      },
+      {
+        "command": "/reset",
+        "description": "重置上下文（全新开始，同 /new）",
+        "should_escape": false
+      },
+      {
+        "command": "/cd",
+        "description": "切换工作目录",
+        "usage_hint": "/cd /path/to/project",
+        "should_escape": false
+      },
+      {
+        "command": "/context",
+        "description": "查看上下文窗口使用量",
+        "should_escape": false
+      },
+      {
+        "command": "/skills",
+        "description": "查看已加载的技能列表",
+        "should_escape": false
+      },
+      {
+        "command": "/mcp",
+        "description": "查看 MCP 服务器状态",
+        "should_escape": false
+      },
+      {
+        "command": "/model",
+        "description": "切换 AI 模型",
+        "usage_hint": "/model claude-sonnet-4-6",
+        "should_escape": false
+      },
+      {
+        "command": "/perm",
+        "description": "设置权限模式",
+        "usage_hint": "/perm bypassPermissions",
+        "should_escape": false
+      },
+      {
+        "command": "/effort",
+        "description": "设置推理力度",
+        "usage_hint": "/effort high",
+        "should_escape": false
+      },
+      {
+        "command": "/compact",
+        "description": "压缩对话历史",
+        "should_escape": false
+      },
+      {
+        "command": "/clear",
+        "description": "清空对话",
+        "should_escape": false
+      },
+      {
+        "command": "/rewind",
+        "description": "撤销上一轮对话",
+        "should_escape": false
+      },
+      {
+        "command": "/commit",
+        "description": "创建 Git 提交",
         "should_escape": false
       }
     ]
