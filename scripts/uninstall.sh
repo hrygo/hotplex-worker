@@ -73,7 +73,8 @@ fi
 
 # Kill dev-mode gateway process and clean PID file
 if [[ -f "$USER_DIR/.pids/gateway.pid" ]]; then
-    pid=$(cat "$USER_DIR/.pids/gateway.pid" 2>/dev/null || true)
+    pid=$(grep -oE '"pid":[0-9]+' "$USER_DIR/.pids/gateway.pid" 2>/dev/null | head -1 | cut -d: -f2)
+    pid="${pid:-$(cat "$USER_DIR/.pids/gateway.pid" 2>/dev/null)}"
     if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
         kill "$pid" 2>/dev/null || true
         sleep 1

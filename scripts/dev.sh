@@ -48,11 +48,25 @@ info() { echo -e "${CYAN}› $*${NC}"; }
 
 die()  { err "$@"; exit 1; }
 
+# Read PID from file, handling both plain integer and JSON {"pid":1234} formats.
+read_pid() {
+    local content
+    content=$(cat "$1" 2>/dev/null) || return 1
+    if [[ "$content" =~ ^\{ ]]; then
+        # JSON format — extract "pid" value
+        local pid
+        pid=$(echo "$content" | grep -oE '"pid":[0-9]+' | head -1 | cut -d: -f2) || return 1
+        echo "$pid"
+    else
+        echo "$content"
+    fi
+}
+
 # Kill process by PID file, then remove the file.
 kill_pidfile() {
     local pidfile=$1; local name=${2:-service}
     [[ ! -f "$pidfile" ]] && return 0
-    local pid; pid=$(cat "$pidfile" 2>/dev/null || true)
+    local pid; pid=$(read_pid "$pidfile")
     [[ -z "$pid" ]] && rm -f "$pidfile" && return 0
     if kill -0 "$pid" 2>/dev/null; then
         info "Stopping $name (PID $pid)..."
@@ -88,14 +102,14 @@ kill_port() {
 # ── Gateway ────────────────────────────────────────────────────────────────────
 
 gateway_running() {
-    [[ -f "$GATEWAY_PID" ]] && kill -0 "$(cat "$GATEWAY_PID")" 2>/dev/null
+    [[ -f "$GATEWAY_PID" ]] && kill -0 "$(read_pid "$GATEWAY_PID")" 2>/dev/null
 }
 
 start_gateway() {
     mkdir -p "$LOG_DIR" "$BUILD_DIR"
 
     if gateway_running; then
-        warn "Gateway already running (PID $(cat "$GATEWAY_PID"))"
+        warn "Gateway already running (PID $(read_pid "$GATEWAY_PID"))"
         return 0
     fi
 
@@ -111,11 +125,12 @@ start_gateway() {
 
     : > "$GATEWAY_LOG"
     "$binary" gateway start -c "$CONFIG" >> "$GATEWAY_LOG" 2>&1 &
-    echo $! > "$GATEWAY_PID"
+    local bg_pid=$!
+    echo $bg_pid > "$GATEWAY_PID"
 
     # Wait for gateway to initialize (up to 10s), then display banner.
     for ((i=0; i<20; i++)); do
-        if ! kill -0 "$(cat "$GATEWAY_PID")" 2>/dev/null; then
+        if ! kill -0 "$bg_pid" 2>/dev/null; then
             err "Gateway failed to start"
             tail -20 "$GATEWAY_LOG"
             rm -f "$GATEWAY_PID"
@@ -128,7 +143,7 @@ start_gateway() {
         sleep 0.5
     done
 
-    if kill -0 "$(cat "$GATEWAY_PID")" 2>/dev/null; then
+    if kill -0 "$bg_pid" 2>/dev/null; then
         grep -vE '^(time=|\{"time":)' "$GATEWAY_LOG" | sed '/^$/d' || true
     fi
 }
@@ -139,7 +154,7 @@ stop_gateway() {
 
 status_gateway() {
     if gateway_running; then
-        local pid; pid=$(cat "$GATEWAY_PID")
+        local pid; pid=$(read_pid "$GATEWAY_PID")
         local mem cpu
         mem=$(ps -o rss= -p "$pid" 2>/dev/null | awk '{printf "%.1f MB", $1/1024}' || echo "N/A")
         cpu=$(ps -o %cpu= -p "$pid" 2>/dev/null | awk '{print $1"%"}' || echo "N/A")
