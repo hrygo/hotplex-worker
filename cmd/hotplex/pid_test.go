@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -9,40 +8,46 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestPIDWriteReadRemove(t *testing.T) {
+func TestGatewayStateWriteReadRemove(t *testing.T) {
 	origHome := os.Getenv("HOME")
 	tmpDir := t.TempDir()
 	t.Setenv("HOME", tmpDir)
 
-	err := writeGatewayPID()
+	err := writeGatewayState("/test/config.yaml", true)
 	require.NoError(t, err)
 
 	pidPath := filepath.Join(tmpDir, ".hotplex", ".pids", "gateway.pid")
-	data, err := os.ReadFile(pidPath)
+	_, err = os.ReadFile(pidPath)
 	require.NoError(t, err)
-	require.Equal(t, []byte(fmt.Sprintf("%d", os.Getpid())), data)
 
-	pid, err := readGatewayPID()
-	require.NoError(t, err)
-	require.Equal(t, os.Getpid(), pid)
+	state, _ := readGatewayState()
+	requireConfigPath(t, state)
 
-	removeGatewayPID()
+	removeGatewayState()
 	_, err = os.Stat(pidPath)
 	require.True(t, os.IsNotExist(err))
 
 	t.Setenv("HOME", origHome)
 }
 
-func TestReadGatewayPID_NoFile(t *testing.T) {
+func requireConfigPath(t *testing.T, state *gatewayState) {
+	t.Helper()
+	require.NotNil(t, state)
+	require.Equal(t, os.Getpid(), state.PID)
+	require.Equal(t, "/test/config.yaml", state.ConfigPath)
+	require.True(t, state.DevMode)
+}
+
+func TestReadGatewayState_NoFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("HOME", tmpDir)
 
-	_, err := readGatewayPID()
+	_, err := readGatewayState()
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "no PID file")
 }
 
-func TestReadGatewayPID_StalePID(t *testing.T) {
+func TestReadGatewayState_StalePID(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("HOME", tmpDir)
 
@@ -50,10 +55,10 @@ func TestReadGatewayPID_StalePID(t *testing.T) {
 	err := os.MkdirAll(filepath.Dir(pidPath), 0o755)
 	require.NoError(t, err)
 
-	err = os.WriteFile(pidPath, []byte("99999999"), 0o644)
+	err = os.WriteFile(pidPath, []byte(`{"pid":99999999}`), 0o644)
 	require.NoError(t, err)
 
-	_, err = readGatewayPID()
+	_, err = readGatewayState()
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "stale")
 }

@@ -117,6 +117,17 @@ func (b *Bridge) StartSession(ctx context.Context, id, userID, botID string, wt 
 		ConfigWhitelist: b.workerEnvWhitelist,
 	}
 
+	// Inject Slack context for CLI subcommand auto-resolution.
+	if chID, ok := platformKey["channel_id"]; ok && chID != "" {
+		if workerInfo.Env == nil {
+			workerInfo.Env = make(map[string]string)
+		}
+		workerInfo.Env["HOTPLEX_SLACK_CHANNEL_ID"] = chID
+		if threadTS, ok := platformKey["thread_ts"]; ok && threadTS != "" {
+			workerInfo.Env["HOTPLEX_SLACK_THREAD_TS"] = threadTS
+		}
+	}
+
 	if _, err := b.createAndLaunchWorker(workerLaunchParams{
 		ctx:        ctx,
 		wt:         wt,
@@ -254,6 +265,19 @@ func (b *Bridge) resumeWithOpts(ctx context.Context, id, workDir string, opts fo
 		ProjectDir:      workDir,
 		ConfigEnv:       b.workerEnv,
 		ConfigWhitelist: b.workerEnvWhitelist,
+	}
+
+	// Inject Slack context for CLI subcommand auto-resolution (same as StartSession).
+	if si.PlatformKey != nil {
+		if chID, ok := si.PlatformKey["channel_id"]; ok && chID != "" {
+			if workerInfo.Env == nil {
+				workerInfo.Env = make(map[string]string)
+			}
+			workerInfo.Env["HOTPLEX_SLACK_CHANNEL_ID"] = chID
+			if threadTS, ok := si.PlatformKey["thread_ts"]; ok && threadTS != "" {
+				workerInfo.Env["HOTPLEX_SLACK_THREAD_TS"] = threadTS
+			}
+		}
 	}
 
 	w, err := b.createAndLaunchWorker(workerLaunchParams{
@@ -784,6 +808,19 @@ func (b *Bridge) attemptResumeFallback(p fallbackParams) bool {
 		ProjectDir:      p.workDir,
 		ConfigEnv:       b.workerEnv,
 		ConfigWhitelist: b.workerEnvWhitelist,
+	}
+
+	// Inject Slack context for CLI subcommand auto-resolution (same as StartSession).
+	if si.PlatformKey != nil {
+		if chID, ok := si.PlatformKey["channel_id"]; ok && chID != "" {
+			if workerInfo.Env == nil {
+				workerInfo.Env = make(map[string]string)
+			}
+			workerInfo.Env["HOTPLEX_SLACK_CHANNEL_ID"] = chID
+			if threadTS, ok := si.PlatformKey["thread_ts"]; ok && threadTS != "" {
+				workerInfo.Env["HOTPLEX_SLACK_THREAD_TS"] = threadTS
+			}
+		}
 	}
 
 	w, err := b.createAndLaunchWorker(workerLaunchParams{

@@ -283,8 +283,9 @@ HotPlex 在 Slack 中提供三种交互式审批界面：
   "oauth_config": {
     "scopes": {
       "bot": [
-        "assistant:write",
+        "search:read.files",
         "app_mentions:read",
+        "assistant:write",
         "bookmarks:read",
         "bookmarks:write",
         "canvases:read",
@@ -319,9 +320,13 @@ HotPlex 在 Slack 中提供三种交互式审批界面：
         "remote_files:write",
         "team:read",
         "usergroups:read",
-        "users:read"
+        "users:read",
+        "search:read.im",
+        "search:read.users",
+        "search:read.public"
       ]
-    }
+    },
+    "pkce_enabled": false
   },
   "settings": {
     "event_subscriptions": {
@@ -394,6 +399,10 @@ HotPlex 在 Slack 中提供三种交互式审批界面：
 
 | Scope                                | 用途           | 必要性 |
 | ------------------------------------ | -------------- | ------ |
+| `search:read.files`                 | 搜索文件         | 推荐   |
+| `search:read.im`                    | 搜索私聊消息       | 推荐   |
+| `search:read.users`                 | 搜索用户         | 推荐   |
+| `search:read.public`                | 搜索公开频道消息     | 推荐   |
 | `pins:read` / `pins:write`           | 消息置顶       | 可选   |
 | `bookmarks:read` / `bookmarks:write` | 频道书签       | 可选   |
 | `links:read` / `links:write`         | 链接展开       | 可选   |

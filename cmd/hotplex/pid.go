@@ -1,11 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
-	"strings"
+	"time"
 
 	"github.com/hrygo/hotplex/internal/config"
 	"github.com/hrygo/hotplex/internal/service"
@@ -16,36 +16,49 @@ func gatewayPIDPath() string {
 	return filepath.Join(config.HotplexHome(), ".pids", "gateway.pid")
 }
 
-func writeGatewayPID() error {
+type gatewayState struct {
+	PID        int    `json:"pid"`
+	ConfigPath string `json:"config,omitempty"`
+	DevMode    bool   `json:"dev,omitempty"`
+}
+
+func writeGatewayState(configPath string, devMode bool) error {
 	pidPath := gatewayPIDPath()
 	if err := os.MkdirAll(filepath.Dir(pidPath), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(pidPath, []byte(fmt.Sprintf("%d", os.Getpid())), 0o644)
+	state := gatewayState{
+		PID:        os.Getpid(),
+		ConfigPath: configPath,
+		DevMode:    devMode,
+	}
+	data, _ := json.Marshal(state)
+	return os.WriteFile(pidPath, data, 0o644)
 }
 
-func readGatewayPID() (int, error) {
+func readGatewayState() (*gatewayState, error) {
 	data, err := os.ReadFile(gatewayPIDPath())
 	if err != nil {
-		return 0, fmt.Errorf("gateway not running (no PID file)")
+		return nil, fmt.Errorf("gateway not running (no PID file)")
 	}
 
-	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
-	if err != nil {
-		return 0, fmt.Errorf("invalid PID file content")
+	var state gatewayState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return nil, fmt.Errorf("invalid PID file content")
 	}
 
-	if err := proc.IsProcessAlive(pid); err != nil {
+	if err := proc.IsProcessAlive(state.PID); err != nil {
+		removeGatewayState()
 		if proc.IsProcessNotExist(err) {
-			removeGatewayPID()
-			return 0, fmt.Errorf("gateway not running (PID %d stale)", pid)
+			return nil, fmt.Errorf("gateway not running (PID %d stale)", state.PID)
 		}
+		return nil, fmt.Errorf("gateway not running (PID %d: %w)", state.PID, err)
 	}
 
-	return pid, nil
+	return &state, nil
 }
 
-func removeGatewayPID() {
+func removeGatewayState() {
 	_ = os.Remove(gatewayPIDPath())
 }
 
@@ -57,14 +70,21 @@ const (
 )
 
 type gatewayInstance struct {
-	PID    int
-	Source discoverySource
-	Level  service.Level // only set when Source == sourceService
+	PID        int
+	Source     discoverySource
+	Level      service.Level
+	ConfigPath string
+	DevMode    bool
 }
 
 func findRunningGateway() (*gatewayInstance, error) {
-	if pid, err := readGatewayPID(); err == nil {
-		return &gatewayInstance{PID: pid, Source: sourcePID}, nil
+	if state, err := readGatewayState(); err == nil {
+		return &gatewayInstance{
+			PID:        state.PID,
+			Source:     sourcePID,
+			ConfigPath: state.ConfigPath,
+			DevMode:    state.DevMode,
+		}, nil
 	}
 
 	mgr := service.NewManager()
@@ -78,18 +98,27 @@ func findRunningGateway() (*gatewayInstance, error) {
 	return nil, fmt.Errorf("gateway not running (no PID file and no service found)")
 }
 
-// stopGateway terminates a discovered gateway instance via the appropriate mechanism.
 func stopGateway(inst *gatewayInstance) error {
 	switch inst.Source {
 	case sourcePID:
 		if err := proc.GracefulTerminate(inst.PID); err != nil {
 			return fmt.Errorf("stop PID %d: %w", inst.PID, err)
 		}
-		removeGatewayPID()
+		removeGatewayState()
 	case sourceService:
 		if err := service.NewManager().Stop("hotplex", inst.Level); err != nil {
 			return fmt.Errorf("stop service: %w", err)
 		}
 	}
 	return nil
+}
+
+func waitForProcessExit(pid int, timeout time.Duration) {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if err := proc.IsProcessAlive(pid); err != nil {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 }
