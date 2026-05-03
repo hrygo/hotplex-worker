@@ -196,6 +196,10 @@ func (h *Handler) handleInput(ctx context.Context, env *events.Envelope) error {
 					UserID:    env.OwnerID,
 				})
 			}
+			// Capture inbound event for replay (best-effort).
+			if h.bridge != nil {
+				h.bridge.CaptureInbound(env.SessionID, env.Seq, events.Input, env.Event.Data)
+			}
 		}
 	} else {
 		h.log.Warn("gateway: handleInput no worker found", "session_id", env.SessionID)
@@ -762,31 +766,49 @@ func (h *Handler) handleSkillsList(ctx context.Context, env *events.Envelope, fi
 
 // ─── Bridge ─────────────────────────────────────────────────────────────────
 
-// SessionManager abstracts the session.Manager methods used by Bridge.
-// It allows Bridge to be tested without a real Manager instance.
-type SessionManager interface {
+// SessionReader provides read-only session access.
+type SessionReader interface {
+	Get(id string) (*session.SessionInfo, error)
+	GetWorker(id string) worker.Worker
+}
+
+// SessionLifecycle provides session creation and deletion.
+type SessionLifecycle interface {
 	CreateWithBot(ctx context.Context, id, userID, botID string, wt worker.WorkerType, allowedTools []string, platform string, platformKey map[string]string, workDir, title string) (*session.SessionInfo, error)
+	Delete(ctx context.Context, id string) error
+	DeletePhysical(ctx context.Context, id string) error
+}
+
+// SessionTransitioner provides state transition operations.
+type SessionTransitioner interface {
+	Transition(ctx context.Context, id string, to events.SessionState) error
+	TransitionWithInput(ctx context.Context, id string, to events.SessionState, content string, metadata map[string]any) error
+	TransitionWithReason(ctx context.Context, id string, to events.SessionState, termReason string) error
+}
+
+// SessionWorkerManager provides worker attachment operations.
+type SessionWorkerManager interface {
 	AttachWorker(id string, w worker.Worker) error
 	DetachWorker(id string)
 	DetachWorkerIf(id string, expected worker.Worker) bool
-	Transition(ctx context.Context, id string, to events.SessionState) error
-	Get(id string) (*session.SessionInfo, error)
-	GetWorker(id string) worker.Worker
-	Delete(ctx context.Context, id string) error
-	DeletePhysical(ctx context.Context, id string) error
-	List(ctx context.Context, userID, platform string, limit, offset int) ([]*session.SessionInfo, error)
 	UpdateWorkerSessionID(ctx context.Context, id, workerSessionID string) error
-	// ResetExpiry updates ExpiresAt to now + retentionPeriod for active sessions.
-	// Called after resume so a reactivated session isn't immediately killed by GC max_lifetime.
-	ResetExpiry(ctx context.Context, id string) error
-	// UpdateWorkDir updates the workDir for a session in memory and DB.
-	UpdateWorkDir(ctx context.Context, id, workDir string) error
-	// TransitionWithInput transitions a session to a new state with input content.
-	TransitionWithInput(ctx context.Context, id string, to events.SessionState, content string, metadata map[string]any) error
-	// TransitionWithReason transitions a session to a new state with a termination reason.
-	TransitionWithReason(ctx context.Context, id string, to events.SessionState, termReason string) error
-	// ValidateOwnership checks that the session belongs to the given user or admin.
+}
+
+// SessionMeta provides administrative and metadata operations.
+type SessionMeta interface {
+	List(ctx context.Context, userID, platform string, limit, offset int) ([]*session.SessionInfo, error)
 	ValidateOwnership(ctx context.Context, sessionID, userID, adminUserID string) error
+	UpdateWorkDir(ctx context.Context, id, workDir string) error
+	ResetExpiry(ctx context.Context, id string) error
+}
+
+// SessionManager composes all session sub-interfaces for full management.
+type SessionManager interface {
+	SessionReader
+	SessionLifecycle
+	SessionTransitioner
+	SessionWorkerManager
+	SessionMeta
 }
 
 // WorkerFactory creates worker instances. Production code uses defaultWorkerFactory.

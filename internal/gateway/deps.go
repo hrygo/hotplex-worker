@@ -24,7 +24,7 @@ type HandlerDeps struct {
 type BridgeDeps struct {
 	Log                *slog.Logger
 	Hub                *Hub
-	SM                 SessionManager
+	SM                 bridgeSM
 	ConvStore          session.ConversationStore
 	EventCollector     *eventstore.Collector // optional; nil means event storage disabled
 	RetryCtrl          *LLMRetryController

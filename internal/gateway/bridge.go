@@ -26,12 +26,24 @@ type resetGenerationer interface {
 	LoadResetGeneration() int64
 }
 
+// bridgeSM is the narrow subset of SessionManager that Bridge needs.
+// Bridge never uses: List, DeletePhysical, TransitionWithInput,
+// TransitionWithReason, ValidateOwnership, UpdateWorkDir.
+type bridgeSM interface {
+	SessionReader
+	SessionWorkerManager
+	CreateWithBot(ctx context.Context, id, userID, botID string, wt worker.WorkerType, allowedTools []string, platform string, platformKey map[string]string, workDir, title string) (*session.SessionInfo, error)
+	Delete(ctx context.Context, id string) error
+	Transition(ctx context.Context, id string, to events.SessionState) error
+	ResetExpiry(ctx context.Context, id string) error
+}
+
 // Bridge connects the gateway to the session manager.
 // It runs the read pump in a goroutine and proxies worker events to the hub.
 type Bridge struct {
 	log       *slog.Logger
 	hub       *Hub
-	sm        SessionManager
+	sm        bridgeSM
 	convStore session.ConversationStore // optional; nil means conversation logging disabled
 	collector *eventstore.Collector     // optional; nil means event storage disabled
 	wf        WorkerFactory

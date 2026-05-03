@@ -1035,7 +1035,7 @@ func (m *mockBridgeSM) ValidateOwnership(ctx context.Context, sessionID, userID,
 	return args.Error(0)
 }
 
-var _ SessionManager = (*mockBridgeSM)(nil)
+var _ bridgeSM = (*mockBridgeSM)(nil)
 
 // mockBridgeWorker is a configurable fake Worker for Bridge tests.
 type mockBridgeWorker struct {
