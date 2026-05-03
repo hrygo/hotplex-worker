@@ -881,23 +881,25 @@ export function useHotPlexRuntime({
     }
   }, []);
 
-  // Memoized thread messages conversion (spec §7.1)
-  // Filter out malformed messages and guard against undefined roles to prevent
-  // assistant-ui's internal converter from crashing with "Unknown message role".
-  // Dedup by ID to prevent MessageRepository "same id" errors.
+  // Deduped messages for assistant-ui — the ExternalStoreAdapter interface has no
+  // threadMessages field; it processes raw `messages` via convertMessage. Dedup here
+  // to prevent MessageRepository "same id already exists" errors. Also filter out
+  // context-usage messages (internal metadata, not conversation messages).
+  const adapterMessages = useMemo(() => {
+    const seen = new Set<string>();
+    return messages
+      .filter((m): m is HotPlexMessage => !!m && (m.role === 'user' || m.role === 'assistant'))
+      .filter((m) => !m.parts.every(p => p.type === 'context-usage'))
+      .filter((m) => {
+        if (seen.has(m.id)) return false;
+        seen.add(m.id);
+        return true;
+      });
+  }, [messages]);
+
   const threadMessages = useMemo(
-    () => {
-      const seen = new Set<string>();
-      return messages
-        .filter((m): m is HotPlexMessage => !!m && (m.role === 'user' || m.role === 'assistant'))
-        .filter((m) => {
-          if (seen.has(m.id)) return false;
-          seen.add(m.id);
-          return true;
-        })
-        .map((m) => convertToThreadMessage(m));
-    },
-    [messages]
+    () => adapterMessages.map((m) => convertToThreadMessage(m)),
+    [adapterMessages]
   );
 
   // Stable setMessages callback to prevent adapter churn
@@ -922,7 +924,7 @@ export function useHotPlexRuntime({
   return useMemo(() => ({
     // State
     isRunning,
-    messages,
+    messages: adapterMessages,
     threadMessages,
     suggestions,
     setMessages: handleSetMessages,
@@ -940,7 +942,7 @@ export function useHotPlexRuntime({
     // Metrics — exposed for session dashboard (spec §4.5)
     extras,
   } as ExternalStoreAdapter<HotPlexMessage>), [
-    isRunning, messages, threadMessages, suggestions,
+    isRunning, adapterMessages, threadMessages, suggestions,
     handleSetMessages, handleNew, handleCancel, capabilities, extras,
   ]);
 }
