@@ -390,6 +390,22 @@ hotplex update -y             # 跳过确认提示
 hotplex update --restart      # 更新后自动重启网关
 ```
 
+### Slack 操作
+
+```bash
+hotplex slack send-message --text "Hello" --channel <id>
+hotplex slack upload-file --file ./report.pdf --title "Report"
+hotplex slack update-message --channel <id> --ts <ts> --text "Updated"
+hotplex slack schedule-message --text "Reminder" --at "2026-05-04T09:00:00+08:00"
+hotplex slack download-file --file-id <id> --output ./save.pdf
+hotplex slack list-channels --types im,public_channel --json
+hotplex slack search --query "keyword" --type messages
+hotplex slack canvas create --title "Doc" --content "# Title\nContent"
+hotplex slack canvas edit --canvas-id <id> --content "New content"
+hotplex slack bookmark add --channel <id> --title "Link" --url <url>
+hotplex slack react add --channel <id> --ts <ts> --emoji white_check_mark
+```
+
 ---
 
 ## 备注
