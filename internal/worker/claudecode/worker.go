@@ -74,8 +74,9 @@ var claudeCodeEnvWhitelist = []string{
 	"BUN_RUNTIME_NV",
 	// OpenTelemetry (prefix-matched in BuildEnv)
 	"OTEL_",
-	// HotPlex Slack context (prefix-matched)
-	"HOTPLEX_SLACK_",
+	// HotPlex Slack context (exact-match only)
+	"HOTPLEX_SLACK_CHANNEL_ID",
+	"HOTPLEX_SLACK_THREAD_TS",
 }
 
 // Default session store directory.

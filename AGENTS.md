@@ -315,6 +315,7 @@ git push fork --delete feat/<feature-name>
 
 - **Edit 工具优先**：修改源码必须使用 Edit 工具，禁止用 `sed -i` 插入或修改代码行
 - **Edit 匹配失败时**：重新 Read 文件获取精确内容，用精确字符串重试 Edit；扩大上下文使其唯一
+- **Go 文件 tab 缩进**：Go 项目使用 tab 缩进（gofmt 标准）。使用 Edit 工具时，old_string 必须从 Read 输出中直接复制原文（保留 tab），禁止手敲空格缩进。Edit 匹配失败时先用 `cat -A` 确认实际空白字符
 - **`sed` 适用场景**：仅限非代码操作（config 快速替换、日志过滤等简单唯一 token 替换）
 
 ### 独特风格
