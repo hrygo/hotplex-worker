@@ -36,7 +36,6 @@ Oracle 自动发现并挂载本机底层的 **Obsidian 专属技能引擎 (Skill
 | `obsidian-maintain`| `/obsidian-maintain`| **系统维保**：Obsidian 定期维护与垃圾清理 |
 | `obsidian-rename` | `/obsidian-rename` | **安全重命名**：安全重命名 Vault 中的笔记及所有引用 |
 | `obsidian-cli` | `/obsidian-cli` | **底层执行**：与 Obsidian 交互的 CLI 底层工具 |
-| `(Core System)` | `/new`, `/park`| 框架控制流指令：重置检索上下文与安全释放内存 |
 
 ## 创意实验室 (Suggested Prompts)
 高频场景触发语：
@@ -159,85 +158,6 @@ Oracle 自动发现并挂载本机底层的 **Obsidian 专属技能引擎 (Skill
       {
         "command": "/obsidian-cli",
         "description": "执行与 Obsidian 插件系统交互的底层 CLI 指令",
-        "should_escape": false
-      },
-      {
-        "command": "/park",
-        "description": "休眠当前会话，安全停止底层 Worker 进程以释放内存",
-        "should_escape": false
-      },
-      {
-        "command": "/gc",
-        "description": "休眠会话（停止 Worker，保留上下文，同 /park）",
-        "should_escape": false
-      },
-      {
-        "command": "/new",
-        "description": "重置当前知识检索的对话上下文，开启一段全新对话",
-        "should_escape": false
-      },
-      {
-        "command": "/reset",
-        "description": "重置上下文（全新开始，同 /new）",
-        "should_escape": false
-      },
-      {
-        "command": "/cd",
-        "description": "切换工作目录",
-        "usage_hint": "/cd /path/to/project",
-        "should_escape": false
-      },
-      {
-        "command": "/context",
-        "description": "查看上下文窗口使用量",
-        "should_escape": false
-      },
-      {
-        "command": "/skills",
-        "description": "查看已加载的技能列表",
-        "should_escape": false
-      },
-      {
-        "command": "/mcp",
-        "description": "查看 MCP 服务器状态",
-        "should_escape": false
-      },
-      {
-        "command": "/model",
-        "description": "切换 AI 模型",
-        "usage_hint": "/model claude-sonnet-4-6",
-        "should_escape": false
-      },
-      {
-        "command": "/perm",
-        "description": "设置权限模式",
-        "usage_hint": "/perm bypassPermissions",
-        "should_escape": false
-      },
-      {
-        "command": "/effort",
-        "description": "设置推理力度",
-        "usage_hint": "/effort high",
-        "should_escape": false
-      },
-      {
-        "command": "/compact",
-        "description": "压缩对话历史",
-        "should_escape": false
-      },
-      {
-        "command": "/clear",
-        "description": "清空对话",
-        "should_escape": false
-      },
-      {
-        "command": "/rewind",
-        "description": "撤销上一轮对话",
-        "should_escape": false
-      },
-      {
-        "command": "/commit",
-        "description": "创建 Git 提交",
         "should_escape": false
       }
     ]
