@@ -78,7 +78,12 @@ interface ContextUsagePart {
   data: ContextUsageData;
 }
 
-type MessagePart = TextPart | ReasoningPart | ToolCallPart | ToolSummaryPart | ContextUsagePart;
+interface TurnSummaryPart {
+  type: 'turn-summary';
+  data: import('@/lib/ai-sdk-transport/client/types').TurnSessionStats;
+}
+
+type MessagePart = TextPart | ReasoningPart | ToolCallPart | ToolSummaryPart | ContextUsagePart | TurnSummaryPart;
 
 // Internal message format for our store
 interface HotPlexMessage {
@@ -98,13 +103,16 @@ interface HotPlexMessage {
  * Handles both old format (content: string) and new format (parts: MessagePart[]).
  */
 function convertToThreadMessage(message: HotPlexMessage): ThreadMessageLike {
-  // Filter out ToolSummaryPart and ContextUsagePart — not recognized by assistant-ui's ThreadMessageLike type
-  const content = message.parts.filter((p): p is TextPart | ReasoningPart | ToolCallPart => p.type !== 'tool-summary' && p.type !== 'context-usage');
+  // Filter out ToolSummaryPart, ContextUsagePart, and TurnSummaryPart — not recognized by assistant-ui's ThreadMessageLike type
+  const content = message.parts.filter((p): p is TextPart | ReasoningPart | ToolCallPart => p.type !== 'tool-summary' && p.type !== 'context-usage' && p.type !== 'turn-summary');
 
   const role = (message.role as string) === 'user' ? 'user' : 'assistant';
 
   // Extract context usage data for card rendering
   const contextUsagePart = message.parts.find((p): p is ContextUsagePart => p.type === 'context-usage');
+
+  // Extract turn summary data for card rendering
+  const turnSummaryPart = message.parts.find((p): p is TurnSummaryPart => p.type === 'turn-summary');
 
   const result: ThreadMessageLike = {
     id: message.id,
@@ -112,7 +120,10 @@ function convertToThreadMessage(message: HotPlexMessage): ThreadMessageLike {
     content,
     createdAt: message.createdAt,
     attachments: [],
-    metadata: contextUsagePart ? { contextUsage: contextUsagePart.data } as any : {},
+    metadata: {
+      ...(contextUsagePart ? { contextUsage: contextUsagePart.data } : {}),
+      ...(turnSummaryPart ? { turnSummary: turnSummaryPart.data } : {}),
+    } as any,
   };
 
   // Status is only supported for assistant messages
@@ -516,10 +527,15 @@ export function useHotPlexRuntime({
 
       setMessages((prev) => {
         const lastMessage = prev[prev.length - 1];
-        if (lastMessage?.role === 'assistant' && lastMessage.status === 'streaming') {
+        if (lastMessage?.role === 'assistant') {
+          const parts = [...lastMessage.parts];
+          // Inject turn-summary part from _session data
+          if (data?.stats?._session) {
+            parts.push({ type: 'turn-summary' as const, data: data.stats._session });
+          }
           return [
             ...prev.slice(0, -1),
-            { ...lastMessage, status: 'complete' },
+            { ...lastMessage, status: 'complete' as const, parts },
           ];
         }
         return prev;
@@ -881,23 +897,25 @@ export function useHotPlexRuntime({
     }
   }, []);
 
-  // Memoized thread messages conversion (spec §7.1)
-  // Filter out malformed messages and guard against undefined roles to prevent
-  // assistant-ui's internal converter from crashing with "Unknown message role".
-  // Dedup by ID to prevent MessageRepository "same id" errors.
+  // Deduped messages for assistant-ui — the ExternalStoreAdapter interface has no
+  // threadMessages field; it processes raw `messages` via convertMessage. Dedup here
+  // to prevent MessageRepository "same id already exists" errors. Also filter out
+  // context-usage messages (internal metadata, not conversation messages).
+  const adapterMessages = useMemo(() => {
+    const seen = new Set<string>();
+    return messages
+      .filter((m): m is HotPlexMessage => !!m && (m.role === 'user' || m.role === 'assistant'))
+      .filter((m) => !m.parts.every(p => p.type === 'context-usage' || p.type === 'turn-summary'))
+      .filter((m) => {
+        if (seen.has(m.id)) return false;
+        seen.add(m.id);
+        return true;
+      });
+  }, [messages]);
+
   const threadMessages = useMemo(
-    () => {
-      const seen = new Set<string>();
-      return messages
-        .filter((m): m is HotPlexMessage => !!m && (m.role === 'user' || m.role === 'assistant'))
-        .filter((m) => {
-          if (seen.has(m.id)) return false;
-          seen.add(m.id);
-          return true;
-        })
-        .map((m) => convertToThreadMessage(m));
-    },
-    [messages]
+    () => adapterMessages.map((m) => convertToThreadMessage(m)),
+    [adapterMessages]
   );
 
   // Stable setMessages callback to prevent adapter churn
@@ -922,7 +940,7 @@ export function useHotPlexRuntime({
   return useMemo(() => ({
     // State
     isRunning,
-    messages,
+    messages: adapterMessages,
     threadMessages,
     suggestions,
     setMessages: handleSetMessages,
@@ -940,7 +958,7 @@ export function useHotPlexRuntime({
     // Metrics — exposed for session dashboard (spec §4.5)
     extras,
   } as ExternalStoreAdapter<HotPlexMessage>), [
-    isRunning, messages, threadMessages, suggestions,
+    isRunning, adapterMessages, threadMessages, suggestions,
     handleSetMessages, handleNew, handleCancel, capabilities, extras,
   ]);
 }

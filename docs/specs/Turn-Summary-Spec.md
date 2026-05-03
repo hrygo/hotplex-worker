@@ -186,14 +186,15 @@ case events.Done:
 `resetPerTurn()` 保持不变（在 conversation store 写入后调用）。
 `computePerTurnDeltas()` 是纯计算，提前调用安全。
 
-### 3.3 turn_summary.go
+### 3.3 turn_summary.go ✅ Implemented
 
-**新建** `internal/messaging/turn_summary.go`。
+**文件**: `internal/messaging/turn_summary.go`
+
+实际 `TurnSummaryData` 包含比 spec 更多的字段：
 
 ```go
-package messaging
-
 type TurnSummaryData struct {
+    // Spec 定义字段
     ContextPct     float64
     ContextWindow  int64
     TotalInputTok  int64
@@ -206,10 +207,20 @@ type TurnSummaryData struct {
     TurnOutputTok  int64
     TurnCostUSD    float64
     TotalCostUSD   float64
+
+    // 额外实现字段
+    ContextFill     int64
+    TotalOutputTok  int64
+    SessionDuration string
+    WorkDir         string
+    GitBranch       string
 }
 
 func ExtractTurnSummary(env *events.Envelope) TurnSummaryData { ... }
-func FormatTurnSummary(d TurnSummaryData) string { ... }
+func FormatTurnSummary(d TurnSummaryData) string { ... }      // 紧凑单行
+func FormatTurnSummaryRich(d TurnSummaryData) string { ... }  // 多行（Slack fallback）
+func TruncatePath(p string) string { ... }
+func FormatSessionDuration(d string) string { ... }
 ```
 
 **复用已有工具**（`context_format.go`）：
@@ -291,21 +302,90 @@ func (c *FeishuConn) sendTurnSummary(ctx context.Context, env *events.Envelope) 
 
 ---
 
-## 4. WebChat 前端
+## 4. WebChat 前端 ✅ Implemented
 
-无需后端改动。前端从 `DoneData.Stats["_session"]` 渲染。
+### 4.1 数据流
 
-扩展后的 `_session` 数据供前端展示：
+后端无需额外改动。`_session` 数据通过 AEP `done` 事件到达前端：
 
 ```
-Context: 🟢 24% [██████░░░░] 48K/200K
-Model: Sonnet 4 | Turn: 3
-Input: ~12K tokens | Output: ~2K tokens
-Tools: Read × 5, Bash × 3, Edit × 2, Grep × 2
-Duration: 42s | Cost: $0.04 (Total: $0.12)
+Gateway → done envelope → BrowserHotPlexClient._routeEvent()
+  → handleDone(data) → data.stats._session → TurnSummaryCard
 ```
 
-前端可自行决定渲染粒度和展示风格。
+### 4.2 类型定义
+
+`webchat/lib/ai-sdk-transport/client/types.ts` 扩展 `DoneStats`：
+
+```typescript
+export interface DoneStats {
+  // ... existing fields ...
+  _session?: TurnSessionStats;
+}
+
+export interface TurnSessionStats {
+  turn_count: number;
+  tool_call_count: number;
+  model_name: string;
+  context_pct: number;
+  context_window: number;
+  context_fill: number;
+  total_input_tok: number;
+  total_output_tok: number;
+  total_cost_usd: number;
+  turn_duration_ms: number;
+  turn_input_tok: number;
+  turn_output_tok: number;
+  turn_cost_usd: number;
+  tool_names: Record<string, number> | null;
+  duration: string;
+  duration_seconds: number;
+  work_dir: string;
+  git_branch: string;
+}
+```
+
+### 4.3 Adapter 注入
+
+`webchat/lib/adapters/hotplex-runtime-adapter.ts`：
+- `MessagePart` union 包含 `TurnSummaryPart`（type: `turn-summary`, data: `TurnSessionStats`）
+- `handleDone` 中提取 `_session` 数据，追加 `turn-summary` part 到最后一条 assistant message
+- `adapterMessages` filter 过滤 `turn-summary` 类型（同 `context-usage` 逻辑）
+- `convertToThreadMessage` 通过 `metadata.turnSummary` 传递数据
+
+### 4.4 TurnSummaryCard 组件
+
+`webchat/components/assistant-ui/TurnSummaryCard.tsx`：
+- 遵循 `ContextUsageCard.tsx` 的动画和样式模式
+- severity coloring（复用 context-format severity 逻辑）
+- 紧凑布局：Model · Context bar · Tools · Duration · Cost
+
+### 4.5 渲染集成
+
+`webchat/components/assistant-ui/thread.tsx` `AssistantMessage` 中，在 `ContextUsageCard` 之后渲染 `TurnSummaryCard`。
+
+---
+
+## 5. WebChat Dedup & Filtering
+
+`webchat/lib/adapters/hotplex-runtime-adapter.ts` 中存在三层去重/过滤机制：
+
+### 5.1 Server History Merge Dedup
+
+加载服务端历史消息时，与本地 live 消息进行双层去重：
+
+- **ID-based**：以服务端消息 ID 集合为准，丢弃匹配的本地消息
+- **Content-signature-based**：对 `role:text` 内容签名匹配的本地消息丢弃（处理本地 `user-${Date.now()}` ID 与服务端 ID 不一致的场景）
+
+合并顺序：`[...serverMessages, ...liveOnly]`，服务端消息优先。
+
+### 5.2 Output Dedup for assistant-ui
+
+`adapterMessages` 使用 `useMemo` + `Set<string>` 过滤重复 ID 消息，防止 assistant-ui `MessageRepository` "same id already exists" 错误。`handleMessage` 和 `handleDelta+handleDone` 可为同一逻辑内容创建消息，此去重层确保不重复。
+
+### 5.3 Context-usage Message Filtering
+
+纯 `context-usage` 类型 part 的消息从 adapter 输出中过滤。`context_usage` 事件通过 `handleContextUsage` 创建独立消息，`ContextUsageCard` 通过 `metadata.contextUsage` 渲染（不作为可见对话消息）。不过滤会导致空 assistant 消息出现。
 
 ---
 

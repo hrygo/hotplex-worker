@@ -427,8 +427,10 @@ var defaultContextWindows = map[string]int64{
 
 使用 `DoneData.Stats` 中的约定 key `_session` 注入聚合统计。不需要新增事件类型。
 
+> **实际实现**: `internal/gateway/session_stats.go:sessionAccumulator.snapshot()`
+
 ```go
-// DoneData.Stats["_session"] 的值结构
+// DoneData.Stats["_session"] 的值结构（实际 snapshot 输出）
 type SessionStatsSnapshot struct {
     // 会话元信息
     TurnCount     int     `json:"turn_count"`
@@ -436,11 +438,12 @@ type SessionStatsSnapshot struct {
     Duration      string  `json:"duration"`          // "3m42s"
     DurationSecs  float64 `json:"duration_seconds"`  // 222.5
 
-    // Token 统计
-    TotalInputTokens  int64 `json:"total_input_tokens"`
-    TotalOutputTokens int64 `json:"total_output_tokens"`
+    // Token 统计（累计）
+    TotalInputTok  int64 `json:"total_input_tok"`
+    TotalOutputTok int64 `json:"total_output_tok"`
 
-    // Context Window（精确值，来自 modelUsage.contextWindow）
+    // Context Window
+    ContextFill   int64   `json:"context_fill"`     // 本轮 input tokens
     ContextWindow int64   `json:"context_window"`   // 200000
     ContextPct    float64 `json:"context_pct"`      // 24.1
 
@@ -448,7 +451,18 @@ type SessionStatsSnapshot struct {
     TotalCostUSD float64 `json:"total_cost_usd"`
 
     // 模型
-    ModelName string `json:"model_name"` // "Sonnet 4.6"
+    ModelName string `json:"model_name"` // "Sonnet"
+
+    // 每轮增量（Turn Summary Spec 扩展）
+    TurnDurationMs int64            `json:"turn_duration_ms"`
+    TurnInputTok   int64            `json:"turn_input_tok"`
+    TurnOutputTok  int64            `json:"turn_output_tok"`
+    TurnCostUSD    float64          `json:"turn_cost_usd"`
+    ToolNames      map[string]int   `json:"tool_names"`     // tool → count
+
+    // 环境
+    WorkDir   string `json:"work_dir"`
+    GitBranch string `json:"git_branch"`
 }
 ```
 
@@ -718,112 +732,42 @@ func (b *Bridge) deleteAccum(sessionID string) {
 }
 ```
 
-### 4.3 Phase 3: Feishu 渲染
+### 4.3 Phase 3: Feishu 渲染 ✅ Implemented (evolved)
 
 **文件**: `internal/messaging/feishu/adapter.go`
 
-#### 4.3.1 Done 事件处理增强
+实际实现使用统一的 `messaging.ExtractTurnSummary` + `messaging.FormatTurnSummary`（来自 `internal/messaging/turn_summary.go`），而非 spec 原始设计的独立 `formatFeishuStatsFooter` 函数。
 
-当前 `WriteCtx` (`adapter.go:488-508`) 在 done 时只清理资源。改为先追加 stats 再关闭：
+#### 实际实现逻辑
 
-```go
-if env.Event.Type == events.Done {
-    // ...existing typing/reaction cleanup...
+Done 事件时，提取 turn summary 并渲染：
 
-    // 追加 stats footer 到流式卡片
-    if streamCtrl != nil && streamCtrl.IsCreated() {
-        if ss := extractSessionStats(env); ss != nil {
-            footer := formatFeishuStatsFooter(ss)
-            _ = streamCtrl.AppendContent(footer)
-        }
-        return streamCtrl.Close(ctx)
-    }
-    return nil
-}
+1. **流式卡片存在**：通过 `streamCtrl.Write("\n\n---\n_" + summaryText + "_")` 追加到卡片内
+2. **无流式卡片**：通过 `go c.sendTurnSummaryText(summaryText)` 以独立消息发送（reply 或 sendText，10s 超时）
+
+格式化统一使用 `FormatTurnSummary(TurnSummaryData)` 生成单行紧凑格式：
+
+```
+Sonnet · 24% · 42s · 🛠 12 tools · $0.04
 ```
 
-#### 4.3.2 Stats Footer 格式化
+severity icon 映射复用 `context_format.go` 的 `SeverityLevel` + `SeverityIcon`。
 
-```go
-func formatFeishuStatsFooter(ss map[string]any) string {
-    modelName, _ := ss["model_name"].(string)
-    duration, _ := ss["duration"].(string)
-    turnCount := toInt(ss["turn_count"])
-    toolCount := toInt(ss["tool_call_count"])
-    inputTok := toInt64(ss["total_input_tok"])
-    outputTok := toInt64(ss["total_output_tok"])
-    ctxPct, _ := ss["context_pct"].(float64)
-    cost, _ := ss["total_cost_usd"].(float64)
-
-    return fmt.Sprintf("\n\n---\n📊 **%s** · 🕐 %s · 🔄 %d轮 · 🔧 %d次工具\n"+
-        "🪙 %s in / %s out (%.0f%% ctx) · 💰 $%.4f",
-        modelName, duration, turnCount, toolCount,
-        formatTokenCount(inputTok), formatTokenCount(outputTok),
-        ctxPct, cost)
-}
-```
-
-#### 4.3.3 Streaming Controller 扩展
-
-**文件**: `internal/messaging/feishu/streaming.go`
-
-需确认 `streamCtrl` 是否已有追加内容的方法。若没有，需新增 `AppendContent(content string) error`，在关闭前向卡片 markdown element 追加内容。
-
-### 4.4 Phase 4: Slack 渲染
+### 4.4 Phase 4: Slack 渲染 ✅ Implemented (evolved)
 
 **文件**: `internal/messaging/slack/adapter.go`
 
-#### 4.4.1 Done 事件处理增强
+实际实现使用 `sendTurnSummary` + `buildTurnSummaryTable`，超出 spec 原始设计的 `postStatsBlock` + `ContextBlock` 方案。
 
-当前 `WriteCtx` (`adapter.go:460-466`) 在 done 时只清除 status。改为追加 stats 消息：
+#### 实际实现逻辑
 
-```go
-case events.Done, events.Error:
-    _ = c.adapter.statusMgr.Clear(ctx, c.channelID, c.threadTS)
-    c.adapter.activeIndicators.Stop(ctx, c.channelID, c.messageTS)
+Done 事件时，`go c.sendTurnSummary(ctx, env)` 异步发送：
 
-    // done 时追加 stats block
-    if env.Event.Type == events.Done {
-        if ss := extractSessionStats(env); ss != nil {
-            _ = c.postStatsBlock(ctx, ss)
-        }
-    }
-    return nil
-```
+1. **首选 TableBlock**：`buildTurnSummaryTable(d)` 构建富表格，包含 Turn#、Model、Context（含进度条）、Duration、Tools（含分类明细）、Tokens、WorkDir、GitBranch、Session duration
+2. **Fallback**：TableBlock 被拒绝时降级为 `FormatTurnSummaryRich(d)` 多行纯文本格式
+3. **最终 fallback**：rich text 也失败时 `log.Warn` 记录
 
-#### 4.4.2 Stats Block 消息
-
-```go
-func (c *SlackConn) postStatsBlock(ctx context.Context, ss map[string]any) error {
-    duration, _ := ss["duration"].(string)
-    turnCount := toInt(ss["turn_count"])
-    toolCount := toInt(ss["tool_call_count"])
-    inputTok := toInt64(ss["total_input_tok"])
-    outputTok := toInt64(ss["total_output_tok"])
-    ctxPct, _ := ss["context_pct"].(float64)
-    cost, _ := ss["total_cost_usd"].(float64)
-
-    text := fmt.Sprintf(
-        "🕐 %s · 🔄 %d turns · 🔧 %d tools · 🪙 %s/%s tok (%.0f%% ctx) · 💰 $%.4f",
-        duration, turnCount, toolCount,
-        formatTokenCount(inputTok), formatTokenCount(outputTok),
-        ctxPct, cost,
-    )
-
-    blocks := []slack.Block{
-        slack.NewContextBlock(
-            "stats",
-            slack.NewTextBlockObject("mrkdwn", text, false, nil),
-        ),
-    }
-
-    _, _, err := c.adapter.client.PostMessageContext(ctx, c.channelID,
-        slack.MsgOptionBlocks(blocks...),
-        slack.MsgOptionTS(c.threadTS),
-    )
-    return err
-}
-```
+数据提取使用 `messaging.ExtractTurnSummary(env)`，格式化使用 `FormatTurnSummary` / `FormatTurnSummaryRich`。
 
 ### 4.5 辅助函数
 

@@ -14,10 +14,10 @@ type sessionAccumulator struct {
 	TurnCount     int
 	ToolCallCount int
 	TotalCostUSD  float64
-	TotalInput    int64 // cumulative input_tokens + cache_creation + cache_read
+	TotalInput    int64 // cumulative input tokens consumed across turns
 	TotalOutput   int64
 	ContextWindow int64  // from modelUsage.contextWindow (0 = unknown)
-	ContextFill   int64  // latest turn's input + cache_creation + cache_read (not cumulative)
+	ContextFill   int64  // latest turn's input_tokens (total including cache, bounded by ContextWindow)
 	ModelName     string // first model seen
 	StartedAt     time.Time
 	WorkDir       string // session working directory
@@ -42,14 +42,22 @@ func (a *sessionAccumulator) mergePerTurnStats(data events.DoneData) {
 		return
 	}
 
-	// Claude Code format: usage.input_tokens + cache tokens
+	// Claude Code format: input_tokens already includes cache tokens.
+	// cache_creation and cache_read are billing-rate breakdowns (subsets of
+	// input_tokens), NOT additive — summing them double-counts cache tokens.
 	if usage, ok := data.Stats["usage"].(map[string]any); ok {
-		input := events.ToInt64(usage["input_tokens"]) +
-			events.ToInt64(usage["cache_creation_input_tokens"]) +
-			events.ToInt64(usage["cache_read_input_tokens"])
+		input := events.ToInt64(usage["input_tokens"])
 		a.TotalInput += input
 		a.ContextFill = input
 		a.TotalOutput += events.ToInt64(usage["output_tokens"])
+	} else if tokens, ok := data.Stats["tokens"].(map[string]any); ok {
+		// OpenCode format: input/cache_read/cache_write are separate additive fields.
+		input := events.ToInt64(tokens["input"]) +
+			events.ToInt64(tokens["cache_read"]) +
+			events.ToInt64(tokens["cache_write"])
+		a.TotalInput += input
+		a.ContextFill = input
+		a.TotalOutput += events.ToInt64(tokens["output"])
 	}
 
 	// Claude Code modelUsage: extract model name + contextWindow
@@ -66,16 +74,6 @@ func (a *sessionAccumulator) mergePerTurnStats(data events.DoneData) {
 				a.ContextWindow = cw
 			}
 		}
-	}
-
-	// OpenCode format: tokens.input + cache tokens
-	if tokens, ok := data.Stats["tokens"].(map[string]any); ok {
-		input := events.ToInt64(tokens["input"]) +
-			events.ToInt64(tokens["cache_read"]) +
-			events.ToInt64(tokens["cache_write"])
-		a.TotalInput += input
-		a.ContextFill = input
-		a.TotalOutput += events.ToInt64(tokens["output"])
 	}
 
 	// Cost: Claude Code uses "total_cost_usd", OpenCode uses "cost"

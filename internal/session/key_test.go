@@ -234,3 +234,45 @@ func TestDerivePlatformSessionKey_AllWorkerTypes(t *testing.T) {
 		})
 	}
 }
+
+// PBAC-012: DerivePlatformSessionKey with different BotIDs produces different session IDs.
+func TestDerivePlatformSessionKey_BotIDDifferentiation(t *testing.T) {
+	t.Parallel()
+
+	base := PlatformContext{Platform: "slack", TeamID: "T001", ChannelID: "C100", UserID: "U001"}
+	bot1 := base
+	bot1.BotID = "U11111"
+	bot2 := base
+	bot2.BotID = "U22222"
+
+	keyBase := DerivePlatformSessionKey("owner", worker.TypeClaudeCode, base)
+	keyBot1 := DerivePlatformSessionKey("owner", worker.TypeClaudeCode, bot1)
+	keyBot2 := DerivePlatformSessionKey("owner", worker.TypeClaudeCode, bot2)
+
+	require.NotEqual(t, keyBase, keyBot1, "different BotID → different session key")
+	require.NotEqual(t, keyBot1, keyBot2, "different BotIDs → different session keys")
+
+	keyBot1Again := DerivePlatformSessionKey("owner", worker.TypeClaudeCode, bot1)
+	require.Equal(t, keyBot1, keyBot1Again, "same BotID must be deterministic")
+}
+
+// PBAC-027: FromMap reconstructs BotID from persisted platformKey["bot_id"].
+func TestPlatformContext_FromMap_BotID(t *testing.T) {
+	t.Parallel()
+
+	var pc PlatformContext
+	pc.FromMap(map[string]string{
+		"bot_id":     "U12345",
+		"team_id":    "T001",
+		"channel_id": "C100",
+		"user_id":    "U999",
+	})
+	require.Equal(t, "U12345", pc.BotID)
+	require.Equal(t, "T001", pc.TeamID)
+	require.Equal(t, "C100", pc.ChannelID)
+	require.Equal(t, "U999", pc.UserID)
+
+	var pc2 PlatformContext
+	pc2.FromMap(map[string]string{"team_id": "T001"})
+	require.Empty(t, pc2.BotID)
+}

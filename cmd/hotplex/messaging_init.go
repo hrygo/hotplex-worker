@@ -128,6 +128,9 @@ func startMessagingAdapters(ctx context.Context, deps *GatewayDeps) ([]messaging
 			statuses = append(statuses, AdapterStatus{Name: string(pt), Started: false})
 			continue
 		}
+		if err := msgBridge.SetAdapter(adapter); err != nil {
+			log.Error("messaging: adapter platform mismatch", "platform", pt, "err", err)
+		}
 		adapters = append(adapters, adapter)
 		statuses = append(statuses, AdapterStatus{Name: string(pt), Started: true})
 		log.Info("messaging: adapter started", "platform", pt)
