@@ -256,30 +256,42 @@ Place these files in `agent_config.config_dir`:
 | `USER.md` | C | User profile, preferences | Language, timezone, communication style |
 | `MEMORY.md` | C | Persistent cross-session memory | Feedback corrections, project context |
 
-### Platform Variants
+### Per-Bot 3-Level Directory Fallback
 
-Append `.<platform>` before `.md` for platform-specific overrides:
+Each config file is resolved independently through a 3-level directory lookup:
 
 ```
 ~/.hotplex/agent-configs/
-├── SOUL.md              ← Default persona (all platforms)
-├── SOUL.slack.md        ← Slack-specific additions (appended to SOUL.md)
-├── SOUL.feishu.md       ← Feishu-specific additions
+├── SOUL.md                 ← Global default (all platforms)
 ├── AGENTS.md
-├── AGENTS.slack.md      ← Slack-specific rules
 ├── SKILLS.md
 ├── USER.md
-└── MEMORY.md
+├── MEMORY.md
+├── slack/                  ← Slack platform-level
+│   ├── SOUL.md
+│   ├── AGENTS.md
+│   └── U12345/             ← Slack per-bot level (User ID)
+│       ├── SOUL.md
+│       └── AGENTS.md
+├── feishu/                 ← Feishu platform-level
+│   ├── SOUL.md
+│   └── ou_abc123/          ← Feishu per-bot level (Open ID)
+│       └── SOUL.md
+└── webchat/                ← WebChat platform-level
+    └── my-bot/             ← WebChat per-bot level (JWT bot_id)
+        └── SOUL.md
 ```
 
-Loading: base file content is loaded first, then platform variant is appended. Either part is optional.
+**Resolution order** (per file): `<platform>/<botID>/<file>` → `<platform>/<file>` → `<file>`.
+
+First non-empty file wins (replacement semantics, not append). Empty or frontmatter-only files fall through to the next level.
 
 ### Size Limits
 
 | Limit | Value | Description |
 |-------|-------|-------------|
-| Per file | 12,000 chars | Individual file truncation limit |
-| Total | 60,000 chars | Combined limit across all files |
+| Per file | 8,000 chars | Individual file truncation limit |
+| Total | 40,000 chars | Combined limit across all files |
 
 YAML frontmatter (`---` blocks) is automatically stripped from files before injection.
 
@@ -452,9 +464,36 @@ worker:
 
 ---
 
-## Messaging Access Control
+## Worker Environment Variables
 
-Messaging platforms (Slack, Feishu) support granular access control to ensure the bot only responds to authorized users in specific contexts.
+Inject additional environment variables into worker processes via `worker.environment`. This is the only config field that supports `${VAR}` expansion.
+
+### Configuration
+
+```yaml
+worker:
+  environment:
+    - "BUN_RUNTIME_NV=disable_avx512"
+    - "MY_API_KEY=${MY_API_KEY}"           # Expanded from gateway's env
+    - "MY_TOKEN=${MY_TOKEN:-default-val}"  # With default fallback
+```
+
+### Behavior
+
+- Each entry is either `KEY=VALUE` (literal) or `KEY=${VAR}` (expanded from gateway process env)
+- Entries referencing unset variables without defaults are silently dropped (with warning log)
+- Merged with `env_whitelist` and `allowed_envs` — all three sources contribute to worker env
+- `${VAR:-default}` syntax is supported for fallback values
+
+### Environment Variables
+
+```bash
+# worker.environment is not settable via env var — use config file only
+```
+
+---
+
+## Messaging Access Control
 
 ### Configuration Fields
 

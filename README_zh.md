@@ -15,7 +15,7 @@
 
 <p align="center">
   <a href="https://github.com/hrygo/hotplex/actions/workflows/ci.yml"><img src="https://github.com/hrygo/hotplex/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <img src="https://img.shields.io/badge/Version-v1.2.0-10B981?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/Version-v1.5.0-10B981?style=flat-square" alt="Version">
   <a href="https://github.com/hrygo/hotplex/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-3B82F6?style=flat-square" alt="License"></a>
   <img src="https://img.shields.io/badge/Go-1.26+-00ADD8?style=flat-square&logo=go" alt="Go">
   <img src="https://img.shields.io/badge/Protocol-AEP%20v1-7C3AED?style=flat-square" alt="AEP v1">
@@ -34,7 +34,7 @@
 - 🌐 **开箱即用 Web UI** — 内部集成高颜值 Next.js Chat 界面，单二进制文件即可完成从 API 到前端的全栈部署。
 - 🛡️ **企业级安全加固** — 强制 JWT ES256 认证、SSRF 防护，以及基于 PGID 的进程级隔离与孤儿进程自动清理。
 - 📊 **全链路监控审计** — 完整支持 Prometheus 指标、OpenTelemetry 链路追踪及结构化 JSON 日志，掌控每一条指令。
-- 🛠️ **一体化 CLI** — `gateway`、`service`、`dev`、`onboard`、`doctor`、`security`、`status` 集成在单个二进制中
+- 🛠️ **一体化 CLI** — `gateway`、`service`、`slack`、`update`、`dev`、`onboard`、`doctor`、`security`、`status` 集成在单个二进制中
 - 🌍 **多语言 SDK** — Go、TypeScript、Python、Java 客户端开箱即用
 
 ## ⚡ 快速开始

@@ -13,7 +13,7 @@ make build
 # 产物在 bin/ 目录下
 ```
 
-支持 macOS (arm64) 和 Linux (amd64/arm64)。
+支持 macOS (arm64)、Linux (amd64/arm64) 和 Windows (amd64/arm64)。
 
 ---
 
@@ -248,7 +248,18 @@ export HOTPLEX_DB_EVENTS_PATH="/var/lib/hotplex/events.db"
 | `USER.md` | 用户背景和偏好 |
 | `MEMORY.md` | AI 的长期记忆 |
 
-还可以为不同平台创建变体，如 `SOUL.slack.md`（仅在 Slack 渠道生效）。
+支持 **per-bot 3 级目录 fallback**，按文件独立查找：
+
+```
+~/.hotplex/agent-configs/
+  SOUL.md                    ← 全局默认
+  slack/SOUL.md              ← Slack 平台级
+  slack/U12345/SOUL.md       ← Slack 特定用户级（最高优先级）
+  feishu/SOUL.md             ← 飞书平台级
+  feishu/ou_abc123/SOUL.md   ← 飞书特定用户级
+```
+
+查找顺序：`<platform>/<botID>/<file>` → `<platform>/<file>` → `<file>`，命中第一个非空文件即停止。
 
 每个文件最大 8KB，总计不超过 40KB。
 
@@ -297,6 +308,19 @@ hotplex version              查看版本
 hotplex update               自更新到最新版本
 hotplex update --check       仅检查更新
 hotplex update -y            跳过确认提示
+hotplex update --restart     更新后自动重启网关
+
+# Slack 操作
+hotplex slack send-message --text "Hello" --channel <id>
+hotplex slack update-message --channel <id> --ts <ts> --text "Updated"
+hotplex slack schedule-message --text "Reminder" --at "2026-05-04T09:00:00+08:00"
+hotplex slack upload-file --file ./report.pdf --title "Report"
+hotplex slack download-file --file-id <id> --output ./save.pdf
+hotplex slack list-channels --types im,public_channel --json
+hotplex slack bookmark add --channel <id> --title "Link" --url <url>
+hotplex slack bookmark list --channel <id>
+hotplex slack bookmark remove --channel <id> --bookmark-id <id>
+hotplex slack react add --channel <id> --ts <ts> --emoji white_check_mark
 
 # 网关管理
 hotplex gateway start        前台启动网关
