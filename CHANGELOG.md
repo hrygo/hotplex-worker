@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.5.1] - 2026-05-04
+
+### Summary
+
+v1.5.1 是一次 patch 版本更新，修复 v1.5.0 引入的 **agent 配置注入丢失** 和 **.env 路径展开失败** 两个关键问题。Bridge 闭包捕获导致 agent config SystemPrompt 在 worker Start/Resume 时被静默丢弃；Viper env override 绕过路径规范化导致 `~` 前缀路径无法解析。同时修复了 dev.sh 与 gateway PID 文件 JSON 格式不兼容导致的 `make dev` 启动失败。
+
+### Fixed
+
+- **Gateway**: Agent config SystemPrompt 在 worker Start/Resume 时被静默丢弃 — `workerStartFunc` 闭包捕获了 injection 前的 `workerInfo` 副本，注入的 SystemPrompt 未传递到 worker 进程。(#139)
+- **Configuration**: `.env` 中 `~` 前缀路径（如 `~/.hotplex/...`）未展开 — Viper env override 在路径规范化之后写入原始值，导致 agent config、STT 等目录解析失败。(#138)
+- **Configuration**: Worker 和 STT 环境变量通过 `.env` 设置时被静默忽略 — 缺少 `BindEnv` 调用导致 `claude_code.command`、`opencode_server.*` 和 `messaging.*.stt_*` 字段无法从环境变量读取。(#138)
+- **Agent Config**: Agent config 启用但无对应文件时无告警 — 新增 `HasGlobalFiles()` 检测和 `agentConfigGlobalFilesChecker` 诊断检查。(#138)
+- **Dev Tooling**: `make dev` 启动失败 — gateway PID 文件升级为 JSON 格式后 dev.sh `cat` 读取失败，误判进程已死。新增 `read_pid()` 兼容两种格式。
+
 ## [1.5.0] - 2026-05-03
 
 ### Summary
