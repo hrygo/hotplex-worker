@@ -53,6 +53,16 @@ func (a *sessionAccumulator) mergePerTurnStats(data events.DoneData) {
 		a.TotalInput += input
 		a.ContextFill = input
 		a.TotalOutput += events.ToInt64(usage["output_tokens"])
+	} else if tokens, ok := data.Stats["tokens"].(map[string]any); ok {
+		// OpenCode format: tokens.input does NOT include cache tokens.
+		// Unlike Claude Code, OpenCode reports input, cache_read, and cache_write
+		// as separate additive fields. Summing them gives the true total input.
+		input := events.ToInt64(tokens["input"]) +
+			events.ToInt64(tokens["cache_read"]) +
+			events.ToInt64(tokens["cache_write"])
+		a.TotalInput += input
+		a.ContextFill = input
+		a.TotalOutput += events.ToInt64(tokens["output"])
 	}
 
 	// Claude Code modelUsage: extract model name + contextWindow
@@ -69,18 +79,6 @@ func (a *sessionAccumulator) mergePerTurnStats(data events.DoneData) {
 				a.ContextWindow = cw
 			}
 		}
-	}
-
-	// OpenCode format: tokens.input does NOT include cache tokens.
-	// Unlike Claude Code, OpenCode reports input, cache_read, and cache_write
-	// as separate additive fields. Summing them gives the true total input.
-	if tokens, ok := data.Stats["tokens"].(map[string]any); ok {
-		input := events.ToInt64(tokens["input"]) +
-			events.ToInt64(tokens["cache_read"]) +
-			events.ToInt64(tokens["cache_write"])
-		a.TotalInput += input
-		a.ContextFill = input
-		a.TotalOutput += events.ToInt64(tokens["output"])
 	}
 
 	// Cost: Claude Code uses "total_cost_usd", OpenCode uses "cost"

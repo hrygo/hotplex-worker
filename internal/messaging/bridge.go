@@ -48,12 +48,13 @@ func (b *Bridge) WorkDir() string { return b.workDir }
 
 // SetAdapter injects the platform adapter for lazy botID resolution.
 // Must be called after adapter.Start() succeeds and before any Handle() calls.
-func (b *Bridge) SetAdapter(a PlatformAdapterInterface) {
+// Returns an error if the adapter's platform does not match the bridge's platform.
+func (b *Bridge) SetAdapter(a PlatformAdapterInterface) error {
 	if a != nil && a.Platform() != b.platform {
-		b.log.Warn("messaging bridge: adapter platform mismatch",
-			"expected", b.platform, "got", a.Platform())
+		return fmt.Errorf("messaging bridge: adapter platform %q != bridge platform %q", a.Platform(), b.platform)
 	}
 	b.adapter.Store(a)
+	return nil
 }
 
 // getAdapter returns the stored adapter or nil if not yet set.

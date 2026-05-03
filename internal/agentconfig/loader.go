@@ -91,6 +91,9 @@ func Load(dir, platform, botID string) (*AgentConfigs, error) {
 
 // resolveFile implements the 3-level per-file fallback.
 // Returns the content of the first non-empty file found, or ("", nil) if none exist.
+// Non-NotExist I/O errors (e.g., permission denied) are propagated immediately
+// rather than falling through — a file that exists but is unreadable indicates
+// a real configuration problem that should not be silently masked.
 func resolveFile(dir, platform, botID, fileName string) (string, error) {
 	// 1. Bot-level: dir/platform/botID/fileName
 	if botID != "" && platform != "" {

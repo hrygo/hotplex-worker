@@ -14,12 +14,22 @@ import (
 // agentConfigSuffixChecker detects deprecated platform-suffix files
 // (e.g., SOUL.slack.md) in the agent-configs directory and suggests
 // migration to the new directory-based layout.
-type agentConfigSuffixChecker struct{}
+type agentConfigSuffixChecker struct {
+	dir string // override for testing; defaults to config.HotplexHome()/agent-configs
+}
 
 func (c agentConfigSuffixChecker) Name() string     { return "agent.suffix_deprecated" }
 func (c agentConfigSuffixChecker) Category() string { return "agent_config" }
+
+func (c agentConfigSuffixChecker) scanDir() string {
+	if c.dir != "" {
+		return c.dir
+	}
+	return filepath.Join(config.HotplexHome(), "agent-configs")
+}
+
 func (c agentConfigSuffixChecker) Check(_ context.Context) cli.Diagnostic {
-	dir := filepath.Join(config.HotplexHome(), "agent-configs")
+	dir := c.scanDir()
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
