@@ -189,7 +189,7 @@ func (h *testableHandler) handleGC(ctx context.Context, sessionID, ownerID strin
 	if err := h.sm.TransitionWithReason(ctx, sessionID, events.StateTerminated, "gc"); err != nil {
 		return err
 	}
-	// 5. Send state notification
+	// 6. Send state notification
 	return h.sendState(ctx, sessionID, events.StateTerminated, "session_archived")
 }
 
