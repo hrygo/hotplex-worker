@@ -786,7 +786,7 @@ type SessionTransitioner interface {
 	TransitionWithReason(ctx context.Context, id string, to events.SessionState, termReason string) error
 }
 
-// SessionWorkerManager provides worker attachment operations.
+// SessionWorkerManager provides worker attachment and detachment.
 type SessionWorkerManager interface {
 	AttachWorker(id string, w worker.Worker) error
 	DetachWorker(id string)
@@ -794,8 +794,8 @@ type SessionWorkerManager interface {
 	UpdateWorkerSessionID(ctx context.Context, id, workerSessionID string) error
 }
 
-// SessionMeta provides administrative and metadata operations.
-type SessionMeta interface {
+// SessionAdmin provides listing, ownership validation, and metadata mutations.
+type SessionAdmin interface {
 	List(ctx context.Context, userID, platform string, limit, offset int) ([]*session.SessionInfo, error)
 	ValidateOwnership(ctx context.Context, sessionID, userID, adminUserID string) error
 	UpdateWorkDir(ctx context.Context, id, workDir string) error
@@ -808,7 +808,7 @@ type SessionManager interface {
 	SessionLifecycle
 	SessionTransitioner
 	SessionWorkerManager
-	SessionMeta
+	SessionAdmin
 }
 
 // WorkerFactory creates worker instances. Production code uses defaultWorkerFactory.

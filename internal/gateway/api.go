@@ -21,11 +21,8 @@ import (
 )
 
 // apiSM is the narrow subset of SessionManager that GatewayAPI needs.
-// API never uses: CreateWithBot, AttachWorker, DetachWorker, DetachWorkerIf,
-// GetWorker, Delete, UpdateWorkerSessionID, TransitionWithInput,
-// TransitionWithReason, ValidateOwnership, UpdateWorkDir, ResetExpiry.
 type apiSM interface {
-	SessionReader
+	Get(id string) (*session.SessionInfo, error)
 	List(ctx context.Context, userID, platform string, limit, offset int) ([]*session.SessionInfo, error)
 	DeletePhysical(ctx context.Context, id string) error
 	Transition(ctx context.Context, id string, to events.SessionState) error

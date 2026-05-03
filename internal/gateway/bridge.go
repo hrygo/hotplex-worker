@@ -27,11 +27,16 @@ type resetGenerationer interface {
 }
 
 // bridgeSM is the narrow subset of SessionManager that Bridge needs.
-// Bridge never uses: List, DeletePhysical, TransitionWithInput,
-// TransitionWithReason, ValidateOwnership, UpdateWorkDir.
 type bridgeSM interface {
-	SessionReader
-	SessionWorkerManager
+	// SessionReader
+	Get(id string) (*session.SessionInfo, error)
+	GetWorker(id string) worker.Worker
+	// SessionWorkerManager
+	AttachWorker(id string, w worker.Worker) error
+	DetachWorker(id string)
+	DetachWorkerIf(id string, expected worker.Worker) bool
+	UpdateWorkerSessionID(ctx context.Context, id, workerSessionID string) error
+	// Lifecycle + transitions
 	CreateWithBot(ctx context.Context, id, userID, botID string, wt worker.WorkerType, allowedTools []string, platform string, platformKey map[string]string, workDir, title string) (*session.SessionInfo, error)
 	Delete(ctx context.Context, id string) error
 	Transition(ctx context.Context, id string, to events.SessionState) error
