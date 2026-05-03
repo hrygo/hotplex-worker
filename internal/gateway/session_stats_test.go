@@ -128,6 +128,7 @@ func TestSessionAccumulator_MergePerTurnStats(t *testing.T) {
 }
 
 func TestSessionAccumulator_ComputeContextPct(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name          string
 		contextFill   int64
@@ -150,7 +151,6 @@ func TestSessionAccumulator_ComputeContextPct(t *testing.T) {
 			require.Equal(t, tt.wantPct, got)
 		})
 	}
-	t.Parallel()
 }
 
 func TestSessionAccumulator_MergeContextUsage(t *testing.T) {

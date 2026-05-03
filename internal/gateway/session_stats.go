@@ -42,21 +42,16 @@ func (a *sessionAccumulator) mergePerTurnStats(data events.DoneData) {
 		return
 	}
 
-	// Claude Code format: usage.input_tokens already includes cached tokens.
-	// Per Claude Code SDK docs: "input_tokens = total input tokens sent to
-	// the model (includes cached + non-cached)". The cache_creation and
-	// cache_read fields are billing-rate breakdowns (subsets of input_tokens),
-	// NOT additive. Adding them on top double-counts cache tokens, causing
-	// ContextFill to exceed ContextWindow.
+	// Claude Code format: input_tokens already includes cache tokens.
+	// cache_creation and cache_read are billing-rate breakdowns (subsets of
+	// input_tokens), NOT additive — summing them double-counts cache tokens.
 	if usage, ok := data.Stats["usage"].(map[string]any); ok {
 		input := events.ToInt64(usage["input_tokens"])
 		a.TotalInput += input
 		a.ContextFill = input
 		a.TotalOutput += events.ToInt64(usage["output_tokens"])
 	} else if tokens, ok := data.Stats["tokens"].(map[string]any); ok {
-		// OpenCode format: tokens.input does NOT include cache tokens.
-		// Unlike Claude Code, OpenCode reports input, cache_read, and cache_write
-		// as separate additive fields. Summing them gives the true total input.
+		// OpenCode format: input/cache_read/cache_write are separate additive fields.
 		input := events.ToInt64(tokens["input"]) +
 			events.ToInt64(tokens["cache_read"]) +
 			events.ToInt64(tokens["cache_write"])
