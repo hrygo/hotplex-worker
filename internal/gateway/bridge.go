@@ -135,8 +135,8 @@ func (b *Bridge) StartSession(ctx context.Context, id, userID, botID string, wt 
 		platform:   platform,
 		botID:      botID,
 	},
-		func(ctx context.Context, w worker.Worker) error {
-			if err := w.Start(ctx, workerInfo); err != nil {
+		func(ctx context.Context, w worker.Worker, info worker.SessionInfo) error {
+			if err := w.Start(ctx, info); err != nil {
 				_ = b.sm.Delete(ctx, id)
 				return fmt.Errorf("bridge: start worker: %w", err)
 			}
@@ -177,7 +177,7 @@ type workerLaunchParams struct {
 
 // workerStartFunc is called after AttachWorker and injectAgentConfig.
 // On startFn failure, the worker is automatically detached.
-type workerStartFunc func(ctx context.Context, w worker.Worker) error
+type workerStartFunc func(ctx context.Context, w worker.Worker, info worker.SessionInfo) error
 
 // workerAttachErrFunc is called when AttachWorker fails for caller-specific cleanup.
 type workerAttachErrFunc func(w worker.Worker, err error)
@@ -209,7 +209,7 @@ func (b *Bridge) createAndLaunchWorker(params workerLaunchParams, startFn worker
 
 	b.injectAgentConfig(&params.workerInfo, params.platform, params.botID)
 
-	if err := startFn(params.ctx, w); err != nil {
+	if err := startFn(params.ctx, w, params.workerInfo); err != nil {
 		b.sm.DetachWorker(sid)
 		return nil, err
 	}
@@ -288,7 +288,7 @@ func (b *Bridge) resumeWithOpts(ctx context.Context, id, workDir string, opts fo
 		botID:       si.BotID,
 		forwardOpts: &opts,
 	},
-		func(ctx context.Context, w worker.Worker) error {
+		func(ctx context.Context, w worker.Worker, info worker.SessionInfo) error {
 			// Transition IDLE/RESUMED/TERMINATED sessions to RUNNING.
 			if si.State != events.StateRunning {
 				if err := b.sm.Transition(ctx, id, events.StateRunning); err != nil {
@@ -296,16 +296,16 @@ func (b *Bridge) resumeWithOpts(ctx context.Context, id, workDir string, opts fo
 				}
 			}
 			// Zombie GC may delete session files; fall back to fresh start if missing.
-			if fc, ok := w.(worker.SessionFileChecker); ok && !fc.HasSessionFiles(workerInfo.SessionID) {
+			if fc, ok := w.(worker.SessionFileChecker); ok && !fc.HasSessionFiles(info.SessionID) {
 				b.log.Info("bridge: session files missing, falling back to fresh start",
 					"session_id", id)
-				if err := w.Start(ctx, workerInfo); err != nil {
+				if err := w.Start(ctx, info); err != nil {
 					return fmt.Errorf("bridge: fresh start after missing files: %w", err)
 				}
 				opts.resumed = false
 				return nil
 			}
-			if err := w.Resume(ctx, workerInfo); err != nil {
+			if err := w.Resume(ctx, info); err != nil {
 				return fmt.Errorf("bridge: resume start: %w", err)
 			}
 			return nil
@@ -830,11 +830,11 @@ func (b *Bridge) attemptResumeFallback(p fallbackParams) bool {
 		platform:   si.Platform,
 		botID:      si.BotID,
 	},
-		func(ctx context.Context, w worker.Worker) error {
+		func(ctx context.Context, w worker.Worker, info worker.SessionInfo) error {
 			if err := b.sm.Transition(ctx, p.sessionID, events.StateRunning); err != nil {
 				b.log.Warn("bridge: transition to running for fresh start", "session_id", p.sessionID, "err", err)
 			}
-			if err := w.Start(ctx, workerInfo); err != nil {
+			if err := w.Start(ctx, info); err != nil {
 				b.log.Warn("bridge: fresh worker start failed", "session_id", p.sessionID, "err", err)
 				return err
 			}
@@ -1135,6 +1135,7 @@ func (b *Bridge) injectAgentConfig(info *worker.SessionInfo, platform, botID str
 	if b.agentConfigDir == "" {
 		return
 	}
+	b.log.Debug("bridge: loading agent config", "dir", b.agentConfigDir, "platform", platform, "bot_id", botID)
 	configs, err := agentconfig.Load(b.agentConfigDir, platform, botID)
 	if err != nil {
 		if strings.Contains(err.Error(), "invalid botID") {
@@ -1154,6 +1155,9 @@ func (b *Bridge) injectAgentConfig(info *worker.SessionInfo, platform, botID str
 
 	if prompt := agentconfig.BuildSystemPrompt(configs); prompt != "" {
 		info.SystemPrompt = prompt
+		b.log.Info("bridge: agent config injected", "prompt_len", len(prompt), "platform", platform, "bot_id", botID)
+	} else {
+		b.log.Debug("bridge: agent config loaded but prompt empty", "platform", platform, "bot_id", botID)
 	}
 }
 
