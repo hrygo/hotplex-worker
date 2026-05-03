@@ -9,6 +9,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	lark "github.com/larksuite/oapi-sdk-go/v3"
 	larkcardkit "github.com/larksuite/oapi-sdk-go/v3/service/cardkit/v1"
@@ -85,7 +86,6 @@ type StreamingCardController struct {
 	streamStartTime time.Time
 	streamExpired   bool
 	bytesWritten    int64
-	bytesFlushed    int64
 	failedFlushes   int
 
 	chatType     string
@@ -93,6 +93,12 @@ type StreamingCardController struct {
 	limiter      *FeishuRateLimiter
 	client       *lark.Client
 	log          *slog.Logger
+
+	// Background flush loop (decoupled from Write, like Slack NativeStreamingWriter).
+	flushDone    chan struct{}
+	flushStop    sync.Once
+	flushWg      sync.WaitGroup
+	flushTrigger chan struct{} // buffered 1: coalesces rapid signals
 }
 
 const streamingElementID = "streaming_content"
@@ -101,6 +107,11 @@ const streamingElementID = "streaming_content"
 // Feishu server auto-closes streaming after 10 minutes; we rotate at 6 minutes
 // to proactively create a new card and avoid hitting the server limit.
 const StreamTTL = 6 * time.Minute
+
+const (
+	flushInterval = 150 * time.Millisecond // CardKit allows 100ms; 150ms gives margin
+	flushSize     = 30                     // rune count threshold for immediate flush trigger
+)
 
 func NewStreamingCardController(client *lark.Client, limiter *FeishuRateLimiter, log *slog.Logger) *StreamingCardController {
 	var p atomic.Int32
@@ -111,6 +122,8 @@ func NewStreamingCardController(client *lark.Client, limiter *FeishuRateLimiter,
 		log:             log,
 		cardKitOK:       true,
 		elementID:       streamingElementID,
+		flushDone:       make(chan struct{}),
+		flushTrigger:    make(chan struct{}, 1),
 		streamStartTime: time.Now(),
 	}
 }
@@ -205,6 +218,7 @@ func (c *StreamingCardController) EnsureCard(ctx context.Context, chatID, chatTy
 	if !c.transition(PhaseStreaming) {
 		return fmt.Errorf("feishu: cannot transition to streaming")
 	}
+	c.startFlushLoop()
 	return nil
 }
 
@@ -227,7 +241,16 @@ func (c *StreamingCardController) Write(text string) error {
 	}
 	c.buf.WriteString(text)
 	c.bytesWritten += int64(len(text))
+	bufLen := utf8.RuneCountInString(c.buf.String())
 	c.mu.Unlock()
+
+	// Trigger immediate flush when buffer exceeds rune threshold.
+	if bufLen >= flushSize {
+		select {
+		case c.flushTrigger <- struct{}{}:
+		default:
+		}
+	}
 	return nil
 }
 
@@ -254,9 +277,6 @@ func (c *StreamingCardController) Flush(ctx context.Context) error {
 
 	if c.cardKitOK && c.cardID != "" && c.limiter.AllowCardKit(c.cardID) {
 		if err := c.flushCardKitWithRetry(ctx, content, seq); err != nil {
-			// failedFlushes tracks all CardKit failures including rate-limit silent drops.
-			// It is used for integrity checks and logging; rate-limit drops do NOT
-			// count toward bytesFlushed, so content may appear incomplete to users.
 			c.mu.Lock()
 			c.failedFlushes++
 			switch {
@@ -280,7 +300,6 @@ func (c *StreamingCardController) Flush(ctx context.Context) error {
 		} else {
 			c.mu.Lock()
 			c.lastFlushed = content
-			c.bytesFlushed += int64(len(content))
 			c.mu.Unlock()
 			return nil
 		}
@@ -296,11 +315,42 @@ func (c *StreamingCardController) Flush(ctx context.Context) error {
 		}
 		c.mu.Lock()
 		c.lastFlushed = content
-		c.bytesFlushed += int64(len(content))
 		c.mu.Unlock()
 	}
 
 	return nil
+}
+
+// startFlushLoop launches the background flush goroutine.
+// Called once after successful transition to PhaseStreaming.
+func (c *StreamingCardController) startFlushLoop() {
+	c.flushWg.Add(1)
+	go c.flushLoop()
+}
+
+func (c *StreamingCardController) flushLoop() {
+	defer c.flushWg.Done()
+	ticker := time.NewTicker(flushInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-c.flushDone:
+			return
+		case <-c.flushTrigger:
+			_ = c.Flush(context.Background())
+		case <-ticker.C:
+			_ = c.Flush(context.Background())
+		}
+	}
+}
+
+// stopFlushLoop cleanly terminates the background flush goroutine.
+func (c *StreamingCardController) stopFlushLoop() {
+	c.flushStop.Do(func() {
+		close(c.flushDone)
+	})
+	c.flushWg.Wait()
 }
 
 // Expired reports whether the streaming session has exceeded its TTL.
@@ -326,27 +376,15 @@ func (c *StreamingCardController) Close(ctx context.Context) error {
 		return nil
 	}
 
+	// Stop background flush loop first so it doesn't race with final flush.
+	c.stopFlushLoop()
+
 	c.mu.Lock()
 	content := c.buf.String()
 	c.mu.Unlock()
 
 	// Final content: sanitize then optimize for best rendering.
-	// Order matters: SanitizeForCard first (wraps excess tables in code blocks),
-	// then OptimizeMarkdownStyle (extracts code blocks, processes tables, restores).
 	content = OptimizeMarkdownStyle(SanitizeForCard(content))
-
-	// Integrity check: if bytesWritten >> bytesFlushed, the stream lost content.
-	c.mu.Lock()
-	integrityOK := (c.bytesWritten == 0 && c.bytesFlushed == 0) ||
-		c.bytesFlushed >= c.bytesWritten*9/10
-	if !integrityOK {
-		c.log.Warn("feishu: streaming integrity check failed",
-			"bytes_written", c.bytesWritten,
-			"bytes_flushed", c.bytesFlushed,
-			"failed_flushes", c.failedFlushes)
-		content += "\n\n> ⚠️ _部分输出可能因速率限制而丢失。_"
-	}
-	c.mu.Unlock()
 
 	c.log.Debug("feishu: streaming card close",
 		"card_kit_ok", c.cardKitOK,
@@ -355,25 +393,43 @@ func (c *StreamingCardController) Close(ctx context.Context) error {
 		"content_len", len(content),
 		"last_flushed_len", len(c.lastFlushed))
 
+	// Final flush: push complete content to the card.
+	finalFlushOK := false
 	if c.cardKitOK && c.cardID != "" {
 		seq := int(c.sequence.Add(1))
-
 		if err := c.flushCardKit(ctx, content, seq); err != nil {
 			c.log.Warn("feishu: final cardkit flush failed, attempting IM patch fallback",
 				"err", err)
-			// Only attempt IM patch fallback if we have a msgID.
-			// This avoids a double-write when both CardKit and IM patch are attempted.
 			if c.msgID != "" {
-				_ = c.flushIMPatchWithConfig(ctx, content)
+				if err := c.flushIMPatchWithConfig(ctx, content); err == nil {
+					finalFlushOK = true
+				}
 			}
+		} else {
+			finalFlushOK = true
 		}
 	} else if c.msgID != "" {
-		// CardKit never available or permanently degraded: use IM Patch with final
-		// config (streaming_mode=false + summary) to ensure the card renders
-		// correctly without stale streaming state.
 		c.log.Debug("feishu: cardkit degraded, using IM patch with final config")
-		_ = c.flushIMPatchWithConfig(ctx, content)
+		if err := c.flushIMPatchWithConfig(ctx, content); err == nil {
+			finalFlushOK = true
+		}
 	}
+
+	// Integrity check: compare last successfully flushed content against final buffer.
+	// Only warn if the final flush itself failed to deliver full content.
+	c.mu.Lock()
+	if !finalFlushOK || len(c.lastFlushed) < len(SanitizeForCard(c.buf.String()))*9/10 {
+		if c.bytesWritten > 0 {
+			c.log.Warn("feishu: streaming integrity check failed",
+				"bytes_written", c.bytesWritten,
+				"last_flushed_len", len(c.lastFlushed),
+				"buffer_len", len(c.buf.String()),
+				"failed_flushes", c.failedFlushes,
+				"final_flush_ok", finalFlushOK)
+			content += "\n\n> ⚠️ _部分输出可能因速率限制而丢失。_"
+		}
+	}
+	c.mu.Unlock()
 
 	// Update lastFlushed so disableStreaming can use it for the summary preview.
 	c.mu.Lock()
@@ -409,6 +465,8 @@ func (c *StreamingCardController) Abort(ctx context.Context) error {
 	if !c.transition(PhaseAborted) {
 		return nil
 	}
+
+	c.stopFlushLoop()
 
 	c.mu.Lock()
 	cardID := c.cardID

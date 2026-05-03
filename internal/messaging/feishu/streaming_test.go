@@ -381,7 +381,7 @@ func TestStreamingCardController_IntegrityCheck(t *testing.T) {
 	require.True(t, c.transition(PhaseCreating))
 	c.mu.Lock()
 	c.bytesWritten = 0
-	c.bytesFlushed = 0
+	// bytesFlushed removed; integrity now based on lastFlushed vs buf
 	c.mu.Unlock()
 
 	// Close should not panic with zero bytes.

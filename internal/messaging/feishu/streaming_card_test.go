@@ -215,10 +215,12 @@ func TestStreamingCardController_Close_IntegrityFail(t *testing.T) {
 	require.True(t, c.transition(PhaseCreating))
 	require.True(t, c.transition(PhaseStreaming))
 
-	// Simulate: many bytes written, very few flushed → integrity check fails.
+	// Simulate: many bytes written, nothing flushed → integrity check fails.
 	c.mu.Lock()
 	c.bytesWritten = 10000
-	c.bytesFlushed = 100 // only 1% flushed
+	c.lastFlushed = "" // nothing was flushed
+	c.msgID = ""       // no msgID → final flush will fail
+	c.cardKitOK = false
 	c.buf.WriteString("test content")
 	c.mu.Unlock()
 
@@ -233,10 +235,11 @@ func TestStreamingCardController_Close_IntegrityPass(t *testing.T) {
 	require.True(t, c.transition(PhaseCreating))
 	require.True(t, c.transition(PhaseStreaming))
 
-	// Simulate: bytes written ≈ bytes flushed → integrity OK.
+	// Simulate: lastFlushed covers buffer content → integrity OK.
 	c.mu.Lock()
 	c.bytesWritten = 1000
-	c.bytesFlushed = 950 // 95% flushed → passes 90% threshold
+	c.lastFlushed = "content" // matches buf content
+	c.streamingActive = false
 	c.buf.WriteString("content")
 	c.mu.Unlock()
 

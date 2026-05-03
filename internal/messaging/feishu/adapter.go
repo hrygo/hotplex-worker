@@ -844,7 +844,7 @@ func (c *FeishuConn) writeContent(ctx context.Context, env *events.Envelope, tex
 				return nil
 			}
 		} else {
-			// Subsequent content: write + flush.
+			// Subsequent content: write to buffer; background flush loop handles delivery.
 			if err := streamCtrl.Write(text); err != nil {
 				// Streaming failed — flush buffered content and fall back to static delivery.
 				c.adapter.Log.Warn("feishu: streaming write failed, falling back to static", "err", err)
@@ -852,9 +852,8 @@ func (c *FeishuConn) writeContent(ctx context.Context, env *events.Envelope, tex
 				c.mu.Lock()
 				c.streamCtrl = nil
 				c.mu.Unlock()
-			} else {
-				return streamCtrl.Flush(ctx)
 			}
+			return nil
 		}
 	}
 
