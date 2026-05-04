@@ -19,7 +19,7 @@ func TestCollector_CaptureDeltaString(t *testing.T) {
 
 	c.CaptureDeltaString("s1", 4, "Hello")
 	c.CaptureDeltaString("s1", 5, " world")
-	c.Capture("s1", 6, events.MessageEnd, nil, "outbound")
+	c.Capture("s1", 6, events.MessageEnd, nil, "outbound", SourceNormal)
 
 	require.NoError(t, c.Close())
 
@@ -45,7 +45,7 @@ func TestCollector_CaptureDeltaStringSizeFlush(t *testing.T) {
 	c.CaptureDeltaString("s1", 2, strings.Repeat("b", 1100))
 
 	// Done triggers flush of any remaining (none in this case)
-	c.Capture("s1", 3, events.Done, json.RawMessage(`{}`), "outbound")
+	c.Capture("s1", 3, events.Done, json.RawMessage(`{}`), "outbound", SourceNormal)
 	require.NoError(t, c.Close())
 
 	page, err := store.QueryBySession(context.Background(), "s1", 0, CursorLatest, 100)
@@ -70,8 +70,8 @@ func TestCollector_MessageEndFlushWithoutStore(t *testing.T) {
 	c.CaptureDeltaString("s1", 3, "Hello")
 	c.CaptureDeltaString("s1", 4, " world")
 	// MessageEnd triggers flush but is NOT stored
-	c.Capture("s1", 5, events.MessageEnd, json.RawMessage(`{}`), "outbound")
-	c.Capture("s1", 6, events.Done, json.RawMessage(`{}`), "outbound")
+	c.Capture("s1", 5, events.MessageEnd, json.RawMessage(`{}`), "outbound", SourceNormal)
+	c.Capture("s1", 6, events.Done, json.RawMessage(`{}`), "outbound", SourceNormal)
 
 	require.NoError(t, c.Close())
 
@@ -95,7 +95,7 @@ func TestCollector_ResetSession(t *testing.T) {
 
 	// New content after retry
 	c.CaptureDeltaString("s1", 10, "new content")
-	c.Capture("s1", 11, events.MessageEnd, nil, "outbound")
+	c.Capture("s1", 11, events.MessageEnd, nil, "outbound", SourceNormal)
 
 	require.NoError(t, c.Close())
 
@@ -119,7 +119,7 @@ func TestCollector_CreatedAtUsesFirstSeenAt(t *testing.T) {
 	c.CaptureDeltaString("s1", 2, "second")
 	// Flush well after first delta
 	time.Sleep(50 * time.Millisecond)
-	c.Capture("s1", 3, events.MessageEnd, nil, "outbound")
+	c.Capture("s1", 3, events.MessageEnd, nil, "outbound", SourceNormal)
 	require.NoError(t, c.Close())
 
 	page, err := store.QueryBySession(context.Background(), "s1", 0, CursorLatest, 100)
@@ -136,20 +136,20 @@ func TestCollector_ReplaySeqOrdering(t *testing.T) {
 	c := NewCollector(store, slog.Default())
 
 	// Full turn: Input → State → Delta×2 → MessageEnd → ToolCall → Delta×2 → MessageEnd → Done
-	c.Capture("s1", 1, events.Input, json.RawMessage(`{"content":"do it"}`), "inbound")
-	c.Capture("s1", 2, events.State, json.RawMessage(`{"state":"running"}`), "outbound")
+	c.Capture("s1", 1, events.Input, json.RawMessage(`{"content":"do it"}`), "inbound", SourceNormal)
+	c.Capture("s1", 2, events.State, json.RawMessage(`{"state":"running"}`), "outbound", SourceNormal)
 
 	c.CaptureDeltaString("s1", 4, "Hello")
 	c.CaptureDeltaString("s1", 5, " world")
-	c.Capture("s1", 6, events.MessageEnd, nil, "outbound")
+	c.Capture("s1", 6, events.MessageEnd, nil, "outbound", SourceNormal)
 
-	c.Capture("s1", 7, events.ToolCall, json.RawMessage(`{"name":"read"}`), "outbound")
+	c.Capture("s1", 7, events.ToolCall, json.RawMessage(`{"name":"read"}`), "outbound", SourceNormal)
 
 	c.CaptureDeltaString("s1", 9, "Result")
 	c.CaptureDeltaString("s1", 10, " done")
-	c.Capture("s1", 11, events.MessageEnd, nil, "outbound")
+	c.Capture("s1", 11, events.MessageEnd, nil, "outbound", SourceNormal)
 
-	c.Capture("s1", 12, events.Done, json.RawMessage(`{}`), "outbound")
+	c.Capture("s1", 12, events.Done, json.RawMessage(`{}`), "outbound", SourceNormal)
 	require.NoError(t, c.Close())
 
 	page, err := store.QueryBySession(context.Background(), "s1", 0, CursorLatest, 100)
@@ -196,7 +196,7 @@ func TestCollector_ConcurrentFlushNoLoss(t *testing.T) {
 		<-done
 	}
 
-	c.Capture("s1", int64(goroutines*deltasPer+1), events.Done, json.RawMessage(`{}`), "outbound")
+	c.Capture("s1", int64(goroutines*deltasPer+1), events.Done, json.RawMessage(`{}`), "outbound", SourceNormal)
 	require.NoError(t, c.Close())
 
 	page, err := store.QueryBySession(context.Background(), "s1", 0, CursorLatest, 1000)
@@ -248,7 +248,7 @@ func TestCollector_ResetSessionEmptyFlush(t *testing.T) {
 
 	// No deltas accumulated, reset should be no-op
 	c.ResetSession("s1")
-	c.Capture("s1", 1, events.Done, json.RawMessage(`{}`), "outbound")
+	c.Capture("s1", 1, events.Done, json.RawMessage(`{}`), "outbound", SourceNormal)
 	require.NoError(t, c.Close())
 
 	page, err := store.QueryBySession(context.Background(), "s1", 0, CursorLatest, 100)

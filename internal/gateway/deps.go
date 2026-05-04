@@ -6,7 +6,6 @@ import (
 
 	"github.com/hrygo/hotplex/internal/eventstore"
 	"github.com/hrygo/hotplex/internal/security"
-	"github.com/hrygo/hotplex/internal/session"
 )
 
 // HandlerDeps groups all dependencies for Handler construction.
@@ -16,7 +15,6 @@ type HandlerDeps struct {
 	SM            SessionManager
 	JWTValidator  *security.JWTValidator
 	Bridge        *Bridge
-	ConvStore     session.ConversationStore
 	SkillsLocator SkillsLocator
 }
 
@@ -25,7 +23,6 @@ type BridgeDeps struct {
 	Log                *slog.Logger
 	Hub                *Hub
 	SM                 bridgeSM
-	ConvStore          session.ConversationStore
 	EventCollector     *eventstore.Collector // optional; nil means event storage disabled
 	RetryCtrl          *LLMRetryController
 	AgentConfigDir     string

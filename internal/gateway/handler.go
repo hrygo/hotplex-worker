@@ -30,7 +30,6 @@ type Handler struct {
 	sm            SessionManager
 	jwtValidator  *security.JWTValidator
 	bridge        *Bridge
-	convStore     session.ConversationStore
 	skillsLocator SkillsLocator
 }
 
@@ -47,7 +46,6 @@ func NewHandler(deps HandlerDeps) *Handler {
 		sm:            deps.SM,
 		jwtValidator:  deps.JWTValidator,
 		bridge:        deps.Bridge,
-		convStore:     deps.ConvStore,
 		skillsLocator: deps.SkillsLocator,
 	}
 }
@@ -204,17 +202,6 @@ func (h *Handler) handleInput(ctx context.Context, env *events.Envelope) error {
 			_ = h.sendErrorf(ctx, env, events.ErrCodeInternalError, "worker input failed: %v", err)
 		} else {
 			h.log.Debug("gateway: input delivered to worker", "session_id", env.SessionID)
-			// Record user input to conversation store (best-effort).
-			if h.convStore != nil {
-				_ = h.convStore.Append(ctx, &session.ConversationRecord{
-					SessionID: env.SessionID,
-					Seq:       env.Seq,
-					Role:      session.RoleUser,
-					Content:   content,
-					Platform:  si.Platform,
-					UserID:    env.OwnerID,
-				})
-			}
 			// Capture inbound event for replay (best-effort).
 			if h.bridge != nil {
 				h.bridge.CaptureInbound(env.SessionID, env.Seq, events.Input, env.Event.Data)

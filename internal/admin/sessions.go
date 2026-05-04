@@ -138,13 +138,13 @@ func (a *AdminAPI) HandleSessionStats(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "insufficient scope: need session:read", http.StatusForbidden)
 		return
 	}
-	if a.convStore == nil {
-		http.Error(w, "conversation store not available", http.StatusServiceUnavailable)
+	if a.turnStore == nil {
+		http.Error(w, "turn stats not available", http.StatusServiceUnavailable)
 		return
 	}
 
 	id := r.PathValue("id")
-	stats, err := a.convStore.SessionStats(r.Context(), id)
+	stats, err := a.turnStore.TurnStats(r.Context(), id)
 	if err != nil {
 		if r.Context().Err() != nil {
 			http.Error(w, "request cancelled", http.StatusServiceUnavailable)

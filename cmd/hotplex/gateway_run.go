@@ -41,7 +41,6 @@ type GatewayDeps struct {
 	ConfigStore    *config.ConfigStore
 	Hub            *gateway.Hub
 	SessionMgr     *session.Manager
-	ConvStore      session.ConversationStore
 	EventStore     *eventstore.SQLiteStore
 	EventCollector *eventstore.Collector
 	Auth           *security.Authenticator
@@ -183,7 +182,6 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 		Log:                log,
 		Hub:                hub,
 		SM:                 sm,
-		ConvStore:          stores.conversation,
 		EventCollector:     stores.collector,
 		RetryCtrl:          retryCtrl,
 		AgentConfigDir:     agentConfigDir,
@@ -197,8 +195,6 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 		Hub:           hub,
 		SM:            sm,
 		JWTValidator:  jwtValidator,
-		Bridge:        bridge,
-		ConvStore:     stores.conversation,
 		SkillsLocator: skills.NewLocator(log, cfg.Skills.CacheTTL),
 	})
 
@@ -233,7 +229,6 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 		ConfigStore:    cfgStore,
 		Hub:            hub,
 		SessionMgr:     sm,
-		ConvStore:      stores.conversation,
 		EventStore:     stores.event,
 		EventCollector: stores.collector,
 		Auth:           auth,
@@ -290,7 +285,6 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 		WebChatAddr:     cfg.WebChat.Addr,
 		WebChatEmbedded: cfg.WebChat.Enabled,
 		DBPath:          cfg.DB.Path,
-		EventDBPath:     cfg.DB.EventsPath,
 		PoolMax:         cfg.Pool.MaxSize,
 		PoolIdle:        cfg.Pool.MaxIdlePerUser,
 		Adapters:        adapterStatuses,
@@ -387,10 +381,9 @@ func initOrphanCleanup(ctx context.Context, cfg *config.Config, log *slog.Logger
 }
 
 type gatewayStores struct {
-	session      *session.SQLiteStore
-	conversation session.ConversationStore
-	event        *eventstore.SQLiteStore
-	collector    *eventstore.Collector
+	session   *session.SQLiteStore
+	event     *eventstore.SQLiteStore
+	collector *eventstore.Collector
 }
 
 func initStores(ctx context.Context, cfg *config.Config, log *slog.Logger) (*gatewayStores, error) {
@@ -399,24 +392,13 @@ func initStores(ctx context.Context, cfg *config.Config, log *slog.Logger) (*gat
 		return nil, err
 	}
 
-	convStore, err := session.NewSQLiteConversationStore(ctx, cfg)
-	if err != nil {
-		_ = sessionStore.Close()
-		return nil, fmt.Errorf("gateway: init conversation store: %w", err)
-	}
-
-	eventStore, err := eventstore.NewSQLiteStore(ctx, cfg.DB.EventsPath, &cfg.DB)
-	if err != nil {
-		_ = sessionStore.Close()
-		_ = convStore.Close()
-		return nil, fmt.Errorf("gateway: init event store: %w", err)
-	}
+	// EventStore shares the session store's *sql.DB (schema managed by goose migration 002).
+	eventStore := eventstore.NewSQLiteStore(sessionStore.DB())
 
 	return &gatewayStores{
-		session:      sessionStore,
-		conversation: convStore,
-		event:        eventStore,
-		collector:    eventstore.NewCollector(eventStore, log),
+		session:   sessionStore,
+		event:     eventStore,
+		collector: eventstore.NewCollector(eventStore, log),
 	}, nil
 }
 
@@ -426,16 +408,7 @@ func (s *gatewayStores) close(log *slog.Logger) {
 			log.Warn("gateway: event collector close", "err", err)
 		}
 	}
-	if s.event != nil {
-		if err := s.event.Close(); err != nil {
-			log.Warn("gateway: event store close", "err", err)
-		}
-	}
-	if s.conversation != nil {
-		if err := s.conversation.Close(); err != nil {
-			log.Warn("gateway: conversation store close", "err", err)
-		}
-	}
+	// EventStore.Close is a no-op (ownsDB=false); session store owns the shared connection.
 	if s.session != nil {
 		if err := s.session.Close(); err != nil {
 			log.Warn("gateway: session store close", "err", err)
