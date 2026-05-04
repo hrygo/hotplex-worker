@@ -230,6 +230,7 @@ func Run(ctx context.Context, opts WizardOptions) (*WizardResult, error) {
 
 	runAgentConfigStep()
 
+	result.add(stepSTTCheck(opts.ConfigPath))
 	result.add(stepVerify(opts.ConfigPath))
 
 	var reader *bufio.Reader
@@ -551,6 +552,33 @@ func sortedKeys(m map[string]string) []string {
 	return keys
 }
 
+// ─── Step 6.5: STT Check ─────────────────────────────────────────────────────
+
+func stepSTTCheck(configPath string) StepResult {
+	checkers.SetConfigPath(configPath)
+	sttCheckers := cli.DefaultRegistry.ByCategory("stt")
+
+	var details []string
+	for _, c := range sttCheckers {
+		d := c.Check(context.Background())
+		if d.Status == cli.StatusFail {
+			details = append(details, d.Message)
+			if d.FixHint != "" {
+				details = append(details, "  → "+d.FixHint)
+			}
+		}
+	}
+
+	if len(details) > 0 {
+		return StepResult{
+			Name:   "stt_check",
+			Status: "warn",
+			Detail: "STT deps incomplete:\n  " + strings.Join(details, "\n  "),
+		}
+	}
+	return StepResult{Name: "stt_check", Status: "pass", Detail: "STT environment ready"}
+}
+
 // ─── Step 7: Verify ─────────────────────────────────────────────────────────
 
 func stepVerify(configPath string) StepResult {
@@ -561,6 +589,7 @@ func stepVerify(configPath string) StepResult {
 	var allCheckers []cli.Checker
 	allCheckers = append(allCheckers, cli.DefaultRegistry.ByCategory("environment")...)
 	allCheckers = append(allCheckers, cli.DefaultRegistry.ByCategory("config")...)
+	allCheckers = append(allCheckers, cli.DefaultRegistry.ByCategory("stt")...)
 
 	var passCount, failCount int
 	var details []string
