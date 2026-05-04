@@ -366,15 +366,23 @@ func (b *Bridge) handleWorkerExit(w worker.Worker, p workerExitParams) {
 		}
 	}
 
-	if exitCode != 0 && exitCode != 143 && exitCode != -1 {
+	// Suppress user-facing errors when:
+	// 1. Session completed normally: "done" received with no pending turn text.
+	// 2. Worker was intentionally terminated: SIGTERM (exit 143) is always
+	//    bridge/handler/GC-initiated, never an unexpected crash.
+	suppressError := (p.doneReceived && p.turnTextLen == 0) || exitCode == 143
+
+	if suppressError {
+		b.log.Debug("bridge: worker exit not reported (normal completion or intentional termination)",
+			"session_id", p.sessionID, "worker_type", workerType, "exit_code", exitCode,
+			"done_received", p.doneReceived, "turn_text_len", p.turnTextLen)
+	} else if exitCode != 0 && exitCode != -1 {
 		acc := b.getOrInitAccum(p.sessionID, "")
 		b.log.Warn("bridge: worker exited with non-zero code, sending crash error",
 			"session_id", p.sessionID, "worker_type", workerType, "exit_code", exitCode,
 			"duration", time.Since(p.startTime).Round(time.Millisecond), "turn_count", acc.TurnCount)
 		metrics.WorkerCrashesTotal.WithLabelValues(string(workerType), fmt.Sprintf("%d", exitCode)).Inc()
 		b.sendError(p.sessionID, events.ErrCodeWorkerCrash, "worker crashed (exit code %d)", exitCode)
-	} else if exitCode == 143 {
-		b.sendError(p.sessionID, events.ErrCodeSessionTerminated, "worker terminated (SIGTERM)")
 	} else if exitCode == -1 {
 		b.sendError(p.sessionID, events.ErrCodeSessionTerminated, "worker terminated (killed)")
 	} else if !p.doneReceived {
