@@ -1,5 +1,35 @@
 # Changelog
 
+## [1.5.2] - 2026-05-04
+
+### Summary
+
+v1.5.2 是一次 patch 版本更新，聚焦于 **安全加固** 和 **交互授权链修复**。修复 REST API 所有权绕过、JWT 弱密钥接受、Admin IP 欺骗和时序侧信道攻击四个安全漏洞。交互授权链全路径 5 个断裂点全部修复，Slack/飞书/WebChat 用户现在可正常响应 Permission/Question/Elicitation 请求。同时新增 Slack delete-file CLI 命令和 Block Kit 表格渲染，WebChat 和 EventStore 获得性能优化。
+
+### Added
+
+- **Messaging/Slack**: `hotplex slack delete-file --file-id <F_FILE_ID>` 命令 — 调用 Slack files.delete API，支持 AI agent 清理过时上传文件。(#164)
+- **Messaging/Slack**: Markdown 表格渲染为 Block Kit TableBlock — 流式输出结束后自动升级为表格+Markdown 混合布局，header-only/列不匹配等边界安全降级为代码块。(#148)
+
+### Changed
+
+- **Gateway Core**: bridge.go 分解为 4 个职责文件（bridge/bridge_worker/bridge_forward/bridge_retry），SessionManager 拆分为 5 个子接口（ISP），提升可读性和可测试性。(#153)
+- **WebChat**: delta rAF 批处理、React.memo 非流式消息跳过重渲染、highlight.js 懒加载（~200KB → 按需 8 语言）。(#141)
+- **EventStore**: delta 优化 — 捕获 seq 后的快速路径、三触发器 flush（大小/计时器/事件结束）、LLM 重试时丢弃过期 accumulator。(#153)
+
+### Fixed
+
+- **Gateway**: 交互授权链全路径修复 — 添加 `--permission-prompt-tool stdio` 到 Claude Code Worker 参数、修复 OwnerID 空值、替换静默错误丢弃为结构化日志、handleInput metadata 路由短路、WebChat 新增 Question/Elicitation 事件类型。(#160)
+- **Gateway**: SIGTERM（exit code 143）误报为用户可见错误 — 正常退出/bridge 发起的终止改为 debug 日志。(#160)
+- **Messaging/Slack**: Markdown 表格在 header-only 或列不匹配时触发 OOB panic。(#148)
+- **Messaging/Slack**: joinSegments 末尾多余空白 — 未修剪换行符导致消息间距异常。
+
+### Security
+
+- **API**: GetSession/DeleteSession 端点缺失所有权检查 — 任何已认证用户可访问/删除他人 session。ListSessions limit 上限 500 防止资源滥用。(#155)
+- **Security**: JWT secret 弱密钥检查 — 拒绝非 32 字节密钥，config audit 日志脱敏 api_keys/jwt_secret 字段。(#156)
+- **Admin**: X-Forwarded-For 无条件信任导致 IP 白名单绕过 — admin token 验证改用常量时间比较消除时序侧信道。(#149)
+
 ## [1.5.1] - 2026-05-04
 
 ### Summary
