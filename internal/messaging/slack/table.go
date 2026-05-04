@@ -131,11 +131,10 @@ type tableMatch struct {
 	end   int
 }
 
-// ExtractTables splits text into non-table segments and parsed tables.
-// Tables inside fenced code blocks are ignored.
-func ExtractTables(text string) ([]TextSegment, []ParsedTable) {
+// findTableMatches scans text for markdown table positions, skipping code blocks.
+func findTableMatches(text string) []tableMatch {
 	if !strings.Contains(text, "|") {
-		return []TextSegment{{Text: text}}, nil
+		return nil
 	}
 
 	// Collect code block ranges for exclusion.
@@ -186,11 +185,17 @@ func ExtractTables(text string) ([]TextSegment, []ParsedTable) {
 		}
 	}
 
+	return matches
+}
+
+// ExtractTables splits text into non-table segments and parsed tables.
+// Tables inside fenced code blocks are ignored.
+func ExtractTables(text string) ([]TextSegment, []ParsedTable) {
+	matches := findTableMatches(text)
 	if len(matches) == 0 {
 		return []TextSegment{{Text: text}}, nil
 	}
 
-	// Build segments and parsed tables.
 	var segments []TextSegment
 	var tables []ParsedTable
 	prev := 0
@@ -391,56 +396,7 @@ func joinSegments(segments []TextSegment) string {
 // wrapTablesInCodeBlocks wraps markdown tables that are not inside fenced code
 // blocks in ``` fences for monospace rendering.
 func wrapTablesInCodeBlocks(text string) string {
-	if !strings.Contains(text, "|") {
-		return text
-	}
-
-	// Use ExtractTables to find table positions.
-	cbRanges := codeBlockTableRe.FindAllStringIndex(text, -1)
-	inCodeBlock := func(idx int) bool {
-		for _, r := range cbRanges {
-			if idx >= r[0] && idx < r[1] {
-				return true
-			}
-		}
-		return false
-	}
-
-	var matches []tableMatch
-	searchFrom := 0
-
-	if text != "" && text[0] == '|' && !inCodeBlock(0) {
-		if m, ok := tryParseTableAt(text, 0); ok {
-			matches = append(matches, m)
-			searchFrom = nextSearchFrom(text, m.end)
-		}
-	}
-
-	for searchFrom < len(text) {
-		np := strings.Index(text[searchFrom:], "\n\n")
-		if np < 0 {
-			break
-		}
-		pos := searchFrom + np
-		afterBlank := pos + 2
-		for afterBlank < len(text) && (text[afterBlank] == '\n' || text[afterBlank] == ' ') {
-			afterBlank++
-		}
-		if afterBlank >= len(text) {
-			break
-		}
-		if inCodeBlock(afterBlank) {
-			searchFrom = afterBlank
-			continue
-		}
-		if m, ok := tryParseTableAt(text, afterBlank); ok {
-			matches = append(matches, m)
-			searchFrom = nextSearchFrom(text, m.end)
-		} else {
-			searchFrom = afterBlank
-		}
-	}
-
+	matches := findTableMatches(text)
 	if len(matches) == 0 {
 		return text
 	}
