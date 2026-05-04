@@ -456,19 +456,26 @@ func extractMessageContent(env *events.Envelope) string {
 
 // getOrInitAccum returns the session accumulator, creating one if needed.
 func (b *Bridge) getOrInitAccum(sessionID, workDir string) *sessionAccumulator {
+	// Pre-compute branch outside mutex to avoid blocking other sessions
+	// (gitBranchOf spawns a subprocess with 2s timeout).
+	var branch string
+	if workDir != "" {
+		branch = gitBranchOf(workDir)
+	}
+
 	b.accumMu.Lock()
 	defer b.accumMu.Unlock()
 	if acc, ok := b.accum[sessionID]; ok {
 		if workDir != "" && acc.WorkDir == "" {
 			acc.WorkDir = workDir
-			acc.GitBranch = gitBranchOf(workDir)
+			acc.GitBranch = branch
 		}
 		return acc
 	}
 	acc := &sessionAccumulator{StartedAt: time.Now()}
 	if workDir != "" {
 		acc.WorkDir = workDir
-		acc.GitBranch = gitBranchOf(workDir)
+		acc.GitBranch = branch
 	}
 	b.accum[sessionID] = acc
 	return acc
