@@ -356,11 +356,22 @@ func (w *NativeStreamingWriter) Close() error {
 	cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	_, _, _ = w.client.StopStreamContext(cleanupCtx, w.channelID, w.messageTS)
-
-	// Post-stream table upgrade: replace raw tables with Block Kit if possible.
+	// Build table blocks before stopping stream so we can pass them atomically.
+	// Passing blocks during stop avoids the block_mismatch error from chat.update
+	// (rich_text blocks created by markdown_text cannot be replaced via chat.update).
+	var stopOpts []slack.MsgOption
 	if integrityOK && !streamExpired {
-		w.upgradeToTableBlocks(cleanupCtx)
+		stopOpts = w.buildTableStopOpts()
+	}
+
+	if len(stopOpts) > 0 {
+		_, _, err := w.client.StopStreamContext(cleanupCtx, w.channelID, w.messageTS, stopOpts...)
+		if err != nil {
+			w.log.Debug("slack: stop stream with table blocks failed, retrying plain", "err", err)
+			_, _, _ = w.client.StopStreamContext(cleanupCtx, w.channelID, w.messageTS)
+		}
+	} else {
+		_, _, _ = w.client.StopStreamContext(cleanupCtx, w.channelID, w.messageTS)
 	}
 
 	if w.onComplete != nil {
@@ -387,44 +398,37 @@ func (w *NativeStreamingWriter) Close() error {
 	return nil
 }
 
-// upgradeToTableBlocks replaces the streamed message with Block Kit (MarkdownBlock + TableBlock)
-// if the content contains markdown tables. No-op if no tables or upgrade fails.
-func (w *NativeStreamingWriter) upgradeToTableBlocks(ctx context.Context) {
+// buildTableStopOpts constructs MsgOption slice with table Block Kit for chat.stopStream.
+// Returns nil if no tables found or blocks cannot be built.
+// Blocks are passed atomically during stream stop to avoid block_mismatch
+// (rich_text blocks from markdown_text cannot be replaced via chat.update).
+func (w *NativeStreamingWriter) buildTableStopOpts() []slack.MsgOption {
 	w.mu.Lock()
 	content := w.fullContent.String()
 	w.mu.Unlock()
 
 	if content == "" {
-		return
+		return nil
 	}
 
 	segments, tables := ExtractTables(content)
 	if len(tables) == 0 {
-		return
+		return nil
 	}
 
 	blocks := BuildTableBlocks(content, segments, tables)
 	if len(blocks) == 0 {
-		return
+		return nil
 	}
 
 	if len(blocks) > 50 {
-		w.log.Debug("slack: too many blocks for table upgrade, keeping raw message")
-		return
+		w.log.Debug("slack: too many blocks for table upgrade, skipping")
+		return nil
 	}
 
-	opts := []slack.MsgOption{
+	return []slack.MsgOption{
 		slack.MsgOptionBlocks(blocks...),
 		slack.MsgOptionText(content, false),
-	}
-
-	_, _, _, err := w.client.UpdateMessageContext(ctx, w.channelID, w.messageTS, opts...)
-	if err != nil {
-		if isInvalidBlocksError(err) {
-			w.log.Debug("slack: table blocks rejected by workspace, keeping raw message")
-			return
-		}
-		w.log.Warn("slack: failed to upgrade message with table blocks", "err", err)
 	}
 }
 
