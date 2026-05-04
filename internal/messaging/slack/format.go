@@ -14,6 +14,9 @@ func FormatMrkdwn(text string) string {
 	placeholders := make(map[string]string)
 	text = protectCode(text, placeholders)
 
+	// Wrap markdown tables in code blocks (preserves column alignment in mrkdwn)
+	text = wrapTablesInCodeBlocks(text)
+
 	// Convert CommonMark *italic* → _italic_ BEFORE heading/bold conversion.
 	// This ensures *italic* (single-asterisk emphasis) is captured before
 	// **bold** → *bold* creates new single-asterisk patterns.
