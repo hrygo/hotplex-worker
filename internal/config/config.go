@@ -414,10 +414,10 @@ func Default() *Config {
 		},
 		DB: DBConfig{
 			Path:              filepath.Join(HotplexHome(), "data", "hotplex.db"),
-			EventsPath:        filepath.Join(HotplexHome(), "data", "events.db"),
+			EventsPath:        "", // Deprecated: unused, events table lives in hotplex.db
 			WALMode:           true,
 			BusyTimeout:       5 * time.Second,
-			MaxOpenConns:      3,
+			MaxOpenConns:      3, // 1 writer + 2 readers for shared session/event store
 			VacuumThreshold:   0.2,
 			CacheSizeKiB:      8192,
 			MmapSizeMiB:       64,

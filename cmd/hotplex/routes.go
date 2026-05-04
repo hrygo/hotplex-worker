@@ -72,13 +72,13 @@ func setupRoutes(
 	bridgeAdapter := &bridgeAdapter{bridge: bridge}
 	configAdapter := &configAdapter{cfgStore: deps.ConfigStore}
 	configWatcherAdapter := &configWatcherAdapter{watcher: configWatcher}
-	convStoreAdapter := &convStoreAdapter{es: deps.EventStore}
+	turnsAdapter := &turnsStoreAdapter{es: deps.EventStore}
 
 	adminAPI := admin.New(admin.Deps{
 		Log:           log,
 		Config:        configAdapter,
 		SessionMgr:    sessionAdapter,
-		ConvStore:     convStoreAdapter,
+		TurnStats:     turnsAdapter,
 		Hub:           hubAdapter,
 		Bridge:        bridgeAdapter,
 		ConfigWatcher: configWatcherAdapter,

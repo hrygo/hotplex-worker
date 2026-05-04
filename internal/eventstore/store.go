@@ -192,6 +192,9 @@ func NewIndependentStore(dbPath string) (*SQLiteStore, error) {
 	if err != nil {
 		return nil, fmt.Errorf("eventstore: open: %w", err)
 	}
+	// Apply same pragmas as production for test fidelity.
+	_, _ = db.Exec("PRAGMA journal_mode=WAL")
+	_, _ = db.Exec("PRAGMA busy_timeout=5000")
 	return &SQLiteStore{db: db, ownsDB: true}, nil
 }
 

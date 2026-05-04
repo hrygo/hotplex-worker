@@ -81,11 +81,11 @@ func (a *hubAdapter) NextSeqPeek(sessionID string) int64 {
 	return a.hub.NextSeqPeek(sessionID)
 }
 
-type convStoreAdapter struct {
+type turnsStoreAdapter struct {
 	es *eventstore.SQLiteStore
 }
 
-func (a *convStoreAdapter) TurnStats(ctx context.Context, sessionID string) (*eventstore.TurnStats, error) {
+func (a *turnsStoreAdapter) TurnStats(ctx context.Context, sessionID string) (*eventstore.TurnStats, error) {
 	return a.es.QueryTurnStats(ctx, sessionID)
 }
 

@@ -53,6 +53,7 @@ func TestSQLiteStore_AppendAndQuery(t *testing.T) {
 			Type:      "message",
 			Data:      json.RawMessage(`{"content":"hello"}`),
 			Direction: "outbound",
+			Source:    SourceNormal,
 			CreatedAt: time.Now().UnixMilli(),
 		})
 		require.NoError(t, err)

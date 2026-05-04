@@ -23,7 +23,7 @@ FROM events e
 LEFT JOIN sessions s ON s.id = e.session_id
 WHERE e.type = 'input' AND e.direction = 'inbound';
 
--- AI response view
+-- AI response view (uses window function for O(n log n) turn boundary detection)
 CREATE VIEW v_turns_assistant AS
 SELECT
   d.session_id,
@@ -45,11 +45,20 @@ SELECT
 FROM events d
 LEFT JOIN sessions s ON s.id = d.session_id
 LEFT JOIN (
-  SELECT MAX(m.id) AS id, m.session_id,
+  SELECT m.session_id, MAX(m.id) AS id,
     group_concat(json_extract(m.data, '$.content'), char(10)) AS content
-  FROM events m
-  WHERE m.type = 'message'
-  GROUP BY m.session_id, (SELECT MAX(d2.id) FROM events d2 WHERE d2.type='done' AND d2.id <= m.id AND d2.session_id = m.session_id)
+  FROM (
+    SELECT id, session_id, data,
+      MAX(CASE WHEN type = 'done' THEN id END) OVER (
+        PARTITION BY session_id ORDER BY id ROWS UNBOUNDED PRECEDING
+      ) AS turn_end_id
+    FROM events
+    WHERE type IN ('message', 'done')
+  ) grouped
+  JOIN (SELECT DISTINCT session_id, id AS done_id FROM events WHERE type = 'done') done
+    ON done.session_id = grouped.session_id AND done.done_id = grouped.turn_end_id
+  WHERE grouped.type = 'message'
+  GROUP BY grouped.session_id, grouped.turn_end_id
 ) m ON m.session_id = d.session_id AND m.id < d.id
 WHERE d.type = 'done' AND d.direction = 'outbound';
 
