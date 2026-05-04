@@ -20,14 +20,10 @@ func hasScope(r *http.Request, required string) bool {
 	return slices.Contains(getScopes(r), required)
 }
 
-// clientIP extracts the real client IP from the request, respecting X-Forwarded-For.
+// clientIP extracts the client IP from the request.
+// It uses r.RemoteAddr directly to prevent IP spoofing via X-Forwarded-For.
+// Deploy behind a reverse proxy that strips untrusted XFF headers.
 func clientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		if idx := strings.Index(xff, ","); idx != -1 {
-			xff = xff[:idx]
-		}
-		return strings.TrimSpace(xff)
-	}
 	host, _, _ := strings.Cut(r.RemoteAddr, ":")
 	return host
 }
