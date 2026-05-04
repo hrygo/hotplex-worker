@@ -82,10 +82,10 @@ func TestFormatTokenCount(t *testing.T) {
 		{500, "500"},
 		{999, "999"},
 		{1000, "1K"},
-		{1500, "~1.5K"},
-		{9999, "~10.0K"},
+		{1500, "1.5K"},
+		{9999, "10.0K"},
 		{10000, "10K"},
-		{76284, "~76.3K"},
+		{76284, "76.3K"},
 		{200000, "200K"},
 	}
 	for _, tt := range tests {
@@ -98,7 +98,7 @@ func TestFormatTokenCount(t *testing.T) {
 
 func TestFormatTokenDisplay(t *testing.T) {
 	t.Parallel()
-	require.Equal(t, "~76.3K / 200K", FormatTokenDisplay(76284, 200000))
+	require.Equal(t, "76.3K / 200K", FormatTokenDisplay(76284, 200000))
 	require.Equal(t, "500 / 1K", FormatTokenDisplay(500, 1000))
 }
 
@@ -225,7 +225,7 @@ func TestBuildContextDisplay(t *testing.T) {
 	require.Equal(t, SeverityComfortable, info.Severity)
 	require.Equal(t, "🟢", info.Icon)
 	require.Equal(t, "Comfortable", info.Label)
-	require.Equal(t, "~76.3K / 200K", info.TokenDisplay)
+	require.Equal(t, "76.3K / 200K", info.TokenDisplay)
 	require.Equal(t, "[███░░░░░░░]", info.ProgressBar)
 	require.Equal(t, 38, info.Percentage)
 	require.Equal(t, "claude-sonnet-4", info.Model)
@@ -251,7 +251,7 @@ func TestFormatCanonicalText(t *testing.T) {
 	}
 
 	result := FormatCanonicalText(d)
-	require.Contains(t, result, "🟢 [███░░░░░░░] ~76.3K / 200K")
+	require.Contains(t, result, "🟢 [███░░░░░░░] 76.3K / 200K")
 	require.Contains(t, result, "Model: claude-sonnet-4")
 }
 
