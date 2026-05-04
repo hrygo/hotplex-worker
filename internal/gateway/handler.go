@@ -94,18 +94,23 @@ func (h *Handler) handleInput(ctx context.Context, env *events.Envelope) error {
 
 	content, _ := data["content"].(string)
 
-	// Interaction responses: extract metadata and deliver directly to worker,
-	// skipping command detection, state transitions, and conversation store.
-	if md, ok := data["metadata"].(map[string]any); ok && len(md) > 0 {
-		w := h.sm.GetWorker(env.SessionID)
-		if w != nil {
-			if err := w.Input(ctx, content, md); err != nil {
-				h.log.Warn("gateway: worker interaction response", "err", err, "session_id", env.SessionID)
+	// Interaction responses: deliver directly to worker, skipping command detection,
+	// state transitions, and conversation store. Only route when metadata contains
+	// a recognized interaction response key (not platform context metadata).
+	if md, ok := data["metadata"].(map[string]any); ok {
+		if md["permission_response"] != nil ||
+			md["question_response"] != nil ||
+			md["elicitation_response"] != nil {
+			w := h.sm.GetWorker(env.SessionID)
+			if w != nil {
+				if err := w.Input(ctx, content, md); err != nil {
+					h.log.Warn("gateway: worker interaction response", "err", err, "session_id", env.SessionID)
+				}
+			} else {
+				h.log.Warn("gateway: interaction response but no worker", "session_id", env.SessionID)
 			}
-		} else {
-			h.log.Warn("gateway: interaction response but no worker", "session_id", env.SessionID)
+			return nil
 		}
-		return nil
 	}
 
 	// --- Command detection (parity with Slack/Feishu adapters) ---
