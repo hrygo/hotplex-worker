@@ -387,11 +387,15 @@ func buildOneTableBlock(blockID string, t ParsedTable) *slack.TableBlock {
 
 func joinSegments(segments []TextSegment) string {
 	var sb strings.Builder
-	for i, s := range segments {
-		if i > 0 {
+	for _, s := range segments {
+		t := strings.Trim(s.Text, "\n")
+		if t == "" {
+			continue
+		}
+		if sb.Len() > 0 {
 			sb.WriteString("\n\n")
 		}
-		sb.WriteString(s.Text)
+		sb.WriteString(t)
 	}
 	return strings.TrimSpace(sb.String())
 }
