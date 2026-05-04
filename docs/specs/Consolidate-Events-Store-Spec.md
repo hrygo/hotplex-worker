@@ -13,9 +13,9 @@ estimated_hours: 6
 
 # 合并 conversation 表到 events 表规格书
 
-> 版本: v1.0
+> 版本: v1.1
 > 日期: 2026-05-04
-> 状态: Proposed
+> 状态: Proposed (fact-checked)
 > 前置: events 表已上线并稳定运行
 
 ---
@@ -96,24 +96,49 @@ seq=91  evnt: tok_in=145228 tok_out=6577  cost=1.965  tools=32  ✅
 
 ## 3. 修改方案
 
-### 3.1 Phase 1: events 表增加 `source` 字段
+### 3.1 Phase 1: 引入 goose 迁移框架
 
-**文件**: `internal/eventstore/sql/migrations/` — 新增迁移文件
+> **现状**: eventstore 使用 `//go:embed sql/schema.sql` 原始 schema 应用，无迁移机制。
+> session store 已使用 goose（`internal/session/migrate.go`），为保持一致，eventstore 同步引入 goose。
+> **决策**: 接受删库重来（events.db 数据非不可恢复），无需兼容旧 schema。
+
+**新增文件**: `internal/eventstore/migrate.go` — goose 迁移提供者（参照 `internal/session/migrate.go`）
+
+**新增文件**: `internal/eventstore/sql/migrations/001_base_schema.sql` — 完整基础 schema（含 `source` 列）
 
 ```sql
--- 002_add_source.sql
-ALTER TABLE events ADD COLUMN source TEXT NOT NULL DEFAULT 'normal'
-  CHECK(source IN ('normal', 'crash', 'timeout', 'fresh_start'));
+-- +goose Up
+CREATE TABLE IF NOT EXISTS events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    seq INTEGER NOT NULL,
+    type TEXT NOT NULL,
+    data TEXT NOT NULL,
+    direction TEXT NOT NULL DEFAULT 'outbound',
+    source TEXT NOT NULL DEFAULT 'normal'
+      CHECK(source IN ('normal', 'crash', 'timeout', 'fresh_start')),
+    created_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_events_session_seq ON events(session_id, seq);
+CREATE INDEX IF NOT EXISTS idx_events_created ON events(created_at);
+
+-- +goose Down
+DROP TABLE IF EXISTS events;
 ```
 
-**写入点调整**: `collector.Capture()` 增加 `source` 参数，默认 `'normal'`。
+**代码调整**:
+- `store.go`: 移除 `schema.sql` 嵌入 + 原始应用，改用 `goose.NewProvider()` 迁移
+- `collector.go`: `Capture()` 增加 `source` 参数，默认 `'normal'`
+- `StoredEvent` 结构体新增 `Source` 字段
+- `sql/schema.sql` → 删除（内容迁移到 `001_base_schema.sql`）
 
 ### 3.2 Phase 2: 创建 `turns` VIEW 替代 conversation 查询
 
-**文件**: `internal/eventstore/sql/migrations/` — 迁移中创建视图
+**新增文件**: `internal/eventstore/sql/migrations/002_create_turns_view.sql`
 
 ```sql
--- 003_create_turns_view.sql
+-- +goose Up
 
 -- 用户输入视图（替代 conversation WHERE role='user'）
 CREATE VIEW v_turns_user AS
@@ -232,7 +257,7 @@ type EventStore interface {
 | `ConversationStore` 接口和实现 | `internal/session/conversation_store.go` |
 | SQL queries | `internal/session/sql/queries/conversation.*` |
 | migration DDL | `internal/session/sql/migrations/001_init.sql` 中 conversation 部分 |
-| handler.go Append 调用 | `internal/gateway/handler.go:189-198` |
+| handler.go Append 调用 | `internal/gateway/handler.go:203-212` |
 | bridge_forward.go Append 调用 | `internal/gateway/bridge_forward.go:231-252`, `:386-406` |
 | bridge_worker.go Append 调用 | `internal/gateway/bridge_worker.go:204-214` |
 | DI 注入 | `cmd/hotplex/gateway_run.go` ConvStore 字段和注入 |
@@ -244,7 +269,7 @@ type EventStore interface {
 | 场景 | 当前 events 覆盖 | 需补充 |
 |------|-----------------|--------|
 | 正常 input | ✅ `CaptureInbound()` | — |
-| 正常 done | ✅ `forwardEvents()` 转发 | — |
+| 正常 done | ✅ `forwardEvents()` 中 `collector.Capture()` 写入 | — |
 | Worker 崩溃 | ❌ | 在 `handleWorkerExit()` 中写入 source=`crash` 事件 |
 | Turn 超时 | ❌ | 在 turnTimer handler 中写入 source=`timeout` 事件 |
 | Fresh-start 重投递 | ❌ | 在 `attemptResumeFallback()` 中写入 source=`fresh_start` 事件 |
@@ -264,19 +289,24 @@ type EventStore interface {
 
 | # | 文件 | 修改类型 | 说明 |
 |---|------|---------|------|
-| 1 | `internal/eventstore/sql/migrations/002_add_source.sql` | 新增 | events 表增加 source 列 |
-| 2 | `internal/eventstore/sql/migrations/003_create_turns_view.sql` | 新增 | 创建 v_turns/v_turns_user/v_turns_assistant 视图 |
-| 3 | `internal/eventstore/store.go` | 修改 | 新增 GetTurns/GetTurnsBefore/SessionTurnStats 方法 |
-| 4 | `internal/eventstore/collector.go` | 修改 | Capture 增加 source 参数 |
-| 5 | `internal/gateway/api.go` | 修改 | history 端点改用 eventStore |
-| 6 | `internal/admin/sessions.go` | 修改 | stats 端点改用 eventStore |
-| 7 | `internal/admin/admin.go` | 修改 | ConvStoreProvider → EventStoreProvider |
-| 8 | `internal/gateway/bridge_forward.go` | 修改 | 移除 convStore.Append，补充 crash/timeout 事件写入 |
-| 9 | `internal/gateway/bridge_worker.go` | 修改 | 移除 convStore.Append，补充 fresh_start 事件写入 |
-| 10 | `internal/gateway/handler.go` | 修改 | 移除 convStore.Append |
-| 11 | `cmd/hotplex/gateway_run.go` | 修改 | 移除 ConvStore DI |
-| 12 | `internal/session/conversation_store.go` | 删除 | 整个文件 |
-| 13 | `internal/session/sql/queries/conversation.*` | 删除 | 所有 conversation 查询文件 |
+| 1 | `internal/eventstore/migrate.go` | 新增 | goose 迁移提供者（参照 session/migrate.go） |
+| 2 | `internal/eventstore/sql/migrations/001_base_schema.sql` | 新增 | 完整基础 schema（含 source 列），替代 schema.sql |
+| 3 | `internal/eventstore/sql/migrations/002_create_turns_view.sql` | 新增 | 创建 v_turns/v_turns_user/v_turns_assistant 视图 |
+| 4 | `internal/eventstore/sql/schema.sql` | 删除 | 被 goose 迁移替代 |
+| 6 | `internal/eventstore/store.go` | 修改 | 移除 schema.sql 嵌入，改用 goose；新增 GetTurns/GetTurnsBefore/SessionTurnStats |
+| 7 | `internal/eventstore/collector.go` | 修改 | Capture 增加 source 参数 |
+| 8 | `internal/gateway/api.go` | 修改 | history 端点改用 eventStore |
+| 9 | `internal/admin/sessions.go` | 修改 | stats 端点改用 eventStore |
+| 10 | `internal/admin/admin.go` | 修改 | ConvStoreProvider → EventStoreProvider |
+| 11 | `cmd/hotplex/admin_adapters.go` | 修改 | convStoreAdapter → eventStoreAdapter |
+| 12 | `internal/gateway/bridge_forward.go` | 修改 | 移除 convStore.Append，补充 crash/timeout 事件写入 |
+| 13 | `internal/gateway/bridge_worker.go` | 修改 | 移除 convStore.Append，补充 fresh_start 事件写入 |
+| 14 | `internal/gateway/handler.go` | 修改 | 移除 convStore.Append |
+| 15 | `cmd/hotplex/gateway_run.go` | 修改 | 移除 ConvStore DI |
+| 16 | `cmd/hotplex/routes.go` | 修改 | ConvStore 引用改为 EventStore |
+| 17 | `internal/session/conversation_store.go` | 删除 | 整个文件 |
+| 18 | `internal/session/sql/queries/conversation.*` | 删除 | 所有 conversation 查询文件 |
+| 19 | `internal/gateway/api_test.go` | 修改 | mockAPIConvStore → mockEventStore |
 
 ---
 
@@ -297,7 +327,7 @@ type EventStore interface {
 | 风险 | 缓解 |
 |------|------|
 | VIEW 查询性能（JOIN + 聚合） | `v_turns` 按主键/索引关联，且 history 端点已分页；可用物化视图替代 |
-| migration 兼容性 | ALTER TABLE ADD COLUMN 是 SQLite 兼容操作；VIEW 可随时 DROP/CREATE |
+| migration 兼容性 | 引入 goose 框架（与 session store 一致）；接受删库重来，无需兼容旧 schema |
 | API 响应格式变化 | `TurnRecord` 字段与 `ConversationRecord` 保持 JSON 兼容 |
 
 ---
