@@ -577,6 +577,16 @@ func (w *Worker) readOutput(ctx context.Context) {
 		workerEvents, err := w.parser.ParseLine(line)
 		if err != nil {
 			w.BaseWorker.Log.Warn("claudecode: parse line", "session_id", w.sessionID, "err", err, "line", line)
+			// If this is a control_request that failed to parse, deny it to prevent
+			// the Worker from blocking indefinitely waiting for a response.
+			if rawType.Type == "control_request" && w.control != nil {
+				var idHolder struct {
+					RequestID string `json:"request_id"`
+				}
+				if json.Unmarshal([]byte(line), &idHolder) == nil && idHolder.RequestID != "" {
+					_ = w.control.SendPermissionResponse(idHolder.RequestID, false, "gateway: parse error, auto-denied")
+				}
+			}
 			continue
 		}
 		if len(workerEvents) == 0 {

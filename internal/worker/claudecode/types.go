@@ -12,7 +12,8 @@ type SDKMessage struct {
 	ToolUseID string          `json:"tool_use_id,omitempty"`
 	Content   json.RawMessage `json:"content,omitempty"`    // For tool_progress
 	RequestID string          `json:"request_id,omitempty"` // For control_request
-	Response  json.RawMessage `json:"response,omitempty"`   // For control_request
+	Request   json.RawMessage `json:"request,omitempty"`    // For control_request (outbound name)
+	Response  json.RawMessage `json:"response,omitempty"`   // For control_response
 
 	// Result fields (type="result")
 	DurationMs        int64           `json:"duration_ms,omitempty"`
