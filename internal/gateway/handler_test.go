@@ -841,3 +841,160 @@ func TestWorker_ResetContext_Noop(t *testing.T) {
 	err := w.ResetContext(context.Background())
 	require.NoError(t, err)
 }
+
+// ─── handleInput interaction response tests ──────────────────────────────────
+
+// mockInputSM satisfies SessionManager for handleInput tests.
+type mockInputSM struct {
+	mock.Mock
+}
+
+func (m *mockInputSM) Get(id string) (*session.SessionInfo, error) {
+	args := m.Called(id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*session.SessionInfo), args.Error(1)
+}
+func (m *mockInputSM) GetWorker(id string) worker.Worker {
+	args := m.Called(id)
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(worker.Worker)
+}
+func (m *mockInputSM) CreateWithBot(_ context.Context, _ string, _ string, _ string, _ worker.WorkerType, _ []string, _ string, _ map[string]string, _ string, _ string) (*session.SessionInfo, error) {
+	return nil, nil
+}
+func (m *mockInputSM) Delete(_ context.Context, _ string) error         { return nil }
+func (m *mockInputSM) DeletePhysical(_ context.Context, _ string) error { return nil }
+func (m *mockInputSM) Transition(_ context.Context, _ string, _ events.SessionState) error {
+	return nil
+}
+func (m *mockInputSM) TransitionWithInput(_ context.Context, _ string, _ events.SessionState, _ string, _ map[string]any) error {
+	return nil
+}
+func (m *mockInputSM) TransitionWithReason(_ context.Context, _ string, _ events.SessionState, _ string) error {
+	return nil
+}
+func (m *mockInputSM) AttachWorker(_ string, _ worker.Worker) error  { return nil }
+func (m *mockInputSM) DetachWorker(_ string)                         {}
+func (m *mockInputSM) DetachWorkerIf(_ string, _ worker.Worker) bool { return false }
+func (m *mockInputSM) UpdateWorkerSessionID(_ context.Context, _ string, _ string) error {
+	return nil
+}
+func (m *mockInputSM) List(_ context.Context, _ string, _ string, _ int, _ int) ([]*session.SessionInfo, error) {
+	return nil, nil
+}
+func (m *mockInputSM) ValidateOwnership(_ context.Context, _ string, _ string, _ string) error {
+	return nil
+}
+func (m *mockInputSM) UpdateWorkDir(_ context.Context, _ string, _ string) error { return nil }
+func (m *mockInputSM) ResetExpiry(_ context.Context, _ string) error             { return nil }
+
+func newInputHandler(t *testing.T, sm *mockInputSM) *Handler {
+	t.Helper()
+	return &Handler{
+		log: slog.Default(),
+		hub: nil, // interaction path does not use hub
+		sm:  sm,
+	}
+}
+
+func TestHandleInput_InteractionResponse_RoutesToWorker(t *testing.T) {
+	tests := []struct {
+		name     string
+		metadata map[string]any
+	}{
+		{"permission_response", map[string]any{"permission_response": map[string]any{"tool_call_id": "tc1", "decision": "allow"}}},
+		{"question_response", map[string]any{"question_response": map[string]any{"answer": "yes"}}},
+		{"elicitation_response", map[string]any{"elicitation_response": map[string]any{"value": "/tmp"}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sm := new(mockInputSM)
+			w := new(mockWorkerForHandler)
+			sm.On("GetWorker", "s1").Return(w)
+			w.On("Input", mock.Anything, "my response", mock.Anything).Return(nil)
+
+			h := newInputHandler(t, sm)
+			err := h.handleInput(context.Background(), inputEnvelopeWithMetadata("s1", "my response", tt.metadata))
+
+			require.NoError(t, err)
+			sm.AssertExpectations(t)
+			w.AssertExpectations(t)
+
+			// Verify Input received the interaction metadata (not nil).
+			calls := w.Calls
+			require.Len(t, calls, 1)
+			md, ok := calls[0].Arguments.Get(2).(map[string]any)
+			require.True(t, ok)
+			require.NotNil(t, md[tt.name])
+		})
+	}
+}
+
+func TestHandleInput_NoWorker_GracefulReturn(t *testing.T) {
+	sm := new(mockInputSM)
+	sm.On("GetWorker", "s1").Return(nil) // no worker
+
+	h := newInputHandler(t, sm)
+	err := h.handleInput(context.Background(), inputEnvelopeWithMetadata("s1", "ok", map[string]any{
+		"permission_response": map[string]any{"decision": "allow"},
+	}))
+
+	require.NoError(t, err)
+	sm.AssertExpectations(t)
+}
+
+func TestHandleInput_WorkerInputError_GracefulReturn(t *testing.T) {
+	sm := new(mockInputSM)
+	w := new(mockWorkerForHandler)
+	sm.On("GetWorker", "s1").Return(w)
+	w.On("Input", mock.Anything, "ok", mock.Anything).Return(errors.New("worker busy"))
+
+	h := newInputHandler(t, sm)
+	err := h.handleInput(context.Background(), inputEnvelopeWithMetadata("s1", "ok", map[string]any{
+		"question_response": map[string]any{"answer": "yes"},
+	}))
+
+	require.NoError(t, err)
+	sm.AssertExpectations(t)
+	w.AssertExpectations(t)
+}
+
+func TestHandleInput_NonInteractionMetadata_FallsThrough(t *testing.T) {
+	sm := new(mockInputSM)
+	w := new(mockWorkerForHandler)
+
+	// Normal path: Get returns active session, GetWorker returns worker,
+	// worker.Input called with nil metadata (not interaction metadata).
+	sm.On("Get", "s1").Return(&session.SessionInfo{State: events.StateRunning}, nil)
+	sm.On("GetWorker", "s1").Return(w)
+	w.On("Input", mock.Anything, "hello", mock.Anything).Return(nil)
+
+	h := newInputHandler(t, sm)
+	err := h.handleInput(context.Background(), inputEnvelopeWithMetadata("s1", "hello", map[string]any{
+		"platform": "slack", // not an interaction key
+	}))
+
+	require.NoError(t, err)
+	sm.AssertExpectations(t)
+	w.AssertExpectations(t)
+}
+
+func TestHandleInput_NoMetadata_FallsThrough(t *testing.T) {
+	sm := new(mockInputSM)
+	w := new(mockWorkerForHandler)
+
+	sm.On("Get", "s1").Return(&session.SessionInfo{State: events.StateRunning}, nil)
+	sm.On("GetWorker", "s1").Return(w)
+	w.On("Input", mock.Anything, "hello", mock.Anything).Return(nil)
+
+	h := newInputHandler(t, sm)
+	err := h.handleInput(context.Background(), inputEnvelope("s1", "hello"))
+
+	require.NoError(t, err)
+	sm.AssertExpectations(t)
+	w.AssertExpectations(t)
+}
