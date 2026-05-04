@@ -59,6 +59,23 @@ func TestExtractTables(t *testing.T) {
 		require.Len(t, segments, 1)
 	})
 
+	t.Run("header and separator only no data rows", func(t *testing.T) {
+		t.Parallel()
+		input := "| H1 | H2 |\n|---|---|"
+		_, tables := ExtractTables(input)
+		require.Len(t, tables, 1)
+		require.Len(t, tables[0].Rows, 0)
+		require.Equal(t, []string{"H1", "H2"}, tables[0].Headers)
+	})
+
+	t.Run("header and separator with trailing newline", func(t *testing.T) {
+		t.Parallel()
+		input := "| H1 | H2 |\n|---|---|\n"
+		_, tables := ExtractTables(input)
+		require.Len(t, tables, 1)
+		require.Len(t, tables[0].Rows, 0)
+	})
+
 	t.Run("empty cells", func(t *testing.T) {
 		t.Parallel()
 		input := "| H1 | H2 |\n|---|---|\n| A |  |"
