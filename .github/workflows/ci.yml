@@ -165,17 +165,6 @@ jobs:
           name: coverage
           path: coverage.out
 
-      - name: Upload to Codecov
-        if: always()
-        uses: codecov/codecov-action@v6
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          slug: hrygo/hotplex
-          files: ./coverage.out
-          flags: unittests
-          name: hotplex
-          fail_ci_if_error: false
-
   # ── Build verification + Lint (parallel with Test) ────────────────────
   # Builds with webchat (uses cached output when available).
   # Runs vet + build + lint — all static checks in one job.

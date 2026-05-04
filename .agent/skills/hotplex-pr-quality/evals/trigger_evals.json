@@ -30,11 +30,6 @@
     "note": "lint 错误场景"
   },
   {
-    "query": "codecov 覆盖率不够，怎么办？",
-    "should_trigger": true,
-    "note": "codecov 问题场景"
-  },
-  {
     "query": "Windows CI 挂了，但我代码在 Mac 上跑得没问题",
     "should_trigger": true,
     "note": "跨平台 CI 失败，HotPlex 特定"

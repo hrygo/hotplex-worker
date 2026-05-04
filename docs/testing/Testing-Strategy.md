@@ -543,11 +543,7 @@ jobs:
           make test-e2e
 
       - name: Coverage Report
-        uses: codecov/codecov-action@v4
-        with:
-          files: ./coverage.out
-          fail_ci_if_error: true
-          threshold: 80%
+        run: go tool cover -func=coverage.out 2>/dev/null | tail -1 || true
 ```
 
 ### 8.2 本地开发

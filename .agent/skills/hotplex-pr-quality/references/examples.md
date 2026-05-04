@@ -54,16 +54,7 @@ $ gh pr checks --watch
 Test	pass	2m7s
 Build	pass	44s
 Coverage Check	pass	58s
-codecov/patch	fail
-codecov/project	pass
 ```
-
-#### 步骤 7：处理 codecov
-**AI 分析**：
-- patch coverage 41.46% < 50%
-- 存在实质性障碍：SSE client 需要真实 HTTP server
-- ROI 低：添加集成测试需要 opencode binary
-- 决定：接受失败，在 PR 中说明
 
 **结果**：PR 创建成功，等待 review
 
@@ -135,113 +126,7 @@ Build	pass	44s
 
 ---
 
-## 示例 3：处理 codecov 失败
-
-### 用户请求
-```
-codecov 覆盖率不够，怎么办？
-```
-
-### AI 执行流程
-
-#### 步骤 1：查看 codecov 报告
-```bash
-$ gh pr view 96 --json comments \
-  | jq '.comments[] | select(.body | contains("Codecov")) | .body'
-```
-
-**报告显示**：
-```
-Patch coverage is 41.46341% with 24 lines missing
-
-Files with missing lines:
-- worker.go: 22.22% (19 Missing)
-- singleton.go: 78.57% (3 Missing)
-```
-
-#### 步骤 2：分析未覆盖代码
-```bash
-$ go tool cover -func=coverage.out | grep "worker.go"
-Start:	7.7%
-readSSE:	0.0%
-initSessionConn:	0.0%
-```
-
-**分析**：
-- `readSSE` 需要 HTTP SSE 连接
-- `initSessionConn` 需要真实 server session
-- 这些都是集成测试，需要 opencode binary
-
-#### 步骤 3：判断实质性障碍
-```
-是否存在实质性障碍？
-✅ 需要 opencode binary
-✅ 需要真实 HTTP server
-✅ Mock 成本高
-
-ROI 是否合理？
-❌ 投入：添加集成测试（2+ 小时）
-❌ 产出：覆盖率提升 < 5%
-❌ 结论：ROI 低
-```
-
-#### 步骤 4：添加单元测试
-```go
-// 测试 sseCancel 的调用
-func TestOpenCodeServerWorker_Terminate_CallsSSECancel(t *testing.T) {
-	w := New()
-	sseCtx, sseCancel := context.WithCancel(context.Background())
-	w.Mu.Lock()
-	w.sseCancel = sseCancel
-	w.Mu.Unlock()
-
-	err := w.Terminate(ctx)
-	require.NoError(t, err)
-
-	select {
-	case <-sseCtx.Done():
-		// Context cancelled as expected
-	default:
-		t.Fatal("sseCancel was not called")
-	}
-}
-```
-
-#### 步骤 5：重新评估
-```bash
-$ make test
-ok  	github.com/hrygo/hotplex/internal/worker/opencodeserver	0.021s	coverage: 14.4%
-
-$ git push fork fix-branch
-```
-
-**codecov 结果**：
-- patch coverage: 41.46% → 43.2% (+1.74%)
-- 仍然未达标，但提升了
-
-#### 步骤 6：在 PR 中说明
-```markdown
-## Codecov 状态说明
-
-⚠️ codecov/patch 未达标 (43.2% < 50%)
-
-**原因：存在实质性障碍**
-- SSE client 和 context cancellation 需要真实 HTTP server
-- 集成测试需要 opencode binary，CI 环境未安装
-- Mock 测试成本高，ROI 低（投入 2+ 小时，提升 < 5%）
-
-**核心功能测试：**
-- ✅ 所有单元测试通过
-- ✅ sseCancel 调用已测试
-- ✅ Terminate/Kill 逻辑已验证
-- ✅ 手动测试验证功能正常
-```
-
-**结果**：PR 可接受，等待 review
-
----
-
-## 示例 4：完整的端到端流程
+## 示例 3：完整的端到端流程
 
 ### 用户请求
 ```
@@ -335,26 +220,9 @@ $ gh pr checks --watch
 1:00 - Test pending
 2:00 - Test pass ✅
 2:30 - Coverage Check pass ✅
-3:00 - codecov/patch fail ⚠️
-3:00 - codecov/project pass ✅
 ```
 
-#### 阶段 6：处理 codecov（2 分钟）
-**AI 分析**：
-```
-codecov/patch: 41.46% < 50%
-codecov/project: 59.55% (通过)
-
-分析：
-- 未覆盖代码：readSSE, initSessionConn
-- 原因：需要真实 HTTP server
-- 障碍：实质性障碍（需要 opencode binary）
-- ROI：低（集成测试成本高）
-
-决策：接受失败，核心功能已测试
-```
-
-#### 阶段 7：最终确认
+#### 阶段 6：最终确认
 ```bash
 $ gh pr checks 96
 Test	pass	✅
@@ -367,7 +235,6 @@ Gate	pass	✅
 ```
 ✅ PR 创建成功
 - 核心检查全部通过
-- codecov 部分未达标（存在实质性障碍）
 - PR #96 已就绪，等待 review
 
 链接：https://github.com/hrygo/hotplex/pull/96
@@ -545,9 +412,8 @@ gh pr view <number> --json comments \
   | jq -r '.comments[] | .body'
 ```
 
-### 技巧 5：比较 PR 的覆盖率变化
+### 技巧 5：查看 PR 的覆盖率变化
 ```bash
-# 查看 codecov 评论
-gh pr view <number> --json comments \
-  | jq -r '.comments[] | select(.body | contains("Coverage Diff")) | .body'
+# 本地查看覆盖率
+go tool cover -func=coverage.out | tail -1
 ```
