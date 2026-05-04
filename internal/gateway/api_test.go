@@ -320,6 +320,7 @@ func TestDeleteSession_GracefulTermination(t *testing.T) {
 	bridge := new(mockAPIBridge)
 	api := newTestAPI(t, sm, bridge)
 
+	sm.On("Get", "sess-1").Return(&session.SessionInfo{ID: "sess-1", UserID: "anonymous"}, nil)
 	sm.On("Transition", mock.Anything, "sess-1", events.StateTerminated).Return(nil)
 	sm.On("DeletePhysical", mock.Anything, "sess-1").Return(nil)
 
@@ -338,6 +339,7 @@ func TestDeleteSession_TransitionFailsStillDeletes(t *testing.T) {
 	bridge := new(mockAPIBridge)
 	api := newTestAPI(t, sm, bridge)
 
+	sm.On("Get", "sess-2").Return(&session.SessionInfo{ID: "sess-2", UserID: "anonymous"}, nil)
 	sm.On("Transition", mock.Anything, "sess-2", events.StateTerminated).Return(errTestBridge)
 	sm.On("DeletePhysical", mock.Anything, "sess-2").Return(nil)
 
@@ -410,7 +412,7 @@ func TestGetSession(t *testing.T) {
 	bridge := new(mockAPIBridge)
 	api := newTestAPI(t, sm, bridge)
 
-	si := &session.SessionInfo{ID: "sess-x", State: events.StateRunning, Title: "my session"}
+	si := &session.SessionInfo{ID: "sess-x", State: events.StateRunning, Title: "my session", UserID: "anonymous"}
 	sm.On("Get", "sess-x").Return(si, nil)
 
 	mux := setupMux(api)

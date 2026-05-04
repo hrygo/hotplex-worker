@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"crypto/subtle"
 	"log/slog"
 	"net/http"
 	"runtime/debug"
@@ -163,13 +164,16 @@ func (a *AdminAPI) Middleware(next http.Handler) http.Handler {
 
 func (a *AdminAPI) validateToken(token string) ([]string, bool) {
 	cfg := a.cfg.Get()
+	tb := []byte(token)
 	if cfg.Admin.TokenScopes != nil {
-		if scopes, ok := cfg.Admin.TokenScopes[token]; ok {
-			return scopes, true
+		for t, scopes := range cfg.Admin.TokenScopes {
+			if subtle.ConstantTimeCompare(tb, []byte(t)) == 1 {
+				return scopes, true
+			}
 		}
 	}
 	for _, t := range cfg.Admin.Tokens {
-		if t == token {
+		if subtle.ConstantTimeCompare(tb, []byte(t)) == 1 {
 			if len(cfg.Admin.DefaultScopes) > 0 {
 				return cfg.Admin.DefaultScopes, true
 			}

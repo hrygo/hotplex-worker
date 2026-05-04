@@ -504,7 +504,7 @@ func TestConfig_RequireSecrets(t *testing.T) {
 					JWTSecret: decodeJWTSecret("c2hvcnQ="), // "short" in base64
 				},
 			},
-			expectError: false, // Only checks for empty, not minimum length
+			expectError: true, // Now rejects non-32-byte keys
 		},
 	}
 
@@ -607,12 +607,12 @@ func TestDecodeJWTSecret(t *testing.T) {
 		{
 			name:     "other string (not 32 bytes)",
 			input:    "short",
-			expected: []byte("short"),
+			expected: nil,
 		},
 		{
 			name:     "empty string",
 			input:    "",
-			expected: []byte(""),
+			expected: nil,
 		},
 	}
 

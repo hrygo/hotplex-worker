@@ -124,6 +124,8 @@ func (c *Config) RequireSecrets() error {
 	var missing []string
 	if len(c.Security.JWTSecret) == 0 {
 		missing = append(missing, "security.jwt_secret")
+	} else if len(c.Security.JWTSecret) < 32 {
+		missing = append(missing, "security.jwt_secret (must decode to exactly 32 bytes for ES256)")
 	}
 	if len(missing) > 0 {
 		return fmt.Errorf("config: missing required secrets: %s (set via config file or HOTPLEX_JWT_SECRET env var)", strings.Join(missing, ", "))
@@ -917,5 +919,5 @@ func decodeJWTSecret(secret string) []byte {
 	if len(raw) == 32 {
 		return raw
 	}
-	return []byte(secret)
+	return nil
 }
