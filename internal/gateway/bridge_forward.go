@@ -455,27 +455,23 @@ func extractMessageContent(env *events.Envelope) string {
 }
 
 // getOrInitAccum returns the session accumulator, creating one if needed.
+// gitBranchOf is called inside the lock only when the accumulator first
+// receives a non-empty workDir — a one-time cost per session (up to 2s
+// subprocess). After that, the branch is already set and skipped.
 func (b *Bridge) getOrInitAccum(sessionID, workDir string) *sessionAccumulator {
-	// Pre-compute branch outside mutex to avoid blocking other sessions
-	// (gitBranchOf spawns a subprocess with 2s timeout).
-	var branch string
-	if workDir != "" {
-		branch = gitBranchOf(workDir)
-	}
-
 	b.accumMu.Lock()
 	defer b.accumMu.Unlock()
 	if acc, ok := b.accum[sessionID]; ok {
 		if workDir != "" && acc.WorkDir == "" {
 			acc.WorkDir = workDir
-			acc.GitBranch = branch
+			acc.GitBranch = gitBranchOf(workDir)
 		}
 		return acc
 	}
 	acc := &sessionAccumulator{StartedAt: time.Now()}
 	if workDir != "" {
 		acc.WorkDir = workDir
-		acc.GitBranch = branch
+		acc.GitBranch = gitBranchOf(workDir)
 	}
 	b.accum[sessionID] = acc
 	return acc
