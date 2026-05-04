@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/hrygo/hotplex/internal/config"
-	"github.com/hrygo/hotplex/internal/session"
+	"github.com/hrygo/hotplex/internal/eventstore"
 	"github.com/hrygo/hotplex/internal/worker"
 	"github.com/hrygo/hotplex/pkg/events"
 )
@@ -56,7 +56,7 @@ type ConfigWatcherProvider interface {
 }
 
 type ConvStoreProvider interface {
-	SessionStats(ctx context.Context, sessionID string) (*session.ConversationSessionStats, error)
+	TurnStats(ctx context.Context, sessionID string) (*eventstore.TurnStats, error)
 }
 
 type DebugSessionSnapshot struct {

@@ -280,7 +280,7 @@ type GatewayConfig struct {
 // DBConfig holds SQLite settings shared by all database connections.
 type DBConfig struct {
 	Path              string        `mapstructure:"path"`
-	EventsPath        string        `mapstructure:"events_path"`
+	EventsPath        string        `mapstructure:"events_path"` // Deprecated: events table now lives in hotplex.db (same as Path)
 	WALMode           bool          `mapstructure:"wal_mode"`
 	BusyTimeout       time.Duration `mapstructure:"busy_timeout"`
 	MaxOpenConns      int           `mapstructure:"max_open_conns"`
@@ -417,7 +417,7 @@ func Default() *Config {
 			EventsPath:        filepath.Join(HotplexHome(), "data", "events.db"),
 			WALMode:           true,
 			BusyTimeout:       5 * time.Second,
-			MaxOpenConns:      2,
+			MaxOpenConns:      3,
 			VacuumThreshold:   0.2,
 			CacheSizeKiB:      8192,
 			MmapSizeMiB:       64,

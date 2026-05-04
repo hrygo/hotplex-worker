@@ -12,8 +12,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/hrygo/hotplex/internal/eventstore"
 	"github.com/hrygo/hotplex/internal/metrics"
-	"github.com/hrygo/hotplex/internal/session"
 	"github.com/hrygo/hotplex/internal/worker"
 	"github.com/hrygo/hotplex/pkg/events"
 )
@@ -31,9 +31,9 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 	workerType := w.Type()
 	b.log.Debug("bridge: forwardEvents goroutine started", "session_id", sessionID, "worker_type", workerType, "resumed", opts.resumed)
 
-	// Cache session info for conversation store writes (avoids per-turn DB lookup).
+	// Cache session info for event capture (avoids per-turn DB lookup).
 	var sessPlatform, sessOwner string
-	if b.convStore != nil && b.sm != nil {
+	if b.collector != nil && b.sm != nil {
 		if si, err := b.sm.Get(sessionID); err == nil {
 			sessPlatform = si.Platform
 			sessOwner = si.OwnerID
@@ -69,6 +69,7 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 			b.log.Warn("bridge: turn timeout exceeded, terminating worker",
 				"session_id", sessionID, "worker_type", workerType, "turn_timeout", b.turnTimeout)
 			b.sendError(sessionID, events.ErrCodeTurnTimeout, "Turn exceeded %v time limit and was terminated.", b.turnTimeout)
+			b.captureSyntheticEvent(sessionID, "turn_timeout", fmt.Sprintf("Turn exceeded %v time limit", b.turnTimeout), eventstore.SourceTimeout)
 			_ = w.Terminate(context.Background())
 		})
 		defer turnTimer.Stop()
@@ -227,31 +228,6 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 			lastError = nil
 		}
 
-		// Record assistant response to conversation store after retry decision.
-		if env.Event.Type == events.Done && b.convStore != nil {
-			dd, _ := asDoneData(env.Event.Data)
-			acc := b.getOrInitAccum(sessionID, "")
-			success := dd.Success
-			_ = b.convStore.Append(context.Background(), &session.ConversationRecord{
-				SessionID:     sessionID,
-				Seq:           env.Seq,
-				Role:          session.RoleAssistant,
-				Content:       turnText.String(),
-				Platform:      sessPlatform,
-				UserID:        sessOwner,
-				Model:         acc.ModelName,
-				Success:       &success,
-				Source:        session.SourceNormal,
-				Tools:         acc.ToolNames,
-				ToolCallCount: acc.ToolCallCount,
-				TokensIn:      acc.PerTurnInput,
-				TokensOut:     acc.PerTurnOutput,
-				DurationMs:    acc.TurnDurationMs,
-				CostUSD:       acc.PerTurnCost,
-			})
-			acc.resetPerTurn()
-		}
-
 		if env.Event.Type == events.Done {
 			turnText.Reset()
 			turnStartTime = time.Now()
@@ -383,34 +359,12 @@ func (b *Bridge) handleWorkerExit(w worker.Worker, p workerExitParams) {
 			"duration", time.Since(p.startTime).Round(time.Millisecond), "turn_count", acc.TurnCount)
 		metrics.WorkerCrashesTotal.WithLabelValues(string(workerType), fmt.Sprintf("%d", exitCode)).Inc()
 		b.sendError(p.sessionID, events.ErrCodeWorkerCrash, "worker crashed (exit code %d)", exitCode)
+		b.captureSyntheticEvent(p.sessionID, "worker_crash", fmt.Sprintf("Worker crashed with exit code %d", exitCode), eventstore.SourceCrash)
 	} else if exitCode == -1 {
 		b.sendError(p.sessionID, events.ErrCodeSessionTerminated, "worker terminated (killed)")
 	} else if !p.doneReceived {
 		b.log.Debug("bridge: sending error for platform cleanup (no done received)", "session_id", p.sessionID, "worker_type", workerType)
 		b.sendError(p.sessionID, events.ErrCodeWorkerCrash, "worker exited without sending done")
-	}
-
-	workerCrashed := (exitCode != 0 && exitCode != 143 && exitCode != -1) || (!p.doneReceived && p.turnTimerFired)
-	if b.convStore != nil && p.turnTextLen > 0 && workerCrashed {
-		acc := b.getOrInitAccum(p.sessionID, "")
-		src := session.SourceCrash
-		if p.turnTimerFired {
-			src = session.SourceTimeout
-		}
-		falseVal := false
-		_ = b.convStore.Append(context.Background(), &session.ConversationRecord{
-			SessionID:     p.sessionID,
-			Seq:           b.hub.NextSeq(p.sessionID),
-			Role:          session.RoleAssistant,
-			Content:       p.turnText,
-			Platform:      p.sessPlatform,
-			UserID:        p.sessOwner,
-			Model:         acc.ModelName,
-			Success:       &falseVal,
-			Source:        src,
-			Tools:         acc.ToolNames,
-			ToolCallCount: acc.ToolCallCount,
-		})
 	}
 
 	if !fallbackAttempted {
@@ -426,7 +380,7 @@ func (b *Bridge) captureEvent(sessionID string, seq int64, eventType events.Kind
 	if err != nil {
 		return
 	}
-	b.collector.Capture(sessionID, seq, eventType, ed, "outbound")
+	b.collector.Capture(sessionID, seq, eventType, ed, "outbound", eventstore.SourceNormal)
 }
 
 // CaptureInbound persists an inbound (user→worker) event for replay.
@@ -438,7 +392,25 @@ func (b *Bridge) CaptureInbound(sessionID string, seq int64, eventType events.Ki
 	if err != nil {
 		return
 	}
-	b.collector.Capture(sessionID, seq, eventType, ed, "inbound")
+	b.collector.Capture(sessionID, seq, eventType, ed, "inbound", eventstore.SourceNormal)
+}
+
+// captureSyntheticEvent writes a synthetic done-like event for crash/timeout/fresh_start scenarios.
+// Uses seq=0 and the done event type so the v_turns_assistant VIEW can surface it.
+func (b *Bridge) captureSyntheticEvent(sessionID, reason, message, source string) {
+	if b.collector == nil {
+		return
+	}
+	data, err := json.Marshal(map[string]any{
+		"success":   false,
+		"reason":    reason,
+		"message":   message,
+		"synthetic": true,
+	})
+	if err != nil {
+		return
+	}
+	b.collector.Capture(sessionID, 0, events.Done, data, "outbound", source)
 }
 
 // extractMessageContent extracts text content from a message or message_delta event.

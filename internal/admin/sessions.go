@@ -144,7 +144,7 @@ func (a *AdminAPI) HandleSessionStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	id := r.PathValue("id")
-	stats, err := a.convStore.SessionStats(r.Context(), id)
+	stats, err := a.convStore.TurnStats(r.Context(), id)
 	if err != nil {
 		if r.Context().Err() != nil {
 			http.Error(w, "request cancelled", http.StatusServiceUnavailable)

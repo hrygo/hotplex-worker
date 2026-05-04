@@ -10,16 +10,34 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/hrygo/hotplex/internal/config"
+	"github.com/hrygo/hotplex/internal/sqlutil"
 	"github.com/hrygo/hotplex/pkg/events"
 )
+
+func init() {
+	// Ensure SQLite driver is registered.
+	_ = sqlutil.DriverName
+}
 
 func newTestStore(t *testing.T) *SQLiteStore {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "test.db")
-	store, err := NewSQLiteStore(context.Background(), dbPath, &config.DBConfig{})
+	store, err := NewIndependentStore(dbPath)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
+
+	// Create the events table (normally done by goose migration 002).
+	_, err = store.db.Exec(`CREATE TABLE IF NOT EXISTS events (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		session_id TEXT NOT NULL,
+		seq INTEGER NOT NULL,
+		type TEXT NOT NULL,
+		data TEXT NOT NULL,
+		direction TEXT NOT NULL DEFAULT 'outbound',
+		source TEXT NOT NULL DEFAULT 'normal',
+		created_at INTEGER NOT NULL
+	)`)
+	require.NoError(t, err)
 	return store
 }
 
@@ -180,8 +198,8 @@ func TestCollector_CaptureAndFlush(t *testing.T) {
 	collector := NewCollector(store, slog.Default())
 
 	// Capture storable events
-	collector.Capture("sess1", 1, events.Message, json.RawMessage(`{"content":"hello"}`), "outbound")
-	collector.Capture("sess1", 2, events.Done, json.RawMessage(`{}`), "outbound")
+	collector.Capture("sess1", 1, events.Message, json.RawMessage(`{"content":"hello"}`), "outbound", SourceNormal)
+	collector.Capture("sess1", 2, events.Done, json.RawMessage(`{}`), "outbound", SourceNormal)
 
 	// Close drains and flushes remaining events synchronously
 	require.NoError(t, collector.Close())
@@ -200,7 +218,7 @@ func TestCollector_DropNonStorable(t *testing.T) {
 	defer func() { _ = collector.Close() }()
 
 	// Non-storable event should be silently dropped
-	collector.Capture("sess1", 1, events.Kind("non_storable_type"), json.RawMessage(`{}`), "outbound")
+	collector.Capture("sess1", 1, events.Kind("non_storable_type"), json.RawMessage(`{}`), "outbound", SourceNormal)
 
 	// Wait briefly to ensure it's processed (or not)
 	time.Sleep(200 * time.Millisecond)

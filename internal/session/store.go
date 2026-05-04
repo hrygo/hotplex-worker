@@ -33,6 +33,9 @@ type SQLiteStore struct {
 	log *slog.Logger
 }
 
+// DB returns the underlying *sql.DB for sharing with other stores (e.g., eventstore).
+func (s *SQLiteStore) DB() *sql.DB { return s.db }
+
 // NewSQLiteStore creates and initializes a new SQLiteStore.
 func NewSQLiteStore(ctx context.Context, cfg *config.Config) (*SQLiteStore, error) {
 	db, err := openSQLiteDB(cfg, dbOpenOpts{
