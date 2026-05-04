@@ -280,6 +280,7 @@ func (c *Conn) performInit(handler *Handler) error {
 		metrics.GatewayErrorsTotal.WithLabelValues(string(events.ErrCodeInvalidMessage)).Inc()
 		return err
 	}
+	workDir = expanded
 
 	// Resolve session ID: clients put session_id at the envelope level
 	// (env.SessionID), not inside event.data. If the envelope session_id
