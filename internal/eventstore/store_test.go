@@ -97,7 +97,7 @@ func TestSQLiteStore_DeleteBySession(t *testing.T) {
 
 	err := store.Append(ctx, &StoredEvent{
 		SessionID: "sess-del", Seq: 1, Type: "message",
-		Data: json.RawMessage(`{}`), Direction: "outbound", CreatedAt: time.Now().UnixMilli(),
+		Data: json.RawMessage(`{}`), Direction: "outbound", Source: SourceNormal, CreatedAt: time.Now().UnixMilli(),
 	})
 	require.NoError(t, err)
 
@@ -115,13 +115,13 @@ func TestSQLiteStore_DeleteExpired(t *testing.T) {
 	now := time.Now().UnixMilli()
 	err := store.Append(ctx, &StoredEvent{
 		SessionID: "sess-exp", Seq: 1, Type: "message",
-		Data: json.RawMessage(`{}`), Direction: "outbound", CreatedAt: now - 86400000, // 1 day ago
+		Data: json.RawMessage(`{}`), Direction: "outbound", Source: SourceNormal, CreatedAt: now - 86400000, // 1 day ago
 	})
 	require.NoError(t, err)
 
 	err = store.Append(ctx, &StoredEvent{
 		SessionID: "sess-exp", Seq: 2, Type: "message",
-		Data: json.RawMessage(`{}`), Direction: "outbound", CreatedAt: now,
+		Data: json.RawMessage(`{}`), Direction: "outbound", Source: SourceNormal, CreatedAt: now,
 	})
 	require.NoError(t, err)
 
@@ -147,7 +147,7 @@ func TestSQLiteStore_Transaction(t *testing.T) {
 	for i := int64(1); i <= 3; i++ {
 		err := tx.Append(ctx, &StoredEvent{
 			SessionID: "sess-tx", Seq: i, Type: "message",
-			Data: json.RawMessage(`{}`), Direction: "outbound", CreatedAt: time.Now().UnixMilli(),
+			Data: json.RawMessage(`{}`), Direction: "outbound", Source: SourceNormal, CreatedAt: time.Now().UnixMilli(),
 		})
 		require.NoError(t, err, "append event seq=%d", i)
 	}
@@ -167,7 +167,7 @@ func TestSQLiteStore_QueryLimitBounds(t *testing.T) {
 	for i := int64(1); i <= 5; i++ {
 		err := store.Append(ctx, &StoredEvent{
 			SessionID: "sess-lim", Seq: i, Type: "message",
-			Data: json.RawMessage(`{}`), Direction: "outbound", CreatedAt: time.Now().UnixMilli(),
+			Data: json.RawMessage(`{}`), Direction: "outbound", Source: SourceNormal, CreatedAt: time.Now().UnixMilli(),
 		})
 		require.NoError(t, err)
 	}

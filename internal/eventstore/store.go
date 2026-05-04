@@ -77,6 +77,16 @@ const (
 
 var ErrNotFound = errors.New("eventstore: no events found")
 
+const defaultTimeout = 5 * time.Second
+
+// withDefaultTimeout wraps ctx with a 5s timeout if it has no deadline.
+func withDefaultTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
+	if _, ok := ctx.Deadline(); ok {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, defaultTimeout)
+}
+
 // TurnRecord represents a single conversational turn derived from events VIEW.
 type TurnRecord struct {
 	SessionID  string  `json:"session_id"`
@@ -199,11 +209,8 @@ func NewIndependentStore(dbPath string) (*SQLiteStore, error) {
 }
 
 func (s *SQLiteStore) Append(ctx context.Context, event *StoredEvent) error {
-	if _, ok := ctx.Deadline(); !ok {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-	}
+	ctx, cancel := withDefaultTimeout(ctx)
+	defer cancel()
 	_, err := s.db.ExecContext(ctx, queries["insert"],
 		event.SessionID, event.Seq, event.Type, event.Data, event.Direction, event.Source, event.CreatedAt)
 	if err != nil {
@@ -213,11 +220,8 @@ func (s *SQLiteStore) Append(ctx context.Context, event *StoredEvent) error {
 }
 
 func (s *SQLiteStore) BeginTx(ctx context.Context) (EventTx, error) {
-	if _, ok := ctx.Deadline(); !ok {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-	}
+	ctx, cancel := withDefaultTimeout(ctx)
+	defer cancel()
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("eventstore: begin tx: %w", err)
@@ -243,11 +247,8 @@ func (t *sqliteTx) Commit() error {
 }
 
 func (s *SQLiteStore) QueryBySession(ctx context.Context, sessionID string, cursor int64, dir CursorDirection, limit int) (*EventPage, error) {
-	if _, ok := ctx.Deadline(); !ok {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-	}
+	ctx, cancel := withDefaultTimeout(ctx)
+	defer cancel()
 	if limit <= 0 {
 		limit = 200
 	}
@@ -315,11 +316,8 @@ func (s *SQLiteStore) QueryBySession(ctx context.Context, sessionID string, curs
 }
 
 func (s *SQLiteStore) DeleteBySession(ctx context.Context, sessionID string) error {
-	if _, ok := ctx.Deadline(); !ok {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-	}
+	ctx, cancel := withDefaultTimeout(ctx)
+	defer cancel()
 	_, err := s.db.ExecContext(ctx, queries["delete_by_session"], sessionID)
 	if err != nil {
 		return fmt.Errorf("eventstore: delete by session: %w", err)
@@ -328,11 +326,8 @@ func (s *SQLiteStore) DeleteBySession(ctx context.Context, sessionID string) err
 }
 
 func (s *SQLiteStore) DeleteExpired(ctx context.Context, cutoff time.Time) (int64, error) {
-	if _, ok := ctx.Deadline(); !ok {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-	}
+	ctx, cancel := withDefaultTimeout(ctx)
+	defer cancel()
 	res, err := s.db.ExecContext(ctx, queries["delete_expired"], cutoff.UnixMilli())
 	if err != nil {
 		return 0, fmt.Errorf("eventstore: delete expired: %w", err)
@@ -349,11 +344,8 @@ func (s *SQLiteStore) Close() error {
 
 // QueryTurns fetches conversation turns via v_turns view with limit/offset pagination.
 func (s *SQLiteStore) QueryTurns(ctx context.Context, sessionID string, limit, offset int) ([]*TurnRecord, error) {
-	if _, ok := ctx.Deadline(); !ok {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-	}
+	ctx, cancel := withDefaultTimeout(ctx)
+	defer cancel()
 	rows, err := s.db.QueryContext(ctx, queries["turns.query"], sessionID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("eventstore: query turns: %w", err)
@@ -364,11 +356,8 @@ func (s *SQLiteStore) QueryTurns(ctx context.Context, sessionID string, limit, o
 
 // QueryTurnsBefore fetches turns with seq < beforeSeq (cursor-based, DESC in SQL, reversed to ASC).
 func (s *SQLiteStore) QueryTurnsBefore(ctx context.Context, sessionID string, beforeSeq int64, limit int) ([]*TurnRecord, error) {
-	if _, ok := ctx.Deadline(); !ok {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-	}
+	ctx, cancel := withDefaultTimeout(ctx)
+	defer cancel()
 	rows, err := s.db.QueryContext(ctx, queries["turns.query_before"], sessionID, beforeSeq, limit)
 	if err != nil {
 		return nil, fmt.Errorf("eventstore: query turns before: %w", err)
@@ -387,11 +376,8 @@ func (s *SQLiteStore) QueryTurnsBefore(ctx context.Context, sessionID string, be
 
 // QueryTurnStats returns aggregated turn statistics for a session via v_turns_assistant.
 func (s *SQLiteStore) QueryTurnStats(ctx context.Context, sessionID string) (*TurnStats, error) {
-	if _, ok := ctx.Deadline(); !ok {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-	}
+	ctx, cancel := withDefaultTimeout(ctx)
+	defer cancel()
 	rows, err := s.db.QueryContext(ctx, queries["turns.stats"], sessionID)
 	if err != nil {
 		return nil, fmt.Errorf("eventstore: query turn stats: %w", err)

@@ -372,19 +372,18 @@ func (b *Bridge) handleWorkerExit(w worker.Worker, p workerExitParams) {
 	}
 }
 
+// captureEvent persists an outbound event for replay.
 func (b *Bridge) captureEvent(sessionID string, seq int64, eventType events.Kind, data any) {
-	if b.collector == nil {
-		return
-	}
-	ed, err := json.Marshal(data)
-	if err != nil {
-		return
-	}
-	b.collector.Capture(sessionID, seq, eventType, ed, "outbound", eventstore.SourceNormal)
+	b.captureDirected(sessionID, seq, eventType, data, "outbound")
 }
 
 // CaptureInbound persists an inbound (user→worker) event for replay.
 func (b *Bridge) CaptureInbound(sessionID string, seq int64, eventType events.Kind, data any) {
+	b.captureDirected(sessionID, seq, eventType, data, "inbound")
+}
+
+// captureDirected marshals event data and sends it to the collector with the given direction.
+func (b *Bridge) captureDirected(sessionID string, seq int64, eventType events.Kind, data any, direction string) {
 	if b.collector == nil {
 		return
 	}
@@ -392,7 +391,7 @@ func (b *Bridge) CaptureInbound(sessionID string, seq int64, eventType events.Ki
 	if err != nil {
 		return
 	}
-	b.collector.Capture(sessionID, seq, eventType, ed, "inbound", eventstore.SourceNormal)
+	b.collector.Capture(sessionID, seq, eventType, ed, direction, eventstore.SourceNormal)
 }
 
 // captureSyntheticEvent writes a synthetic done-like event for crash/timeout/fresh_start scenarios.

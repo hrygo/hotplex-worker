@@ -69,7 +69,7 @@ type AdminAPI struct {
 	log           *slog.Logger
 	cfg           ConfigProvider
 	sm            SessionManagerProvider
-	convStore     TurnStatsProvider
+	turnStore     TurnStatsProvider
 	hub           HubProvider
 	bridge        BridgeProvider
 	configWatcher ConfigWatcherProvider
@@ -96,7 +96,7 @@ func New(deps Deps) *AdminAPI {
 		log:           deps.Log,
 		cfg:           deps.Config,
 		sm:            deps.SessionMgr,
-		convStore:     deps.TurnStats,
+		turnStore:     deps.TurnStats,
 		hub:           deps.Hub,
 		bridge:        deps.Bridge,
 		configWatcher: deps.ConfigWatcher,
