@@ -504,6 +504,8 @@ func (b *Bridge) injectSessionStats(env *events.Envelope, acc *sessionAccumulato
 var (
 	gitAvailable bool
 	gitOnce      sync.Once
+	gitBranchMu  sync.Mutex
+	gitBranchMap = map[string]string{} // dir → branch name
 )
 
 func checkGitAvailable() bool {
@@ -516,17 +518,30 @@ func checkGitAvailable() bool {
 
 // gitBranchOf returns the current git branch name for the given directory, or empty string.
 // Best-effort: 2s timeout, skips if git is not installed, errors silently ignored.
+// Results are cached per directory (branch changes within a session are not tracked).
 func gitBranchOf(dir string) string {
 	if !checkGitAvailable() {
 		return ""
 	}
+	gitBranchMu.Lock()
+	if b, ok := gitBranchMap[dir]; ok {
+		gitBranchMu.Unlock()
+		return b
+	}
+	gitBranchMu.Unlock()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", "rev-parse", "--abbrev-ref", "HEAD")
 	cmd.Dir = dir
 	out, err := cmd.Output()
-	if err != nil {
-		return ""
+	branch := ""
+	if err == nil {
+		branch = strings.TrimSpace(string(out))
 	}
-	return strings.TrimSpace(string(out))
+
+	gitBranchMu.Lock()
+	gitBranchMap[dir] = branch
+	gitBranchMu.Unlock()
+	return branch
 }
