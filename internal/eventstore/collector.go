@@ -15,6 +15,9 @@ const (
 	collectorChanCap       = 2048
 	collectorBatchMax      = 100
 	collectorFlushInterval = 100 * time.Millisecond
+
+	deltaFlushSize     = 4096 // bytes — flush accumulator when content exceeds this
+	deltaFlushInterval = 2 * time.Second
 )
 
 // StorableTypes is the set of AEP event types eligible for event storage replay.
@@ -25,8 +28,6 @@ var StorableTypes = map[events.Kind]bool{
 	events.Input:               true,
 	events.Done:                true,
 	events.Message:             true,
-	events.MessageStart:        true,
-	events.MessageEnd:          true,
 	events.ToolCall:            true,
 	events.ToolResult:          true,
 	events.Reasoning:           true,
@@ -53,6 +54,11 @@ type captureRequest struct {
 
 // Collector captures AEP events, merges message.delta streams, and writes
 // them asynchronously to the underlying EventStore.
+//
+// Delta accumulation uses three flush triggers:
+//   - Size: content exceeds deltaFlushSize (hot path, synchronous)
+//   - Timer: accumulator age exceeds deltaFlushInterval (runWriter ticker)
+//   - Event: MessageEnd or next storable event (hot path, synchronous)
 type Collector struct {
 	store    EventStore
 	captureC chan *captureRequest
@@ -82,12 +88,6 @@ func NewCollector(store EventStore, log *slog.Logger) *Collector {
 // If the event is a message.delta, it is accumulated in-memory and merged
 // on message.end or next non-delta event.
 func (c *Collector) Capture(sessionID string, seq int64, eventType events.Kind, data json.RawMessage, direction string) {
-	if !IsStorable(eventType) {
-		return
-	}
-
-	now := time.Now().UnixMilli()
-
 	if eventType == events.MessageDelta {
 		c.accumMu.Lock()
 		acc := c.accum[sessionID]
@@ -100,30 +100,22 @@ func (c *Collector) Capture(sessionID string, seq int64, eventType events.Kind, 
 		return
 	}
 
-	// Flush any pending delta accumulation for this session before processing
-	// the current event.
+	// MessageEnd triggers flush but is not stored itself.
+	if eventType == events.MessageEnd {
+		c.flushDelta(sessionID)
+		return
+	}
+
+	if !IsStorable(eventType) {
+		return
+	}
+
 	c.flushDelta(sessionID)
 
-	// Send the current event.
 	req := &captureRequest{event: &StoredEvent{
 		SessionID: sessionID,
 		Seq:       seq,
 		Type:      string(eventType),
-		Data:      data,
-		Direction: direction,
-		CreatedAt: now,
-	}}
-	c.send(req)
-}
-
-// CaptureDeltaEnd is called on message.end to flush the accumulated delta.
-func (c *Collector) CaptureDeltaEnd(sessionID string, endSeq int64, data json.RawMessage, direction string) {
-	c.flushDelta(sessionID)
-
-	req := &captureRequest{event: &StoredEvent{
-		SessionID: sessionID,
-		Seq:       endSeq,
-		Type:      string(events.MessageEnd),
 		Data:      data,
 		Direction: direction,
 		CreatedAt: time.Now().UnixMilli(),
@@ -137,26 +129,10 @@ func (c *Collector) flushDelta(sessionID string) {
 	delete(c.accum, sessionID)
 	c.accumMu.Unlock()
 
-	if acc == nil || acc.len() == 0 {
+	if acc == nil || acc.count == 0 {
 		return
 	}
-
-	merged, seq, firstSeq, lastSeq := acc.flush()
-	mergedData, _ := json.Marshal(map[string]any{
-		"content":      merged,
-		"merged_count": lastSeq - firstSeq + 1,
-		"seq_range":    []int64{firstSeq, lastSeq},
-	})
-
-	req := &captureRequest{event: &StoredEvent{
-		SessionID: sessionID,
-		Seq:       seq,
-		Type:      string(events.Message),
-		Data:      mergedData,
-		Direction: "outbound",
-		CreatedAt: time.Now().UnixMilli(),
-	}}
-	c.send(req)
+	c.send(acc.toRequest(sessionID))
 }
 
 func (c *Collector) send(req *captureRequest) {
@@ -173,12 +149,17 @@ func (c *Collector) send(req *captureRequest) {
 
 // Close drains the capture channel and flushes remaining events.
 func (c *Collector) Close() error {
-	// Flush any remaining delta accumulators.
+	// Swap accumulator map under lock, flush outside to avoid deadlock.
 	c.accumMu.Lock()
-	for sid := range c.accum {
-		c.flushDelta(sid)
-	}
+	pending := c.accum
+	c.accum = nil
 	c.accumMu.Unlock()
+
+	for sid, acc := range pending {
+		if acc.count > 0 {
+			c.send(acc.toRequest(sid))
+		}
+	}
 
 	close(c.closeC)
 	c.closeWg.Wait()
@@ -203,7 +184,6 @@ func (c *Collector) runWriter() {
 	for {
 		select {
 		case <-c.closeC:
-			// Drain remaining items in channel.
 			for {
 				select {
 				case req := <-c.captureC:
@@ -219,9 +199,25 @@ func (c *Collector) runWriter() {
 				flush()
 			}
 		case <-ticker.C:
+			c.flushTimedOutAccumulators(&batch)
 			flush()
 		}
 	}
+}
+
+// flushTimedOutAccumulators scans all accumulators and flushes those whose
+// age exceeds deltaFlushInterval. Bypasses captureC to avoid deadlock in
+// runWriter (which both reads from and would write to captureC).
+func (c *Collector) flushTimedOutAccumulators(batch *[]*captureRequest) {
+	now := time.Now()
+	c.accumMu.Lock()
+	for sid, acc := range c.accum {
+		if now.Sub(acc.firstSeenAt) >= deltaFlushInterval {
+			delete(c.accum, sid)
+			*batch = append(*batch, acc.toRequest(sid))
+		}
+	}
+	c.accumMu.Unlock()
 }
 
 func (c *Collector) flushBatch(batch []*captureRequest) {
@@ -254,13 +250,42 @@ func (c *Collector) flushBatch(batch []*captureRequest) {
 	}
 }
 
+// CaptureDeltaString accumulates a message.delta content string directly,
+// skipping the json.Marshal/Unmarshal round-trip of Capture.
+// Flushes immediately when accumulated content exceeds deltaFlushSize.
+func (c *Collector) CaptureDeltaString(sessionID string, seq int64, content string) {
+	c.accumMu.Lock()
+	acc := c.accum[sessionID]
+	if acc == nil {
+		acc = newDeltaAccumulator()
+		c.accum[sessionID] = acc
+	}
+	acc.appendRaw(seq, content)
+
+	if acc.content.Len() >= deltaFlushSize {
+		delete(c.accum, sessionID)
+		c.accumMu.Unlock()
+		c.send(acc.toRequest(sessionID))
+		return
+	}
+	c.accumMu.Unlock()
+}
+
+// ResetSession discards any accumulated delta content for the given session.
+func (c *Collector) ResetSession(sessionID string) {
+	c.accumMu.Lock()
+	delete(c.accum, sessionID)
+	c.accumMu.Unlock()
+}
+
 // deltaAccumulator merges message.delta content in-memory.
 type deltaAccumulator struct {
-	content  strings.Builder
-	seq      int64
-	firstSeq int64
-	lastSeq  int64
-	count    int
+	content     strings.Builder
+	seq         int64
+	firstSeq    int64
+	lastSeq     int64
+	count       int
+	firstSeenAt time.Time
 }
 
 func newDeltaAccumulator() *deltaAccumulator {
@@ -273,23 +298,32 @@ func (a *deltaAccumulator) append(seq int64, data json.RawMessage) {
 	}
 	_ = json.Unmarshal(data, &delta)
 
-	a.content.WriteString(delta.Content)
+	a.appendRaw(seq, delta.Content)
+}
+
+func (a *deltaAccumulator) appendRaw(seq int64, content string) {
+	a.content.WriteString(content)
 	a.lastSeq = seq
 	if a.count == 0 {
 		a.firstSeq = seq
 		a.seq = seq
+		a.firstSeenAt = time.Now()
 	}
 	a.count++
 }
 
-func (a *deltaAccumulator) flush() (content string, seq, firstSeq, lastSeq int64) {
-	content = a.content.String()
-	seq = a.seq
-	firstSeq = a.firstSeq
-	lastSeq = a.lastSeq
-	return
-}
-
-func (a *deltaAccumulator) len() int {
-	return a.count
+func (a *deltaAccumulator) toRequest(sessionID string) *captureRequest {
+	mergedData, _ := json.Marshal(map[string]any{
+		"content":      a.content.String(),
+		"merged_count": a.lastSeq - a.firstSeq + 1,
+		"seq_range":    []int64{a.firstSeq, a.lastSeq},
+	})
+	return &captureRequest{event: &StoredEvent{
+		SessionID: sessionID,
+		Seq:       a.seq,
+		Type:      string(events.Message),
+		Data:      mergedData,
+		Direction: "outbound",
+		CreatedAt: a.firstSeenAt.UnixMilli(),
+	}}
 }
