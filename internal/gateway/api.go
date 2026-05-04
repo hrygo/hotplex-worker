@@ -20,9 +20,17 @@ import (
 	"github.com/hrygo/hotplex/pkg/events"
 )
 
+// apiSM is the narrow subset of SessionManager that GatewayAPI needs.
+type apiSM interface {
+	Get(id string) (*session.SessionInfo, error)
+	List(ctx context.Context, userID, platform string, limit, offset int) ([]*session.SessionInfo, error)
+	DeletePhysical(ctx context.Context, id string) error
+	Transition(ctx context.Context, id string, to events.SessionState) error
+}
+
 type GatewayAPI struct {
 	auth       *security.Authenticator
-	sm         SessionManager
+	sm         apiSM
 	bridge     SessionStarter
 	cfgStore   *config.ConfigStore
 	convStore  ConversationStoreReader
@@ -41,7 +49,7 @@ type ConversationStoreReader interface {
 	GetBySessionBefore(ctx context.Context, sessionID string, beforeSeq int64, limit int) ([]*session.ConversationRecord, error)
 }
 
-func NewGatewayAPI(log *slog.Logger, auth *security.Authenticator, sm SessionManager, bridge SessionStarter, cfgStore *config.ConfigStore, convStore ConversationStoreReader, eventStore EventStoreReader) *GatewayAPI {
+func NewGatewayAPI(log *slog.Logger, auth *security.Authenticator, sm apiSM, bridge SessionStarter, cfgStore *config.ConfigStore, convStore ConversationStoreReader, eventStore EventStoreReader) *GatewayAPI {
 	return &GatewayAPI{auth: auth, sm: sm, bridge: bridge, cfgStore: cfgStore, convStore: convStore, eventStore: eventStore, log: log.With("component", "api")}
 }
 

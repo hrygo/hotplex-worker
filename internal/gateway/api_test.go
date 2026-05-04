@@ -106,6 +106,8 @@ func (m *mockAPISM) ValidateOwnership(ctx context.Context, sessionID, userID, ad
 	return m.Called(ctx, sessionID, userID, adminUserID).Error(0)
 }
 
+var _ apiSM = (*mockAPISM)(nil)
+
 // ─── Mock SessionStarter for API tests ─────────────────────────────────────────
 
 type mockAPIBridge struct {

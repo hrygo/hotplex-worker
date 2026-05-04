@@ -184,6 +184,7 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 		Hub:                hub,
 		SM:                 sm,
 		ConvStore:          stores.conversation,
+		EventCollector:     stores.collector,
 		RetryCtrl:          retryCtrl,
 		AgentConfigDir:     agentConfigDir,
 		TurnTimeout:        cfg.Worker.TurnTimeout,
