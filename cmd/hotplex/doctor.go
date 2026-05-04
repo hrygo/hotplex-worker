@@ -64,7 +64,7 @@ Use --fix to automatically resolve issues where possible.`,
 	cmd.Flags().BoolVar(&fix, "fix", false, "automatically fix issues")
 	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "show detailed information")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "output in JSON format")
-	cmd.Flags().StringVarP(&category, "category", "C", "", "only check specified category (environment, config, dependencies, security, runtime, messaging)")
+	cmd.Flags().StringVarP(&category, "category", "C", "", "only check specified category (environment, config, dependencies, security, runtime, messaging, stt)")
 	configFlag(cmd, &configPath)
 	return cmd
 }
