@@ -1,6 +1,6 @@
 # HotPlex 项目知识库
 
-**最后更新**: 2026-05-03 · **分支**: main · **版本**: v1.5.0
+**最后更新**: 2026-05-04 · **分支**: main · **版本**: v1.5.0
 
 ---
 
@@ -141,12 +141,13 @@ cp configs/env.example .env
 - `base/` - 共享 BaseWorker + Conn
 
 **支撑模块**：
-- `config/` - Viper 配置 + 热重载
-- `agentconfig/` - Agent 人格/上下文加载器
+- `config/` - Viper 配置 + 热重载 + 继承 + 审计/回滚
+- `agentconfig/` - B/C 双通道 Agent 人格/上下文加载器
 - `security/` - JWT、SSRF、路径安全
 - `skills/` - Skills 发现
 - `metrics/` - Prometheus 指标
-- `service/` - 系统服务管理
+- `service/` - 跨平台系统服务管理（systemd/launchd/SCM）
+- `eventstore/` - 会话事件持久化 + delta 聚合
 - `updater/` - 自更新（GitHub API、sha256 校验、原子替换）
 
 ### 公共包 (`pkg/`)
@@ -441,10 +442,16 @@ hotplex slack react add --channel <id> --ts <ts> --emoji white_check_mark
 
 | 文件 | 行数 |
 |------|------|
-| `bridge.go` | 1256 |
-| `feishu/adapter.go` | 1240 |
-| `slack/adapter.go` | 1165 |
-| `manager.go` | 961 |
-| `config.go` | 835 |
-| `opencodeserver/worker.go` | 824 |
-| `hub.go` | 818 |
+| `manager_test.go` | 2249 |
+| `adapter_test.go` (slack) | 2138 |
+| `conn_test.go` | 1424 |
+| `adapter.go` (slack) | 1321 |
+| `adapter.go` (feishu) | 1267 |
+| `hub_test.go` | 1103 |
+| `commands_test.go` (ocs) | 1050 |
+| `manager.go` | 984 |
+| `security_test.go` | 929 |
+| `config.go` | 923 |
+| `worker.go` (ocs) | 860 |
+| `streaming.go` (feishu) | 857 |
+| `handler.go` | 823 |
