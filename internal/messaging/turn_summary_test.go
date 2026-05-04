@@ -281,6 +281,8 @@ func TestFormatTurnSummaryRich_Full(t *testing.T) {
 		ToolNames:       map[string]int{"Read": 5, "Edit": 3, "Bash": 2, "Grep": 2},
 		TurnInputTok:    12000,
 		TurnOutputTok:   2000,
+		TotalInputTok:   48434,
+		TotalOutputTok:  2000,
 		WorkDir:         "/home/user/workspace/hotplex",
 		GitBranch:       "feat/117-turn-summary",
 		SessionDuration: 750,
@@ -288,19 +290,19 @@ func TestFormatTurnSummaryRich_Full(t *testing.T) {
 	got := FormatTurnSummaryRich(d)
 	require.Contains(t, got, "🔄 #3")
 	require.Contains(t, got, "🤖 Sonnet")
-	require.Contains(t, got, "🧠 24%")
-	require.Contains(t, got, "⏱ 42s")
+	require.Contains(t, got, "🧠 [█░░░░] 48.4K/200K")
 	require.Contains(t, got, "🔧 12 (")
-	require.Contains(t, got, "💎")
 	require.Contains(t, got, "📂")
 	require.Contains(t, got, "🌿 feat/117-turn-summary")
-	require.Contains(t, got, "⏳ 12m30s")
+	require.Contains(t, got, "⏱️ Turn 42s | Session 12m30s")
+	require.Contains(t, got, "💎")
+	require.Contains(t, got, "12K in · 2K out | Σ 48.4K in · Σ 2K out")
 }
 
 func TestFormatTurnSummaryRich_Minimal(t *testing.T) {
 	t.Parallel()
 	got := FormatTurnSummaryRich(TurnSummaryData{TurnDurationMs: 3000})
-	require.Contains(t, got, "⏱ 3s")
+	require.Contains(t, got, "⏱️ Turn 3s")
 }
 
 func TestFormatTurnSummaryRich_Empty(t *testing.T) {
