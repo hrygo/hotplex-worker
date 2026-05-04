@@ -575,3 +575,49 @@ func TestHasSessionFiles_NoFiles(t *testing.T) {
 	w := New()
 	require.False(t, w.HasSessionFiles("sess_test-uuid-1234"))
 }
+
+// TestHasSessionFiles_EmptySessionEnvDir verifies that a stale empty session-env
+// directory does NOT cause HasSessionFiles to return true (issue #172).
+func TestHasSessionFiles_EmptySessionEnvDir(t *testing.T) {
+	t.Parallel()
+
+	homeDir := t.TempDir()
+	envDir := filepath.Join(homeDir, ".claude", "session-env", "test-uuid-1234")
+	require.NoError(t, os.MkdirAll(envDir, 0o755))
+
+	// The empty directory exists on disk but no JSONL file.
+	parsedID := "test-uuid-1234"
+	pattern := filepath.Join(homeDir, ".claude", "projects", "*", parsedID+".jsonl")
+	matches, _ := filepath.Glob(pattern)
+	for _, m := range matches {
+		if fi, err := os.Stat(m); err == nil && !fi.IsDir() {
+			t.Fatal("should not match any JSONL file")
+		}
+	}
+
+	// Verify the session-env dir itself exists (would have matched old logic).
+	envMatches, _ := filepath.Glob(filepath.Join(homeDir, ".claude", "session-env", parsedID))
+	require.Len(t, envMatches, 1) // stale empty dir is on disk
+}
+
+func TestHasSessionFiles_JSONLExists(t *testing.T) {
+	t.Parallel()
+
+	homeDir := t.TempDir()
+	projectDir := filepath.Join(homeDir, ".claude", "projects", "hash")
+	require.NoError(t, os.MkdirAll(projectDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "test-uuid-1234.jsonl"), []byte("{}"), 0o644))
+
+	parsedID := "test-uuid-1234"
+	pattern := filepath.Join(homeDir, ".claude", "projects", "*", parsedID+".jsonl")
+	matches, _ := filepath.Glob(pattern)
+	require.Len(t, matches, 1)
+
+	found := false
+	for _, m := range matches {
+		if fi, err := os.Stat(m); err == nil && !fi.IsDir() {
+			found = true
+		}
+	}
+	require.True(t, found, "JSONL file should be detected as a valid session file")
+}

@@ -444,6 +444,7 @@ func (w *Worker) ResetContext(ctx context.Context) error {
 }
 
 // sessionFileGlobs returns glob patterns for Claude Code session files.
+// Used by deleteSessionFiles to clean up all session-related artifacts.
 func sessionFileGlobs(homeDir, parsedID string) []string {
 	return []string{
 		filepath.Join(homeDir, ".claude", "projects", "*", parsedID+".jsonl"),
@@ -452,7 +453,9 @@ func sessionFileGlobs(homeDir, parsedID string) []string {
 	}
 }
 
-// HasSessionFiles checks whether session files still exist on disk.
+// HasSessionFiles checks whether the JSONL conversation file exists on disk.
+// Only JSONL files indicate a resumable session; empty session-env directories
+// are insufficient and must not trigger the resume path.
 func (w *Worker) HasSessionFiles(sessionID string) bool {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
@@ -462,9 +465,10 @@ func (w *Worker) HasSessionFiles(sessionID string) bool {
 		return true
 	}
 	parsedID := aep.ParseSessionID(sessionID)
-	for _, pattern := range sessionFileGlobs(homeDir, parsedID) {
-		matches, _ := filepath.Glob(pattern)
-		if len(matches) > 0 {
+	pattern := filepath.Join(homeDir, ".claude", "projects", "*", parsedID+".jsonl")
+	matches, _ := filepath.Glob(pattern)
+	for _, m := range matches {
+		if fi, err := os.Stat(m); err == nil && !fi.IsDir() {
 			return true
 		}
 	}
@@ -484,6 +488,7 @@ func (w *Worker) deleteSessionFiles() error {
 	var (
 		firstErr error
 		total    int
+		parents  = map[string]bool{}
 	)
 	for _, pattern := range patterns {
 		matches, err := filepath.Glob(pattern)
@@ -498,8 +503,14 @@ func (w *Worker) deleteSessionFiles() error {
 			} else {
 				w.Log.Debug("claudecode: removed session file", "session_id", w.sessionID, "path", m)
 				total++
+				parents[filepath.Dir(m)] = true
 			}
 		}
+	}
+	// Best-effort cleanup of empty parent directories to prevent
+	// future false positives from stale empty dirs.
+	for dir := range parents {
+		_ = os.Remove(dir)
 	}
 	if total > 0 {
 		w.Log.Info("claudecode: deleted session files for reset", "count", total, "session_id", w.sessionID)
