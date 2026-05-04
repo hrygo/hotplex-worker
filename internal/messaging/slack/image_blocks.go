@@ -37,7 +37,7 @@ func extractImages(text string) (parts []imagePart, remaining string) {
 		trimmed := strings.TrimSpace(line)
 
 		if isLocalMediaPath(trimmed) {
-			imgURL, altText := localFileToImagePart(trimmed)
+			imgURL, altText := localFileToImagePart(filepath.Clean(trimmed))
 			if imgURL != "" {
 				parts = append(parts, imagePart{URL: imgURL, AltText: altText})
 				continue

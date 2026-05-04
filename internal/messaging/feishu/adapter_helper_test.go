@@ -275,7 +275,7 @@ func TestSaveMediaBytes(t *testing.T) {
 			checkInDir: true,
 		},
 		{
-			name:       "path traversal with dot",
+			name:       "dot name falls back to key",
 			media:      &MediaInfo{Key: "dot_key", Type: "image", Name: "."},
 			data:       []byte("data"),
 			wantErr:    false,
@@ -283,7 +283,7 @@ func TestSaveMediaBytes(t *testing.T) {
 			checkInDir: true,
 		},
 		{
-			name:       "path traversal with dotdot only",
+			name:       "dotdot name falls back to key",
 			media:      &MediaInfo{Key: "dd_key", Type: "image", Name: ".."},
 			data:       []byte("data"),
 			wantErr:    false,
