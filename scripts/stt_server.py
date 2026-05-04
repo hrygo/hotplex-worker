@@ -93,38 +93,34 @@ def create_funasr_backend(model_name: str):
         _write_response(error="DEP_MISSING: funasr-onnx not installed. Run: pip install funasr-onnx")
         sys.exit(1)
 
-    # Buffer error message — stdout is suppressed during model loading.
-    # We write the response after the context manager restores stdout.
-    load_error = ""
+    # Catch exceptions outside the suppress context to ensure _write_response
+    # goes to real stdout, not /dev/null.
+    try:
+        with _suppress_stdout():
+            # Auto-patch ONNX model if needed.
+            try:
+                from modelscope.hub.snapshot_download import snapshot_download  # type: ignore
+                from fix_onnx_model import patch_model_dir  # type: ignore
 
-    with _suppress_stdout():
-        # Auto-patch ONNX model if needed (Less node type mismatch).
-        try:
-            from modelscope.hub.snapshot_download import snapshot_download  # type: ignore
-            from fix_onnx_model import patch_model_dir  # type: ignore
+                model_dir = snapshot_download(model_name)
+                for name in patch_model_dir(model_dir):
+                    print(f"[stt] patched ONNX: {name}", file=sys.stderr)
+            except ImportError:
+                pass  # onnx not installed — skip patching, let it fail naturally
+            except Exception as e:
+                print(f"[stt] ONNX patch warning: {type(e).__name__}: {e}", file=sys.stderr)
 
-            model_dir = snapshot_download(model_name)
-            for name in patch_model_dir(model_dir):
-                print(f"[stt] patched ONNX: {name}", file=sys.stderr)
-        except ImportError:
-            pass  # onnx not installed — skip patching, let it fail naturally
-        except Exception as e:
-            print(f"[stt] ONNX patch warning: {type(e).__name__}: {e}", file=sys.stderr)
-
-        try:
             model = SenseVoiceSmall(model_name, quantize=False)
-        except TypeError as e:
-            # funasr-onnx raises TypeError when ONNX export is needed but funasr
-            # is not installed (it uses `raise "string"` instead of raise Exception).
-            load_error = (
-                f"MODEL_LOAD_FAILED: ONNX model missing or export failed: {e}. "
-                "Install funasr to auto-export: pip install funasr"
-            )
-        except Exception as e:
-            load_error = f"MODEL_LOAD_FAILED: {type(e).__name__}: {e}"
-
-    if load_error:
-        _write_response(error=load_error)
+    except TypeError as e:
+        # funasr-onnx raises TypeError when ONNX export is needed but funasr
+        # is not installed (it uses `raise "string"` instead of raise Exception).
+        _write_response(
+            error=f"MODEL_LOAD_FAILED: ONNX model missing or export failed: {e}. "
+            "Install funasr to auto-export: pip install funasr"
+        )
+        sys.exit(1)
+    except Exception as e:
+        _write_response(error=f"MODEL_LOAD_FAILED: {type(e).__name__}: {e}")
         sys.exit(1)
 
     print(f"[stt] model loaded: {model_name}", file=sys.stderr)

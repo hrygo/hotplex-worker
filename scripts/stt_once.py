@@ -58,19 +58,6 @@ def _suppress_stdout():
         os.close(saved)
 
 
-def _check_onnx_model(model_dir: str) -> str | None:
-    """Check if ONNX model files exist. Returns error message or None."""
-    onnx_path = os.path.join(model_dir, "model.onnx")
-    quant_path = os.path.join(model_dir, "model_quant.onnx")
-    if os.path.exists(onnx_path) or os.path.exists(quant_path):
-        return None
-    return (
-        f"ONNX model not found in {model_dir}. "
-        "Export from PyTorch: pip install funasr && "
-        "python3 -c \"from funasr import AutoModel; AutoModel(model='{model}').export(type='onnx')\""
-    )
-
-
 def main():
     if len(sys.argv) < 2:
         print("STT_ERROR\tusage: stt_once.py <audio_file>", file=sys.stderr)
@@ -87,8 +74,7 @@ def main():
         )
         sys.exit(2)
 
-    # Load model with stdout suppressed (modelscope prints progress to stdout).
-    # Use context manager to guarantee _restore_stdout is called exactly once.
+    # Suppress stdout during model loading (modelscope prints progress to stdout).
     with _suppress_stdout():
         try:
             model = SenseVoiceSmall("iic/SenseVoiceSmall", quantize=False)
