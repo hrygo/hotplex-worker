@@ -505,8 +505,15 @@ var (
 	gitAvailable bool
 	gitOnce      sync.Once
 	gitBranchMu  sync.Mutex
-	gitBranchMap = map[string]string{} // dir → branch name
+	gitBranchMap = map[string]gitBranchEntry{} // dir → cached branch
 )
+
+const gitBranchTTL = 5 * time.Minute
+
+type gitBranchEntry struct {
+	branch string
+	expiry time.Time
+}
 
 func checkGitAvailable() bool {
 	gitOnce.Do(func() {
@@ -518,15 +525,18 @@ func checkGitAvailable() bool {
 
 // gitBranchOf returns the current git branch name for the given directory, or empty string.
 // Best-effort: 2s timeout, skips if git is not installed, errors silently ignored.
-// Results are cached per directory (branch changes within a session are not tracked).
+// Results are cached per directory with a 5-minute TTL.
 func gitBranchOf(dir string) string {
 	if !checkGitAvailable() {
 		return ""
 	}
+
+	now := time.Now()
 	gitBranchMu.Lock()
-	if b, ok := gitBranchMap[dir]; ok {
+	if e, ok := gitBranchMap[dir]; ok && now.Before(e.expiry) {
+		branch := e.branch
 		gitBranchMu.Unlock()
-		return b
+		return branch
 	}
 	gitBranchMu.Unlock()
 
@@ -541,7 +551,7 @@ func gitBranchOf(dir string) string {
 	}
 
 	gitBranchMu.Lock()
-	gitBranchMap[dir] = branch
+	gitBranchMap[dir] = gitBranchEntry{branch: branch, expiry: now.Add(gitBranchTTL)}
 	gitBranchMu.Unlock()
 	return branch
 }
