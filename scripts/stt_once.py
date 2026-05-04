@@ -21,6 +21,7 @@ import json
 import os
 import re
 import sys
+from contextlib import contextmanager
 
 # Pattern: <|lang|><|EMOTION|><|EVENT|><|woitn|>text
 _SENSEVOICE_TAG_RE = re.compile(r"<\|([^|]*)\|>")
@@ -42,19 +43,19 @@ def _write_json(obj: dict) -> None:
     sys.stdout.flush()
 
 
+@contextmanager
 def _suppress_stdout():
-    """Redirect stdout to /dev/null during model loading."""
+    """Context manager that redirects stdout to /dev/null and restores on exit."""
     devnull = os.open(os.devnull, os.O_WRONLY)
     saved = os.dup(1)
     os.dup2(devnull, 1)
     os.close(devnull)
-    return saved
-
-
-def _restore_stdout(saved_fd):
-    sys.stdout.flush()
-    os.dup2(saved_fd, 1)
-    os.close(saved_fd)
+    try:
+        yield
+    finally:
+        sys.stdout.flush()
+        os.dup2(saved, 1)
+        os.close(saved)
 
 
 def main():
@@ -73,18 +74,26 @@ def main():
         )
         sys.exit(2)
 
-    saved = _suppress_stdout()
-    try:
-        model = SenseVoiceSmall("iic/SenseVoiceSmall", quantize=False)
-    except Exception as e:
-        _restore_stdout(saved)
-        print(
-            f"STT_ERROR\tcode=MODEL_LOAD_FAILED\t{type(e).__name__}: {e}",
-            file=sys.stderr,
-        )
-        sys.exit(3)
-    finally:
-        _restore_stdout(saved)
+    # Suppress stdout during model loading (modelscope prints progress to stdout).
+    with _suppress_stdout():
+        try:
+            model = SenseVoiceSmall("iic/SenseVoiceSmall", quantize=False)
+        except TypeError as e:
+            # funasr-onnx raises TypeError when ONNX export is needed but funasr
+            # is not installed (it uses `raise "string"` instead of raise Exception).
+            print(
+                "STT_ERROR\tcode=MODEL_LOAD_FAILED\t"
+                f"ONNX model missing or export failed: {e}. "
+                "Install funasr to auto-export: pip install funasr",
+                file=sys.stderr,
+            )
+            sys.exit(3)
+        except Exception as e:
+            print(
+                f"STT_ERROR\tcode=MODEL_LOAD_FAILED\t{type(e).__name__}: {e}",
+                file=sys.stderr,
+            )
+            sys.exit(3)
 
     try:
         result = model(audio_path)
