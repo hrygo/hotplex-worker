@@ -413,6 +413,20 @@ export function useHotPlexRuntime({
       });
     };
 
+    // Delta batcher — accumulate streaming deltas and flush once per animation frame
+    // to reduce React re-renders from 30-60/s to at most 60fps (1 per frame).
+    let pendingDelta = '';
+    let deltaRafId = 0;
+
+    const flushDelta = () => {
+      const content = pendingDelta;
+      pendingDelta = '';
+      deltaRafId = 0;
+      if (content) {
+        appendDelta(content);
+      }
+    };
+
     // Handle reasoning/thinking content (appends to last reasoning part or creates one)
     const handleReasoning = (data: ReasoningData, _env: Envelope) => {
       if (!data) return;
@@ -450,8 +464,10 @@ export function useHotPlexRuntime({
 
     const handleDelta = (data: MessageDeltaData, env: Envelope) => {
       if (!data) return;
-      appendDelta(data.content || '');
-      setIsRunning(true);
+      pendingDelta += data.content || '';
+      if (!deltaRafId) {
+        deltaRafId = requestAnimationFrame(flushDelta);
+      }
     };
 
     const handleMessage = (data: MessageData, env: Envelope) => {
@@ -710,6 +726,7 @@ export function useHotPlexRuntime({
     });
 
     return () => {
+      if (deltaRafId) cancelAnimationFrame(deltaRafId);
       client.off('delta', handleDelta);
       client.off('message', handleMessage);
       client.off('done', handleDone);
