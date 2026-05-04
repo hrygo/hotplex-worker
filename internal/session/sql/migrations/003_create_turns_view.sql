@@ -58,7 +58,7 @@ CREATE VIEW v_turns AS
 SELECT * FROM v_turns_user
 UNION ALL
 SELECT * FROM v_turns_assistant
-ORDER BY session_id, created_at;
+ORDER BY session_id, created_at, CASE role WHEN 'user' THEN 0 ELSE 1 END;
 
 -- +goose Down
 DROP VIEW IF EXISTS v_turns;

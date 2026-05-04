@@ -396,7 +396,7 @@ func (b *Bridge) CaptureInbound(sessionID string, seq int64, eventType events.Ki
 }
 
 // captureSyntheticEvent writes a synthetic done-like event for crash/timeout/fresh_start scenarios.
-// Uses seq=0 and the done event type so the v_turns_assistant VIEW can surface it.
+// Allocates a real seq number to avoid colliding with the AEP "unassigned" convention (seq=0).
 func (b *Bridge) captureSyntheticEvent(sessionID, reason, message, source string) {
 	if b.collector == nil {
 		return
@@ -410,7 +410,8 @@ func (b *Bridge) captureSyntheticEvent(sessionID, reason, message, source string
 	if err != nil {
 		return
 	}
-	b.collector.Capture(sessionID, 0, events.Done, data, "outbound", source)
+	seq := b.hub.NextSeq(sessionID)
+	b.collector.Capture(sessionID, seq, events.Done, data, "outbound", source)
 }
 
 // extractMessageContent extracts text content from a message or message_delta event.

@@ -189,7 +189,7 @@ func (s *SQLiteStore) GetExpiredIdle(ctx context.Context, now time.Time) ([]stri
 	return collectIDs(rows)
 }
 
-// FK CASCADE handles conversation cleanup automatically.
+// Events lifecycle is managed independently — session deletion does not cascade to events.
 func (s *SQLiteStore) DeleteTerminated(ctx context.Context, cutoff time.Time) error {
 	_, err := s.db.ExecContext(ctx, queries["store.delete_terminated"], events.StateTerminated, cutoff)
 	if err != nil {
