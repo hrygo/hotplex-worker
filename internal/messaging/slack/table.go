@@ -239,7 +239,10 @@ func tryParseTableAt(text string, headerStart int) (tableMatch, bool) {
 		return tableMatch{}, false
 	}
 
-	tableEnd := sepEnd + 1
+	tableEnd := sepEnd
+	if tableEnd < len(text) {
+		tableEnd++ // skip past separator newline
+	}
 	for tableEnd < len(text) {
 		if text[tableEnd] == '\n' {
 			break
@@ -357,7 +360,11 @@ func buildMultiTableBlocks(content string) []slack.Block {
 func buildOneTableBlock(blockID string, t ParsedTable) *slack.TableBlock {
 	table := slack.NewTableBlock(blockID)
 	settings := make([]slack.ColumnSetting, len(t.Headers))
-	for j, align := range t.ColAligns {
+	for j := range settings {
+		align := slack.ColumnAlignmentLeft
+		if j < len(t.ColAligns) {
+			align = t.ColAligns[j]
+		}
 		settings[j] = slack.ColumnSetting{Align: align, IsWrapped: true}
 	}
 	table = table.WithColumnSettings(settings...)
