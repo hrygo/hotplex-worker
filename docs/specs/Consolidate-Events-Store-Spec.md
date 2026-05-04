@@ -52,7 +52,7 @@ HotPlex 维护两个独立 SQLite 数据库、三张持久化表：
 | 配置复杂度 | 两个路径 (`DB.Path` + `DB.EventsPath`) | 单一 `DB.Path` |
 | 连接数 | 3 个 `*sql.DB` (session + conversation + events) | 2 个 (session + events) |
 | 备份/恢复 | 两个文件需协调 | 单文件 |
-| GC 协调 | session 删除不级联 events（已知缺陷） | 同库便于 GC 流程调用 `DeleteBySession` |
+| GC 协调 | session 删除不级联 events | 同库，GC 不负责清理 events |
 | 写入争用 | 隔离（但 events.db 写入量本身不高） | WAL 模式 + busy_timeout=5s 充分缓解 |
 | goose 迁移 | 两套独立管理 | 统一管理 |
 
@@ -329,7 +329,7 @@ type TurnRecord struct {
 |------|------|
 | **数据一致性** | 消除双源写入，单点真实 |
 | **VIEW 直连** | events JOIN sessions 同库直连，无需 ATTACH 或应用层拼接 |
-| **GC 协调** | 同库便于 Session GC 流程中调用 `DeleteBySession` 清理 events |
+| **GC 协调** | 同库，GC 不清理 events，events 通过 `DeleteExpired` 独立过期 |
 | **代码量** | 净减 ~400 行（conversation_store + 独立 eventstore 迁移 + EventsPath 配置） |
 | **连接数** | 从 3 个 `*sql.DB` 降至 2 个 |
 | **配置** | 单一 `DB.Path`，移除 `EventsPath` |
@@ -349,7 +349,7 @@ type TurnRecord struct {
 
 | 测试 | 覆盖点 |
 |------|--------|
-| `TestEventsTable_DeleteBySession` | Session GC 调用 DeleteBySession 清理 events |
+| `TestEventsTable_DeleteBySession` | DeleteBySession 手动清理指定 session 的 events |
 | `TestEventsTable_SourceCheck` | source CHECK 约束生效 |
 | `TestTurnsView_UserInput` | v_turns_user JOIN sessions 取 platform/owner_id |
 | `TestTurnsView_AssistantResponse` | v_turns_assistant 关联 message + done + sessions |
