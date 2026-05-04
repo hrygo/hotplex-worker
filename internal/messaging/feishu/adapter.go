@@ -1172,7 +1172,9 @@ func (a *Adapter) saveMediaBytes(data []byte, media *MediaInfo, ext string) (str
 
 	filename := media.Key + ext
 	if media.Name != "" {
-		filename = media.Key + "_" + media.Name
+		if base := filepath.Base(media.Name); base != "." && base != ".." && base != string(filepath.Separator) {
+			filename = media.Key + "_" + base
+		}
 	}
 	filePath := filepath.Join(mediaDir, filename)
 

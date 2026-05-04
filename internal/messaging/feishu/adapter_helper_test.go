@@ -15,6 +15,7 @@ import (
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	"github.com/stretchr/testify/require"
 
+	"github.com/hrygo/hotplex/internal/config"
 	"github.com/hrygo/hotplex/internal/messaging"
 	"github.com/hrygo/hotplex/internal/messaging/stt"
 	"github.com/hrygo/hotplex/pkg/events"
@@ -242,12 +243,13 @@ func TestSaveMediaBytes(t *testing.T) {
 	adapter := newTestAdapter(t)
 
 	tests := []struct {
-		name      string
-		media     *MediaInfo
-		data      []byte
-		wantErr   bool
-		checkFile bool
-		checkName bool
+		name       string
+		media      *MediaInfo
+		data       []byte
+		wantErr    bool
+		checkFile  bool
+		checkName  bool
+		checkInDir bool
 	}{
 		{
 			name:      "image jpg",
@@ -263,6 +265,30 @@ func TestSaveMediaBytes(t *testing.T) {
 			wantErr:   false,
 			checkFile: true,
 			checkName: true,
+		},
+		{
+			name:       "path traversal with dotdot",
+			media:      &MediaInfo{Key: "evil_key", Type: "file", Name: "../../../etc/crontab"},
+			data:       []byte("evil"),
+			wantErr:    false,
+			checkFile:  true,
+			checkInDir: true,
+		},
+		{
+			name:       "dot name falls back to key",
+			media:      &MediaInfo{Key: "dot_key", Type: "image", Name: "."},
+			data:       []byte("data"),
+			wantErr:    false,
+			checkFile:  true,
+			checkInDir: true,
+		},
+		{
+			name:       "dotdot name falls back to key",
+			media:      &MediaInfo{Key: "dd_key", Type: "image", Name: ".."},
+			data:       []byte("data"),
+			wantErr:    false,
+			checkFile:  true,
+			checkInDir: true,
 		},
 	}
 
@@ -280,6 +306,13 @@ func TestSaveMediaBytes(t *testing.T) {
 				data, err := os.ReadFile(path)
 				require.NoError(t, err)
 				require.Equal(t, tt.data, data)
+				if tt.checkInDir {
+					mediaDir := filepath.Join(config.TempBaseDir(), "media", tt.media.Type+"s")
+					absPath, dirErr := filepath.Abs(path)
+					require.NoError(t, dirErr)
+					require.True(t, strings.HasPrefix(absPath, mediaDir+string(filepath.Separator)),
+						"file %q escaped media dir %q", absPath, mediaDir)
+				}
 				t.Cleanup(func() { os.RemoveAll(filepath.Dir(path)) })
 			}
 		})

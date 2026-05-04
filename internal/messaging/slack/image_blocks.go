@@ -37,7 +37,7 @@ func extractImages(text string) (parts []imagePart, remaining string) {
 		trimmed := strings.TrimSpace(line)
 
 		if isLocalMediaPath(trimmed) {
-			imgURL, altText := localFileToImagePart(trimmed)
+			imgURL, altText := localFileToImagePart(filepath.Clean(trimmed))
 			if imgURL != "" {
 				parts = append(parts, imagePart{URL: imgURL, AltText: altText})
 				continue
@@ -55,8 +55,9 @@ func extractImages(text string) (parts []imagePart, remaining string) {
 }
 
 func isLocalMediaPath(s string) bool {
-	return strings.HasPrefix(s, mediaImagesPrefix) ||
-		strings.HasPrefix(s, mediaVideosPrefix)
+	cleaned := filepath.Clean(s)
+	return strings.HasPrefix(cleaned, mediaImagesPrefix) ||
+		strings.HasPrefix(cleaned, mediaVideosPrefix)
 }
 
 func isImageURL(s string) bool {
