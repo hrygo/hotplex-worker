@@ -147,6 +147,8 @@ func (a *Adapter) registerInteraction(requestID, sessionID, ownerID string, kind
 		CreatedAt: time.Now(),
 		Timeout:   messaging.DefaultInteractionTimeout,
 		SendResponse: func(metadata map[string]any) {
+			respCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
 			env := &events.Envelope{
 				Version:   events.Version,
 				ID:        requestID,
@@ -161,7 +163,7 @@ func (a *Adapter) registerInteraction(requestID, sessionID, ownerID string, kind
 				OwnerID: ownerID,
 			}
 			if a.Bridge() != nil {
-				if err := a.Bridge().Handle(context.Background(), env, conn); err != nil {
+				if err := a.Bridge().Handle(respCtx, env, conn); err != nil {
 					a.Log.Error("interaction: failed to send response",
 						"request_id", requestID,
 						"session_id", sessionID,

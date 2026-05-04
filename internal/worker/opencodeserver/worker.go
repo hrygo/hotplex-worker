@@ -498,9 +498,7 @@ func (w *Worker) applyPermissions(ctx context.Context, session worker.SessionInf
 
 	// Default bypass (preserves existing behavior), configurable override.
 	mode := "bypassPermissions"
-	if session.SkipPermissions {
-		mode = "bypassPermissions"
-	} else if session.PermissionMode != "" {
+	if session.PermissionMode != "" {
 		mode = session.PermissionMode
 	}
 

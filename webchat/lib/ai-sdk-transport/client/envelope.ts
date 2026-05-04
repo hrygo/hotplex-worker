@@ -235,7 +235,7 @@ export function createElicitationResponseEnvelope(
     sessionId,
     1,
     EventKind.ElicitationResponse,
-    { id: elicitationId, action, ...((content !== undefined) ? { content } : {}) }
+    { id: elicitationId, action, ...(content !== undefined && { content }) }
   );
 }
 

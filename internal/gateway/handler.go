@@ -94,17 +94,12 @@ func (h *Handler) handleInput(ctx context.Context, env *events.Envelope) error {
 
 	content, _ := data["content"].(string)
 
-	// Extract metadata for interaction responses (permission/question/elicitation).
-	var metadata map[string]any
-	if md, mdOK := data["metadata"].(map[string]any); mdOK && len(md) > 0 {
-		metadata = md
-	}
-
-	// Interaction responses: skip command detection, state transitions, and conversation store.
-	if metadata != nil {
+	// Interaction responses: extract metadata and deliver directly to worker,
+	// skipping command detection, state transitions, and conversation store.
+	if md, ok := data["metadata"].(map[string]any); ok && len(md) > 0 {
 		w := h.sm.GetWorker(env.SessionID)
 		if w != nil {
-			if err := w.Input(ctx, content, metadata); err != nil {
+			if err := w.Input(ctx, content, md); err != nil {
 				h.log.Warn("gateway: worker interaction response", "err", err, "session_id", env.SessionID)
 			}
 		} else {
