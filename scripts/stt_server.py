@@ -42,6 +42,7 @@ import json
 import os
 import re
 import sys
+from contextlib import contextmanager
 
 
 def _setup_pdeathsig():
@@ -69,19 +70,19 @@ def _setup_pdeathsig():
 # ---------------------------------------------------------------------------
 
 
+@contextmanager
 def _suppress_stdout():
-    """Redirect stdout to /dev/null, returning the original fd."""
+    """Context manager that redirects stdout to /dev/null and restores on exit."""
     devnull = os.open(os.devnull, os.O_WRONLY)
     saved = os.dup(1)
     os.dup2(devnull, 1)
     os.close(devnull)
-    return saved
-
-
-def _restore_stdout(saved_fd):
-    sys.stdout.flush()
-    os.dup2(saved_fd, 1)
-    os.close(saved_fd)
+    try:
+        yield
+    finally:
+        sys.stdout.flush()
+        os.dup2(saved, 1)
+        os.close(saved)
 
 
 def create_funasr_backend(model_name: str):
@@ -92,9 +93,11 @@ def create_funasr_backend(model_name: str):
         _write_response(error="DEP_MISSING: funasr-onnx not installed. Run: pip install funasr-onnx")
         sys.exit(1)
 
-    # Suppress stdout during model loading — modelscope/funasr print progress to stdout.
-    saved = _suppress_stdout()
-    try:
+    # Buffer error message — stdout is suppressed during model loading.
+    # We write the response after the context manager restores stdout.
+    load_error = ""
+
+    with _suppress_stdout():
         # Auto-patch ONNX model if needed (Less node type mismatch).
         try:
             from modelscope.hub.snapshot_download import snapshot_download  # type: ignore
@@ -110,12 +113,19 @@ def create_funasr_backend(model_name: str):
 
         try:
             model = SenseVoiceSmall(model_name, quantize=False)
+        except TypeError as e:
+            # funasr-onnx raises TypeError when ONNX export is needed but funasr
+            # is not installed (it uses `raise "string"` instead of raise Exception).
+            load_error = (
+                f"MODEL_LOAD_FAILED: ONNX model missing or export failed: {e}. "
+                "Install funasr to auto-export: pip install funasr"
+            )
         except Exception as e:
-            _restore_stdout(saved)
-            _write_response(error=f"MODEL_LOAD_FAILED: {type(e).__name__}: {e}")
-            sys.exit(1)
-    finally:
-        _restore_stdout(saved)
+            load_error = f"MODEL_LOAD_FAILED: {type(e).__name__}: {e}"
+
+    if load_error:
+        _write_response(error=load_error)
+        sys.exit(1)
 
     print(f"[stt] model loaded: {model_name}", file=sys.stderr)
     return lambda path: _funasr_transcribe(model, path)

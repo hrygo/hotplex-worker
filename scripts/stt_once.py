@@ -21,6 +21,7 @@ import json
 import os
 import re
 import sys
+from contextlib import contextmanager
 
 # Pattern: <|lang|><|EMOTION|><|EVENT|><|woitn|>text
 _SENSEVOICE_TAG_RE = re.compile(r"<\|([^|]*)\|>")
@@ -42,19 +43,32 @@ def _write_json(obj: dict) -> None:
     sys.stdout.flush()
 
 
+@contextmanager
 def _suppress_stdout():
-    """Redirect stdout to /dev/null during model loading."""
+    """Context manager that redirects stdout to /dev/null and restores on exit."""
     devnull = os.open(os.devnull, os.O_WRONLY)
     saved = os.dup(1)
     os.dup2(devnull, 1)
     os.close(devnull)
-    return saved
+    try:
+        yield
+    finally:
+        sys.stdout.flush()
+        os.dup2(saved, 1)
+        os.close(saved)
 
 
-def _restore_stdout(saved_fd):
-    sys.stdout.flush()
-    os.dup2(saved_fd, 1)
-    os.close(saved_fd)
+def _check_onnx_model(model_dir: str) -> str | None:
+    """Check if ONNX model files exist. Returns error message or None."""
+    onnx_path = os.path.join(model_dir, "model.onnx")
+    quant_path = os.path.join(model_dir, "model_quant.onnx")
+    if os.path.exists(onnx_path) or os.path.exists(quant_path):
+        return None
+    return (
+        f"ONNX model not found in {model_dir}. "
+        "Export from PyTorch: pip install funasr && "
+        "python3 -c \"from funasr import AutoModel; AutoModel(model='{model}').export(type='onnx')\""
+    )
 
 
 def main():
@@ -73,18 +87,27 @@ def main():
         )
         sys.exit(2)
 
-    saved = _suppress_stdout()
-    try:
-        model = SenseVoiceSmall("iic/SenseVoiceSmall", quantize=False)
-    except Exception as e:
-        _restore_stdout(saved)
-        print(
-            f"STT_ERROR\tcode=MODEL_LOAD_FAILED\t{type(e).__name__}: {e}",
-            file=sys.stderr,
-        )
-        sys.exit(3)
-    finally:
-        _restore_stdout(saved)
+    # Load model with stdout suppressed (modelscope prints progress to stdout).
+    # Use context manager to guarantee _restore_stdout is called exactly once.
+    with _suppress_stdout():
+        try:
+            model = SenseVoiceSmall("iic/SenseVoiceSmall", quantize=False)
+        except TypeError as e:
+            # funasr-onnx raises TypeError when ONNX export is needed but funasr
+            # is not installed (it uses `raise "string"` instead of raise Exception).
+            print(
+                "STT_ERROR\tcode=MODEL_LOAD_FAILED\t"
+                f"ONNX model missing or export failed: {e}. "
+                "Install funasr to auto-export: pip install funasr",
+                file=sys.stderr,
+            )
+            sys.exit(3)
+        except Exception as e:
+            print(
+                f"STT_ERROR\tcode=MODEL_LOAD_FAILED\t{type(e).__name__}: {e}",
+                file=sys.stderr,
+            )
+            sys.exit(3)
 
     try:
         result = model(audio_path)
