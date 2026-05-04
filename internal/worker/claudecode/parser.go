@@ -300,8 +300,16 @@ func (p *Parser) parseResult(msg *SDKMessage) ([]*WorkerEvent, error) {
 // All subtypes (can_use_tool, set_*, mcp_*, etc.) are returned as
 // EventControl with Payload=*ControlRequestPayload, routing by Subtype in worker.go.
 func (p *Parser) parseControlRequest(msg *SDKMessage) ([]*WorkerEvent, error) {
+	// Claude Code uses "request" as the inner payload field for control_request.
+	payload := msg.Request
+	if len(payload) == 0 {
+		payload = msg.Response // fallback for older protocol versions
+	}
+	if len(payload) == 0 {
+		return nil, fmt.Errorf("parser: control_request has no request/response payload")
+	}
 	var req ControlRequestPayload
-	if err := json.Unmarshal(msg.Response, &req); err != nil {
+	if err := json.Unmarshal(payload, &req); err != nil {
 		return nil, fmt.Errorf("parser: unmarshal control_request: %w", err)
 	}
 	req.RequestID = msg.RequestID // canonical source is outer SDKMessage

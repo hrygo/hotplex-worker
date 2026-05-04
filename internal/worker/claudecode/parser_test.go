@@ -191,6 +191,57 @@ func TestParser_ParseLine_ControlRequestMCPStatus(t *testing.T) {
 	require.Equal(t, "mcp_status", cr.Subtype)
 }
 
+func TestParser_ParseLine_ControlRequest_WithRequestField(t *testing.T) {
+	log := newTestLogger()
+	parser := NewParser(log)
+
+	tests := []struct {
+		name    string
+		line    string
+		wantID  string
+		wantSub string
+		wantOk  bool
+	}{
+		{
+			name:    "can_use_tool with request field (actual Claude Code format)",
+			line:    `{"type":"control_request","request_id":"req_auq_1","request":{"subtype":"can_use_tool","tool_name":"AskUserQuestion","input":{"questions":[{"question":"PR strategy?","header":"PR","options":[{"label":"Single PR","description":"All phases in one PR"}],"multiSelect":false}]},"tool_use_id":"call_abc123"}}`,
+			wantID:  "req_auq_1",
+			wantSub: "can_use_tool",
+			wantOk:  true,
+		},
+		{
+			name:    "can_use_tool with response field (backward compat)",
+			line:    `{"type":"control_request","request_id":"req_old","response":{"subtype":"can_use_tool","tool_name":"read_file","input":{"path":"/app/main.go"}}}`,
+			wantID:  "req_old",
+			wantSub: "can_use_tool",
+			wantOk:  true,
+		},
+		{
+			name:   "control_request with neither request nor response field",
+			line:   `{"type":"control_request","request_id":"req_empty"}`,
+			wantOk: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			events, err := parser.ParseLine(tt.line)
+			if !tt.wantOk {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Len(t, events, 1)
+			require.Equal(t, EventControl, events[0].Type)
+			cr, ok := events[0].Payload.(*ControlRequestPayload)
+			require.True(t, ok)
+			require.Equal(t, tt.wantID, cr.RequestID)
+			require.Equal(t, tt.wantSub, cr.Subtype)
+		})
+	}
+}
+
 func TestParser_ParseLine_SystemStatus(t *testing.T) {
 	log := newTestLogger()
 	parser := NewParser(log)
