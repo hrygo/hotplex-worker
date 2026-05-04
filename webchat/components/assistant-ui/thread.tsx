@@ -135,7 +135,7 @@ function MessageActions({ message, isUser }: { message: any, isUser?: boolean })
   );
 }
 
-function AssistantMessage({ message }: { message: any }) {
+const AssistantMessage = memo(function AssistantMessage({ message }: { message: any }) {
   const [expandedTools, setExpandedTools] = useState<Record<string, boolean>>({});
 
   return (
@@ -251,7 +251,11 @@ function AssistantMessage({ message }: { message: any }) {
       </div>
     </motion.div>
   );
-}
+}, (prev, next) => {
+  if (prev.message.id !== next.message.id) return false;
+  if ((next.message as any)?.status?.type === 'running') return false;
+  return prev.message.content === next.message.content;
+});
 
 /* ============================================================
    Rest of the components (UserMessage, ReasoningBlock, Composer, etc.)
@@ -302,7 +306,7 @@ function ReasoningBlock({ text }: { text: string }) {
   );
 }
 
-function UserMessage({ message }: { message: any }) {
+const UserMessage = memo(function UserMessage({ message }: { message: any }) {
   return (
     <motion.div className="group flex items-start justify-end gap-4 mb-8" variants={messageVariants} initial="hidden" animate="visible">
       <div className="relative max-w-[85%] flex-1 flex flex-col items-end min-w-0 group/msg">
@@ -326,7 +330,7 @@ function UserMessage({ message }: { message: any }) {
       </div>
     </motion.div>
   );
-}
+}, (prev, next) => prev.message.id === next.message.id);
 
 function WelcomeScreen() {
   return (
