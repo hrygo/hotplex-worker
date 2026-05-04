@@ -508,7 +508,7 @@ var (
 	gitBranchMap = map[string]gitBranchEntry{} // dir → cached branch
 )
 
-const gitBranchTTL = 5 * time.Minute
+const gitBranchTTL = 30 * time.Minute
 
 type gitBranchEntry struct {
 	branch string
@@ -525,7 +525,7 @@ func checkGitAvailable() bool {
 
 // gitBranchOf returns the current git branch name for the given directory, or empty string.
 // Best-effort: 2s timeout, skips if git is not installed, errors silently ignored.
-// Results are cached per directory with a 5-minute TTL.
+// Results are cached per directory with a 30-minute TTL.
 func gitBranchOf(dir string) string {
 	if !checkGitAvailable() {
 		return ""
