@@ -13,9 +13,9 @@ estimated_hours: 8
 
 # 合并 conversation 表到 events 表规格书
 
-> 版本: v3.0
+> 版本: v3.1
 > 日期: 2026-05-04
-> 状态: Proposed (audited)
+> 状态: Proposed (audited ×2)
 > 架构决策: 单数据库（合并 events.db → hotplex.db），接受删库重来
 
 ---
@@ -116,12 +116,13 @@ DROP TABLE IF EXISTS events;
 
 **修改**: `internal/eventstore/store.go`
 
-- `NewSQLiteStore` 改为接收 `*sql.DB`（由 session store 共享），不再自行开库
-- 移除 `sqlutil.OpenDB` 调用和 `dbPath` 参数
+- `NewSQLiteStore` 改为接收 `*sql.DB`（由 session store 共享），不再自行开库；移除 `dbPath` 和 `dbCfg` 参数
+- 移除 `sqlutil.OpenDB` 调用
 - 移除 `sql/schema.sql` 嵌入（schema 由 session store goose 管理）
 - `StoredEvent` 增加 `Source string` 字段
-- `scanEvents` 扫描 7 列
-- `Append` 传 7 参数（含 source）
+- `scanEvents` 扫描 7 列（含 source）
+- `Append` / `sqliteTx.Append` 传 7 参数（含 source）
+- `Close()` 增加 `ownsDB bool` 守卫：共享 DB 时为 `false`，不调用 `db.Close()`；仅独立测试场景为 `true`
 
 **修改**: `internal/eventstore/collector.go`
 
@@ -136,6 +137,7 @@ DROP TABLE IF EXISTS events;
 - EventStore 使用 session store 的 `*sql.DB` 连接
 - 移除 `cfg.DB.EventsPath` 引用
 - EventStore 不再独立 Close（由 session store 统一管理生命周期）
+- Session store `MaxOpenConns` 从 2 提升至 3（共享连接池：session + events 并发写入）
 
 **修改**: `internal/eventstore/sql/queries/events.*`
 
@@ -230,16 +232,17 @@ DROP VIEW IF EXISTS v_turns_user;
 **`GET /api/sessions/{id}/history`** — `internal/gateway/api.go:289-355`
 
 当前：`g.convStore.GetBySession()` → conversation 表
-改为：`g.eventStore.GetTurns()` → `v_turns` 视图
+改为：`g.eventStore.QueryTurns()` → `v_turns` 视图
 
 **`GET /admin/sessions/{id}/stats`** — `internal/admin/sessions.go:136-159`
 
 当前：`a.convStore.SessionStats()` → conversation 聚合
-改为：`a.eventStore.SessionTurnStats()` → `v_turns_assistant` 聚合
+改为：`a.eventStore.QueryTurnStats()` → `v_turns_assistant` 聚合
 
-新增 `TurnRecord` 结构和三个接口方法：
+新增 `TurnRecord` 结构（替代现有 `ConversationRecord`，JSON 字段保持兼容）和三个接口方法（命名遵循现有 `Query*` 前缀惯例）：
 
 ```go
+// TurnRecord 替代 ConversationRecord，JSON 字段保持 API 兼容。
 type TurnRecord struct {
     Seq        int64   `json:"seq"`
     Role       string  `json:"role"`
@@ -305,7 +308,7 @@ type TurnRecord struct {
 | 7 | `cmd/hotplex/gateway_run.go` | 0 | 修改（共享 DB，移除 EventsPath） |
 | 8 | `internal/config/config.go` | 0 | 修改（EventsPath deprecated） |
 | 9 | `internal/session/sql/migrations/003_create_turns_view.sql` | 1 | 新增 |
-| 10 | `internal/eventstore/store.go` | 2 | 修改（GetTurns/GetTurnsBefore/SessionTurnStats） |
+| 10 | `internal/eventstore/store.go` | 2 | 修改（QueryTurns/QueryTurnsBefore/QueryTurnStats） |
 | 11 | `internal/gateway/api.go` | 2 | 修改 |
 | 12 | `internal/admin/sessions.go` | 2 | 修改 |
 | 13 | `internal/admin/admin.go` | 2 | 修改 |
@@ -357,7 +360,7 @@ type TurnRecord struct {
 | `TestTurnsView_CrashSource` | source=crash 写入和查询 |
 | `TestTurnsView_TimeoutSource` | source=timeout 写入和查询 |
 | `TestTurnsView_FreshStartSource` | source=fresh_start 写入和查询 |
-| `TestGetTurns_Pagination` | limit/offset 分页 |
-| `TestGetTurnsBefore_Cursor` | before_seq 游标分页 |
-| `TestSessionTurnStats_Aggregation` | 聚合统计一致 |
+| `TestQueryTurns_Pagination` | limit/offset 分页 |
+| `TestQueryTurnsBefore_Cursor` | before_seq 游标分页 |
+| `TestQueryTurnStats_Aggregation` | 聚合统计一致 |
 | `TestHistoryAPI_BackwardCompatible` | API JSON 兼容 |
