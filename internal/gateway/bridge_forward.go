@@ -504,7 +504,7 @@ func (b *Bridge) injectSessionStats(env *events.Envelope, acc *sessionAccumulato
 var (
 	gitAvailable bool
 	gitOnce      sync.Once
-	gitBranchMu  sync.Mutex
+	gitBranchMu  sync.RWMutex
 	gitBranchMap = map[string]gitBranchEntry{} // dir → cached branch
 )
 
@@ -532,13 +532,13 @@ func gitBranchOf(dir string) string {
 	}
 
 	now := time.Now()
-	gitBranchMu.Lock()
+	gitBranchMu.RLock()
 	if e, ok := gitBranchMap[dir]; ok && now.Before(e.expiry) {
 		branch := e.branch
-		gitBranchMu.Unlock()
+		gitBranchMu.RUnlock()
 		return branch
 	}
-	gitBranchMu.Unlock()
+	gitBranchMu.RUnlock()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
