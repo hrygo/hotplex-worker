@@ -314,10 +314,20 @@ func diffConfigs(prev, next *Config) []ConfigChange {
 	return changes
 }
 
+// sensitiveFields are fields whose values should be redacted in audit logs.
+var sensitiveFields = map[string]bool{
+	"security.api_keys":   true,
+	"security.jwt_secret": true,
+}
+
 // resolveField extracts a config field value by its dot-separated path
 // (e.g. "gateway.addr" → Config.Gateway.Addr) using reflection.
 // Returns the value as a string for comparison and audit logging.
+// Sensitive fields are redacted to prevent credential leakage.
 func resolveField(cfg *Config, path string) string {
+	if sensitiveFields[path] {
+		return "[REDACTED]"
+	}
 	parts := strings.Split(path, ".")
 	v := reflect.ValueOf(cfg).Elem()
 

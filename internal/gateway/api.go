@@ -69,7 +69,7 @@ func (g *GatewayAPI) ListSessions(w http.ResponseWriter, r *http.Request) {
 	platform := platformWebChat // Default to webchat as requested
 
 	if l := r.URL.Query().Get("limit"); l != "" {
-		if v, err := strconv.Atoi(l); err == nil && v > 0 {
+		if v, err := strconv.Atoi(l); err == nil && v > 0 && v <= 500 {
 			limit = v
 		}
 	}
@@ -163,7 +163,8 @@ func (g *GatewayAPI) CreateSession(w http.ResponseWriter, r *http.Request) {
 }
 
 func (g *GatewayAPI) GetSession(w http.ResponseWriter, r *http.Request) {
-	if _, _, err := g.auth.AuthenticateRequest(r); err != nil {
+	userID, _, err := g.auth.AuthenticateRequest(r)
+	if err != nil {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -177,17 +178,32 @@ func (g *GatewayAPI) GetSession(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
+	if si.UserID != userID {
+		http.Error(w, "ownership required", http.StatusForbidden)
+		return
+	}
 	respondJSON(w, si)
 }
 
 func (g *GatewayAPI) DeleteSession(w http.ResponseWriter, r *http.Request) {
-	if _, _, err := g.auth.AuthenticateRequest(r); err != nil {
+	userID, _, err := g.auth.AuthenticateRequest(r)
+	if err != nil {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	id := r.PathValue("id")
 	if id == "" {
 		http.Error(w, "session id required", http.StatusBadRequest)
+		return
+	}
+
+	si, err := g.sm.Get(id)
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	if si.UserID != userID {
+		http.Error(w, "ownership required", http.StatusForbidden)
 		return
 	}
 
