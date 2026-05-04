@@ -94,6 +94,25 @@ func (h *Handler) handleInput(ctx context.Context, env *events.Envelope) error {
 
 	content, _ := data["content"].(string)
 
+	// Extract metadata for interaction responses (permission/question/elicitation).
+	var metadata map[string]any
+	if md, mdOK := data["metadata"].(map[string]any); mdOK && len(md) > 0 {
+		metadata = md
+	}
+
+	// Interaction responses: skip command detection, state transitions, and conversation store.
+	if metadata != nil {
+		w := h.sm.GetWorker(env.SessionID)
+		if w != nil {
+			if err := w.Input(ctx, content, metadata); err != nil {
+				h.log.Warn("gateway: worker interaction response", "err", err, "session_id", env.SessionID)
+			}
+		} else {
+			h.log.Warn("gateway: interaction response but no worker", "session_id", env.SessionID)
+		}
+		return nil
+	}
+
 	// --- Command detection (parity with Slack/Feishu adapters) ---
 
 	// Help command: reply directly without involving the worker.

@@ -50,7 +50,7 @@ func (c *FeishuConn) sendPermissionRequest(ctx context.Context, env *events.Enve
 		return fmt.Errorf("feishu: send permission card: %w", err)
 	}
 
-	c.adapter.registerInteraction(data.ID, env.SessionID, events.PermissionRequest, c)
+	c.adapter.registerInteraction(data.ID, env.SessionID, env.OwnerID, events.PermissionRequest, c)
 
 	c.adapter.Log.Info("feishu: permission request posted",
 		"request_id", data.ID,
@@ -97,7 +97,7 @@ func (c *FeishuConn) sendQuestionRequest(ctx context.Context, env *events.Envelo
 		return fmt.Errorf("feishu: send question card: %w", err)
 	}
 
-	c.adapter.registerInteraction(data.ID, env.SessionID, events.QuestionRequest, c)
+	c.adapter.registerInteraction(data.ID, env.SessionID, env.OwnerID, events.QuestionRequest, c)
 
 	c.adapter.Log.Info("feishu: question request posted",
 		"request_id", data.ID,
@@ -129,7 +129,7 @@ func (c *FeishuConn) sendElicitationRequest(ctx context.Context, env *events.Env
 		return fmt.Errorf("feishu: send elicitation card: %w", err)
 	}
 
-	c.adapter.registerInteraction(data.ID, env.SessionID, events.ElicitationRequest, c)
+	c.adapter.registerInteraction(data.ID, env.SessionID, env.OwnerID, events.ElicitationRequest, c)
 
 	c.adapter.Log.Info("feishu: elicitation request posted",
 		"request_id", data.ID,
@@ -139,7 +139,7 @@ func (c *FeishuConn) sendElicitationRequest(ctx context.Context, env *events.Env
 }
 
 // registerInteraction registers a pending interaction with the adapter's manager.
-func (a *Adapter) registerInteraction(requestID, sessionID string, kind events.Kind, conn *FeishuConn) {
+func (a *Adapter) registerInteraction(requestID, sessionID, ownerID string, kind events.Kind, conn *FeishuConn) {
 	a.Interactions.Register(&messaging.PendingInteraction{
 		ID:        requestID,
 		SessionID: sessionID,
@@ -158,9 +158,19 @@ func (a *Adapter) registerInteraction(requestID, sessionID string, kind events.K
 						"metadata": metadata,
 					},
 				},
+				OwnerID: ownerID,
 			}
 			if a.Bridge() != nil {
-				_ = a.Bridge().Handle(context.Background(), env, conn)
+				if err := a.Bridge().Handle(context.Background(), env, conn); err != nil {
+					a.Log.Error("interaction: failed to send response",
+						"request_id", requestID,
+						"session_id", sessionID,
+						"err", err)
+				}
+			} else {
+				a.Log.Error("interaction: bridge not available",
+					"request_id", requestID,
+					"session_id", sessionID)
 			}
 		},
 	})

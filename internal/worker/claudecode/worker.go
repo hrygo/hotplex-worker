@@ -221,7 +221,7 @@ func (w *Worker) buildCLIArgs(session worker.SessionInfo, resume bool) []string 
 		"--verbose", // Required for stream-json mode
 		"--output-format", "stream-json",
 		"--input-format", "stream-json",
-		"--dangerously-skip-permissions",
+		"--permission-prompt-tool", "stdio", // Enable control_request/control_response protocol
 	}
 
 	// Only two session modes:
@@ -233,11 +233,16 @@ func (w *Worker) buildCLIArgs(session worker.SessionInfo, resume bool) []string 
 		args = append(args, "--session-id", aep.ParseSessionID(session.SessionID))
 	}
 
-	if session.PermissionMode != "" {
-		args = append(args, "--permission-mode", session.PermissionMode)
-	}
+	// Permission mode: default bypass (preserves existing behavior), configurable override.
+	// --permission-prompt-tool stdio + --dangerously-skip-permissions:
+	//   - Normal operations: step 2a bypass → allow (no control_request)
+	//   - Bypass-immune ops (.claude/, .git/, shell config): step 1g → ask → control_request
 	if session.SkipPermissions {
 		args = append(args, "--dangerously-skip-permissions")
+	} else if session.PermissionMode != "" {
+		args = append(args, "--permission-mode", session.PermissionMode)
+	} else {
+		args = append(args, "--dangerously-skip-permissions") // default bypass
 	}
 	if len(session.DisallowedTools) > 0 {
 		args = append(args, "--disallowed-tools", joinTools(session.DisallowedTools))

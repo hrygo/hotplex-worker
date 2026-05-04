@@ -487,7 +487,7 @@ func (w *Worker) Rewind(ctx context.Context, targetID string) error {
 
 // ─── Internal Methods ─────────────────────────────────────────────────────────
 
-func (w *Worker) applyPermissions(ctx context.Context, _ worker.SessionInfo) error {
+func (w *Worker) applyPermissions(ctx context.Context, session worker.SessionInfo) error {
 	w.Mu.Lock()
 	cmd := w.cmd
 	w.Mu.Unlock()
@@ -496,8 +496,16 @@ func (w *Worker) applyPermissions(ctx context.Context, _ worker.SessionInfo) err
 		return fmt.Errorf("commander not initialized")
 	}
 
+	// Default bypass (preserves existing behavior), configurable override.
+	mode := "bypassPermissions"
+	if session.SkipPermissions {
+		mode = "bypassPermissions"
+	} else if session.PermissionMode != "" {
+		mode = session.PermissionMode
+	}
+
 	_, err := cmd.SendControlRequest(ctx, "set_permission_mode", map[string]any{
-		"mode": "bypassPermissions",
+		"mode": mode,
 	})
 	return err
 }
