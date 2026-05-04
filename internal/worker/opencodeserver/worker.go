@@ -250,6 +250,15 @@ func (w *Worker) Input(ctx context.Context, content string, metadata map[string]
 			return w.httpPost(ctx, fmt.Sprintf("/question/%s/reply", reqID),
 				map[string][][]string{"answers": answersToArrays(answers)})
 		}
+		if eResp, ok := metadata["elicitation_response"].(map[string]any); ok {
+			reqID, _ := eResp["id"].(string)
+			action, _ := eResp["action"].(string)
+			payload := map[string]any{"action": action}
+			if content, ok := eResp["content"].(map[string]any); ok {
+				payload["content"] = content
+			}
+			return w.httpPost(ctx, fmt.Sprintf("/elicitation/%s/reply", reqID), payload)
+		}
 	}
 
 	msg := events.NewEnvelope(
@@ -487,7 +496,7 @@ func (w *Worker) Rewind(ctx context.Context, targetID string) error {
 
 // ─── Internal Methods ─────────────────────────────────────────────────────────
 
-func (w *Worker) applyPermissions(ctx context.Context, _ worker.SessionInfo) error {
+func (w *Worker) applyPermissions(ctx context.Context, session worker.SessionInfo) error {
 	w.Mu.Lock()
 	cmd := w.cmd
 	w.Mu.Unlock()
@@ -496,8 +505,14 @@ func (w *Worker) applyPermissions(ctx context.Context, _ worker.SessionInfo) err
 		return fmt.Errorf("commander not initialized")
 	}
 
+	// Default bypass (preserves existing behavior), configurable override.
+	mode := "bypassPermissions"
+	if session.PermissionMode != "" {
+		mode = session.PermissionMode
+	}
+
 	_, err := cmd.SendControlRequest(ctx, "set_permission_mode", map[string]any{
-		"mode": "bypassPermissions",
+		"mode": mode,
 	})
 	return err
 }

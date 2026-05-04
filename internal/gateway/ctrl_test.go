@@ -140,6 +140,13 @@ func inputEnvelope(sessionID, content string) *events.Envelope {
 	})
 }
 
+func inputEnvelopeWithMetadata(sessionID, content string, metadata map[string]any) *events.Envelope {
+	return events.NewEnvelope(aep.NewID(), sessionID, 1, events.Input, map[string]any{
+		"content":  content,
+		"metadata": metadata,
+	})
+}
+
 func pingEnvelope(sessionID string) *events.Envelope {
 	return events.NewEnvelope(aep.NewID(), sessionID, 1, events.Ping, nil)
 }
@@ -215,6 +222,137 @@ func TestHandleInput_RunningSession_AcceptsInput(t *testing.T) {
 	err = handler.handleInput(context.Background(), env)
 	// No error — input is accepted and delivered to worker.
 	require.NoError(t, err)
+}
+
+// ─── handleInput: interaction response routing tests ────────────────────────
+
+func TestHandleInput_InteractionResponse_Permission(t *testing.T) {
+	t.Parallel()
+	handler, mgr, _, _ := newHandlerWithRealStore(t)
+
+	const sid = "sess_perm_resp"
+	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "", "")
+	require.NoError(t, err)
+	require.NoError(t, mgr.Transition(context.Background(), sid, events.StateRunning))
+
+	w := new(mockWorkerForHandler)
+	w.On("Input", mock.Anything, "", mock.Anything).Return(nil)
+	w.On("Terminate", mock.Anything).Return(nil).Maybe()
+	mgr.AttachWorker(sid, w)
+
+	md := map[string]any{
+		"permission_response": map[string]any{
+			"request_id": "req_1",
+			"allowed":    true,
+		},
+	}
+	env := inputEnvelopeWithMetadata(sid, "", md)
+	err = handler.handleInput(context.Background(), env)
+	require.NoError(t, err)
+	w.AssertCalled(t, "Input", mock.Anything, "", mock.MatchedBy(func(md map[string]any) bool {
+		pr, ok := md["permission_response"].(map[string]any)
+		return ok && pr["request_id"] == "req_1"
+	}))
+}
+
+func TestHandleInput_InteractionResponse_Question(t *testing.T) {
+	t.Parallel()
+	handler, mgr, _, _ := newHandlerWithRealStore(t)
+
+	const sid = "sess_q_resp"
+	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "", "")
+	require.NoError(t, err)
+	require.NoError(t, mgr.Transition(context.Background(), sid, events.StateRunning))
+
+	w := new(mockWorkerForHandler)
+	w.On("Input", mock.Anything, "", mock.Anything).Return(nil)
+	w.On("Terminate", mock.Anything).Return(nil).Maybe()
+	mgr.AttachWorker(sid, w)
+
+	md := map[string]any{
+		"question_response": map[string]any{
+			"id":      "q_1",
+			"answers": map[string]string{"_": "yes"},
+		},
+	}
+	env := inputEnvelopeWithMetadata(sid, "", md)
+	err = handler.handleInput(context.Background(), env)
+	require.NoError(t, err)
+	w.AssertCalled(t, "Input", mock.Anything, "", mock.Anything)
+}
+
+func TestHandleInput_InteractionResponse_Elicitation(t *testing.T) {
+	t.Parallel()
+	handler, mgr, _, _ := newHandlerWithRealStore(t)
+
+	const sid = "sess_elic_resp"
+	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "", "")
+	require.NoError(t, err)
+	require.NoError(t, mgr.Transition(context.Background(), sid, events.StateRunning))
+
+	w := new(mockWorkerForHandler)
+	w.On("Input", mock.Anything, "", mock.Anything).Return(nil)
+	w.On("Terminate", mock.Anything).Return(nil).Maybe()
+	mgr.AttachWorker(sid, w)
+
+	md := map[string]any{
+		"elicitation_response": map[string]any{
+			"id":     "e_1",
+			"action": "accept",
+		},
+	}
+	env := inputEnvelopeWithMetadata(sid, "", md)
+	err = handler.handleInput(context.Background(), env)
+	require.NoError(t, err)
+	w.AssertCalled(t, "Input", mock.Anything, "", mock.Anything)
+}
+
+func TestHandleInput_InteractionResponse_NoWorker(t *testing.T) {
+	t.Parallel()
+	handler, mgr, _, _ := newHandlerWithRealStore(t)
+
+	const sid = "sess_no_worker"
+	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "", "")
+	require.NoError(t, err)
+	require.NoError(t, mgr.Transition(context.Background(), sid, events.StateRunning))
+	// No worker attached — interaction response should not error.
+
+	md := map[string]any{
+		"permission_response": map[string]any{"request_id": "req_1", "allowed": true},
+	}
+	env := inputEnvelopeWithMetadata(sid, "", md)
+	err = handler.handleInput(context.Background(), env)
+	require.NoError(t, err)
+}
+
+func TestHandleInput_PlatformMetadataNotRouted(t *testing.T) {
+	t.Parallel()
+	handler, mgr, _, _ := newHandlerWithRealStore(t)
+
+	const sid = "sess_platform_md"
+	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "", "")
+	require.NoError(t, err)
+	require.NoError(t, mgr.Transition(context.Background(), sid, events.StateRunning))
+
+	w := new(mockWorkerForHandler)
+	// Normal input path: handler calls w.Input(ctx, content, nil) — third arg is nil.
+	w.On("Input", mock.Anything, "hello", mock.Anything).Return(nil)
+	w.On("Terminate", mock.Anything).Return(nil).Maybe()
+	mgr.AttachWorker(sid, w)
+
+	// Platform context metadata (from messaging/bridge MakeEnvelope) should NOT
+	// trigger the interaction response short-circuit.
+	md := map[string]any{
+		"platform":   "slack",
+		"user_id":    "U123",
+		"channel_id": "C456",
+	}
+	env := inputEnvelopeWithMetadata(sid, "hello", md)
+	err = handler.handleInput(context.Background(), env)
+	require.NoError(t, err)
+	// Verify Input was called — the key assertion is that it received "hello",
+	// proving the platform metadata did NOT trigger the interaction shortcut.
+	w.AssertCalled(t, "Input", mock.Anything, "hello", mock.Anything)
 }
 
 // ─── handlePing tests ─────────────────────────────────────────────────────────

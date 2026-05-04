@@ -224,7 +224,9 @@ func TestBuildCLIArgs_AllOptions(t *testing.T) {
 	require.Contains(t, args, "--json-schema", "/schemas/output.json")
 	require.Contains(t, args, "--include-hook-events")
 	require.Contains(t, args, "--include-partial-messages")
-	require.Contains(t, args, "--dangerously-skip-permissions")
+	require.Contains(t, args, "--permission-prompt-tool", "stdio")
+	// Custom PermissionMode="plan" → no --dangerously-skip-permissions
+	require.NotContains(t, args, "--dangerously-skip-permissions")
 	require.NotContains(t, args, "--system-prompt") // replace mode not set
 }
 
@@ -325,13 +327,15 @@ func TestBuildCLIArgs_Minimal(t *testing.T) {
 	}
 
 	args := w.buildCLIArgs(session, false)
-	// resume=false → --session-id minimal-session, so 9 tokens total:
+	// resume=false → --session-id minimal-session, 11 tokens total:
 	// --print --verbose --output-format stream-json --input-format stream-json
-	// --dangerously-skip-permissions --session-id minimal-session
-	require.Len(t, args, 9)
+	// --permission-prompt-tool stdio --session-id minimal-session --dangerously-skip-permissions
+	require.Len(t, args, 11)
 	require.Contains(t, args, "--print")
 	require.Contains(t, args, "--verbose")
+	require.Contains(t, args, "--permission-prompt-tool", "stdio")
 	require.Contains(t, args, "--session-id", "minimal-session")
+	require.Contains(t, args, "--dangerously-skip-permissions")
 	require.NotContains(t, args, "--resume")
 }
 
