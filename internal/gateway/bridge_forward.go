@@ -108,9 +108,13 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 		env = events.Clone(env)
 		env.SessionID = sessionID
 
+		var capturedDeltaContent string
 		if env.Event.Type == events.MessageDelta || env.Event.Type == events.Message {
 			if content := extractMessageContent(env); content != "" {
 				turnText.WriteString(content)
+				if env.Event.Type == events.MessageDelta {
+					capturedDeltaContent = content
+				}
 			}
 		}
 
@@ -185,7 +189,11 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 			b.log.Warn("bridge: forward event failed", "err", err, "session_id", sessionID, "worker_type", workerType, "event_type", env.Event.Type)
 		}
 
-		b.captureEvent(sessionID, env.Seq, env.Event.Type, env.Event.Data)
+		if capturedDeltaContent != "" && b.collector != nil {
+			b.collector.CaptureDeltaString(sessionID, env.Seq, capturedDeltaContent)
+		} else if env.Event.Type != events.MessageDelta {
+			b.captureEvent(sessionID, env.Seq, env.Event.Type, env.Event.Data)
+		}
 
 		// Flush buffered error on non-Done events (no retry decision possible yet).
 		if pendingError != nil && env.Event.Type != events.Done {
@@ -202,6 +210,9 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 				pendingError = nil
 				b.autoRetry(context.Background(), w, sessionID, attempt)
 				turnText.Reset()
+				if b.collector != nil {
+					b.collector.ResetSession(sessionID)
+				}
 				lastError = nil
 				continue
 			}
