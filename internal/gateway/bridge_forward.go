@@ -459,6 +459,10 @@ func (b *Bridge) getOrInitAccum(sessionID, workDir string) *sessionAccumulator {
 	b.accumMu.Lock()
 	defer b.accumMu.Unlock()
 	if acc, ok := b.accum[sessionID]; ok {
+		if workDir != "" && acc.WorkDir == "" {
+			acc.WorkDir = workDir
+			acc.GitBranch = gitBranchOf(workDir)
+		}
 		return acc
 	}
 	acc := &sessionAccumulator{StartedAt: time.Now()}

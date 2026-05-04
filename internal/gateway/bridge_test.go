@@ -211,6 +211,51 @@ func TestGetOrInitAccum(t *testing.T) {
 	assert.NotSame(t, acc1, acc3)
 }
 
+func TestGetOrInitAccum_LazyUpdate(t *testing.T) {
+	t.Parallel()
+	log := slog.Default()
+	b := &Bridge{
+		log:     log,
+		sm:      new(mockBridgeSM),
+		accum:   make(map[string]*sessionAccumulator),
+		accumMu: sync.Mutex{},
+	}
+
+	// First call creates accumulator with empty workDir.
+	acc := b.getOrInitAccum("sess-1", "")
+	require.NotNil(t, acc)
+	assert.Equal(t, "", acc.WorkDir)
+	assert.Equal(t, "", acc.GitBranch)
+
+	// Second call with workDir lazily updates the existing accumulator.
+	same := b.getOrInitAccum("sess-1", "/tmp/project")
+	assert.Same(t, acc, same)
+	assert.Equal(t, "/tmp/project", acc.WorkDir)
+
+	// Third call with different workDir does NOT overwrite (already set).
+	b.getOrInitAccum("sess-1", "/other")
+	assert.Equal(t, "/tmp/project", acc.WorkDir)
+}
+
+func TestGetOrInitAccum_EmptyWorkDirNoOp(t *testing.T) {
+	t.Parallel()
+	log := slog.Default()
+	b := &Bridge{
+		log:     log,
+		sm:      new(mockBridgeSM),
+		accum:   make(map[string]*sessionAccumulator),
+		accumMu: sync.Mutex{},
+	}
+
+	acc := b.getOrInitAccum("sess-1", "")
+	require.NotNil(t, acc)
+
+	// Calling again with empty workDir should not change anything.
+	same := b.getOrInitAccum("sess-1", "")
+	assert.Same(t, acc, same)
+	assert.Equal(t, "", acc.WorkDir)
+}
+
 // ─── Test injectSessionStats ─────────────────────────────────────────────────
 
 func TestInjectSessionStats(t *testing.T) {

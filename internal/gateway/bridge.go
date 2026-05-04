@@ -140,11 +140,12 @@ func (b *Bridge) StartSession(ctx context.Context, id, userID, botID string, wt 
 	}
 
 	if _, err := b.createAndLaunchWorker(workerLaunchParams{
-		ctx:        ctx,
-		wt:         wt,
-		workerInfo: workerInfo,
-		platform:   platform,
-		botID:      botID,
+		ctx:         ctx,
+		wt:          wt,
+		workerInfo:  workerInfo,
+		platform:    platform,
+		botID:       botID,
+		forwardOpts: &forwardOpts{workDir: workDir},
 	},
 		func(ctx context.Context, w worker.Worker, info worker.SessionInfo) error {
 			if err := w.Start(ctx, info); err != nil {
