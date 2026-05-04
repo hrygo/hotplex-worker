@@ -434,9 +434,10 @@ func scanTurns(rows *sql.Rows) ([]*TurnRecord, error) {
 	for rows.Next() {
 		var r TurnRecord
 		var success sql.NullInt64
+		var toolsJSON sql.NullString // consumed from VIEW but not exposed
 		if err := rows.Scan(&r.SessionID, &r.Seq, &r.Role, &r.Content,
 			&r.Platform, &r.UserID, &r.Model, &success, &r.Source,
-			&r.ToolCount, &r.TokensIn, &r.TokensOut,
+			&toolsJSON, &r.ToolCount, &r.TokensIn, &r.TokensOut,
 			&r.DurationMs, &r.CostUSD, &r.CreatedAt); err != nil {
 			return nil, fmt.Errorf("eventstore: scan turn: %w", err)
 		}
