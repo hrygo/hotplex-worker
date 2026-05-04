@@ -455,10 +455,17 @@ func extractMessageContent(env *events.Envelope) string {
 }
 
 // getOrInitAccum returns the session accumulator, creating one if needed.
+// gitBranchOf is called inside the lock only when the accumulator first
+// receives a non-empty workDir — a one-time cost per session (up to 2s
+// subprocess). After that, the branch is already set and skipped.
 func (b *Bridge) getOrInitAccum(sessionID, workDir string) *sessionAccumulator {
 	b.accumMu.Lock()
 	defer b.accumMu.Unlock()
 	if acc, ok := b.accum[sessionID]; ok {
+		if workDir != "" && acc.WorkDir == "" {
+			acc.WorkDir = workDir
+			acc.GitBranch = gitBranchOf(workDir)
+		}
 		return acc
 	}
 	acc := &sessionAccumulator{StartedAt: time.Now()}
@@ -497,7 +504,16 @@ func (b *Bridge) injectSessionStats(env *events.Envelope, acc *sessionAccumulato
 var (
 	gitAvailable bool
 	gitOnce      sync.Once
+	gitBranchMu  sync.RWMutex
+	gitBranchMap = map[string]gitBranchEntry{} // dir → cached branch
 )
+
+const gitBranchTTL = 30 * time.Minute
+
+type gitBranchEntry struct {
+	branch string
+	expiry time.Time
+}
 
 func checkGitAvailable() bool {
 	gitOnce.Do(func() {
@@ -509,17 +525,33 @@ func checkGitAvailable() bool {
 
 // gitBranchOf returns the current git branch name for the given directory, or empty string.
 // Best-effort: 2s timeout, skips if git is not installed, errors silently ignored.
+// Results are cached per directory with a 30-minute TTL.
 func gitBranchOf(dir string) string {
 	if !checkGitAvailable() {
 		return ""
 	}
+
+	now := time.Now()
+	gitBranchMu.RLock()
+	if e, ok := gitBranchMap[dir]; ok && now.Before(e.expiry) {
+		branch := e.branch
+		gitBranchMu.RUnlock()
+		return branch
+	}
+	gitBranchMu.RUnlock()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", "rev-parse", "--abbrev-ref", "HEAD")
 	cmd.Dir = dir
 	out, err := cmd.Output()
-	if err != nil {
-		return ""
+	branch := ""
+	if err == nil {
+		branch = strings.TrimSpace(string(out))
 	}
-	return strings.TrimSpace(string(out))
+
+	gitBranchMu.Lock()
+	gitBranchMap[dir] = gitBranchEntry{branch: branch, expiry: now.Add(gitBranchTTL)}
+	gitBranchMu.Unlock()
+	return branch
 }

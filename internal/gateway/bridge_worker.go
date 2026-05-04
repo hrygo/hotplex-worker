@@ -172,11 +172,12 @@ func (b *Bridge) attemptResumeFallback(p fallbackParams) bool {
 	}
 
 	w, err := b.createAndLaunchWorker(workerLaunchParams{
-		ctx:        context.Background(),
-		wt:         si.WorkerType,
-		workerInfo: workerInfo,
-		platform:   si.Platform,
-		botID:      si.BotID,
+		ctx:         context.Background(),
+		wt:          si.WorkerType,
+		workerInfo:  workerInfo,
+		platform:    si.Platform,
+		botID:       si.BotID,
+		forwardOpts: &forwardOpts{workDir: p.workDir},
 	},
 		func(ctx context.Context, w worker.Worker, info worker.SessionInfo) error {
 			if err := b.sm.Transition(ctx, p.sessionID, events.StateRunning); err != nil {
