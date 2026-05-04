@@ -49,19 +49,15 @@
     },
     {
       "id": 3,
-      "prompt": "codecov 覆盖率不够，怎么办？",
-      "expected_output": "AI 应该分析 codecov 失败原因，判断是否存在实质性障碍，评估 ROI，根据 HotPlex 项目实战经验决策是否需要添加测试或在 PR 中说明",
+      "prompt": "Coverage Check CI 挂了，帮我看看",
+      "expected_output": "AI 应该分析覆盖率下降原因，检查哪些文件覆盖率不足，判断是否需要补充测试",
       "assertions": [
         {
-          "name": "分析 codecov 失败",
-          "check": "输出中包含 codecov 分析或覆盖率检查"
+          "name": "分析覆盖率下降",
+          "check": "输出中包含覆盖率分析或未覆盖代码检查"
         },
         {
-          "name": "判断实质性障碍",
-          "check": "输出中包含实质性障碍或 ROI 分析"
-        },
-        {
-          "name": "提供决策建议",
+          "name": "提供修复建议",
           "check": "输出中包含是否修复的建议或在 PR 中说明"
         }
       ]
