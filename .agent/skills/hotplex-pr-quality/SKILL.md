@@ -1,7 +1,7 @@
 ---
 name: hotplex-pr-quality
 version: 3.0.0
-description: "HotPlex 项目（hrygo/hotplex）专用 PR 质量保证。开发完成后提交代码、创建/更新 PR、推送 fork、审查代码质量、修复 CI 失败（测试/lint/codecov/跨平台构建）时使用。即使只说「帮我提交」「CI 红了」「推代码」也应触发。覆盖：质量检查 → 提交 → 推送 → PR → 代码审查 → CI 监控与修复。"
+description: "HotPlex 项目（hrygo/hotplex）专用 PR 质量保证。开发完成后提交代码、创建/更新 PR、推送 fork、审查代码质量、修复 CI 失败（测试/lint/跨平台构建）时使用。即使只说「帮我提交」「CI 红了」「推代码」也应触发。覆盖：质量检查 → 提交 → 推送 → PR → 代码审查 → CI 监控与修复。"
 metadata:
   requires:
     bins: ["gh", "git"]
@@ -140,11 +140,6 @@ gh pr checks <pr-number> --repo hrygo/hotplex
 |------|------|------|
 | P0 | Test / Build（三平台） | 必须修复 |
 | P1 | Coverage Check | 通常修复 |
-| P2 | codecov | 可协商 |
-
-**codecov 失败处理**：
-
-存在实质性障碍（需外部服务/Mock 成本高/ROI 低）→ 评估 ROI → 核心功能必须修，< 5% 下降且有障碍可接受。接受时在 PR 说明原因。
 
 ### 阶段 8：修复 CI（如需）
 
