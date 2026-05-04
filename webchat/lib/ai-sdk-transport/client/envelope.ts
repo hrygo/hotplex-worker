@@ -205,6 +205,41 @@ export function createPermissionResponseEnvelope(
 }
 
 /**
+ * Create a question response envelope.
+ */
+export function createQuestionResponseEnvelope(
+  sessionId: string,
+  questionId: string,
+  answers: Record<string, string>
+): Envelope<{ id: string; answers: Record<string, string> }> {
+  return createEnvelope(
+    newEventId(),
+    sessionId,
+    1,
+    EventKind.QuestionResponse,
+    { id: questionId, answers }
+  );
+}
+
+/**
+ * Create an elicitation response envelope.
+ */
+export function createElicitationResponseEnvelope(
+  sessionId: string,
+  elicitationId: string,
+  action: 'accept' | 'decline' | 'cancel',
+  content?: Record<string, unknown>
+): Envelope<{ id: string; action: string; content?: Record<string, unknown> }> {
+  return createEnvelope(
+    newEventId(),
+    sessionId,
+    1,
+    EventKind.ElicitationResponse,
+    { id: elicitationId, action, ...(content !== undefined && { content }) }
+  );
+}
+
+/**
  * Create a worker command envelope for sending stdio commands to the worker
  * (e.g., "skills" to fetch loaded skills).
  */

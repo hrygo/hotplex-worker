@@ -658,7 +658,7 @@ func TestAdapterFlow_RegisterInteraction(t *testing.T) {
 	a.Interactions = messaging.NewInteractionManager(discardLogger)
 	conn := a.GetOrCreateConn("chat_ri", "")
 
-	a.registerInteraction("req-1", "sess-ri", events.PermissionRequest, conn)
+	a.registerInteraction("req-1", "sess-ri", "owner-1", events.PermissionRequest, conn)
 	require.Equal(t, 1, a.Interactions.Len())
 }
 
@@ -712,7 +712,7 @@ func TestAdapterFlow_RegisterInteraction_CallbackConsumed(t *testing.T) {
 	conn.mu.Unlock()
 
 	// Register via registerInteraction (creates SendResponse closure with nil bridge).
-	a.registerInteraction("perm-ricb", "sess-ricb", events.PermissionRequest, conn)
+	a.registerInteraction("perm-ricb", "sess-ricb", "owner-ricb", events.PermissionRequest, conn)
 	require.Equal(t, 1, a.Interactions.Len())
 
 	// Consume the interaction via checkPendingInteraction.

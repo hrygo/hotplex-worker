@@ -30,6 +30,8 @@ import type {
   ToolResultData,
   DoneData,
   PermissionRequestData,
+  QuestionRequestData,
+  ElicitationRequestData,
   ReasoningData,
   StepData,
   PongData,
@@ -42,6 +44,8 @@ import {
   createPingEnvelope,
   createControlEnvelope,
   createPermissionResponseEnvelope,
+  createQuestionResponseEnvelope,
+  createElicitationResponseEnvelope,
   createWorkerCommandEnvelope,
   serializeEnvelope,
   deserializeEnvelope,
@@ -69,6 +73,8 @@ export interface BrowserClientEvents {
   reasoning: (data: ReasoningData, env: Envelope) => void;
   step: (data: StepData, env: Envelope) => void;
   permissionRequest: (data: PermissionRequestData, env: Envelope) => void;
+  questionRequest: (data: QuestionRequestData, env: Envelope) => void;
+  elicitationRequest: (data: ElicitationRequestData, env: Envelope) => void;
   reconnect: (data: ControlData, env: Envelope) => void;
   sessionInvalid: (data: ControlData, env: Envelope) => void;
   throttle: (data: ControlData, env: Envelope) => void;
@@ -385,6 +391,14 @@ export class BrowserHotPlexClient extends EventEmitter<BrowserClientEvents> {
         this.emit('permissionRequest', event.data as PermissionRequestData, env);
         break;
 
+      case EventKind.QuestionRequest:
+        this.emit('questionRequest', event.data as QuestionRequestData, env);
+        break;
+
+      case EventKind.ElicitationRequest:
+        this.emit('elicitationRequest', event.data as ElicitationRequestData, env);
+        break;
+
       case EventKind.Pong:
         this.missedPongs = 0;
         this.lastPongTime = Date.now();
@@ -469,6 +483,16 @@ export class BrowserHotPlexClient extends EventEmitter<BrowserClientEvents> {
 
   sendPermissionResponse(permissionId: string, allowed: boolean, reason?: string): void {
     const env = createPermissionResponseEnvelope(this._sessionId!, permissionId, allowed, reason);
+    this._send(env);
+  }
+
+  sendQuestionResponse(questionId: string, answers: Record<string, string>): void {
+    const env = createQuestionResponseEnvelope(this._sessionId!, questionId, answers);
+    this._send(env);
+  }
+
+  sendElicitationResponse(elicitationId: string, action: 'accept' | 'decline' | 'cancel', content?: Record<string, unknown>): void {
+    const env = createElicitationResponseEnvelope(this._sessionId!, elicitationId, action, content);
     this._send(env);
   }
 

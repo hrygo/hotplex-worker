@@ -208,7 +208,7 @@ func (c *SlackConn) sendPermissionRequest(ctx context.Context, env *events.Envel
 	}
 
 	// Register the pending interaction with timeout
-	c.adapter.registerInteraction(data.ID, env.SessionID, events.PermissionRequest, msgTS, c)
+	c.adapter.registerInteraction(data.ID, env.SessionID, env.OwnerID, events.PermissionRequest, msgTS, c)
 
 	c.adapter.Log.Info("slack: permission request posted",
 		"request_id", data.ID,
@@ -320,7 +320,7 @@ func (c *SlackConn) sendQuestionRequest(ctx context.Context, env *events.Envelop
 		}
 	}
 
-	c.adapter.registerInteraction(data.ID, env.SessionID, events.QuestionRequest, msgTS, c)
+	c.adapter.registerInteraction(data.ID, env.SessionID, env.OwnerID, events.QuestionRequest, msgTS, c)
 
 	c.adapter.Log.Info("slack: question request posted",
 		"request_id", data.ID,
@@ -405,13 +405,13 @@ func (c *SlackConn) sendElicitationRequest(ctx context.Context, env *events.Enve
 		}
 	}
 
-	c.adapter.registerInteraction(data.ID, env.SessionID, events.ElicitationRequest, msgTS, c)
+	c.adapter.registerInteraction(data.ID, env.SessionID, env.OwnerID, events.ElicitationRequest, msgTS, c)
 
 	return nil
 }
 
 // registerInteraction registers a pending interaction with the adapter's manager.
-func (a *Adapter) registerInteraction(requestID, sessionID string, kind events.Kind, _ string, conn *SlackConn) {
+func (a *Adapter) registerInteraction(requestID, sessionID, ownerID string, kind events.Kind, _ string, conn *SlackConn) {
 	a.Interactions.Register(&messaging.PendingInteraction{
 		ID:        requestID,
 		SessionID: sessionID,
@@ -432,10 +432,19 @@ func (a *Adapter) registerInteraction(requestID, sessionID string, kind events.K
 						"metadata": metadata,
 					},
 				},
-				OwnerID: "",
+				OwnerID: ownerID,
 			}
 			if a.Bridge() != nil {
-				_ = a.Bridge().Handle(respCtx, env, conn)
+				if err := a.Bridge().Handle(respCtx, env, conn); err != nil {
+					a.Log.Error("interaction: failed to send response",
+						"request_id", requestID,
+						"session_id", sessionID,
+						"err", err)
+				}
+			} else {
+				a.Log.Error("interaction: bridge not available",
+					"request_id", requestID,
+					"session_id", sessionID)
 			}
 		},
 	})

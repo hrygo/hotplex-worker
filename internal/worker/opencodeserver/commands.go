@@ -157,7 +157,16 @@ func (c *ServerCommander) setPermissionMode(ctx context.Context, body map[string
 	var rules []map[string]any
 	switch mode {
 	case "bypassPermissions":
+		// Wildcard allow-all: all tool calls auto-approved.
 		rules = []map[string]any{{"permission": "*", "action": "allow", "pattern": "*"}}
+	case "default", "":
+		// No rules injected: OCS default (no matching rule → ask → publishes permission.asked).
+		rules = []map[string]any{}
+	case "plan":
+		// Read-only allowed + write requires approval.
+		rules = []map[string]any{
+			{"permission": "read", "action": "allow", "pattern": "*"},
+		}
 	default:
 		rules = []map[string]any{}
 	}

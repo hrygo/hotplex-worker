@@ -151,6 +151,40 @@ export interface PermissionResponseData {
   reason?: string;
 }
 
+export interface QuestionOption {
+  label: string;
+  description?: string;
+}
+
+export interface QuestionItem {
+  header?: string;
+  question: string;
+  options?: QuestionOption[];
+}
+
+export interface QuestionRequestData {
+  id: string;
+  questions: QuestionItem[];
+}
+
+export interface QuestionResponseData {
+  id: string;
+  answers: Record<string, string>;
+}
+
+export interface ElicitationRequestData {
+  id: string;
+  mcp_server_name: string;
+  message: string;
+  url?: string;
+}
+
+export interface ElicitationResponseData {
+  id: string;
+  action: 'accept' | 'decline' | 'cancel';
+  content?: Record<string, unknown>;
+}
+
 export interface PongData {
   state: SessionState;
 }
@@ -315,6 +349,8 @@ export interface ServerEventDataMap {
   [EventKind.Step]: StepData;
   [EventKind.Raw]: RawData;
   [EventKind.PermissionRequest]: PermissionRequestData;
+  [EventKind.QuestionRequest]: QuestionRequestData;
+  [EventKind.ElicitationRequest]: ElicitationRequestData;
   [EventKind.Pong]: PongData;
   [EventKind.Control]: ControlData;
   [EventKind.ContextUsage]: ContextUsageData;
@@ -334,6 +370,8 @@ export interface ServerEventEnvelopeMap {
   [EventKind.Step]: Envelope<StepData>;
   [EventKind.Raw]: Envelope<RawData>;
   [EventKind.PermissionRequest]: Envelope<PermissionRequestData>;
+  [EventKind.QuestionRequest]: Envelope<QuestionRequestData>;
+  [EventKind.ElicitationRequest]: Envelope<ElicitationRequestData>;
   [EventKind.Pong]: Envelope<PongData>;
   [EventKind.Control]: Envelope<ControlData>;
   [EventKind.ContextUsage]: Envelope<ContextUsageData>;

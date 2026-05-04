@@ -2,12 +2,17 @@ package opencodeserver
 
 import (
 	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os/exec"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/hrygo/hotplex/internal/worker"
+	"github.com/hrygo/hotplex/pkg/events"
 )
 
 func hasOpenCodeBinary() bool {
@@ -33,11 +38,8 @@ func TestOpenCodeServerWorker_New(t *testing.T) {
 	t.Parallel()
 	w := New()
 
-	// Verify worker is properly initialized
 	require.NotNil(t, w)
 	require.NotNil(t, w.BaseWorker)
-	// singleton may be nil if not initialized, so just check it exists (could be nil)
-	// require.NotNil(t, w.singleton)
 	require.NotNil(t, w.client)
 	require.Nil(t, w.sseClient, "sseClient should be nil until Start/Resume")
 	require.Nil(t, w.sseCancel, "sseCancel should be nil until Start/Resume")
@@ -104,20 +106,16 @@ func TestOpenCodeServerWorker_Terminate_CallsSSECancel(t *testing.T) {
 	w := New()
 	ctx := context.Background()
 
-	// Set sseCancel
 	sseCtx, sseCancel := context.WithCancel(context.Background())
 	w.Mu.Lock()
 	w.sseCancel = sseCancel
 	w.Mu.Unlock()
 
-	// Terminate should call sseCancel
 	err := w.Terminate(ctx)
 	require.NoError(t, err)
 
-	// Verify context was cancelled
 	select {
 	case <-sseCtx.Done():
-		// Context was cancelled as expected
 	default:
 		t.Fatal("sseCancel was not called by Terminate")
 	}
@@ -128,20 +126,16 @@ func TestOpenCodeServerWorker_Kill_CallsSSECancel(t *testing.T) {
 
 	w := New()
 
-	// Set sseCancel
 	sseCtx, sseCancel := context.WithCancel(context.Background())
 	w.Mu.Lock()
 	w.sseCancel = sseCancel
 	w.Mu.Unlock()
 
-	// Kill should call sseCancel
 	err := w.Kill()
 	require.NoError(t, err)
 
-	// Verify context was cancelled
 	select {
 	case <-sseCtx.Done():
-		// Context was cancelled as expected
 	default:
 		t.Fatal("sseCancel was not called by Kill")
 	}
@@ -153,8 +147,6 @@ func TestOpenCodeServerWorker_Terminate_NilSSECancel(t *testing.T) {
 	w := New()
 	ctx := context.Background()
 
-	// Don't set sseCancel (it's nil)
-	// Terminate should not panic
 	err := w.Terminate(ctx)
 	require.NoError(t, err)
 }
@@ -164,8 +156,6 @@ func TestOpenCodeServerWorker_Kill_NilSSECancel(t *testing.T) {
 
 	w := New()
 
-	// Don't set sseCancel (it's nil)
-	// Kill should not panic
 	err := w.Kill()
 	require.NoError(t, err)
 }
@@ -176,11 +166,9 @@ func TestOpenCodeServerWorker_Terminate_ReleasesSingleton(t *testing.T) {
 	w := New()
 	ctx := context.Background()
 
-	// Terminate should call releaseOnce
 	err := w.Terminate(ctx)
 	require.NoError(t, err)
 
-	// Call Terminate again - should not call release twice
 	err = w.Terminate(ctx)
 	require.NoError(t, err)
 }
@@ -190,11 +178,9 @@ func TestOpenCodeServerWorker_Kill_ReleasesSingleton(t *testing.T) {
 
 	w := New()
 
-	// Kill should call releaseOnce
 	err := w.Kill()
 	require.NoError(t, err)
 
-	// Call Kill again - should not call release twice
 	err = w.Kill()
 	require.NoError(t, err)
 }
@@ -259,7 +245,6 @@ func TestOpenCodeServerWorker_Start_WithBinary(t *testing.T) {
 
 	err := w.Start(ctx, session)
 	if err != nil {
-		// Server started but API call may fail - that's OK for this test
 		t.Logf("Start returned error (expected if server API not configured): %v", err)
 		return
 	}
@@ -270,4 +255,141 @@ func TestOpenCodeServerWorker_Start_WithBinary(t *testing.T) {
 	}
 
 	_ = w.Kill()
+}
+
+// ─── Input interaction response tests (httptest-backed) ──────────────────────
+
+func newWorkerWithMockServer(t *testing.T, handler http.HandlerFunc) (*Worker, *httptest.Server) {
+	t.Helper()
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
+
+	w := New()
+	w.httpAddr = srv.URL
+	w.client = srv.Client()
+	w.httpConn = &conn{
+		sessionID: "test-session",
+		userID:    "test-user",
+		httpAddr:  srv.URL,
+		client:    srv.Client(),
+		recvCh:    make(chan *events.Envelope, 16),
+		log:       w.Log,
+	}
+	return w, srv
+}
+
+func TestInput_PermissionResponse_Allowed(t *testing.T) {
+	t.Parallel()
+
+	var receivedPath string
+	var receivedBody map[string]string
+	w, _ := newWorkerWithMockServer(t, func(w http.ResponseWriter, r *http.Request) {
+		receivedPath = r.URL.Path
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &receivedBody)
+		w.WriteHeader(http.StatusOK)
+	})
+
+	md := map[string]any{
+		"permission_response": map[string]any{
+			"request_id": "perm_123",
+			"allowed":    true,
+		},
+	}
+	err := w.Input(context.Background(), "", md)
+	require.NoError(t, err)
+	require.Equal(t, "/permission/perm_123/reply", receivedPath)
+	require.Equal(t, "once", receivedBody["reply"])
+}
+
+func TestInput_PermissionResponse_Denied(t *testing.T) {
+	t.Parallel()
+
+	var receivedBody map[string]string
+	w, _ := newWorkerWithMockServer(t, func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &receivedBody)
+		w.WriteHeader(http.StatusOK)
+	})
+
+	md := map[string]any{
+		"permission_response": map[string]any{
+			"request_id": "perm_456",
+			"allowed":    false,
+		},
+	}
+	err := w.Input(context.Background(), "", md)
+	require.NoError(t, err)
+	require.Equal(t, "reject", receivedBody["reply"])
+}
+
+func TestInput_QuestionResponse(t *testing.T) {
+	t.Parallel()
+
+	var receivedPath string
+	w, _ := newWorkerWithMockServer(t, func(w http.ResponseWriter, r *http.Request) {
+		receivedPath = r.URL.Path
+		w.WriteHeader(http.StatusOK)
+	})
+
+	md := map[string]any{
+		"question_response": map[string]any{
+			"id":      "q_789",
+			"answers": map[string]string{"q1": "yes"},
+		},
+	}
+	err := w.Input(context.Background(), "", md)
+	require.NoError(t, err)
+	require.Equal(t, "/question/q_789/reply", receivedPath)
+}
+
+func TestInput_ElicitationResponse(t *testing.T) {
+	t.Parallel()
+
+	var receivedPath string
+	var receivedBody map[string]any
+	w, _ := newWorkerWithMockServer(t, func(w http.ResponseWriter, r *http.Request) {
+		receivedPath = r.URL.Path
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &receivedBody)
+		w.WriteHeader(http.StatusOK)
+	})
+
+	md := map[string]any{
+		"elicitation_response": map[string]any{
+			"id":     "e_001",
+			"action": "accept",
+			"content": map[string]any{
+				"key": "value",
+			},
+		},
+	}
+	err := w.Input(context.Background(), "", md)
+	require.NoError(t, err)
+	require.Equal(t, "/elicitation/e_001/reply", receivedPath)
+	require.Equal(t, "accept", receivedBody["action"])
+	require.Equal(t, map[string]any{"key": "value"}, receivedBody["content"])
+}
+
+func TestInput_ElicitationResponse_Decline(t *testing.T) {
+	t.Parallel()
+
+	var receivedBody map[string]any
+	w, _ := newWorkerWithMockServer(t, func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &receivedBody)
+		w.WriteHeader(http.StatusOK)
+	})
+
+	md := map[string]any{
+		"elicitation_response": map[string]any{
+			"id":     "e_002",
+			"action": "decline",
+		},
+	}
+	err := w.Input(context.Background(), "", md)
+	require.NoError(t, err)
+	require.Equal(t, "decline", receivedBody["action"])
+	_, hasContent := receivedBody["content"]
+	require.False(t, hasContent)
 }
