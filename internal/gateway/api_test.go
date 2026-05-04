@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/hrygo/hotplex/internal/config"
+	"github.com/hrygo/hotplex/internal/eventstore"
 	"github.com/hrygo/hotplex/internal/security"
 	"github.com/hrygo/hotplex/internal/session"
 	"github.com/hrygo/hotplex/internal/worker"
@@ -130,26 +131,26 @@ func (m *mockAPIBridge) SwitchWorkDir(ctx context.Context, oldSessionID, newWork
 	return args.Get(0).(*SwitchWorkDirResult), args.Error(1)
 }
 
-// ─── Mock ConversationStoreReader for API tests ────────────────────────────────
+// ─── Mock TurnsReader for API tests ────────────────────────────────
 
-type mockAPIConvStore struct {
+type mockTurnsStore struct {
 	mock.Mock
 }
 
-func (m *mockAPIConvStore) GetBySession(ctx context.Context, sessionID string, limit, offset int) ([]*session.ConversationRecord, error) {
+func (m *mockTurnsStore) QueryTurns(ctx context.Context, sessionID string, limit, offset int) ([]*eventstore.TurnRecord, error) {
 	args := m.Called(ctx, sessionID, limit, offset)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).([]*session.ConversationRecord), args.Error(1)
+	return args.Get(0).([]*eventstore.TurnRecord), args.Error(1)
 }
 
-func (m *mockAPIConvStore) GetBySessionBefore(ctx context.Context, sessionID string, beforeSeq int64, limit int) ([]*session.ConversationRecord, error) {
+func (m *mockTurnsStore) QueryTurnsBefore(ctx context.Context, sessionID string, beforeSeq int64, limit int) ([]*eventstore.TurnRecord, error) {
 	args := m.Called(ctx, sessionID, beforeSeq, limit)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).([]*session.ConversationRecord), args.Error(1)
+	return args.Get(0).([]*eventstore.TurnRecord), args.Error(1)
 }
 
 // ─── Test helpers ───────────────────────────────────────────────────────────────
@@ -164,9 +165,9 @@ func newTestAPI(t *testing.T, sm *mockAPISM, bridge *mockAPIBridge) *GatewayAPI 
 	return NewGatewayAPI(slog.Default(), newTestAuth(t), sm, bridge, config.NewConfigStore(&config.Config{}, nil), nil, nil)
 }
 
-func newTestAPIWithConv(t *testing.T, sm *mockAPISM, bridge *mockAPIBridge, convStore *mockAPIConvStore) *GatewayAPI {
+func newTestAPIWithTurns(t *testing.T, sm *mockAPISM, bridge *mockAPIBridge, turnsStore *mockTurnsStore) *GatewayAPI {
 	t.Helper()
-	return NewGatewayAPI(slog.Default(), newTestAuth(t), sm, bridge, config.NewConfigStore(&config.Config{}, nil), convStore, nil)
+	return NewGatewayAPI(slog.Default(), newTestAuth(t), sm, bridge, config.NewConfigStore(&config.Config{}, nil), turnsStore, nil)
 }
 
 func authedReq(method, target string, body io.Reader) *http.Request {
@@ -504,14 +505,14 @@ func TestGetHistory_Success(t *testing.T) {
 	t.Parallel()
 	sm := new(mockAPISM)
 	bridge := new(mockAPIBridge)
-	convStore := new(mockAPIConvStore)
-	api := newTestAPIWithConv(t, sm, bridge, convStore)
+	ts := new(mockTurnsStore)
+	api := newTestAPIWithTurns(t, sm, bridge, ts)
 
 	sm.On("Get", "sess-1").Return(&session.SessionInfo{ID: "sess-1", UserID: "anonymous"}, nil)
-	records := []*session.ConversationRecord{
-		{ID: "conv-1", SessionID: "sess-1", Seq: 1, Role: "user", Content: "hello"},
+	records := []*eventstore.TurnRecord{
+		{SessionID: "sess-1", Seq: 1, Role: "user", Content: "hello"},
 	}
-	convStore.On("GetBySession", mock.Anything, "sess-1", 51, 0).Return(records, nil)
+	ts.On("QueryTurns", mock.Anything, "sess-1", 51, 0).Return(records, nil)
 
 	mux := setupMux(api)
 	w := httptest.NewRecorder()
@@ -520,8 +521,8 @@ func TestGetHistory_Success(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, w.Code)
 	var resp struct {
-		Records []*session.ConversationRecord `json:"records"`
-		HasMore bool                          `json:"has_more"`
+		Records []*eventstore.TurnRecord `json:"records"`
+		HasMore bool                     `json:"has_more"`
 	}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	require.Len(t, resp.Records, 1)
@@ -532,16 +533,16 @@ func TestGetHistory_HasMore(t *testing.T) {
 	t.Parallel()
 	sm := new(mockAPISM)
 	bridge := new(mockAPIBridge)
-	convStore := new(mockAPIConvStore)
-	api := newTestAPIWithConv(t, sm, bridge, convStore)
+	ts := new(mockTurnsStore)
+	api := newTestAPIWithTurns(t, sm, bridge, ts)
 
 	sm.On("Get", "sess-1").Return(&session.SessionInfo{ID: "sess-1", UserID: "anonymous"}, nil)
-	records := []*session.ConversationRecord{
-		{ID: "conv-1", Seq: 1},
-		{ID: "conv-2", Seq: 2},
-		{ID: "conv-3", Seq: 3},
+	records := []*eventstore.TurnRecord{
+		{Seq: 1},
+		{Seq: 2},
+		{Seq: 3},
 	}
-	convStore.On("GetBySession", mock.Anything, "sess-1", 3, 0).Return(records, nil)
+	ts.On("QueryTurns", mock.Anything, "sess-1", 3, 0).Return(records, nil)
 
 	mux := setupMux(api)
 	w := httptest.NewRecorder()
@@ -550,8 +551,8 @@ func TestGetHistory_HasMore(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, w.Code)
 	var resp struct {
-		Records []*session.ConversationRecord `json:"records"`
-		HasMore bool                          `json:"has_more"`
+		Records []*eventstore.TurnRecord `json:"records"`
+		HasMore bool                     `json:"has_more"`
 	}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	require.Len(t, resp.Records, 2)
@@ -562,11 +563,11 @@ func TestGetHistory_NoRecords(t *testing.T) {
 	t.Parallel()
 	sm := new(mockAPISM)
 	bridge := new(mockAPIBridge)
-	convStore := new(mockAPIConvStore)
-	api := newTestAPIWithConv(t, sm, bridge, convStore)
+	ts := new(mockTurnsStore)
+	api := newTestAPIWithTurns(t, sm, bridge, ts)
 
 	sm.On("Get", "sess-1").Return(&session.SessionInfo{ID: "sess-1", UserID: "anonymous"}, nil)
-	convStore.On("GetBySession", mock.Anything, "sess-1", 51, 0).Return(nil, session.ErrConvNotFound)
+	ts.On("QueryTurns", mock.Anything, "sess-1", 51, 0).Return(nil, eventstore.ErrNotFound)
 
 	mux := setupMux(api)
 	w := httptest.NewRecorder()
@@ -587,8 +588,8 @@ func TestGetHistory_Unauthorized(t *testing.T) {
 	t.Parallel()
 	sm := new(mockAPISM)
 	bridge := new(mockAPIBridge)
-	convStore := new(mockAPIConvStore)
-	api := newTestAPIWithConv(t, sm, bridge, convStore)
+	ts := new(mockTurnsStore)
+	api := newTestAPIWithTurns(t, sm, bridge, ts)
 
 	mux := setupMux(api)
 	w := httptest.NewRecorder()
@@ -602,8 +603,8 @@ func TestGetHistory_OwnershipCheck(t *testing.T) {
 	t.Parallel()
 	sm := new(mockAPISM)
 	bridge := new(mockAPIBridge)
-	convStore := new(mockAPIConvStore)
-	api := newTestAPIWithConv(t, sm, bridge, convStore)
+	ts := new(mockTurnsStore)
+	api := newTestAPIWithTurns(t, sm, bridge, ts)
 
 	sm.On("Get", "sess-1").Return(&session.SessionInfo{ID: "sess-1", UserID: "other-user"}, nil)
 
@@ -619,14 +620,14 @@ func TestGetHistory_WithBeforeSeq(t *testing.T) {
 	t.Parallel()
 	sm := new(mockAPISM)
 	bridge := new(mockAPIBridge)
-	convStore := new(mockAPIConvStore)
-	api := newTestAPIWithConv(t, sm, bridge, convStore)
+	ts := new(mockTurnsStore)
+	api := newTestAPIWithTurns(t, sm, bridge, ts)
 
 	sm.On("Get", "sess-1").Return(&session.SessionInfo{ID: "sess-1", UserID: "anonymous"}, nil)
-	records := []*session.ConversationRecord{
-		{ID: "conv-1", Seq: 1},
+	records := []*eventstore.TurnRecord{
+		{Seq: 1},
 	}
-	convStore.On("GetBySessionBefore", mock.Anything, "sess-1", int64(5), 11).Return(records, nil)
+	ts.On("QueryTurnsBefore", mock.Anything, "sess-1", int64(5), 11).Return(records, nil)
 
 	mux := setupMux(api)
 	w := httptest.NewRecorder()
@@ -636,7 +637,7 @@ func TestGetHistory_WithBeforeSeq(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 }
 
-func TestGetHistory_NilConvStore(t *testing.T) {
+func TestGetHistory_NilTurnsStore(t *testing.T) {
 	t.Parallel()
 	sm := new(mockAPISM)
 	bridge := new(mockAPIBridge)

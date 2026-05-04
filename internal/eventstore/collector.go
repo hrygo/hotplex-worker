@@ -87,7 +87,7 @@ func NewCollector(store EventStore, log *slog.Logger) *Collector {
 // Capture sends an event to the collector for async persistence.
 // If the event is a message.delta, it is accumulated in-memory and merged
 // on message.end or next non-delta event.
-func (c *Collector) Capture(sessionID string, seq int64, eventType events.Kind, data json.RawMessage, direction string) {
+func (c *Collector) Capture(sessionID string, seq int64, eventType events.Kind, data json.RawMessage, direction, source string) {
 	if eventType == events.MessageDelta {
 		c.accumMu.Lock()
 		acc := c.accum[sessionID]
@@ -118,6 +118,7 @@ func (c *Collector) Capture(sessionID string, seq int64, eventType events.Kind, 
 		Type:      string(eventType),
 		Data:      data,
 		Direction: direction,
+		Source:    source,
 		CreatedAt: time.Now().UnixMilli(),
 	}}
 	c.send(req)
@@ -324,6 +325,7 @@ func (a *deltaAccumulator) toRequest(sessionID string) *captureRequest {
 		Type:      string(events.Message),
 		Data:      mergedData,
 		Direction: "outbound",
+		Source:    SourceNormal,
 		CreatedAt: a.firstSeenAt.UnixMilli(),
 	}}
 }

@@ -11,11 +11,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hrygo/hotplex/internal/config"
 	"github.com/hrygo/hotplex/internal/sqlutil"
 )
 
-//go:embed sql/queries/*.sql sql/schema.sql
+//go:embed sql/queries/*.sql
 var sqlFS embed.FS
 
 var queries = loadQueries()
@@ -31,7 +30,7 @@ func loadQueries() map[string]string {
 		if !strings.HasSuffix(name, ".sql") {
 			continue
 		}
-		data, err := sqlFS.ReadFile("sql/queries/" + name)
+		data, err := fs.ReadFile(sqlFS, "sql/queries/"+name)
 		if err != nil {
 			panic("eventstore: read sql file " + name + ": " + err.Error())
 		}
@@ -56,6 +55,14 @@ func stripComments(s string) string {
 	return b.String()
 }
 
+// Source constants for event provenance tracking.
+const (
+	SourceNormal     = "normal"
+	SourceCrash      = "crash"
+	SourceTimeout    = "timeout"
+	SourceFreshStart = "fresh_start"
+)
+
 // CursorDirection controls pagination direction relative to a cursor seq value.
 type CursorDirection int
 
@@ -70,6 +77,61 @@ const (
 
 var ErrNotFound = errors.New("eventstore: no events found")
 
+const defaultTimeout = 5 * time.Second
+
+// withDefaultTimeout wraps ctx with a 5s timeout if it has no deadline.
+func withDefaultTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
+	if _, ok := ctx.Deadline(); ok {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, defaultTimeout)
+}
+
+// TurnRecord represents a single conversational turn derived from events VIEW.
+type TurnRecord struct {
+	SessionID  string  `json:"session_id"`
+	Seq        int64   `json:"seq"`
+	Role       string  `json:"role"`
+	Content    string  `json:"content"`
+	Platform   string  `json:"platform"`
+	UserID     string  `json:"user_id"`
+	Model      string  `json:"model"`
+	Success    *bool   `json:"success"`
+	Source     string  `json:"source"`
+	ToolCount  int     `json:"tool_call_count"`
+	TokensIn   int     `json:"tokens_in"`
+	TokensOut  int     `json:"tokens_out"`
+	DurationMs int64   `json:"duration_ms"`
+	CostUSD    float64 `json:"cost_usd"`
+	CreatedAt  int64   `json:"created_at"`
+}
+
+// TurnStats holds aggregated statistics across all assistant turns of a session.
+type TurnStats struct {
+	SessionID    string         `json:"session_id"`
+	TotalTurns   int            `json:"total_turns"`
+	SuccessTurns int            `json:"success_turns"`
+	FailedTurns  int            `json:"failed_turns"`
+	TotalDurMs   int64          `json:"total_duration_ms"`
+	TotalCostUSD float64        `json:"total_cost_usd"`
+	TotalTokIn   int64          `json:"total_tokens_in"`
+	TotalTokOut  int64          `json:"total_tokens_out"`
+	Turns        []TurnStatItem `json:"turns"`
+}
+
+// TurnStatItem holds per-turn statistics.
+type TurnStatItem struct {
+	Seq        int64   `json:"seq"`
+	Success    bool    `json:"success"`
+	DurationMs int64   `json:"duration_ms"`
+	CostUSD    float64 `json:"cost_usd"`
+	TokensIn   int64   `json:"tokens_in"`
+	TokensOut  int64   `json:"tokens_out"`
+	Model      string  `json:"model"`
+	Source     string  `json:"source"`
+	CreatedAt  int64   `json:"created_at"`
+}
+
 // StoredEvent represents a single persisted AEP event.
 type StoredEvent struct {
 	SessionID string          `json:"session_id"`
@@ -77,6 +139,7 @@ type StoredEvent struct {
 	Type      string          `json:"type"`
 	Data      json.RawMessage `json:"data"`
 	Direction string          `json:"direction"`
+	Source    string          `json:"source"`
 	CreatedAt int64           `json:"created_at"`
 }
 
@@ -109,7 +172,7 @@ type EventStore interface {
 	// DeleteExpired removes events older than the cutoff.
 	DeleteExpired(ctx context.Context, cutoff time.Time) (int64, error)
 
-	// Close flushes pending writes and closes the database.
+	// Close flushes pending writes and closes the database (if owned).
 	Close() error
 }
 
@@ -119,45 +182,37 @@ type EventTx interface {
 	Commit() error
 }
 
-// SQLiteStore implements EventStore using an independent SQLite database.
+// SQLiteStore implements EventStore using a shared SQLite database connection.
 type SQLiteStore struct {
-	db *sql.DB
+	db     *sql.DB
+	ownsDB bool // true only when opened independently (tests); false when sharing session store DB.
 }
 
 var _ EventStore = (*SQLiteStore)(nil)
 
-func NewSQLiteStore(ctx context.Context, dbPath string, dbCfg *config.DBConfig) (*SQLiteStore, error) {
-	db, err := sqlutil.OpenDB(dbPath, dbCfg, "eventstore", sqlutil.PoolOpts{
-		MaxOpen:     1,
-		MaxIdle:     1,
-		MaxLifetime: 0,
-		MaxIdleTime: 5 * time.Minute,
-	})
-	if err != nil {
-		return nil, err
-	}
+// NewSQLiteStore creates an event store using a shared *sql.DB.
+// The schema is managed by the session store goose migrations (002_events_table.sql).
+func NewSQLiteStore(db *sql.DB) *SQLiteStore {
+	return &SQLiteStore{db: db, ownsDB: false}
+}
 
-	schema, err := sqlFS.ReadFile("sql/schema.sql")
+// NewIndependentStore opens its own DB for testing.
+func NewIndependentStore(dbPath string) (*SQLiteStore, error) {
+	db, err := sql.Open(sqlutil.DriverName, dbPath)
 	if err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("eventstore: read schema: %w", err)
+		return nil, fmt.Errorf("eventstore: open: %w", err)
 	}
-	if _, err := db.Exec(string(schema)); err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("eventstore: apply schema: %w", err)
-	}
-
-	return &SQLiteStore{db: db}, nil
+	// Apply same pragmas as production for test fidelity.
+	_, _ = db.Exec("PRAGMA journal_mode=WAL")
+	_, _ = db.Exec("PRAGMA busy_timeout=5000")
+	return &SQLiteStore{db: db, ownsDB: true}, nil
 }
 
 func (s *SQLiteStore) Append(ctx context.Context, event *StoredEvent) error {
-	if _, ok := ctx.Deadline(); !ok {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-	}
+	ctx, cancel := withDefaultTimeout(ctx)
+	defer cancel()
 	_, err := s.db.ExecContext(ctx, queries["insert"],
-		event.SessionID, event.Seq, event.Type, event.Data, event.Direction, event.CreatedAt)
+		event.SessionID, event.Seq, event.Type, event.Data, event.Direction, event.Source, event.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("eventstore: append: %w", err)
 	}
@@ -165,11 +220,8 @@ func (s *SQLiteStore) Append(ctx context.Context, event *StoredEvent) error {
 }
 
 func (s *SQLiteStore) BeginTx(ctx context.Context) (EventTx, error) {
-	if _, ok := ctx.Deadline(); !ok {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-	}
+	ctx, cancel := withDefaultTimeout(ctx)
+	defer cancel()
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("eventstore: begin tx: %w", err)
@@ -183,7 +235,7 @@ type sqliteTx struct {
 
 func (t *sqliteTx) Append(ctx context.Context, event *StoredEvent) error {
 	_, err := t.tx.ExecContext(ctx, queries["insert"],
-		event.SessionID, event.Seq, event.Type, event.Data, event.Direction, event.CreatedAt)
+		event.SessionID, event.Seq, event.Type, event.Data, event.Direction, event.Source, event.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("eventstore: tx append: %w", err)
 	}
@@ -195,11 +247,8 @@ func (t *sqliteTx) Commit() error {
 }
 
 func (s *SQLiteStore) QueryBySession(ctx context.Context, sessionID string, cursor int64, dir CursorDirection, limit int) (*EventPage, error) {
-	if _, ok := ctx.Deadline(); !ok {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-	}
+	ctx, cancel := withDefaultTimeout(ctx)
+	defer cancel()
 	if limit <= 0 {
 		limit = 200
 	}
@@ -267,11 +316,8 @@ func (s *SQLiteStore) QueryBySession(ctx context.Context, sessionID string, curs
 }
 
 func (s *SQLiteStore) DeleteBySession(ctx context.Context, sessionID string) error {
-	if _, ok := ctx.Deadline(); !ok {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-	}
+	ctx, cancel := withDefaultTimeout(ctx)
+	defer cancel()
 	_, err := s.db.ExecContext(ctx, queries["delete_by_session"], sessionID)
 	if err != nil {
 		return fmt.Errorf("eventstore: delete by session: %w", err)
@@ -280,11 +326,8 @@ func (s *SQLiteStore) DeleteBySession(ctx context.Context, sessionID string) err
 }
 
 func (s *SQLiteStore) DeleteExpired(ctx context.Context, cutoff time.Time) (int64, error) {
-	if _, ok := ctx.Deadline(); !ok {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-	}
+	ctx, cancel := withDefaultTimeout(ctx)
+	defer cancel()
 	res, err := s.db.ExecContext(ctx, queries["delete_expired"], cutoff.UnixMilli())
 	if err != nil {
 		return 0, fmt.Errorf("eventstore: delete expired: %w", err)
@@ -293,14 +336,89 @@ func (s *SQLiteStore) DeleteExpired(ctx context.Context, cutoff time.Time) (int6
 }
 
 func (s *SQLiteStore) Close() error {
-	return s.db.Close()
+	if s.ownsDB {
+		return s.db.Close()
+	}
+	return nil
+}
+
+// QueryTurns fetches conversation turns via v_turns view with limit/offset pagination.
+func (s *SQLiteStore) QueryTurns(ctx context.Context, sessionID string, limit, offset int) ([]*TurnRecord, error) {
+	ctx, cancel := withDefaultTimeout(ctx)
+	defer cancel()
+	rows, err := s.db.QueryContext(ctx, queries["turns.query"], sessionID, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("eventstore: query turns: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	return scanTurns(rows)
+}
+
+// QueryTurnsBefore fetches turns with seq < beforeSeq (cursor-based, DESC in SQL, reversed to ASC).
+func (s *SQLiteStore) QueryTurnsBefore(ctx context.Context, sessionID string, beforeSeq int64, limit int) ([]*TurnRecord, error) {
+	ctx, cancel := withDefaultTimeout(ctx)
+	defer cancel()
+	rows, err := s.db.QueryContext(ctx, queries["turns.query_before"], sessionID, beforeSeq, limit)
+	if err != nil {
+		return nil, fmt.Errorf("eventstore: query turns before: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	records, err := scanTurns(rows)
+	if err != nil {
+		return nil, err
+	}
+	// Reverse to ASC order (SQL returns DESC).
+	for i, j := 0, len(records)-1; i < j; i, j = i+1, j-1 {
+		records[i], records[j] = records[j], records[i]
+	}
+	return records, nil
+}
+
+// QueryTurnStats returns aggregated turn statistics for a session via v_turns_assistant.
+func (s *SQLiteStore) QueryTurnStats(ctx context.Context, sessionID string) (*TurnStats, error) {
+	ctx, cancel := withDefaultTimeout(ctx)
+	defer cancel()
+	rows, err := s.db.QueryContext(ctx, queries["turns.stats"], sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("eventstore: query turn stats: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	stats := &TurnStats{SessionID: sessionID}
+	for rows.Next() {
+		var ts TurnStatItem
+		var success sql.NullInt64
+		var role, toolsJSON sql.NullString
+		var toolCount sql.NullInt64
+		if err := rows.Scan(new(string), &ts.Seq, &role, &success, &ts.Source,
+			&toolsJSON, &toolCount, &ts.TokensIn, &ts.TokensOut,
+			&ts.DurationMs, &ts.CostUSD, &ts.Model, &ts.CreatedAt); err != nil {
+			continue
+		}
+		ts.Success = success.Valid && success.Int64 == 1
+		stats.TotalTurns++
+		if ts.Success {
+			stats.SuccessTurns++
+		} else {
+			stats.FailedTurns++
+		}
+		stats.TotalDurMs += ts.DurationMs
+		stats.TotalCostUSD += ts.CostUSD
+		stats.TotalTokIn += ts.TokensIn
+		stats.TotalTokOut += ts.TokensOut
+		stats.Turns = append(stats.Turns, ts)
+	}
+	if stats.TotalTurns == 0 {
+		return nil, ErrNotFound
+	}
+	return stats, rows.Err()
 }
 
 func scanEvents(rows *sql.Rows) ([]*StoredEvent, error) {
 	var events []*StoredEvent
 	for rows.Next() {
 		var e StoredEvent
-		if err := rows.Scan(&e.SessionID, &e.Seq, &e.Type, &e.Data, &e.Direction, &e.CreatedAt); err != nil {
+		if err := rows.Scan(&e.SessionID, &e.Seq, &e.Type, &e.Data, &e.Direction, &e.Source, &e.CreatedAt); err != nil {
 			return nil, fmt.Errorf("eventstore: scan: %w", err)
 		}
 		events = append(events, &e)
@@ -309,4 +427,28 @@ func scanEvents(rows *sql.Rows) ([]*StoredEvent, error) {
 		return nil, ErrNotFound
 	}
 	return events, rows.Err()
+}
+
+func scanTurns(rows *sql.Rows) ([]*TurnRecord, error) {
+	var records []*TurnRecord
+	for rows.Next() {
+		var r TurnRecord
+		var success sql.NullInt64
+		var toolsJSON sql.NullString // consumed from VIEW but not exposed
+		if err := rows.Scan(&r.SessionID, &r.Seq, &r.Role, &r.Content,
+			&r.Platform, &r.UserID, &r.Model, &success, &r.Source,
+			&toolsJSON, &r.ToolCount, &r.TokensIn, &r.TokensOut,
+			&r.DurationMs, &r.CostUSD, &r.CreatedAt); err != nil {
+			return nil, fmt.Errorf("eventstore: scan turn: %w", err)
+		}
+		if success.Valid {
+			s := success.Int64 == 1
+			r.Success = &s
+		}
+		records = append(records, &r)
+	}
+	if len(records) == 0 {
+		return nil, ErrNotFound
+	}
+	return records, rows.Err()
 }

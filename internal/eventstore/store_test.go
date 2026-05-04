@@ -10,16 +10,35 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/hrygo/hotplex/internal/config"
+	"github.com/hrygo/hotplex/internal/sqlutil"
 	"github.com/hrygo/hotplex/pkg/events"
 )
+
+func init() {
+	// Ensure SQLite driver is registered.
+	_ = sqlutil.DriverName
+}
 
 func newTestStore(t *testing.T) *SQLiteStore {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "test.db")
-	store, err := NewSQLiteStore(context.Background(), dbPath, &config.DBConfig{})
+	store, err := NewIndependentStore(dbPath)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
+
+	// Create the events table (normally done by goose migration 002).
+	_, err = store.db.Exec(`CREATE TABLE IF NOT EXISTS events (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		session_id TEXT NOT NULL,
+		seq INTEGER NOT NULL,
+		type TEXT NOT NULL,
+		data TEXT NOT NULL,
+		direction TEXT NOT NULL DEFAULT 'outbound',
+		source TEXT NOT NULL DEFAULT 'normal'
+			CHECK(source IN ('normal', 'crash', 'timeout', 'fresh_start')),
+		created_at INTEGER NOT NULL
+	)`)
+	require.NoError(t, err)
 	return store
 }
 
@@ -35,6 +54,7 @@ func TestSQLiteStore_AppendAndQuery(t *testing.T) {
 			Type:      "message",
 			Data:      json.RawMessage(`{"content":"hello"}`),
 			Direction: "outbound",
+			Source:    SourceNormal,
 			CreatedAt: time.Now().UnixMilli(),
 		})
 		require.NoError(t, err)
@@ -78,7 +98,7 @@ func TestSQLiteStore_DeleteBySession(t *testing.T) {
 
 	err := store.Append(ctx, &StoredEvent{
 		SessionID: "sess-del", Seq: 1, Type: "message",
-		Data: json.RawMessage(`{}`), Direction: "outbound", CreatedAt: time.Now().UnixMilli(),
+		Data: json.RawMessage(`{}`), Direction: "outbound", Source: SourceNormal, CreatedAt: time.Now().UnixMilli(),
 	})
 	require.NoError(t, err)
 
@@ -96,13 +116,13 @@ func TestSQLiteStore_DeleteExpired(t *testing.T) {
 	now := time.Now().UnixMilli()
 	err := store.Append(ctx, &StoredEvent{
 		SessionID: "sess-exp", Seq: 1, Type: "message",
-		Data: json.RawMessage(`{}`), Direction: "outbound", CreatedAt: now - 86400000, // 1 day ago
+		Data: json.RawMessage(`{}`), Direction: "outbound", Source: SourceNormal, CreatedAt: now - 86400000, // 1 day ago
 	})
 	require.NoError(t, err)
 
 	err = store.Append(ctx, &StoredEvent{
 		SessionID: "sess-exp", Seq: 2, Type: "message",
-		Data: json.RawMessage(`{}`), Direction: "outbound", CreatedAt: now,
+		Data: json.RawMessage(`{}`), Direction: "outbound", Source: SourceNormal, CreatedAt: now,
 	})
 	require.NoError(t, err)
 
@@ -128,7 +148,7 @@ func TestSQLiteStore_Transaction(t *testing.T) {
 	for i := int64(1); i <= 3; i++ {
 		err := tx.Append(ctx, &StoredEvent{
 			SessionID: "sess-tx", Seq: i, Type: "message",
-			Data: json.RawMessage(`{}`), Direction: "outbound", CreatedAt: time.Now().UnixMilli(),
+			Data: json.RawMessage(`{}`), Direction: "outbound", Source: SourceNormal, CreatedAt: time.Now().UnixMilli(),
 		})
 		require.NoError(t, err, "append event seq=%d", i)
 	}
@@ -148,7 +168,7 @@ func TestSQLiteStore_QueryLimitBounds(t *testing.T) {
 	for i := int64(1); i <= 5; i++ {
 		err := store.Append(ctx, &StoredEvent{
 			SessionID: "sess-lim", Seq: i, Type: "message",
-			Data: json.RawMessage(`{}`), Direction: "outbound", CreatedAt: time.Now().UnixMilli(),
+			Data: json.RawMessage(`{}`), Direction: "outbound", Source: SourceNormal, CreatedAt: time.Now().UnixMilli(),
 		})
 		require.NoError(t, err)
 	}
@@ -175,13 +195,43 @@ func TestIsStorable(t *testing.T) {
 	require.False(t, IsStorable(events.Kind("unknown")))
 }
 
+func TestEventsTable_SourceCheck(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	tests := []struct {
+		source string
+		ok     bool
+	}{
+		{SourceNormal, true},
+		{SourceCrash, true},
+		{SourceTimeout, true},
+		{SourceFreshStart, true},
+		{"invalid_source", false},
+		{"", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.source, func(t *testing.T) {
+			err := store.Append(ctx, &StoredEvent{
+				SessionID: "sess-check", Seq: 1, Type: "done",
+				Data: raw(`{}`), Direction: "outbound", Source: tt.source, CreatedAt: time.Now().UnixMilli(),
+			})
+			if tt.ok {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+			}
+		})
+	}
+}
+
 func TestCollector_CaptureAndFlush(t *testing.T) {
 	store := newTestStore(t)
 	collector := NewCollector(store, slog.Default())
 
 	// Capture storable events
-	collector.Capture("sess1", 1, events.Message, json.RawMessage(`{"content":"hello"}`), "outbound")
-	collector.Capture("sess1", 2, events.Done, json.RawMessage(`{}`), "outbound")
+	collector.Capture("sess1", 1, events.Message, json.RawMessage(`{"content":"hello"}`), "outbound", SourceNormal)
+	collector.Capture("sess1", 2, events.Done, json.RawMessage(`{}`), "outbound", SourceNormal)
 
 	// Close drains and flushes remaining events synchronously
 	require.NoError(t, collector.Close())
@@ -200,7 +250,7 @@ func TestCollector_DropNonStorable(t *testing.T) {
 	defer func() { _ = collector.Close() }()
 
 	// Non-storable event should be silently dropped
-	collector.Capture("sess1", 1, events.Kind("non_storable_type"), json.RawMessage(`{}`), "outbound")
+	collector.Capture("sess1", 1, events.Kind("non_storable_type"), json.RawMessage(`{}`), "outbound", SourceNormal)
 
 	// Wait briefly to ensure it's processed (or not)
 	time.Sleep(200 * time.Millisecond)

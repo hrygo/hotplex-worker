@@ -6,6 +6,7 @@ import (
 
 	"github.com/hrygo/hotplex/internal/admin"
 	"github.com/hrygo/hotplex/internal/config"
+	"github.com/hrygo/hotplex/internal/eventstore"
 	"github.com/hrygo/hotplex/internal/gateway"
 	"github.com/hrygo/hotplex/internal/session"
 	"github.com/hrygo/hotplex/internal/worker"
@@ -80,12 +81,12 @@ func (a *hubAdapter) NextSeqPeek(sessionID string) int64 {
 	return a.hub.NextSeqPeek(sessionID)
 }
 
-type convStoreAdapter struct {
-	cs session.ConversationStore
+type turnsStoreAdapter struct {
+	es *eventstore.SQLiteStore
 }
 
-func (a *convStoreAdapter) SessionStats(ctx context.Context, sessionID string) (*session.ConversationSessionStats, error) {
-	return a.cs.SessionStats(ctx, sessionID)
+func (a *turnsStoreAdapter) TurnStats(ctx context.Context, sessionID string) (*eventstore.TurnStats, error) {
+	return a.es.QueryTurnStats(ctx, sessionID)
 }
 
 type bridgeAdapter struct {

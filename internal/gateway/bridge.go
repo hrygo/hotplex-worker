@@ -49,8 +49,7 @@ type Bridge struct {
 	log       *slog.Logger
 	hub       *Hub
 	sm        bridgeSM
-	convStore session.ConversationStore // optional; nil means conversation logging disabled
-	collector *eventstore.Collector     // optional; nil means event storage disabled
+	collector *eventstore.Collector // optional; nil means event storage disabled
 	wf        WorkerFactory
 	retryCtrl *LLMRetryController
 
@@ -88,7 +87,6 @@ func NewBridge(deps BridgeDeps) *Bridge {
 		hub:                deps.Hub,
 		sm:                 deps.SM,
 		wf:                 defaultWorkerFactory{},
-		convStore:          deps.ConvStore,
 		collector:          deps.EventCollector,
 		retryCtrl:          deps.RetryCtrl,
 		agentConfigDir:     deps.AgentConfigDir,

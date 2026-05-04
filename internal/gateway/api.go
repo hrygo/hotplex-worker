@@ -33,7 +33,7 @@ type GatewayAPI struct {
 	sm         apiSM
 	bridge     SessionStarter
 	cfgStore   *config.ConfigStore
-	convStore  ConversationStoreReader
+	turnsStore TurnsReader
 	eventStore EventStoreReader
 	log        *slog.Logger
 }
@@ -43,14 +43,14 @@ type EventStoreReader interface {
 	QueryBySession(ctx context.Context, sessionID string, cursor int64, dir eventstore.CursorDirection, limit int) (*eventstore.EventPage, error)
 }
 
-// ConversationStoreReader defines the subset of ConversationStore needed by the history API.
-type ConversationStoreReader interface {
-	GetBySession(ctx context.Context, sessionID string, limit, offset int) ([]*session.ConversationRecord, error)
-	GetBySessionBefore(ctx context.Context, sessionID string, beforeSeq int64, limit int) ([]*session.ConversationRecord, error)
+// TurnsReader defines the interface for querying conversation turns via the events VIEW.
+type TurnsReader interface {
+	QueryTurns(ctx context.Context, sessionID string, limit, offset int) ([]*eventstore.TurnRecord, error)
+	QueryTurnsBefore(ctx context.Context, sessionID string, beforeSeq int64, limit int) ([]*eventstore.TurnRecord, error)
 }
 
-func NewGatewayAPI(log *slog.Logger, auth *security.Authenticator, sm apiSM, bridge SessionStarter, cfgStore *config.ConfigStore, convStore ConversationStoreReader, eventStore EventStoreReader) *GatewayAPI {
-	return &GatewayAPI{auth: auth, sm: sm, bridge: bridge, cfgStore: cfgStore, convStore: convStore, eventStore: eventStore, log: log.With("component", "api")}
+func NewGatewayAPI(log *slog.Logger, auth *security.Authenticator, sm apiSM, bridge SessionStarter, cfgStore *config.ConfigStore, turnsStore TurnsReader, eventStore EventStoreReader) *GatewayAPI {
+	return &GatewayAPI{auth: auth, sm: sm, bridge: bridge, cfgStore: cfgStore, turnsStore: turnsStore, eventStore: eventStore, log: log.With("component", "api")}
 }
 
 func respondJSON(w http.ResponseWriter, v any) {
@@ -322,22 +322,22 @@ func (g *GatewayAPI) GetHistory(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if g.convStore == nil {
+	if g.turnsStore == nil {
 		respondJSON(w, map[string]any{"records": []any{}, "has_more": false})
 		return
 	}
 
 	fetchLimit := limit + 1
-	var records []*session.ConversationRecord
+	var records []*eventstore.TurnRecord
 
 	if beforeSeq > 0 {
-		records, err = g.convStore.GetBySessionBefore(r.Context(), id, beforeSeq, fetchLimit)
+		records, err = g.turnsStore.QueryTurnsBefore(r.Context(), id, beforeSeq, fetchLimit)
 	} else {
-		records, err = g.convStore.GetBySession(r.Context(), id, fetchLimit, 0)
+		records, err = g.turnsStore.QueryTurns(r.Context(), id, fetchLimit, 0)
 	}
 
 	if err != nil {
-		if errors.Is(err, session.ErrConvNotFound) {
+		if errors.Is(err, eventstore.ErrNotFound) {
 			respondJSON(w, map[string]any{"records": []any{}, "has_more": false})
 			return
 		}

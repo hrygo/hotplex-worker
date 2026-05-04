@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/hrygo/hotplex/internal/agentconfig"
-	"github.com/hrygo/hotplex/internal/session"
+	"github.com/hrygo/hotplex/internal/eventstore"
 	"github.com/hrygo/hotplex/internal/worker"
 	"github.com/hrygo/hotplex/internal/worker/noop"
 	"github.com/hrygo/hotplex/pkg/events"
@@ -198,20 +198,11 @@ func (b *Bridge) attemptResumeFallback(p fallbackParams) bool {
 	}
 
 	// Re-deliver the original input that was lost when the first worker crashed.
+	b.captureSyntheticEvent(p.sessionID, "fresh_start", "Session restarted with context reset after worker crash", eventstore.SourceFreshStart)
 	if p.lastInput != "" {
 		b.log.Info("bridge: re-delivering input to fresh worker", "session_id", p.sessionID, "content_len", len(p.lastInput))
 		if err := w.Input(context.Background(), p.lastInput, nil); err != nil {
 			b.log.Warn("bridge: input re-delivery failed", "session_id", p.sessionID, "err", err)
-		} else if b.convStore != nil {
-			_ = b.convStore.Append(context.Background(), &session.ConversationRecord{
-				SessionID: p.sessionID,
-				Seq:       b.hub.NextSeq(p.sessionID),
-				Role:      session.RoleUser,
-				Content:   p.lastInput,
-				Platform:  si.Platform,
-				UserID:    si.OwnerID,
-				Source:    session.SourceFreshStart,
-			})
 		}
 	}
 
