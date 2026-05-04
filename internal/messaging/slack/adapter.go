@@ -828,8 +828,11 @@ func (c *SlackConn) writeWithPostMessage(ctx context.Context, text string, isDel
 		text += "\n\n"
 	}
 
-	// Try image block rendering for non-delta messages
+	// Try table block rendering for non-delta messages (TableBlock > ImageBlock)
 	if !isDelta {
+		if err := c.tryTableBlocks(ctx, text); err == nil {
+			return nil
+		}
 		if err := c.tryImageBlocks(ctx, text); err == nil {
 			return nil
 		}
@@ -845,6 +848,41 @@ func (c *SlackConn) writeWithPostMessage(ctx context.Context, text string, isDel
 		if err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// tryTableBlocks extracts markdown tables and sends as Block Kit (MarkdownBlock + TableBlock).
+// Returns error if no tables found or block send fails (caller falls back to text).
+func (c *SlackConn) tryTableBlocks(ctx context.Context, text string) error {
+	segments, tables := ExtractTables(text)
+	if len(tables) == 0 {
+		return fmt.Errorf("no tables")
+	}
+
+	blocks := BuildTableBlocks(text, segments, tables)
+	if len(blocks) == 0 {
+		return fmt.Errorf("no valid table blocks")
+	}
+
+	if err := ValidateBlocks(blocks); err != nil {
+		return fmt.Errorf("validate: %w", err)
+	}
+
+	opts := []slack.MsgOption{
+		slack.MsgOptionBlocks(blocks...),
+		slack.MsgOptionText(text, false),
+	}
+	if c.threadTS != "" {
+		opts = append(opts, slack.MsgOptionTS(c.threadTS))
+	}
+
+	_, _, pErr := c.adapter.client.PostMessageContext(ctx, c.channelID, opts...)
+	if pErr != nil {
+		if isInvalidBlocksError(pErr) {
+			c.adapter.Log.Warn("slack: table blocks rejected", "err", pErr)
+		}
+		return pErr
 	}
 	return nil
 }

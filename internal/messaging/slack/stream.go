@@ -117,6 +117,9 @@ type NativeStreamingWriter struct {
 	bytesFlushed      int64
 	failedFlushChunks []string
 
+	// Post-stream table upgrade: accumulates full content for table detection on Close.
+	fullContent strings.Builder
+
 	// TTL 监控
 	streamStartTime  time.Time
 	streamExpired    bool
@@ -190,6 +193,7 @@ func (w *NativeStreamingWriter) Write(p []byte) (int, error) {
 	}
 
 	w.buf.Write(p)
+	w.fullContent.Write(p)
 	w.bytesWritten += int64(len(p))
 
 	// 超过阈值触发即时 flush
@@ -354,6 +358,11 @@ func (w *NativeStreamingWriter) Close() error {
 
 	_, _, _ = w.client.StopStreamContext(cleanupCtx, w.channelID, w.messageTS)
 
+	// Post-stream table upgrade: replace raw tables with Block Kit if possible.
+	if integrityOK && !streamExpired {
+		w.upgradeToTableBlocks(cleanupCtx)
+	}
+
 	if w.onComplete != nil {
 		w.onComplete(w.messageTS)
 	}
@@ -376,6 +385,47 @@ func (w *NativeStreamingWriter) Close() error {
 		}
 	}
 	return nil
+}
+
+// upgradeToTableBlocks replaces the streamed message with Block Kit (MarkdownBlock + TableBlock)
+// if the content contains markdown tables. No-op if no tables or upgrade fails.
+func (w *NativeStreamingWriter) upgradeToTableBlocks(ctx context.Context) {
+	w.mu.Lock()
+	content := w.fullContent.String()
+	w.mu.Unlock()
+
+	if content == "" {
+		return
+	}
+
+	segments, tables := ExtractTables(content)
+	if len(tables) == 0 {
+		return
+	}
+
+	blocks := BuildTableBlocks(content, segments, tables)
+	if len(blocks) == 0 {
+		return
+	}
+
+	if len(blocks) > 50 {
+		w.log.Debug("slack: too many blocks for table upgrade, keeping raw message")
+		return
+	}
+
+	opts := []slack.MsgOption{
+		slack.MsgOptionBlocks(blocks...),
+		slack.MsgOptionText(content, false),
+	}
+
+	_, _, _, err := w.client.UpdateMessageContext(ctx, w.channelID, w.messageTS, opts...)
+	if err != nil {
+		if isInvalidBlocksError(err) {
+			w.log.Debug("slack: table blocks rejected by workspace, keeping raw message")
+			return
+		}
+		w.log.Warn("slack: failed to upgrade message with table blocks", "err", err)
+	}
 }
 
 // Compile-time check
