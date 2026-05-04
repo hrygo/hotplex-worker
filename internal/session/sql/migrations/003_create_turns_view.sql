@@ -24,6 +24,8 @@ LEFT JOIN sessions s ON s.id = e.session_id
 WHERE e.type = 'input' AND e.direction = 'inbound';
 
 -- AI response view (uses window function for O(n log n) turn boundary detection)
+-- Each message is associated with the NEXT done event via MIN(... FOLLOWING),
+-- then grouped and joined 1:1 on m.next_done_id = d.id.
 CREATE VIEW v_turns_assistant AS
 SELECT
   d.session_id,
@@ -45,21 +47,19 @@ SELECT
 FROM events d
 LEFT JOIN sessions s ON s.id = d.session_id
 LEFT JOIN (
-  SELECT m.session_id, MAX(m.id) AS id,
-    group_concat(json_extract(m.data, '$.content'), char(10)) AS content
+  SELECT grouped.session_id, grouped.next_done_id,
+    group_concat(json_extract(grouped.data, '$.content'), char(10)) AS content
   FROM (
-    SELECT id, session_id, data,
-      MAX(CASE WHEN type = 'done' THEN id END) OVER (
-        PARTITION BY session_id ORDER BY id ROWS UNBOUNDED PRECEDING
-      ) AS turn_end_id
+    SELECT id, session_id, type, data,
+      MIN(CASE WHEN type = 'done' THEN id END) OVER (
+        PARTITION BY session_id ORDER BY id ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING
+      ) AS next_done_id
     FROM events
     WHERE type IN ('message', 'done')
   ) grouped
-  JOIN (SELECT DISTINCT session_id, id AS done_id FROM events WHERE type = 'done') done
-    ON done.session_id = grouped.session_id AND done.done_id = grouped.turn_end_id
-  WHERE grouped.type = 'message'
-  GROUP BY grouped.session_id, grouped.turn_end_id
-) m ON m.session_id = d.session_id AND m.id < d.id
+  WHERE grouped.type = 'message' AND grouped.next_done_id IS NOT NULL
+  GROUP BY grouped.session_id, grouped.next_done_id
+) m ON m.session_id = d.session_id AND m.next_done_id = d.id
 WHERE d.type = 'done' AND d.direction = 'outbound';
 
 -- Merged view
@@ -67,7 +67,7 @@ CREATE VIEW v_turns AS
 SELECT * FROM v_turns_user
 UNION ALL
 SELECT * FROM v_turns_assistant
-ORDER BY session_id, created_at, CASE role WHEN 'user' THEN 0 ELSE 1 END;
+ORDER BY session_id, created_at, role DESC;
 
 -- +goose Down
 DROP VIEW IF EXISTS v_turns;
