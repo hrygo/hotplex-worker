@@ -285,7 +285,6 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 		WebChatAddr:     cfg.WebChat.Addr,
 		WebChatEmbedded: cfg.WebChat.Enabled,
 		DBPath:          cfg.DB.Path,
-		EventDBPath:     cfg.DB.EventsPath,
 		PoolMax:         cfg.Pool.MaxSize,
 		PoolIdle:        cfg.Pool.MaxIdlePerUser,
 		Adapters:        adapterStatuses,
