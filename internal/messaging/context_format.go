@@ -104,7 +104,7 @@ func FormatTokenCount(tokens int) string {
 	if k == float64(int(k)) {
 		return fmt.Sprintf("%dK", int(k))
 	}
-	return fmt.Sprintf("~%.1fK", k)
+	return fmt.Sprintf("%.1fK", k)
 }
 
 // FormatTokenDisplay produces a human-friendly "used / max" string.

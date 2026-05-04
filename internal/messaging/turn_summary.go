@@ -225,10 +225,10 @@ func FormatTurnSummaryRich(d TurnSummaryData) string {
 		if pct > 100 {
 			pct = 100
 		}
-		core = append(core, fmt.Sprintf("🧠 %d%%", pct))
-	}
-	if d.TurnDurationMs > 0 {
-		core = append(core, "⏱ "+formatDuration(d.TurnDurationMs))
+		bar := BuildProgressBar(pct, 5)
+		used := FormatTokenCount(int(d.ContextFill))
+		max := FormatTokenCount(int(d.ContextWindow))
+		core = append(core, fmt.Sprintf("🧠 %s %s/%s", bar, used, max))
 	}
 	if d.ToolCallCount > 0 {
 		core = append(core, "🔧 "+formatToolNames(d.ToolNames, d.ToolCallCount))
@@ -237,19 +237,7 @@ func FormatTurnSummaryRich(d TurnSummaryData) string {
 		lines = append(lines, strings.Join(core, " · "))
 	}
 
-	// Line 2: Token details
-	if d.TurnInputTok > 0 || d.TurnOutputTok > 0 {
-		var tokParts []string
-		if d.TurnInputTok > 0 {
-			tokParts = append(tokParts, fmt.Sprintf("in %s", FormatTokenCount(int(d.TurnInputTok))))
-		}
-		if d.TurnOutputTok > 0 {
-			tokParts = append(tokParts, fmt.Sprintf("out %s", FormatTokenCount(int(d.TurnOutputTok))))
-		}
-		lines = append(lines, "💎 "+strings.Join(tokParts, " · "))
-	}
-
-	// Line 3: Environment
+	// Line 2: Environment
 	var envParts []string
 	if d.WorkDir != "" {
 		envParts = append(envParts, "📂 "+TruncatePath(d.WorkDir, 3))
@@ -257,11 +245,46 @@ func FormatTurnSummaryRich(d TurnSummaryData) string {
 	if d.GitBranch != "" {
 		envParts = append(envParts, "🌿 "+d.GitBranch)
 	}
-	if sessDur := FormatSessionDuration(d.SessionDuration); sessDur != "" {
-		envParts = append(envParts, "⏳ "+sessDur)
-	}
 	if len(envParts) > 0 {
 		lines = append(lines, strings.Join(envParts, " · "))
+	}
+
+	// Line 3: Duration (merged Turn + Session)
+	var durParts []string
+	if d.TurnDurationMs > 0 {
+		durParts = append(durParts, "Turn "+formatDuration(d.TurnDurationMs))
+	}
+	if sessDur := FormatSessionDuration(d.SessionDuration); sessDur != "" {
+		durParts = append(durParts, "Session "+sessDur)
+	}
+	if len(durParts) > 0 {
+		lines = append(lines, "⏱️ "+strings.Join(durParts, " | "))
+	}
+
+	// Line 4: Tokens (turn + session total)
+	if d.TurnInputTok > 0 || d.TurnOutputTok > 0 || d.TotalInputTok > 0 || d.TotalOutputTok > 0 {
+		var tokParts []string
+		if d.TurnInputTok > 0 || d.TurnOutputTok > 0 {
+			var tp []string
+			if d.TurnInputTok > 0 {
+				tp = append(tp, fmt.Sprintf("%s in", FormatTokenCount(int(d.TurnInputTok))))
+			}
+			if d.TurnOutputTok > 0 {
+				tp = append(tp, fmt.Sprintf("%s out", FormatTokenCount(int(d.TurnOutputTok))))
+			}
+			tokParts = append(tokParts, strings.Join(tp, " · "))
+		}
+		if d.TotalInputTok > 0 || d.TotalOutputTok > 0 {
+			var tp []string
+			if d.TotalInputTok > 0 {
+				tp = append(tp, fmt.Sprintf("Σ %s in", FormatTokenCount(int(d.TotalInputTok))))
+			}
+			if d.TotalOutputTok > 0 {
+				tp = append(tp, fmt.Sprintf("Σ %s out", FormatTokenCount(int(d.TotalOutputTok))))
+			}
+			tokParts = append(tokParts, strings.Join(tp, " · "))
+		}
+		lines = append(lines, "💎 "+strings.Join(tokParts, " | "))
 	}
 
 	return strings.Join(lines, "\n")

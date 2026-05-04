@@ -26,13 +26,14 @@ import (
 )
 
 const (
-	messageExpiry    = 30 * time.Minute
-	dedupMaxEntries  = 5000
-	dedupTTL         = 30 * time.Minute
-	mediaCleanupInt  = 6 * time.Hour
-	mediaTTL         = 24 * time.Hour
-	maxMessageLength = 3800            // Slack limit is ~4000
-	errPrefix        = "\u26a0\ufe0f " // ⚠️
+	messageExpiry       = 30 * time.Minute
+	dedupMaxEntries     = 5000
+	dedupTTL            = 30 * time.Minute
+	mediaCleanupInt     = 6 * time.Hour
+	mediaTTL            = 24 * time.Hour
+	maxMessageLength    = 3800            // Slack limit is ~4000
+	errPrefix           = "\u26a0\ufe0f " // ⚠️
+	turnSummaryCooldown = 5 * time.Minute // min interval between turn summary sends per conn
 )
 
 // Subtypes that should never be processed.
@@ -642,6 +643,8 @@ type SlackConn struct {
 	streamWriter   *NativeStreamingWriter
 	streamWriterMu sync.Mutex
 	workDir        string // current workDir identity for session key derivation
+
+	lastSummarySentMs atomic.Int64 // unix ms of last successful turn summary send
 }
 
 // NewSlackConn creates a platform connection bound to a channel/thread.
@@ -1035,6 +1038,13 @@ func (c *SlackConn) sendTurnSummary(_ context.Context, env *events.Envelope) {
 	if c.adapter == nil || c.adapter.client == nil {
 		return
 	}
+	// Throttle: at most once per turnSummaryCooldown per connection.
+	now := time.Now().UnixMilli()
+	last := c.lastSummarySentMs.Load()
+	if now-last < turnSummaryCooldown.Milliseconds() {
+		return
+	}
+
 	d := messaging.ExtractTurnSummary(env)
 	plainText := messaging.FormatTurnSummary(d)
 	if plainText == "" {
@@ -1058,6 +1068,7 @@ func (c *SlackConn) sendTurnSummary(_ context.Context, env *events.Envelope) {
 	defer cancel()
 	_, _, err := c.adapter.client.PostMessageContext(sendCtx, c.channelID, opts...)
 	if err == nil {
+		c.lastSummarySentMs.Store(now)
 		return
 	}
 
@@ -1075,6 +1086,8 @@ func (c *SlackConn) sendTurnSummary(_ context.Context, env *events.Envelope) {
 	_, _, fbErr := c.adapter.client.PostMessageContext(sendCtx, c.channelID, fbOpts...)
 	if fbErr != nil {
 		c.adapter.Log.Warn("turn summary fallback send failed", "err", fbErr)
+	} else {
+		c.lastSummarySentMs.Store(now)
 	}
 }
 
@@ -1096,36 +1109,64 @@ func (c *SlackConn) buildTurnSummaryTable(d messaging.TurnSummaryData) []slack.B
 		if pct > 100 {
 			pct = 100
 		}
+		bar := messaging.BuildProgressBar(pct, 5)
+		used := messaging.FormatTokenCount(int(d.ContextFill))
 		max := messaging.FormatTokenCount(int(d.ContextWindow))
-		bar := messaging.BuildProgressBar(pct, 10)
-		table.AddRow(richTextCell("🧠 Context"), richTextCell(fmt.Sprintf("%s %s", bar, max)))
-	}
-	if d.TurnDurationMs > 0 {
-		table.AddRow(richTextCell("⏱️ Duration"), richTextCell(formatDurationSlack(d.TurnDurationMs)))
+		table.AddRow(richTextCell("🧠 Context"), richTextCell(fmt.Sprintf("%s %s/%s", bar, used, max)))
 	}
 	if d.ToolCallCount > 0 {
 		toolStr := formatToolNamesSlack(d.ToolNames, d.ToolCallCount)
 		table.AddRow(richTextCell("🔧 Tools"), richTextCell(toolStr))
 	}
-	if d.TurnInputTok > 0 || d.TurnOutputTok > 0 {
-		parts := make([]string, 0, 2)
-		if d.TurnInputTok > 0 {
-			parts = append(parts, fmt.Sprintf("%s in", messaging.FormatTokenCount(int(d.TurnInputTok))))
-		}
-		if d.TurnOutputTok > 0 {
-			parts = append(parts, fmt.Sprintf("%s out", messaging.FormatTokenCount(int(d.TurnOutputTok))))
-		}
-		table.AddRow(richTextCell("💎 Tokens"), richTextCell(strings.Join(parts, " · ")))
-	}
-
 	if d.WorkDir != "" {
 		table.AddRow(richTextCell("📂 Dir"), richTextCell(messaging.TruncatePath(d.WorkDir, 3)))
 	}
 	if d.GitBranch != "" {
 		table.AddRow(richTextCell("🌿 Branch"), richTextCell(d.GitBranch))
 	}
-	if sessDur := messaging.FormatSessionDuration(d.SessionDuration); sessDur != "" {
-		table.AddRow(richTextCell("⏳ Session"), richTextCell(sessDur))
+	// Duration (merged Turn + Session)
+	turnDur := ""
+	if d.TurnDurationMs > 0 {
+		turnDur = "Turn " + formatDurationSlack(d.TurnDurationMs)
+	}
+	sessDur := ""
+	if d.SessionDuration > 0 {
+		sessDur = "Session " + messaging.FormatSessionDuration(d.SessionDuration)
+	}
+	if turnDur != "" || sessDur != "" {
+		dParts := make([]string, 0, 2)
+		if turnDur != "" {
+			dParts = append(dParts, turnDur)
+		}
+		if sessDur != "" {
+			dParts = append(dParts, sessDur)
+		}
+		table.AddRow(richTextCell("⏱️ Duration"), richTextCell(strings.Join(dParts, " | ")))
+	}
+	// Tokens (turn + session total)
+	if d.TurnInputTok > 0 || d.TurnOutputTok > 0 || d.TotalInputTok > 0 || d.TotalOutputTok > 0 {
+		var tokParts []string
+		if d.TurnInputTok > 0 || d.TurnOutputTok > 0 {
+			var tp []string
+			if d.TurnInputTok > 0 {
+				tp = append(tp, fmt.Sprintf("%s in", messaging.FormatTokenCount(int(d.TurnInputTok))))
+			}
+			if d.TurnOutputTok > 0 {
+				tp = append(tp, fmt.Sprintf("%s out", messaging.FormatTokenCount(int(d.TurnOutputTok))))
+			}
+			tokParts = append(tokParts, strings.Join(tp, " · "))
+		}
+		if d.TotalInputTok > 0 || d.TotalOutputTok > 0 {
+			var tp []string
+			if d.TotalInputTok > 0 {
+				tp = append(tp, fmt.Sprintf("Σ %s in", messaging.FormatTokenCount(int(d.TotalInputTok))))
+			}
+			if d.TotalOutputTok > 0 {
+				tp = append(tp, fmt.Sprintf("Σ %s out", messaging.FormatTokenCount(int(d.TotalOutputTok))))
+			}
+			tokParts = append(tokParts, strings.Join(tp, " · "))
+		}
+		table.AddRow(richTextCell("💎 Tokens"), richTextCell(strings.Join(tokParts, " | ")))
 	}
 
 	return []slack.Block{table}
