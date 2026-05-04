@@ -203,6 +203,149 @@ func TestTurnsView_IncompleteTurn(t *testing.T) {
 
 func raw(s string) json.RawMessage { return json.RawMessage(s) }
 
+func TestTurnsView_UserInputJoinsSession(t *testing.T) {
+	store := newTestStoreWithViews(t)
+	ctx := context.Background()
+	sid := "sess-view-test"
+	now := time.Now().UnixMilli()
+
+	require.NoError(t, store.Append(ctx, &StoredEvent{SessionID: sid, Seq: 1, Type: "input", Data: raw(`{"content":"hello"}`), Direction: "inbound", Source: SourceNormal, CreatedAt: now}))
+	require.NoError(t, store.Append(ctx, &StoredEvent{SessionID: sid, Seq: 2, Type: "message", Data: raw(`{"content":"hi"}`), Direction: "outbound", Source: SourceNormal, CreatedAt: now + 1}))
+	require.NoError(t, store.Append(ctx, &StoredEvent{SessionID: sid, Seq: 3, Type: "done", Data: raw(`{"success":true}`), Direction: "outbound", Source: SourceNormal, CreatedAt: now + 2}))
+
+	records, err := store.QueryTurns(ctx, sid, 100, 0)
+	require.NoError(t, err)
+	require.Len(t, records, 2)
+
+	user := records[0]
+	require.Equal(t, "user", user.Role)
+	require.Equal(t, "feishu", user.Platform)
+	require.Equal(t, "ou_test", user.UserID)
+}
+
+func TestTurnsView_CrashSource(t *testing.T) {
+	store := newTestStoreWithViews(t)
+	ctx := context.Background()
+	sid := "sess-view-test"
+	now := time.Now().UnixMilli()
+
+	require.NoError(t, store.Append(ctx, &StoredEvent{SessionID: sid, Seq: 1, Type: "input", Data: raw(`{"content":"do work"}`), Direction: "inbound", Source: SourceNormal, CreatedAt: now}))
+	require.NoError(t, store.Append(ctx, &StoredEvent{SessionID: sid, Seq: 2, Type: "done", Data: raw(`{"success":false,"reason":"worker_crash","message":"Worker crashed with exit code 1","synthetic":true}`), Direction: "outbound", Source: SourceCrash, CreatedAt: now + 1}))
+
+	records, err := store.QueryTurns(ctx, sid, 100, 0)
+	require.NoError(t, err)
+	require.Len(t, records, 2)
+	require.Equal(t, SourceCrash, records[1].Source)
+
+	stats, err := store.QueryTurnStats(ctx, sid)
+	require.NoError(t, err)
+	require.Equal(t, 1, stats.FailedTurns)
+	require.Equal(t, SourceCrash, stats.Turns[0].Source)
+}
+
+func TestTurnsView_TimeoutSource(t *testing.T) {
+	store := newTestStoreWithViews(t)
+	ctx := context.Background()
+	sid := "sess-view-test"
+	now := time.Now().UnixMilli()
+
+	require.NoError(t, store.Append(ctx, &StoredEvent{SessionID: sid, Seq: 1, Type: "input", Data: raw(`{"content":"long task"}`), Direction: "inbound", Source: SourceNormal, CreatedAt: now}))
+	require.NoError(t, store.Append(ctx, &StoredEvent{SessionID: sid, Seq: 2, Type: "done", Data: raw(`{"success":false,"reason":"turn_timeout","message":"Turn exceeded 5m time limit","synthetic":true}`), Direction: "outbound", Source: SourceTimeout, CreatedAt: now + 1}))
+
+	records, err := store.QueryTurns(ctx, sid, 100, 0)
+	require.NoError(t, err)
+	require.Equal(t, SourceTimeout, records[1].Source)
+}
+
+func TestTurnsView_FreshStartSource(t *testing.T) {
+	store := newTestStoreWithViews(t)
+	ctx := context.Background()
+	sid := "sess-view-test"
+	now := time.Now().UnixMilli()
+
+	require.NoError(t, store.Append(ctx, &StoredEvent{SessionID: sid, Seq: 1, Type: "input", Data: raw(`{"content":"retry"}`), Direction: "inbound", Source: SourceNormal, CreatedAt: now}))
+	require.NoError(t, store.Append(ctx, &StoredEvent{SessionID: sid, Seq: 2, Type: "done", Data: raw(`{"success":false,"reason":"fresh_start","message":"Session restarted with context reset","synthetic":true}`), Direction: "outbound", Source: SourceFreshStart, CreatedAt: now + 1}))
+
+	records, err := store.QueryTurns(ctx, sid, 100, 0)
+	require.NoError(t, err)
+	require.Equal(t, SourceFreshStart, records[1].Source)
+}
+
+func TestQueryTurns_Pagination(t *testing.T) {
+	store := newTestStoreWithViews(t)
+	ctx := context.Background()
+	sid := "sess-view-test"
+	now := time.Now().UnixMilli()
+
+	// Insert 5 complete turns (10 events: 5 input + 5 done)
+	for i := 0; i < 5; i++ {
+		base := int64(i * 100)
+		require.NoError(t, store.Append(ctx, &StoredEvent{SessionID: sid, Seq: base + 1, Type: "input", Data: raw(`{"content":"q"}`), Direction: "inbound", Source: SourceNormal, CreatedAt: now + base*10}))
+		require.NoError(t, store.Append(ctx, &StoredEvent{SessionID: sid, Seq: base + 2, Type: "done", Data: raw(`{"success":true}`), Direction: "outbound", Source: SourceNormal, CreatedAt: now + base*10 + 1}))
+	}
+
+	t.Run("page 1", func(t *testing.T) {
+		records, err := store.QueryTurns(ctx, sid, 4, 0)
+		require.NoError(t, err)
+		require.Len(t, records, 4)
+	})
+
+	t.Run("page 2", func(t *testing.T) {
+		records, err := store.QueryTurns(ctx, sid, 4, 4)
+		require.NoError(t, err)
+		require.Len(t, records, 4)
+	})
+
+	t.Run("page 3 partial", func(t *testing.T) {
+		records, err := store.QueryTurns(ctx, sid, 4, 8)
+		require.NoError(t, err)
+		require.Len(t, records, 2) // only 2 records left
+	})
+
+	t.Run("offset beyond data", func(t *testing.T) {
+		_, err := store.QueryTurns(ctx, sid, 10, 100)
+		require.ErrorIs(t, err, ErrNotFound)
+	})
+}
+
+func TestHistoryAPI_BackwardCompatible(t *testing.T) {
+	store := newTestStoreWithViews(t)
+	ctx := context.Background()
+	sid := "sess-view-test"
+	now := time.Now().UnixMilli()
+
+	require.NoError(t, store.Append(ctx, &StoredEvent{SessionID: sid, Seq: 1, Type: "input", Data: raw(`{"content":"hello"}`), Direction: "inbound", Source: SourceNormal, CreatedAt: now}))
+	require.NoError(t, store.Append(ctx, &StoredEvent{SessionID: sid, Seq: 2, Type: "done", Data: raw(`{"success":true,"stats":{"_session":{"model_name":"claude-3"}}}`), Direction: "outbound", Source: SourceNormal, CreatedAt: now + 1}))
+
+	records, err := store.QueryTurns(ctx, sid, 100, 0)
+	require.NoError(t, err)
+	require.Len(t, records, 2)
+
+	// Verify JSON serialization matches API contract
+	user := records[0]
+	b, err := json.Marshal(user)
+	require.NoError(t, err)
+	var m map[string]any
+	require.NoError(t, json.Unmarshal(b, &m))
+
+	// Required fields present
+	require.Contains(t, m, "seq")
+	require.Contains(t, m, "role")
+	require.Contains(t, m, "content")
+	require.Contains(t, m, "source")
+	require.Contains(t, m, "created_at")
+	require.Equal(t, "user", m["role"])
+	require.Equal(t, "hello", m["content"])
+
+	assistant := records[1]
+	b, err = json.Marshal(assistant)
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(b, &m))
+	require.Equal(t, "assistant", m["role"])
+	require.Contains(t, m, "success")
+	require.Contains(t, m, "model")
+}
+
 func filterByRole(records []*TurnRecord, role string) []*TurnRecord {
 	var filtered []*TurnRecord
 	for _, r := range records {

@@ -34,7 +34,8 @@ func newTestStore(t *testing.T) *SQLiteStore {
 		type TEXT NOT NULL,
 		data TEXT NOT NULL,
 		direction TEXT NOT NULL DEFAULT 'outbound',
-		source TEXT NOT NULL DEFAULT 'normal',
+		source TEXT NOT NULL DEFAULT 'normal'
+			CHECK(source IN ('normal', 'crash', 'timeout', 'fresh_start')),
 		created_at INTEGER NOT NULL
 	)`)
 	require.NoError(t, err)
@@ -192,6 +193,36 @@ func TestIsStorable(t *testing.T) {
 	require.True(t, IsStorable(events.ToolCall))
 	require.False(t, IsStorable(events.MessageDelta))
 	require.False(t, IsStorable(events.Kind("unknown")))
+}
+
+func TestEventsTable_SourceCheck(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	tests := []struct {
+		source string
+		ok     bool
+	}{
+		{SourceNormal, true},
+		{SourceCrash, true},
+		{SourceTimeout, true},
+		{SourceFreshStart, true},
+		{"invalid_source", false},
+		{"", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.source, func(t *testing.T) {
+			err := store.Append(ctx, &StoredEvent{
+				SessionID: "sess-check", Seq: 1, Type: "done",
+				Data: raw(`{}`), Direction: "outbound", Source: tt.source, CreatedAt: time.Now().UnixMilli(),
+			})
+			if tt.ok {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+			}
+		})
+	}
 }
 
 func TestCollector_CaptureAndFlush(t *testing.T) {
