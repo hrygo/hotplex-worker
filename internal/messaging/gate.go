@@ -15,12 +15,6 @@ const (
 	ReasonNoMention      = "no_mention"
 )
 
-// GateResult holds the access decision.
-type GateResult struct {
-	Allowed bool
-	Reason  string
-}
-
 // Gate controls access to the bot based on channel type and user identity.
 type Gate struct {
 	dmPolicy       string // open | allowlist | disabled
@@ -46,46 +40,45 @@ func NewGate(dmPolicy, groupPolicy string, requireMention bool, allowFrom, allow
 }
 
 // Check evaluates whether a message should be processed.
-// channelType: platform-specific DM type (e.g., "im" for Slack, "p2p" for Feishu).
-// The isDM parameter distinguishes DM from group traffic.
-func (g *Gate) Check(isDM bool, userID string, botMentioned bool) *GateResult {
+// Returns (allowed, reason) where reason is non-empty when allowed is false.
+func (g *Gate) Check(isDM bool, userID string, botMentioned bool) (bool, string) {
 	if isDM {
 		return g.checkDM(userID)
 	}
 	return g.checkGroup(userID, botMentioned)
 }
 
-func (g *Gate) checkDM(userID string) *GateResult {
+func (g *Gate) checkDM(userID string) (bool, string) {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 
 	switch g.dmPolicy {
 	case PolicyDisabled:
-		return &GateResult{false, ReasonDMDisabled}
+		return false, ReasonDMDisabled
 	case PolicyAllowlist:
 		if !g.allowFrom[userID] && !g.allowDMFrom[userID] {
-			return &GateResult{false, ReasonNotInAllowlist}
+			return false, ReasonNotInAllowlist
 		}
 	}
-	return &GateResult{true, ""}
+	return true, ""
 }
 
-func (g *Gate) checkGroup(userID string, botMentioned bool) *GateResult {
+func (g *Gate) checkGroup(userID string, botMentioned bool) (bool, string) {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 
 	switch g.groupPolicy {
 	case PolicyDisabled:
-		return &GateResult{false, ReasonGroupDisabled}
+		return false, ReasonGroupDisabled
 	case PolicyAllowlist:
 		if !g.allowFrom[userID] && !g.allowGroupFrom[userID] {
-			return &GateResult{false, ReasonNotInAllowlist}
+			return false, ReasonNotInAllowlist
 		}
 	}
 	if g.requireMention && !botMentioned {
-		return &GateResult{false, ReasonNoMention}
+		return false, ReasonNoMention
 	}
-	return &GateResult{true, ""}
+	return true, ""
 }
 
 // UpdateAllowFrom replaces the allowlists with new sets of user IDs.

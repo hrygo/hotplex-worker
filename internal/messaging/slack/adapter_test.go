@@ -437,63 +437,65 @@ func (e errFake) Error() string { return string(e) }
 func TestGate_DMOpen(t *testing.T) {
 	t.Parallel()
 	g := messaging.NewGate("open", "open", false, nil, nil, nil)
-	r := g.Check(true, "U1", false)
-	require.True(t, r.Allowed)
+	allowed, _ := g.Check(true, "U1", false)
+	require.True(t, allowed)
 }
 
 func TestGate_DMDisabled(t *testing.T) {
 	t.Parallel()
 	g := messaging.NewGate("disabled", "open", false, nil, nil, nil)
-	r := g.Check(true, "U1", false)
-	require.False(t, r.Allowed)
-	require.Equal(t, "dm_disabled", r.Reason)
+	allowed, reason := g.Check(true, "U1", false)
+	require.False(t, allowed)
+	require.Equal(t, "dm_disabled", reason)
 }
 
 func TestGate_DMAllowlist(t *testing.T) {
 	t.Parallel()
 	g := messaging.NewGate("allowlist", "open", false, []string{"U1"}, nil, nil)
-	r := g.Check(true, "U1", false)
-	require.True(t, r.Allowed)
+	allowed, _ := g.Check(true, "U1", false)
+	require.True(t, allowed)
 
-	r2 := g.Check(true, "U2", false)
-	require.False(t, r2.Allowed)
-	require.Equal(t, "not_in_allowlist", r2.Reason)
+	allowed, reason := g.Check(true, "U2", false)
+	require.False(t, allowed)
+	require.Equal(t, "not_in_allowlist", reason)
 }
 
 func TestGate_GroupDisabled(t *testing.T) {
 	t.Parallel()
 	g := messaging.NewGate("open", "disabled", false, nil, nil, nil)
-	r := g.Check(false, "U1", false)
-	require.False(t, r.Allowed)
-	require.Equal(t, "group_disabled", r.Reason)
+	allowed, reason := g.Check(false, "U1", false)
+	require.False(t, allowed)
+	require.Equal(t, "group_disabled", reason)
 }
 
 func TestGate_RequireMention(t *testing.T) {
 	t.Parallel()
 	g := messaging.NewGate("open", "open", true, nil, nil, nil)
 
-	r := g.Check(false, "U1", false)
-	require.False(t, r.Allowed)
-	require.Equal(t, "no_mention", r.Reason)
+	allowed, reason := g.Check(false, "U1", false)
+	require.False(t, allowed)
+	require.Equal(t, "no_mention", reason)
 
-	r2 := g.Check(false, "U1", true)
-	require.True(t, r2.Allowed)
+	allowed, _ = g.Check(false, "U1", true)
+	require.True(t, allowed)
 }
 
 func TestGate_DMNotRequireMention(t *testing.T) {
 	t.Parallel()
 	g := messaging.NewGate("open", "open", true, nil, nil, nil)
-	// DM should not require mention
-	r := g.Check(true, "U1", false)
-	require.True(t, r.Allowed)
+	allowed, _ := g.Check(true, "U1", false)
+	require.True(t, allowed)
 }
 
 func TestGate_DefaultOpen(t *testing.T) {
 	t.Parallel()
 	g := messaging.NewGate(messaging.PolicyOpen, messaging.PolicyOpen, false, nil, nil, nil)
-	require.True(t, g.Check(true, "U1", false).Allowed)
-	require.True(t, g.Check(false, "U1", false).Allowed)
-	require.True(t, g.Check(false, "U1", false).Allowed)
+	allowed, _ := g.Check(true, "U1", false)
+	require.True(t, allowed)
+	allowed, _ = g.Check(false, "U1", false)
+	require.True(t, allowed)
+	allowed, _ = g.Check(false, "U1", false)
+	require.True(t, allowed)
 }
 
 // --- Phase 3.2: Message expiry ---
@@ -690,12 +692,12 @@ func TestGate_GroupAllowlist(t *testing.T) {
 	t.Parallel()
 	g := messaging.NewGate("open", "allowlist", false, []string{"U_ALLOWED"}, nil, nil)
 
-	result := g.Check(false, "U_ALLOWED", false)
-	require.True(t, result.Allowed, "whitelisted user in group should pass")
+	allowed, _ := g.Check(false, "U_ALLOWED", false)
+	require.True(t, allowed, "whitelisted user in group should pass")
 
-	result = g.Check(false, "U_STRANGER", false)
-	require.False(t, result.Allowed, "non-whitelisted user in group should be rejected")
-	require.Equal(t, messaging.ReasonNotInAllowlist, result.Reason)
+	allowed, reason := g.Check(false, "U_STRANGER", false)
+	require.False(t, allowed, "non-whitelisted user in group should be rejected")
+	require.Equal(t, messaging.ReasonNotInAllowlist, reason)
 }
 
 // ---------------------------------------------------------------------------

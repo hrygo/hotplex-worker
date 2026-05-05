@@ -52,9 +52,19 @@ func (d *Dedup) TryRecord(id string) bool {
 	}
 
 	for len(d.entries) >= d.maxEntries && len(d.order) > 0 {
-		oldest := d.order[0]
-		d.order = d.order[1:]
-		delete(d.entries, oldest)
+		// Use writeIdx compaction to release backing array references.
+		writeIdx := 0
+		target := len(d.entries) - d.maxEntries + 1
+		for _, id := range d.order {
+			if target > 0 {
+				delete(d.entries, id)
+				target--
+			} else {
+				d.order[writeIdx] = id
+				writeIdx++
+			}
+		}
+		d.order = d.order[:writeIdx]
 	}
 
 	d.entries[id] = time.Now()

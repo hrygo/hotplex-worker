@@ -110,3 +110,20 @@ func MapMCPStatusResponse(raw map[string]any) *MCPStatusData {
 	}
 	return result
 }
+
+// DecodeAs extracts a typed struct from Event.Data, handling both the original
+// typed struct and the map[string]any produced by events.Clone JSON round-tripping.
+func DecodeAs[T any](data any) (T, bool) {
+	switch v := data.(type) {
+	case map[string]any:
+		var result T
+		raw, _ := json.Marshal(v)
+		_ = json.Unmarshal(raw, &result)
+		return result, true
+	case T:
+		return v, true
+	default:
+		var zero T
+		return zero, false
+	}
+}

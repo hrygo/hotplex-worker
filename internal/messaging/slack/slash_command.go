@@ -103,8 +103,9 @@ func (a *Adapter) handleSlashCommandEvent(ctx context.Context, evt socketmode.Ev
 		"command", cmd.Command,
 		"user", cmd.UserID,
 		"channel", cmd.ChannelID,
-		"text", cmd.Text,
+		"text_len", len(cmd.Text),
 	)
+	a.Log.Debug("slack: slash command detail", "text", cmd.Text)
 
 	a.socketMode.Ack(*evt.Request) //nolint:errcheck // Ack must not block event processing
 
@@ -115,9 +116,8 @@ func (a *Adapter) handleSlashCommandEvent(ctx context.Context, evt socketmode.Ev
 	}
 
 	if a.Gate != nil {
-		result := a.Gate.Check(false, cmd.UserID, false)
-		if !result.Allowed {
-			a.Log.Debug("slack: gate rejected slash command", "reason", result.Reason, "user", cmd.UserID)
+		if allowed, reason := a.Gate.Check(false, cmd.UserID, false); !allowed {
+			a.Log.Debug("slack: gate rejected slash command", "reason", reason, "user", cmd.UserID)
 			a.sendEphemeralOrPost(ctx, cmd.ChannelID, "", cmd.UserID, "🚫 You are not authorized to use this command.")
 			return
 		}

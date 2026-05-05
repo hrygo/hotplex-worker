@@ -5,17 +5,16 @@ package security
 import (
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/hrygo/hotplex/internal/config"
 )
 
-var allowedBaseDirs = map[string]bool{
-	config.TempBaseDir(): true,
-}
-
-// forbiddenWorkDirs are system directories that must never be used as session work dirs.
-// Populated from environment variables to handle non-C: drive installations.
-var forbiddenWorkDirs []string
+var (
+	allowedBaseDirs     = map[string]bool{config.TempBaseDir(): true}
+	forbiddenWorkDirs   []string
+	securityConfigMutex sync.RWMutex
+)
 
 func init() {
 	sysDrive := os.Getenv("SystemDrive")
@@ -37,6 +36,9 @@ func init() {
 
 // GetAllowedBaseDirs returns a copy of the current allowed base directories map.
 func GetAllowedBaseDirs() map[string]bool {
+	securityConfigMutex.RLock()
+	defer securityConfigMutex.RUnlock()
+
 	result := make(map[string]bool, len(allowedBaseDirs))
 	for k, v := range allowedBaseDirs {
 		result[k] = v
@@ -46,6 +48,9 @@ func GetAllowedBaseDirs() map[string]bool {
 
 // GetForbiddenWorkDirs returns a copy of the current forbidden work directories slice.
 func GetForbiddenWorkDirs() []string {
+	securityConfigMutex.RLock()
+	defer securityConfigMutex.RUnlock()
+
 	result := make([]string, len(forbiddenWorkDirs))
 	copy(result, forbiddenWorkDirs)
 	return result
@@ -53,6 +58,9 @@ func GetForbiddenWorkDirs() []string {
 
 // ConfigureFromConfig applies security settings from the configuration file.
 func ConfigureFromConfig(cfg *config.SecurityConfig) {
+	securityConfigMutex.Lock()
+	defer securityConfigMutex.Unlock()
+
 	for _, pattern := range cfg.WorkDirAllowedBasePatterns {
 		expandedPath := os.ExpandEnv(pattern)
 		if expandedPath != "" {

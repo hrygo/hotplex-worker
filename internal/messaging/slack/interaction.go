@@ -61,6 +61,13 @@ func (a *Adapter) handleInteractionEvent(ctx context.Context, evt socketmode.Eve
 			continue
 		}
 
+		// Verify the user clicking the button is the interaction owner.
+		if pi.OwnerID != "" && pi.OwnerID != userID {
+			a.Log.Warn("slack: interaction user mismatch",
+				"request_id", requestID, "expected_owner", pi.OwnerID, "actual_user", userID)
+			continue
+		}
+
 		// Build response metadata and send through the bridge
 		switch interactionType {
 		case "allow":
@@ -415,6 +422,7 @@ func (a *Adapter) registerInteraction(requestID, sessionID, ownerID string, kind
 	a.Interactions.Register(&messaging.PendingInteraction{
 		ID:        requestID,
 		SessionID: sessionID,
+		OwnerID:   ownerID,
 		Type:      kind,
 		CreatedAt: getTimeNow(),
 		Timeout:   messaging.DefaultInteractionTimeout,

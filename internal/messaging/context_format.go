@@ -1,7 +1,6 @@
 package messaging
 
 import (
-	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -35,17 +34,11 @@ type ContextDisplayInfo struct {
 
 // ExtractContextUsageData extracts ContextUsageData from an envelope.
 func ExtractContextUsageData(env *events.Envelope) (events.ContextUsageData, error) {
-	switch v := env.Event.Data.(type) {
-	case events.ContextUsageData:
-		return v, nil
-	case map[string]any:
-		raw, _ := json.Marshal(v)
-		var d events.ContextUsageData
-		_ = json.Unmarshal(raw, &d)
-		return d, nil
-	default:
-		return events.ContextUsageData{}, fmt.Errorf("unexpected context data type: %T", env.Event.Data)
+	d, ok := events.DecodeAs[events.ContextUsageData](env.Event.Data)
+	if !ok {
+		return d, fmt.Errorf("unexpected context data type: %T", env.Event.Data)
 	}
+	return d, nil
 }
 
 // SeverityLevel maps a usage percentage to a severity level.

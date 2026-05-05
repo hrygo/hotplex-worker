@@ -27,23 +27,48 @@ HotPlex Gateway 元认知。
 
 状态转换是原子的（transitionWithInput）。WebSocket 重连时若 Worker 仍存活，跳过冗余 RUNNING 转换。
 
-## Agent Config 架构（我能帮助用户配置）
+## Agent Config 架构
 
-~/.hotplex/agent-configs/ 下有 5 个核心文件：
+### 配置文件与注入结构
 
-| 文件      | 通道 | 语义          | 我能做什么                             |
-| --------- | ---- | ------------- | -------------------------------------- |
-| SOUL.md   | B    | 人格/身份     | 用户说"我想更正式" → 更新人格          |
-| AGENTS.md | B    | 工作规则/红线 | 用户纠正行为 → 记录规则                |
-| SKILLS.md | B    | 工具使用指南  | 用户问工具用法 → 更新指南              |
-| USER.md   | C    | 用户画像      | 用户说偏好 → 更新画像                  |
-| MEMORY.md | C    | 跨会话记忆    | 从错误中学习 → 记录到 Critical Lessons |
+每个文件按三级 fallback 独立解析（Bot 级 > 平台级 > 全局级），高优先级文件**完整替换**低优先级，不合并、不追加：
 
-- B 通道（SOUL/AGENTS/SKILLS）：合并注入 system prompt（S3 尾部 for CC，body.system for OCS），无 hedging，优先级高
-- C 通道（USER/MEMORY）：注入 <context> section
-- 三级目录 fallback：每个文件独立解析，bot 级 > 平台级 > 全局级（替换模式，非追加）
-  - 全局：SOUL.md / 平台：slack/SOUL.md / Bot：slack/U12345/SOUL.md
-- frontmatter（--- 包裹的 YAML 元数据）自动剥离；每文件最大 8K，全部最大 40K
+```
+全局级:  ~/.hotplex/agent-configs/SOUL.md
+平台级:  ~/.hotplex/agent-configs/feishu/SOUL.md
+Bot 级:  ~/.hotplex/agent-configs/feishu/ou_xxx/SOUL.md   ← 命中则替代全部低级
+```
+
+因此 Bot 级的每个文件必须是完整的自包含定义。
+
+最终注入 system prompt 时，Gateway 用两层 XML 包裹：
+- **B 通道（directives）**：SOUL.md / AGENTS.md / SKILLS.md 作为强制行为约束
+- **C 通道（context）**：本文件（hotplex，go:embed 编译时注入）/ USER.md / MEMORY.md 作为参考信息
+
+Gateway 自动为每个文件添加语义提示（如"Embody this persona naturally"），B 通道是强制行为约束，C 通道是参考信息。
+
+### 文件职责
+
+| 文件 | 通道 | 应包含 | 不应包含 |
+|------|------|--------|----------|
+| SOUL.md | B | 身份、核心原则、沟通风格、红线 | 代码规范、构建命令、项目路径 |
+| AGENTS.md | B | 工作流偏好、自主边界、回复格式、Git 策略 | 断言库、锁模式、路径函数 |
+| SKILLS.md | B | 技能目录、工具用法 | make 命令、目录结构 |
+| USER.md | C | 用户角色、技术栈、交互偏好 | 系统架构、项目约定 |
+| MEMORY.md | C | 动态跨会话上下文、经验教训 | 静态参考（仓库地址、架构概要） |
+
+### 优先级与去重
+
+Worker 自动加载多层上下文（用户级 `~/.claude/CLAUDE.md`、项目级 `CLAUDE.md` / `AGENTS.md`、`.agent/rules/*.md`）。
+
+B 通道（SOUL/AGENTS/SKILLS）是最高优先级行为指令，**可覆盖**上述所有层级。原则：
+- 不重复相同规则（浪费 tokens）
+- 需要不同的行为时主动覆盖（例如项目级默认英文回复，SOUL.md 可改为中文）
+- 只放 bot 特有的指令，项目通用规则留给 CLAUDE.md
+
+### 大小限制
+
+每文件最大 8KB，总量最大 40KB。YAML frontmatter 自动剥离。
 
 ## 控制命令
 
