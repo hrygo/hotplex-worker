@@ -104,15 +104,16 @@ interface HotPlexMessage {
  */
 function convertToThreadMessage(message: HotPlexMessage): ThreadMessageLike {
   // Filter out ToolSummaryPart, ContextUsagePart, and TurnSummaryPart — not recognized by assistant-ui's ThreadMessageLike type
-  const content = message.parts.filter((p): p is TextPart | ReasoningPart | ToolCallPart => p.type !== 'tool-summary' && p.type !== 'context-usage' && p.type !== 'turn-summary');
+  const parts = message.parts ?? [];
+  const content = parts.filter((p): p is TextPart | ReasoningPart | ToolCallPart => p.type !== 'tool-summary' && p.type !== 'context-usage' && p.type !== 'turn-summary');
 
   const role = (message.role as string) === 'user' ? 'user' : 'assistant';
 
   // Extract context usage data for card rendering
-  const contextUsagePart = message.parts.find((p): p is ContextUsagePart => p.type === 'context-usage');
+  const contextUsagePart = parts.find((p): p is ContextUsagePart => p.type === 'context-usage');
 
   // Extract turn summary data for card rendering
-  const turnSummaryPart = message.parts.find((p): p is TurnSummaryPart => p.type === 'turn-summary');
+  const turnSummaryPart = parts.find((p): p is TurnSummaryPart => p.type === 'turn-summary');
 
   const result: ThreadMessageLike = {
     id: message.id,
@@ -146,7 +147,7 @@ function toCacheable(msg: HotPlexMessage): CacheableMessage {
   return {
     id: msg.id,
     role: msg.role,
-    parts: msg.parts.filter((p): p is TextPart | ReasoningPart | ToolSummaryPart =>
+    parts: (msg.parts ?? []).filter((p): p is TextPart | ReasoningPart | ToolSummaryPart =>
       p.type === 'text' || p.type === 'reasoning' || p.type === 'tool-summary'
     ).map(p => ({
       type: p.type,
@@ -309,8 +310,8 @@ export function useHotPlexRuntime({
           const serverMessages = historyToMessages(res.records);
           // Build content signature set for dedup (live user messages have different IDs than server)
           // Extract ALL visible parts (text, reasoning, tool-summary) for accurate dedup
-          const extractText = (parts: MessagePart[]) =>
-            parts
+          const extractText = (parts: MessagePart[] | undefined | null) =>
+            (parts ?? [])
               .filter(p => p.type === 'text' || p.type === 'reasoning' || p.type === 'tool-summary')
               .map(p => {
                 if (p.type === 'text') return (p as TextPart).text || '';
