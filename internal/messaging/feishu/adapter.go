@@ -1243,10 +1243,8 @@ type textContent struct {
 }
 
 // buildCardContent builds a Feishu interactive card JSON using CardKit v2 format.
-// schema:"2.0" is required for the "markdown" tag to work with full markdown rendering.
-// Uses json.NewEncoder with SetEscapeHTML(false) to preserve HTML entities.
 func buildCardContent(text string) string {
-	card := map[string]any{
+	return encodeCard(map[string]any{
 		"schema": "2.0",
 		"config": map[string]any{"wide_screen_mode": true},
 		"body": map[string]any{
@@ -1254,7 +1252,11 @@ func buildCardContent(text string) string {
 				{"tag": "markdown", "content": text},
 			},
 		},
-	}
+	})
+}
+
+// encodeCard serializes a CardKit v2 card to JSON with HTML escaping disabled.
+func encodeCard(card map[string]any) string {
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)
@@ -1292,26 +1294,11 @@ func buildTurnSummaryCard(d messaging.TurnSummaryData) string {
 	if d.GitBranch != "" {
 		elements = append(elements, tableRow("🌿 Branch", d.GitBranch))
 	}
-	turnDur := ""
-	if d.TurnDurationMs > 0 {
-		turnDur = "Turn " + messaging.FormatDuration(d.TurnDurationMs)
+	if durStr := messaging.FormatDurationParts(d); durStr != "" {
+		elements = append(elements, tableRow("⏱️ Duration", durStr))
 	}
-	sessDur := ""
-	if d.SessionDuration > 0 {
-		sessDur = "Session " + messaging.FormatSessionDuration(d.SessionDuration)
-	}
-	if turnDur != "" || sessDur != "" {
-		var dp []string
-		if turnDur != "" {
-			dp = append(dp, turnDur)
-		}
-		if sessDur != "" {
-			dp = append(dp, sessDur)
-		}
-		elements = append(elements, tableRow("⏱️ Duration", strings.Join(dp, " | ")))
-	}
-	if d.TurnInputTok > 0 || d.TurnOutputTok > 0 || d.TotalInputTok > 0 || d.TotalOutputTok > 0 {
-		elements = append(elements, tableRow("💎 Tokens", formatTokensValue(d)))
+	if tokStr := messaging.FormatTokenUsage(d); tokStr != "" {
+		elements = append(elements, tableRow("💎 Tokens", tokStr))
 	}
 
 	if len(elements) == 0 {
@@ -1323,11 +1310,7 @@ func buildTurnSummaryCard(d messaging.TurnSummaryData) string {
 		"config": map[string]any{"wide_screen_mode": true},
 		"body":   map[string]any{"elements": elements},
 	}
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	_ = enc.Encode(card)
-	return strings.TrimRight(buf.String(), "\n")
+	return encodeCard(card)
 }
 
 // tableRow creates a CardKit v2 column_set element with two weighted columns.
@@ -1349,32 +1332,6 @@ func tableRow(label, value string) map[string]any {
 			},
 		},
 	}
-}
-
-// formatTokensValue formats token usage matching Slack's table layout.
-func formatTokensValue(d messaging.TurnSummaryData) string {
-	var tokParts []string
-	if d.TurnInputTok > 0 || d.TurnOutputTok > 0 {
-		var tp []string
-		if d.TurnInputTok > 0 {
-			tp = append(tp, fmt.Sprintf("%s in", messaging.FormatTokenCount(int(d.TurnInputTok))))
-		}
-		if d.TurnOutputTok > 0 {
-			tp = append(tp, fmt.Sprintf("%s out", messaging.FormatTokenCount(int(d.TurnOutputTok))))
-		}
-		tokParts = append(tokParts, strings.Join(tp, " · "))
-	}
-	if d.TotalInputTok > 0 || d.TotalOutputTok > 0 {
-		var tp []string
-		if d.TotalInputTok > 0 {
-			tp = append(tp, fmt.Sprintf("Σ %s in", messaging.FormatTokenCount(int(d.TotalInputTok))))
-		}
-		if d.TotalOutputTok > 0 {
-			tp = append(tp, fmt.Sprintf("Σ %s out", messaging.FormatTokenCount(int(d.TotalOutputTok))))
-		}
-		tokParts = append(tokParts, strings.Join(tp, " · "))
-	}
-	return strings.Join(tokParts, " | ")
 }
 
 // formatSecurityError converts technical security errors into user-friendly messages.

@@ -1147,48 +1147,12 @@ func (c *SlackConn) buildTurnSummaryTable(d messaging.TurnSummaryData) []slack.B
 		table.AddRow(richTextCell("🌿 Branch"), richTextCell(d.GitBranch))
 	}
 	// Duration (merged Turn + Session)
-	turnDur := ""
-	if d.TurnDurationMs > 0 {
-		turnDur = "Turn " + messaging.FormatDuration(d.TurnDurationMs)
-	}
-	sessDur := ""
-	if d.SessionDuration > 0 {
-		sessDur = "Session " + messaging.FormatSessionDuration(d.SessionDuration)
-	}
-	if turnDur != "" || sessDur != "" {
-		dParts := make([]string, 0, 2)
-		if turnDur != "" {
-			dParts = append(dParts, turnDur)
-		}
-		if sessDur != "" {
-			dParts = append(dParts, sessDur)
-		}
-		table.AddRow(richTextCell("⏱️ Duration"), richTextCell(strings.Join(dParts, " | ")))
+	if durStr := messaging.FormatDurationParts(d); durStr != "" {
+		table.AddRow(richTextCell("⏱️ Duration"), richTextCell(durStr))
 	}
 	// Tokens (turn + session total)
-	if d.TurnInputTok > 0 || d.TurnOutputTok > 0 || d.TotalInputTok > 0 || d.TotalOutputTok > 0 {
-		var tokParts []string
-		if d.TurnInputTok > 0 || d.TurnOutputTok > 0 {
-			var tp []string
-			if d.TurnInputTok > 0 {
-				tp = append(tp, fmt.Sprintf("%s in", messaging.FormatTokenCount(int(d.TurnInputTok))))
-			}
-			if d.TurnOutputTok > 0 {
-				tp = append(tp, fmt.Sprintf("%s out", messaging.FormatTokenCount(int(d.TurnOutputTok))))
-			}
-			tokParts = append(tokParts, strings.Join(tp, " · "))
-		}
-		if d.TotalInputTok > 0 || d.TotalOutputTok > 0 {
-			var tp []string
-			if d.TotalInputTok > 0 {
-				tp = append(tp, fmt.Sprintf("Σ %s in", messaging.FormatTokenCount(int(d.TotalInputTok))))
-			}
-			if d.TotalOutputTok > 0 {
-				tp = append(tp, fmt.Sprintf("Σ %s out", messaging.FormatTokenCount(int(d.TotalOutputTok))))
-			}
-			tokParts = append(tokParts, strings.Join(tp, " · "))
-		}
-		table.AddRow(richTextCell("💎 Tokens"), richTextCell(strings.Join(tokParts, " | ")))
+	if tokStr := messaging.FormatTokenUsage(d); tokStr != "" {
+		table.AddRow(richTextCell("💎 Tokens"), richTextCell(tokStr))
 	}
 
 	return []slack.Block{table}
