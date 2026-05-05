@@ -639,8 +639,7 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		c.adapter.Interactions.CancelAll(env.SessionID)
 
 		d := messaging.ExtractTurnSummary(env)
-		summaryText := messaging.FormatTurnSummaryRich(d)
-		if summaryText != "" {
+		if d.TurnCount > 0 || d.ModelName != "" || d.ToolCallCount > 0 {
 			c.adapter.Log.Info("turn summary",
 				"turn_count", d.TurnCount,
 				"duration_ms", d.TurnDurationMs,
@@ -651,14 +650,8 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 			now := time.Now().UnixMilli()
 			last := c.lastSummarySentMs.Load()
 			if now-last >= messaging.TurnSummaryCooldown.Milliseconds() {
-				if streamCtrl != nil && streamCtrl.IsCreated() {
-					if streamCtrl.Write("\n\n---\n"+summaryText) == nil {
-						c.lastSummarySentMs.Store(now)
-					}
-				} else {
-					go c.sendTurnSummaryText(summaryText)
-					c.lastSummarySentMs.Store(now)
-				}
+				go c.sendTurnSummaryCard(ctx, d)
+				c.lastSummarySentMs.Store(now)
 			}
 		}
 
@@ -875,7 +868,11 @@ func (c *FeishuConn) writeContent(ctx context.Context, env *events.Envelope, tex
 	return c.adapter.sendTextMessage(ctx, chatID, OptimizeMarkdownStyle(SanitizeForCard(text)))
 }
 
-func (c *FeishuConn) sendTurnSummaryText(text string) {
+func (c *FeishuConn) sendTurnSummaryCard(_ context.Context, d messaging.TurnSummaryData) {
+	cardJSON := buildTurnSummaryCard(d)
+	if cardJSON == "" {
+		return
+	}
 	sendCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	c.mu.RLock()
@@ -884,12 +881,12 @@ func (c *FeishuConn) sendTurnSummaryText(text string) {
 	c.mu.RUnlock()
 	var err error
 	if replyToMsgID != "" {
-		err = c.adapter.replyMessage(sendCtx, replyToMsgID, text, false)
+		err = c.adapter.replyCardJSON(sendCtx, replyToMsgID, cardJSON)
 	} else {
-		err = c.adapter.sendTextMessage(sendCtx, chatID, text)
+		err = c.adapter.sendCardMessage(sendCtx, chatID, cardJSON)
 	}
 	if err != nil {
-		c.adapter.Log.Warn("turn summary send failed", "err", err)
+		c.adapter.Log.Warn("turn summary card send failed", "err", err)
 	}
 }
 
@@ -1108,6 +1105,29 @@ func (a *Adapter) replyMessage(ctx context.Context, messageID, content string, r
 	return nil
 }
 
+// replyCardJSON replies to a message with a pre-built CardKit v2 JSON card.
+func (a *Adapter) replyCardJSON(ctx context.Context, messageID, cardJSON string) error {
+	if a.larkClient == nil {
+		return fmt.Errorf("feishu: lark client not initialized")
+	}
+	body := larkim.NewReplyMessageReqBodyBuilder().
+		MsgType(larkim.MsgTypeInteractive).
+		Content(cardJSON).
+		Build()
+	req := larkim.NewReplyMessageReqBuilder().
+		MessageId(messageID).
+		Body(body).
+		Build()
+	resp, err := a.larkClient.Im.V1.Message.Reply(ctx, req)
+	if err != nil {
+		return fmt.Errorf("feishu: reply card: %w", err)
+	}
+	if !resp.Success() {
+		return fmt.Errorf("feishu: reply card failed: code=%d msg=%s", resp.Code, resp.Msg)
+	}
+	return nil
+}
+
 const mediaMaxSize = 10 * 1024 * 1024 // 10 MB
 
 // mediaTypeToResourceType maps our internal media types to Feishu resource types.
@@ -1258,6 +1278,121 @@ func buildCardContent(text string) string {
 	enc.SetEscapeHTML(false)
 	_ = enc.Encode(card)
 	return strings.TrimRight(buf.String(), "\n")
+}
+
+// buildTurnSummaryCard builds a CardKit v2 card with column_set rows matching
+// Slack's TableBlock layout: two columns per row (label | value).
+func buildTurnSummaryCard(d messaging.TurnSummaryData) string {
+	var elements []map[string]any
+
+	if d.TurnCount > 0 {
+		elements = append(elements, tableRow("🔄 Turn", fmt.Sprintf("#%d", d.TurnCount)))
+	}
+	if d.ModelName != "" {
+		elements = append(elements, tableRow("🤖 Model", d.ModelName))
+	}
+	if d.ContextWindow > 0 && d.ContextFill > 0 {
+		pct := int(d.ContextPct + 0.5)
+		if pct > 100 {
+			pct = 100
+		}
+		used := messaging.FormatTokenCount(int(d.ContextFill))
+		max := messaging.FormatTokenCount(int(d.ContextWindow))
+		elements = append(elements, tableRow("🧠 Context", fmt.Sprintf("%d%% %s/%s", pct, used, max)))
+	}
+	if d.ToolCallCount > 0 {
+		toolStr := messaging.FormatToolNames(d.ToolNames, d.ToolCallCount)
+		elements = append(elements, tableRow("🔧 Tools", toolStr))
+	}
+	if d.WorkDir != "" {
+		elements = append(elements, tableRow("📂 Dir", messaging.TruncatePath(d.WorkDir, 3)))
+	}
+	if d.GitBranch != "" {
+		elements = append(elements, tableRow("🌿 Branch", d.GitBranch))
+	}
+	turnDur := ""
+	if d.TurnDurationMs > 0 {
+		turnDur = "Turn " + messaging.FormatDuration(d.TurnDurationMs)
+	}
+	sessDur := ""
+	if d.SessionDuration > 0 {
+		sessDur = "Session " + messaging.FormatSessionDuration(d.SessionDuration)
+	}
+	if turnDur != "" || sessDur != "" {
+		var dp []string
+		if turnDur != "" {
+			dp = append(dp, turnDur)
+		}
+		if sessDur != "" {
+			dp = append(dp, sessDur)
+		}
+		elements = append(elements, tableRow("⏱️ Duration", strings.Join(dp, " | ")))
+	}
+	if d.TurnInputTok > 0 || d.TurnOutputTok > 0 || d.TotalInputTok > 0 || d.TotalOutputTok > 0 {
+		elements = append(elements, tableRow("💎 Tokens", formatTokensValue(d)))
+	}
+
+	if len(elements) == 0 {
+		return ""
+	}
+
+	card := map[string]any{
+		"schema": "2.0",
+		"config": map[string]any{"wide_screen_mode": true},
+		"body":   map[string]any{"elements": elements},
+	}
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	_ = enc.Encode(card)
+	return strings.TrimRight(buf.String(), "\n")
+}
+
+// tableRow creates a CardKit v2 column_set element with two weighted columns.
+func tableRow(label, value string) map[string]any {
+	return map[string]any{
+		"tag": "column_set",
+		"columns": []map[string]any{
+			{
+				"tag":      "column",
+				"width":    "weighted",
+				"weight":   1,
+				"elements": []map[string]any{{"tag": "markdown", "content": "**" + label + "**"}},
+			},
+			{
+				"tag":      "column",
+				"width":    "weighted",
+				"weight":   3,
+				"elements": []map[string]any{{"tag": "markdown", "content": value}},
+			},
+		},
+	}
+}
+
+// formatTokensValue formats token usage matching Slack's table layout.
+func formatTokensValue(d messaging.TurnSummaryData) string {
+	var tokParts []string
+	if d.TurnInputTok > 0 || d.TurnOutputTok > 0 {
+		var tp []string
+		if d.TurnInputTok > 0 {
+			tp = append(tp, fmt.Sprintf("%s in", messaging.FormatTokenCount(int(d.TurnInputTok))))
+		}
+		if d.TurnOutputTok > 0 {
+			tp = append(tp, fmt.Sprintf("%s out", messaging.FormatTokenCount(int(d.TurnOutputTok))))
+		}
+		tokParts = append(tokParts, strings.Join(tp, " · "))
+	}
+	if d.TotalInputTok > 0 || d.TotalOutputTok > 0 {
+		var tp []string
+		if d.TotalInputTok > 0 {
+			tp = append(tp, fmt.Sprintf("Σ %s in", messaging.FormatTokenCount(int(d.TotalInputTok))))
+		}
+		if d.TotalOutputTok > 0 {
+			tp = append(tp, fmt.Sprintf("Σ %s out", messaging.FormatTokenCount(int(d.TotalOutputTok))))
+		}
+		tokParts = append(tokParts, strings.Join(tp, " · "))
+	}
+	return strings.Join(tokParts, " | ")
 }
 
 // formatSecurityError converts technical security errors into user-friendly messages.
