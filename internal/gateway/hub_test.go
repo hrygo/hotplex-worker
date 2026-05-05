@@ -11,9 +11,11 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 
 	"github.com/hrygo/hotplex/internal/config"
+	"github.com/hrygo/hotplex/internal/metrics"
 	"github.com/hrygo/hotplex/internal/security"
 	"github.com/hrygo/hotplex/internal/worker"
 	"github.com/hrygo/hotplex/pkg/aep"
@@ -399,11 +401,32 @@ func TestHub_RouteMessage_NoConnections(t *testing.T) {
 	})
 }
 
+func TestHub_RouteMessage_SilentDropMetric(t *testing.T) {
+	t.Parallel()
+	h := newTestHub(t)
+
+	before := testutil.ToFloat64(metrics.GatewayEventsNoSubscribersDropped.WithLabelValues(string(events.State)))
+
+	h.routeMessage(&EnvelopeWithConn{
+		Env:  events.NewEnvelope(aep.NewID(), "orphan", 1, events.State, events.StateData{State: events.StateIdle}),
+		Conn: nil,
+	})
+
+	after := testutil.ToFloat64(metrics.GatewayEventsNoSubscribersDropped.WithLabelValues(string(events.State)))
+	require.Equal(t, before+1, after, "metric should increment when events are dropped with no connections")
+}
+
 func TestHub_sendControlToSession_NoConns(t *testing.T) {
 	t.Parallel()
 	h := newTestHub(t)
+
+	before := testutil.ToFloat64(metrics.GatewayEventsNoSubscribersDropped.WithLabelValues(string(events.Control)))
+
 	env := events.NewEnvelope(aep.NewID(), "no_conns", 1, events.Control, nil)
 	h.sendControlToSession(context.Background(), env)
+
+	after := testutil.ToFloat64(metrics.GatewayEventsNoSubscribersDropped.WithLabelValues(string(events.Control)))
+	require.Equal(t, before+1, after, "metric should increment when control events are dropped")
 }
 
 func TestHub_DrainBroadcast(t *testing.T) {
@@ -881,6 +904,52 @@ func TestPCEntry_JoinPlatformSession_Dedup(t *testing.T) {
 	count := len(h.sessions["s1"])
 	h.mu.RUnlock()
 	require.Equal(t, 1, count)
+}
+
+func TestHub_JoinPlatformSession_DeadEntryReplaced(t *testing.T) {
+	t.Parallel()
+	h := newTestHub(t)
+	pc := &mockPlatformConn{}
+
+	h.JoinPlatformSession("s1", pc)
+
+	h.mu.RLock()
+	var oldEntry *pcEntry
+	for sw := range h.sessions["s1"] {
+		if pce, ok := sw.(*pcEntry); ok {
+			oldEntry = pce
+		}
+	}
+	h.mu.RUnlock()
+	require.NotNil(t, oldEntry)
+
+	_ = oldEntry.Close()
+
+	require.Eventually(t, func() bool {
+		select {
+		case <-oldEntry.done:
+			return true
+		default:
+			return false
+		}
+	}, time.Second, 10*time.Millisecond)
+
+	h.JoinPlatformSession("s1", pc)
+
+	h.mu.RLock()
+	count := len(h.sessions["s1"])
+	var newEntry *pcEntry
+	for sw := range h.sessions["s1"] {
+		if pce, ok := sw.(*pcEntry); ok {
+			newEntry = pce
+		}
+	}
+	h.mu.RUnlock()
+
+	require.Equal(t, 1, count, "should have exactly 1 entry after replacing dead one")
+	require.NotNil(t, newEntry, "new pcEntry should exist")
+	require.NotEqual(t, oldEntry, newEntry,
+		"dead entry should have been replaced with a fresh one")
 }
 
 func TestPCEntry_RouteMessage_LazyEncode(t *testing.T) {

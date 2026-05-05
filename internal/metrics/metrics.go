@@ -97,6 +97,13 @@ var (
 		Help:      "Events dropped at platform conn buffer level",
 	}, []string{"event_type"})
 
+	// GatewayEventsNoSubscribersDropped tracks events dropped due to no subscribed connections.
+	GatewayEventsNoSubscribersDropped = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "hotplex",
+		Name:      "gateway_events_no_subscribers_dropped_total",
+		Help:      "Total events dropped due to no subscribed connections",
+	}, []string{"event_type"})
+
 	// GatewayDeltaCoalescedTotal tracks delta events merged by the coalescer.
 	GatewayDeltaCoalescedTotal = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: "hotplex",
