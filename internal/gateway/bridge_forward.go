@@ -109,6 +109,7 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 
 		env = events.Clone(env)
 		env.SessionID = sessionID
+		env.OwnerID = sessOwner
 
 		var capturedDeltaContent string
 		if env.Event.Type == events.MessageDelta || env.Event.Type == events.Message {
