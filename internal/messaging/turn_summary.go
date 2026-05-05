@@ -277,42 +277,57 @@ func FormatTurnSummaryRich(d TurnSummaryData) string {
 	}
 
 	// Line 6: Duration (merged Turn + Session)
-	var durParts []string
-	if d.TurnDurationMs > 0 {
-		durParts = append(durParts, "Turn "+FormatDuration(d.TurnDurationMs))
-	}
-	if sessDur := FormatSessionDuration(d.SessionDuration); sessDur != "" {
-		durParts = append(durParts, "Session "+sessDur)
-	}
-	if len(durParts) > 0 {
-		lines = append(lines, "⏱️ "+strings.Join(durParts, " · "))
+	if durStr := FormatDurationParts(d); durStr != "" {
+		lines = append(lines, "⏱️ "+durStr)
 	}
 
 	// Line 7: Tokens (turn + session total)
-	if d.TurnInputTok > 0 || d.TurnOutputTok > 0 || d.TotalInputTok > 0 || d.TotalOutputTok > 0 {
-		var tokParts []string
-		if d.TurnInputTok > 0 || d.TurnOutputTok > 0 {
-			var tp []string
-			if d.TurnInputTok > 0 {
-				tp = append(tp, fmt.Sprintf("%s in", FormatTokenCount(int(d.TurnInputTok))))
-			}
-			if d.TurnOutputTok > 0 {
-				tp = append(tp, fmt.Sprintf("%s out", FormatTokenCount(int(d.TurnOutputTok))))
-			}
-			tokParts = append(tokParts, strings.Join(tp, " · "))
-		}
-		if d.TotalInputTok > 0 || d.TotalOutputTok > 0 {
-			var tp []string
-			if d.TotalInputTok > 0 {
-				tp = append(tp, fmt.Sprintf("Σ %s in", FormatTokenCount(int(d.TotalInputTok))))
-			}
-			if d.TotalOutputTok > 0 {
-				tp = append(tp, fmt.Sprintf("Σ %s out", FormatTokenCount(int(d.TotalOutputTok))))
-			}
-			tokParts = append(tokParts, strings.Join(tp, " · "))
-		}
-		lines = append(lines, "💎 "+strings.Join(tokParts, " | "))
+	if tokStr := FormatTokenUsage(d); tokStr != "" {
+		lines = append(lines, "💎 "+tokStr)
 	}
 
 	return strings.Join(lines, "\n")
+}
+
+// FormatDurationParts returns a formatted duration string combining turn and session durations.
+// Returns empty string if no duration data is available.
+func FormatDurationParts(d TurnSummaryData) string {
+	var parts []string
+	if d.TurnDurationMs > 0 {
+		parts = append(parts, "Turn "+FormatDuration(d.TurnDurationMs))
+	}
+	if sessDur := FormatSessionDuration(d.SessionDuration); sessDur != "" {
+		parts = append(parts, "Session "+sessDur)
+	}
+	return strings.Join(parts, " · ")
+}
+
+// FormatTokenUsage returns a formatted token usage string with turn and total breakdowns.
+// Returns empty string if no token data is available.
+func FormatTokenUsage(d TurnSummaryData) string {
+	if d.TurnInputTok <= 0 && d.TurnOutputTok <= 0 && d.TotalInputTok <= 0 && d.TotalOutputTok <= 0 {
+		return ""
+	}
+	var tokParts []string
+	if d.TurnInputTok > 0 || d.TurnOutputTok > 0 {
+		var tp []string
+		if d.TurnInputTok > 0 {
+			tp = append(tp, fmt.Sprintf("%s in", FormatTokenCount(int(d.TurnInputTok))))
+		}
+		if d.TurnOutputTok > 0 {
+			tp = append(tp, fmt.Sprintf("%s out", FormatTokenCount(int(d.TurnOutputTok))))
+		}
+		tokParts = append(tokParts, strings.Join(tp, " · "))
+	}
+	if d.TotalInputTok > 0 || d.TotalOutputTok > 0 {
+		var tp []string
+		if d.TotalInputTok > 0 {
+			tp = append(tp, fmt.Sprintf("Σ %s in", FormatTokenCount(int(d.TotalInputTok))))
+		}
+		if d.TotalOutputTok > 0 {
+			tp = append(tp, fmt.Sprintf("Σ %s out", FormatTokenCount(int(d.TotalOutputTok))))
+		}
+		tokParts = append(tokParts, strings.Join(tp, " · "))
+	}
+	return strings.Join(tokParts, " | ")
 }
