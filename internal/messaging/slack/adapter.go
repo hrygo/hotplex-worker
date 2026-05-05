@@ -642,7 +642,8 @@ type SlackConn struct {
 	handlerMu      sync.Mutex // serializes control commands and message handling per thread
 	streamWriter   *NativeStreamingWriter
 	streamWriterMu sync.Mutex
-	workDir        string // current workDir identity for session key derivation
+	mu             sync.RWMutex // protects workDir
+	workDir        string       // current workDir identity for session key derivation
 
 	lastSummarySentMs atomic.Int64 // unix ms of last successful turn summary send
 }
@@ -652,9 +653,17 @@ func NewSlackConn(adapter *Adapter, channelID, threadTS, workDir string) *SlackC
 	return &SlackConn{adapter: adapter, channelID: channelID, threadTS: threadTS, workDir: workDir}
 }
 
-func (c *SlackConn) WorkDir() string { return c.workDir }
+func (c *SlackConn) WorkDir() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.workDir
+}
 
-func (c *SlackConn) SetWorkDir(dir string) { c.workDir = dir }
+func (c *SlackConn) SetWorkDir(dir string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.workDir = dir
+}
 
 // notifyStatus sets processing status (nil-safe for tests).
 func (c *SlackConn) notifyStatus(ctx context.Context, text string) {

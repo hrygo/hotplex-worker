@@ -143,6 +143,7 @@ func (a *Adapter) registerInteraction(requestID, sessionID, ownerID string, kind
 	a.Interactions.Register(&messaging.PendingInteraction{
 		ID:        requestID,
 		SessionID: sessionID,
+		OwnerID:   ownerID,
 		Type:      kind,
 		CreatedAt: time.Now(),
 		Timeout:   messaging.DefaultInteractionTimeout,

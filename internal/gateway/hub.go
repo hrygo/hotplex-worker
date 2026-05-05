@@ -280,14 +280,11 @@ func (h *Hub) SendToSession(ctx context.Context, env *events.Envelope, afterDrai
 		return nil
 	}
 
-	// Clone before broadcast: Bridge.forwardEvents holds a reference to the
-	// original envelope and may call aep.EncodeJSON(env) concurrently (e.g.,
-	// for msgStore.Append). Cloning here ensures the channel holds an
-	// independent copy, eliminating the race with Bridge.forwardEvents.
-	// The clone is created inside the select to keep the backpressure check
-	// and send atomic (same as the original code).
+	// No Clone needed here: Bridge.forwardEvents already clones the envelope
+	// before calling SendToSession, so this is a bridge-owned copy. The Hub.Run
+	// goroutine reads it from the channel for routing without mutation.
 	if isDroppable(env.Event.Type) {
-		if h.sendBroadcast(&EnvelopeWithConn{Env: events.Clone(env), afterDrain: afterDrainCallback}) {
+		if h.sendBroadcast(&EnvelopeWithConn{Env: env, afterDrain: afterDrainCallback}) {
 			return nil
 		}
 		// sendBroadcast returned false = channel closed; drop delta silently.
@@ -299,7 +296,7 @@ func (h *Hub) SendToSession(ctx context.Context, env *events.Envelope, afterDrai
 	}
 
 	// Guaranteed delivery path.
-	if h.sendBroadcast(&EnvelopeWithConn{Env: events.Clone(env), afterDrain: afterDrainCallback}) {
+	if h.sendBroadcast(&EnvelopeWithConn{Env: env, afterDrain: afterDrainCallback}) {
 		return nil
 	}
 	return errors.New("gateway: broadcast channel closed")

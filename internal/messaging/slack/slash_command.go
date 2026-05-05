@@ -103,8 +103,9 @@ func (a *Adapter) handleSlashCommandEvent(ctx context.Context, evt socketmode.Ev
 		"command", cmd.Command,
 		"user", cmd.UserID,
 		"channel", cmd.ChannelID,
-		"text", cmd.Text,
+		"text_len", len(cmd.Text),
 	)
+	a.Log.Debug("slack: slash command detail", "text", cmd.Text)
 
 	a.socketMode.Ack(*evt.Request) //nolint:errcheck // Ack must not block event processing
 
