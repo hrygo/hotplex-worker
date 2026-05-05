@@ -332,15 +332,22 @@ func envFilePath() string {
 
 func writeEnvVar(key, value string) error {
 	envPath := envFilePath()
-	f, err := os.OpenFile(envPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
-	if err != nil {
-		return fmt.Errorf("open .env: %w", err)
-	}
-	defer func() { _ = f.Close() }()
 
-	line := fmt.Sprintf("%s=%s\n", key, value)
-	_, err = f.WriteString(line)
-	return err
+	// Read existing content and remove any existing entry for this key.
+	var lines []string
+	data, err := os.ReadFile(envPath)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("read .env: %w", err)
+	}
+	prefix := key + "="
+	for _, line := range strings.Split(string(data), "\n") {
+		if line != "" && !strings.HasPrefix(line, prefix) {
+			lines = append(lines, line)
+		}
+	}
+	lines = append(lines, fmt.Sprintf("%s=%s", key, value))
+	content := strings.Join(lines, "\n") + "\n"
+	return os.WriteFile(envPath, []byte(content), 0o600)
 }
 
 func unsetEnvVar(key string) error {

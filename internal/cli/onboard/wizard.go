@@ -16,6 +16,7 @@ import (
 	"github.com/hrygo/hotplex/internal/cli/checkers"
 	"github.com/hrygo/hotplex/internal/cli/output"
 	"github.com/hrygo/hotplex/internal/config"
+	"github.com/hrygo/hotplex/internal/security"
 	"github.com/hrygo/hotplex/internal/service"
 )
 
@@ -630,7 +631,7 @@ func loadEnvFile(dir string) {
 		key := strings.TrimSpace(line[:idx])
 		val := strings.TrimSpace(line[idx+1:])
 		val = strings.Trim(val, `"'`)
-		if os.Getenv(key) == "" {
+		if os.Getenv(key) == "" && !security.IsProtected(key) {
 			_ = os.Setenv(key, val)
 			loaded++
 		}
