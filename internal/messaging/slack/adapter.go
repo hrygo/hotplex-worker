@@ -26,10 +26,10 @@ import (
 )
 
 const (
-	messageExpiry       = 30 * time.Minute
-	dedupMaxEntries     = 5000
-	dedupTTL            = 30 * time.Minute
-	mediaCleanupInt     = 6 * time.Hour
+	messageExpiry    = 30 * time.Minute
+	dedupMaxEntries  = 5000
+	dedupTTL         = 30 * time.Minute
+	mediaCleanupInt  = 6 * time.Hour
 	mediaTTL         = 24 * time.Hour
 	maxMessageLength = 3800            // Slack limit is ~4000
 	errPrefix        = "\u26a0\ufe0f " // ⚠️

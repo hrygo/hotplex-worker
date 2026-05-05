@@ -28,8 +28,6 @@ import (
 	"github.com/hrygo/hotplex/pkg/events"
 )
 
-const turnSummaryCooldown = 5 * time.Minute
-
 func init() {
 	messaging.Register(messaging.PlatformFeishu, func(log *slog.Logger) messaging.PlatformAdapterInterface {
 		return &Adapter{
@@ -517,16 +515,16 @@ type FeishuConn struct {
 	chatID    string
 	threadKey string
 
-	mu            sync.RWMutex
-	chatType      string
-	replyToMsgID  string
-	platformMsgID string
-	sessionID     string
-	streamCtrl    *StreamingCardController
-	typingRid     string
-	toolRid       string
-	toolEmoji     string    // current timeline emoji, for dedup
-	startedAt     time.Time // when the user sent the current message
+	mu                sync.RWMutex
+	chatType          string
+	replyToMsgID      string
+	platformMsgID     string
+	sessionID         string
+	streamCtrl        *StreamingCardController
+	typingRid         string
+	toolRid           string
+	toolEmoji         string    // current timeline emoji, for dedup
+	startedAt         time.Time // when the user sent the current message
 	workDir           string    // current workDir identity for session key derivation
 	lastSummarySentMs atomic.Int64
 }
@@ -652,9 +650,9 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 			)
 			now := time.Now().UnixMilli()
 			last := c.lastSummarySentMs.Load()
-			if now-last >= turnSummaryCooldown.Milliseconds() {
+			if now-last >= messaging.TurnSummaryCooldown.Milliseconds() {
 				if streamCtrl != nil && streamCtrl.IsCreated() {
-					if streamCtrl.Write("\n\n---\n" + richText) == nil {
+					if streamCtrl.Write("\n\n---\n"+richText) == nil {
 						c.lastSummarySentMs.Store(now)
 					}
 				} else {
