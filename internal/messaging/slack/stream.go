@@ -289,6 +289,8 @@ func (w *NativeStreamingWriter) appendWithRetry(content string) error {
 			return nil
 		}
 		lastErr = err
+		w.log.Debug("slack: appendStream attempt failed",
+			"attempt", i+1, "channel", w.channelID, "err", err)
 
 		if isStreamStateError(err) || isAuthError(err) {
 			w.mu.Lock()
@@ -316,6 +318,8 @@ func (w *NativeStreamingWriter) appendWithRetry(content string) error {
 			}
 		}
 	}
+	w.log.Warn("slack: appendStream failed after all retries",
+		"channel", w.channelID, "max_retries", maxAppendRetries, "err", lastErr)
 	return lastErr
 }
 
