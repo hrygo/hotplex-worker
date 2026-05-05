@@ -240,7 +240,7 @@ func (w *NativeStreamingWriter) flushLoop() {
 // flushBuffer flushes the buffered content to Slack via AppendStream.
 func (w *NativeStreamingWriter) flushBuffer() {
 	w.mu.Lock()
-	if w.buf.Len() == 0 || w.closed || !w.started {
+	if w.buf.Len() == 0 || !w.started {
 		w.mu.Unlock()
 		return
 	}
