@@ -469,3 +469,41 @@ func TestMapMCPStatusResponse(t *testing.T) {
 		})
 	}
 }
+
+func TestDecodeAs(t *testing.T) {
+	t.Parallel()
+
+	type testStruct struct {
+		Name  string `json:"name"`
+		Count int    `json:"count"`
+	}
+
+	tests := []struct {
+		name      string
+		input     any
+		wantOK    bool
+		wantName  string
+		wantCount int
+	}{
+		{name: "typed struct", input: testStruct{Name: "direct", Count: 3}, wantOK: true, wantName: "direct", wantCount: 3},
+		{name: "pointer to struct", input: &testStruct{Name: "ptr", Count: 7}, wantOK: true, wantName: "ptr", wantCount: 7},
+		{name: "nil pointer", input: (*testStruct)(nil), wantOK: false},
+		{name: "map round-trip", input: map[string]any{"name": "mapped", "count": float64(5)}, wantOK: true, wantName: "mapped", wantCount: 5},
+		{name: "incompatible type", input: "not a struct", wantOK: false},
+		{name: "nil input", input: nil, wantOK: false},
+		{name: "map partial fields", input: map[string]any{"name": "partial"}, wantOK: true, wantName: "partial", wantCount: 0},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			result, ok := DecodeAs[testStruct](tt.input)
+			require.Equal(t, tt.wantOK, ok)
+			if tt.wantOK {
+				require.Equal(t, tt.wantName, result.Name)
+				require.Equal(t, tt.wantCount, result.Count)
+			}
+		})
+	}
+}

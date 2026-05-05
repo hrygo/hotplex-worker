@@ -204,7 +204,7 @@ func (h *Handler) handleInput(ctx context.Context, env *events.Envelope) error {
 		} else {
 			h.log.Debug("gateway: input delivered to worker", "session_id", env.SessionID)
 			// Capture inbound event for replay (best-effort).
-			if h.bridge != nil {
+			if h.bridge != nil && h.bridge.collector != nil {
 				if ed, err := json.Marshal(env.Event.Data); err == nil {
 					h.bridge.CaptureInbound(env.SessionID, env.Seq, events.Input, ed)
 				}
