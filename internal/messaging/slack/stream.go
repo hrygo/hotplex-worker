@@ -282,7 +282,7 @@ func (w *NativeStreamingWriter) flushBuffer() {
 	}
 }
 
-const appendTimeout = 30 * time.Second
+const appendTimeout = 10 * time.Second
 
 func (w *NativeStreamingWriter) appendWithRetry(content string) error {
 	var lastErr error
