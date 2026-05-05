@@ -223,15 +223,11 @@ func TruncatePath(p string, maxComponents int) string {
 			parts = append(parts, s)
 		}
 	}
-	sep := "/"
-	if prefix == "~" {
-		sep = "/"
-	}
 	if len(parts) <= maxComponents {
-		return prefix + sep + strings.Join(parts, "/")
+		return prefix + "/" + strings.Join(parts, "/")
 	}
 	kept := parts[len(parts)-maxComponents:]
-	return prefix + sep + strings.Join(kept, "/")
+	return prefix + "/" + strings.Join(kept, "/")
 }
 
 // FormatTurnSummaryRich produces a multi-line turn summary with each metric on its own line.
