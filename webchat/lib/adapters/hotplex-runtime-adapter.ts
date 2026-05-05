@@ -13,7 +13,7 @@ import { WorkerStdioCommand } from '@/lib/ai-sdk-transport/client/constants';
 import { wsUrl, workerType, apiKey, workDir, allowedTools } from '@/lib/config';
 import { useMetrics } from '@/lib/hooks/useMetrics';
 import { getSessionHistory, type ConversationRecord } from '@/lib/api/sessions';
-import { saveMessages, loadMessages, clearMessages, type CacheableMessage } from '@/lib/cache/message-cache';
+import { saveMessages, loadMessages, type CacheableMessage } from '@/lib/cache/message-cache';
 import { conversationTurnsToMessages } from '@/lib/utils/turn-replay';
 import type {
   Envelope,
@@ -741,7 +741,6 @@ export function useHotPlexRuntime({
       pendingReasoningRef.current = '';
       client.disconnect();
       clientRef.current = null;
-      clearMessages(sessionId);
     };
   }, [sessionId]);
 

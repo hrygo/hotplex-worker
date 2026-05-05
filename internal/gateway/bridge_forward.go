@@ -389,10 +389,12 @@ func (b *Bridge) CaptureInbound(sessionID string, seq int64, eventType events.Ki
 // captureDirected marshals event data and sends it to the collector with the given direction.
 func (b *Bridge) captureDirected(sessionID string, seq int64, eventType events.Kind, data any, direction string) {
 	if b.collector == nil {
+		b.log.Debug("bridge: capture skipped, collector is nil", "session_id", sessionID, "type", eventType, "direction", direction)
 		return
 	}
 	ed, err := json.Marshal(data)
 	if err != nil {
+		b.log.Warn("bridge: capture marshal failed", "session_id", sessionID, "type", eventType, "direction", direction, "err", err)
 		return
 	}
 	b.collector.Capture(sessionID, seq, eventType, ed, direction, eventstore.SourceNormal)
