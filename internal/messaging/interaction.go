@@ -235,40 +235,18 @@ func ExtractPermissionData(env *events.Envelope) (*events.PermissionRequestData,
 
 // ExtractQuestionData extracts QuestionRequestData from an AEP envelope.
 func ExtractQuestionData(env *events.Envelope) (*events.QuestionRequestData, error) {
-	switch d := env.Event.Data.(type) {
-	case events.QuestionRequestData:
-		return &d, nil
-	case map[string]any:
-		id, _ := d["id"].(string)
-		toolName, _ := d["tool_name"].(string)
-		return &events.QuestionRequestData{
-			ID:       id,
-			ToolName: toolName,
-		}, nil
-	default:
+	d, ok := events.DecodeAs[events.QuestionRequestData](env.Event.Data)
+	if !ok {
 		return nil, fmt.Errorf("unexpected question data type: %T", env.Event.Data)
 	}
+	return &d, nil
 }
 
 // ExtractElicitationData extracts ElicitationRequestData from an AEP envelope.
 func ExtractElicitationData(env *events.Envelope) (*events.ElicitationRequestData, error) {
-	switch d := env.Event.Data.(type) {
-	case events.ElicitationRequestData:
-		return &d, nil
-	case map[string]any:
-		id, _ := d["id"].(string)
-		mcpServerName, _ := d["mcp_server_name"].(string)
-		message, _ := d["message"].(string)
-		mode, _ := d["mode"].(string)
-		url, _ := d["url"].(string)
-		return &events.ElicitationRequestData{
-			ID:            id,
-			MCPServerName: mcpServerName,
-			Message:       message,
-			Mode:          mode,
-			URL:           url,
-		}, nil
-	default:
+	d, ok := events.DecodeAs[events.ElicitationRequestData](env.Event.Data)
+	if !ok {
 		return nil, fmt.Errorf("unexpected elicitation data type: %T", env.Event.Data)
 	}
+	return &d, nil
 }
