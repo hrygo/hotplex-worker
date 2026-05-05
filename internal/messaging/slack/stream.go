@@ -179,9 +179,10 @@ func (w *NativeStreamingWriter) Write(p []byte) (int, error) {
 		}
 	}
 
-	// 首次调用：同步启动流
+	// 首次调用：用首个 payload 启动流（替代占位符，直接展示真实内容）
 	if !w.started {
-		opts := []slack.MsgOption{slack.MsgOptionMarkdownText(":thought_balloon: Thinking...\n")}
+		initialContent := string(p)
+		opts := []slack.MsgOption{slack.MsgOptionMarkdownText(initialContent)}
 		if w.threadTS != "" {
 			opts = append(opts, slack.MsgOptionTS(w.threadTS))
 		}
@@ -198,9 +199,13 @@ func (w *NativeStreamingWriter) Write(p []byte) (int, error) {
 		w.messageTS = streamTS
 		w.started = true
 		w.streamStartTime = time.Now()
+		w.fullContent.Write(p)
+		w.bytesWritten += int64(len(p))
+		w.bytesFlushed += int64(len(p))
 		if w.onRegister != nil {
 			w.onRegister(w)
 		}
+		return len(p), nil
 	}
 
 	w.buf.Write(p)
