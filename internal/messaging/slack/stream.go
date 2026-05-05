@@ -90,9 +90,11 @@ func containsAny(str string, substrs []string) bool {
 // into a standard io.WriteCloser. First Write() starts the stream,
 // subsequent calls buffer content, Close() ends it with fallback.
 type NativeStreamingWriter struct {
-	// ctx is stored because the writer needs it for the lifecycle of the stream,
-	// and the goroutines spawned by Write/flushBuffer need access to it.
-	ctx       context.Context
+	// startCtx is the caller's context, used only for the synchronous
+	// StartStream call in Write(). Background operations (flushLoop,
+	// appendWithRetry) must NOT reference this — the caller (pcEntry.writeOne)
+	// cancels its context as soon as Write() returns.
+	startCtx  context.Context
 	client    *slack.Client
 	channelID string
 	threadTS  string
@@ -131,7 +133,7 @@ type NativeStreamingWriter struct {
 func NewNativeStreamingWriter(ctx context.Context, client *slack.Client, channelID, threadTS, teamID string,
 	rateLimiter *ChannelRateLimiter, log *slog.Logger, onComplete func(string), onRegister func(*NativeStreamingWriter)) *NativeStreamingWriter {
 	w := &NativeStreamingWriter{
-		ctx:          ctx,
+		startCtx:     ctx,
 		client:       client,
 		channelID:    channelID,
 		threadTS:     threadTS,
@@ -179,14 +181,14 @@ func (w *NativeStreamingWriter) Write(p []byte) (int, error) {
 
 	// 首次调用：同步启动流
 	if !w.started {
-		opts := []slack.MsgOption{slack.MsgOptionMarkdownText(":thought_balloon: Thinking...")}
+		opts := []slack.MsgOption{slack.MsgOptionMarkdownText(":thought_balloon: Thinking...\n")}
 		if w.threadTS != "" {
 			opts = append(opts, slack.MsgOptionTS(w.threadTS))
 		}
 		if w.teamID != "" {
 			opts = append(opts, slack.MsgOptionRecipientTeamID(w.teamID))
 		}
-		_, streamTS, err := w.client.StartStreamContext(w.ctx,
+		_, streamTS, err := w.client.StartStreamContext(w.startCtx,
 			w.channelID,
 			opts...,
 		)
@@ -215,7 +217,9 @@ func (w *NativeStreamingWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// flushLoop background goroutine: periodic + threshold-triggered flush
+// flushLoop background goroutine: periodic + threshold-triggered flush.
+// Uses closeChan for lifecycle control instead of w.startCtx, because
+// startCtx is canceled by pcEntry.writeOne as soon as Write() returns.
 func (w *NativeStreamingWriter) flushLoop() {
 	defer w.wg.Done()
 	ticker := time.NewTicker(flushInterval)
@@ -223,9 +227,6 @@ func (w *NativeStreamingWriter) flushLoop() {
 
 	for {
 		select {
-		case <-w.ctx.Done():
-			w.flushBuffer()
-			return
 		case <-w.closeChan:
 			w.flushBuffer()
 			return
@@ -279,7 +280,7 @@ func (w *NativeStreamingWriter) flushBuffer() {
 func (w *NativeStreamingWriter) appendWithRetry(content string) error {
 	var lastErr error
 	for i := 0; i < maxAppendRetries; i++ {
-		_, _, err := w.client.AppendStreamContext(w.ctx, w.channelID, w.messageTS,
+		_, _, err := w.client.AppendStreamContext(context.Background(), w.channelID, w.messageTS,
 			slack.MsgOptionMarkdownText(content),
 		)
 		if err == nil {
@@ -300,22 +301,12 @@ func (w *NativeStreamingWriter) appendWithRetry(content string) error {
 		}
 
 		if isRateLimited, retryAfter := isRateLimitError(err); isRateLimited {
-			timer := time.NewTimer(retryAfter)
-			select {
-			case <-timer.C:
-				continue
-			case <-w.ctx.Done():
-				timer.Stop()
-				return w.ctx.Err()
-			}
+			time.Sleep(retryAfter)
+			continue
 		}
 
 		if i < maxAppendRetries-1 {
-			select {
-			case <-time.After(retryDelay):
-			case <-w.ctx.Done():
-				return w.ctx.Err()
-			}
+			time.Sleep(retryDelay)
 		}
 	}
 	w.log.Warn("slack: appendStream failed after all retries",
@@ -365,7 +356,7 @@ func (w *NativeStreamingWriter) Close() error {
 			"bytes_written", bytesWritten)
 	}
 
-	// Use a fresh context for cleanup since w.ctx may be cancelled
+	// Use a fresh context for cleanup since startCtx may be cancelled
 	cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 

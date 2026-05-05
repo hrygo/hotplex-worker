@@ -989,13 +989,16 @@ func (c *SlackConn) tryFileUpload(ctx context.Context, text string) bool {
 }
 
 // closeStreamWriter closes and clears the stream writer.
+// The lock is released before calling Close() to avoid a deadlock:
+// Close() → onComplete → writeWithStreaming's callback → Lock(streamWriterMu).
 func (c *SlackConn) closeStreamWriter() {
 	c.streamWriterMu.Lock()
-	defer c.streamWriterMu.Unlock()
+	w := c.streamWriter
+	c.streamWriter = nil
+	c.streamWriterMu.Unlock()
 
-	if c.streamWriter != nil {
-		_ = c.streamWriter.Close()
-		c.streamWriter = nil
+	if w != nil {
+		_ = w.Close()
 	}
 }
 
