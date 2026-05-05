@@ -5,9 +5,12 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/hrygo/hotplex/pkg/events"
 )
+
+const TurnSummaryCooldown = 5 * time.Minute
 
 // TurnSummaryData holds per-turn summary fields extracted from a Done envelope.
 type TurnSummaryData struct {
