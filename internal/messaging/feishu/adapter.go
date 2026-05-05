@@ -639,8 +639,8 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		c.adapter.Interactions.CancelAll(env.SessionID)
 
 		d := messaging.ExtractTurnSummary(env)
-		richText := messaging.FormatTurnSummaryRich(d)
-		if richText != "" {
+		summaryText := messaging.FormatTurnSummaryRich(d)
+		if summaryText != "" {
 			c.adapter.Log.Info("turn summary",
 				"turn_count", d.TurnCount,
 				"duration_ms", d.TurnDurationMs,
@@ -652,11 +652,11 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 			last := c.lastSummarySentMs.Load()
 			if now-last >= messaging.TurnSummaryCooldown.Milliseconds() {
 				if streamCtrl != nil && streamCtrl.IsCreated() {
-					if streamCtrl.Write("\n\n---\n"+richText) == nil {
+					if streamCtrl.Write("\n\n---\n"+summaryText) == nil {
 						c.lastSummarySentMs.Store(now)
 					}
 				} else {
-					go c.sendTurnSummaryText(richText)
+					go c.sendTurnSummaryText(summaryText)
 					c.lastSummarySentMs.Store(now)
 				}
 			}

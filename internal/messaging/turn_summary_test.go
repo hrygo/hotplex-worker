@@ -1,6 +1,7 @@
 package messaging
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -159,7 +160,7 @@ func TestFormatTurnSummary_DurationFormats(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := formatDuration(tt.ms)
+			got := FormatDuration(tt.ms)
 			require.Equal(t, tt.want, got)
 		})
 	}
@@ -222,7 +223,7 @@ func TestFormatSessionDuration(t *testing.T) {
 func TestFormatToolNames_Sorted(t *testing.T) {
 	t.Parallel()
 	names := map[string]int{"Edit": 1, "Read": 5, "Bash": 3}
-	got := formatToolNames(names, 9)
+	got := FormatToolNames(names, 9)
 	require.Equal(t, "9 (Read×5, Bash×3, Edit×1)", got)
 }
 
@@ -231,14 +232,14 @@ func TestFormatToolNames_Top5(t *testing.T) {
 	names := map[string]int{
 		"Read": 10, "Edit": 8, "Bash": 5, "Grep": 4, "Glob": 3, "Agent": 2, "Write": 1,
 	}
-	got := formatToolNames(names, 33)
+	got := FormatToolNames(names, 33)
 	require.Equal(t, "33 (Read×10, Edit×8, Bash×5, Grep×4, Glob×3) +2", got)
 }
 
 func TestFormatToolNames_Exactly5(t *testing.T) {
 	t.Parallel()
 	names := map[string]int{"Read": 5, "Edit": 3, "Bash": 2, "Grep": 2, "Glob": 1}
-	got := formatToolNames(names, 13)
+	got := FormatToolNames(names, 13)
 	require.Equal(t, "13 (Read×5, Edit×3, Bash×2, Grep×2, Glob×1)", got)
 }
 
@@ -288,13 +289,14 @@ func TestFormatTurnSummaryRich_Full(t *testing.T) {
 		SessionDuration: 750,
 	}
 	got := FormatTurnSummaryRich(d)
-	require.Contains(t, got, "🔄 #3")
-	require.Contains(t, got, "🤖 Sonnet")
-	require.Contains(t, got, "🧠 [█░░░░] 48.4K/200K")
+	lines := strings.Split(got, "\n")
+	require.Contains(t, lines[0], "🔄 #3")
+	require.Contains(t, lines[1], "🤖 Sonnet")
+	require.Contains(t, got, "🧠 24% · 48.4K/200K")
 	require.Contains(t, got, "🔧 12 (")
 	require.Contains(t, got, "📂")
 	require.Contains(t, got, "🌿 feat/117-turn-summary")
-	require.Contains(t, got, "⏱️ Turn 42s | Session 12m30s")
+	require.Contains(t, got, "⏱️ Turn 42s · Session 12m30s")
 	require.Contains(t, got, "💎")
 	require.Contains(t, got, "12K in · 2K out | Σ 48.4K in · Σ 2K out")
 }

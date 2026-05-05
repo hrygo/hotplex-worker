@@ -201,13 +201,13 @@ func TestGetOrInitAccum(t *testing.T) {
 		accumMu: sync.Mutex{},
 	}
 
-	acc1 := b.getOrInitAccum("sess-1", "")
+	acc1 := b.getOrInitAccum("sess-1", "", time.Now())
 	require.NotNil(t, acc1)
 
-	acc2 := b.getOrInitAccum("sess-1", "")
+	acc2 := b.getOrInitAccum("sess-1", "", time.Now())
 	assert.Same(t, acc1, acc2)
 
-	acc3 := b.getOrInitAccum("sess-2", "")
+	acc3 := b.getOrInitAccum("sess-2", "", time.Now())
 	assert.NotSame(t, acc1, acc3)
 }
 
@@ -222,18 +222,18 @@ func TestGetOrInitAccum_LazyUpdate(t *testing.T) {
 	}
 
 	// First call creates accumulator with empty workDir.
-	acc := b.getOrInitAccum("sess-1", "")
+	acc := b.getOrInitAccum("sess-1", "", time.Now())
 	require.NotNil(t, acc)
 	assert.Equal(t, "", acc.WorkDir)
 	assert.Equal(t, "", acc.GitBranch)
 
 	// Second call with workDir lazily updates the existing accumulator.
-	same := b.getOrInitAccum("sess-1", "/tmp/project")
+	same := b.getOrInitAccum("sess-1", "/tmp/project", time.Now())
 	assert.Same(t, acc, same)
 	assert.Equal(t, "/tmp/project", acc.WorkDir)
 
 	// Third call with different workDir does NOT overwrite (already set).
-	b.getOrInitAccum("sess-1", "/other")
+	b.getOrInitAccum("sess-1", "/other", time.Now())
 	assert.Equal(t, "/tmp/project", acc.WorkDir)
 }
 
@@ -247,11 +247,11 @@ func TestGetOrInitAccum_EmptyWorkDirNoOp(t *testing.T) {
 		accumMu: sync.Mutex{},
 	}
 
-	acc := b.getOrInitAccum("sess-1", "")
+	acc := b.getOrInitAccum("sess-1", "", time.Now())
 	require.NotNil(t, acc)
 
 	// Calling again with empty workDir should not change anything.
-	same := b.getOrInitAccum("sess-1", "")
+	same := b.getOrInitAccum("sess-1", "", time.Now())
 	assert.Same(t, acc, same)
 	assert.Equal(t, "", acc.WorkDir)
 }
@@ -264,7 +264,7 @@ func TestInjectSessionStats(t *testing.T) {
 	hub := newTestHub(t)
 	b := NewBridge(BridgeDeps{Log: log, Hub: hub, SM: sm})
 
-	acc := b.getOrInitAccum("sess-1", "")
+	acc := b.getOrInitAccum("sess-1", "", time.Now())
 	acc.ToolCallCount = 4
 
 	env := &events.Envelope{
@@ -289,7 +289,7 @@ func TestInjectSessionStats_NonDoneData(t *testing.T) {
 	hub := newTestHub(t)
 	b := NewBridge(BridgeDeps{Log: log, Hub: hub, SM: sm})
 
-	acc := b.getOrInitAccum("sess-1", "")
+	acc := b.getOrInitAccum("sess-1", "", time.Now())
 	env := &events.Envelope{
 		Event: events.Event{
 			Type: events.Message,

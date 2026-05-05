@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1133,10 +1132,9 @@ func (c *SlackConn) buildTurnSummaryTable(d messaging.TurnSummaryData) []slack.B
 		if pct > 100 {
 			pct = 100
 		}
-		bar := messaging.BuildProgressBar(pct, 5)
 		used := messaging.FormatTokenCount(int(d.ContextFill))
 		max := messaging.FormatTokenCount(int(d.ContextWindow))
-		table.AddRow(richTextCell("🧠 Context"), richTextCell(fmt.Sprintf("%s %s/%s", bar, used, max)))
+		table.AddRow(richTextCell("🧠 Context"), richTextCell(fmt.Sprintf("%d%% %s/%s", pct, used, max)))
 	}
 	if d.ToolCallCount > 0 {
 		toolStr := formatToolNamesSlack(d.ToolNames, d.ToolCallCount)
@@ -1151,7 +1149,7 @@ func (c *SlackConn) buildTurnSummaryTable(d messaging.TurnSummaryData) []slack.B
 	// Duration (merged Turn + Session)
 	turnDur := ""
 	if d.TurnDurationMs > 0 {
-		turnDur = "Turn " + formatDurationSlack(d.TurnDurationMs)
+		turnDur = "Turn " + messaging.FormatDuration(d.TurnDurationMs)
 	}
 	sessDur := ""
 	if d.SessionDuration > 0 {
@@ -1197,52 +1195,13 @@ func (c *SlackConn) buildTurnSummaryTable(d messaging.TurnSummaryData) []slack.B
 }
 
 func formatToolNamesSlack(names map[string]int, total int) string {
+	s := messaging.FormatToolNames(names, total)
 	if len(names) == 0 {
-		return fmt.Sprintf("%d calls", total)
+		return s + " calls"
 	}
-	type kv struct {
-		name  string
-		count int
-	}
-	sorted := make([]kv, 0, len(names))
-	for k, v := range names {
-		sorted = append(sorted, kv{k, v})
-	}
-	sort.Slice(sorted, func(i, j int) bool {
-		if sorted[i].count != sorted[j].count {
-			return sorted[i].count > sorted[j].count
-		}
-		return sorted[i].name < sorted[j].name
-	})
-	const topN = 5
-	shown := sorted
-	remaining := len(sorted) - topN
-	if remaining > 0 {
-		shown = sorted[:topN]
-	}
-	parts := make([]string, len(shown))
-	for i, s := range shown {
-		parts[i] = fmt.Sprintf("%s×%d", s.name, s.count)
-	}
-	result := fmt.Sprintf("%d calls (%s)", total, strings.Join(parts, ", "))
-	if remaining > 0 {
-		result += fmt.Sprintf(" +%d", remaining)
-	}
-	return result
+	return strings.Replace(s, fmt.Sprintf("%d (", total), fmt.Sprintf("%d calls (", total), 1)
 }
 
-func formatDurationSlack(ms int64) string {
-	switch {
-	case ms < 1000:
-		return fmt.Sprintf("%dms", ms)
-	case ms < 60_000:
-		return fmt.Sprintf("%ds", ms/1000)
-	case ms < 3_600_000:
-		return fmt.Sprintf("%dm%ds", ms/60_000, (ms%60_000)/1000)
-	default:
-		return fmt.Sprintf("%dh%dm", ms/3_600_000, (ms%3_600_000)/60_000)
-	}
-}
 func (c *SlackConn) sendContextUsage(ctx context.Context, env *events.Envelope) error {
 	if c.adapter == nil || c.adapter.client == nil {
 		return fmt.Errorf("slack: client not initialized")

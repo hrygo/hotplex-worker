@@ -105,20 +105,20 @@ func FormatTurnSummary(d TurnSummaryData) string {
 	}
 
 	if d.TurnDurationMs > 0 {
-		parts = append(parts, "⏱ "+formatDuration(d.TurnDurationMs))
+		parts = append(parts, "⏱ "+FormatDuration(d.TurnDurationMs))
 	}
 
 	if d.ToolCallCount > 0 {
-		toolStr := formatToolNames(d.ToolNames, d.ToolCallCount)
+		toolStr := FormatToolNames(d.ToolNames, d.ToolCallCount)
 		parts = append(parts, "🔧 "+toolStr)
 	}
 
 	return strings.Join(parts, " · ")
 }
 
-// formatToolNames produces "N (Tool×M, ...)" sorted by count descending.
+// FormatToolNames produces "N (Tool×M, ...)" sorted by count descending.
 // Shows at most top 5 tools; remaining tools are summarized as "+N".
-func formatToolNames(names map[string]int, total int) string {
+func FormatToolNames(names map[string]int, total int) string {
 	if len(names) == 0 {
 		return fmt.Sprintf("%d", total)
 	}
@@ -153,7 +153,7 @@ func formatToolNames(names map[string]int, total int) string {
 	return result
 }
 
-func formatDuration(ms int64) string {
+func FormatDuration(ms int64) string {
 	switch {
 	case ms < 1000:
 		return fmt.Sprintf("%dms", ms)
@@ -171,7 +171,7 @@ func FormatSessionDuration(secs float64) string {
 	if secs <= 0 {
 		return ""
 	}
-	return formatDuration(int64(secs * 1000))
+	return FormatDuration(int64(secs * 1000))
 }
 
 // TruncatePath shortens a file path for display, keeping the last n path components.
@@ -209,62 +209,61 @@ func TruncatePath(p string, maxComponents int) string {
 	return drive + "/" + strings.Join(kept, "/")
 }
 
-// FormatTurnSummaryRich produces a multi-line turn summary with emoji-prefixed fields.
-// Used as rich fallback when TableBlock is rejected.
+// FormatTurnSummaryRich produces a multi-line turn summary with each metric on its own line.
+// Used as the primary format for Feishu and rich fallback for Slack.
 // Returns empty string if no meaningful data is available.
 func FormatTurnSummaryRich(d TurnSummaryData) string {
 	var lines []string
 
-	// Line 1: Core metrics
-	var core []string
+	// Line 1: Turn count
 	if d.TurnCount > 0 {
-		core = append(core, fmt.Sprintf("🔄 #%d", d.TurnCount))
+		lines = append(lines, fmt.Sprintf("🔄 #%d", d.TurnCount))
 	}
+
+	// Line 2: Model
 	if d.ModelName != "" {
-		core = append(core, "🤖 "+d.ModelName)
+		lines = append(lines, "🤖 "+d.ModelName)
 	}
+
+	// Line 2: Context window
 	if d.ContextWindow > 0 && d.ContextFill > 0 {
 		pct := int(d.ContextPct + 0.5)
 		if pct > 100 {
 			pct = 100
 		}
-		bar := BuildProgressBar(pct, 5)
 		used := FormatTokenCount(int(d.ContextFill))
 		max := FormatTokenCount(int(d.ContextWindow))
-		core = append(core, fmt.Sprintf("🧠 %s %s/%s", bar, used, max))
-	}
-	if d.ToolCallCount > 0 {
-		core = append(core, "🔧 "+formatToolNames(d.ToolNames, d.ToolCallCount))
-	}
-	if len(core) > 0 {
-		lines = append(lines, strings.Join(core, " · "))
+		lines = append(lines, fmt.Sprintf("🧠 %d%% · %s/%s", pct, used, max))
 	}
 
-	// Line 2: Environment
-	var envParts []string
-	if d.WorkDir != "" {
-		envParts = append(envParts, "📂 "+TruncatePath(d.WorkDir, 3))
-	}
+	// Line 3: Git branch
 	if d.GitBranch != "" {
-		envParts = append(envParts, "🌿 "+d.GitBranch)
-	}
-	if len(envParts) > 0 {
-		lines = append(lines, strings.Join(envParts, " · "))
+		lines = append(lines, "🌿 "+d.GitBranch)
 	}
 
-	// Line 3: Duration (merged Turn + Session)
+	// Line 4: Work directory
+	if d.WorkDir != "" {
+		lines = append(lines, "📂 "+TruncatePath(d.WorkDir, 3))
+	}
+
+	// Line 5: Tools
+	if d.ToolCallCount > 0 {
+		lines = append(lines, "🔧 "+FormatToolNames(d.ToolNames, d.ToolCallCount))
+	}
+
+	// Line 6: Duration (merged Turn + Session)
 	var durParts []string
 	if d.TurnDurationMs > 0 {
-		durParts = append(durParts, "Turn "+formatDuration(d.TurnDurationMs))
+		durParts = append(durParts, "Turn "+FormatDuration(d.TurnDurationMs))
 	}
 	if sessDur := FormatSessionDuration(d.SessionDuration); sessDur != "" {
 		durParts = append(durParts, "Session "+sessDur)
 	}
 	if len(durParts) > 0 {
-		lines = append(lines, "⏱️ "+strings.Join(durParts, " | "))
+		lines = append(lines, "⏱️ "+strings.Join(durParts, " · "))
 	}
 
-	// Line 4: Tokens (turn + session total)
+	// Line 7: Tokens (turn + session total)
 	if d.TurnInputTok > 0 || d.TurnOutputTok > 0 || d.TotalInputTok > 0 || d.TotalOutputTok > 0 {
 		var tokParts []string
 		if d.TurnInputTok > 0 || d.TurnOutputTok > 0 {
