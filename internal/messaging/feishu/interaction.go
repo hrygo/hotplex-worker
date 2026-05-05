@@ -2,7 +2,6 @@ package feishu
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -322,11 +321,7 @@ func buildInteractionCard(body, footer string) string {
 		"body":   map[string]any{"elements": elements},
 	}
 
-	var buf strings.Builder
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	_ = enc.Encode(card)
-	return strings.TrimRight(buf.String(), "\n")
+	return encodeCard(card)
 }
 
 // truncate shortens a string to maxLen.

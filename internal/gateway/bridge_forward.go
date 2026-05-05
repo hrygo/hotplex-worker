@@ -109,6 +109,7 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 
 		env = events.Clone(env)
 		env.SessionID = sessionID
+		env.OwnerID = sessOwner
 
 		var capturedDeltaContent string
 		if env.Event.Type == events.MessageDelta || env.Event.Type == events.Message {
@@ -524,6 +525,14 @@ func gitBranchOf(dir string) string {
 	branch := ""
 	if err == nil {
 		branch = strings.TrimSpace(string(out))
+		if branch == "HEAD" {
+			// Detached HEAD: show short commit hash instead.
+			shortCmd := exec.CommandContext(ctx, "git", "rev-parse", "--short", "HEAD")
+			shortCmd.Dir = dir
+			if shortOut, shortErr := shortCmd.Output(); shortErr == nil {
+				branch = strings.TrimSpace(string(shortOut))
+			}
+		}
 	}
 
 	gitBranchMu.Lock()

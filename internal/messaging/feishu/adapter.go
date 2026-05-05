@@ -639,28 +639,14 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		c.adapter.Interactions.CancelAll(env.SessionID)
 
 		d := messaging.ExtractTurnSummary(env)
-		summaryText := messaging.FormatTurnSummaryRich(d)
-		if summaryText != "" {
-			c.adapter.Log.Info("turn summary",
-				"turn_count", d.TurnCount,
-				"duration_ms", d.TurnDurationMs,
-				"model", d.ModelName,
-				"tool_calls", d.ToolCallCount,
-				"input_tok", d.TotalInputTok,
-			)
-			now := time.Now().UnixMilli()
-			last := c.lastSummarySentMs.Load()
-			if now-last >= messaging.TurnSummaryCooldown.Milliseconds() {
-				if streamCtrl != nil && streamCtrl.IsCreated() {
-					if streamCtrl.Write("\n\n---\n"+summaryText) == nil {
-						c.lastSummarySentMs.Store(now)
-					}
-				} else {
-					go c.sendTurnSummaryText(summaryText)
-					c.lastSummarySentMs.Store(now)
-				}
-			}
-		}
+		c.adapter.Log.Info("turn summary",
+			"turn_count", d.TurnCount,
+			"duration_ms", d.TurnDurationMs,
+			"model", d.ModelName,
+			"tool_calls", d.ToolCallCount,
+			"input_tok", d.TotalInputTok,
+		)
+		go c.sendTurnSummaryCard(d)
 
 		var closeErr error
 		if streamCtrl != nil && streamCtrl.IsCreated() {
@@ -875,7 +861,20 @@ func (c *FeishuConn) writeContent(ctx context.Context, env *events.Envelope, tex
 	return c.adapter.sendTextMessage(ctx, chatID, OptimizeMarkdownStyle(SanitizeForCard(text)))
 }
 
-func (c *FeishuConn) sendTurnSummaryText(text string) {
+func (c *FeishuConn) sendTurnSummaryCard(d messaging.TurnSummaryData) {
+	cardJSON := buildTurnSummaryCard(d)
+	if cardJSON == "" {
+		return
+	}
+	now := time.Now().UnixMilli()
+	last := c.lastSummarySentMs.Load()
+	if now-last < messaging.TurnSummaryCooldown.Milliseconds() {
+		return
+	}
+	// CAS to win the race: only one goroutine proceeds past the cooldown.
+	if !c.lastSummarySentMs.CompareAndSwap(last, now) {
+		return
+	}
 	sendCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	c.mu.RLock()
@@ -884,13 +883,15 @@ func (c *FeishuConn) sendTurnSummaryText(text string) {
 	c.mu.RUnlock()
 	var err error
 	if replyToMsgID != "" {
-		err = c.adapter.replyMessage(sendCtx, replyToMsgID, text, false)
+		err = c.adapter.doReplyCard(sendCtx, replyToMsgID, cardJSON, false)
 	} else {
-		err = c.adapter.sendTextMessage(sendCtx, chatID, text)
+		err = c.adapter.sendCardMessage(sendCtx, chatID, cardJSON)
 	}
 	if err != nil {
-		c.adapter.Log.Warn("turn summary send failed", "err", err)
+		c.adapter.Log.Warn("turn summary card send failed", "err", err)
+		return
 	}
+	c.lastSummarySentMs.Store(time.Now().UnixMilli())
 }
 
 func (c *FeishuConn) sendContextUsage(ctx context.Context, env *events.Envelope) error {
@@ -1076,35 +1077,39 @@ func (a *Adapter) sendTextMessage(ctx context.Context, chatID, text string) erro
 
 //nolint:unparam // replyInThread reserved for future thread reply support
 func (a *Adapter) replyMessage(ctx context.Context, messageID, content string, replyInThread bool) error {
-	if a.larkClient == nil {
-		return fmt.Errorf("feishu: lark client not initialized")
-	}
-
 	cardJSON := buildCardContent(content)
 	preview := cardJSON
 	if len(preview) > 200 {
 		preview = preview[:200] + "..."
 	}
 	a.Log.Debug("feishu: sending reply card", "msg_id", messageID, "content_len", len(cardJSON), "content_preview", preview)
+	if err := a.doReplyCard(ctx, messageID, cardJSON, replyInThread); err != nil {
+		return err
+	}
+	a.Log.Debug("feishu: reply message sent", "msg_id", messageID, "content_len", len(content))
+	return nil
+}
+
+func (a *Adapter) doReplyCard(ctx context.Context, messageID, cardJSON string, replyInThread bool) error {
+	if a.larkClient == nil {
+		return fmt.Errorf("feishu: lark client not initialized")
+	}
 	body := larkim.NewReplyMessageReqBodyBuilder().
 		MsgType(larkim.MsgTypeInteractive).
 		Content(cardJSON).
 		ReplyInThread(replyInThread).
 		Build()
-
 	req := larkim.NewReplyMessageReqBuilder().
 		MessageId(messageID).
 		Body(body).
 		Build()
-
 	resp, err := a.larkClient.Im.V1.Message.Reply(ctx, req)
 	if err != nil {
-		return fmt.Errorf("feishu: reply message: %w", err)
+		return fmt.Errorf("feishu: reply card: %w", err)
 	}
 	if !resp.Success() {
-		return fmt.Errorf("feishu: reply message failed: code=%d msg=%s", resp.Code, resp.Msg)
+		return fmt.Errorf("feishu: reply card failed: code=%d msg=%s", resp.Code, resp.Msg)
 	}
-	a.Log.Debug("feishu: reply message sent", "msg_id", messageID, "content_len", len(content))
 	return nil
 }
 
@@ -1241,10 +1246,8 @@ type textContent struct {
 }
 
 // buildCardContent builds a Feishu interactive card JSON using CardKit v2 format.
-// schema:"2.0" is required for the "markdown" tag to work with full markdown rendering.
-// Uses json.NewEncoder with SetEscapeHTML(false) to preserve HTML entities.
 func buildCardContent(text string) string {
-	card := map[string]any{
+	return encodeCard(map[string]any{
 		"schema": "2.0",
 		"config": map[string]any{"wide_screen_mode": true},
 		"body": map[string]any{
@@ -1252,12 +1255,86 @@ func buildCardContent(text string) string {
 				{"tag": "markdown", "content": text},
 			},
 		},
-	}
+	})
+}
+
+// encodeCard serializes a CardKit v2 card to JSON with HTML escaping disabled.
+func encodeCard(card map[string]any) string {
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)
 	_ = enc.Encode(card)
 	return strings.TrimRight(buf.String(), "\n")
+}
+
+// buildTurnSummaryCard builds a CardKit v2 card with column_set rows matching
+// Slack's TableBlock layout: two columns per row (label | value).
+func buildTurnSummaryCard(d messaging.TurnSummaryData) string {
+	var elements []map[string]any
+
+	if d.TurnCount > 0 {
+		elements = append(elements, tableRow("🔄 Turn", fmt.Sprintf("#%d", d.TurnCount)))
+	}
+	if d.ModelName != "" {
+		elements = append(elements, tableRow("🤖 Model", d.ModelName))
+	}
+	if d.ContextWindow > 0 && d.ContextFill > 0 {
+		pct := int(d.ContextPct + 0.5)
+		if pct > 100 {
+			pct = 100
+		}
+		used := messaging.FormatTokenCount(int(d.ContextFill))
+		max := messaging.FormatTokenCount(int(d.ContextWindow))
+		elements = append(elements, tableRow("🧠 Context", fmt.Sprintf("%d%% %s/%s", pct, used, max)))
+	}
+	if d.ToolCallCount > 0 {
+		toolStr := messaging.FormatToolNames(d.ToolNames, d.ToolCallCount)
+		elements = append(elements, tableRow("🔧 Tools", toolStr))
+	}
+	if d.WorkDir != "" {
+		elements = append(elements, tableRow("📂 Dir", messaging.TruncatePath(d.WorkDir, 3)))
+	}
+	if d.GitBranch != "" {
+		elements = append(elements, tableRow("🌿 Branch", d.GitBranch))
+	}
+	if durStr := messaging.FormatDurationParts(d); durStr != "" {
+		elements = append(elements, tableRow("⏱ Time", durStr))
+	}
+	if tokStr := messaging.FormatTokenUsage(d); tokStr != "" {
+		elements = append(elements, tableRow("💎 Tokens", tokStr))
+	}
+
+	if len(elements) == 0 {
+		return ""
+	}
+
+	card := map[string]any{
+		"schema": "2.0",
+		"config": map[string]any{"wide_screen_mode": true},
+		"body":   map[string]any{"elements": elements},
+	}
+	return encodeCard(card)
+}
+
+// tableRow creates a CardKit v2 column_set element with two weighted columns.
+func tableRow(label, value string) map[string]any {
+	return map[string]any{
+		"tag": "column_set",
+		"columns": []map[string]any{
+			{
+				"tag":      "column",
+				"width":    "weighted",
+				"weight":   1,
+				"elements": []map[string]any{{"tag": "markdown", "content": "**" + label + "**"}},
+			},
+			{
+				"tag":      "column",
+				"width":    "weighted",
+				"weight":   3,
+				"elements": []map[string]any{{"tag": "markdown", "content": value}},
+			},
+		},
+	}
 }
 
 // formatSecurityError converts technical security errors into user-friendly messages.
