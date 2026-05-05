@@ -906,6 +906,52 @@ func TestPCEntry_JoinPlatformSession_Dedup(t *testing.T) {
 	require.Equal(t, 1, count)
 }
 
+func TestHub_JoinPlatformSession_DeadEntryReplaced(t *testing.T) {
+	t.Parallel()
+	h := newTestHub(t)
+	pc := &mockPlatformConn{}
+
+	h.JoinPlatformSession("s1", pc)
+
+	h.mu.RLock()
+	var oldEntry *pcEntry
+	for sw := range h.sessions["s1"] {
+		if pce, ok := sw.(*pcEntry); ok {
+			oldEntry = pce
+		}
+	}
+	h.mu.RUnlock()
+	require.NotNil(t, oldEntry)
+
+	_ = oldEntry.Close()
+
+	require.Eventually(t, func() bool {
+		select {
+		case <-oldEntry.done:
+			return true
+		default:
+			return false
+		}
+	}, time.Second, 10*time.Millisecond)
+
+	h.JoinPlatformSession("s1", pc)
+
+	h.mu.RLock()
+	count := len(h.sessions["s1"])
+	var newEntry *pcEntry
+	for sw := range h.sessions["s1"] {
+		if pce, ok := sw.(*pcEntry); ok {
+			newEntry = pce
+		}
+	}
+	h.mu.RUnlock()
+
+	require.Equal(t, 1, count, "should have exactly 1 entry after replacing dead one")
+	require.NotNil(t, newEntry, "new pcEntry should exist")
+	require.NotEqual(t, fmt.Sprintf("%p", oldEntry), fmt.Sprintf("%p", newEntry),
+		"dead entry should have been replaced with a fresh one")
+}
+
 func TestPCEntry_RouteMessage_LazyEncode(t *testing.T) {
 	t.Parallel()
 	h := newTestHub(t)

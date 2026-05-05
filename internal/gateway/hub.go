@@ -233,7 +233,14 @@ func (h *Hub) JoinPlatformSession(sessionID string, pc messaging.PlatformConn) {
 
 	for sw := range h.sessions[sessionID] {
 		if pce, ok := sw.(*pcEntry); ok && pce.pc == pc {
-			return
+			select {
+			case <-pce.done:
+				delete(h.sessions[sessionID], sw)
+				h.log.Info("gateway: replaced dead platform conn entry",
+					"session_id", sessionID)
+			default:
+				return
+			}
 		}
 	}
 
