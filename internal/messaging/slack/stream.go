@@ -381,10 +381,16 @@ func (w *NativeStreamingWriter) Close() error {
 		_, _, err := w.client.StopStreamContext(cleanupCtx, w.channelID, w.messageTS, stopOpts...)
 		if err != nil {
 			w.log.Debug("slack: stop stream with table blocks failed, retrying plain", "err", err)
-			_, _, _ = w.client.StopStreamContext(cleanupCtx, w.channelID, w.messageTS)
+			_, _, err = w.client.StopStreamContext(cleanupCtx, w.channelID, w.messageTS)
+			if err != nil {
+				w.log.Warn("slack: stop stream failed", "channel", w.channelID, "err", err)
+			}
 		}
 	} else {
-		_, _, _ = w.client.StopStreamContext(cleanupCtx, w.channelID, w.messageTS)
+		_, _, err := w.client.StopStreamContext(cleanupCtx, w.channelID, w.messageTS)
+		if err != nil {
+			w.log.Warn("slack: stop stream failed", "channel", w.channelID, "err", err)
+		}
 	}
 
 	if w.onComplete != nil {
@@ -405,7 +411,11 @@ func (w *NativeStreamingWriter) Close() error {
 			fallbackText += remainingBuf
 		}
 		if fallbackText != "" {
-			_, _, _ = w.client.PostMessageContext(cleanupCtx, w.channelID, slack.MsgOptionText(fallbackText, false))
+			_, _, err := w.client.PostMessageContext(cleanupCtx, w.channelID, slack.MsgOptionText(fallbackText, false))
+			if err != nil {
+				w.log.Error("slack: fallback PostMessage failed",
+					"channel", w.channelID, "err", err)
+			}
 		}
 	}
 	return nil
