@@ -1,7 +1,6 @@
 package messaging
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/hrygo/hotplex/pkg/events"
@@ -24,17 +23,11 @@ type SkillGroup struct {
 }
 
 func ExtractSkillsListData(env *events.Envelope) (events.SkillsListData, error) {
-	switch v := env.Event.Data.(type) {
-	case events.SkillsListData:
-		return v, nil
-	case map[string]any:
-		raw, _ := json.Marshal(v)
-		var d events.SkillsListData
-		_ = json.Unmarshal(raw, &d)
-		return d, nil
-	default:
-		return events.SkillsListData{}, fmt.Errorf("unexpected skills data type: %T", env.Event.Data)
+	d, ok := events.DecodeAs[events.SkillsListData](env.Event.Data)
+	if !ok {
+		return d, fmt.Errorf("unexpected skills data type: %T", env.Event.Data)
 	}
+	return d, nil
 }
 
 func GroupSkillsBySource(skills []events.SkillEntry) []SkillGroup {

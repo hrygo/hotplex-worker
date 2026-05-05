@@ -317,9 +317,8 @@ func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsA
 	// Access control gate (must run before ResolveMentions which strips <@BOTID>)
 	if a.Gate != nil {
 		botMentioned := strings.Contains(text, "<@"+a.botID+">")
-		result := a.Gate.Check(channelType == ChannelIM, userID, botMentioned)
-		if !result.Allowed {
-			a.Log.Debug("slack: gate rejected", "reason", result.Reason, "user", userID)
+		if allowed, reason := a.Gate.Check(channelType == ChannelIM, userID, botMentioned); !allowed {
+			a.Log.Debug("slack: gate rejected", "reason", reason, "user", userID)
 			return
 		}
 	}

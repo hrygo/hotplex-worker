@@ -38,9 +38,9 @@ func TestGate_Check_DM(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			g := NewGate(tt.policy, PolicyOpen, false, tt.globalList, tt.dmList, nil)
-			res := g.Check(true, tt.userID, false)
-			require.Equal(t, tt.allowed, res.Allowed)
-			require.Equal(t, tt.reason, res.Reason)
+			allowed, reason := g.Check(true, tt.userID, false)
+			require.Equal(t, tt.allowed, allowed)
+			require.Equal(t, tt.reason, reason)
 		})
 	}
 }
@@ -72,9 +72,9 @@ func TestGate_Check_Group(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			g := NewGate(PolicyOpen, tt.policy, tt.requireM, tt.globalList, nil, tt.groupList)
-			res := g.Check(false, tt.userID, tt.mentioned)
-			require.Equal(t, tt.allowed, res.Allowed)
-			require.Equal(t, tt.reason, res.Reason)
+			allowed, reason := g.Check(false, tt.userID, tt.mentioned)
+			require.Equal(t, tt.allowed, allowed)
+			require.Equal(t, tt.reason, reason)
 		})
 	}
 }
@@ -83,15 +83,23 @@ func TestGate_UpdateAllowFrom(t *testing.T) {
 	t.Parallel()
 	g := NewGate(PolicyAllowlist, PolicyAllowlist, false, []string{"U1"}, []string{"DM1"}, []string{"GP1"})
 
-	require.True(t, g.Check(true, "U1", false).Allowed)
-	require.True(t, g.Check(true, "DM1", false).Allowed)
-	require.False(t, g.Check(true, "U2", false).Allowed)
+	allowed, _ := g.Check(true, "U1", false)
+	require.True(t, allowed)
+	allowed, _ = g.Check(true, "DM1", false)
+	require.True(t, allowed)
+	allowed, _ = g.Check(true, "U2", false)
+	require.False(t, allowed)
 
 	g.UpdateAllowFrom([]string{"U2"}, []string{"DM2"}, []string{"GP2"})
 
-	require.False(t, g.Check(true, "U1", false).Allowed)
-	require.True(t, g.Check(true, "U2", false).Allowed)
-	require.False(t, g.Check(true, "DM1", false).Allowed)
-	require.True(t, g.Check(true, "DM2", false).Allowed)
-	require.True(t, g.Check(false, "GP2", false).Allowed)
+	allowed, _ = g.Check(true, "U1", false)
+	require.False(t, allowed)
+	allowed, _ = g.Check(true, "U2", false)
+	require.True(t, allowed)
+	allowed, _ = g.Check(true, "DM1", false)
+	require.False(t, allowed)
+	allowed, _ = g.Check(true, "DM2", false)
+	require.True(t, allowed)
+	allowed, _ = g.Check(false, "GP2", false)
+	require.True(t, allowed)
 }

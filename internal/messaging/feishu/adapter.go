@@ -341,9 +341,8 @@ func (a *Adapter) handleMessage(ctx context.Context, event *larkim.P2MessageRece
 	// Step 7: Access control.
 	botMentioned := isBotMentioned(msg.Mentions, a.botOpenID)
 	if a.Gate != nil {
-		result := a.Gate.Check(chatType == "p2p", userID, botMentioned)
-		if !result.Allowed {
-			a.Log.Debug("feishu: gate rejected", "reason", result.Reason, "chat", chatID, "user", userID)
+		if allowed, reason := a.Gate.Check(chatType == "p2p", userID, botMentioned); !allowed {
+			a.Log.Debug("feishu: gate rejected", "reason", reason, "chat", chatID, "user", userID)
 			return nil
 		}
 	}

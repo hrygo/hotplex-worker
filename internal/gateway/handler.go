@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -204,7 +205,9 @@ func (h *Handler) handleInput(ctx context.Context, env *events.Envelope) error {
 			h.log.Debug("gateway: input delivered to worker", "session_id", env.SessionID)
 			// Capture inbound event for replay (best-effort).
 			if h.bridge != nil {
-				h.bridge.CaptureInbound(env.SessionID, env.Seq, events.Input, env.Event.Data)
+				if ed, err := json.Marshal(env.Event.Data); err == nil {
+					h.bridge.CaptureInbound(env.SessionID, env.Seq, events.Input, ed)
+				}
 			}
 		}
 	} else {

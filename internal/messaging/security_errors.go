@@ -1,7 +1,6 @@
 package messaging
 
 import (
-	"encoding/json"
 	"strings"
 
 	"github.com/hrygo/hotplex/pkg/events"
@@ -113,17 +112,7 @@ func FormatSecurityError(err error, msgs map[SecurityErrorCode]string) string {
 
 // ExtractMCPStatusData extracts MCP status data from an event envelope.
 func ExtractMCPStatusData(env *events.Envelope) (events.MCPStatusData, bool) {
-	var d events.MCPStatusData
-	switch v := env.Event.Data.(type) {
-	case events.MCPStatusData:
-		d = v
-	case map[string]any:
-		raw, _ := json.Marshal(v)
-		_ = json.Unmarshal(raw, &d)
-	default:
-		return d, false
-	}
-	return d, true
+	return events.DecodeAs[events.MCPStatusData](env.Event.Data)
 }
 
 // MCPServerIcon returns the status icon for an MCP server.
