@@ -650,8 +650,7 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 			now := time.Now().UnixMilli()
 			last := c.lastSummarySentMs.Load()
 			if now-last >= messaging.TurnSummaryCooldown.Milliseconds() {
-				go c.sendTurnSummaryCard(ctx, d)
-				c.lastSummarySentMs.Store(now)
+				go c.sendTurnSummaryCard(d)
 			}
 		}
 
@@ -868,7 +867,7 @@ func (c *FeishuConn) writeContent(ctx context.Context, env *events.Envelope, tex
 	return c.adapter.sendTextMessage(ctx, chatID, OptimizeMarkdownStyle(SanitizeForCard(text)))
 }
 
-func (c *FeishuConn) sendTurnSummaryCard(_ context.Context, d messaging.TurnSummaryData) {
+func (c *FeishuConn) sendTurnSummaryCard(d messaging.TurnSummaryData) {
 	cardJSON := buildTurnSummaryCard(d)
 	if cardJSON == "" {
 		return
@@ -881,13 +880,15 @@ func (c *FeishuConn) sendTurnSummaryCard(_ context.Context, d messaging.TurnSumm
 	c.mu.RUnlock()
 	var err error
 	if replyToMsgID != "" {
-		err = c.adapter.replyCardJSON(sendCtx, replyToMsgID, cardJSON)
+		err = c.adapter.doReplyCard(sendCtx, replyToMsgID, cardJSON, false)
 	} else {
 		err = c.adapter.sendCardMessage(sendCtx, chatID, cardJSON)
 	}
 	if err != nil {
 		c.adapter.Log.Warn("turn summary card send failed", "err", err)
+		return
 	}
+	c.lastSummarySentMs.Store(time.Now().UnixMilli())
 }
 
 func (c *FeishuConn) sendContextUsage(ctx context.Context, env *events.Envelope) error {
@@ -1073,46 +1074,27 @@ func (a *Adapter) sendTextMessage(ctx context.Context, chatID, text string) erro
 
 //nolint:unparam // replyInThread reserved for future thread reply support
 func (a *Adapter) replyMessage(ctx context.Context, messageID, content string, replyInThread bool) error {
-	if a.larkClient == nil {
-		return fmt.Errorf("feishu: lark client not initialized")
-	}
-
 	cardJSON := buildCardContent(content)
 	preview := cardJSON
 	if len(preview) > 200 {
 		preview = preview[:200] + "..."
 	}
 	a.Log.Debug("feishu: sending reply card", "msg_id", messageID, "content_len", len(cardJSON), "content_preview", preview)
-	body := larkim.NewReplyMessageReqBodyBuilder().
-		MsgType(larkim.MsgTypeInteractive).
-		Content(cardJSON).
-		ReplyInThread(replyInThread).
-		Build()
-
-	req := larkim.NewReplyMessageReqBuilder().
-		MessageId(messageID).
-		Body(body).
-		Build()
-
-	resp, err := a.larkClient.Im.V1.Message.Reply(ctx, req)
-	if err != nil {
-		return fmt.Errorf("feishu: reply message: %w", err)
-	}
-	if !resp.Success() {
-		return fmt.Errorf("feishu: reply message failed: code=%d msg=%s", resp.Code, resp.Msg)
+	if err := a.doReplyCard(ctx, messageID, cardJSON, replyInThread); err != nil {
+		return err
 	}
 	a.Log.Debug("feishu: reply message sent", "msg_id", messageID, "content_len", len(content))
 	return nil
 }
 
-// replyCardJSON replies to a message with a pre-built CardKit v2 JSON card.
-func (a *Adapter) replyCardJSON(ctx context.Context, messageID, cardJSON string) error {
+func (a *Adapter) doReplyCard(ctx context.Context, messageID, cardJSON string, replyInThread bool) error {
 	if a.larkClient == nil {
 		return fmt.Errorf("feishu: lark client not initialized")
 	}
 	body := larkim.NewReplyMessageReqBodyBuilder().
 		MsgType(larkim.MsgTypeInteractive).
 		Content(cardJSON).
+		ReplyInThread(replyInThread).
 		Build()
 	req := larkim.NewReplyMessageReqBuilder().
 		MessageId(messageID).
