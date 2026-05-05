@@ -312,6 +312,9 @@ func (h *Hub) sendControlToSession(ctx context.Context, env *events.Envelope) {
 	h.mu.RUnlock()
 
 	if len(conns) == 0 {
+		metrics.GatewayEventsSilentDropped.WithLabelValues(string(env.Event.Type)).Inc()
+		h.log.Warn("gateway: control event dropped, no connections",
+			"session_id", env.SessionID, "event_type", env.Event.Type)
 		return
 	}
 
@@ -415,6 +418,9 @@ func (h *Hub) routeMessage(msg *EnvelopeWithConn) {
 	h.mu.RUnlock()
 
 	if len(conns) == 0 {
+		metrics.GatewayEventsSilentDropped.WithLabelValues(string(msg.Env.Event.Type)).Inc()
+		h.log.Warn("gateway: event dropped, no connections",
+			"session_id", msg.Env.SessionID, "event_type", msg.Env.Event.Type)
 		return
 	}
 
