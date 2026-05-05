@@ -38,9 +38,14 @@ func (c sttEnvironmentChecker) Check(ctx context.Context) cli.Diagnostic {
 			passed = append(passed, "python3: "+pyPath)
 			if pkgOk, detail := checkPythonPackages(ctx, pyPath); pkgOk {
 				passed = append(passed, "funasr-onnx + onnxruntime")
+				if onnxOk, _ := checkOnnxPackage(ctx, pyPath); onnxOk {
+					passed = append(passed, "onnx (model auto-patch)")
+				} else {
+					hints = append(hints, "pip3 install onnx  # required for ONNX model auto-patch")
+				}
 			} else {
 				failed = append(failed, "Python STT packages missing: "+detail)
-				hints = append(hints, "pip3 install funasr-onnx onnxruntime")
+				hints = append(hints, "pip3 install funasr-onnx onnxruntime onnx")
 			}
 		} else {
 			failed = append(failed, "python3 not found in PATH")
@@ -117,6 +122,15 @@ func providerDeps(provider string) (python, ffmpeg bool) {
 
 func checkPythonPackages(ctx context.Context, pyPath string) (bool, string) {
 	cmd := exec.CommandContext(ctx, pyPath, "-c", "import funasr_onnx; import onnxruntime; print('ok')")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return false, strings.TrimSpace(string(out))
+	}
+	return true, ""
+}
+
+func checkOnnxPackage(ctx context.Context, pyPath string) (bool, string) {
+	cmd := exec.CommandContext(ctx, pyPath, "-c", "import onnx; print('ok')")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return false, strings.TrimSpace(string(out))

@@ -90,9 +90,11 @@ func containsAny(str string, substrs []string) bool {
 // into a standard io.WriteCloser. First Write() starts the stream,
 // subsequent calls buffer content, Close() ends it with fallback.
 type NativeStreamingWriter struct {
-	// ctx is stored because the writer needs it for the lifecycle of the stream,
-	// and the goroutines spawned by Write/flushBuffer need access to it.
-	ctx       context.Context
+	// startCtx is the caller's context, used only for the synchronous
+	// StartStream call in Write(). Background operations (flushLoop,
+	// appendWithRetry) must NOT reference this — the caller (pcEntry.writeOne)
+	// cancels its context as soon as Write() returns.
+	startCtx  context.Context
 	client    *slack.Client
 	channelID string
 	threadTS  string
@@ -131,7 +133,7 @@ type NativeStreamingWriter struct {
 func NewNativeStreamingWriter(ctx context.Context, client *slack.Client, channelID, threadTS, teamID string,
 	rateLimiter *ChannelRateLimiter, log *slog.Logger, onComplete func(string), onRegister func(*NativeStreamingWriter)) *NativeStreamingWriter {
 	w := &NativeStreamingWriter{
-		ctx:          ctx,
+		startCtx:     ctx,
 		client:       client,
 		channelID:    channelID,
 		threadTS:     threadTS,
@@ -177,16 +179,17 @@ func (w *NativeStreamingWriter) Write(p []byte) (int, error) {
 		}
 	}
 
-	// 首次调用：同步启动流
+	// 首次调用：用首个 payload 启动流（替代占位符，直接展示真实内容）
 	if !w.started {
-		opts := []slack.MsgOption{slack.MsgOptionMarkdownText(":thought_balloon: Thinking...")}
+		initialContent := string(p)
+		opts := []slack.MsgOption{slack.MsgOptionMarkdownText(initialContent)}
 		if w.threadTS != "" {
 			opts = append(opts, slack.MsgOptionTS(w.threadTS))
 		}
 		if w.teamID != "" {
 			opts = append(opts, slack.MsgOptionRecipientTeamID(w.teamID))
 		}
-		_, streamTS, err := w.client.StartStreamContext(w.ctx,
+		_, streamTS, err := w.client.StartStreamContext(w.startCtx,
 			w.channelID,
 			opts...,
 		)
@@ -196,9 +199,13 @@ func (w *NativeStreamingWriter) Write(p []byte) (int, error) {
 		w.messageTS = streamTS
 		w.started = true
 		w.streamStartTime = time.Now()
+		w.fullContent.Write(p)
+		w.bytesWritten += int64(len(p))
+		w.bytesFlushed += int64(len(p))
 		if w.onRegister != nil {
 			w.onRegister(w)
 		}
+		return len(p), nil
 	}
 
 	w.buf.Write(p)
@@ -215,7 +222,9 @@ func (w *NativeStreamingWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// flushLoop background goroutine: periodic + threshold-triggered flush
+// flushLoop background goroutine: periodic + threshold-triggered flush.
+// Uses closeChan for lifecycle control instead of w.startCtx, because
+// startCtx is canceled by pcEntry.writeOne as soon as Write() returns.
 func (w *NativeStreamingWriter) flushLoop() {
 	defer w.wg.Done()
 	ticker := time.NewTicker(flushInterval)
@@ -223,9 +232,6 @@ func (w *NativeStreamingWriter) flushLoop() {
 
 	for {
 		select {
-		case <-w.ctx.Done():
-			w.flushBuffer()
-			return
 		case <-w.closeChan:
 			w.flushBuffer()
 			return
@@ -240,7 +246,7 @@ func (w *NativeStreamingWriter) flushLoop() {
 // flushBuffer flushes the buffered content to Slack via AppendStream.
 func (w *NativeStreamingWriter) flushBuffer() {
 	w.mu.Lock()
-	if w.buf.Len() == 0 || w.closed || !w.started {
+	if w.buf.Len() == 0 || !w.started {
 		w.mu.Unlock()
 		return
 	}
@@ -276,12 +282,16 @@ func (w *NativeStreamingWriter) flushBuffer() {
 	}
 }
 
+const appendTimeout = 10 * time.Second
+
 func (w *NativeStreamingWriter) appendWithRetry(content string) error {
 	var lastErr error
 	for i := 0; i < maxAppendRetries; i++ {
-		_, _, err := w.client.AppendStreamContext(w.ctx, w.channelID, w.messageTS,
+		ctx, cancel := context.WithTimeout(context.Background(), appendTimeout)
+		_, _, err := w.client.AppendStreamContext(ctx, w.channelID, w.messageTS,
 			slack.MsgOptionMarkdownText(content),
 		)
+		cancel()
 		if err == nil {
 			w.mu.Lock()
 			w.bytesFlushed += int64(len(content))
@@ -289,6 +299,8 @@ func (w *NativeStreamingWriter) appendWithRetry(content string) error {
 			return nil
 		}
 		lastErr = err
+		w.log.Debug("slack: appendStream attempt failed",
+			"attempt", i+1, "channel", w.channelID, "err", err)
 
 		if isStreamStateError(err) || isAuthError(err) {
 			w.mu.Lock()
@@ -298,24 +310,16 @@ func (w *NativeStreamingWriter) appendWithRetry(content string) error {
 		}
 
 		if isRateLimited, retryAfter := isRateLimitError(err); isRateLimited {
-			timer := time.NewTimer(retryAfter)
-			select {
-			case <-timer.C:
-				continue
-			case <-w.ctx.Done():
-				timer.Stop()
-				return w.ctx.Err()
-			}
+			time.Sleep(retryAfter)
+			continue
 		}
 
 		if i < maxAppendRetries-1 {
-			select {
-			case <-time.After(retryDelay):
-			case <-w.ctx.Done():
-				return w.ctx.Err()
-			}
+			time.Sleep(retryDelay)
 		}
 	}
+	w.log.Warn("slack: appendStream failed after all retries",
+		"channel", w.channelID, "max_retries", maxAppendRetries, "err", lastErr)
 	return lastErr
 }
 
@@ -361,7 +365,7 @@ func (w *NativeStreamingWriter) Close() error {
 			"bytes_written", bytesWritten)
 	}
 
-	// Use a fresh context for cleanup since w.ctx may be cancelled
+	// Use a fresh context for cleanup since startCtx may be cancelled
 	cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -373,14 +377,18 @@ func (w *NativeStreamingWriter) Close() error {
 		stopOpts = w.buildTableStopOpts()
 	}
 
+	var stopErr error
 	if len(stopOpts) > 0 {
-		_, _, err := w.client.StopStreamContext(cleanupCtx, w.channelID, w.messageTS, stopOpts...)
-		if err != nil {
-			w.log.Debug("slack: stop stream with table blocks failed, retrying plain", "err", err)
-			_, _, _ = w.client.StopStreamContext(cleanupCtx, w.channelID, w.messageTS)
+		_, _, stopErr = w.client.StopStreamContext(cleanupCtx, w.channelID, w.messageTS, stopOpts...)
+		if stopErr != nil {
+			w.log.Debug("slack: stop stream with table blocks failed, retrying plain", "err", stopErr)
+			_, _, stopErr = w.client.StopStreamContext(cleanupCtx, w.channelID, w.messageTS)
 		}
 	} else {
-		_, _, _ = w.client.StopStreamContext(cleanupCtx, w.channelID, w.messageTS)
+		_, _, stopErr = w.client.StopStreamContext(cleanupCtx, w.channelID, w.messageTS)
+	}
+	if stopErr != nil {
+		w.log.Warn("slack: stop stream failed", "channel", w.channelID, "err", stopErr)
 	}
 
 	if w.onComplete != nil {
@@ -401,7 +409,18 @@ func (w *NativeStreamingWriter) Close() error {
 			fallbackText += remainingBuf
 		}
 		if fallbackText != "" {
-			_, _, _ = w.client.PostMessageContext(cleanupCtx, w.channelID, slack.MsgOptionText(fallbackText, false))
+			opts := []slack.MsgOption{slack.MsgOptionText(fallbackText, false)}
+			if w.threadTS != "" {
+				opts = append(opts, slack.MsgOptionTS(w.threadTS))
+			}
+			if w.teamID != "" {
+				opts = append(opts, slack.MsgOptionRecipientTeamID(w.teamID))
+			}
+			_, _, err := w.client.PostMessageContext(cleanupCtx, w.channelID, opts...)
+			if err != nil {
+				w.log.Error("slack: fallback PostMessage failed",
+					"channel", w.channelID, "err", err)
+			}
 		}
 	}
 	return nil

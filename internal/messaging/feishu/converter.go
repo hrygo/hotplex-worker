@@ -244,7 +244,11 @@ func BuildMediaPrompt(userText string, paths []string, medias []*MediaInfo, tran
 		}
 	} else {
 		// File paths only (no transcription).
-		fmt.Fprintf(&sb, "[用户发送的消息包含 %s，已下载到本地，请使用 Read 工具查看后再回答]\n", strings.Join(parts, "、"))
+		if audioCount > 0 {
+			fmt.Fprintf(&sb, "[用户发送的消息包含 %s，STT 转写失败，已下载到本地，请优先使用 stt_once.py 转写]\n", strings.Join(parts, "、"))
+		} else {
+			fmt.Fprintf(&sb, "[用户发送的消息包含 %s，已下载到本地，请使用 Read 工具查看后再回答]\n", strings.Join(parts, "、"))
+		}
 		for _, p := range paths {
 			sb.WriteString("- ")
 			sb.WriteString(p)

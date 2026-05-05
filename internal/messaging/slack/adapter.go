@@ -348,9 +348,23 @@ func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsA
 			// Audio + STT: transcribe voice messages to text.
 			if m.Type == mediaTypeAudio && a.transcriber != nil {
 				if audioText, audioErr := a.handleAudioMessage(ctx, m); audioErr != nil {
-					text += fmt.Sprintf("\n[audio: %s]", m.Name)
+					// STT failed: save audio to disk for worker fallback.
+					if path, saveErr := a.downloadMedia(ctx, m); saveErr == nil {
+						text += fmt.Sprintf("\n[audio STT failed, saved to: %s — please use stt_once.py to transcribe]", path)
+					} else {
+						text += fmt.Sprintf("\n[audio: %s (STT and download both failed)]", m.Name)
+					}
 				} else {
 					text += audioText
+				}
+				continue
+			}
+			// Audio without transcriber: save to disk for worker fallback.
+			if m.Type == mediaTypeAudio {
+				if path, err := a.downloadMedia(ctx, m); err == nil {
+					text += fmt.Sprintf("\n[audio saved to: %s — please use stt_once.py to transcribe]", path)
+				} else {
+					text += fmt.Sprintf("\n[audio: %s (download failed)]", m.Name)
 				}
 				continue
 			}
@@ -477,13 +491,15 @@ func (a *Adapter) Close(ctx context.Context) error {
 	a.MarkClosed()
 
 	a.mu.Lock()
+	streams := make([]*NativeStreamingWriter, 0, len(a.activeStreams))
 	for _, w := range a.activeStreams {
+		streams = append(streams, w)
+	}
+	a.activeStreams = nil
+	a.mu.Unlock()
+	for _, w := range streams {
 		_ = w.Close()
 	}
-	for k := range a.activeStreams {
-		delete(a.activeStreams, k)
-	}
-	a.mu.Unlock()
 
 	conns := a.DrainConns()
 	for _, c := range conns {
@@ -989,13 +1005,16 @@ func (c *SlackConn) tryFileUpload(ctx context.Context, text string) bool {
 }
 
 // closeStreamWriter closes and clears the stream writer.
+// The lock is released before calling Close() to avoid a deadlock:
+// Close() → onComplete → writeWithStreaming's callback → Lock(streamWriterMu).
 func (c *SlackConn) closeStreamWriter() {
 	c.streamWriterMu.Lock()
-	defer c.streamWriterMu.Unlock()
+	w := c.streamWriter
+	c.streamWriter = nil
+	c.streamWriterMu.Unlock()
 
-	if c.streamWriter != nil {
-		_ = c.streamWriter.Close()
-		c.streamWriter = nil
+	if w != nil {
+		_ = w.Close()
 	}
 }
 
