@@ -526,7 +526,12 @@ func gitBranchOf(dir string) string {
 	if err == nil {
 		branch = strings.TrimSpace(string(out))
 		if branch == "HEAD" {
-			branch = ""
+			// Detached HEAD: show short commit hash instead.
+			shortCmd := exec.CommandContext(ctx, "git", "rev-parse", "--short", "HEAD")
+			shortCmd.Dir = dir
+			if shortOut, shortErr := shortCmd.Output(); shortErr == nil {
+				branch = strings.TrimSpace(string(shortOut))
+			}
 		}
 	}
 
