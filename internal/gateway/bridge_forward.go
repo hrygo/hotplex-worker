@@ -525,6 +525,9 @@ func gitBranchOf(dir string) string {
 	branch := ""
 	if err == nil {
 		branch = strings.TrimSpace(string(out))
+		if branch == "HEAD" {
+			branch = ""
+		}
 	}
 
 	gitBranchMu.Lock()
