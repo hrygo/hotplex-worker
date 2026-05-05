@@ -277,12 +277,16 @@ func (w *NativeStreamingWriter) flushBuffer() {
 	}
 }
 
+const appendTimeout = 30 * time.Second
+
 func (w *NativeStreamingWriter) appendWithRetry(content string) error {
 	var lastErr error
 	for i := 0; i < maxAppendRetries; i++ {
-		_, _, err := w.client.AppendStreamContext(context.Background(), w.channelID, w.messageTS,
+		ctx, cancel := context.WithTimeout(context.Background(), appendTimeout)
+		_, _, err := w.client.AppendStreamContext(ctx, w.channelID, w.messageTS,
 			slack.MsgOptionMarkdownText(content),
 		)
+		cancel()
 		if err == nil {
 			w.mu.Lock()
 			w.bytesFlushed += int64(len(content))
