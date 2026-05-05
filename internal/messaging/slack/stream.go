@@ -411,7 +411,14 @@ func (w *NativeStreamingWriter) Close() error {
 			fallbackText += remainingBuf
 		}
 		if fallbackText != "" {
-			_, _, err := w.client.PostMessageContext(cleanupCtx, w.channelID, slack.MsgOptionText(fallbackText, false))
+			opts := []slack.MsgOption{slack.MsgOptionText(fallbackText, false)}
+			if w.threadTS != "" {
+				opts = append(opts, slack.MsgOptionTS(w.threadTS))
+			}
+			if w.teamID != "" {
+				opts = append(opts, slack.MsgOptionRecipientTeamID(w.teamID))
+			}
+			_, _, err := w.client.PostMessageContext(cleanupCtx, w.channelID, opts...)
 			if err != nil {
 				w.log.Error("slack: fallback PostMessage failed",
 					"channel", w.channelID, "err", err)
