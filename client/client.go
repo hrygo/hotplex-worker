@@ -70,71 +70,58 @@ type Event struct {
 	Data    any    `json:"data,omitempty"`
 }
 
-// decodeAs is a generic helper that round-trips map[string]any through JSON
-// to produce a typed struct. Returns (zero, false) if data is not a map.
-func decodeAs[T any](data any) (T, bool) {
-	d, ok := data.(map[string]any)
-	if !ok {
-		var zero T
-		return zero, false
-	}
-	b, _ := json.Marshal(d)
-	var res T
-	_ = json.Unmarshal(b, &res)
-	return res, true
-}
 
 // AsDoneData parses event data as DoneData.
-func (e Event) AsDoneData() (DoneData, bool) { return decodeAs[DoneData](e.Data) }
+func (e Event) AsDoneData() (DoneData, bool) { return events.DecodeAs[DoneData](e.Data) }
 
 // AsErrorData parses event data as ErrorData.
-func (e Event) AsErrorData() (ErrorData, bool) { return decodeAs[ErrorData](e.Data) }
+func (e Event) AsErrorData() (ErrorData, bool) { return events.DecodeAs[ErrorData](e.Data) }
 
 // AsToolCallData parses event data as ToolCallData.
-func (e Event) AsToolCallData() (ToolCallData, bool) { return decodeAs[ToolCallData](e.Data) }
+func (e Event) AsToolCallData() (ToolCallData, bool) { return events.DecodeAs[ToolCallData](e.Data) }
 
 // AsPermissionRequestData parses event data as PermissionRequestData.
 func (e Event) AsPermissionRequestData() (PermissionRequestData, bool) {
-	return decodeAs[PermissionRequestData](e.Data)
+	return events.DecodeAs[PermissionRequestData](e.Data)
 }
 
 // AsQuestionRequestData parses event data as QuestionRequestData.
 func (e Event) AsQuestionRequestData() (QuestionRequestData, bool) {
-	return decodeAs[QuestionRequestData](e.Data)
+	return events.DecodeAs[QuestionRequestData](e.Data)
 }
 
 // AsElicitationRequestData parses event data as ElicitationRequestData.
 func (e Event) AsElicitationRequestData() (ElicitationRequestData, bool) {
-	return decodeAs[ElicitationRequestData](e.Data)
+	return events.DecodeAs[ElicitationRequestData](e.Data)
 }
 
 // AsMessageStartData parses event data as MessageStartData.
 func (e Event) AsMessageStartData() (MessageStartData, bool) {
-	return decodeAs[MessageStartData](e.Data)
+	return events.DecodeAs[MessageStartData](e.Data)
 }
 
 // AsMessageDeltaData parses event data as MessageDeltaData.
 func (e Event) AsMessageDeltaData() (MessageDeltaData, bool) {
-	return decodeAs[MessageDeltaData](e.Data)
+	return events.DecodeAs[MessageDeltaData](e.Data)
 }
 
 // AsMessageEndData parses event data as MessageEndData.
-func (e Event) AsMessageEndData() (MessageEndData, bool) { return decodeAs[MessageEndData](e.Data) }
+func (e Event) AsMessageEndData() (MessageEndData, bool) { return events.DecodeAs[MessageEndData](e.Data) }
 
 // AsStateData parses event data as StateData.
-func (e Event) AsStateData() (StateData, bool) { return decodeAs[StateData](e.Data) }
+func (e Event) AsStateData() (StateData, bool) { return events.DecodeAs[StateData](e.Data) }
 
 // AsReasoningData parses event data as ReasoningData.
-func (e Event) AsReasoningData() (ReasoningData, bool) { return decodeAs[ReasoningData](e.Data) }
+func (e Event) AsReasoningData() (ReasoningData, bool) { return events.DecodeAs[ReasoningData](e.Data) }
 
 // AsStepData parses event data as StepData.
-func (e Event) AsStepData() (StepData, bool) { return decodeAs[StepData](e.Data) }
+func (e Event) AsStepData() (StepData, bool) { return events.DecodeAs[StepData](e.Data) }
 
 // AsToolResultData parses event data as ToolResultData.
-func (e Event) AsToolResultData() (ToolResultData, bool) { return decodeAs[ToolResultData](e.Data) }
+func (e Event) AsToolResultData() (ToolResultData, bool) { return events.DecodeAs[ToolResultData](e.Data) }
 
 // AsInitAckData parses event data as InitAckData.
-func (e Event) AsInitAckData() (InitAckData, bool) { return decodeAs[InitAckData](e.Data) }
+func (e Event) AsInitAckData() (InitAckData, bool) { return events.DecodeAs[InitAckData](e.Data) }
 
 // New creates a new client with the given options.
 func New(ctx context.Context, opts ...Option) (*Client, error) {
@@ -492,7 +479,7 @@ func (c *Client) recvPump() {
 
 		// Update local state on state events.
 		if env.Event.Type == events.State {
-			if d, ok := decodeAs[StateData](env.Event.Data); ok {
+			if d, ok := events.DecodeAs[StateData](env.Event.Data); ok {
 				c.mu.Lock()
 				c.state = d.State
 				c.mu.Unlock()
@@ -571,7 +558,7 @@ func (c *Client) deliver(evt Event) {
 }
 
 func parseInitAck(env *events.Envelope) *InitAckData {
-	ack, _ := decodeAs[InitAckData](env.Event.Data)
+	ack, _ := events.DecodeAs[InitAckData](env.Event.Data)
 	if ack.SessionID == "" {
 		ack.SessionID = env.SessionID
 	}
