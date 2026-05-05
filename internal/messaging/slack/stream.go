@@ -377,20 +377,18 @@ func (w *NativeStreamingWriter) Close() error {
 		stopOpts = w.buildTableStopOpts()
 	}
 
+	var stopErr error
 	if len(stopOpts) > 0 {
-		_, _, err := w.client.StopStreamContext(cleanupCtx, w.channelID, w.messageTS, stopOpts...)
-		if err != nil {
-			w.log.Debug("slack: stop stream with table blocks failed, retrying plain", "err", err)
-			_, _, err = w.client.StopStreamContext(cleanupCtx, w.channelID, w.messageTS)
-			if err != nil {
-				w.log.Warn("slack: stop stream failed", "channel", w.channelID, "err", err)
-			}
+		_, _, stopErr = w.client.StopStreamContext(cleanupCtx, w.channelID, w.messageTS, stopOpts...)
+		if stopErr != nil {
+			w.log.Debug("slack: stop stream with table blocks failed, retrying plain", "err", stopErr)
+			_, _, stopErr = w.client.StopStreamContext(cleanupCtx, w.channelID, w.messageTS)
 		}
 	} else {
-		_, _, err := w.client.StopStreamContext(cleanupCtx, w.channelID, w.messageTS)
-		if err != nil {
-			w.log.Warn("slack: stop stream failed", "channel", w.channelID, "err", err)
-		}
+		_, _, stopErr = w.client.StopStreamContext(cleanupCtx, w.channelID, w.messageTS)
+	}
+	if stopErr != nil {
+		w.log.Warn("slack: stop stream failed", "channel", w.channelID, "err", stopErr)
 	}
 
 	if w.onComplete != nil {

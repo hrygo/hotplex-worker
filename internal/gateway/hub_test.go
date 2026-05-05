@@ -405,14 +405,14 @@ func TestHub_RouteMessage_SilentDropMetric(t *testing.T) {
 	t.Parallel()
 	h := newTestHub(t)
 
-	before := testutil.ToFloat64(metrics.GatewayEventsSilentDropped.WithLabelValues(string(events.State)))
+	before := testutil.ToFloat64(metrics.GatewayEventsNoSubscribersDropped.WithLabelValues(string(events.State)))
 
 	h.routeMessage(&EnvelopeWithConn{
 		Env:  events.NewEnvelope(aep.NewID(), "orphan", 1, events.State, events.StateData{State: events.StateIdle}),
 		Conn: nil,
 	})
 
-	after := testutil.ToFloat64(metrics.GatewayEventsSilentDropped.WithLabelValues(string(events.State)))
+	after := testutil.ToFloat64(metrics.GatewayEventsNoSubscribersDropped.WithLabelValues(string(events.State)))
 	require.Equal(t, before+1, after, "metric should increment when events are dropped with no connections")
 }
 
@@ -420,12 +420,12 @@ func TestHub_sendControlToSession_NoConns(t *testing.T) {
 	t.Parallel()
 	h := newTestHub(t)
 
-	before := testutil.ToFloat64(metrics.GatewayEventsSilentDropped.WithLabelValues(string(events.Control)))
+	before := testutil.ToFloat64(metrics.GatewayEventsNoSubscribersDropped.WithLabelValues(string(events.Control)))
 
 	env := events.NewEnvelope(aep.NewID(), "no_conns", 1, events.Control, nil)
 	h.sendControlToSession(context.Background(), env)
 
-	after := testutil.ToFloat64(metrics.GatewayEventsSilentDropped.WithLabelValues(string(events.Control)))
+	after := testutil.ToFloat64(metrics.GatewayEventsNoSubscribersDropped.WithLabelValues(string(events.Control)))
 	require.Equal(t, before+1, after, "metric should increment when control events are dropped")
 }
 
@@ -948,7 +948,7 @@ func TestHub_JoinPlatformSession_DeadEntryReplaced(t *testing.T) {
 
 	require.Equal(t, 1, count, "should have exactly 1 entry after replacing dead one")
 	require.NotNil(t, newEntry, "new pcEntry should exist")
-	require.NotEqual(t, fmt.Sprintf("%p", oldEntry), fmt.Sprintf("%p", newEntry),
+	require.NotEqual(t, oldEntry, newEntry,
 		"dead entry should have been replaced with a fresh one")
 }
 
