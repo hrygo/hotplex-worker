@@ -33,7 +33,6 @@ Configuration (config.yaml):
     feishu:
       stt_provider: "local"
       stt_local_cmd: "python3 /path/to/stt_server.py --model iic/SenseVoiceSmall"
-      stt_local_mode: "persistent"
       stt_local_idle_ttl: "10m"
 """
 

@@ -158,13 +158,11 @@ type MessagingConfig struct {
 	Feishu FeishuConfig `mapstructure:"feishu"`
 }
 
-// STT constants for provider and mode values.
+// STT constants for provider values.
 const (
 	STTProviderLocal       = "local"
 	STTProviderFeishu      = "feishu"
 	STTProviderFeishuLocal = "feishu+local"
-	STTModeEphemeral       = "ephemeral"
-	STTModePersistent      = "persistent"
 )
 
 // STTConfig holds speech-to-text configuration shared across messaging adapters.
@@ -173,11 +171,16 @@ type STTConfig struct {
 	// "feishu+local" (cloud primary, local fallback), "" (disabled).
 	Provider string `mapstructure:"stt_provider"`
 	// LocalCmd is the command template. {file} is replaced with the audio file path.
+	// If {file} is present → ephemeral mode (fork per request).
+	// If absent → persistent mode (long-lived subprocess, stdin/stdout JSON protocol).
 	LocalCmd string `mapstructure:"stt_local_cmd"`
-	// LocalMode: "ephemeral" (per-request process) or "persistent" (long-lived subprocess).
-	LocalMode string `mapstructure:"stt_local_mode"`
 	// LocalIdleTTL controls auto-shutdown of persistent subprocess. 0 = disabled.
 	LocalIdleTTL time.Duration `mapstructure:"stt_local_idle_ttl"`
+}
+
+// IsPersistent returns true when LocalCmd uses persistent mode (no {file} placeholder).
+func (c STTConfig) IsPersistent() bool {
+	return c.LocalCmd != "" && !strings.Contains(c.LocalCmd, "{file}")
 }
 
 // SlackConfig holds Slack Socket Mode adapter settings.
@@ -488,7 +491,6 @@ func Default() *Config {
 				STTConfig: STTConfig{
 					Provider:     "feishu+local",
 					LocalCmd:     "python3 " + filepath.Join(HotplexHome(), "scripts", "stt_server.py"),
-					LocalMode:    "persistent",
 					LocalIdleTTL: time.Hour,
 				},
 			},
@@ -499,7 +501,6 @@ func Default() *Config {
 				STTConfig: STTConfig{
 					Provider:     "local",
 					LocalCmd:     "python3 " + filepath.Join(HotplexHome(), "scripts", "stt_server.py"),
-					LocalMode:    "persistent",
 					LocalIdleTTL: time.Hour,
 				},
 			},
@@ -582,12 +583,10 @@ func Load(filePath string, opts LoadOptions) (*Config, error) {
 	_ = v.BindEnv("messaging.slack.work_dir")
 	_ = v.BindEnv("messaging.slack.stt_provider")
 	_ = v.BindEnv("messaging.slack.stt_local_cmd")
-	_ = v.BindEnv("messaging.slack.stt_local_mode")
 	_ = v.BindEnv("messaging.slack.stt_local_idle_ttl")
 	_ = v.BindEnv("messaging.feishu.work_dir")
 	_ = v.BindEnv("messaging.feishu.stt_provider")
 	_ = v.BindEnv("messaging.feishu.stt_local_cmd")
-	_ = v.BindEnv("messaging.feishu.stt_local_mode")
 	_ = v.BindEnv("messaging.feishu.stt_local_idle_ttl")
 
 	if err := v.Unmarshal(cfg); err != nil {

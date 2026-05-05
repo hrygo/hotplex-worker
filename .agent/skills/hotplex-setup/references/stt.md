@@ -86,7 +86,6 @@ chmod +x ~/.hotplex/scripts/stt_*.py
 **Slack（仅本地）**：
 ```bash
 HOTPLEX_MESSAGING_SLACK_STT_PROVIDER=local
-HOTPLEX_MESSAGING_SLACK_STT_LOCAL_MODE=ephemeral
 HOTPLEX_MESSAGING_SLACK_STT_LOCAL_CMD=python3 ~/.hotplex/scripts/stt_once.py
 HOTPLEX_MESSAGING_SLACK_STT_LOCAL_IDLE_TTL=1h
 ```
@@ -94,7 +93,6 @@ HOTPLEX_MESSAGING_SLACK_STT_LOCAL_IDLE_TTL=1h
 **飞书（云端 + 本地降级）**：
 ```bash
 HOTPLEX_MESSAGING_FEISHU_STT_PROVIDER=feishu+local
-HOTPLEX_MESSAGING_FEISHU_STT_LOCAL_MODE=ephemeral
 HOTPLEX_MESSAGING_FEISHU_STT_LOCAL_CMD=python3 ~/.hotplex/scripts/stt_server.py
 HOTPLEX_MESSAGING_FEISHU_STT_LOCAL_IDLE_TTL=1h
 ```
@@ -164,9 +162,9 @@ ls -lh ~/.hotplex/scripts/stt_once.py
 ```
 
 ### Q: STT 占用内存过高？
-**A**: 使用 `ephemeral` 模式：
+**A**: 使用 ephemeral 模式（带 `{file}` 占位符，每次 fork 后自动释放）：
 ```bash
-HOTPLEX_MESSAGING_FEISHU_STT_LOCAL_MODE=ephemeral
+HOTPLEX_MESSAGING_FEISHU_STT_LOCAL_CMD="python3 ~/.hotplex/scripts/stt_once.py {file}"
 ```
 
 ### Q: 如何禁用 STT？
