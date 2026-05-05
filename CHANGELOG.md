@@ -1,5 +1,40 @@
 # Changelog
 
+## [1.5.3] - 2026-05-05
+
+### Summary
+
+v1.5.3 是一次 patch 版本更新，聚焦于 **消息通道稳定性** 和 **EventStore 架构简化**。修复 Slack 流式输出死锁、消息静默丢弃、DM 线程丢失三个高频问题。EventStore 合并至共享数据库消除双文件运维负担，Turn Summary 统一为 Slack/飞书共享的多行卡片布局。同时修复安全路径穿越、Worker 控制请求映射、per-turn token 统计等多项 bug。
+
+### Added
+
+- **Gateway Core**: `GatewayEventsNoSubscribersDropped` Prometheus counter — 追踪因无订阅连接而静默丢弃的事件，提升消息丢失可观测性。(#182)
+- **STT**: Auto-patch ONNX models — 首次加载时自动修补模型文件，添加 `.patched` marker 避免重复修补。(#182)
+- **STT**: Audio STT failure fallback — STT 失败时下载音频到磁盘并提示 Worker 使用 `stt_once.py` 转录，防止音频内容静默丢失。(#182)
+
+### Changed
+
+- **EventStore**: Events 表合并至 session 共享数据库 — 新增 goose migration 002/003，`source` 列追踪事件来源（normal/crash/timeout/fresh_start），`v_turns` SQL VIEW 替代 ConversationStore。(#171)
+- **Messaging**: Turn Summary 统一为 Slack/飞书共享的多行卡片布局 — 导出 `FormatDuration`/`FormatToolNames` 共享 helper，消除 47 行 Slack 重复代码。(#181)
+- **Gateway Core**: Bridge 拆分 `captureEvent`/`CaptureInbound` 使用 `json.RawMessage` 减少重复序列化，`events.DecodeAs[T]` 泛型 helper 替代 6 处 map→struct JSON round-trip。(#176)
+- **Slack**: Streaming start 使用首个 Write payload 作为初始内容，移除 "Thinking..." 占位符。(#182)
+
+### Fixed
+
+- **Slack**: `closeStreamWriter` 不可重入死锁 — `sync.Mutex` 持锁调用 `Close()` 触发 `onComplete` 回调再次获锁，导致所有后续 turn 永久阻塞。(#182)
+- **Slack**: `flushBuffer` 在 `w.closed=true` 后跳过最终 flush — 移除 closed 检查，确保退出时缓冲内容完整发送。(#182)
+- **Slack**: `appendWithRetry` 无限阻塞 — 添加 per-call 10s 超时防止 Slack API 无响应时 Close() 永久挂起。(#182)
+- **Slack**: DM 流式输出失败 — `StartStreamContext` 缺少 `thread_ts` 和 `team_id` 导致 DM 消息 API 报错。(#174)
+- **Slack**: Fallback PostMessage 缺少 `thread_ts` — 非流式回退消息发到 DM 顶层而非线程内。(#182)
+- **Gateway Core**: `JoinPlatformSession` 死连接未检测 — `pcEntry` writeLoop 退出后事件仍被静默丢弃，新增 `select on done` 检测并替换。(#182)
+- **Gateway Core**: Worker cold-start 计入 Turn 1 时长 — `turnStartTime` 改为 firstEvent 时重置，排除 worker 启动开销。(#176)
+- **Gateway Core**: Per-turn token delta 与累计总量相同 — `resetPerTurn()` 被标记为死代码未调用，Done 后补充调用修复。(#176)
+- **Gateway Core**: `pendingError` 双重 JSON 编码 — captureEvent 内部已 Marshal，调用方重复 Marshal 导致数据损坏。(#176)
+- **Worker/ClaudeCode**: `HasSessionFiles` 空目录误判 — 空 `session-env/<id>` 目录触发无效 resume 浪费 ~14s。(#173)
+- **Worker**: `control_request` 字段映射错误 — SDK 使用 "request" 非 "response"，导致 `can_use_tool` 阻塞无限等待。(#170)
+- **Security**: Slack/飞书媒体处理路径穿越 — `filepath.Clean` 前缀检查和 `filepath.Base` 文件名清洗。(#167)
+- **WebChat**: `message.parts` 为 null 时 filter/find 崩溃 — 新增 null guard 防止反序列化异常。(#177)
+
 ## [1.5.2] - 2026-05-04
 
 ### Summary
