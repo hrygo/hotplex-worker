@@ -76,6 +76,19 @@ def main():
 
     # Suppress stdout during model loading (modelscope prints progress to stdout).
     with _suppress_stdout():
+        # Auto-patch ONNX model if needed.
+        try:
+            from modelscope.hub.snapshot_download import snapshot_download  # type: ignore
+            from fix_onnx_model import patch_model_dir  # type: ignore
+
+            model_dir = snapshot_download("iic/SenseVoiceSmall")
+            for name in patch_model_dir(model_dir):
+                print(f"[stt] patched ONNX: {name}", file=sys.stderr)
+        except ImportError:
+            pass  # onnx not installed — skip patching, let it fail naturally
+        except Exception as e:
+            print(f"[stt] ONNX patch warning: {type(e).__name__}: {e}", file=sys.stderr)
+
         try:
             model = SenseVoiceSmall("iic/SenseVoiceSmall", quantize=False)
         except TypeError as e:

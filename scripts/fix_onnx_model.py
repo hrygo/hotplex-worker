@@ -22,6 +22,9 @@ import onnx
 from onnx import TensorProto, helper
 
 
+_MARKER_SUFFIX = ".patched"
+
+
 def patch_onnx_file(model_path: str) -> bool:
     """Patch a single ONNX file. Returns True if file was patched."""
     model = onnx.load(model_path, load_external_data=True)
@@ -72,12 +75,22 @@ def patch_onnx_file(model_path: str) -> bool:
 
 
 def patch_model_dir(model_dir: str) -> list[str]:
-    """Patch all ONNX models in directory. Returns list of patched filenames."""
+    """Patch all ONNX models in directory. Returns list of patched filenames.
+
+    Uses a .patched marker file per ONNX file to skip already-patched models,
+    avoiding the cost of loading and scanning the full model on every startup.
+    """
     patched = []
     for name in ("model_quant.onnx", "model.onnx"):
         path = os.path.join(model_dir, name)
-        if os.path.exists(path) and patch_onnx_file(path):
+        if not os.path.exists(path):
+            continue
+        marker = path + _MARKER_SUFFIX
+        if os.path.exists(marker):
+            continue
+        if patch_onnx_file(path):
             patched.append(name)
+            Path(marker).touch()
     return patched
 
 
@@ -91,7 +104,12 @@ def main() -> None:
         path = model_dir / name
         if not path.exists():
             continue
+        marker = str(path) + _MARKER_SUFFIX
+        if os.path.exists(marker):
+            print(f"{name}: already patched (marker found)")
+            continue
         if patch_onnx_file(str(path)):
+            Path(marker).touch()
             print(f"Patched {name}")
         else:
             print(f"{name}: already correct")
