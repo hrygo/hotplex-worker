@@ -96,6 +96,7 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 
 		if firstEvent {
 			b.persistWorkerSessionID(w, sessionID)
+			turnStartTime = time.Now() // exclude worker cold-start from Turn 1
 			firstEvent = false
 		}
 
@@ -122,7 +123,7 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 		// Stats accumulation: track tool calls and merge per-turn stats on done.
 		switch env.Event.Type {
 		case events.ToolCall:
-			acc := b.getOrInitAccum(sessionID, "")
+			acc := b.getOrInitAccum(sessionID, "", startTime)
 			acc.ToolCallCount++
 			if tc, ok := asToolCallData(env.Event.Data); ok {
 				if acc.ToolNames == nil {
@@ -134,7 +135,7 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 			if turnTimer != nil {
 				turnTimer.Stop()
 			}
-			acc := b.getOrInitAccum(sessionID, opts.workDir)
+			acc := b.getOrInitAccum(sessionID, opts.workDir, startTime)
 			if dd, ok := asDoneData(env.Event.Data); ok {
 				acc.mergePerTurnStats(dd)
 			}
@@ -155,6 +156,7 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 			}
 
 			b.injectSessionStats(env, acc)
+			acc.resetPerTurn()
 			if b.log.Enabled(context.Background(), slog.LevelDebug) {
 				b.log.Debug("bridge: turn completed",
 					"session_id", sessionID, "worker_type", workerType, "turn", acc.TurnCount,
@@ -201,11 +203,7 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 			if err := b.hub.SendToSession(context.Background(), pendingError); err != nil {
 				b.log.Warn("bridge: forward buffered error failed", "err", err, "session_id", sessionID, "worker_type", workerType)
 			}
-			if b.collector != nil {
-				if ed, err := json.Marshal(pendingError.Event.Data); err == nil {
-					b.captureEvent(sessionID, pendingError.Seq, pendingError.Event.Type, ed)
-				}
-			}
+			b.captureEvent(sessionID, pendingError.Seq, pendingError.Event.Type, pendingError.Event.Data)
 			pendingError = nil
 		}
 
@@ -357,7 +355,7 @@ func (b *Bridge) handleWorkerExit(w worker.Worker, p workerExitParams) {
 			"session_id", p.sessionID, "worker_type", workerType, "exit_code", exitCode,
 			"done_received", p.doneReceived, "turn_text_len", p.turnTextLen)
 	} else if exitCode != 0 && exitCode != -1 {
-		acc := b.getOrInitAccum(p.sessionID, "")
+		acc := b.getOrInitAccum(p.sessionID, "", p.startTime)
 		b.log.Warn("bridge: worker exited with non-zero code, sending crash error",
 			"session_id", p.sessionID, "worker_type", workerType, "exit_code", exitCode,
 			"duration", time.Since(p.startTime).Round(time.Millisecond), "turn_count", acc.TurnCount)
@@ -436,7 +434,7 @@ func extractMessageContent(env *events.Envelope) string {
 // gitBranchOf is called inside the lock only when the accumulator first
 // receives a non-empty workDir — a one-time cost per session (up to 2s
 // subprocess). After that, the branch is already set and skipped.
-func (b *Bridge) getOrInitAccum(sessionID, workDir string) *sessionAccumulator {
+func (b *Bridge) getOrInitAccum(sessionID, workDir string, startTime time.Time) *sessionAccumulator {
 	b.accumMu.Lock()
 	defer b.accumMu.Unlock()
 	if acc, ok := b.accum[sessionID]; ok {
@@ -446,7 +444,7 @@ func (b *Bridge) getOrInitAccum(sessionID, workDir string) *sessionAccumulator {
 		}
 		return acc
 	}
-	acc := &sessionAccumulator{StartedAt: time.Now()}
+	acc := &sessionAccumulator{StartedAt: startTime}
 	if workDir != "" {
 		acc.WorkDir = workDir
 		acc.GitBranch = gitBranchOf(workDir)
