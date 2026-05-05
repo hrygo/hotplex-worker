@@ -309,15 +309,15 @@ func TestFormatTurnSummaryRich_Full(t *testing.T) {
 	require.Contains(t, got, "🔧 12 (")
 	require.Contains(t, got, "📂")
 	require.Contains(t, got, "🌿 feat/117-turn-summary")
-	require.Contains(t, got, "⏱️ Turn 42s · Session 12m30s")
+	require.Contains(t, got, "⏱ 42s · Σ 12m30s")
 	require.Contains(t, got, "💎")
-	require.Contains(t, got, "12K in · 2K out | Σ 48.4K in · Σ 2K out")
+	require.Contains(t, got, "12K↓ 2K↑ | Σ48.4K↓ Σ2K↑")
 }
 
 func TestFormatTurnSummaryRich_Minimal(t *testing.T) {
 	t.Parallel()
 	got := FormatTurnSummaryRich(TurnSummaryData{TurnDurationMs: 3000})
-	require.Contains(t, got, "⏱️ Turn 3s")
+	require.Contains(t, got, "⏱ 3s")
 }
 
 func TestFormatTurnSummaryRich_Empty(t *testing.T) {

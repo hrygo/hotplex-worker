@@ -274,7 +274,7 @@ func FormatTurnSummaryRich(d TurnSummaryData) string {
 
 	// Line 6: Duration (merged Turn + Session)
 	if durStr := FormatDurationParts(d); durStr != "" {
-		lines = append(lines, "⏱️ "+durStr)
+		lines = append(lines, "⏱ "+durStr)
 	}
 
 	// Line 7: Tokens (turn + session total)
@@ -290,10 +290,10 @@ func FormatTurnSummaryRich(d TurnSummaryData) string {
 func FormatDurationParts(d TurnSummaryData) string {
 	var parts []string
 	if d.TurnDurationMs > 0 {
-		parts = append(parts, "Turn "+FormatDuration(d.TurnDurationMs))
+		parts = append(parts, FormatDuration(d.TurnDurationMs))
 	}
-	if sessDur := FormatSessionDuration(d.SessionDuration); sessDur != "" {
-		parts = append(parts, "Session "+sessDur)
+	if d.SessionDuration > 0 {
+		parts = append(parts, "Σ "+FormatSessionDuration(d.SessionDuration))
 	}
 	return strings.Join(parts, " · ")
 }
@@ -308,22 +308,22 @@ func FormatTokenUsage(d TurnSummaryData) string {
 	if d.TurnInputTok > 0 || d.TurnOutputTok > 0 {
 		var tp []string
 		if d.TurnInputTok > 0 {
-			tp = append(tp, fmt.Sprintf("%s in", FormatTokenCount(int(d.TurnInputTok))))
+			tp = append(tp, FormatTokenCount(int(d.TurnInputTok))+"↓")
 		}
 		if d.TurnOutputTok > 0 {
-			tp = append(tp, fmt.Sprintf("%s out", FormatTokenCount(int(d.TurnOutputTok))))
+			tp = append(tp, FormatTokenCount(int(d.TurnOutputTok))+"↑")
 		}
-		tokParts = append(tokParts, strings.Join(tp, " · "))
+		tokParts = append(tokParts, strings.Join(tp, " "))
 	}
 	if d.TotalInputTok > 0 || d.TotalOutputTok > 0 {
 		var tp []string
 		if d.TotalInputTok > 0 {
-			tp = append(tp, fmt.Sprintf("Σ %s in", FormatTokenCount(int(d.TotalInputTok))))
+			tp = append(tp, "Σ"+FormatTokenCount(int(d.TotalInputTok))+"↓")
 		}
 		if d.TotalOutputTok > 0 {
-			tp = append(tp, fmt.Sprintf("Σ %s out", FormatTokenCount(int(d.TotalOutputTok))))
+			tp = append(tp, "Σ"+FormatTokenCount(int(d.TotalOutputTok))+"↑")
 		}
-		tokParts = append(tokParts, strings.Join(tp, " · "))
+		tokParts = append(tokParts, strings.Join(tp, " "))
 	}
 	return strings.Join(tokParts, " | ")
 }

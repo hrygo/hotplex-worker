@@ -1148,7 +1148,7 @@ func (c *SlackConn) buildTurnSummaryTable(d messaging.TurnSummaryData) []slack.B
 	}
 	// Duration (merged Turn + Session)
 	if durStr := messaging.FormatDurationParts(d); durStr != "" {
-		table.AddRow(richTextCell("⏱️ Duration"), richTextCell(durStr))
+		table.AddRow(richTextCell("⏱ Time"), richTextCell(durStr))
 	}
 	// Tokens (turn + session total)
 	if tokStr := messaging.FormatTokenUsage(d); tokStr != "" {

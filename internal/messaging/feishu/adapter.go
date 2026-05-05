@@ -639,20 +639,14 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		c.adapter.Interactions.CancelAll(env.SessionID)
 
 		d := messaging.ExtractTurnSummary(env)
-		if d.TurnCount > 0 || d.ModelName != "" || d.ToolCallCount > 0 {
-			c.adapter.Log.Info("turn summary",
-				"turn_count", d.TurnCount,
-				"duration_ms", d.TurnDurationMs,
-				"model", d.ModelName,
-				"tool_calls", d.ToolCallCount,
-				"input_tok", d.TotalInputTok,
-			)
-			now := time.Now().UnixMilli()
-			last := c.lastSummarySentMs.Load()
-			if now-last >= messaging.TurnSummaryCooldown.Milliseconds() {
-				go c.sendTurnSummaryCard(d)
-			}
-		}
+		c.adapter.Log.Info("turn summary",
+			"turn_count", d.TurnCount,
+			"duration_ms", d.TurnDurationMs,
+			"model", d.ModelName,
+			"tool_calls", d.ToolCallCount,
+			"input_tok", d.TotalInputTok,
+		)
+		go c.sendTurnSummaryCard(d)
 
 		var closeErr error
 		if streamCtrl != nil && streamCtrl.IsCreated() {
@@ -870,6 +864,15 @@ func (c *FeishuConn) writeContent(ctx context.Context, env *events.Envelope, tex
 func (c *FeishuConn) sendTurnSummaryCard(d messaging.TurnSummaryData) {
 	cardJSON := buildTurnSummaryCard(d)
 	if cardJSON == "" {
+		return
+	}
+	now := time.Now().UnixMilli()
+	last := c.lastSummarySentMs.Load()
+	if now-last < messaging.TurnSummaryCooldown.Milliseconds() {
+		return
+	}
+	// CAS to win the race: only one goroutine proceeds past the cooldown.
+	if !c.lastSummarySentMs.CompareAndSwap(last, now) {
 		return
 	}
 	sendCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -1295,7 +1298,7 @@ func buildTurnSummaryCard(d messaging.TurnSummaryData) string {
 		elements = append(elements, tableRow("🌿 Branch", d.GitBranch))
 	}
 	if durStr := messaging.FormatDurationParts(d); durStr != "" {
-		elements = append(elements, tableRow("⏱️ Duration", durStr))
+		elements = append(elements, tableRow("⏱ Time", durStr))
 	}
 	if tokStr := messaging.FormatTokenUsage(d); tokStr != "" {
 		elements = append(elements, tableRow("💎 Tokens", tokStr))
