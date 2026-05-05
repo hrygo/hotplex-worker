@@ -115,12 +115,6 @@ func MapMCPStatusResponse(raw map[string]any) *MCPStatusData {
 // typed struct and the map[string]any produced by events.Clone JSON round-tripping.
 func DecodeAs[T any](data any) (T, bool) {
 	switch v := data.(type) {
-	case *T:
-		if v == nil {
-			var zero T
-			return zero, false
-		}
-		return *v, true
 	case map[string]any:
 		var result T
 		raw, _ := json.Marshal(v)

@@ -486,8 +486,7 @@ func TestDecodeAs(t *testing.T) {
 		wantCount int
 	}{
 		{name: "typed struct", input: testStruct{Name: "direct", Count: 3}, wantOK: true, wantName: "direct", wantCount: 3},
-		{name: "pointer to struct", input: &testStruct{Name: "ptr", Count: 7}, wantOK: true, wantName: "ptr", wantCount: 7},
-		{name: "nil pointer", input: (*testStruct)(nil), wantOK: false},
+		{name: "pointer falls to default", input: &testStruct{Name: "ptr", Count: 7}, wantOK: false},
 		{name: "map round-trip", input: map[string]any{"name": "mapped", "count": float64(5)}, wantOK: true, wantName: "mapped", wantCount: 5},
 		{name: "incompatible type", input: "not a struct", wantOK: false},
 		{name: "nil input", input: nil, wantOK: false},

@@ -192,10 +192,8 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 
 		if capturedDeltaContent != "" && b.collector != nil {
 			b.collector.CaptureDeltaString(sessionID, env.Seq, capturedDeltaContent)
-		} else if env.Event.Type != events.MessageDelta && b.collector != nil {
-			if ed, err := json.Marshal(env.Event.Data); err == nil {
-				b.captureEvent(sessionID, env.Seq, env.Event.Type, ed)
-			}
+		} else if env.Event.Type != events.MessageDelta {
+			b.captureEvent(sessionID, env.Seq, env.Event.Type, env.Event.Data)
 		}
 
 		// Flush buffered error on non-Done events (no retry decision possible yet).
@@ -227,11 +225,7 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 				if err := b.hub.SendToSession(context.Background(), pendingError); err != nil {
 					b.log.Warn("bridge: forward buffered error failed", "err", err, "session_id", sessionID, "worker_type", workerType)
 				}
-				if b.collector != nil {
-					if ed, err := json.Marshal(pendingError.Event.Data); err == nil {
-						b.captureEvent(sessionID, pendingError.Seq, pendingError.Event.Type, ed)
-					}
-				}
+				b.captureEvent(sessionID, pendingError.Seq, pendingError.Event.Type, pendingError.Event.Data)
 				pendingError = nil
 			}
 			b.retryCtrl.RecordSuccess(sessionID)
@@ -383,21 +377,25 @@ func (b *Bridge) handleWorkerExit(w worker.Worker, p workerExitParams) {
 }
 
 // captureEvent persists an outbound event for replay.
-func (b *Bridge) captureEvent(sessionID string, seq int64, eventType events.Kind, data json.RawMessage) {
+func (b *Bridge) captureEvent(sessionID string, seq int64, eventType events.Kind, data any) {
 	b.captureDirected(sessionID, seq, eventType, data, "outbound")
 }
 
 // CaptureInbound persists an inbound (user→worker) event for replay.
-func (b *Bridge) CaptureInbound(sessionID string, seq int64, eventType events.Kind, data json.RawMessage) {
+func (b *Bridge) CaptureInbound(sessionID string, seq int64, eventType events.Kind, data any) {
 	b.captureDirected(sessionID, seq, eventType, data, "inbound")
 }
 
-// captureDirected sends pre-encoded event data to the collector with the given direction.
-func (b *Bridge) captureDirected(sessionID string, seq int64, eventType events.Kind, data json.RawMessage, direction string) {
+// captureDirected marshals event data and sends it to the collector with the given direction.
+func (b *Bridge) captureDirected(sessionID string, seq int64, eventType events.Kind, data any, direction string) {
 	if b.collector == nil {
 		return
 	}
-	b.collector.Capture(sessionID, seq, eventType, data, direction, eventstore.SourceNormal)
+	ed, err := json.Marshal(data)
+	if err != nil {
+		return
+	}
+	b.collector.Capture(sessionID, seq, eventType, ed, direction, eventstore.SourceNormal)
 }
 
 // captureSyntheticEvent writes a synthetic done-like event for crash/timeout/fresh_start scenarios.
