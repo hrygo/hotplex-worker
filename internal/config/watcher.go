@@ -75,8 +75,9 @@ type Watcher struct {
 	callbackSem chan struct{}
 
 	// Audit log of all changes.
-	muAudit sync.Mutex
-	audit   []ConfigChange
+	muAudit     sync.Mutex
+	audit       []ConfigChange
+	maxAuditLen int
 
 	// Config history for rollback. index 0 = oldest, len-1 = latest.
 	// Only full config snapshots are stored (not every diff).
@@ -114,6 +115,7 @@ func NewWatcher(log *slog.Logger, path string, sp SecretsProvider, store *Config
 		onStatic:      onStatic,
 		callbackSem:   make(chan struct{}, 4),
 		audit:         make([]ConfigChange, 0, 64),
+		maxAuditLen:   256,
 		maxHistoryLen: 64,
 	}
 }
@@ -232,6 +234,10 @@ func (w *Watcher) reload() {
 			hasStatic = true
 		}
 	}
+	if len(w.audit) > w.maxAuditLen {
+		trim := len(w.audit) - w.maxAuditLen
+		w.audit = w.audit[trim:]
+	}
 	w.muAudit.Unlock()
 
 	w.muHistory.Lock()
@@ -260,15 +266,22 @@ func (w *Watcher) reload() {
 			w.onChange(newCfg)
 		}()
 	}
-	for _, c := range changes {
-		if !c.Hot && hasStatic && w.onStatic != nil {
-			c := c
-			go func() {
-				w.callbackSem <- struct{}{}
-				defer func() { <-w.callbackSem }()
-				w.onStatic(c.Field)
-			}()
+	// Batch all static callbacks into a single goroutine to reduce
+	// goroutine proliferation under rapid config reloads.
+	if hasStatic && w.onStatic != nil {
+		var staticFields []string
+		for _, c := range changes {
+			if !c.Hot {
+				staticFields = append(staticFields, c.Field)
+			}
 		}
+		go func() {
+			w.callbackSem <- struct{}{}
+			defer func() { <-w.callbackSem }()
+			for _, f := range staticFields {
+				w.onStatic(f)
+			}
+		}()
 	}
 }
 

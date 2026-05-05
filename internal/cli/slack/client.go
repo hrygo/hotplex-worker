@@ -10,6 +10,7 @@ import (
 	"github.com/slack-go/slack"
 
 	"github.com/hrygo/hotplex/internal/config"
+	"github.com/hrygo/hotplex/internal/security"
 )
 
 func NewClient(botToken string) (*slack.Client, error) {
@@ -84,7 +85,7 @@ func loadEnvFile(dir string) {
 		if len(val) >= 2 && ((val[0] == '"' && val[len(val)-1] == '"') || (val[0] == '\'' && val[len(val)-1] == '\'')) {
 			val = val[1 : len(val)-1]
 		}
-		if os.Getenv(key) == "" {
+		if os.Getenv(key) == "" && !security.IsProtected(key) {
 			os.Setenv(key, val)
 		}
 	}

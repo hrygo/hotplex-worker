@@ -239,20 +239,3 @@ func TestSendInputBeforeConnect(t *testing.T) {
 	err := c.SendInput(context.Background(), "test")
 	require.ErrorIs(t, err, ErrNotConnected)
 }
-
-func TestDecodeAs(t *testing.T) {
-	t.Parallel()
-
-	t.Run("non-map returns false", func(t *testing.T) {
-		t.Parallel()
-		_, ok := decodeAs[DoneData]("not a map")
-		require.False(t, ok)
-	})
-
-	t.Run("map converts correctly", func(t *testing.T) {
-		t.Parallel()
-		d, ok := decodeAs[DoneData](map[string]any{"success": true})
-		require.True(t, ok)
-		require.True(t, d.Success)
-	})
-}

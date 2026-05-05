@@ -1,6 +1,7 @@
 package messaging
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -8,6 +9,13 @@ import (
 
 	"github.com/hrygo/hotplex/pkg/events"
 )
+
+func homeDir(t *testing.T) string {
+	t.Helper()
+	home, err := os.UserHomeDir()
+	require.NoError(t, err)
+	return home
+}
 
 func TestExtractTurnSummary_Full(t *testing.T) {
 	t.Parallel()
@@ -259,6 +267,11 @@ func TestTruncatePath(t *testing.T) {
 		{"zero max", "/home/user", 0, ""},
 		{"windows absolute", "C:\\Users\\admin\\workspace\\project", 2, "C:/workspace/project"},
 		{"windows short", "D:\\dev\\app", 5, "D:/dev/app"},
+		{"home dir path", homeDir(t) + "/.hotplex/workspace/hotplex", 3, "~/.hotplex/workspace/hotplex"},
+		{"home dir exact", homeDir(t), 3, "~"},
+		{"home dir short", homeDir(t) + "/projects", 3, "~/projects"},
+		{"home dir truncated", homeDir(t) + "/.hotplex/workspace/hotplex/deep/pkg", 3, "~/hotplex/deep/pkg"},
+		{"home dir one", homeDir(t) + "/.hotplex/workspace/hotplex", 1, "~/hotplex"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

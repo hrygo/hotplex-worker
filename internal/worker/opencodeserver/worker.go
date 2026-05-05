@@ -40,6 +40,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"runtime/debug"
 	"strings"
 	"sync"
@@ -241,7 +242,7 @@ func (w *Worker) Input(ctx context.Context, content string, metadata map[string]
 			if !allowed {
 				reply = "reject"
 			}
-			return w.httpPost(ctx, fmt.Sprintf("/permission/%s/reply", reqID),
+			return w.httpPost(ctx, fmt.Sprintf("/permission/%s/reply", url.PathEscape(reqID)),
 				map[string]string{"reply": reply})
 		}
 		if qResp, ok := metadata["question_response"].(map[string]any); ok {
@@ -445,7 +446,7 @@ func (w *Worker) ResetContext(ctx context.Context) error {
 		return fmt.Errorf("opencodeserver: reset: worker not started")
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", httpAddr+"/session/"+sessionID+"/reset", http.NoBody)
+	req, err := http.NewRequestWithContext(ctx, "POST", httpAddr+"/session/"+url.PathEscape(sessionID)+"/reset", http.NoBody)
 	if err != nil {
 		return fmt.Errorf("opencodeserver: reset: new request: %w", err)
 	}
@@ -532,7 +533,7 @@ func (w *Worker) createSession(ctx context.Context, projectDir string) (string, 
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return "", fmt.Errorf("create session failed: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
@@ -581,7 +582,7 @@ func (w *Worker) readSSE(ctx context.Context, sessionID string) {
 		}
 	}()
 
-	url := fmt.Sprintf("%s/events?session_id=%s", w.httpAddr, sessionID)
+	url := fmt.Sprintf("%s/events?session_id=%s", w.httpAddr, url.QueryEscape(sessionID))
 	req, err := http.NewRequestWithContext(ctx, "GET", url, http.NoBody)
 	if err != nil {
 		w.Log.Error("opencodeserver: create SSE request", "session_id", sessionID, "err", err)
@@ -598,7 +599,7 @@ func (w *Worker) readSSE(ctx context.Context, sessionID string) {
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		w.Log.Error("opencodeserver: SSE status",
 			"session_id", sessionID,
 			"status", resp.StatusCode,
@@ -766,7 +767,7 @@ func (w *Worker) httpPost(ctx context.Context, path string, payload any) error {
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
-		respBody, _ := io.ReadAll(resp.Body)
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return fmt.Errorf("opencodeserver: post %s failed: status %d, body: %s",
 			path, resp.StatusCode, string(respBody))
 	}
@@ -827,7 +828,7 @@ func (c *conn) Send(ctx context.Context, msg *events.Envelope) error {
 		return fmt.Errorf("opencodeserver: marshal input: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/session/%s/message", c.httpAddr, c.sessionID)
+	url := fmt.Sprintf("%s/session/%s/message", c.httpAddr, url.PathEscape(c.sessionID))
 	req, err := http.NewRequestWithContext(ctx, "POST", url, strings.NewReader(string(payload)))
 	if err != nil {
 		return fmt.Errorf("opencodeserver: create request: %w", err)
@@ -841,7 +842,7 @@ func (c *conn) Send(ctx context.Context, msg *events.Envelope) error {
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
-		respBody, _ := io.ReadAll(resp.Body)
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return fmt.Errorf("opencodeserver: input failed: status %d, body: %s",
 			resp.StatusCode, string(respBody))
 	}

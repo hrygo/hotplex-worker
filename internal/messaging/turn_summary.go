@@ -2,6 +2,7 @@ package messaging
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -178,6 +179,9 @@ func FormatSessionDuration(secs float64) string {
 // Returns empty string if maxComponents <= 0. If the path is already short enough,
 // it is returned unchanged. Uses "/" as separator for cross-platform display in
 // messaging (Slack/Feishu). Preserves Windows drive letters (e.g. "C:").
+// Replaces the user's home directory prefix with "~" before truncation so that
+// paths under home are displayed relative to "~" instead of showing misleading
+// truncated segments like "/.hotplex/workspace/hotplex".
 func TruncatePath(p string, maxComponents int) string {
 	if p == "" || maxComponents <= 0 {
 		return ""
@@ -187,11 +191,28 @@ func TruncatePath(p string, maxComponents int) string {
 	p = strings.ReplaceAll(p, "\\", "/")
 	p = filepath.Clean(p)
 
+	// Track home directory prefix for user-friendly display.
+	prefix := ""
+
+	// Replace home directory prefix with ~ so components are counted relative to home.
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		homeNorm := strings.ReplaceAll(home, "\\", "/")
+		homeNorm = filepath.Clean(homeNorm)
+		if p == homeNorm {
+			return "~"
+		}
+		if strings.HasPrefix(p, homeNorm+"/") {
+			p = p[len(homeNorm):] // e.g. "/.hotplex/workspace/hotplex"
+			prefix = "~"
+		}
+	}
+
 	// Detect and preserve Windows drive letter (e.g. "C:").
-	drive := ""
-	if len(p) >= 2 && p[1] == ':' && (p[0] >= 'A' && p[0] <= 'Z' || p[0] >= 'a' && p[0] <= 'z') {
-		drive = p[:2]
-		p = p[2:]
+	if prefix == "" {
+		if len(p) >= 2 && p[1] == ':' && (p[0] >= 'A' && p[0] <= 'Z' || p[0] >= 'a' && p[0] <= 'z') {
+			prefix = p[:2]
+			p = p[2:]
+		}
 	}
 
 	// Split and filter empty parts.
@@ -202,11 +223,15 @@ func TruncatePath(p string, maxComponents int) string {
 			parts = append(parts, s)
 		}
 	}
+	sep := "/"
+	if prefix == "~" {
+		sep = "/"
+	}
 	if len(parts) <= maxComponents {
-		return drive + "/" + strings.Join(parts, "/")
+		return prefix + sep + strings.Join(parts, "/")
 	}
 	kept := parts[len(parts)-maxComponents:]
-	return drive + "/" + strings.Join(kept, "/")
+	return prefix + sep + strings.Join(kept, "/")
 }
 
 // FormatTurnSummaryRich produces a multi-line turn summary with each metric on its own line.
