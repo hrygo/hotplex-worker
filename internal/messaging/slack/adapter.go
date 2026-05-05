@@ -348,9 +348,23 @@ func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsA
 			// Audio + STT: transcribe voice messages to text.
 			if m.Type == mediaTypeAudio && a.transcriber != nil {
 				if audioText, audioErr := a.handleAudioMessage(ctx, m); audioErr != nil {
-					text += fmt.Sprintf("\n[audio: %s]", m.Name)
+					// STT failed: save audio to disk for worker fallback.
+					if path, saveErr := a.downloadMedia(ctx, m); saveErr == nil {
+						text += fmt.Sprintf("\n[audio STT failed, saved to: %s — please use stt_once.py to transcribe]", path)
+					} else {
+						text += fmt.Sprintf("\n[audio: %s (STT and download both failed)]", m.Name)
+					}
 				} else {
 					text += audioText
+				}
+				continue
+			}
+			// Audio without transcriber: save to disk for worker fallback.
+			if m.Type == mediaTypeAudio {
+				if path, err := a.downloadMedia(ctx, m); err == nil {
+					text += fmt.Sprintf("\n[audio saved to: %s — please use stt_once.py to transcribe]", path)
+				} else {
+					text += fmt.Sprintf("\n[audio: %s (download failed)]", m.Name)
 				}
 				continue
 			}
