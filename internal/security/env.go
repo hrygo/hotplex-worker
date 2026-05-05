@@ -60,17 +60,26 @@ var protectedVars = map[string]bool{
 	"CLAUDECODE":    true,
 	"GATEWAY_ADDR":  true,
 	"GATEWAY_TOKEN": true,
+}
+
+// cliProtectedVars are system variables that .env files must not override.
+// Separate from worker protectedVars since BuildWorkerEnv must pass
+// HOME/PATH/USER through to worker processes.
+var cliProtectedVars = map[string]bool{
 	"HOME":          true,
 	"PATH":          true,
 	"USER":          true,
 	"SHELL":         true,
+	"CLAUDECODE":    true,
+	"GATEWAY_ADDR":  true,
+	"GATEWAY_TOKEN": true,
 }
 
 // IsProtected reports whether an environment variable key should not be
 // overwritten from .env files. This prevents accidental override of critical
 // system and gateway variables.
 func IsProtected(key string) bool {
-	return protectedVars[strings.ToUpper(key)]
+	return cliProtectedVars[strings.ToUpper(key)]
 }
 
 // BuildWorkerEnv constructs a safe environment for worker processes.

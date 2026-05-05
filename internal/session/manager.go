@@ -583,6 +583,11 @@ func (m *Manager) ValidateOwnership(ctx context.Context, sessionID, userID, admi
 		return err
 	}
 	if adminUserID != "" {
+		m.log.Info("session: admin access to session",
+			"session_id", sessionID,
+			"admin_user_id", adminUserID,
+			"session_owner", si.UserID,
+		)
 		return nil // admin bypass
 	}
 	if si.UserID != userID {
