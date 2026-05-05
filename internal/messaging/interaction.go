@@ -19,6 +19,7 @@ const (
 type PendingInteraction struct {
 	ID        string        // request ID from the worker
 	SessionID string        // session ID
+	OwnerID   string        // user ID of the interaction owner (for auth verification)
 	Type      events.Kind   // PermissionRequest, QuestionRequest, ElicitationRequest
 	CreatedAt time.Time     // when the request was created
 	Timeout   time.Duration // timeout duration

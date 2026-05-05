@@ -27,107 +27,120 @@ func TestNewGate_EmptyAllowlist(t *testing.T) {
 func TestGate_DM_Disabled(t *testing.T) {
 	t.Parallel()
 	g := messaging.NewGate("disabled", "open", false, nil, nil, nil)
-	result := g.Check(true, "ou_any", false)
-	require.False(t, result.Allowed)
-	require.Equal(t, messaging.ReasonDMDisabled, result.Reason)
+	allowed, reason := g.Check(true, "ou_any", false)
+	require.False(t, allowed)
+	require.Equal(t, messaging.ReasonDMDisabled, reason)
 }
 
 // TC-4.1-2: dm_policy=open allows all DMs
 func TestGate_DM_Open(t *testing.T) {
 	t.Parallel()
 	g := messaging.NewGate("open", "open", false, nil, nil, nil)
-	result := g.Check(true, "ou_any", false)
-	require.True(t, result.Allowed)
-	require.Empty(t, result.Reason)
+	allowed, reason := g.Check(true, "ou_any", false)
+	require.True(t, allowed)
+	require.Empty(t, reason)
 }
 
 // TC-4.1-3: dm_policy=allowlist only allows whitelisted users
 func TestGate_DM_Allowlist(t *testing.T) {
 	t.Parallel()
 	g := messaging.NewGate("allowlist", "open", false, []string{"ou_global"}, []string{"ou_dm"}, nil)
-	require.True(t, g.Check(true, "ou_global", false).Allowed)
-	require.True(t, g.Check(true, "ou_dm", false).Allowed)
-	require.False(t, g.Check(true, "ou_group", false).Allowed)
-	result := g.Check(true, "ou_denied", false)
-	require.False(t, result.Allowed)
-	require.Equal(t, messaging.ReasonNotInAllowlist, result.Reason)
+	allowed, _ := g.Check(true, "ou_global", false)
+	require.True(t, allowed)
+	allowed, _ = g.Check(true, "ou_dm", false)
+	require.True(t, allowed)
+	allowed, _ = g.Check(true, "ou_group", false)
+	require.False(t, allowed)
+	allowed, reason := g.Check(true, "ou_denied", false)
+	require.False(t, allowed)
+	require.Equal(t, messaging.ReasonNotInAllowlist, reason)
 }
 
 // TC-4.1-4: group_policy=disabled rejects all group messages
 func TestGate_Group_Disabled(t *testing.T) {
 	t.Parallel()
 	g := messaging.NewGate("open", "disabled", false, nil, nil, nil)
-	result := g.Check(false, "ou_any", false)
-	require.False(t, result.Allowed)
-	require.Equal(t, messaging.ReasonGroupDisabled, result.Reason)
+	allowed, reason := g.Check(false, "ou_any", false)
+	require.False(t, allowed)
+	require.Equal(t, messaging.ReasonGroupDisabled, reason)
 }
 
 // TC-4.1-5: require_mention=true rejects without @bot
 func TestGate_Group_NoMention(t *testing.T) {
 	t.Parallel()
 	g := messaging.NewGate("open", "open", true, nil, nil, nil)
-	result := g.Check(false, "ou_any", false)
-	require.False(t, result.Allowed)
-	require.Equal(t, messaging.ReasonNoMention, result.Reason)
+	allowed, reason := g.Check(false, "ou_any", false)
+	require.False(t, allowed)
+	require.Equal(t, messaging.ReasonNoMention, reason)
 }
 
 // TC-4.1-6: require_mention=true allows with @bot
 func TestGate_Group_WithMention(t *testing.T) {
 	t.Parallel()
 	g := messaging.NewGate("open", "open", true, nil, nil, nil)
-	result := g.Check(false, "ou_any", true)
-	require.True(t, result.Allowed)
+	allowed, _ := g.Check(false, "ou_any", true)
+	require.True(t, allowed)
 }
 
 // TC-4.1-7: topic_group uses same policy as group
 func TestGate_TopicGroup_UsesGroupPolicy(t *testing.T) {
 	t.Parallel()
 	g := messaging.NewGate("open", "disabled", false, nil, nil, nil)
-	result := g.Check(false, "ou_any", false)
-	require.False(t, result.Allowed)
-	require.Equal(t, messaging.ReasonGroupDisabled, result.Reason)
+	allowed, reason := g.Check(false, "ou_any", false)
+	require.False(t, allowed)
+	require.Equal(t, messaging.ReasonGroupDisabled, reason)
 }
 
 // TC-4.1-3 extended: group allowlist
 func TestGate_Group_Allowlist(t *testing.T) {
 	t.Parallel()
 	g := messaging.NewGate("open", "allowlist", false, []string{"ou_global"}, nil, []string{"ou_group"})
-	require.True(t, g.Check(false, "ou_global", false).Allowed)
-	require.True(t, g.Check(false, "ou_group", false).Allowed)
-	require.False(t, g.Check(false, "ou_dm", false).Allowed)
-	result := g.Check(false, "ou_denied", false)
-	require.False(t, result.Allowed)
-	require.Equal(t, messaging.ReasonNotInAllowlist, result.Reason)
+	allowed, _ := g.Check(false, "ou_global", false)
+	require.True(t, allowed)
+	allowed, _ = g.Check(false, "ou_group", false)
+	require.True(t, allowed)
+	allowed, _ = g.Check(false, "ou_dm", false)
+	require.False(t, allowed)
+	allowed, reason := g.Check(false, "ou_denied", false)
+	require.False(t, allowed)
+	require.Equal(t, messaging.ReasonNotInAllowlist, reason)
 }
 
 // TC-4.1-6 extended: group with mention + allowlist
 func TestGate_Group_RequireMention_Allowlist(t *testing.T) {
 	t.Parallel()
 	g := messaging.NewGate("open", "allowlist", true, []string{"ou_allowed"}, nil, nil)
-	result := g.Check(false, "ou_allowed", true)
-	require.True(t, result.Allowed)
+	allowed, _ := g.Check(false, "ou_allowed", true)
+	require.True(t, allowed)
 
-	result = g.Check(false, "ou_allowed", false)
-	require.False(t, result.Allowed)
-	require.Equal(t, messaging.ReasonNoMention, result.Reason)
+	allowed, reason := g.Check(false, "ou_allowed", false)
+	require.False(t, allowed)
+	require.Equal(t, messaging.ReasonNoMention, reason)
 
-	result = g.Check(false, "ou_denied", true)
-	require.False(t, result.Allowed)
-	require.Equal(t, messaging.ReasonNotInAllowlist, result.Reason)
+	allowed, reason = g.Check(false, "ou_denied", true)
+	require.False(t, allowed)
+	require.Equal(t, messaging.ReasonNotInAllowlist, reason)
 }
 
 func TestGate_UpdateAllowFrom(t *testing.T) {
 	t.Parallel()
 	g := messaging.NewGate("allowlist", "allowlist", false, []string{"ou_1"}, []string{"ou_dm1"}, []string{"ou_gp1"})
-	require.True(t, g.Check(true, "ou_1", false).Allowed)
-	require.True(t, g.Check(true, "ou_dm1", false).Allowed)
-	require.False(t, g.Check(true, "ou_dm2", false).Allowed)
+	allowed, _ := g.Check(true, "ou_1", false)
+	require.True(t, allowed)
+	allowed, _ = g.Check(true, "ou_dm1", false)
+	require.True(t, allowed)
+	allowed, _ = g.Check(true, "ou_dm2", false)
+	require.False(t, allowed)
 
 	g.UpdateAllowFrom([]string{"ou_2"}, []string{"ou_dm2"}, []string{"ou_gp2"})
-	require.False(t, g.Check(true, "ou_1", false).Allowed)
-	require.True(t, g.Check(true, "ou_2", false).Allowed)
-	require.True(t, g.Check(true, "ou_dm2", false).Allowed)
-	require.True(t, g.Check(false, "ou_gp2", false).Allowed)
+	allowed, _ = g.Check(true, "ou_1", false)
+	require.False(t, allowed)
+	allowed, _ = g.Check(true, "ou_2", false)
+	require.True(t, allowed)
+	allowed, _ = g.Check(true, "ou_dm2", false)
+	require.True(t, allowed)
+	allowed, _ = g.Check(false, "ou_gp2", false)
+	require.True(t, allowed)
 }
 
 // ─── Dedup: message expiry tests ─────────────────────────────────────────────

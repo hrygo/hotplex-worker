@@ -19,19 +19,27 @@ func NewConnPool[C any](factory func(key string) C) *ConnPool[C] {
 	}
 }
 
-// Fast-path: check closed before acquiring lock to avoid contention in hot paths.
+// Fast-path: read-lock for existing connection lookup; write-lock only for creation.
 func (p *ConnPool[C]) GetOrCreate(key string) C {
 	if p.closed.Load() {
 		var zero C
 		return zero
 	}
+	// Fast path: read lock for existing connection lookup.
+	p.mu.RLock()
+	if c, ok := p.conns[key]; ok {
+		p.mu.RUnlock()
+		return c
+	}
+	p.mu.RUnlock()
+	// Slow path: write lock for creation.
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.closed.Load() {
 		var zero C
 		return zero
 	}
-	if c, ok := p.conns[key]; ok {
+	if c, ok := p.conns[key]; ok { // double-check after acquiring write lock
 		return c
 	}
 	c := p.factory(key)

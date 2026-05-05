@@ -201,7 +201,11 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 			if err := b.hub.SendToSession(context.Background(), pendingError); err != nil {
 				b.log.Warn("bridge: forward buffered error failed", "err", err, "session_id", sessionID, "worker_type", workerType)
 			}
-			b.captureEvent(sessionID, pendingError.Seq, pendingError.Event.Type, pendingError.Event.Data)
+			if b.collector != nil {
+				if ed, err := json.Marshal(pendingError.Event.Data); err == nil {
+					b.captureEvent(sessionID, pendingError.Seq, pendingError.Event.Type, ed)
+				}
+			}
 			pendingError = nil
 		}
 
