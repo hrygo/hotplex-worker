@@ -477,13 +477,15 @@ func (a *Adapter) Close(ctx context.Context) error {
 	a.MarkClosed()
 
 	a.mu.Lock()
+	streams := make([]*NativeStreamingWriter, 0, len(a.activeStreams))
 	for _, w := range a.activeStreams {
+		streams = append(streams, w)
+	}
+	a.activeStreams = nil
+	a.mu.Unlock()
+	for _, w := range streams {
 		_ = w.Close()
 	}
-	for k := range a.activeStreams {
-		delete(a.activeStreams, k)
-	}
-	a.mu.Unlock()
 
 	conns := a.DrainConns()
 	for _, c := range conns {
