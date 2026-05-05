@@ -439,7 +439,6 @@ messaging:
     reconnect_max_delay: 60s          # reconnect max delay
     stt_provider: "local"             # speech-to-text: local / empty (disabled)
     stt_local_cmd: "python3 ~/.hotplex/scripts/stt_server.py"
-    stt_local_mode: "persistent"      # ephemeral / persistent
     stt_local_idle_ttl: 1h            # persistent mode idle timeout
 ```
 

@@ -442,7 +442,6 @@ if media != nil {
 - **推理**: `funasr-onnx` ONNX Runtime，FP32 非量化
 - **性能**: ~0.35s/file，CER ~2%（中文）
 - **语言**: 中文、英文、日语、韩语、粤语（自动检测）
-- **持久模式** (`stt_local_mode: "persistent"`): 长驻子进程 `stt_server.py`，模型常驻内存，避免冷启动
 - **ONNX 补丁**: `fix_onnx_model.py` 自动修复 ModelScope 预导出模型的 `Less` 节点类型不匹配
 
 **配置示例**:
@@ -452,7 +451,6 @@ messaging:
   feishu:
     stt_provider: "local"
     stt_local_cmd: "python3 scripts/stt_server.py --model iic/SenseVoiceSmall"
-    stt_local_mode: "persistent"
     stt_local_idle_ttl: "10m"
 ```
 

@@ -439,7 +439,6 @@ messaging:
     reconnect_max_delay: 60s          # 断线重连最大延迟
     stt_provider: "local"             # 语音转文字：local / 空（禁用）
     stt_local_cmd: "python3 ~/.hotplex/scripts/stt_server.py"
-    stt_local_mode: "persistent"      # ephemeral / persistent
     stt_local_idle_ttl: 1h            # 持久模式空闲超时
 ```
 

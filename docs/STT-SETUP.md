@@ -195,7 +195,6 @@ feishu:
   enabled: true
   stt_provider: "local"
   stt_local_cmd: "python3 scripts/stt_once.py {file}"
-  stt_local_mode: "ephemeral"
 ```
 
 ### 6.2 Persistent 模式
@@ -208,7 +207,6 @@ feishu:
   enabled: true
   stt_provider: "local"
   stt_local_cmd: "python3 scripts/stt_server.py --model iic/SenseVoiceSmall"
-  stt_local_mode: "persistent"
   stt_local_idle_ttl: 1h       # 空闲 1 小时后自动关闭子进程
 ```
 
@@ -228,7 +226,6 @@ feishu:
   enabled: true
   stt_provider: "feishu+local"
   stt_local_cmd: "python3 scripts/stt_server.py --model iic/SenseVoiceSmall"
-  stt_local_mode: "persistent"
   stt_local_idle_ttl: 1h
 ```
 
@@ -262,7 +259,6 @@ slack:
   enabled: true
   stt_provider: "local"
   stt_local_cmd: "python3 scripts/stt_once.py {file}"
-  stt_local_mode: "ephemeral"
 ```
 
 ### 7.2 Persistent 模式
@@ -273,7 +269,6 @@ slack:
   enabled: true
   stt_provider: "local"
   stt_local_cmd: "python3 scripts/stt_server.py --model iic/SenseVoiceSmall"
-  stt_local_mode: "persistent"
   stt_local_idle_ttl: 1h
 ```
 
@@ -385,7 +380,6 @@ volumes:
 feishu:
   stt_provider: "feishu+local"
   stt_local_cmd: "python3 /opt/hotplex/scripts/stt_server.py --model iic/SenseVoiceSmall"
-  stt_local_mode: "persistent"
   stt_local_idle_ttl: 30m    # 容器环境建议缩短空闲超时
 ```
 
@@ -395,7 +389,6 @@ feishu:
 slack:
   stt_provider: "local"
   stt_local_cmd: "python3 /opt/hotplex/scripts/stt_server.py --model iic/SenseVoiceSmall"
-  stt_local_mode: "persistent"
   stt_local_idle_ttl: 30m
 ```
 
@@ -490,7 +483,6 @@ grep "persistent stt" logs/gateway.log
 
 ```yaml
 # 从 ephemeral 切换到 persistent
-stt_local_mode: "persistent"
 stt_local_cmd: "python3 scripts/stt_server.py --model iic/SenseVoiceSmall"
 ```
 
@@ -517,7 +509,6 @@ mkdir -p ~/.cache/modelscope/hub/models/iic/SenseVoiceSmall
 
 ### 飞书
 
-| 场景 | stt_provider | stt_local_cmd | stt_local_mode | stt_local_idle_ttl |
 |------|-------------|---------------|----------------|-------------------|
 | 仅云端 | `feishu` | — | — | — |
 | 仅本地（低频） | `local` | `python3 scripts/stt_once.py {file}` | `ephemeral` | — |
@@ -527,7 +518,6 @@ mkdir -p ~/.cache/modelscope/hub/models/iic/SenseVoiceSmall
 
 ### Slack
 
-| 场景 | stt_provider | stt_local_cmd | stt_local_mode | stt_local_idle_ttl |
 |------|-------------|---------------|----------------|-------------------|
 | 仅本地（低频） | `local` | `python3 scripts/stt_once.py {file}` | `ephemeral` | — |
 | 仅本地（高频） | `local` | `python3 scripts/stt_server.py --model iic/SenseVoiceSmall` | `persistent` | `1h` |

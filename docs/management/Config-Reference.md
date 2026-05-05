@@ -338,7 +338,6 @@ messaging:
 
     # Local STT mode: "ephemeral" (per-request process) or "persistent" (long-lived subprocess)
     # Persistent mode keeps the model in memory, avoiding ~2-3s cold start per request.
-    stt_local_mode: "persistent"
 
     # Idle timeout for persistent mode. Subprocess auto-shuts down after this duration
     # with no transcription requests. 0 = disabled (never auto-shutdown).
@@ -386,7 +385,6 @@ HOTPLEX_MESSAGING_FEISHU_DM_POLICY=allowlist  # open | allowlist | disabled (def
 HOTPLEX_MESSAGING_FEISHU_GROUP_POLICY=allowlist # open | allowlist | disabled (default: allowlist)
 HOTPLEX_MESSAGING_FEISHU_STT_PROVIDER=local
 HOTPLEX_MESSAGING_FEISHU_STT_LOCAL_CMD="python3 /path/to/stt_server.py"
-HOTPLEX_MESSAGING_FEISHU_STT_LOCAL_MODE=persistent
 HOTPLEX_MESSAGING_FEISHU_STT_LOCAL_IDLE_TTL=10m
 ```
 
@@ -612,7 +610,6 @@ vim configs/config.yaml
 - Pool settings (`max_size`, `max_idle_per_user`)
 - Session retention (`retention_period`, `gc_scan_interval`)
 - Admin settings (`rate_limit_enabled`, `requests_per_sec`)
-- STT settings (`stt_provider`, `stt_local_cmd`, `stt_local_mode`, `stt_local_idle_ttl`)
 
 **Non-reloadable fields** (require restart):
 - Network addresses (`gateway.addr`, `admin.addr`)
