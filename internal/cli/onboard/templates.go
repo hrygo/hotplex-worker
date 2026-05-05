@@ -174,7 +174,7 @@ log:
 			GroupPolicy:    defaultStr(opts.SlackGroupPolicy, "allowlist"),
 			RequireMention: defaultBool(opts.SlackRequireMention, true),
 			AllowFrom:      opts.SlackAllowFrom,
-			Extra:          "    socket_mode: true\n    worker_type: \"claude_code\"\n    stt_provider: \"local\"\n    stt_local_cmd: \"python3 scripts/stt_once.py {file}\"\n    stt_local_mode: \"persistent\"\n    stt_local_idle_ttl: 1h\n",
+			Extra:          "    socket_mode: true\n    worker_type: \"claude_code\"\n    stt_provider: \"local\"\n    stt_local_cmd: \"python3 ~/.hotplex/scripts/stt_server.py --model iic/SenseVoiceSmall\"\n    stt_local_idle_ttl: 1h\n",
 		})
 	}
 
@@ -186,7 +186,7 @@ log:
 			GroupPolicy:    defaultStr(opts.FeishuGroupPolicy, "allowlist"),
 			RequireMention: defaultBool(opts.FeishuRequireMention, true),
 			AllowFrom:      opts.FeishuAllowFrom,
-			Extra:          "    worker_type: \"claude_code\"\n    stt_provider: \"feishu+local\"\n    stt_local_mode: \"ephemeral\"\n    stt_local_idle_ttl: 1h\n",
+			Extra:          "    worker_type: \"claude_code\"\n    stt_provider: \"feishu+local\"\n    stt_local_cmd: \"python3 ~/.hotplex/scripts/stt_server.py --model iic/SenseVoiceSmall\"\n    stt_local_idle_ttl: 1h\n",
 		})
 	}
 

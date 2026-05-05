@@ -196,18 +196,18 @@ func buildLocalSTT(platform string, cfg config.STTConfig, log *slog.Logger) stt.
 	var transcriber stt.Transcriber
 	expandedCmd := expandCommand(cfg.LocalCmd)
 
-	cacheKey := cfg.LocalMode + ":" + expandedCmd
+	cacheKey := expandedCmd
 
 	if existing, ok := sttCache[cacheKey]; ok {
 		if existing.Refs() <= 0 {
 			delete(sttCache, cacheKey)
 		} else {
-			log.Debug(platform+": reusing shared stt transcriber", "mode", cfg.LocalMode, "cmd", expandedCmd)
+			log.Debug(platform+": reusing shared stt transcriber", "cmd", expandedCmd)
 			return existing.Acquire()
 		}
 	}
 
-	if cfg.LocalMode == config.STTModePersistent {
+	if cfg.IsPersistent() {
 		hash := sha256.Sum256([]byte(expandedCmd))
 		pidKey := "stt-server-" + hex.EncodeToString(hash[:])[:12]
 		transcriber = stt.NewPersistentSTT(expandedCmd, pidKey, cfg.LocalIdleTTL, log)

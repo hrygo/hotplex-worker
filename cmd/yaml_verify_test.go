@@ -28,7 +28,7 @@ func main() {
 		"max_retries: 9", "base_delay: 5s", "max_delay: 120s",
 		"notify_user: true", "retry_input:",
 		"dm_policy:", "group_policy:", "require_mention:",
-		"stt_provider:", "stt_local_cmd:", "stt_local_mode:",
+		"stt_provider:", "stt_local_cmd:",
 		"stt_local_idle_ttl:", "socket_mode: true",
 		"type:", "enabled:",
 	}
