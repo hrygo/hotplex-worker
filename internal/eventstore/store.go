@@ -89,21 +89,23 @@ func withDefaultTimeout(ctx context.Context) (context.Context, context.CancelFun
 
 // TurnRecord represents a single conversational turn derived from events VIEW.
 type TurnRecord struct {
-	SessionID  string  `json:"session_id"`
-	Seq        int64   `json:"seq"`
-	Role       string  `json:"role"`
-	Content    string  `json:"content"`
-	Platform   string  `json:"platform"`
-	UserID     string  `json:"user_id"`
-	Model      string  `json:"model"`
-	Success    *bool   `json:"success"`
-	Source     string  `json:"source"`
-	ToolCount  int     `json:"tool_call_count"`
-	TokensIn   int     `json:"tokens_in"`
-	TokensOut  int     `json:"tokens_out"`
-	DurationMs int64   `json:"duration_ms"`
-	CostUSD    float64 `json:"cost_usd"`
-	CreatedAt  int64   `json:"created_at"`
+	ID         string         `json:"id"`
+	SessionID  string         `json:"session_id"`
+	Seq        int64          `json:"seq"`
+	Role       string         `json:"role"`
+	Content    string         `json:"content"`
+	Platform   string         `json:"platform"`
+	UserID     string         `json:"user_id"`
+	Model      string         `json:"model"`
+	Success    *bool          `json:"success"`
+	Source     string         `json:"source"`
+	Tools      map[string]int `json:"tools"`
+	ToolCount  int            `json:"tool_call_count"`
+	TokensIn   int            `json:"tokens_in"`
+	TokensOut  int            `json:"tokens_out"`
+	DurationMs int64          `json:"duration_ms"`
+	CostUSD    float64        `json:"cost_usd"`
+	CreatedAt  int64          `json:"created_at"`
 }
 
 // TurnStats holds aggregated statistics across all assistant turns of a session.
@@ -434,7 +436,7 @@ func scanTurns(rows *sql.Rows) ([]*TurnRecord, error) {
 	for rows.Next() {
 		var r TurnRecord
 		var success sql.NullInt64
-		var toolsJSON sql.NullString // consumed from VIEW but not exposed
+		var toolsJSON sql.NullString
 		if err := rows.Scan(&r.SessionID, &r.Seq, &r.Role, &r.Content,
 			&r.Platform, &r.UserID, &r.Model, &success, &r.Source,
 			&toolsJSON, &r.ToolCount, &r.TokensIn, &r.TokensOut,
@@ -444,6 +446,10 @@ func scanTurns(rows *sql.Rows) ([]*TurnRecord, error) {
 		if success.Valid {
 			s := success.Int64 == 1
 			r.Success = &s
+		}
+		r.ID = fmt.Sprintf("%s:%d", r.SessionID, r.Seq)
+		if toolsJSON.Valid && toolsJSON.String != "" {
+			_ = json.Unmarshal([]byte(toolsJSON.String), &r.Tools) //nolint:errcheck // best-effort: malformed tools_json yields empty map
 		}
 		records = append(records, &r)
 	}

@@ -74,14 +74,3 @@ export function loadMessages(sessionId: string): CacheableMessage[] | null {
     return null;
   }
 }
-
-/**
- * Clear cached messages for a given session.
- */
-export function clearMessages(sessionId: string): void {
-  try {
-    localStorage.removeItem(STORAGE_PREFIX + sessionId);
-  } catch {
-    // fail silently
-  }
-}
