@@ -1,7 +1,6 @@
 package gateway
 
 import (
-	"encoding/json"
 	"strings"
 	"time"
 
@@ -166,33 +165,13 @@ func (a *sessionAccumulator) snapshot() map[string]any {
 // asDoneData extracts DoneData from Event.Data, handling both the original typed
 // struct and the map[string]any produced by events.Clone JSON round-tripping.
 func asDoneData(data any) (events.DoneData, bool) {
-	switch v := data.(type) {
-	case events.DoneData:
-		return v, true
-	case map[string]any:
-		var dd events.DoneData
-		raw, _ := json.Marshal(v)
-		_ = json.Unmarshal(raw, &dd)
-		return dd, true
-	default:
-		return events.DoneData{}, false
-	}
+	return events.DecodeAs[events.DoneData](data)
 }
 
 // asToolCallData extracts ToolCallData from Event.Data, handling both the original
 // typed struct and the map[string]any produced by events.Clone JSON round-tripping.
 func asToolCallData(data any) (events.ToolCallData, bool) {
-	switch v := data.(type) {
-	case events.ToolCallData:
-		return v, true
-	case map[string]any:
-		var tc events.ToolCallData
-		raw, _ := json.Marshal(v)
-		_ = json.Unmarshal(raw, &tc)
-		return tc, true
-	default:
-		return events.ToolCallData{}, false
-	}
+	return events.DecodeAs[events.ToolCallData](data)
 }
 
 // shortModelName returns a human-readable model name.

@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	lark "github.com/larksuite/oapi-sdk-go/v3"
@@ -26,6 +27,8 @@ import (
 	"github.com/hrygo/hotplex/internal/messaging/stt"
 	"github.com/hrygo/hotplex/pkg/events"
 )
+
+const turnSummaryCooldown = 5 * time.Minute
 
 func init() {
 	messaging.Register(messaging.PlatformFeishu, func(log *slog.Logger) messaging.PlatformAdapterInterface {
@@ -341,9 +344,8 @@ func (a *Adapter) handleMessage(ctx context.Context, event *larkim.P2MessageRece
 	// Step 7: Access control.
 	botMentioned := isBotMentioned(msg.Mentions, a.botOpenID)
 	if a.Gate != nil {
-		result := a.Gate.Check(chatType == "p2p", userID, botMentioned)
-		if !result.Allowed {
-			a.Log.Debug("feishu: gate rejected", "reason", result.Reason, "chat", chatID, "user", userID)
+		if allowed, reason := a.Gate.Check(chatType == "p2p", userID, botMentioned); !allowed {
+			a.Log.Debug("feishu: gate rejected", "reason", reason, "chat", chatID, "user", userID)
 			return nil
 		}
 	}
@@ -525,7 +527,8 @@ type FeishuConn struct {
 	toolRid       string
 	toolEmoji     string    // current timeline emoji, for dedup
 	startedAt     time.Time // when the user sent the current message
-	workDir       string    // current workDir identity for session key derivation
+	workDir           string    // current workDir identity for session key derivation
+	lastSummarySentMs atomic.Int64
 }
 
 func NewFeishuConn(adapter *Adapter, chatID, threadKey, workDir string) *FeishuConn {
@@ -638,8 +641,8 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		c.adapter.Interactions.CancelAll(env.SessionID)
 
 		d := messaging.ExtractTurnSummary(env)
-		summaryText := messaging.FormatTurnSummary(d)
-		if summaryText != "" {
+		richText := messaging.FormatTurnSummaryRich(d)
+		if richText != "" {
 			c.adapter.Log.Info("turn summary",
 				"turn_count", d.TurnCount,
 				"duration_ms", d.TurnDurationMs,
@@ -647,10 +650,17 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 				"tool_calls", d.ToolCallCount,
 				"input_tok", d.TotalInputTok,
 			)
-			if streamCtrl != nil && streamCtrl.IsCreated() {
-				_ = streamCtrl.Write("\n\n---\n_" + summaryText + "_")
-			} else {
-				go c.sendTurnSummaryText(summaryText)
+			now := time.Now().UnixMilli()
+			last := c.lastSummarySentMs.Load()
+			if now-last >= turnSummaryCooldown.Milliseconds() {
+				if streamCtrl != nil && streamCtrl.IsCreated() {
+					if streamCtrl.Write("\n\n---\n" + richText) == nil {
+						c.lastSummarySentMs.Store(now)
+					}
+				} else {
+					go c.sendTurnSummaryText(richText)
+					c.lastSummarySentMs.Store(now)
+				}
 			}
 		}
 
