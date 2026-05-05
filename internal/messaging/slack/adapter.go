@@ -423,6 +423,11 @@ func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsA
 		return
 	}
 
+	// Check if text is a response to a pending interaction (text fallback for Block Kit failures).
+	if a.checkPendingInteraction(ctx, text, channelID, threadTS, userID) {
+		return
+	}
+
 	// Set initial assistant status (native API for paid workspaces)
 	if a.isAssistantCapable.Load() && threadTS != "" {
 		_ = a.SetAssistantStatus(ctx, channelID, threadTS, "Initializing...")

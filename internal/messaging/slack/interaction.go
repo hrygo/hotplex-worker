@@ -458,5 +458,132 @@ func (a *Adapter) registerInteraction(requestID, sessionID, ownerID string, kind
 	})
 }
 
+// checkPendingInteraction checks if a text message is a response to a pending
+// interaction (permission, question, or elicitation). Returns true if consumed.
+//
+// Supported patterns (matching the fallback text instructions):
+//   - "allow <requestID>" / "deny <requestID>"  — permission response
+//   - raw text                                    — question response (any text)
+//   - "accept <requestID>" / "decline <requestID>" — elicitation response
+func (a *Adapter) checkPendingInteraction(ctx context.Context, text, channelID, threadTS, userID string) bool {
+	if a.Interactions.Len() == 0 {
+		return false
+	}
+
+	normalized := strings.ToLower(strings.TrimSpace(text))
+	words := strings.Fields(normalized)
+
+	// Try "<action> <requestID>" pattern first.
+	var action, requestID string
+	if len(words) >= 2 {
+		action = words[0]
+		requestID = words[1]
+	}
+
+	var matched *messaging.PendingInteraction
+
+	if requestID != "" {
+		if pi, ok := a.Interactions.Get(requestID); ok {
+			matched = pi
+		}
+	}
+
+	// Fallback: most recent pending interaction for raw text (question only).
+	if matched == nil {
+		candidates := a.Interactions.GetAll()
+		if len(candidates) == 0 {
+			return false
+		}
+		// Only raw text (no action keyword) matches question requests.
+		if action != "" {
+			return false
+		}
+		candidate := candidates[0]
+		if candidate.Type != events.QuestionRequest {
+			return false
+		}
+		matched = candidate
+	}
+
+	if matched.OwnerID != "" && matched.OwnerID != userID {
+		return false
+	}
+
+	var metadata map[string]any
+
+	switch matched.Type {
+	case events.PermissionRequest:
+		if action != "allow" && action != "deny" {
+			return false
+		}
+		reason := ""
+		allowed := action == "allow"
+		if !allowed {
+			reason = "user denied"
+		}
+		metadata = map[string]any{
+			"permission_response": map[string]any{
+				"request_id": matched.ID,
+				"allowed":    allowed,
+				"reason":     reason,
+			},
+		}
+
+	case events.QuestionRequest:
+		metadata = map[string]any{
+			"question_response": map[string]any{
+				"id": matched.ID,
+				"answers": map[string]string{
+					"_": text,
+				},
+			},
+		}
+
+	case events.ElicitationRequest:
+		if action != "accept" && action != "decline" {
+			return false
+		}
+		metadata = map[string]any{
+			"elicitation_response": map[string]any{
+				"id":     matched.ID,
+				"action": action,
+			},
+		}
+
+	default:
+		return false
+	}
+
+	if _, ok := a.Interactions.Complete(matched.ID); !ok {
+		return false
+	}
+
+	matched.SendResponse(metadata)
+
+	a.Log.Info("slack: interaction response received via text",
+		"request_id", matched.ID,
+		"type", matched.Type,
+		"user", userID)
+
+	ackText := "✅ Response received"
+	if matched.Type == events.PermissionRequest {
+		if d, ok := metadata["permission_response"].(map[string]any); ok {
+			if allowed, _ := d["allowed"].(bool); allowed {
+				ackText = "✅ Allowed"
+			} else {
+				ackText = "🚫 Denied"
+			}
+		}
+	}
+
+	opts := []slack.MsgOption{slack.MsgOptionText(ackText, false)}
+	if threadTS != "" {
+		opts = append(opts, slack.MsgOptionTS(threadTS))
+	}
+	_, _, _ = a.client.PostMessageContext(ctx, channelID, opts...)
+
+	return true
+}
+
 // getTimeNow returns the current time. Extracted for testability.
 var getTimeNow = time.Now
