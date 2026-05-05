@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 )
 
@@ -55,7 +56,7 @@ func (c *ServerCommander) Compact(ctx context.Context, args map[string]any) erro
 		}
 	}
 	var result bool
-	if err := c.doPost(ctx, "/session/"+c.sessionID+"/summarize", reqBody, &result); err != nil {
+	if err := c.doPost(ctx, "/session/"+url.PathEscape(c.sessionID)+"/summarize", reqBody, &result); err != nil {
 		return fmt.Errorf("opencode compact: %w", err)
 	}
 	return nil
@@ -63,7 +64,7 @@ func (c *ServerCommander) Compact(ctx context.Context, args map[string]any) erro
 
 // Clear implements WorkerCommander — delete session + create new.
 func (c *ServerCommander) Clear(ctx context.Context) error {
-	if err := c.doDelete(ctx, "/session/"+c.sessionID); err != nil {
+	if err := c.doDelete(ctx, "/session/"+url.PathEscape(c.sessionID)); err != nil {
 		return fmt.Errorf("opencode clear (delete): %w", err)
 	}
 	var newSession struct {
@@ -86,7 +87,7 @@ func (c *ServerCommander) Rewind(ctx context.Context, targetID string) error {
 		reqBody["messageID"] = targetID
 	}
 	var result any
-	if err := c.doPost(ctx, "/session/"+c.sessionID+"/revert", reqBody, &result); err != nil {
+	if err := c.doPost(ctx, "/session/"+url.PathEscape(c.sessionID)+"/revert", reqBody, &result); err != nil {
 		return fmt.Errorf("opencode rewind: %w", err)
 	}
 	return nil
@@ -103,7 +104,7 @@ func (c *ServerCommander) UpdateSessionID(id string) { c.sessionID = id }
 
 func (c *ServerCommander) queryContextUsage(ctx context.Context) (map[string]any, error) {
 	var messages []openCodeMessage
-	if err := c.doGet(ctx, "/session/"+c.sessionID+"/message?limit=100", &messages); err != nil {
+	if err := c.doGet(ctx, "/session/"+url.PathEscape(c.sessionID)+"/message?limit=100", &messages); err != nil {
 		return nil, fmt.Errorf("opencode context query: %w", err)
 	}
 	var totalInput, totalOutput, totalReasoning, totalCacheRead, totalCacheWrite int
@@ -170,7 +171,7 @@ func (c *ServerCommander) setPermissionMode(ctx context.Context, body map[string
 	default:
 		rules = []map[string]any{}
 	}
-	if err := c.doPatch(ctx, "/session/"+c.sessionID, map[string]any{"permission": rules}); err != nil {
+	if err := c.doPatch(ctx, "/session/"+url.PathEscape(c.sessionID), map[string]any{"permission": rules}); err != nil {
 		return nil, fmt.Errorf("opencode set permission: %w", err)
 	}
 	return map[string]any{"success": true, "mode": mode}, nil
@@ -242,7 +243,7 @@ func (c *ServerCommander) doRequest(ctx context.Context, method, path string, bo
 // lastKnownModel scans recent messages for the model used by the last assistant turn.
 func (c *ServerCommander) lastKnownModel(ctx context.Context) (providerID, modelID string) {
 	var messages []openCodeMessage
-	if err := c.doGet(ctx, "/session/"+c.sessionID+"/message?limit=50", &messages); err != nil {
+	if err := c.doGet(ctx, "/session/"+url.PathEscape(c.sessionID)+"/message?limit=50", &messages); err != nil {
 		return "", ""
 	}
 	for i := len(messages) - 1; i >= 0; i-- {
@@ -262,7 +263,7 @@ func (c *ServerCommander) lastKnownModel(ctx context.Context) (providerID, model
 // lastAssistantMessageID returns the ID of the most recent assistant message.
 func (c *ServerCommander) lastAssistantMessageID(ctx context.Context) string {
 	var messages []openCodeMessage
-	if err := c.doGet(ctx, "/session/"+c.sessionID+"/message?limit=50", &messages); err != nil {
+	if err := c.doGet(ctx, "/session/"+url.PathEscape(c.sessionID)+"/message?limit=50", &messages); err != nil {
 		return ""
 	}
 	for i := len(messages) - 1; i >= 0; i-- {
