@@ -30,10 +30,9 @@ const (
 	dedupMaxEntries     = 5000
 	dedupTTL            = 30 * time.Minute
 	mediaCleanupInt     = 6 * time.Hour
-	mediaTTL            = 24 * time.Hour
-	maxMessageLength    = 3800            // Slack limit is ~4000
-	errPrefix           = "\u26a0\ufe0f " // ⚠️
-	turnSummaryCooldown = 5 * time.Minute // min interval between turn summary sends per conn
+	mediaTTL         = 24 * time.Hour
+	maxMessageLength = 3800            // Slack limit is ~4000
+	errPrefix        = "\u26a0\ufe0f " // ⚠️
 )
 
 // Subtypes that should never be processed.
@@ -1047,7 +1046,7 @@ func (c *SlackConn) sendTurnSummary(_ context.Context, env *events.Envelope) {
 	// Throttle: at most once per turnSummaryCooldown per connection.
 	now := time.Now().UnixMilli()
 	last := c.lastSummarySentMs.Load()
-	if now-last < turnSummaryCooldown.Milliseconds() {
+	if now-last < messaging.TurnSummaryCooldown.Milliseconds() {
 		return
 	}
 
