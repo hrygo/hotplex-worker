@@ -515,7 +515,7 @@ func (c *StreamingCardController) sendCardMessage(ctx context.Context, chatID, c
 			},
 		},
 	}
-	contentJSON, _ := json.Marshal(cardContent)
+	contentJSON := encodeCard(cardContent)
 
 	// Group chat: reply to user's message. DM: send directly.
 	c.mu.Lock()
@@ -524,9 +524,9 @@ func (c *StreamingCardController) sendCardMessage(ctx context.Context, chatID, c
 	c.mu.Unlock()
 
 	if isGroup && replyTo != "" {
-		return c.replyCardMessage(ctx, replyTo, string(contentJSON))
+		return c.replyCardMessage(ctx, replyTo, contentJSON)
 	}
-	return c.createCardMessage(ctx, chatID, string(contentJSON))
+	return c.createCardMessage(ctx, chatID, contentJSON)
 }
 
 func (c *StreamingCardController) createCardMessage(ctx context.Context, chatID, contentJSON string) (string, error) {
@@ -707,10 +707,10 @@ func (c *StreamingCardController) flushIMPatch(ctx context.Context, content stri
 			},
 		},
 	}
-	contentJSON, _ := json.Marshal(cardContent)
+	contentJSON := encodeCard(cardContent)
 
 	body := larkim.NewPatchMessageReqBodyBuilder().
-		Content(string(contentJSON)).
+		Content(contentJSON).
 		Build()
 
 	req := larkim.NewPatchMessageReqBuilder().
@@ -750,10 +750,10 @@ func (c *StreamingCardController) flushIMPatchWithConfig(ctx context.Context, co
 			},
 		},
 	}
-	contentJSON, _ := json.Marshal(cardContent)
+	contentJSON := encodeCard(cardContent)
 
 	body := larkim.NewPatchMessageReqBodyBuilder().
-		Content(string(contentJSON)).
+		Content(contentJSON).
 		Build()
 
 	req := larkim.NewPatchMessageReqBuilder().
