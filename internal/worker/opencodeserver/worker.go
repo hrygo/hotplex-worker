@@ -582,8 +582,8 @@ func (w *Worker) readSSE(ctx context.Context, sessionID string) {
 		}
 	}()
 
-	url := fmt.Sprintf("%s/events?session_id=%s", w.httpAddr, url.QueryEscape(sessionID))
-	req, err := http.NewRequestWithContext(ctx, "GET", url, http.NoBody)
+	sseURL := fmt.Sprintf("%s/events?session_id=%s", w.httpAddr, url.QueryEscape(sessionID))
+	req, err := http.NewRequestWithContext(ctx, "GET", sseURL, http.NoBody)
 	if err != nil {
 		w.Log.Error("opencodeserver: create SSE request", "session_id", sessionID, "err", err)
 		return
@@ -828,8 +828,8 @@ func (c *conn) Send(ctx context.Context, msg *events.Envelope) error {
 		return fmt.Errorf("opencodeserver: marshal input: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/session/%s/message", c.httpAddr, url.PathEscape(c.sessionID))
-	req, err := http.NewRequestWithContext(ctx, "POST", url, strings.NewReader(string(payload)))
+	msgURL := fmt.Sprintf("%s/session/%s/message", c.httpAddr, url.PathEscape(c.sessionID))
+	req, err := http.NewRequestWithContext(ctx, "POST", msgURL, strings.NewReader(string(payload)))
 	if err != nil {
 		return fmt.Errorf("opencodeserver: create request: %w", err)
 	}
