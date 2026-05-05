@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	lark "github.com/larksuite/oapi-sdk-go/v3"
@@ -514,17 +515,18 @@ type FeishuConn struct {
 	chatID    string
 	threadKey string
 
-	mu            sync.RWMutex
-	chatType      string
-	replyToMsgID  string
-	platformMsgID string
-	sessionID     string
-	streamCtrl    *StreamingCardController
-	typingRid     string
-	toolRid       string
-	toolEmoji     string    // current timeline emoji, for dedup
-	startedAt     time.Time // when the user sent the current message
-	workDir       string    // current workDir identity for session key derivation
+	mu                sync.RWMutex
+	chatType          string
+	replyToMsgID      string
+	platformMsgID     string
+	sessionID         string
+	streamCtrl        *StreamingCardController
+	typingRid         string
+	toolRid           string
+	toolEmoji         string    // current timeline emoji, for dedup
+	startedAt         time.Time // when the user sent the current message
+	workDir           string    // current workDir identity for session key derivation
+	lastSummarySentMs atomic.Int64
 }
 
 func NewFeishuConn(adapter *Adapter, chatID, threadKey, workDir string) *FeishuConn {
@@ -637,8 +639,8 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		c.adapter.Interactions.CancelAll(env.SessionID)
 
 		d := messaging.ExtractTurnSummary(env)
-		summaryText := messaging.FormatTurnSummary(d)
-		if summaryText != "" {
+		richText := messaging.FormatTurnSummaryRich(d)
+		if richText != "" {
 			c.adapter.Log.Info("turn summary",
 				"turn_count", d.TurnCount,
 				"duration_ms", d.TurnDurationMs,
@@ -646,10 +648,17 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 				"tool_calls", d.ToolCallCount,
 				"input_tok", d.TotalInputTok,
 			)
-			if streamCtrl != nil && streamCtrl.IsCreated() {
-				_ = streamCtrl.Write("\n\n---\n_" + summaryText + "_")
-			} else {
-				go c.sendTurnSummaryText(summaryText)
+			now := time.Now().UnixMilli()
+			last := c.lastSummarySentMs.Load()
+			if now-last >= messaging.TurnSummaryCooldown.Milliseconds() {
+				if streamCtrl != nil && streamCtrl.IsCreated() {
+					if streamCtrl.Write("\n\n---\n"+richText) == nil {
+						c.lastSummarySentMs.Store(now)
+					}
+				} else {
+					go c.sendTurnSummaryText(richText)
+					c.lastSummarySentMs.Store(now)
+				}
 			}
 		}
 
