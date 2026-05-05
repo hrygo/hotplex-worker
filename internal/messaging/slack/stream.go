@@ -96,6 +96,7 @@ type NativeStreamingWriter struct {
 	client    *slack.Client
 	channelID string
 	threadTS  string
+	teamID    string
 	log       *slog.Logger
 
 	mu          sync.Mutex
@@ -127,13 +128,14 @@ type NativeStreamingWriter struct {
 }
 
 // NewNativeStreamingWriter creates a new streaming writer for Slack.
-func NewNativeStreamingWriter(ctx context.Context, client *slack.Client, channelID, threadTS string,
+func NewNativeStreamingWriter(ctx context.Context, client *slack.Client, channelID, threadTS, teamID string,
 	rateLimiter *ChannelRateLimiter, log *slog.Logger, onComplete func(string), onRegister func(*NativeStreamingWriter)) *NativeStreamingWriter {
 	w := &NativeStreamingWriter{
 		ctx:          ctx,
 		client:       client,
 		channelID:    channelID,
 		threadTS:     threadTS,
+		teamID:       teamID,
 		log:          log,
 		onComplete:   onComplete,
 		onRegister:   onRegister,
@@ -177,9 +179,16 @@ func (w *NativeStreamingWriter) Write(p []byte) (int, error) {
 
 	// 首次调用：同步启动流
 	if !w.started {
+		opts := []slack.MsgOption{slack.MsgOptionMarkdownText(":thought_balloon: Thinking...")}
+		if w.threadTS != "" {
+			opts = append(opts, slack.MsgOptionTS(w.threadTS))
+		}
+		if w.teamID != "" {
+			opts = append(opts, slack.MsgOptionRecipientTeamID(w.teamID))
+		}
 		_, streamTS, err := w.client.StartStreamContext(w.ctx,
 			w.channelID,
-			slack.MsgOptionMarkdownText(":thought_balloon: Thinking..."),
+			opts...,
 		)
 		if err != nil {
 			return 0, fmt.Errorf("start stream: %w", err)

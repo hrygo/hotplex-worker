@@ -452,7 +452,7 @@ func (a *Adapter) HandleTextMessage(ctx context.Context, platformMsgID, channelI
 
 // NewStreamingWriter creates a streaming writer for the given channel/thread.
 func (a *Adapter) NewStreamingWriter(ctx context.Context, channelID, threadTS string, onComplete func(string)) *NativeStreamingWriter {
-	w := NewNativeStreamingWriter(ctx, a.client, channelID, threadTS, a.rateLimiter, a.Log, func(ts string) {
+	w := NewNativeStreamingWriter(ctx, a.client, channelID, threadTS, a.teamID, a.rateLimiter, a.Log, func(ts string) {
 		if !a.IsClosed() {
 			a.mu.Lock()
 			delete(a.activeStreams, ts)
@@ -778,7 +778,8 @@ func (c *SlackConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 	// Try streaming for delta/text events
 	if env.Event.Type == events.MessageDelta || env.Event.Type == "text" {
 		if err := c.writeWithStreaming(ctx, text); err != nil {
-			// Fall back to PostMessage on streaming failure
+			c.adapter.Log.Info("slack: streaming failed, falling back to PostMessage",
+				"channel", c.channelID, "err", err)
 			return c.writeWithPostMessage(ctx, text, env.Event.Type == events.MessageDelta)
 		}
 		return nil
@@ -831,14 +832,11 @@ func (c *SlackConn) writeWithPostMessage(ctx context.Context, text string, isDel
 		text += "\n\n"
 	}
 
-	// Try table block rendering for non-delta messages (TableBlock > ImageBlock)
-	if !isDelta {
-		if err := c.tryTableBlocks(ctx, text); err == nil {
-			return nil
-		}
-		if err := c.tryImageBlocks(ctx, text); err == nil {
-			return nil
-		}
+	if err := c.tryTableBlocks(ctx, text); err == nil {
+		return nil
+	}
+	if err := c.tryImageBlocks(ctx, text); err == nil {
+		return nil
 	}
 
 	chunks := ChunkContent(text, maxMessageLength)
