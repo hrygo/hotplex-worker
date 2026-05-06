@@ -8,7 +8,6 @@ import (
 
 	_ "github.com/hrygo/hotplex/internal/worker/claudecode"
 	_ "github.com/hrygo/hotplex/internal/worker/opencodeserver"
-	_ "github.com/hrygo/hotplex/internal/worker/pi"
 	"github.com/hrygo/hotplex/pkg/aep"
 )
 
@@ -28,7 +27,7 @@ func main() {
 		Short: "HotPlex Worker Gateway",
 		Long: `HotPlex Worker Gateway — unified access layer for AI Coding Agent sessions.
 
-WebSocket gateway abstracting Claude Code, OpenCode Server, and Pi-mono protocol differences.
+WebSocket gateway abstracting Claude Code and OpenCode Server protocol differences.
 Connects users across Web, Slack, and Feishu through one optimized binary.
 
 Quick start:

@@ -72,7 +72,6 @@ Client (Web / IDE / CLI / SDK)         Messaging Platform
 | `claude-code` | Anthropic Claude Code CLI | stdio | NDJSON | Persistent (Hot-Multiplexing) | 生产可用 |
 | `opencode-server` | OpenCode Server | HTTP | SSE/JSON | Managed (单进程共享) | 生产可用 |
 | `acpx` | ACPX Agent | stdio | NDJSON | Persistent | 占位（未实现） |
-| `pi-mono` | Pi-mono Coding Agent | stdio | Raw text | Ephemeral | 桩文件 |
 
 ### 1.4 技术规格
 
@@ -475,7 +474,6 @@ SIGTERM (优雅终止)
 | **Claude Code** | stdio | NDJSON | Persistent | ✅ 生产可用 | 多轮进程复用、`--resume` 恢复、权限协议 |
 | **OpenCode Server** | HTTP+SSE | SSE/JSON | Managed | ✅ 生产可用 | 单进程共享、动态端口、健康检查自动重启 |
 | **ACPX** | stdio | NDJSON | Persistent | ⬚ 占位 | 目录存在但未实现 |
-| **Pi-mono** | stdio | Raw text | Ephemeral | ⬚ 桩文件 | 仅占位 stub |
 
 ### 6.6 开发自定义 Worker
 

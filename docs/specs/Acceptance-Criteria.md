@@ -99,7 +99,7 @@ version: v1.0
 - Given Worker 输出流, When Worker Adapter 解析输出, Then 文本行被转换为 message.delta{ delta: { type: 'text', text: <line> } }
 - Given message.delta, Then delta.type 必须是 'text'|'code'|'image' 之一
 - Given message.delta, Then delta.text 包含实际增量文本内容
-- Given message.delta, When Worker 是 raw stdout 类型（pi-mono）, Then 每行 stdout 转换为一条 delta
+- Given message.delta, When Worker 是 raw stdout 类型, Then 每行 stdout 转换为一条 delta
 - Given message.delta, When 消息被 backpressure 丢弃, Then seq 不消耗（sessionDropped flag 设为 true）
 
 ### AEP-006 — Tool_call 和 Tool_result 事件（S→C）
@@ -477,7 +477,6 @@ version: v1.0
 **验收标准**:
 - Given ClaudeCode Worker, When Capabilities 检查, Then Type()=='claude_code', SupportsResume()==true, SessionStoreDir() 返回非空路径
 - Given Worker, When Capabilities 检查, Then Type()=='opencode_server', SupportsResume()==true，EnvWhitelist 列出允许的环境变量名
-- Given Pi-mono Worker, When Capabilities 检查, Then Type()=='pi-mono', SupportsResume()==false，SessionStoreDir()==''
 
 ### WK-003 — Claude Code Worker：--resume 恢复持久会话
 **描述**: Claude Code 适配器通过 --print --session-id 和 --resume 参数实现持久化。

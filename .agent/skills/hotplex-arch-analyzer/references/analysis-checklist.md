@@ -5,7 +5,7 @@ HotPlex Worker Gateway 专用架构分析检查清单。针对以下核心架构
 **核心架构层次**：
 - Gateway 层：WebSocket 连接管理、事件分发、AEP 协议
 - Session 层：5 状态机、SQLite 持久化、PoolManager
-- Worker 层：Claude Code、OpenCode Server、Pi-mono 适配器
+- Worker 层：Claude Code、OpenCode Server 适配器
 - Messaging 层：Slack、飞书双向消息适配
 - Agent Config 层：B/C 通道人格注入
 

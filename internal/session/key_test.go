@@ -49,7 +49,7 @@ func TestDeriveSessionKey_UUIDv5Format(t *testing.T) {
 	}{
 		{"u1", worker.TypeClaudeCode, "s1", "/tmp/hotplex/workspace"},
 		{"user_long_id", worker.TypeOpenCodeSrv, "my-session-123", "/tmp/hotplex/projects/app"},
-		{"", worker.TypePimon, "", ""},
+		{"", worker.TypeACPX, "", ""},
 		{"owner", worker.TypeOpenCodeSrv, "session-with-dashes", "/var/hotplex/projects"},
 	}
 
@@ -80,7 +80,7 @@ func TestDeriveSessionKey_AllWorkerTypes(t *testing.T) {
 	for _, wt := range []worker.WorkerType{
 		worker.TypeClaudeCode,
 		worker.TypeOpenCodeSrv,
-		worker.TypePimon,
+		worker.TypeACPX,
 		worker.TypeUnknown,
 	} {
 		wt := wt
@@ -221,7 +221,7 @@ func TestDerivePlatformSessionKey_AllWorkerTypes(t *testing.T) {
 	for _, wt := range []worker.WorkerType{
 		worker.TypeClaudeCode,
 		worker.TypeOpenCodeSrv,
-		worker.TypePimon,
+		worker.TypeACPX,
 		worker.TypeUnknown,
 	} {
 		wt := wt

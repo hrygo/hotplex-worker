@@ -73,7 +73,6 @@ const (
 	TypeClaudeCode  WorkerType = "claude_code"
 	TypeOpenCodeSrv WorkerType = "opencode_server"
 	TypeACPX        WorkerType = "acpx"
-	TypePimon       WorkerType = "pi-mono"
 	TypeUnknown     WorkerType = "unknown"
 )
 

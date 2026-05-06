@@ -46,7 +46,6 @@ Client (WebSocket) ──→ Gateway (AEP v1) ──→ Worker (Claude Code / Op
 |------|-------------|----------|
 | `claude-code` | Anthropic Claude Code CLI | stdio / NDJSON |
 | `opencode-server` | OpenCode Server | HTTP / SSE |
-| `pi-mono` | Pi-mono protocol | stdio (stub) |
 
 ### Key Architecture Properties
 
