@@ -1139,7 +1139,7 @@ func (c *SlackConn) buildTurnSummaryTable(d messaging.TurnSummaryData) []slack.B
 		}
 		used := messaging.FormatTokenCount(int(d.ContextFill))
 		max := messaging.FormatTokenCount(int(d.ContextWindow))
-		table.AddRow(richTextCell("🧠 Context"), richTextCell(fmt.Sprintf("%d%% %s/%s", pct, used, max)))
+		table.AddRow(richTextCell("🧠 Context"), richTextCell(fmt.Sprintf("%d%% · %s/%s", pct, used, max)))
 	}
 	if d.ToolCallCount > 0 {
 		toolStr := formatToolNamesSlack(d.ToolNames, d.ToolCallCount)

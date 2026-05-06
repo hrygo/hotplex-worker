@@ -254,7 +254,7 @@ func FormatTurnSummaryRich(d TurnSummaryData) string {
 		}
 		used := FormatTokenCount(int(d.ContextFill))
 		max := FormatTokenCount(int(d.ContextWindow))
-		lines = append(lines, fmt.Sprintf("🧠 %d%% · %s/%s", pct, used, max))
+		lines = append(lines, fmt.Sprintf("🧠 Context %d%% · %s/%s", pct, used, max))
 	}
 
 	// Line 3: Git branch
@@ -279,7 +279,7 @@ func FormatTurnSummaryRich(d TurnSummaryData) string {
 
 	// Line 7: Tokens (turn + session total)
 	if tokStr := FormatTokenUsage(d); tokStr != "" {
-		lines = append(lines, "💎 "+tokStr)
+		lines = append(lines, "💎 Tokens "+tokStr)
 	}
 
 	return strings.Join(lines, "\n")
@@ -313,7 +313,7 @@ func FormatTokenUsage(d TurnSummaryData) string {
 		if d.TurnOutputTok > 0 {
 			tp = append(tp, FormatTokenCount(int(d.TurnOutputTok))+"↑")
 		}
-		tokParts = append(tokParts, strings.Join(tp, " "))
+		tokParts = append(tokParts, strings.Join(tp, " · "))
 	}
 	if d.TotalInputTok > 0 || d.TotalOutputTok > 0 {
 		var tp []string
@@ -323,7 +323,7 @@ func FormatTokenUsage(d TurnSummaryData) string {
 		if d.TotalOutputTok > 0 {
 			tp = append(tp, "Σ"+FormatTokenCount(int(d.TotalOutputTok))+"↑")
 		}
-		tokParts = append(tokParts, strings.Join(tp, " "))
+		tokParts = append(tokParts, strings.Join(tp, " · "))
 	}
-	return strings.Join(tokParts, " | ")
+	return strings.Join(tokParts, " · ")
 }

@@ -305,13 +305,13 @@ func TestFormatTurnSummaryRich_Full(t *testing.T) {
 	lines := strings.Split(got, "\n")
 	require.Contains(t, lines[0], "🔄 #3")
 	require.Contains(t, lines[1], "🤖 Sonnet")
-	require.Contains(t, got, "🧠 24% · 48.4K/200K")
+	require.Contains(t, got, "🧠 Context 24% · 48.4K/200K")
 	require.Contains(t, got, "🔧 12 (")
 	require.Contains(t, got, "📂")
 	require.Contains(t, got, "🌿 feat/117-turn-summary")
 	require.Contains(t, got, "⏱ 42s · Σ 12m30s")
-	require.Contains(t, got, "💎")
-	require.Contains(t, got, "12K↓ 2K↑ | Σ48.4K↓ Σ2K↑")
+	require.Contains(t, got, "💎 Tokens")
+	require.Contains(t, got, "12K↓ · 2K↑ · Σ48.4K↓ · Σ2K↑")
 }
 
 func TestFormatTurnSummaryRich_Minimal(t *testing.T) {
