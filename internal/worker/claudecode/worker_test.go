@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -656,4 +657,126 @@ func TestHasSessionFiles_JSONLExists(t *testing.T) {
 		}
 	}
 	require.True(t, found, "JSONL file should be detected as a valid session file")
+}
+
+func TestAutoApproveTool_MatchingTool(t *testing.T) {
+	original := permissionAutoApprove.Load()
+	defer permissionAutoApprove.Store(original)
+
+	permissionAutoApprove.Store([]string{"ExitPlanMode"})
+
+	var buf bytes.Buffer
+	ctrl := NewControlHandler(slog.Default(), &buf)
+	cr := &ControlRequestPayload{
+		Subtype:   "can_use_tool",
+		ToolName:  "ExitPlanMode",
+		RequestID: "req-123",
+	}
+
+	result := autoApproveTool(ctrl, cr)
+	require.True(t, result, "should auto-approve ExitPlanMode")
+
+	// Verify a response was written to stdin (buf)
+	require.NotEmpty(t, buf.String(), "should send permission response")
+	require.Contains(t, buf.String(), `"allowed":true`)
+	require.Contains(t, buf.String(), "auto-approved")
+}
+
+func TestAutoApproveTool_NonMatchingTool(t *testing.T) {
+	original := permissionAutoApprove.Load()
+	defer permissionAutoApprove.Store(original)
+
+	permissionAutoApprove.Store([]string{"ExitPlanMode"})
+
+	var buf bytes.Buffer
+	ctrl := NewControlHandler(slog.Default(), &buf)
+	cr := &ControlRequestPayload{
+		Subtype:   "can_use_tool",
+		ToolName:  "Bash",
+		RequestID: "req-456",
+	}
+
+	result := autoApproveTool(ctrl, cr)
+	require.False(t, result, "should not auto-approve Bash")
+	require.Empty(t, buf.String(), "should not send any response")
+}
+
+func TestAutoApproveTool_EmptyList(t *testing.T) {
+	original := permissionAutoApprove.Load()
+	defer permissionAutoApprove.Store(original)
+
+	permissionAutoApprove.Store([]string{})
+
+	var buf bytes.Buffer
+	ctrl := NewControlHandler(slog.Default(), &buf)
+	cr := &ControlRequestPayload{
+		Subtype:   "can_use_tool",
+		ToolName:  "ExitPlanMode",
+		RequestID: "req-789",
+	}
+
+	result := autoApproveTool(ctrl, cr)
+	require.False(t, result, "should not auto-approve with empty list")
+	require.Empty(t, buf.String())
+}
+
+func TestAutoApproveTool_NilList(t *testing.T) {
+	original := permissionAutoApprove.Load()
+	defer permissionAutoApprove.Store(original)
+
+	// Simulate freshly initialized state: atomic.Value holds typed nil wrapper.
+	// permissionAutoApprove.Load() returns nil when the stored value is the empty slice,
+	// which means list.([]string) yields []string{} — autoApproveTool handles this correctly.
+	permissionAutoApprove.Store([]string{})
+
+	var buf bytes.Buffer
+	ctrl := NewControlHandler(slog.Default(), &buf)
+	cr := &ControlRequestPayload{
+		Subtype:   "can_use_tool",
+		ToolName:  "ExitPlanMode",
+		RequestID: "req-nil",
+	}
+
+	result := autoApproveTool(ctrl, cr)
+	require.False(t, result, "should not auto-approve with empty list")
+}
+
+func TestInitConfig_PermissionAutoApprove(t *testing.T) {
+	origCmd := commandParts.Load()
+	origPP := permissionPrompt.Load()
+	origAA := permissionAutoApprove.Load()
+	defer func() {
+		commandParts.Store(origCmd)
+		permissionPrompt.Store(origPP)
+		permissionAutoApprove.Store(origAA)
+	}()
+
+	InitConfig(config.ClaudeCodeConfig{
+		Command:               "claude",
+		PermissionPrompt:      true,
+		PermissionAutoApprove: []string{"ExitPlanMode", "Read"},
+	})
+
+	require.Equal(t, []string{"claude"}, commandParts.Load())
+	require.True(t, permissionPrompt.Load().(bool))
+	require.Equal(t, []string{"ExitPlanMode", "Read"}, permissionAutoApprove.Load())
+}
+
+func TestInitConfig_PermissionAutoApproveNil(t *testing.T) {
+	origCmd := commandParts.Load()
+	origPP := permissionPrompt.Load()
+	origAA := permissionAutoApprove.Load()
+	defer func() {
+		commandParts.Store(origCmd)
+		permissionPrompt.Store(origPP)
+		permissionAutoApprove.Store(origAA)
+	}()
+
+	InitConfig(config.ClaudeCodeConfig{
+		Command:               "claude",
+		PermissionPrompt:      false,
+		PermissionAutoApprove: nil,
+	})
+
+	require.Equal(t, []string{}, permissionAutoApprove.Load(), "nil should be stored as empty slice")
 }

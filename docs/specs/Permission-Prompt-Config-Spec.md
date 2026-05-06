@@ -103,7 +103,11 @@ worker:
   claude_code:
     command: "claude"
     permission_prompt: false        # 是否启用 --permission-prompt-tool stdio（默认关闭）
+    permission_auto_approve:        # 自动放行的 tool name 列表（不发交互请求）
+      - "ExitPlanMode"
 ```
+
+**自动放行机制**：`readOutput()` 中 `can_use_tool` 分支在构造 PermissionRequest envelope 前，检查 `cr.ToolName` 是否在 `permission_auto_approve` 列表中。匹配则调用 `control.SendPermissionResponse(allow)` 并 skip envelope 创建。
 
 ### 2.2 运行时 Bug 修复（Phase 2 — 已完成 018c794）
 
@@ -286,6 +290,10 @@ Claude Code stdout → parser → EventControl(can_use_tool) → PermissionReque
 | `internal/messaging/slack/interaction.go` | 2 | backtick strip + DEBUG 日志 + 候选匹配 | `018c794` |
 | `internal/messaging/feishu/interaction.go` | 2 | backtick strip + keyword 扩展 | `018c794` |
 | `internal/gateway/handler.go` | 2 | interaction response 日志增强 | `018c794` |
+| `internal/config/config.go` | 1 | 新增 `PermissionAutoApprove` 字段 | 待提交 |
+| `configs/config.yaml` | 1 | 新增 `permission_auto_approve` 配置 | 待提交 |
+| `internal/worker/claudecode/worker.go` | 1 | `autoApproveTool()` + readOutput 拦截 | 待提交 |
+| `internal/worker/claudecode/worker_test.go` | 1 | 6 个自动放行测试 | 待提交 |
 
 ---
 

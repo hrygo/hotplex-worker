@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -40,6 +41,13 @@ func init() {
 	permissionPrompt.Store(false)
 }
 
+// permissionAutoApprove lists tool names to auto-approve without user interaction.
+var permissionAutoApprove atomic.Value // []string
+
+func init() {
+	permissionAutoApprove.Store([]string{})
+}
+
 // InitConfig applies Claude Code worker configuration.
 func InitConfig(cfg config.ClaudeCodeConfig) {
 	cmd := cfg.Command
@@ -49,9 +57,30 @@ func InitConfig(cfg config.ClaudeCodeConfig) {
 	parts := strings.Fields(cmd)
 	commandParts.Store(parts)
 	permissionPrompt.Store(cfg.PermissionPrompt)
+	autoApprove := cfg.PermissionAutoApprove
+	if autoApprove == nil {
+		autoApprove = []string{}
+	}
+	permissionAutoApprove.Store(autoApprove)
 	if err := security.RegisterCommand(parts[0]); err != nil {
 		slog.Default().Error("claudecode: failed to register command", "command", parts[0], "err", err)
 	}
+}
+
+// autoApproveTool checks if a control request's tool name is in the auto-approve list.
+// If matched, it sends an allow response and returns true.
+func autoApproveTool(ctrl *ControlHandler, cr *ControlRequestPayload) bool {
+	list := permissionAutoApprove.Load()
+	if list == nil {
+		return false
+	}
+	toolNames, ok := list.([]string)
+	if !ok || !slices.Contains(toolNames, cr.ToolName) {
+		return false
+	}
+	ctrl.log.Info("auto-approved permission request", "tool", cr.ToolName, "request_id", cr.RequestID)
+	_ = ctrl.SendPermissionResponse(cr.RequestID, true, "auto-approved")
+	return true
 }
 
 // Env whitelist for Claude Code worker.
@@ -671,6 +700,10 @@ func (w *Worker) readOutput(ctx context.Context) {
 						)
 						w.trySend(env)
 					} else {
+						// Check auto-approve list before forwarding to user
+						if autoApproveTool(w.control, cr) {
+							continue
+						}
 						// Other tools → PermissionRequest event
 						var input map[string]any
 						if len(cr.Input) > 0 {

@@ -311,8 +311,9 @@ type WorkerConfig struct {
 
 // ClaudeCodeConfig holds Claude Code worker startup settings.
 type ClaudeCodeConfig struct {
-	Command          string `mapstructure:"command"`           // binary + optional subcommand, e.g. "claude" or "ccr code"
-	PermissionPrompt bool   `mapstructure:"permission_prompt"` // enable --permission-prompt-tool stdio for interaction chain
+	Command               string   `mapstructure:"command"`                 // binary + optional subcommand, e.g. "claude" or "ccr code"
+	PermissionPrompt      bool     `mapstructure:"permission_prompt"`       // enable --permission-prompt-tool stdio for interaction chain
+	PermissionAutoApprove []string `mapstructure:"permission_auto_approve"` // tool names to auto-approve without user interaction
 }
 
 // OpenCodeServerConfig holds OpenCode Server singleton process settings.
