@@ -11,6 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/hrygo/hotplex/internal/config"
 	"github.com/hrygo/hotplex/internal/worker"
 )
 
@@ -224,7 +225,8 @@ func TestBuildCLIArgs_AllOptions(t *testing.T) {
 	require.Contains(t, args, "--json-schema", "/schemas/output.json")
 	require.Contains(t, args, "--include-hook-events")
 	require.Contains(t, args, "--include-partial-messages")
-	require.Contains(t, args, "--permission-prompt-tool", "stdio")
+	// --permission-prompt-tool not present by default (disabled)
+	require.NotContains(t, args, "--permission-prompt-tool")
 	// Custom PermissionMode="plan" → no --dangerously-skip-permissions
 	require.NotContains(t, args, "--dangerously-skip-permissions")
 	require.NotContains(t, args, "--system-prompt") // replace mode not set
@@ -327,13 +329,14 @@ func TestBuildCLIArgs_Minimal(t *testing.T) {
 	}
 
 	args := w.buildCLIArgs(session, false)
-	// resume=false → --session-id minimal-session, 11 tokens total:
+	// resume=false → --session-id minimal-session, 9 tokens total:
 	// --print --verbose --output-format stream-json --input-format stream-json
-	// --permission-prompt-tool stdio --session-id minimal-session --dangerously-skip-permissions
-	require.Len(t, args, 11)
+	// --session-id minimal-session --dangerously-skip-permissions
+	// (--permission-prompt-tool stdio NOT included: default is disabled)
+	require.Len(t, args, 9)
 	require.Contains(t, args, "--print")
 	require.Contains(t, args, "--verbose")
-	require.Contains(t, args, "--permission-prompt-tool", "stdio")
+	require.NotContains(t, args, "--permission-prompt-tool")
 	require.Contains(t, args, "--session-id", "minimal-session")
 	require.Contains(t, args, "--dangerously-skip-permissions")
 	require.NotContains(t, args, "--resume")
@@ -352,6 +355,39 @@ func TestBuildCLIArgs_Bare(t *testing.T) {
 
 	args := w.buildCLIArgs(session, false)
 	require.Contains(t, args, "--bare")
+}
+
+func TestBuildCLIArgs_PermissionPromptEnabled(t *testing.T) {
+	// Do NOT use t.Parallel() — InitConfig mutates global state (security.RegisterCommand map).
+	// Enable permission prompt via InitConfig (simulates config.yaml permission_prompt: true)
+	InitConfig(config.ClaudeCodeConfig{Command: "claude", PermissionPrompt: true})
+	defer InitConfig(config.ClaudeCodeConfig{Command: "claude"}) // reset to default
+
+	w := New()
+	session := worker.SessionInfo{
+		SessionID:  "pp-session",
+		UserID:     "test-user",
+		ProjectDir: "/tmp",
+	}
+
+	args := w.buildCLIArgs(session, false)
+	require.Contains(t, args, "--permission-prompt-tool", "stdio")
+}
+
+func TestBuildCLIArgs_PermissionPromptDisabled(t *testing.T) {
+	// Do NOT use t.Parallel() — same reason as PermissionPromptEnabled.
+	// Ensure default is disabled
+	InitConfig(config.ClaudeCodeConfig{Command: "claude", PermissionPrompt: false})
+
+	w := New()
+	session := worker.SessionInfo{
+		SessionID:  "pp-off-session",
+		UserID:     "test-user",
+		ProjectDir: "/tmp",
+	}
+
+	args := w.buildCLIArgs(session, false)
+	require.NotContains(t, args, "--permission-prompt-tool")
 }
 
 func TestBuildCLIArgs_AllowedDirs(t *testing.T) {

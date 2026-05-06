@@ -33,6 +33,13 @@ func init() {
 	commandParts.Store([]string{"claude"})
 }
 
+// permissionPrompt controls whether --permission-prompt-tool stdio is passed to Claude Code.
+var permissionPrompt atomic.Value // bool
+
+func init() {
+	permissionPrompt.Store(false)
+}
+
 // InitConfig applies Claude Code worker configuration.
 func InitConfig(cfg config.ClaudeCodeConfig) {
 	cmd := cfg.Command
@@ -41,6 +48,7 @@ func InitConfig(cfg config.ClaudeCodeConfig) {
 	}
 	parts := strings.Fields(cmd)
 	commandParts.Store(parts)
+	permissionPrompt.Store(cfg.PermissionPrompt)
 	if err := security.RegisterCommand(parts[0]); err != nil {
 		slog.Default().Error("claudecode: failed to register command", "command", parts[0], "err", err)
 	}
@@ -225,7 +233,12 @@ func (w *Worker) buildCLIArgs(session worker.SessionInfo, resume bool) []string 
 		"--verbose", // Required for stream-json mode
 		"--output-format", "stream-json",
 		"--input-format", "stream-json",
-		"--permission-prompt-tool", "stdio", // Enable control_request/control_response protocol
+	}
+
+	// Conditionally enable permission prompt tool for interaction chain.
+	// When disabled, Claude Code auto-denies ask results in headless mode.
+	if pp, _ := permissionPrompt.Load().(bool); pp {
+		args = append(args, "--permission-prompt-tool", "stdio")
 	}
 
 	// Only two session modes:
@@ -238,9 +251,11 @@ func (w *Worker) buildCLIArgs(session worker.SessionInfo, resume bool) []string 
 	}
 
 	// Permission mode: default bypass (preserves existing behavior), configurable override.
-	// --permission-prompt-tool stdio + --dangerously-skip-permissions:
+	// --permission-prompt-tool stdio + --dangerously-skip-permissions (both enabled):
 	//   - Normal operations: step 2a bypass → allow (no control_request)
 	//   - Bypass-immune ops (.claude/, .git/, shell config): step 1g → ask → control_request
+	// --permission-prompt-tool disabled (default):
+	//   - All ask results auto-denied by Claude Code in headless mode
 	if session.SkipPermissions {
 		args = append(args, "--dangerously-skip-permissions")
 	} else if session.PermissionMode != "" {

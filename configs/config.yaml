@@ -136,6 +136,10 @@ worker:
 
   claude_code:
     command: "claude"
+    # Enable --permission-prompt-tool stdio for forwarding permission requests
+    # to Slack/Feishu interaction UI. When false (default), Claude Code auto-denies
+    # permission requests in headless mode (no user interaction).
+    permission_prompt: false
 
   opencode_server:
     idle_drain_period: 30m
