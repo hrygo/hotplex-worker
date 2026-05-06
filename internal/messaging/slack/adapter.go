@@ -829,6 +829,17 @@ func (c *SlackConn) writeWithStreaming(ctx context.Context, text string) error {
 	c.streamWriterMu.Lock()
 	defer c.streamWriterMu.Unlock()
 
+	// TTL rotation: proactively replace expired streams before
+	// Slack's server-side streaming limit kicks in.
+	if c.streamWriter != nil && c.streamWriter.Expired() {
+		oldWriter := c.streamWriter
+		c.streamWriter = nil
+		go func() { _ = oldWriter.Close() }()
+		c.adapter.Log.Info("slack: stream rotated",
+			"channel", c.channelID,
+			"old_msg_ts", oldWriter.messageTS)
+	}
+
 	// Create new streaming writer if needed
 	if c.streamWriter == nil {
 		writer := c.adapter.NewStreamingWriter(ctx, c.channelID, c.threadTS, func(ts string) {
