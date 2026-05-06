@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "last_updated": "2026-05-07T07:37:30.000000+08:00",
-  "total_cycles": 111,
+  "last_updated": "2026-05-07T07:46:55.000000+08:00",
+  "total_cycles": 112,
   "modules": {
     "internal/gateway": {
       "analysis_count": 8,
@@ -145,7 +145,7 @@
       }
     },
     "internal/session": {
-      "analysis_count": 7,
+      "analysis_count": 8,
       "aspects_covered": [
         "coupling",
         "error-handling",
@@ -166,9 +166,10 @@
         217,
         235,
         243,
-        256
+        256,
+        267
       ],
-      "findings_total": 26,
+      "findings_total": 29,
       "findings_dropped": [
         {
           "finding": "worker.WorkerType coupling",
@@ -233,9 +234,25 @@
         {
           "finding": "raw-function-callbacks-vs-interfaces",
           "reason": "Medium confidence, Low ROI — current pattern works, interface adds unnecessary abstraction"
+        },
+        {
+          "finding": "Get() uses context.Background() with no store timeout",
+          "reason": "Low ROI — read path, SQLite queries are fast"
+        },
+        {
+          "finding": "GetExpiredMaxLifetime/GetExpiredIdle return bare errors",
+          "reason": "Low ROI — callers log the errors, wrapping only helps tooling"
+        },
+        {
+          "finding": "Compact VACUUM error not wrapped",
+          "reason": "Very Low ROI — admin operation, not hot path"
+        },
+        {
+          "finding": "PoolManager.Acquire + AttachWorker double-count metric",
+          "reason": "Very Low ROI — defensive dead-code path, errors.As always succeeds"
         }
       ],
-      "last_analyzed": "2026-05-07T05:27:25.146690",
+      "last_analyzed": "2026-05-07T07:46:55.000000+08:00",
       "stats": {
         "files": 11,
         "lines": 4651
@@ -1296,20 +1313,10 @@
     262,
     263,
     264,
-    265
+    265,
+    267
   ],
   "recent_activity": [
-    {
-      "cycle": 92,
-      "module": "internal/updater",
-      "aspects": [
-        "testability",
-        "code-quality"
-      ],
-      "findings": 2,
-      "issue": 251,
-      "timestamp": "2026-05-07T04:24:00+08:00"
-    },
     {
       "cycle": 93,
       "module": "pkg/aep",
@@ -1534,6 +1541,18 @@
       "issue": 265,
       "note": "Phase 2 re-analysis — LLMRetryController patterns data race + ctrlCancel not deferred",
       "timestamp": "2026-05-07T07:37:30.000000+08:00"
+    },
+    {
+      "cycle": 112,
+      "module": "internal/session",
+      "aspects": [
+        "error-handling",
+        "concurrency"
+      ],
+      "findings": 3,
+      "issue": 267,
+      "note": "Phase 2 re-analysis — silent store error in getManagedSession + max-turns orphan + AttachWorker lock ordering",
+      "timestamp": "2026-05-07T07:46:55.000000+08:00"
     }
   ]
 }
