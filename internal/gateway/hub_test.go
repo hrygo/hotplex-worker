@@ -1007,7 +1007,7 @@ func (f *fakeWorker) Type() worker.WorkerType                             { retu
 func (f *fakeWorker) SupportsResume() bool                                { return true }
 func (f *fakeWorker) SupportsStreaming() bool                             { return true }
 func (f *fakeWorker) SupportsTools() bool                                 { return true }
-func (f *fakeWorker) EnvWhitelist() []string                              { return nil }
+func (f *fakeWorker) EnvBlocklist() []string                              { return nil }
 func (f *fakeWorker) SessionStoreDir() string                             { return "" }
 func (f *fakeWorker) MaxTurns() int                                       { return 0 }
 func (f *fakeWorker) Modalities() []string                                { return []string{"text", "code"} }

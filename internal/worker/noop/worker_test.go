@@ -68,7 +68,7 @@ func TestNoOpWorker_CapabilitiesMethods(t *testing.T) {
 	require.False(t, w.SupportsResume())
 	require.False(t, w.SupportsStreaming())
 	require.False(t, w.SupportsTools())
-	require.Nil(t, w.EnvWhitelist())
+	require.Nil(t, w.EnvBlocklist())
 	require.Empty(t, w.SessionStoreDir())
 	require.Zero(t, w.MaxTurns())
 	require.Nil(t, w.Modalities())

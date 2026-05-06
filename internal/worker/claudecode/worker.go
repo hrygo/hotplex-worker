@@ -78,37 +78,15 @@ func autoApproveTool(ctrl *ControlHandler, cr *ControlRequestPayload) bool {
 	return true
 }
 
-// Env whitelist for Claude Code worker.
-var claudeCodeEnvWhitelist = []string{
-	"HOME", "USER", "SHELL", "PATH", "TERM",
-	"LANG", "LC_ALL", "PWD",
-	// Claude Code CLI vars (兼容前缀)
-	"CLAUDE_API_KEY", "CLAUDE_MODEL", "CLAUDE_BASE_URL",
-	"CLAUDE_CODE_MODE", "CLAUDE_DISABLE_AUTO_PERMISSIONS",
-	"CLAUDE_CODE_EXECPATH", "CLAUDE_CODE_ENTRYPOINT",
-	"CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS",
-	"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
-	// Claude Code CLI prefix (catches all CLAUDE_CODE_* vars)
-	"CLAUDE_CODE_",
-	// Anthropic SDK vars (部分用户直接设置这些)
-	"ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "ANTHROPIC_MODEL",
-	"ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BEDROCK_BASE_URL",
-	"ANTHROPIC_VERTEX_BASE_URL", "ANTHROPIC_FOUNDRY_BASE_URL",
-	"ANTHROPIC_CUSTOM_HEADERS",
-	// External LLM API Keys
-	"OPENAI_API_KEY", "DASHSCOPE_API_KEY", "MINIMAX_API_KEY",
-	"ZHIPU_API_KEY", "DEEPSEEK_API_KEY", "OPENROUTER_API_KEY",
-	// 安全配置
-	"BASH_MAX_TIMEOUT_MS", "BASH_MAX_OUTPUT_LENGTH",
-	"MAX_THINKING_TOKENS", "MAX_MCP_OUTPUT_TOKENS",
-	"MCP_TIMEOUT", "MCP_TOOL_TIMEOUT",
-	// Bun 运行时配置
-	"BUN_RUNTIME_NV",
-	// OpenTelemetry (prefix-matched in BuildEnv)
-	"OTEL_",
-	// HotPlex Slack context (exact-match only)
-	"HOTPLEX_SLACK_CHANNEL_ID",
-	"HOTPLEX_SLACK_THREAD_TS",
+// Env blocklist for Claude Code worker.
+// All os.Environ() vars are passed through by default, except those listed here.
+// Gateway-internal secrets use the HOTPLEX_ prefix to prevent leakage.
+var claudeCodeEnvBlocklist = []string{
+	// Nested agent detection — must never propagate to worker subprocess.
+	"CLAUDECODE",
+	// Gateway-internal secrets (prefix match blocks all HOTPLEX_* vars;
+	// HOTPLEX_SESSION_ID and HOTPLEX_WORKER_TYPE are added separately in BuildEnv).
+	"HOTPLEX_",
 }
 
 // Default session store directory.
@@ -156,7 +134,7 @@ func (w *Worker) Type() worker.WorkerType { return worker.TypeClaudeCode }
 func (w *Worker) SupportsResume() bool    { return true }
 func (w *Worker) SupportsStreaming() bool { return true }
 func (w *Worker) SupportsTools() bool     { return true }
-func (w *Worker) EnvWhitelist() []string  { return claudeCodeEnvWhitelist }
+func (w *Worker) EnvBlocklist() []string  { return claudeCodeEnvBlocklist }
 func (w *Worker) SessionStoreDir() string { return defaultSessionStoreDir }
 func (w *Worker) MaxTurns() int           { return 0 }
 func (w *Worker) Modalities() []string    { return []string{"text", "code", "image"} }
@@ -207,7 +185,7 @@ func (w *Worker) startLocked(_ context.Context, session worker.SessionInfo, resu
 	fullArgs = append(fullArgs, args...)
 
 	bgCtx := context.Background()
-	stdin, _, _, err := w.Proc.Start(bgCtx, binary, fullArgs, base.BuildEnv(session, claudeCodeEnvWhitelist, "claude-code"), session.ProjectDir)
+	stdin, _, _, err := w.Proc.Start(bgCtx, binary, fullArgs, base.BuildEnv(session, claudeCodeEnvBlocklist, "claude-code"), session.ProjectDir)
 	if err != nil {
 		w.Proc = nil
 		return fmt.Errorf("claudecode: start: %w", err)

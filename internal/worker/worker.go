@@ -50,9 +50,9 @@ type Capabilities interface {
 	// SupportsTools returns true if the worker exposes tool call capabilities.
 	SupportsTools() bool
 
-	// EnvWhitelist returns the set of environment variable names this worker
-	// is allowed to receive (empty = all allowed).
-	EnvWhitelist() []string
+	// EnvBlocklist returns the set of environment variable names this worker
+	// must NOT receive (empty = all allowed).
+	EnvBlocklist() []string
 
 	// SessionStoreDir returns the directory where the worker stores session state,
 	// or empty string if the worker does not persist sessions.
@@ -194,11 +194,11 @@ type SessionInfo struct {
 	// Takes precedence over SystemPrompt when set.
 	SystemPromptReplace string
 	// ConfigEnv holds extra env vars from worker.environment config. These always
-	// override values from os.Environ(), even for whitelisted keys (e.g. BUN_RUNTIME_NV).
+	// override values from os.Environ().
 	ConfigEnv []string
-	// ConfigWhitelist holds additional env var names from worker.env_whitelist config.
-	// These are merged with the hardcoded per-worker whitelist in BuildEnv.
-	ConfigWhitelist []string
+	// ConfigBlocklist holds additional env var names from worker.env_blocklist config.
+	// These are merged with the hardcoded per-worker blocklist in BuildEnv.
+	ConfigBlocklist []string
 	// PermissionMode controls how the worker handles permission requests.
 	// Valid values: "default", "plan", "auto-accept".
 	PermissionMode string

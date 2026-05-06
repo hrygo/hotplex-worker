@@ -29,22 +29,19 @@ func TestClaudeCodeWorker_Capabilities(t *testing.T) {
 	require.True(t, w.SupportsResume())
 	require.True(t, w.SupportsStreaming())
 	require.True(t, w.SupportsTools())
-	require.NotNil(t, w.EnvWhitelist())
+	require.NotNil(t, w.EnvBlocklist())
 	require.Equal(t, ".claude/projects", w.SessionStoreDir())
 	require.Zero(t, w.MaxTurns())
 	require.Equal(t, []string{"text", "code", "image"}, w.Modalities())
 }
 
-func TestClaudeCodeWorker_EnvWhitelist(t *testing.T) {
+func TestClaudeCodeWorker_EnvBlocklist(t *testing.T) {
 	t.Parallel()
 	w := New()
 
-	wl := w.EnvWhitelist()
-	require.Contains(t, wl, "CLAUDE_API_KEY")
-	require.Contains(t, wl, "CLAUDE_MODEL")
-	require.Contains(t, wl, "CLAUDE_BASE_URL")
-	require.Contains(t, wl, "HOME")
-	require.Contains(t, wl, "PATH")
+	bl := w.EnvBlocklist()
+	require.Contains(t, bl, "CLAUDECODE")
+	require.Contains(t, bl, "HOTPLEX_")
 }
 
 func TestClaudeCodeWorker_ConnBeforeStart(t *testing.T) {

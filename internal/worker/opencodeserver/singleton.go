@@ -357,7 +357,7 @@ func (s *SingletonProcessManager) startIdleDrainLocked() {
 
 // buildEnv creates the environment for the opencode serve process.
 func (s *SingletonProcessManager) buildEnv() []string {
-	return base.BuildEnv(worker.SessionInfo{}, openCodeSrvEnvWhitelist, "opencode-server")
+	return base.BuildEnv(worker.SessionInfo{}, openCodeSrvEnvBlocklist, "opencode-server")
 }
 
 // --- package-level singleton ---

@@ -202,7 +202,7 @@ func (m *mockWorkerForHandler) Type() worker.WorkerType { return worker.TypeClau
 func (m *mockWorkerForHandler) SupportsResume() bool    { return true }
 func (m *mockWorkerForHandler) SupportsStreaming() bool { return true }
 func (m *mockWorkerForHandler) SupportsTools() bool     { return true }
-func (m *mockWorkerForHandler) EnvWhitelist() []string  { return nil }
+func (m *mockWorkerForHandler) EnvBlocklist() []string  { return nil }
 func (m *mockWorkerForHandler) SessionStoreDir() string { return "" }
 func (m *mockWorkerForHandler) MaxTurns() int           { return 0 }
 func (m *mockWorkerForHandler) Modalities() []string    { return []string{"text"} }
