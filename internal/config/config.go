@@ -11,12 +11,17 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/spf13/viper"
 )
 
 var envVarRe = regexp.MustCompile(`\$\{([^}:]+)(?::-([^}]*))?\}`)
+
+// warnedEnvEntries deduplicates env-entry exclusion warnings so the same
+// message is only logged once per process, even when Load is called many times.
+var warnedEnvEntries sync.Map
 
 // ExpandEnv expands ${VAR} and ${VAR:-default} references in a config value
 // using os.Getenv.  This is used to reference secrets (or other values) from
@@ -692,7 +697,7 @@ func loadRecursive(filePath string, opts LoadOptions, visited []string) (*Config
 	for _, e := range cfg.Worker.Environment {
 		if entry, ok := expandEnvEntry(e); ok {
 			expanded = append(expanded, entry)
-		} else {
+		} else if _, loaded := warnedEnvEntries.LoadOrStore(e, true); !loaded {
 			slog.Warn("excluding env entry: references unset variable", "entry", e)
 		}
 	}

@@ -300,7 +300,8 @@ func defaultBool(p *bool, def bool) bool {
 }
 
 func GenerateSecret() string {
-	b := make([]byte, 48)
+	// ES256 requires exactly 32 bytes; decodeJWTSecret rejects other lengths.
+	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		panic("crypto/rand.Read failed: " + err.Error())
 	}
