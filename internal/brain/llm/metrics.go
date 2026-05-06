@@ -80,6 +80,7 @@ func NewMetricsCollector(config MetricsConfig) *MetricsCollector {
 	if err != nil {
 		// Fallback to local tracking
 		mc.meter = nil
+		return mc
 	}
 
 	// Input token counter
@@ -90,6 +91,7 @@ func NewMetricsCollector(config MetricsConfig) *MetricsCollector {
 	)
 	if err != nil {
 		mc.meter = nil
+		return mc
 	}
 
 	// Output token counter
@@ -100,6 +102,7 @@ func NewMetricsCollector(config MetricsConfig) *MetricsCollector {
 	)
 	if err != nil {
 		mc.meter = nil
+		return mc
 	}
 
 	// Cost counter
@@ -110,6 +113,7 @@ func NewMetricsCollector(config MetricsConfig) *MetricsCollector {
 	)
 	if err != nil {
 		mc.meter = nil
+		return mc
 	}
 
 	// Error counter
@@ -120,6 +124,7 @@ func NewMetricsCollector(config MetricsConfig) *MetricsCollector {
 	)
 	if err != nil {
 		mc.meter = nil
+		return mc
 	}
 
 	// Routing decision counter
@@ -130,6 +135,7 @@ func NewMetricsCollector(config MetricsConfig) *MetricsCollector {
 	)
 	if err != nil {
 		mc.meter = nil
+		return mc
 	}
 
 	// Active requests gauge
@@ -140,6 +146,7 @@ func NewMetricsCollector(config MetricsConfig) *MetricsCollector {
 	)
 	if err != nil {
 		mc.meter = nil
+		return mc
 	}
 
 	return mc

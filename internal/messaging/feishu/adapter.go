@@ -330,11 +330,10 @@ func (a *Adapter) handleMessage(ctx context.Context, event *larkim.P2MessageRece
 	}
 	text = messaging.SanitizeText(text)
 
-	// Download media to local files and build structured prompt.
-	var _hasVoice bool
+	var hasVoice bool
 	if len(medias) > 0 {
-		paths, transcriptions, hasVoice := a.processMediaAttachments(ctx, medias)
-		_hasVoice = hasVoice
+		var paths, transcriptions []string
+		paths, transcriptions, hasVoice = a.processMediaAttachments(ctx, medias)
 		if len(paths) > 0 || len(transcriptions) > 0 {
 			text = BuildMediaPrompt(text, paths, medias, transcriptions)
 		}
@@ -401,7 +400,7 @@ func (a *Adapter) handleMessage(ctx context.Context, event *larkim.P2MessageRece
 			"text_len", len(text),
 		)
 
-		return a.handleTextMessage(qtx, messageID, chatID, chatType, userID, text, threadKey, replyToMsgID, _hasVoice)
+		return a.handleTextMessage(qtx, messageID, chatID, chatType, userID, text, threadKey, replyToMsgID, hasVoice)
 	})
 }
 
@@ -424,11 +423,8 @@ func (a *Adapter) handleTextMessage(ctx context.Context, platformMsgID, channelI
 
 	conn := a.GetOrCreateConn(channelID, threadKey)
 
-	// Mark this connection as voice-triggered for TTS reply on Done.
 	if voiceTriggered {
-		conn.mu.Lock()
-		conn.voiceTriggered = true
-		conn.mu.Unlock()
+		conn.voiceTriggered.Store(true)
 	}
 
 	envelope := a.Bridge().MakeFeishuEnvelope(channelID, threadKey, userID, text, conn.WorkDir(), a.botOpenID)
@@ -551,7 +547,7 @@ type FeishuConn struct {
 	startedAt         time.Time // when the user sent the current message
 	workDir           string    // current workDir identity for session key derivation
 	lastSummarySentMs atomic.Int64
-	voiceTriggered    bool // true when this turn was initiated by a voice message
+	voiceTriggered    atomic.Bool
 }
 
 func NewFeishuConn(adapter *Adapter, chatID, threadKey, workDir string) *FeishuConn {
@@ -680,8 +676,7 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 			closeErr = streamCtrl.Close(ctx)
 		}
 
-		// TTS voice reply: only when this turn was triggered by a voice message.
-		if c.adapter.ttsPipeline != nil && c.voiceTriggered {
+		if c.adapter.ttsPipeline != nil && c.voiceTriggered.Load() {
 			var fullText string
 			if streamCtrl != nil {
 				fullText = streamCtrl.Content()
@@ -691,9 +686,13 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 				chatID := c.chatID
 				replyID := c.replyToMsgID
 				c.mu.RUnlock()
-				go c.adapter.ttsPipeline.Process(ctx, fullText, chatID, replyID)
+				ttsCtx, ttsCancel := context.WithTimeout(context.Background(), 60*time.Second)
+				go func() {
+					defer ttsCancel()
+					c.adapter.ttsPipeline.Process(ttsCtx, fullText, chatID, replyID)
+				}()
 			}
-			c.voiceTriggered = false
+			c.voiceTriggered.Store(false)
 		}
 
 		return closeErr

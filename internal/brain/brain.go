@@ -60,45 +60,6 @@ type ObservableBrain interface {
 	GetCostCalculator() *llm.CostCalculator
 }
 
-// ResilientBrain extends Brain with circuit breaker and failover capabilities.
-type ResilientBrain interface {
-	Brain
-
-	// GetCircuitBreaker returns the circuit breaker.
-	GetCircuitBreaker() *llm.CircuitBreaker
-
-	// GetFailoverManager returns the failover manager.
-	GetFailoverManager() *llm.FailoverManager
-
-	// ResetCircuitBreaker manually resets the circuit breaker.
-	ResetCircuitBreaker()
-
-	// ManualFailover manually switches to a specific provider.
-	ManualFailover(providerName string) error
-}
-
-// BudgetControlledBrain extends Brain with budget control capabilities.
-type BudgetControlledBrain interface {
-	Brain
-
-	// GetBudgetTracker returns the budget tracker for a session.
-	GetBudgetTracker(sessionID string) *llm.BudgetTracker
-
-	// GetBudgetManager returns the budget manager.
-	GetBudgetManager() *llm.BudgetManager
-}
-
-// PriorityBrain extends Brain with priority queue capabilities.
-type PriorityBrain interface {
-	Brain
-
-	// GetPriorityScheduler returns the priority scheduler.
-	GetPriorityScheduler() *llm.PriorityScheduler
-
-	// SubmitWithPriority submits a request with specified priority.
-	SubmitWithPriority(ctx context.Context, prompt string, priority llm.Priority) (string, error)
-}
-
 // HealthStatus represents the health status of the Brain service.
 // Re-exported from llm package for convenience.
 type HealthStatus = llm.HealthStatus

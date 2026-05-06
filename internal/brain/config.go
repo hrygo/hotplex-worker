@@ -113,38 +113,6 @@ type CircuitBreakerConfig struct {
 	Interval    time.Duration // Interval for resetting failure count
 }
 
-// === Failover Configuration ===
-
-// FailoverConfig configures provider failover behavior.
-type FailoverConfig struct {
-	Enabled        bool                 // Enable failover
-	Providers      []llm.ProviderConfig // Backup providers
-	EnableAuto     bool                 // Enable automatic failover
-	EnableFailback bool                 // Enable automatic failback when primary recovers
-	Cooldown       time.Duration        // Cooldown period before failback
-}
-
-// === Budget Configuration ===
-
-// BudgetConfig configures budget limits for LLM costs.
-type BudgetConfig struct {
-	Enabled         bool      // Enable budget tracking
-	Period          string    // Budget period: "daily", "weekly", "monthly"
-	Limit           float64   // Budget limit in USD
-	EnableHardLimit bool      // Block requests when budget exceeded
-	AlertThresholds []float64 // Alert at these percentages (e.g., [0.5, 0.8, 0.9])
-}
-
-// === Priority Configuration ===
-
-// PriorityConfig configures request prioritization.
-type PriorityConfig struct {
-	Enabled               bool // Enable priority queuing
-	MaxQueueSize          int  // Maximum queued requests
-	EnableLowPriorityDrop bool // Drop low-priority requests when queue full
-	HighPriorityReserve   int  // Reserved slots for high-priority requests
-}
-
 // === Intent Router Configuration ===
 
 // IntentRouterFeatureConfig configures intent routing features.
@@ -216,12 +184,6 @@ type Config struct {
 	Router RouterConfig
 	// CircuitBreaker is the circuit breaker configuration.
 	CircuitBreaker CircuitBreakerConfig
-	// Failover is the failover configuration.
-	Failover FailoverConfig
-	// Budget is the budget configuration.
-	Budget BudgetConfig
-	// Priority is the priority configuration.
-	Priority PriorityConfig
 	// IntentRouter is the intent router feature configuration.
 	IntentRouter IntentRouterFeatureConfig
 	// Memory is the memory compression feature configuration.
@@ -437,24 +399,6 @@ func buildConfig(apiKey, provider, protocol, model, endpoint string) Config {
 			MaxFailures: getIntEnv("HOTPLEX_BRAIN_CIRCUIT_BREAKER_MAX_FAILURES", 5),
 			Timeout:     getDurationEnv("HOTPLEX_BRAIN_CIRCUIT_BREAKER_TIMEOUT", 30*time.Second),
 			Interval:    getDurationEnv("HOTPLEX_BRAIN_CIRCUIT_BREAKER_INTERVAL", 60*time.Second),
-		},
-		Failover: FailoverConfig{
-			Enabled:        getBoolEnv("HOTPLEX_BRAIN_FAILOVER_ENABLED", false),
-			EnableAuto:     getBoolEnv("HOTPLEX_BRAIN_FAILOVER_ENABLE_AUTO", true),
-			EnableFailback: getBoolEnv("HOTPLEX_BRAIN_FAILOVER_ENABLE_FAILBACK", true),
-			Cooldown:       getDurationEnv("HOTPLEX_BRAIN_FAILOVER_COOLDOWN", 5*time.Minute),
-		},
-		Budget: BudgetConfig{
-			Enabled:         getBoolEnv("HOTPLEX_BRAIN_BUDGET_ENABLED", false),
-			Period:          getEnv("HOTPLEX_BRAIN_BUDGET_PERIOD", "daily"),
-			Limit:           getFloatEnv("HOTPLEX_BRAIN_BUDGET_LIMIT", 10.0),
-			EnableHardLimit: getBoolEnv("HOTPLEX_BRAIN_BUDGET_ENABLE_HARD_LIMIT", false),
-		},
-		Priority: PriorityConfig{
-			Enabled:               getBoolEnv("HOTPLEX_BRAIN_PRIORITY_ENABLED", false),
-			MaxQueueSize:          getIntEnv("HOTPLEX_BRAIN_PRIORITY_MAX_QUEUE_SIZE", 1000),
-			EnableLowPriorityDrop: getBoolEnv("HOTPLEX_BRAIN_PRIORITY_ENABLE_LOW_PRIORITY_DROP", true),
-			HighPriorityReserve:   getIntEnv("HOTPLEX_BRAIN_PRIORITY_HIGH_PRIORITY_RESERVE", 100),
 		},
 		IntentRouter: IntentRouterFeatureConfig{
 			Enabled:             getBoolEnv("HOTPLEX_BRAIN_INTENT_ROUTER_ENABLED", true),

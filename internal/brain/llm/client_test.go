@@ -3,7 +3,6 @@ package llm
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -141,38 +140,6 @@ func TestCachedClient_ClearCache(t *testing.T) {
 	// Second call - cache miss again
 	_, _ = cachedClient.Chat(context.Background(), "test prompt")
 
-	mockClient.AssertExpectations(t)
-}
-
-func TestHealthMonitor_CachesHealthStatus(t *testing.T) {
-	t.Parallel()
-	mockClient := new(MockLLMClient)
-	status := HealthStatus{Healthy: true, LatencyMs: 50}
-	mockClient.On("HealthCheck", mock.Anything).Return(status).Once()
-
-	monitor := NewHealthMonitor(mockClient, 1*time.Second)
-
-	// First check
-	result1 := monitor.HealthCheck(context.Background())
-	assert.True(t, result1.Healthy)
-
-	// Second check - should use cached value
-	result2 := monitor.HealthCheck(context.Background())
-	assert.True(t, result2.Healthy)
-
-	// Only one call to underlying client
-	mockClient.AssertExpectations(t)
-}
-
-func TestHealthMonitor_IsHealthy(t *testing.T) {
-	t.Parallel()
-	mockClient := new(MockLLMClient)
-	mockClient.On("HealthCheck", mock.Anything).Return(HealthStatus{Healthy: true}).Once()
-
-	monitor := NewHealthMonitor(mockClient, 1*time.Second)
-	monitor.HealthCheck(context.Background())
-
-	assert.True(t, monitor.IsHealthy())
 	mockClient.AssertExpectations(t)
 }
 

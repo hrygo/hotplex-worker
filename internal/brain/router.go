@@ -39,6 +39,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -100,9 +101,8 @@ type IntentRouter struct {
 	lruIndex map[string]*list.Element // Quick lookup for list elements
 	cacheMu  sync.RWMutex
 
-	// Metrics for monitoring
-	totalProcessed int64 // Total messages classified
-	cacheHits      int64 // Cache hit count (avoided Brain API calls)
+	totalProcessed atomic.Int64
+	cacheHits      atomic.Int64
 }
 
 // IntentRouterConfig holds configuration for IntentRouter.
@@ -156,13 +156,13 @@ func (r *IntentRouter) Route(ctx context.Context, msg string) *IntentResult {
 	// Check cache first
 	cacheKey := r.cacheKey(msg)
 	if cached := r.getFromCache(cacheKey); cached != nil {
-		r.cacheHits++
+		r.cacheHits.Add(1)
 		return cached
 	}
 
 	// Perform intent detection
 	result := r.detectIntent(ctx, msg)
-	r.totalProcessed++
+	r.totalProcessed.Add(1)
 
 	// Cache the result
 	r.addToCache(cacheKey, result)
@@ -488,10 +488,10 @@ func (r *IntentRouter) Stats() map[string]interface{} {
 
 	return map[string]interface{}{
 		"enabled":         r.enabled,
-		"total_processed": r.totalProcessed,
-		"cache_hits":      r.cacheHits,
+		"total_processed": r.totalProcessed.Load(),
+		"cache_hits":      r.cacheHits.Load(),
 		"cache_size":      cacheLen,
-		"hit_rate":        float64(r.cacheHits) / float64(r.totalProcessed+1),
+		"hit_rate":        float64(r.cacheHits.Load()) / float64(r.totalProcessed.Load()+1),
 	}
 }
 

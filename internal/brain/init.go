@@ -101,10 +101,8 @@ func Init(logger *slog.Logger) error {
 		client = llm.NewCachedClient(client, config.Cache.Size)
 	}
 
-	// Rate limiting
-	if rateLimiter != nil {
-		client = llm.NewRateLimitedClient(client, rateLimiter)
-	}
+	// Rate limiting handled by enhancedBrainWrapper.applyRateLimit
+	// (not as a decorator, to avoid double rate limiting).
 
 	// 4. Register global brain instance
 	SetGlobal(&enhancedBrainWrapper{
@@ -173,21 +171,9 @@ func Init(logger *slog.Logger) error {
 	return nil
 }
 
-// llmClient defines the interface for LLM client operations used by Brain.
-// This enables composition and middleware wrapping at the client level.
-type llmClient interface {
-	Chat(ctx context.Context, prompt string) (string, error)
-	Analyze(ctx context.Context, prompt string, target any) error
-	ChatStream(ctx context.Context, prompt string) (<-chan string, error)
-	HealthCheck(ctx context.Context) HealthStatus
-}
-
-// Compile-time interface verification for llmClient
-var _ llmClient = llm.LLMClient(nil)
-
 // enhancedBrainWrapper satisfies Brain, StreamingBrain, RoutableBrain, and ObservableBrain interfaces.
 type enhancedBrainWrapper struct {
-	client         llmClient
+	client         llm.LLMClient
 	config         Config
 	metrics        *llm.MetricsCollector
 	costCalculator *llm.CostCalculator
@@ -333,7 +319,10 @@ func (w *enhancedBrainWrapper) ChatStream(ctx context.Context, prompt string) (<
 	if w.timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, w.timeout)
-		defer cancel()
+		// Cancel must not fire when ChatStream returns — it would kill the
+		// streaming goroutine immediately. The goroutine inherits ctx and
+		// relies on its timeout for lifecycle management.
+		_ = cancel
 	}
 
 	// Select model and apply rate limiting

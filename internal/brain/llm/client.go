@@ -29,7 +29,6 @@ var (
 	_ LLMClient = (*RetryClient)(nil)
 	_ LLMClient = (*CircuitClient)(nil)
 	_ LLMClient = (*MetricsClient)(nil)
-	_ LLMClient = (*BudgetClient)(nil)
 )
 
 // OpenAIClient implements OpenAI-compatible LLM interactions.

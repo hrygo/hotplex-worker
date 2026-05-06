@@ -507,7 +507,7 @@ func TestInit_Disabled(t *testing.T) {
 func TestEnhancedBrainWrapper_ImplementsLLMClient(t *testing.T) {
 	// Compile-time check already exists in brain.go,
 	// but verify the wrapper can be assigned
-	var _ llmClient = (*enhancedBrainWrapper)(nil)
+	var _ llm.LLMClient = (*enhancedBrainWrapper)(nil)
 }
 
 // ========================================
@@ -1155,14 +1155,6 @@ func TestConfig_AdminUsers(t *testing.T) {
 
 	config := LoadConfigFromEnv()
 	assert.Equal(t, []string{"user1", "user2", "user3"}, config.Guard.AdminUsers)
-}
-
-func TestConfig_BudgetLimit(t *testing.T) {
-	t.Setenv("HOTPLEX_BRAIN_API_KEY", "key")
-	t.Setenv("HOTPLEX_BRAIN_BUDGET_LIMIT", "100.50")
-
-	config := LoadConfigFromEnv()
-	assert.InDelta(t, 100.50, config.Budget.Limit, 0.01)
 }
 
 func TestConfig_OpenCodeProviderType(t *testing.T) {

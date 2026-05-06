@@ -96,15 +96,12 @@ func (p *TTSPipeline) summarize(ctx context.Context, fullText string) (string, e
 	return strings.TrimSpace(result), nil
 }
 
-// sendAudio uploads Opus audio to Feishu and sends it as an audio message.
 func (p *TTSPipeline) sendAudio(ctx context.Context, chatID, replyToMsgID string, opusData []byte) error {
-	// Upload file to Feishu.
 	fileKey, err := p.uploadAudio(ctx, opusData)
 	if err != nil {
 		return fmt.Errorf("upload audio: %w", err)
 	}
 
-	// Send audio message.
 	msgContent := fmt.Sprintf(`{"file_key":%q}`, fileKey)
 	req := larkim.NewCreateMessageReqBuilder().
 		ReceiveIdType("chat_id").
@@ -115,7 +112,6 @@ func (p *TTSPipeline) sendAudio(ctx context.Context, chatID, replyToMsgID string
 			Build()).
 		Build()
 
-	// Use reply API if we have a message to reply to.
 	if replyToMsgID != "" {
 		replyReq := larkim.NewReplyMessageReqBuilder().
 			MessageId(replyToMsgID).
@@ -138,7 +134,6 @@ func (p *TTSPipeline) sendAudio(ctx context.Context, chatID, replyToMsgID string
 	return nil
 }
 
-// uploadAudio uploads Opus audio bytes to Feishu and returns the file_key.
 func (p *TTSPipeline) uploadAudio(ctx context.Context, opusData []byte) (string, error) {
 	req := larkim.NewCreateFileReqBuilder().
 		Body(larkim.NewCreateFileReqBodyBuilder().
@@ -163,5 +158,8 @@ func truncateText(s string, maxLen int) string {
 	if len(runes) <= maxLen {
 		return s
 	}
-	return string(runes[:maxLen]) + "..."
+	if maxLen > 3 {
+		return string(runes[:maxLen-3]) + "..."
+	}
+	return string(runes[:maxLen])
 }
