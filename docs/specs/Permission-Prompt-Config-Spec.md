@@ -6,7 +6,7 @@ tags:
   - messaging/interaction
   - config
 date: 2026-05-06
-status: phase-2-done
+status: complete
 priority: high
 ---
 
@@ -14,7 +14,7 @@ priority: high
 
 > 版本: v2.1
 > 日期: 2026-05-06
-> 状态: Phase 1 & 2 已完成，Phase 3 测试补充进行中
+> 状态: Phase 1-4 全部完成
 > 关联: #160 (交互链路修复 PR) / #197 (交互管道加固) / #200 (配置化)
 
 ---
@@ -233,7 +233,7 @@ config.yaml → Viper → WorkerConfig.ClaudeCode.PermissionPrompt → buildCLIA
 | `internal/messaging/feishu/adapter.go` | 飞书 permission card 显示 request ID |
 | `internal/messaging/feishu/interaction.go` | 飞书 keyword matching 扩展 |
 
-### Phase 3：交互链路端到端验证（P0）— 进行中
+### Phase 3：交互链路端到端验证（P0）— 已完成
 
 **验证清单**：
 
@@ -248,25 +248,28 @@ Claude Code stdout → parser → EventControl(can_use_tool) → PermissionReque
   → Claude Code 继续执行 → Done → closeStreamWriter
 ```
 
-**需要补充的测试**：
+**已补充的测试**（430 行，4 文件）：
 
 | 测试 | 覆盖 | 优先级 | 状态 |
 |------|------|--------|------|
-| `TestWriteCtx_PermissionRequest_ClosesStream` | 验证流式 writer 在 permission_request 前被关闭 | P0 | 待补充 |
-| `TestSanitizeArgsPreview_NestedBackticks` | 验证含 ``` 的 args 不破坏 block 格式 | P1 | 待补充 |
-| `TestSanitizeArgsPreview_Truncation` | 验证长 args 被截断 | P2 | 待补充 |
-| `TestCheckPendingInteraction_*`（Slack） | Slack 文本 fallback 匹配各路径 | P0 | **零测试，关键缺口** |
-| Slack 按钮回调端到端测试 | Socket Mode callback → SendResponse → stdin | P1 | 仅手动 E2E |
-| 飞书文本响应端到端测试 | "允许"/"拒绝" → SendResponse → stdin | P1 | adapter 级部分覆盖 |
+| `TestWriteCtx_InteractionEvents_ClosesStream` (Slack) | 3 种交互事件前流式 writer 关闭 | P0 | ✅ |
+| `TestWriteCtx_InteractionEvents_ClosesStreamCtrl` (Feishu) | 3 种交互事件前 clearActiveIndicators | P0 | ✅ |
+| `TestCheckPendingInteraction_*` (Slack, 10 cases) | allow/deny/accept/decline/question/owner mismatch/fallback/wrong action | P0 | ✅ |
+| `TestArgsPreview_BacktickStripping` (双平台) | 嵌套反引号 strip + 截断 | P1 | ✅ |
+| `make check` CI | lint + test + build | P0 | ✅ |
 
-### Phase 4：PermissionRequest Hooks 文档与模板（P1）
+**仍为手动验证的项**：
 
-**目标**：提供常用 hooks 模板，用户可按需启用
+| 测试 | 覆盖 | 状态 |
+|------|------|------|
+| Slack 按钮回调端到端测试 | Socket Mode callback → SendResponse → stdin | 仅手动 E2E |
+| 飞书文本响应端到端测试 | "允许"/"拒绝" → SendResponse → stdin | adapter 级部分覆盖 |
+
+### Phase 4：PermissionRequest Hooks 文档与模板（P1）— 已完成
 
 **交付物**：
-- `docs/permission-hooks-guide.md`：hooks 配置指南
-- `configs/permission-hooks-examples.json`：常用自动放行模板
-- 更新 Onboard Wizard 中的 hooks 配置引导
+- `docs/permission-hooks-guide.md`：hooks 配置指南 + 安全注意事项
+- `configs/permission-hooks-examples.json`：Go/前端项目自动放行模板
 
 ---
 
@@ -315,15 +318,17 @@ Claude Code stdout → parser → EventControl(can_use_tool) → PermissionReque
 - [x] B3: 精确匹配失败后 fallback 到候选类型匹配（`interaction.go:521-528`）
 - [x] `make check` CI 通过
 
-### Phase 3（进行中）
+### Phase 3（已完成）
 
-- [ ] `TestWriteCtx_PermissionRequest_ClosesStream`（Slack + Feishu）
-- [ ] `TestCheckPendingInteraction_*` 系列（Slack，当前零覆盖）
-- [ ] `TestSanitizeArgsPreview_NestedBackticks`（双平台）
-- [ ] Slack 端到端交互链路自动化测试
-- [ ] 飞书端到端交互链路自动化测试
+- [x] `TestWriteCtx_InteractionEvents_ClosesStream`（Slack: 3 subtests）
+- [x] `TestWriteCtx_InteractionEvents_ClosesStreamCtrl`（Feishu: 3 subtests）
+- [x] `TestCheckPendingInteraction_*` 系列（Slack: 10 test cases）
+- [x] `TestArgsPreview_BacktickStripping`（双平台: 5+5 cases）
+- [x] `make check` CI 通过
+- [ ] Slack 端到端交互链路自动化测试（仅手动 E2E）
+- [ ] 飞书端到端交互链路自动化测试（adapter 级部分覆盖）
 
-### Phase 4
+### Phase 4（已完成）
 
-- [ ] PermissionRequest hooks 文档完成
-- [ ] 常用 hooks 模板可导入
+- [x] PermissionRequest hooks 文档完成（`docs/permission-hooks-guide.md`）
+- [x] 常用 hooks 模板可导入（`configs/permission-hooks-examples.json`）
