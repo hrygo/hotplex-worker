@@ -20,9 +20,9 @@ const (
 	flushSize         = 20 // rune count threshold for immediate flush
 	maxAppendRetries  = 3
 	retryDelay        = 50 * time.Millisecond
-	maxAppendSize     = 3000 // Slack limit ~4000, safety margin
-	StreamTTL         = 10 * time.Minute
-	StreamRotationTTL = 8 * time.Minute // proactive rotation before server 10min limit
+	maxAppendSize     = 3000            // Slack limit ~4000, safety margin
+	StreamTTL         = 5 * time.Minute // empirical server-side wallclock limit (undocumented)
+	StreamRotationTTL = 4 * time.Minute // proactive rotation before server ~5min limit
 )
 
 func isStreamStateError(err error) bool {
