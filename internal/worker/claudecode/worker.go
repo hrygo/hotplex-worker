@@ -30,21 +30,15 @@ var _ worker.Worker = (*Worker)(nil)
 // Thread-safe via atomic.Value. Default: ["claude"].
 var commandParts atomic.Value // []string
 
-func init() {
-	commandParts.Store([]string{"claude"})
-}
-
 // permissionPrompt controls whether --permission-prompt-tool stdio is passed to Claude Code.
 var permissionPrompt atomic.Value // bool
-
-func init() {
-	permissionPrompt.Store(false)
-}
 
 // permissionAutoApprove lists tool names to auto-approve without user interaction.
 var permissionAutoApprove atomic.Value // []string
 
 func init() {
+	commandParts.Store([]string{"claude"})
+	permissionPrompt.Store(false)
 	permissionAutoApprove.Store([]string{})
 }
 

@@ -701,47 +701,37 @@ func TestAutoApproveTool_NonMatchingTool(t *testing.T) {
 	require.Empty(t, buf.String(), "should not send any response")
 }
 
-func TestAutoApproveTool_EmptyList(t *testing.T) {
+func TestAutoApproveTool_EmptyOrNilList(t *testing.T) {
 	original := permissionAutoApprove.Load()
 	defer permissionAutoApprove.Store(original)
 
-	permissionAutoApprove.Store([]string{})
-
-	var buf bytes.Buffer
-	ctrl := NewControlHandler(slog.Default(), &buf)
-	cr := &ControlRequestPayload{
-		Subtype:   "can_use_tool",
-		ToolName:  "ExitPlanMode",
-		RequestID: "req-789",
+	tests := []struct {
+		name  string
+		store any // []string or nil-equivalent
+	}{
+		{"empty slice", []string{}},
+		{"nil stored as empty", []string{}}, // InitConfig normalizes nil → []string{}
 	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			permissionAutoApprove.Store(tt.store)
 
-	result := autoApproveTool(ctrl, cr)
-	require.False(t, result, "should not auto-approve with empty list")
-	require.Empty(t, buf.String())
+			var buf bytes.Buffer
+			ctrl := NewControlHandler(slog.Default(), &buf)
+			cr := &ControlRequestPayload{
+				Subtype:   "can_use_tool",
+				ToolName:  "ExitPlanMode",
+				RequestID: "req-empty",
+			}
+
+			result := autoApproveTool(ctrl, cr)
+			require.False(t, result, "should not auto-approve with empty list")
+			require.Empty(t, buf.String())
+		})
+	}
 }
 
-func TestAutoApproveTool_NilList(t *testing.T) {
-	original := permissionAutoApprove.Load()
-	defer permissionAutoApprove.Store(original)
-
-	// Simulate freshly initialized state: atomic.Value holds typed nil wrapper.
-	// permissionAutoApprove.Load() returns nil when the stored value is the empty slice,
-	// which means list.([]string) yields []string{} — autoApproveTool handles this correctly.
-	permissionAutoApprove.Store([]string{})
-
-	var buf bytes.Buffer
-	ctrl := NewControlHandler(slog.Default(), &buf)
-	cr := &ControlRequestPayload{
-		Subtype:   "can_use_tool",
-		ToolName:  "ExitPlanMode",
-		RequestID: "req-nil",
-	}
-
-	result := autoApproveTool(ctrl, cr)
-	require.False(t, result, "should not auto-approve with empty list")
-}
-
-func TestInitConfig_PermissionAutoApprove(t *testing.T) {
+func TestInitConfig_PermissionSettings(t *testing.T) {
 	origCmd := commandParts.Load()
 	origPP := permissionPrompt.Load()
 	origAA := permissionAutoApprove.Load()
@@ -751,32 +741,39 @@ func TestInitConfig_PermissionAutoApprove(t *testing.T) {
 		permissionAutoApprove.Store(origAA)
 	}()
 
-	InitConfig(config.ClaudeCodeConfig{
-		Command:               "claude",
-		PermissionPrompt:      true,
-		PermissionAutoApprove: []string{"ExitPlanMode", "Read"},
-	})
-
-	require.Equal(t, []string{"claude"}, commandParts.Load())
-	require.True(t, permissionPrompt.Load().(bool))
-	require.Equal(t, []string{"ExitPlanMode", "Read"}, permissionAutoApprove.Load())
-}
-
-func TestInitConfig_PermissionAutoApproveNil(t *testing.T) {
-	origCmd := commandParts.Load()
-	origPP := permissionPrompt.Load()
-	origAA := permissionAutoApprove.Load()
-	defer func() {
-		commandParts.Store(origCmd)
-		permissionPrompt.Store(origPP)
-		permissionAutoApprove.Store(origAA)
-	}()
-
-	InitConfig(config.ClaudeCodeConfig{
-		Command:               "claude",
-		PermissionPrompt:      false,
-		PermissionAutoApprove: nil,
-	})
-
-	require.Equal(t, []string{}, permissionAutoApprove.Load(), "nil should be stored as empty slice")
+	tests := []struct {
+		name     string
+		cfg      config.ClaudeCodeConfig
+		wantList []string
+		wantPP   bool
+	}{
+		{
+			name: "with auto-approve tools",
+			cfg: config.ClaudeCodeConfig{
+				Command:               "claude",
+				PermissionPrompt:      true,
+				PermissionAutoApprove: []string{"ExitPlanMode", "Read"},
+			},
+			wantList: []string{"ExitPlanMode", "Read"},
+			wantPP:   true,
+		},
+		{
+			name: "nil auto-approve normalized to empty",
+			cfg: config.ClaudeCodeConfig{
+				Command:               "claude",
+				PermissionPrompt:      false,
+				PermissionAutoApprove: nil,
+			},
+			wantList: []string{},
+			wantPP:   false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			InitConfig(tt.cfg)
+			require.Equal(t, []string{"claude"}, commandParts.Load())
+			require.Equal(t, tt.wantPP, permissionPrompt.Load().(bool))
+			require.Equal(t, tt.wantList, permissionAutoApprove.Load())
+		})
+	}
 }
