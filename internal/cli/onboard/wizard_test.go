@@ -325,6 +325,12 @@ func TestRun_NonInteractive(t *testing.T) {
 		t.Skip("skipping: environment pre-check fails on this system: " + s.Detail)
 	}
 
+	// Suppress wizard UI output during test
+	devNull, _ := os.Open(os.DevNull)
+	orig := os.Stderr
+	os.Stderr = devNull
+	defer func() { os.Stderr = orig; devNull.Close() }()
+
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.yaml")
 	origDir, _ := os.Getwd()
@@ -368,6 +374,12 @@ func TestRun_NonInteractive_WithSlack(t *testing.T) {
 	if s.Status == "fail" {
 		t.Skip("skipping: environment pre-check fails on this system: " + s.Detail)
 	}
+
+	// Suppress wizard UI output during test
+	devNull, _ := os.Open(os.DevNull)
+	orig := os.Stderr
+	os.Stderr = devNull
+	defer func() { os.Stderr = orig; devNull.Close() }()
 
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.yaml")
