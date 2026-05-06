@@ -2,13 +2,13 @@
 type: design
 tags:
   - project/HotPlex
-  - environment/whitelist
+  - environment/blocklist
   - security/env-injection
 ---
 
-# Environment Variable Whitelist Strategy
+# Environment Variable Blocklist Strategy
 
-> HotPlex v1.0 环境变量白名单策略。
+> HotPlex v1.5 环境变量黑名单 + `HOTPLEX_WORKER_` 前缀剥离策略。
 
 ---
 
@@ -16,328 +16,432 @@ tags:
 
 ### 1.1 危险模式
 
-> ⚠️ **`os.Environ()` 返回所有环境变量**，可能包含敏感信息。
+> **`os.Environ()` 返回所有环境变量**，可能包含网关内部敏感信息。
 
 **泄漏的敏感变量**：
 
 | 变量模式 | 风险 | 严重度 |
 |----------|------|--------|
-| `AWS_.*_KEY` | 云凭证 | 🔴 P0 |
-| `GITHUB_` | 代码仓库凭证 | 🔴 P0 |
-| `.*_API_KEY` | API 凭证 | 🔴 P0 |
-| `KUBECONFIG` | K8s 集群访问 | 🔴 P0 |
-| `JWT_SECRET` | JWT 签名密钥 | 🔴 P0 |
+| `HOTPLEX_JWT_SECRET` | JWT 签名密钥 | P0 |
+| `HOTPLEX_ADMIN_TOKEN_*` | 管理员 Token | P0 |
+| `HOTPLEX_GATEWAY_TOKEN` | 网关认证 Token | P0 |
+| `HOTPLEX_SLACK_*` | Slack App 凭证 | P1 |
+| `HOTPLEX_FEISHU_*` | 飞书 App 凭证 | P1 |
+| `CLAUDECODE` | 嵌套 Agent 注入 | P1 |
 
 ### 1.2 安全原则
 
-> ✅ **Go os/exec 不继承父进程环境变量**（除非显式设置 `cmd.Env`）。
+> **默认通过 + 黑名单拒绝**：所有 `os.Environ()` 变量默认传递给 Worker，仅黑名单中的变量被阻止。
 
 ```go
-// 默认：子进程不继承父进程环境
-cmd := exec.Command("ls")
-// cmd.Env == nil
-
-// 显式设置：仅传递允许的变量
+// 旧方案（已废弃）：白名单 — 仅传递列出的变量
 cmd.Env = []string{"HOME=/home/test", "PATH=/usr/bin"}
+
+// 新方案：黑名单 — 传递所有变量，仅阻止列出的变量
+cmd.Env = base.BuildEnv(session, blocklist, workerTypeLabel)
+```
+
+**为什么从白名单切换到黑名单**：
+- 白名单方案需要维护允许变量列表，新增工具/SDK 时容易遗漏
+- 黑名单方案更安全 — 只需关注"不该传递什么"，而非"应该传递什么"
+- `HOTPLEX_WORKER_` 前缀剥离机制让运维精确控制 Worker 环境变量
+
+---
+
+## 2. 黑名单方案
+
+### 2.1 Worker 黑名单
+
+每个 Worker 类型通过 `Capabilities.EnvBlocklist()` 接口定义自己的黑名单：
+
+```go
+// internal/worker/worker.go
+
+type Capabilities interface {
+    // EnvBlocklist returns the set of environment variable names this worker
+    // must NOT receive (empty = all allowed).
+    EnvBlocklist() []string
+    // ...
+}
+```
+
+**Claude Code Worker 黑名单**（`internal/worker/claudecode/worker.go`）：
+
+```go
+// All os.Environ() vars are passed through by default, except those listed here.
+// Gateway-internal secrets use the HOTPLEX_ prefix to prevent leakage.
+var claudeCodeEnvBlocklist = []string{
+    // Nested agent detection — must never propagate to worker subprocess.
+    "CLAUDECODE",
+    // Gateway-internal secrets (prefix match blocks all HOTPLEX_* vars;
+    // HOTPLEX_SESSION_ID and HOTPLEX_WORKER_TYPE are added separately in BuildEnv).
+    "HOTPLEX_",
+}
+```
+
+**OpenCode Server Worker 黑名单**（`internal/worker/opencodeserver/worker.go`）：
+
+```go
+// Env blocklist for OpenCode Server worker.
+// All os.Environ() vars are passed through by default, except those listed here.
+var openCodeSrvEnvBlocklist = []string{
+    // Nested agent detection.
+    "CLAUDECODE",
+    // Gateway-internal secrets (prefix match).
+    "HOTPLEX_",
+    // Claude Code specific vars — not relevant for OCS worker.
+    "CLAUDE_",
+    "ANTHROPIC_",
+}
+```
+
+### 2.2 前缀匹配
+
+黑名单条目以 `_` 结尾时执行**前缀匹配**：
+
+| 条目 | 匹配规则 | 示例 |
+|------|---------|------|
+| `"CLAUDECODE"` | 精确匹配 | 仅阻止 `CLAUDECODE` |
+| `"HOTPLEX_"` | 前缀匹配 | 阻止 `HOTPLEX_JWT_SECRET`、`HOTPLEX_ADMIN_TOKEN_1` 等所有 `HOTPLEX_*` 变量 |
+| `"CLAUDE_"` | 前缀匹配 | 阻止 `CLAUDE_API_KEY`、`CLAUDE_MODEL` 等 |
+
+### 2.3 配置驱动的扩展黑名单
+
+除了硬编码黑名单，还支持通过 `worker.env_blocklist` 配置动态扩展：
+
+```go
+// internal/worker/worker.go — SessionInfo 字段
+
+// ConfigBlocklist holds additional env var names from worker.env_blocklist config.
+// These are merged with the hardcoded per-worker blocklist in BuildEnv.
+ConfigBlocklist []string
+```
+
+配置方式：
+```yaml
+# configs/config.yaml
+worker:
+  env_blocklist:
+    - "AWS_"
+    - "KUBECONFIG"
 ```
 
 ---
 
-## 2. 白名单方案
+## 3. BuildEnv — 7 阶段优先级管线
 
-### 2.1 基础白名单
+### 3.0 单一入口点
+
+`base.BuildEnv()` 是 Worker 环境变量构建的**唯一入口**：
 
 ```go
-// internal/security/env.go
+// internal/worker/base/env.go
 
-// BaseEnvWhitelist 基础系统变量
-var BaseEnvWhitelist = []string{
-    "HOME", "USER", "SHELL", "PATH", "TERM",
-    "LANG", "LC_ALL", "PWD",
-}
+// BuildEnv constructs the environment variables for a CLI worker process.
+//
+// Priority (low → high):
+//  1. os.Environ() — filtered through blocklist
+//  2. HOTPLEX_WORKER_ prefix-stripped injections from .env
+//  3. session.Env — per-session overrides
+//  4. ConfigEnv — highest priority config overrides
+func BuildEnv(session worker.SessionInfo, blocklist []string, workerTypeLabel string) []string
+```
 
-// GoEnvWhitelist Go 运行时变量
-var GoEnvWhitelist = []string{
-    "GOPROXY", "GOSUMDB", "GONOSUMDB", "GOPRIVATE",
+### 3.1 阶段详解
+
+```
+Phase 1: 扫描 HOTPLEX_WORKER_* 变量
+    ↓  构建 stripMap: HOTPLEX_WORKER_GITHUB_TOKEN → GITHUB_TOKEN
+Phase 2: 过滤 os.Environ()
+    ↓  排除精确匹配 + 前缀匹配黑名单
+    ↓  排除 HOTPLEX_WORKER_* 原始变量
+    ↓  动态阻止系统级同名变量（如 GITHUB_TOKEN 被 stripMap 覆盖时阻止）
+Phase 3: 注入 HOTPLEX Session 变量
+    ↓  HOTPLEX_SESSION_ID + HOTPLEX_WORKER_TYPE
+Phase 4: 注入剥离后的 HOTPLEX_WORKER_* 变量
+    ↓  覆盖系统级同名变量
+Phase 5: 注入 session.Env（每会话覆盖）
+Phase 6: StripNestedAgent（纵深防御）
+    ↓  移除 CLAUDECODE= 环境变量
+Phase 7: 注入 ConfigEnv（最高优先级配置覆盖）
+```
+
+### 3.2 HOTPLEX_WORKER_ 前缀剥离
+
+这是安全传递 Secrets 给 Worker 的核心机制：
+
+```go
+// internal/worker/base/env.go
+
+const workerSecretPrefix = "HOTPLEX_WORKER_"
+
+// Phase 1: Scan HOTPLEX_WORKER_* vars for prefix stripping.
+// HOTPLEX_WORKER_GITHUB_TOKEN → GITHUB_TOKEN.
+// Only HOTPLEX_WORKER_ prefix is stripped; other HOTPLEX_* vars are untouched.
+stripMap := make(map[string]string)
+for _, e := range environ {
+    key, val, ok := strings.Cut(e, "=")
+    if !ok || !strings.HasPrefix(key, workerSecretPrefix) {
+        continue
+    }
+    strippedKey := strings.TrimPrefix(key, workerSecretPrefix)
+    if strippedKey == "" {
+        continue
+    }
+    stripMap[strippedKey] = val
 }
 ```
 
-### 2.2 Worker 特定白名单
+**.env 文件示例**：
+```bash
+# .env
+
+# 网关内部变量（不会泄漏给 Worker）
+HOTPLEX_JWT_SECRET=xxx
+HOTPLEX_ADMIN_TOKEN_1=xxx
+
+# Worker 专用变量（自动剥离前缀后注入 Worker 环境）
+HOTPLEX_WORKER_GITHUB_TOKEN=ghp_xxx    # → Worker 收到 GITHUB_TOKEN=ghp_xxx
+HOTPLEX_WORKER_ANTHROPIC_API_KEY=sk-xxx # → Worker 收到 ANTHROPIC_API_KEY=sk-xxx
+```
+
+### 3.3 动态阻止
+
+当 `HOTPLEX_WORKER_*` 剥离后的变量名与系统变量同名时，系统级版本被动态阻止：
 
 ```go
-// WorkerEnvWhitelist 按 Worker 类型配置
-var WorkerEnvWhitelist = map[string][]string{
-    "claude-code": append(BaseEnvWhitelist,
-        "CLAUDE_API_KEY", "CLAUDE_MODEL", "CLAUDE_BASE_URL",
-    ),
-    "opencode-server": {},  // Server 模式无需环境变量
+// Phase 2: Filter os.Environ() through blocklist + dynamic blocks.
+
+// Dynamic block: system-level version of a stripped var is blocked
+// (e.g., system GITHUB_TOKEN blocked when HOTPLEX_WORKER_GITHUB_TOKEN exists).
+if _, blocked := stripMap[key]; blocked {
+    continue
 }
 ```
 
-### 2.3 HotPlex 控制变量
+**示例**：
 
-```go
-// HotPlexRequired 必需的 HotPlex 变量
-var HotPlexRequired = []string{
-    "HOTPLEX_SESSION_ID",
-    "HOTPLEX_WORKER_TYPE",
-}
+```
+系统环境: GITHUB_TOKEN=system-level-token
+.env 文件: HOTPLEX_WORKER_GITHUB_TOKEN=worker-specific-token
 
-// HotPlexOptional 可选的 HotPlex 变量
-var HotPlexOptional = []string{
-    "HOTPLEX_WORK_DIR",
-    "HOTPLEX_TRACE_ENABLED",
-    "HOTPLEX_LOG_LEVEL",
-}
+结果: Worker 收到 GITHUB_TOKEN=worker-specific-token
+      系统级 GITHUB_TOKEN 被自动阻止，防止泄漏
 ```
 
----
-
-## 3. SafeEnvBuilder
-
-### 3.0 安全原则（关键）
-
-> ⚠️ **secrets 和 hotplexVars 中的 key 不得覆盖系统变量，否则可导致执行环境被劫持。**
-
-### 3.1 ProtectedEnvVars（禁止作为 Secret Key）
+### 3.4 完整实现
 
 ```go
-// internal/security/env.go
+// internal/worker/base/env.go
 
-// ProtectedEnvVars 禁止作为 secret/HotPlex key 的系统变量
-// ⚠️ 防止 AddSecret/AddHotPlexVar 覆盖系统变量导致执行环境被劫持
-var ProtectedEnvVars = []string{
-    // 系统基础（覆盖会导致执行行为改变）
-    "HOME", "USER", "SHELL", "PATH", "TERM",
-    "LANG", "LC_ALL", "PWD", "GID", "UID", "SHLVL",
-    // Go 运行时（覆盖会影响 Go 程序行为）
-    "GOROOT", "GOPATH", "GOPROXY", "GOSUMDB",
-    // 命令解析器（覆盖会导致 PATH 被篡改）
-    "BASH", "BASH_VERSION", "ZSH_VERSION",
-}
+func BuildEnv(session worker.SessionInfo, blocklist []string, workerTypeLabel string) []string {
+    environ := os.Environ()
+    env := make([]string, 0, len(environ))
 
-func IsProtectedEnvVar(key string) bool {
-    for _, protected := range ProtectedEnvVars {
-        if key == protected {
-            return true
-        }
-    }
-    return false
-}
-```
-
-### 3.2 实现
-
-```go
-// internal/security/env_builder.go
-
-type SafeEnvBuilder struct {
-    whitelist   []string
-    hotplexVars map[string]string
-    secrets     map[string]string
-}
-
-func NewSafeEnvBuilder() *SafeEnvBuilder {
-    return &SafeEnvBuilder{
-        whitelist:   BaseEnvWhitelist,
-        hotplexVars: make(map[string]string),
-        secrets:     make(map[string]string),
-    }
-}
-
-func (b *SafeEnvBuilder) AddWorkerType(workerType string) *SafeEnvBuilder {
-    if whitelist, ok := WorkerEnvWhitelist[workerType]; ok {
-        b.whitelist = append(b.whitelist, whitelist...)
-    }
-    return b
-}
-
-func (b *SafeEnvBuilder) AddHotPlexVar(key, value string) error {
-    // ⚠️ 必须检查：禁止覆盖系统变量
-    if IsProtectedEnvVar(key) {
-        return fmt.Errorf("cannot use %q as HotPlex var: protected system variable", key)
-    }
-    b.hotplexVars[key] = value
-    return nil
-}
-
-func (b *SafeEnvBuilder) AddSecret(key, value string) error {
-    // ⚠️ 必须检查：禁止以系统变量名作为 secret key
-    // 攻击场景：AddSecret("PATH", "/malicious") → 覆盖系统 PATH
-    if IsProtectedEnvVar(key) {
-        return fmt.Errorf("cannot use %q as secret key: protected system variable", key)
-    }
-    b.secrets[key] = value
-    return nil
-}
-
-func (b *SafeEnvBuilder) Build() []string {
-    env := []string{}
-
-    // 1. 添加白名单变量（系统变量基础值）
-    for _, key := range b.whitelist {
-        if val := os.Getenv(key); val != "" {
-            env = append(env, key+"="+val)
+    // Build blocklist set, tracking prefix entries.
+    blockSet := make(map[string]bool)
+    prefixKeys := make([]string, 0)
+    for _, k := range blocklist {
+        if strings.HasSuffix(k, "_") {
+            prefixKeys = append(prefixKeys, k)
+        } else {
+            blockSet[k] = true
         }
     }
 
-    // 2. 添加 HotPlex 变量（已校验，不覆盖系统变量）
-    for key, val := range b.hotplexVars {
-        env = append(env, key+"="+val)
+    // Merge config-driven blocklist (worker.env_blocklist).
+    for _, k := range session.ConfigBlocklist {
+        if strings.HasSuffix(k, "_") {
+            prefixKeys = append(prefixKeys, k)
+        } else {
+            blockSet[k] = true
+        }
     }
 
-    // 3. 添加 Secret 变量（已校验，不覆盖系统变量）
-    for key, val := range b.secrets {
-        env = append(env, key+"="+val)
+    // Phase 1: Scan HOTPLEX_WORKER_* vars for prefix stripping.
+    stripMap := make(map[string]string)
+    for _, e := range environ {
+        key, val, ok := strings.Cut(e, "=")
+        if !ok || !strings.HasPrefix(key, workerSecretPrefix) {
+            continue
+        }
+        strippedKey := strings.TrimPrefix(key, workerSecretPrefix)
+        if strippedKey != "" {
+            stripMap[strippedKey] = val
+        }
+    }
+
+    // Phase 2: Filter os.Environ() through blocklist + dynamic blocks.
+    for _, e := range environ {
+        key, _, ok := strings.Cut(e, "=")
+        if !ok {
+            continue
+        }
+        if blockSet[key] || hasAnyPrefix(key, prefixKeys) {
+            continue
+        }
+        // HOTPLEX_WORKER_* vars handled by stripping, not passed through.
+        if strings.HasPrefix(key, workerSecretPrefix) {
+            continue
+        }
+        // Dynamic block: system-level version of stripped var.
+        if _, blocked := stripMap[key]; blocked {
+            continue
+        }
+        env = append(env, e)
+    }
+
+    // Phase 3: Add HOTPLEX session vars.
+    env = append(env,
+        "HOTPLEX_SESSION_ID="+session.SessionID,
+        "HOTPLEX_WORKER_TYPE="+workerTypeLabel,
+    )
+
+    // Phase 4: Inject stripped HOTPLEX_WORKER_* vars.
+    for k, v := range stripMap {
+        env = setOrAppend(env, k+"="+v)
+    }
+
+    // Phase 5: Add session-specific env vars.
+    for k, v := range session.Env {
+        if k != "" {
+            env = setOrAppend(env, k+"="+v)
+        }
+    }
+
+    // Phase 6: Strip nested agent config (CLAUDECODE=).
+    env = security.StripNestedAgent(env)
+
+    // Phase 7: Apply config-driven env vars (highest priority).
+    for _, e := range session.ConfigEnv {
+        if e != "" && strings.Contains(e, "=") {
+            env = setOrAppend(env, e)
+        }
     }
 
     return env
 }
 ```
 
-**攻击防护验证**：
+### 3.5 调用示例
 
 ```go
-func TestSafeEnvBuilder_BlocksSystemOverride(t *testing.T) {
-    builder := NewSafeEnvBuilder()
+// Claude Code Worker 启动（internal/worker/claudecode/worker.go）
+stdin, _, _, err := w.Proc.Start(bgCtx, binary, fullArgs,
+    base.BuildEnv(session, claudeCodeEnvBlocklist, "claude-code"),
+    session.ProjectDir,
+)
 
-    // ❌ 这些都会被拒绝
-    err := builder.AddSecret("PATH", "/malicious")
-    assert.Error(t, err)
-    assert.Contains(t, err.Error(), "protected system variable")
-
-    err = builder.AddHotPlexVar("HOME", "/tmp/pwned")
-    assert.Error(t, err)
-
-    // ✅ 这些会被接受
-    err = builder.AddSecret("CLAUDE_API_KEY", "sk-xxx")
-    assert.NoError(t, err)
-
-    err = builder.AddHotPlexVar("HOTPLEX_SESSION_ID", "sess_123")
-    assert.NoError(t, err)
-}
-```
-
-### 3.3 使用示例
-
-```go
-func (a *ClaudeCodeAdapter) StartSession(cfg *SessionConfig) error {
-    builder := NewSafeEnvBuilder().
-        AddWorkerType("claude-code").
-        AddHotPlexVar("HOTPLEX_SESSION_ID", cfg.SessionID).    // ✅ 返回 error
-        AddHotPlexVar("HOTPLEX_WORKER_TYPE", "claude-code").
-        AddSecret("CLAUDE_API_KEY", a.secretsProvider.Get("CLAUDE_API_KEY"))  // ✅ 返回 error
-
-    // 检查所有操作是否成功
-    if err := builder.LastError(); err != nil {
-        return err
-    }
-
-    cmd := exec.Command("claude", args...)
-    cmd.Env = builder.Build()
-    cmd.Dir = cfg.WorkDir
-
-    return cmd.Start()
-}
-```
-
-```go
-func (a *ClaudeCodeAdapter) StartSession(cfg *SessionConfig) error {
-    // 构建安全环境
-    env := NewSafeEnvBuilder().
-        AddWorkerType("claude-code").
-        AddHotPlexVar("HOTPLEX_SESSION_ID", cfg.SessionID).
-        AddHotPlexVar("HOTPLEX_WORKER_TYPE", "claude-code").
-        AddSecret("CLAUDE_API_KEY", a.secretsProvider.Get("CLAUDE_API_KEY")).
-        Build()
-
-    cmd := exec.Command("claude", args...)
-    cmd.Env = env  // ✅ 仅包含白名单变量
-    cmd.Dir = cfg.WorkDir
-
-    return cmd.Start()
-}
+// OpenCode Server 单例进程启动（internal/worker/opencodeserver/singleton.go）
+return base.BuildEnv(worker.SessionInfo{}, openCodeSrvEnvBlocklist, "opencode-server")
 ```
 
 ---
 
-## 4. 敏感变量检测
+## 4. 纵深防御
 
-### 4.1 敏感模式
+### 4.1 StripNestedAgent
+
+即使 `CLAUDECODE` 已在黑名单中，`StripNestedAgent` 仍作为 Phase 6 纵深防御：
 
 ```go
-// SensitivePatterns 敏感环境变量模式
-// ⚠️ 使用 [A-Z0-9_]* 替代 .*，避免 ReDoS（正则表达式拒绝服务）
-// Go RE2 不支持回溯，但长字符串匹配 .* 仍有性能问题
-var SensitivePatterns = []string{
-    `^AWS_[A-Z0-9_]*KEY$`, `^AWS_[A-Z0-9_]*SECRET`,
-    `^GITHUB_`,
-    `^.*_[A-Z0-9_]*API_KEY$`, `^.*_[A-Z0-9_]*TOKEN$`,
-    `^DATABASE_URL$`, `^.*_[A-Z0-9_]*PASSWORD$`,
-    `^JWT_`, `^.*_[A-Z0-9_]*SECRET`,
-    `^KUBECONFIG$`,
-}
+// internal/security/env.go
 
-func IsSensitive(key string) bool {
-    for _, pattern := range SensitivePatterns {
-        matched, _ := regexp.MatchString(pattern, key)
-        if matched {
-            return true
+// StripNestedAgent removes CLAUDECODE= from the environment to prevent
+// nested agent invocation.
+func StripNestedAgent(env []string) []string {
+    prefix := "CLAUDECODE="
+    filtered := make([]string, 0, len(env))
+    for _, e := range env {
+        if strings.HasPrefix(e, prefix) {
+            continue
         }
+        filtered = append(filtered, e)
     }
-    return false
+    return filtered
 }
 ```
 
-### 4.2 警告日志
+**双重保护**：
+1. Phase 2 黑名单过滤阻止 `CLAUDECODE` 通过
+2. Phase 6 `StripNestedAgent` 再次清理 — 防止 session.Env 或 ConfigEnv 注入
+
+### 4.2 IsProtected（CLI .env 校验）
+
+CLI 层面防止 `.env` 文件覆盖关键系统变量：
 
 ```go
-func CheckForSensitiveVars() {
-    leaked := []string{}
+// internal/security/env.go
 
-    for _, env := range os.Environ() {
-        key := strings.SplitN(env, "=", 2)[0]
-        if IsSensitive(key) {
-            leaked = append(leaked, key)
-        }
-    }
+// cliProtectedVars are system variables that .env files must not override.
+// Separate from worker blocklists since BuildEnv must pass HOME/PATH/USER
+// through to worker processes.
+var cliProtectedVars = map[string]bool{
+    "HOME":          true,
+    "PATH":          true,
+    "USER":          true,
+    "SHELL":         true,
+    "CLAUDECODE":    true,
+    "GATEWAY_ADDR":  true,
+    "GATEWAY_TOKEN": true,
+}
 
-    if len(leaked) > 0 {
-        log.Warn("sensitive environment variables detected",
-            "count", len(leaked),
-            "vars", leaked,
-            "note", "these variables should be managed by secrets provider",
-        )
-    }
+// IsProtected reports whether an environment variable key should not be
+// overwritten from .env files.
+func IsProtected(key string) bool {
+    return cliProtectedVars[strings.ToUpper(key)]
 }
 ```
+
+**注意**：`IsProtected` 仅用于 CLI `.env` 校验，不影响 `BuildEnv`。Worker 进程需要 `HOME`、`PATH` 等变量才能正常运行。
+
+### 4.3 防护层次总结
+
+| 层次 | 机制 | 位置 | 作用 |
+|------|------|------|------|
+| L1 | 黑名单过滤 | `BuildEnv` Phase 2 | 阻止 Worker 不该看到的变量 |
+| L2 | 前缀剥离 | `BuildEnv` Phase 1+4 | 安全注入 Worker 专用 Secrets |
+| L3 | 动态阻止 | `BuildEnv` Phase 2 | 防止系统级变量覆盖剥离变量 |
+| L4 | StripNestedAgent | `BuildEnv` Phase 6 | 纵深防御嵌套 Agent |
+| L5 | IsProtected | CLI `.env` 校验 | 防止运维误覆盖关键系统变量 |
 
 ---
 
 ## 5. 配置
 
 ```yaml
-# configs/worker.yaml
+# configs/config.yaml
 worker:
-  env:
-    # 基础白名单
-    base_whitelist:
-      - HOME
-      - USER
-      - PATH
-      - TERM
-      - LANG
+  # 扩展黑名单（合并到 Worker 硬编码黑名单）
+  env_blocklist:
+    - "AWS_"           # 前缀匹配：阻止所有 AWS_* 变量
+    - "KUBECONFIG"     # 精确匹配：阻止 K8s 配置
 
-    # Worker 特定白名单
-    worker_whitelist:
-      claude-code:
-        - CLAUDE_API_KEY
-        - CLAUDE_MODEL
-        - OPENAI_API_KEY
-      opencode-server: []
+  # 最高优先级环境变量（覆盖所有其他来源）
+  environment:
+    - "MY_TOOL_CONFIG=/etc/mytool/config.yaml"
+```
 
-    # HotPlex 必需变量
-    hotplex_required:
-      - HOTPLEX_SESSION_ID
-      - HOTPLEX_WORKER_TYPE
+### .env 文件约定
+
+```bash
+# .env
+
+# === 网关内部变量（HOTPLEX_ 前缀，不会泄漏给 Worker）===
+HOTPLEX_JWT_SECRET=xxx
+HOTPLEX_ADMIN_TOKEN_1=xxx
+HOTPLEX_GATEWAY_TOKEN=xxx
+HOTPLEX_SLACK_APP_TOKEN=xxx
+HOTPLEX_FEISHU_APP_ID=xxx
+
+# === Worker 专用变量（HOTPLEX_WORKER_ 前缀，自动剥离后注入）===
+HOTPLEX_WORKER_GITHUB_TOKEN=ghp_xxx
+HOTPLEX_WORKER_ANTHROPIC_API_KEY=sk-xxx
+HOTPLEX_WORKER_AWS_REGION=us-east-1
+```
+
+### 优先级总结
+
+```
+ConfigEnv（最高）> session.Env > HOTPLEX_WORKER_ 剥离 > os.Environ（过滤后）（最低）
 ```

@@ -114,11 +114,11 @@ worker:
   default_work_dir: ~/.hotplex/workspace
   pid_dir: ~/.hotplex/.pids
 
-  # Environment variables to pass through to workers
-  env_whitelist: []
+  # Environment variables to block from workers (prefix match with trailing "_").
+  env_blocklist: []
 
   # Extra environment variables for all worker processes (highest priority).
-  # These override whitelisted keys from os.Environ().
+  # These override all other env sources.
   environment:
     - GH_TOKEN=${HOTPLEX_WORKER_GH_TOKEN}
     - GITHUB_TOKEN=${HOTPLEX_WORKER_GITHUB_TOKEN}

@@ -304,7 +304,6 @@ type WorkerConfig struct {
 	IdleTimeout      time.Duration        `mapstructure:"idle_timeout"`
 	ExecutionTimeout time.Duration        `mapstructure:"execution_timeout"`
 	TurnTimeout      time.Duration        `mapstructure:"turn_timeout"`
-	AllowedEnvs      []string             `mapstructure:"allowed_envs"`
 	EnvBlocklist     []string             `mapstructure:"env_blocklist"`
 	DefaultWorkDir   string               `mapstructure:"default_work_dir"`
 	PIDDir           string               `mapstructure:"pid_dir"`
@@ -438,7 +437,6 @@ func Default() *Config {
 			IdleTimeout:      60 * time.Minute,
 			ExecutionTimeout: 30 * time.Minute,
 			TurnTimeout:      0, // disabled by default; execution_timeout catches zombies
-			AllowedEnvs:      nil,
 			EnvBlocklist:     nil,
 			DefaultWorkDir:   filepath.Join(HotplexHome(), "workspace"),
 			PIDDir:           filepath.Join(HotplexHome(), ".pids"),
@@ -702,21 +700,6 @@ func loadRecursive(filePath string, opts LoadOptions, visited []string) (*Config
 		}
 	}
 	cfg.Worker.Environment = expanded
-
-	// Post-process: normalize allowed_envs into env_blocklist.
-	if len(cfg.Worker.AllowedEnvs) > 0 {
-		seen := make(map[string]bool)
-		for _, e := range cfg.Worker.EnvBlocklist {
-			seen[e] = true
-		}
-		for _, e := range cfg.Worker.AllowedEnvs {
-			seen[e] = true
-		}
-		cfg.Worker.EnvBlocklist = nil
-		for e := range seen {
-			cfg.Worker.EnvBlocklist = append(cfg.Worker.EnvBlocklist, e)
-		}
-	}
 
 	cfg.normalizePaths()
 

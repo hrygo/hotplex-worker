@@ -480,7 +480,7 @@ worker:
 
 - Each entry is either `KEY=VALUE` (literal) or `KEY=${VAR}` (expanded from gateway process env)
 - Entries referencing unset variables without defaults are silently dropped (with warning log)
-- Merged with `env_whitelist` and `allowed_envs` — all three sources contribute to worker env
+- Merged with `env_blocklist` and `HOTPLEX_WORKER_` prefix stripping — all sources contribute to worker env
 - `${VAR:-default}` syntax is supported for fallback values
 
 ### Environment Variables

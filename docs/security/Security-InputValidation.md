@@ -322,68 +322,37 @@ func ValidateBaseDir(baseDir string) error {
 | 环境之间严格隔离 | ✅ 每个环境有独立 `.env` |
 | 环境变量作为唯一配置来源 | ⚠️ 需加强 |
 
-### 5.2 环境变量白名单
+### 5.2 环境变量 Blocklist 隔离
 
 ```go
-// internal/security/env.go
+// internal/worker/base/env.go — BuildEnv 7 阶段管线
 
-// SafeEnvWhitelist 允许的环境变量
-var SafeEnvWhitelist = []string{
-    // 系统基础
-    "HOME", "USER", "SHELL", "PATH", "TERM", "LANG", "LC_ALL",
-    // Go 运行时
-    "GOPATH", "GOROOT", "GOPROXY", "GOSUMDB",
-    // HotPlex 控制
-    "HOTPLEX_SESSION_ID", "HOTPLEX_WORKER_TYPE", "HOTPLEX_GATEWAY_ADDR",
+// Worker blocklist: 默认所有 os.Environ() 变量透传，仅阻止敏感项。
+var claudeCodeEnvBlocklist = []string{
+    "CLAUDECODE",  // 嵌套 Agent 防护
+    "HOTPLEX_",    // 前缀匹配：阻止所有 HOTPLEX_* 网关内部变量
 }
 
-// SensitivePatterns 敏感变量模式（ReDoS 安全版本）
-// ⚠️ 使用 [A-Z0-9_]* 替代 .*，避免长字符串匹配性能问题
-var SensitivePatterns = []string{
-    `^AWS_[A-Z0-9_]*KEY$`, `^AWS_[A-Z0-9_]*SECRET`,
-    `^GITHUB_`,
-    `^.*_[A-Z0-9_]*TOKEN$`,
-    `^DATABASE_URL$`, `^.*_[A-Z0-9_]*PASSWORD$`,
-    `^JWT_.*`, `^.*_[A-Z0-9_]*SECRET`,
-}
+// .env 文件中通过 HOTPLEX_WORKER_ 前缀注入 Worker 密钥：
+// HOTPLEX_WORKER_GITHUB_TOKEN=xxx → GITHUB_TOKEN=xxx（自动剥离前缀）
 
-func IsSensitiveVar(name string) bool {
-    for _, pattern := range SensitivePatterns {
-        matched, _ := regexp.MatchString(pattern, name)
-        if matched {
-            return true
-        }
-    }
-    return false
-}
+// BuildEnv 优先级（低→高）：
+//  1. os.Environ() — 经 blocklist 过滤
+//  2. HOTPLEX_WORKER_ 前缀剥离注入
+//  3. session.Env — 每会话覆盖
+//  4. ConfigEnv — 最高优先级配置覆盖
+```
 
-// BuildSafeEnv 构建安全的环境变量
-func BuildSafeEnv(extra map[string]string) []string {
-    env := []string{}
+```go
+// internal/security/env.go — 纵深防御
 
-    // 添加白名单变量
-    for _, key := range SafeEnvWhitelist {
-        if val := os.Getenv(key); val != "" {
-            env = append(env, key+"="+val)
-        }
-    }
+// StripNestedAgent 移除 CLAUDECODE= 防止嵌套 Agent 调用
+func StripNestedAgent(env []string) []string { ... }
 
-    // 添加额外变量
-    for key, val := range extra {
-        env = append(env, key+"="+val)
-    }
-
-    // 过滤敏感变量（检查是否已添加到 extra）
-    filtered := []string{}
-    for _, e := range env {
-        parts := strings.SplitN(e, "=", 2)
-        key := parts[0]
-        if !IsSensitiveVar(key) || _, ok := extra[key]; ok {
-            filtered = append(filtered, e)
-        }
-    }
-
-    return filtered
+// IsProtected 防止 .env 文件覆盖系统关键变量
+var cliProtectedVars = map[string]bool{
+    "HOME": true, "PATH": true, "USER": true,
+    "CLAUDECODE": true, "GATEWAY_ADDR": true,
 }
 ```
 

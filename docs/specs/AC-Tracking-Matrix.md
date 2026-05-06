@@ -122,13 +122,13 @@ version: v1.1
 | 76 | **SEC-022** | DNS 重新绑定攻击防护 | 🔴 P0 | 🟩 PASS | Claude Code | `security_test.go` DNS重绑定测试 |
 | 77 | **SEC-023** | URL 验证流程完整链路 | 🔴 P0 | 🟩 PASS | Claude Code | `security_test.go` 完整URL验证链路测试 |
 | 78 | **SEC-024** | SSRFValidator 日志记录被阻止的请求 | 🟡 P1 | 🟩 PASS | Claude Code | `security_test.go` SSRF日志记录测试 |
-| 79 | **SEC-030** | BaseEnvWhitelist 限制基础环境变量 | 🔴 P0 | 🟩 PASS | Claude Code | `env_builder_test.go` TestSafeEnvBuilder_AddWorkerType |
-| 80 | **SEC-031** | Worker 类型特定白名单正确注入 | 🟡 P1 | 🟩 PASS | Claude Code | `env_builder_test.go` AddWorkerType测试 |
-| 81 | **SEC-032** | ProtectedEnvVars 绝对不可被覆盖 | 🔴 P0 | 🟩 PASS | Claude Code | `env_builder_test.go` TestIsProtectedEnvVar |
-| 82 | **SEC-033** | 敏感模式检测正确识别秘密信息 | 🔴 P0 | 🟩 PASS | Claude Code | `env_builder_test.go` IsSensitive测试 |
-| 83 | **SEC-034** | 保护变量始终被剥离 | 🔴 P0 | 🟩 PASS | Claude Code | `env_builder_test.go` BuildWorkerEnv剥离测试 |
-| 84 | **SEC-035** | HotPlex 必需变量正确注入 | 🟡 P1 | 🟩 PASS | Claude Code | `env_builder_test.go` AddHotPlexVar测试 |
-| 85 | **SEC-036** | Go 运行时环境变量白名单受保护 | 🟡 P1 | 🟩 PASS | Claude Code | `env_builder_test.go` GOPROXY/GOPATH测试 |
+| 79 | **SEC-030** | EnvBlocklist 阻止敏感环境变量传递 | 🔴 P0 | 🟩 PASS | Claude Code | `base/env_test.go` BuildEnv blocklist 测试 |
+| 80 | **SEC-031** | Worker 类型特定环境变量正确注入 | 🟡 P1 | 🟩 PASS | Claude Code | `base/env_test.go` Worker EnvBlocklist 测试 |
+| 81 | **SEC-032** | Protected 变量绝对不可被覆盖 | 🔴 P0 | 🟩 PASS | Claude Code | `base/env_test.go` protected vars 测试 |
+| 82 | **SEC-033** | 敏感变量检测正确识别秘密信息 | 🔴 P0 | 🟩 PASS | Claude Code | `base/env_test.go` blocklist 匹配测试 |
+| 83 | **SEC-034** | 保护变量始终被剥离 | 🔴 P0 | 🟩 PASS | Claude Code | `base/env_test.go` 剥离 CLAUDECODE/GATEWAY_* 测试 |
+| 84 | **SEC-035** | HotPlex 必需变量正确注入 | 🟡 P1 | 🟩 PASS | Claude Code | `base/env_test.go` HOTPLEX_WORKER_ 前缀注入测试 |
+| 85 | **SEC-036** | Go 运行时环境变量受保护 | 🟡 P1 | 🟩 PASS | Claude Code | `base/env_test.go` GOPROXY/GOPATH 测试 |
 | 86 | **SEC-037** | 嵌套 Agent 调用被阻止 | 🟡 P1 | 🟩 PASS | Claude Code | `base/env_test.go` StripNestedAgent测试 |
 | 87 | **SEC-040** | AllowedTools 白名单限制可用工具 | 🔴 P0 | 🟩 PASS | Claude Code | `limits_test.go` ValidateTools测试 |
 | 88 | **SEC-041** | BuildAllowedToolsArgs 正确构建 CLI 参数 | ⚪ P2 | 🟩 PASS | Claude Code | `limits_test.go` BuildAllowedToolsArgs测试 |

@@ -940,7 +940,7 @@ var AllowedCommands = map[string]bool{
 
 ### 10.5 环境变量隔离
 
-`SafeEnvBuilder` 三层过滤：基础白名单 → Worker 特定白名单 → Hotplex 控制变量。
+Blocklist 过滤 + `HOTPLEX_WORKER_` 前缀剥离：所有环境变量默认透传，仅屏蔽 `CLAUDECODE` 和 `HOTPLEX_` 前缀变量；`HOTPLEX_WORKER_*` 前缀变量自动剥离前缀后注入 Worker 环境。
 
 ### 10.6 AI 工具策略
 
@@ -993,10 +993,9 @@ worker:
   max_lifetime: 24h
   idle_timeout: 60m
   execution_timeout: 10m
-  env_whitelist:
-    - HOME
-    - PATH
-    - CLAUDE_API_KEY
+  env_blocklist:
+    - CLAUDECODE_*
+    - HOTPLEX_*
 
 security:
   api_key_header: "X-API-Key"
