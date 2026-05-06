@@ -90,6 +90,10 @@ func NewCollector(store EventStore, log *slog.Logger) *Collector {
 func (c *Collector) Capture(sessionID string, seq int64, eventType events.Kind, data json.RawMessage, direction, source string) {
 	if eventType == events.MessageDelta {
 		c.accumMu.Lock()
+		if c.accum == nil {
+			c.accumMu.Unlock()
+			return
+		}
 		acc := c.accum[sessionID]
 		if acc == nil {
 			acc = newDeltaAccumulator()
@@ -256,6 +260,10 @@ func (c *Collector) flushBatch(batch []*captureRequest) {
 // Flushes immediately when accumulated content exceeds deltaFlushSize.
 func (c *Collector) CaptureDeltaString(sessionID string, seq int64, content string) {
 	c.accumMu.Lock()
+	if c.accum == nil {
+		c.accumMu.Unlock()
+		return
+	}
 	acc := c.accum[sessionID]
 	if acc == nil {
 		acc = newDeltaAccumulator()

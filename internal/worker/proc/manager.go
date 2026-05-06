@@ -205,6 +205,7 @@ func (m *Manager) Terminate(ctx context.Context, gracePeriod time.Duration) erro
 	case <-done:
 		m.captureExitCode()
 		m.untrackPID(pidKey)
+		_ = m.Close()
 		return nil
 	case <-timer.C:
 		m.log.Warn("proc: graceful shutdown timeout, force killing", "pgid", pgid)
@@ -217,9 +218,9 @@ func (m *Manager) Terminate(ctx context.Context, gracePeriod time.Duration) erro
 // Kill force-kills the entire process group.
 func (m *Manager) Kill() error {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 
 	if !m.started || m.exited {
+		m.mu.Unlock()
 		return nil
 	}
 
@@ -234,6 +235,9 @@ func (m *Manager) Kill() error {
 	_ = m.cmd.Wait()
 	m.captureExitCodeLocked()
 	m.untrackPID(m.pidKey)
+	m.mu.Unlock()
+
+	_ = m.Close()
 	return nil
 }
 

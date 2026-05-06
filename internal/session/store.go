@@ -88,7 +88,10 @@ func (s *SQLiteStore) Upsert(ctx context.Context, info *SessionInfo) error {
 		info.CreatedAt, info.UpdatedAt, info.ExpiresAt, info.IdleExpiresAt,
 		string(ctxJSON),
 	)
-	return err
+	if err != nil {
+		return fmt.Errorf("session store: upsert: %w", err)
+	}
+	return nil
 }
 
 type rowScanner interface{ Scan(dest ...any) error }
@@ -122,7 +125,9 @@ func scanSession(sc rowScanner) (*SessionInfo, error) {
 		}
 	}
 	if platformKeyStr.Valid && platformKeyStr.String != "" {
-		_ = json.Unmarshal([]byte(platformKeyStr.String), &info.PlatformKey)
+		if err := json.Unmarshal([]byte(platformKeyStr.String), &info.PlatformKey); err != nil {
+			return nil, fmt.Errorf("session store: unmarshal platform key: %w", err)
+		}
 	}
 	return &info, nil
 }
@@ -152,6 +157,7 @@ func (s *SQLiteStore) List(ctx context.Context, userID, platform string, limit, 
 	for rows.Next() {
 		si, err := scanSession(rows)
 		if err != nil {
+			s.log.Warn("session store: skipping corrupted row", "err", err)
 			continue
 		}
 		sessions = append(sessions, si)
