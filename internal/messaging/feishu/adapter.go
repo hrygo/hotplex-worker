@@ -418,7 +418,7 @@ func (a *Adapter) handleTextMessage(ctx context.Context, platformMsgID, channelI
 	}
 
 	// Check if this text is a response to a pending interaction.
-	if a.checkPendingInteraction(ctx, text, conn) {
+	if a.checkPendingInteraction(ctx, text, userID, conn) {
 		return nil // text consumed as interaction response
 	}
 	conn.mu.Lock()

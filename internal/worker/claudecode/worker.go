@@ -202,7 +202,11 @@ func (w *Worker) startLocked(_ context.Context, session worker.SessionInfo, resu
 	w.mapper = NewMapper(w.Log, session.SessionID, w.nextSeq)
 	w.control = NewControlHandler(w.BaseWorker.Log, stdin)
 
-	w.SetConnLocked(base.NewConn(w.BaseWorker.Log, stdin, session.UserID, session.SessionID))
+	bc := base.NewConn(w.BaseWorker.Log, stdin, session.UserID, session.SessionID)
+	w.SetConnLocked(bc)
+	// Share Conn's mutex with ControlHandler so all stdin writes are serialized
+	// through a single lock, preventing interleaved NDJSON on the shared stdin fd.
+	w.control.SetWriteMu(bc.WriteMu())
 
 	w.BaseWorker.StartTime = time.Now()
 	w.BaseWorker.SetLastIO(w.BaseWorker.StartTime)

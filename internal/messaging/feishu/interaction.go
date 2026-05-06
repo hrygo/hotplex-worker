@@ -46,7 +46,11 @@ func (c *FeishuConn) sendPermissionRequest(ctx context.Context, env *events.Enve
 	c.adapter.Log.Debug("feishu: sending permission request card", "chat", chatID, "request_id", data.ID)
 
 	if err := c.adapter.sendCardMessage(ctx, chatID, cardJSON); err != nil {
-		return fmt.Errorf("feishu: send permission card: %w", err)
+		c.adapter.Log.Warn("feishu: failed to send permission card, trying text fallback", "err", err)
+		fallback := buildPermissionFallbackText(data)
+		if fbErr := c.adapter.sendTextMessage(ctx, chatID, fallback); fbErr != nil {
+			return fmt.Errorf("feishu: send permission request (card and fallback failed): card=%w, fallback=%s", err, fbErr.Error())
+		}
 	}
 
 	c.adapter.registerInteraction(data.ID, env.SessionID, env.OwnerID, events.PermissionRequest, c)
@@ -93,7 +97,11 @@ func (c *FeishuConn) sendQuestionRequest(ctx context.Context, env *events.Envelo
 
 	chatID := c.chatID
 	if err := c.adapter.sendCardMessage(ctx, chatID, cardJSON); err != nil {
-		return fmt.Errorf("feishu: send question card: %w", err)
+		c.adapter.Log.Warn("feishu: failed to send question card, trying text fallback", "err", err)
+		fallback := buildQuestionFallbackText(data)
+		if fbErr := c.adapter.sendTextMessage(ctx, chatID, fallback); fbErr != nil {
+			return fmt.Errorf("feishu: send question request (card and fallback failed): card=%w, fallback=%s", err, fbErr.Error())
+		}
 	}
 
 	c.adapter.registerInteraction(data.ID, env.SessionID, env.OwnerID, events.QuestionRequest, c)
@@ -125,7 +133,11 @@ func (c *FeishuConn) sendElicitationRequest(ctx context.Context, env *events.Env
 
 	chatID := c.chatID
 	if err := c.adapter.sendCardMessage(ctx, chatID, cardJSON); err != nil {
-		return fmt.Errorf("feishu: send elicitation card: %w", err)
+		c.adapter.Log.Warn("feishu: failed to send elicitation card, trying text fallback", "err", err)
+		fallback := buildElicitationFallbackText(data)
+		if fbErr := c.adapter.sendTextMessage(ctx, chatID, fallback); fbErr != nil {
+			return fmt.Errorf("feishu: send elicitation request (card and fallback failed): card=%w, fallback=%s", err, fbErr.Error())
+		}
 	}
 
 	c.adapter.registerInteraction(data.ID, env.SessionID, env.OwnerID, events.ElicitationRequest, c)
@@ -180,7 +192,7 @@ func (a *Adapter) registerInteraction(requestID, sessionID, ownerID string, kind
 
 // checkPendingInteraction checks if a text message is a response to a pending
 // interaction. Returns true if the text was consumed as an interaction response.
-func (a *Adapter) checkPendingInteraction(ctx context.Context, text string, conn *FeishuConn) bool {
+func (a *Adapter) checkPendingInteraction(ctx context.Context, text, userID string, conn *FeishuConn) bool {
 	if a.Interactions.Len() == 0 {
 		return false
 	}
@@ -202,6 +214,11 @@ func (a *Adapter) checkPendingInteraction(ctx context.Context, text string, conn
 	normalized := strings.ToLower(strings.TrimSpace(text))
 
 	matched := candidates[0]
+
+	// Verify the responder is the interaction owner.
+	if matched.OwnerID != "" && matched.OwnerID != userID {
+		return false
+	}
 
 	var metadata map[string]any
 
@@ -330,4 +347,67 @@ func truncate(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen] + "..."
+}
+
+// buildPermissionFallbackText creates plain-text fallback for permission request.
+func buildPermissionFallbackText(data *events.PermissionRequestData) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "⚠️ 工具执行授权\nClaude Code 请求运行: %s\n", data.ToolName)
+
+	if data.Description != "" && data.Description != data.ToolName {
+		fmt.Fprintf(&sb, "描述: %s\n", data.Description)
+	}
+
+	if len(data.Args) > 0 && data.Args[0] != "{}" {
+		preview := data.Args[0]
+		if len(preview) > 500 {
+			preview = preview[:500] + "..."
+		}
+		fmt.Fprintf(&sb, "参数: %s\n", preview)
+	}
+
+	fmt.Fprintf(&sb, "\n回复 允许 或 拒绝 来响应此请求")
+	return sb.String()
+}
+
+// buildQuestionFallbackText creates plain-text fallback for question request.
+func buildQuestionFallbackText(data *events.QuestionRequestData) string {
+	var sb strings.Builder
+	sb.WriteString("❓ 问题请求\n")
+
+	for i, q := range data.Questions {
+		headerLabel := q.Header
+		if headerLabel == "" {
+			headerLabel = "Question"
+		}
+		fmt.Fprintf(&sb, "\n%s %d: %s\n", headerLabel, i+1, q.Question)
+
+		if len(q.Options) > 0 {
+			sb.WriteString("选项:\n")
+			for j, opt := range q.Options {
+				label := opt.Label
+				if opt.Description != "" {
+					label += " — " + opt.Description
+				}
+				fmt.Fprintf(&sb, "  %d. %s\n", j+1, label)
+			}
+		}
+	}
+
+	sb.WriteString("\n回复选项文本或自定义答案来响应此问题")
+	return sb.String()
+}
+
+// buildElicitationFallbackText creates plain-text fallback for elicitation request.
+func buildElicitationFallbackText(data *events.ElicitationRequestData) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "🔗 MCP Server Request\n`%s` 请求输入:\n%s\n",
+		data.MCPServerName, data.Message)
+
+	if data.URL != "" {
+		fmt.Fprintf(&sb, "\n外部表单: %s\n", data.URL)
+	}
+
+	fmt.Fprintf(&sb, "\n回复 accept 或 decline 来响应此请求")
+	return sb.String()
 }

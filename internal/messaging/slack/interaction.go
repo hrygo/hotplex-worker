@@ -54,17 +54,19 @@ func (a *Adapter) handleInteractionEvent(ctx context.Context, evt socketmode.Eve
 		// Acknowledge the interaction to Slack
 		_ = a.socketMode.Ack(*evt.Request)
 
-		// Look up the pending interaction
-		pi, ok := a.Interactions.Complete(requestID)
+		// Validate ownership BEFORE removing from the pending map to prevent
+		// a non-owner from consuming the interaction and blocking the real owner.
+		pi, ok := a.Interactions.Get(requestID)
 		if !ok {
 			a.Log.Warn("slack: interaction not found or expired", "request_id", requestID)
 			continue
 		}
-
-		// Verify the user clicking the button is the interaction owner.
 		if pi.OwnerID != "" && pi.OwnerID != userID {
 			a.Log.Warn("slack: interaction user mismatch",
 				"request_id", requestID, "expected_owner", pi.OwnerID, "actual_user", userID)
+			continue
+		}
+		if _, ok := a.Interactions.Complete(requestID); !ok {
 			continue
 		}
 
@@ -111,9 +113,20 @@ func (a *Adapter) handleInteractionEvent(ctx context.Context, evt socketmode.Eve
 			})
 		}
 
-		// Update the message to show the user's choice
+		// Update the message to show the specific action taken
+		ackText := fmt.Sprintf("_Response recorded by <@%s>_", userID)
+		switch interactionType {
+		case "allow":
+			ackText = fmt.Sprintf("_Allowed by <@%s>_", userID)
+		case "deny":
+			ackText = fmt.Sprintf("_Denied by <@%s>_", userID)
+		case "accept":
+			ackText = fmt.Sprintf("_Accepted by <@%s>_", userID)
+		case "decline":
+			ackText = fmt.Sprintf("_Declined by <@%s>_", userID)
+		}
 		_, _, _, err := a.client.UpdateMessageContext(ctx, channelID, threadTS,
-			slack.MsgOptionText(fmt.Sprintf("_Response recorded by <@%s>_", userID), false),
+			slack.MsgOptionText(ackText, false),
 		)
 		if err != nil {
 			a.Log.Debug("slack: update interaction message", "err", err)

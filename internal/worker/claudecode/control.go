@@ -29,7 +29,7 @@ type ResponsePayload struct {
 
 // ControlHandler handles bidirectional control protocol.
 type ControlHandler struct {
-	mu              sync.Mutex
+	mu              *sync.Mutex
 	log             *slog.Logger
 	stdin           io.Writer // CLI stdin
 	pendingRequests map[string]chan map[string]any
@@ -38,10 +38,17 @@ type ControlHandler struct {
 // NewControlHandler creates a new ControlHandler instance.
 func NewControlHandler(log *slog.Logger, stdin io.Writer) *ControlHandler {
 	return &ControlHandler{
+		mu:              &sync.Mutex{},
 		log:             log,
 		stdin:           stdin,
 		pendingRequests: make(map[string]chan map[string]any),
 	}
+}
+
+// SetWriteMu replaces the internal mutex with a shared one (e.g., from Conn)
+// to serialize all stdin writes through a single lock.
+func (h *ControlHandler) SetWriteMu(mu *sync.Mutex) {
+	h.mu = mu
 }
 
 // HandlePayload processes already-unmarshaled control request fields.

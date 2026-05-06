@@ -26,6 +26,8 @@ type PendingInteraction struct {
 	// SendResponse sends the user's response back through the bridge.
 	// The metadata map contains the response data specific to the interaction type.
 	SendResponse func(metadata map[string]any)
+	// cancelCh is closed by CancelAll to abort the watchTimeout goroutine.
+	cancelCh chan struct{}
 }
 
 // InteractionManager manages pending user interactions (permission requests,
@@ -56,6 +58,7 @@ func (m *InteractionManager) Register(pi *PendingInteraction) {
 		return
 	}
 
+	pi.cancelCh = make(chan struct{})
 	m.pending[pi.ID] = pi
 	m.mu.Unlock()
 
@@ -134,13 +137,16 @@ func (m *InteractionManager) watchTimeout(pi *PendingInteraction) {
 	timer := time.NewTimer(pi.Timeout)
 	defer timer.Stop()
 
-	<-timer.C
+	select {
+	case <-pi.cancelCh:
+		// Cancelled by CancelAll — interaction already removed from map.
+		return
+	case <-timer.C:
+	}
 
 	// Try to complete (remove) the interaction; if already gone, user responded.
-	if completed, ok := m.Complete(pi.ID); !ok {
+	if _, ok := m.Complete(pi.ID); !ok {
 		return
-	} else {
-		_ = completed // suppress linter
 	}
 
 	m.log.Info("interaction: timeout, auto-denying",
@@ -200,6 +206,7 @@ func (m *InteractionManager) CancelAll(sessionID string) {
 	for id, pi := range m.pending {
 		if pi.SessionID == sessionID {
 			delete(m.pending, id)
+			close(pi.cancelCh)
 			m.log.Debug("interaction: cancelled", "request_id", id, "session_id", sessionID)
 		}
 	}
