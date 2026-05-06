@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -374,6 +375,11 @@ func (s *PersistentSTT) isAlive() bool {
 
 // idleMonitor auto-shuts down the subprocess after idle TTL.
 func (s *PersistentSTT) idleMonitor(ctx context.Context) {
+	defer func() {
+		if r := recover(); r != nil {
+			s.log.Error("stt: panic in idleMonitor", "panic", r, "stack", string(debug.Stack()))
+		}
+	}()
 	defer close(s.done)
 
 	ticker := time.NewTicker(30 * time.Second)

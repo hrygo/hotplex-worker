@@ -137,6 +137,11 @@ func (a *Adapter) newEventHandler() *dispatcher.EventDispatcher {
 }
 
 func (a *Adapter) runWebSocket(ctx context.Context) {
+	defer func() {
+		if r := recover(); r != nil {
+			a.Log.Error("feishu: panic in runWebSocket", "panic", r, "stack", string(debug.Stack()))
+		}
+	}()
 	baseDelay := a.BackoffBaseDelay
 	if baseDelay <= 0 {
 		baseDelay = 2 * time.Second

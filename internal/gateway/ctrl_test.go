@@ -168,6 +168,11 @@ func TestHandleInput_Success(t *testing.T) {
 	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "", "")
 	require.NoError(t, err)
 
+	w := new(mockWorkerForHandler)
+	w.On("Input", mock.Anything, "hello", mock.Anything).Return(nil)
+	w.On("Terminate", mock.Anything).Return(nil).Maybe()
+	mgr.AttachWorker(sid, w)
+
 	env := inputEnvelope(sid, "hello")
 	err = handler.handleInput(context.Background(), env)
 	require.NoError(t, err)
@@ -218,6 +223,11 @@ func TestHandleInput_RunningSession_AcceptsInput(t *testing.T) {
 	// When session is RUNNING, handleInput delivers input to worker without error.
 	// This tests the fix: handleInput no longer tries TransitionWithInput for RUNNING,
 	// avoiding the invalid transition error.
+	w := new(mockWorkerForHandler)
+	w.On("Input", mock.Anything, "hello", mock.Anything).Return(nil)
+	w.On("Terminate", mock.Anything).Return(nil).Maybe()
+	mgr.AttachWorker(sid, w)
+
 	env := inputEnvelope(sid, "hello")
 	err = handler.handleInput(context.Background(), env)
 	// No error — input is accepted and delivered to worker.
@@ -517,6 +527,11 @@ func TestHandle_InputRoute(t *testing.T) {
 	const sid = "sess_handle"
 	_, err := mgr.Create(context.Background(), sid, "user1", worker.TypeClaudeCode, nil, "", "")
 	require.NoError(t, err)
+
+	w := new(mockWorkerForHandler)
+	w.On("Input", mock.Anything, "test", mock.Anything).Return(nil)
+	w.On("Terminate", mock.Anything).Return(nil).Maybe()
+	mgr.AttachWorker(sid, w)
 
 	env := inputEnvelope(sid, "test")
 	err = handler.Handle(context.Background(), env)

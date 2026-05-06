@@ -149,6 +149,11 @@ func (a *Adapter) Start(ctx context.Context) error {
 
 	// Async probe for Assistant API capability
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				a.Log.Error("slack: panic in assistant probe", "panic", r, "stack", string(debug.Stack()))
+			}
+		}()
 		probeCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		capable := a.ProbeAssistantCapability(probeCtx)
@@ -167,6 +172,11 @@ func (a *Adapter) Start(ctx context.Context) error {
 }
 
 func (a *Adapter) runSocketMode(ctx context.Context) {
+	defer func() {
+		if r := recover(); r != nil {
+			a.Log.Error("slack: panic in runSocketMode", "panic", r, "stack", string(debug.Stack()))
+		}
+	}()
 	baseDelay := a.BackoffBaseDelay
 	if baseDelay <= 0 {
 		baseDelay = 1 * time.Second
@@ -180,6 +190,11 @@ func (a *Adapter) runSocketMode(ctx context.Context) {
 	// Run() blocks until the WebSocket closes. Wrap it in a loop so that
 	// connection errors trigger automatic reconnect instead of silently exiting.
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				a.Log.Error("slack: panic in socketMode reconnect loop", "panic", r, "stack", string(debug.Stack()))
+			}
+		}()
 		attempt := 1
 		for {
 			select {
@@ -1049,6 +1064,11 @@ func (c *SlackConn) Close() error {
 }
 
 func (a *Adapter) cleanupMedia(ctx context.Context) {
+	defer func() {
+		if r := recover(); r != nil {
+			a.Log.Error("slack: panic in cleanupMedia", "panic", r, "stack", string(debug.Stack()))
+		}
+	}()
 	ticker := time.NewTicker(mediaCleanupInt)
 	defer ticker.Stop()
 

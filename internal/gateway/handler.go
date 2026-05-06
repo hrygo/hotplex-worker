@@ -216,17 +216,16 @@ func (h *Handler) handleInput(ctx context.Context, env *events.Envelope) error {
 		}
 		if err := w.Input(ctx, content, nil); err != nil {
 			h.log.Warn("gateway: worker input", "err", err, "session_id", env.SessionID)
-			_ = h.sendErrorf(ctx, env, events.ErrCodeInternalError, "worker input failed: %v", err)
-		} else {
-			h.log.Debug("gateway: input delivered to worker", "session_id", env.SessionID)
-			// Capture inbound event for replay (best-effort).
-			if h.bridge != nil {
-				h.bridge.CaptureInbound(env.SessionID, env.Seq, events.Input, env.Event.Data)
-			}
+			return h.sendErrorf(ctx, env, events.ErrCodeInternalError, "worker input failed: %v", err)
+		}
+		h.log.Debug("gateway: input delivered to worker", "session_id", env.SessionID)
+		// Capture inbound event for replay (best-effort).
+		if h.bridge != nil {
+			h.bridge.CaptureInbound(env.SessionID, env.Seq, events.Input, env.Event.Data)
 		}
 	} else {
 		h.log.Warn("gateway: handleInput no worker found", "session_id", env.SessionID)
-		_ = h.sendErrorf(ctx, env, events.ErrCodeSessionNotFound, "no worker attached to session")
+		return h.sendErrorf(ctx, env, events.ErrCodeSessionNotFound, "no worker attached to session")
 	}
 
 	return nil
