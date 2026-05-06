@@ -288,13 +288,13 @@ func (b *Bridge) handleWorkerExit(w worker.Worker, p workerExitParams) {
 	var exitCode int
 	ch := make(chan struct{})
 	go func() {
+		defer close(ch)
 		defer func() {
 			if r := recover(); r != nil {
-				b.log.Error("bridge: panic in Wait goroutine", "session_id", p.sessionID, "panic", r, "stack", string(debug.Stack()))
+				b.log.Error("bridge: panic in waitWorker", "session_id", p.sessionID, "panic", r, "stack", string(debug.Stack()))
 			}
 		}()
 		exitCode, _ = w.Wait()
-		close(ch)
 	}()
 	select {
 	case <-ch:
