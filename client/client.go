@@ -70,7 +70,6 @@ type Event struct {
 	Data    any    `json:"data,omitempty"`
 }
 
-
 // AsDoneData parses event data as DoneData.
 func (e Event) AsDoneData() (DoneData, bool) { return events.DecodeAs[DoneData](e.Data) }
 
@@ -106,7 +105,9 @@ func (e Event) AsMessageDeltaData() (MessageDeltaData, bool) {
 }
 
 // AsMessageEndData parses event data as MessageEndData.
-func (e Event) AsMessageEndData() (MessageEndData, bool) { return events.DecodeAs[MessageEndData](e.Data) }
+func (e Event) AsMessageEndData() (MessageEndData, bool) {
+	return events.DecodeAs[MessageEndData](e.Data)
+}
 
 // AsStateData parses event data as StateData.
 func (e Event) AsStateData() (StateData, bool) { return events.DecodeAs[StateData](e.Data) }
@@ -118,7 +119,9 @@ func (e Event) AsReasoningData() (ReasoningData, bool) { return events.DecodeAs[
 func (e Event) AsStepData() (StepData, bool) { return events.DecodeAs[StepData](e.Data) }
 
 // AsToolResultData parses event data as ToolResultData.
-func (e Event) AsToolResultData() (ToolResultData, bool) { return events.DecodeAs[ToolResultData](e.Data) }
+func (e Event) AsToolResultData() (ToolResultData, bool) {
+	return events.DecodeAs[ToolResultData](e.Data)
+}
 
 // AsInitAckData parses event data as InitAckData.
 func (e Event) AsInitAckData() (InitAckData, bool) { return events.DecodeAs[InitAckData](e.Data) }
