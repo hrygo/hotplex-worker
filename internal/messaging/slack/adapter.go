@@ -833,6 +833,7 @@ func (c *SlackConn) writeWithStreaming(ctx context.Context, text string) error {
 	// Slack's server-side streaming limit kicks in.
 	if c.streamWriter != nil && c.streamWriter.Expired() {
 		oldWriter := c.streamWriter
+		oldWriter.SetSkipFallback()
 		c.streamWriter = nil
 		go func() { _ = oldWriter.Close() }()
 		c.adapter.Log.Info("slack: stream rotated",
