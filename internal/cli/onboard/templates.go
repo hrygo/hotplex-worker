@@ -222,16 +222,17 @@ func writeKeptPlatform(b *strings.Builder, opts ConfigTemplateOptions, platform 
 	return true
 }
 
-// extractPlatformBlock reads the existing config file and extracts the YAML block
-// for the given platform (e.g., "slack"), preserving custom settings.
-func extractPlatformBlock(configPath, platform string) string {
+// extractBlock reads the existing config file and extracts the YAML block
+// for the given key at the specified indent level. Supports both top-level
+// keys (indent="") and nested keys (indent="  " for messaging children).
+func extractBlock(configPath, key, indent string) string {
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		return ""
 	}
 
 	lines := strings.Split(string(data), "\n")
-	marker := "  " + platform + ":"
+	marker := indent + key + ":"
 
 	start := -1
 	for i, line := range lines {
@@ -244,30 +245,34 @@ func extractPlatformBlock(configPath, platform string) string {
 		return ""
 	}
 
-	// Find block end: next sibling at 2-space indent under "messaging:",
-	// or a top-level key (col 0), or EOF.
+	markerLen := len(indent)
 	end := len(lines)
 	for i := start + 1; i < len(lines); i++ {
 		line := lines[i]
 		if line == "" {
 			continue
 		}
-		// Column 0 = top-level key (end of messaging section)
-		if line[0] != ' ' {
-			end = i
-			break
-		}
-		// Exactly 2-space indent = sibling under messaging: (next platform)
-		if strings.HasPrefix(line, "  ") && !strings.HasPrefix(line, "    ") && line[0] != '#' {
-			trimmed := strings.TrimSpace(line)
-			if idx := strings.Index(trimmed, ":"); idx > 0 && !strings.Contains(trimmed[:idx], " ") {
-				end = i
+		spaces := 0
+		for _, ch := range line {
+			if ch == ' ' {
+				spaces++
+			} else {
 				break
 			}
+		}
+		if spaces <= markerLen && line[spaces] != '#' {
+			end = i
+			break
 		}
 	}
 
 	return strings.Join(lines[start:end], "\n") + "\n"
+}
+
+// extractPlatformBlock reads the existing config file and extracts the YAML block
+// for the given platform (e.g., "slack"), preserving custom settings.
+func extractPlatformBlock(configPath, platform string) string {
+	return extractBlock(configPath, platform, "  ")
 }
 
 func writeStringList(b *strings.Builder, key string, items []string) {

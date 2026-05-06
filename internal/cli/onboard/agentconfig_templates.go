@@ -2,6 +2,8 @@ package onboard
 
 import (
 	"embed"
+	"fmt"
+	"os"
 	"strings"
 )
 
@@ -38,4 +40,17 @@ func readTemplate(name string) string {
 		return ""
 	}
 	return strings.TrimRight(string(data), "\n") + "\n"
+}
+
+//go:embed guides/*.md
+var guideFS embed.FS
+
+// ShowPlatformGuide prints the embedded setup guide for a messaging platform.
+func ShowPlatformGuide(platform string) {
+	data, err := guideFS.ReadFile("guides/" + platform + ".md")
+	if err != nil {
+		return
+	}
+	fmt.Fprint(os.Stderr, string(data))
+	fmt.Fprintln(os.Stderr)
 }

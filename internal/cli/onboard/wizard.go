@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/hrygo/hotplex/internal/cli"
 	"github.com/hrygo/hotplex/internal/cli/checkers"
@@ -44,6 +45,7 @@ type WizardOptions struct {
 	FeishuGroupPolicy string
 	InstallService    bool
 	ServiceLevel      string
+	Version           string // injected from build ldflags via onboard.go
 }
 
 // ExistingConfig holds detected existing configuration state.
@@ -129,116 +131,154 @@ type StepResult struct {
 	Detail string
 }
 
+// wizardContext carries shared state between wizard steps.
+type wizardContext struct {
+	opts     WizardOptions
+	existing *ExistingConfig
+	envPath  string
+	reader   *bufio.Reader // nil in non-interactive mode
+
+	// Step outputs — pre-fillable from existing config when step is skipped
+	jwtSecret     string
+	adminToken    string
+	workerType    string
+	slackCfg      messagingPlatformConfig
+	feishuCfg     messagingPlatformConfig
+	configCreated bool
+}
+
+// runMode determines how the wizard handles existing configuration.
+type runMode int
+
+const (
+	modeFullConfig  runMode = iota // fresh or forced configuration
+	modeKeep                       // keep existing config
+	modeSelectSteps                // incrementally reconfigure selected steps
+)
+
+// selectableStep represents a user-selectable reconfiguration step.
+type selectableStep struct {
+	name     string
+	label    string // display label for selection UI
+	selected bool
+	run      func(wctx *wizardContext) StepResult
+	prefill  func(wctx *wizardContext) // populate outputs from existing config
+}
+
 func Run(ctx context.Context, opts WizardOptions) (*WizardResult, error) {
 	result := &WizardResult{
 		ConfigPath: opts.ConfigPath,
 		EnvPath:    filepath.Join(filepath.Dir(opts.ConfigPath), ".env"),
 	}
 
-	var jwtSecret, adminToken, workerType string
-	var slackCfg, feishuCfg messagingPlatformConfig
-	var configCreated bool
+	displayBanner(opts.Version)
 
-	displayBanner()
-
-	runAgentConfigStep := func() {
-		s, created := stepAgentConfig()
-		result.add(s)
-		result.AgentConfigNew = created
-	}
-
+	// Step 1: Environment pre-check (always runs, fatal on failure)
 	result.add(stepEnvPreCheck())
 	if result.hasFail() {
 		return result, fmt.Errorf("environment pre-check failed, resolve errors above before continuing")
 	}
 
+	// Step 2: Detect existing config and determine run mode
 	existing := detectExistingConfig(opts.ConfigPath, result.EnvPath)
+	mode := modeFullConfig
 	if !opts.Force && existing.HasAny() {
 		if opts.NonInteractive {
-			result.Action = "keep"
-			result.add(StepResult{Name: "onboard", Status: "pass", Detail: "kept existing configuration (non-interactive)"})
-			runAgentConfigStep()
-			result.add(stepVerify(opts.ConfigPath))
-			return result, nil
+			mode = modeKeep
+		} else {
+			displayExistingConfig(existing)
+			mode = promptRunMode()
 		}
-		displayExistingConfig(existing)
-		if promptKeepOrReconfigure() {
-			result.Action = "keep"
-			result.add(StepResult{Name: "onboard", Status: "pass", Detail: "kept existing configuration"})
-			runAgentConfigStep()
-			result.add(stepVerify(opts.ConfigPath))
-			return result, nil
+	}
+
+	// Fast return for "keep" mode
+	if mode == modeKeep {
+		result.Action = "keep"
+		detail := "kept existing configuration"
+		if opts.NonInteractive {
+			detail += " (non-interactive)"
 		}
-		result.Action = "reconfigure"
-		opts.Force = true // overwrite existing config on reconfigure
+		result.add(StepResult{Name: "onboard", Status: "pass", Detail: detail})
+		s, created := stepAgentConfig()
+		result.add(s)
+		result.AgentConfigNew = created
+		result.add(stepVerify(opts.ConfigPath))
+		return result, nil
+	}
+
+	if mode == modeFullConfig {
+		opts.Force = true
 		fmt.Fprintln(os.Stderr, "  → Reconfiguring...")
 	}
 
-	if opts.NonInteractive {
-		jwtSecret = GenerateSecret()
-		adminToken = GenerateSecret()
-		workerType = "claude_code"
-		result.add(StepResult{Name: "required_config", Status: "pass", Detail: "auto-generated secrets, worker=claude_code"})
-	} else {
-		reader := bufio.NewReader(os.Stdin)
-		jwtSecret, adminToken, workerType, _ = stepRequiredConfig(reader)
+	// Step 3: Build wizard context
+	wctx := &wizardContext{
+		opts:     opts,
+		existing: existing,
+		envPath:  result.EnvPath,
+	}
+	if !opts.NonInteractive {
+		wctx.reader = bufio.NewReader(os.Stdin)
 	}
 
-	result.add(stepWorkerDep(workerType))
+	// Step 4: Define configurable steps
+	steps := wctx.buildSteps()
 
-	if opts.NonInteractive {
-		slackCfg = buildPlatformNonInteractive(opts.EnableSlack, opts.SlackDMPolicy, opts.SlackGroupPolicy, opts.SlackAllowFrom)
-		feishuCfg = buildPlatformNonInteractive(opts.EnableFeishu, opts.FeishuDMPolicy, opts.FeishuGroupPolicy, opts.FeishuAllowFrom)
-		result.add(StepResult{Name: "messaging", Status: "pass", Detail: messagingDetail(slackCfg.enabled, feishuCfg.enabled)})
-	} else {
-		reader := bufio.NewReader(os.Stdin)
-		slackCfg, feishuCfg, _ = stepMessaging(reader, opts, existing)
+	// Step 5: Pre-fill all from existing config
+	for i := range steps {
+		steps[i].prefill(wctx)
 	}
 
-	tplOpts := ConfigTemplateOptions{
-		WorkerType:           workerType,
-		SlackEnabled:         slackCfg.enabled,
-		SlackDMPolicy:        slackCfg.dmPolicy,
-		SlackGroupPolicy:     slackCfg.groupPolicy,
-		SlackRequireMention:  toPtr(slackCfg.requireMention),
-		SlackAllowFrom:       slackCfg.allowFrom,
-		FeishuEnabled:        feishuCfg.enabled,
-		FeishuDMPolicy:       feishuCfg.dmPolicy,
-		FeishuGroupPolicy:    feishuCfg.groupPolicy,
-		FeishuRequireMention: toPtr(feishuCfg.requireMention),
-		FeishuAllowFrom:      feishuCfg.allowFrom,
-	}
-
-	if slackCfg.kept || feishuCfg.kept {
-		tplOpts.KeptPlatforms = map[string]bool{
-			"slack":  slackCfg.kept,
-			"feishu": feishuCfg.kept,
+	// Step 6: If select steps mode, prompt user to choose
+	if mode == modeSelectSteps {
+		choices := promptStepSelection(wctx.reader, steps)
+		for i := range steps {
+			steps[i].selected = choices[i]
 		}
-		tplOpts.ExistingConfigPath = opts.ConfigPath
 	}
 
-	s5, configCreated := stepConfigGen(opts, tplOpts)
+	// Step 7: Run selected configurable steps with progress
+	totalSteps := len(steps) + 3 // +3 mandatory: config_gen, write_config, agent_config+verify
+	current := 1
+	for _, step := range steps {
+		if !step.selected {
+			result.add(StepResult{Name: step.name, Status: "skip", Detail: "unchanged"})
+			continue
+		}
+		displayStepProgress(current, totalSteps, step.label)
+		result.add(step.run(wctx))
+		current++
+	}
+
+	// Step 8: Mandatory steps (always run)
+	if !opts.NonInteractive {
+		wctx.displayPreview()
+	}
+	displayStepProgress(current, totalSteps, "Generate Configuration")
+	s5, configCreated := stepConfigGen(wctx.opts, wctx.buildTemplateOpts())
+	wctx.configCreated = configCreated
 	result.add(s5)
 	if s5.Status == "fail" {
 		return result, fmt.Errorf("config generation failed: %s", s5.Detail)
 	}
+	current++
 
-	s6 := stepWriteConfig(result.EnvPath, jwtSecret, adminToken, slackCfg, feishuCfg, configCreated, opts)
+	displayStepProgress(current, totalSteps, "Write Environment")
+	s6 := stepWriteConfig(wctx.envPath, wctx.jwtSecret, wctx.adminToken, wctx.slackCfg, wctx.feishuCfg, configCreated, wctx.opts)
 	result.add(s6)
 	if s6.Status == "fail" {
 		return result, fmt.Errorf("config write failed: %s", s6.Detail)
 	}
+	current++
 
-	runAgentConfigStep()
+	s, created := stepAgentConfig()
+	result.add(s)
+	result.AgentConfigNew = created
 
-	result.add(stepSTTCheck(opts.ConfigPath))
+	result.add(stepSTTCheck(opts.ConfigPath, wctx.reader))
+
+	displayStepProgress(current, totalSteps, "Verify")
 	result.add(stepVerify(opts.ConfigPath))
-
-	var reader *bufio.Reader
-	if !opts.NonInteractive {
-		reader = bufio.NewReader(os.Stdin)
-	}
-	result.add(stepServiceInstall(reader, opts))
 
 	result.Action = "reconfigure"
 	return result, nil
@@ -283,9 +323,12 @@ func buildPlatformNonInteractive(enabled bool, dmPolicy, groupPolicy string, all
 
 // ─── Display helpers ─────────────────────────────────────────────────────────
 
-func displayBanner() {
+func displayBanner(version string) {
+	if version == "" {
+		version = "dev"
+	}
 	fmt.Fprintf(os.Stderr, "\n  %s\n", output.Bold("HotPlex Worker Gateway — Setup Wizard"))
-	fmt.Fprintf(os.Stderr, "  %s\n", output.Dim("AI Coding Agent Gateway  v0.36.2"))
+	fmt.Fprintf(os.Stderr, "  %s\n", output.Dim("AI Coding Agent Gateway  "+version))
 	fmt.Fprintln(os.Stderr, "  "+strings.Repeat("─", 45))
 	fmt.Fprintln(os.Stderr, "")
 }
@@ -322,6 +365,238 @@ func displayExistingConfig(ec *ExistingConfig) {
 	fmt.Fprintln(os.Stderr, "")
 }
 
+// ─── Run mode selection ──────────────────────────────────────────────────
+
+func promptRunMode() runMode {
+	fmt.Fprintln(os.Stderr, "  What would you like to do?")
+	fmt.Fprintln(os.Stderr, "    1) Keep all — skip to verify")
+	fmt.Fprintln(os.Stderr, "    2) Reconfigure everything — full reset")
+	fmt.Fprintln(os.Stderr, "    3) Select steps — choose what to change")
+	fmt.Fprintf(os.Stderr, "\n  Select [1]: ")
+	line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+	line = strings.TrimSpace(line)
+	switch line {
+	case "2":
+		return modeFullConfig
+	case "3":
+		return modeSelectSteps
+	default:
+		return modeKeep
+	}
+}
+
+func promptStepSelection(reader *bufio.Reader, steps []selectableStep) []bool {
+	fmt.Fprint(os.Stderr, output.SectionHeader("Select Steps to Reconfigure"))
+	choices := make([]bool, len(steps))
+	for i, step := range steps {
+		choices[i] = promptYesNo(reader, step.label)
+	}
+	return choices
+}
+
+// ─── Step progress indicator ────────────────────────────────────────────
+
+func displayStepProgress(current, total int, label string) {
+	fmt.Fprintf(os.Stderr, "  [%d/%d] %s\n", current, total, output.Bold(label))
+}
+
+// ─── wizardContext methods ───────────────────────────────────────────────
+
+func (wctx *wizardContext) buildSteps() []selectableStep {
+	return []selectableStep{
+		{
+			name: "required_config", label: "Secrets & Worker Type", selected: true,
+			run: func(wctx *wizardContext) StepResult { return wctx.runRequiredConfig() },
+			prefill: func(wctx *wizardContext) {
+				wctx.jwtSecret = readExistingEnvValue(wctx.envPath, "HOTPLEX_JWT_SECRET")
+				wctx.adminToken = readExistingEnvValue(wctx.envPath, "HOTPLEX_ADMIN_TOKEN_1")
+				wctx.workerType = readExistingConfigValue(wctx.opts.ConfigPath, "worker.type")
+				if wctx.workerType == "" {
+					wctx.workerType = "claude_code"
+				}
+			},
+		},
+		{
+			name: "worker_dep", label: "Worker Dependency", selected: true,
+			run:     func(wctx *wizardContext) StepResult { return wctx.runWorkerDep() },
+			prefill: func(wctx *wizardContext) {},
+		},
+		{
+			name: "messaging", label: "Messaging Platform", selected: true,
+			run: func(wctx *wizardContext) StepResult { return wctx.runMessaging() },
+			prefill: func(wctx *wizardContext) {
+				wctx.slackCfg = prefillPlatformConfig("slack", wctx.existing, wctx.envPath, []string{
+					"HOTPLEX_MESSAGING_SLACK_BOT_TOKEN",
+					"HOTPLEX_MESSAGING_SLACK_APP_TOKEN",
+				})
+				wctx.feishuCfg = prefillPlatformConfig("feishu", wctx.existing, wctx.envPath, []string{
+					"HOTPLEX_MESSAGING_FEISHU_APP_ID",
+					"HOTPLEX_MESSAGING_FEISHU_APP_SECRET",
+				})
+			},
+		},
+		{
+			name: "service_install", label: "System Service", selected: true,
+			run:     func(wctx *wizardContext) StepResult { return stepServiceInstall(wctx.reader, wctx.opts) },
+			prefill: func(wctx *wizardContext) {},
+		},
+	}
+}
+
+func (wctx *wizardContext) runRequiredConfig() StepResult {
+	if wctx.opts.NonInteractive {
+		wctx.jwtSecret = GenerateSecret()
+		wctx.adminToken = GenerateSecret()
+		wctx.workerType = "claude_code"
+		return StepResult{Name: "required_config", Status: "pass", Detail: "auto-generated secrets, worker=claude_code"}
+	}
+	fmt.Fprint(os.Stderr, output.SectionHeader("Required Configuration"))
+	wctx.jwtSecret = prompt(wctx.reader, "JWT secret (enter to auto-generate)")
+	if wctx.jwtSecret == "" {
+		wctx.jwtSecret = GenerateSecret()
+		fmt.Fprintln(os.Stderr, "  → Generated JWT secret")
+	}
+	wctx.adminToken = prompt(wctx.reader, "Admin token (enter to auto-generate)")
+	if wctx.adminToken == "" {
+		wctx.adminToken = GenerateSecret()
+		fmt.Fprintln(os.Stderr, "  → Generated admin token")
+	}
+	wctx.workerType = promptChoice(wctx.reader, "Worker type", []string{"claude_code", "opencode_server", "pi"})
+	return StepResult{Name: "required_config", Status: "pass", Detail: "worker=" + wctx.workerType}
+}
+
+func (wctx *wizardContext) runWorkerDep() StepResult {
+	return stepWorkerDep(wctx.workerType)
+}
+
+func (wctx *wizardContext) runMessaging() StepResult {
+	if wctx.opts.NonInteractive {
+		wctx.slackCfg = buildPlatformNonInteractive(wctx.opts.EnableSlack, wctx.opts.SlackDMPolicy, wctx.opts.SlackGroupPolicy, wctx.opts.SlackAllowFrom)
+		wctx.feishuCfg = buildPlatformNonInteractive(wctx.opts.EnableFeishu, wctx.opts.FeishuDMPolicy, wctx.opts.FeishuGroupPolicy, wctx.opts.FeishuAllowFrom)
+		return StepResult{Name: "messaging", Status: "pass", Detail: messagingDetail(wctx.slackCfg.enabled, wctx.feishuCfg.enabled)}
+	}
+	slackCfg, feishuCfg, _ := stepMessaging(wctx.reader, wctx.opts, wctx.existing)
+	wctx.slackCfg = slackCfg
+	wctx.feishuCfg = feishuCfg
+	return StepResult{Name: "messaging", Status: "pass", Detail: messagingDetail(slackCfg.enabled, feishuCfg.enabled)}
+}
+
+func (wctx *wizardContext) buildTemplateOpts() ConfigTemplateOptions {
+	tplOpts := ConfigTemplateOptions{
+		WorkerType:           wctx.workerType,
+		SlackEnabled:         wctx.slackCfg.enabled,
+		SlackDMPolicy:        wctx.slackCfg.dmPolicy,
+		SlackGroupPolicy:     wctx.slackCfg.groupPolicy,
+		SlackRequireMention:  toPtr(wctx.slackCfg.requireMention),
+		SlackAllowFrom:       wctx.slackCfg.allowFrom,
+		FeishuEnabled:        wctx.feishuCfg.enabled,
+		FeishuDMPolicy:       wctx.feishuCfg.dmPolicy,
+		FeishuGroupPolicy:    wctx.feishuCfg.groupPolicy,
+		FeishuRequireMention: toPtr(wctx.feishuCfg.requireMention),
+		FeishuAllowFrom:      wctx.feishuCfg.allowFrom,
+	}
+	if wctx.slackCfg.kept || wctx.feishuCfg.kept {
+		tplOpts.KeptPlatforms = map[string]bool{
+			"slack":  wctx.slackCfg.kept,
+			"feishu": wctx.feishuCfg.kept,
+		}
+		tplOpts.ExistingConfigPath = wctx.opts.ConfigPath
+	}
+	return tplOpts
+}
+
+func (wctx *wizardContext) displayPreview() {
+	fmt.Fprint(os.Stderr, output.SectionHeader("Configuration Preview"))
+	fmt.Fprintf(os.Stderr, "    %-14s %s\n", "Worker:", wctx.workerType)
+
+	slackStatus := "disabled"
+	if wctx.slackCfg.enabled {
+		slackStatus = fmt.Sprintf("enabled, dm=%s, group=%s, mention=%t",
+			wctx.slackCfg.dmPolicy, wctx.slackCfg.groupPolicy, wctx.slackCfg.requireMention)
+	}
+	fmt.Fprintf(os.Stderr, "    %-14s %s\n", "Slack:", slackStatus)
+
+	feishuStatus := "disabled"
+	if wctx.feishuCfg.enabled {
+		feishuStatus = fmt.Sprintf("enabled, dm=%s, group=%s, mention=%t",
+			wctx.feishuCfg.dmPolicy, wctx.feishuCfg.groupPolicy, wctx.feishuCfg.requireMention)
+	}
+	fmt.Fprintf(os.Stderr, "    %-14s %s\n", "Feishu:", feishuStatus)
+
+	fmt.Fprintf(os.Stderr, "    %-14s %s\n", "Config:", wctx.opts.ConfigPath)
+	fmt.Fprintf(os.Stderr, "    %-14s %s\n", "Secrets:", wctx.envPath)
+	fmt.Fprintln(os.Stderr)
+
+	if !promptYesNo(wctx.reader, "Write configuration files?") {
+		fmt.Fprintln(os.Stderr, "  → Skipping config write. Use --force to reconfigure later.")
+	}
+}
+
+// ─── Existing config pre-fill helpers ────────────────────────────────────
+
+func readExistingEnvValue(envPath, key string) string {
+	data, err := os.ReadFile(envPath)
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		prefix := key + "="
+		if strings.HasPrefix(line, prefix) && len(line) > len(prefix) {
+			return line[len(prefix):]
+		}
+	}
+	return ""
+}
+
+func readExistingConfigValue(configPath, field string) string {
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return ""
+	}
+	parts := strings.Split(field, ".")
+	if len(parts) != 2 {
+		return ""
+	}
+	parentKey := parts[0] + ":"
+	childKey := parts[1] + ":"
+	inParent := false
+	for _, line := range strings.Split(string(data), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if !inParent {
+			if trimmed == parentKey {
+				inParent = true
+			}
+			continue
+		}
+		if strings.HasPrefix(line, "  "+childKey) {
+			val := strings.TrimPrefix(trimmed, childKey)
+			val = strings.TrimSpace(val)
+			val = strings.Trim(val, "\"")
+			return val
+		}
+		if !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "#") && trimmed != "" {
+			break
+		}
+	}
+	return ""
+}
+
+func prefillPlatformConfig(platform string, existing *ExistingConfig, envPath string, credKeys []string) messagingPlatformConfig {
+	enabled := existing.PlatformConfigured(platform)
+	cfg := messagingPlatformConfig{
+		enabled:     enabled,
+		kept:        enabled,
+		credentials: readExistingEnvCredentials(envPath, credKeys),
+	}
+	if enabled {
+		cfg.dmPolicy = "allowlist"
+		cfg.groupPolicy = "allowlist"
+		cfg.requireMention = true
+	}
+	return cfg
+}
+
 // ─── Step 1: Environment pre-check ──────────────────────────────────────────
 
 func stepEnvPreCheck() StepResult {
@@ -355,27 +630,6 @@ func stepEnvPreCheck() StepResult {
 	return StepResult{Name: "env_precheck", Status: "pass", Detail: fmt.Sprintf("Go %s, %s/%s, %d MB free", ver, runtime.GOOS, runtime.GOARCH, freeMB)}
 }
 
-// ─── Step 2: Required config items ──────────────────────────────────────────
-
-func stepRequiredConfig(reader *bufio.Reader) (jwtSecret, adminToken, workerType string, result StepResult) {
-	fmt.Fprint(os.Stderr, output.SectionHeader("Required Configuration"))
-
-	jwtSecret = prompt(reader, "JWT secret (enter to auto-generate)")
-	if jwtSecret == "" {
-		jwtSecret = GenerateSecret()
-		fmt.Fprintln(os.Stderr, "  → Generated JWT secret")
-	}
-
-	adminToken = prompt(reader, "Admin token (enter to auto-generate)")
-	if adminToken == "" {
-		adminToken = GenerateSecret()
-		fmt.Fprintln(os.Stderr, "  → Generated admin token")
-	}
-
-	workerType = promptChoice(reader, "Worker type", []string{"claude_code", "opencode_server", "pi"})
-	return jwtSecret, adminToken, workerType, StepResult{Name: "required_config", Status: "pass", Detail: "worker=" + workerType}
-}
-
 // ─── Step 3: Worker dependency check ────────────────────────────────────────
 
 func stepWorkerDep(workerType string) StepResult {
@@ -383,17 +637,36 @@ func stepWorkerDep(workerType string) StepResult {
 		"claude_code":     "claude",
 		"opencode_server": "opencode",
 	}
-	if bin, ok := binaries[workerType]; ok {
-		if p, err := exec.LookPath(bin); err == nil {
-			detail := bin + " binary found: " + p
-			if workerType == "opencode_server" {
-				detail += " (singleton mode: shared process across sessions)"
-			}
-			return StepResult{Name: "worker_dep", Status: "pass", Detail: detail}
-		}
-		return StepResult{Name: "worker_dep", Status: "pass", Detail: bin + " binary not found in PATH — install before running serve"}
+	bin, ok := binaries[workerType]
+	if !ok {
+		return StepResult{Name: "worker_dep", Status: "skip", Detail: "worker type " + workerType + " has no binary dependency"}
 	}
-	return StepResult{Name: "worker_dep", Status: "skip", Detail: "worker type " + workerType + " has no binary dependency"}
+
+	// Level 1: binary in PATH
+	p, err := exec.LookPath(bin)
+	if err != nil {
+		return StepResult{Name: "worker_dep", Status: "warn", Detail: bin + " binary not found in PATH — install before running serve"}
+	}
+	detail := bin + " found: " + p
+
+	// Level 2: --version functional check
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, bin, "--version")
+	out, verr := cmd.Output()
+	if verr != nil {
+		detail += " (version check timed out or failed)"
+		return StepResult{Name: "worker_dep", Status: "pass", Detail: detail}
+	}
+	ver := strings.TrimSpace(string(out))
+	if ver != "" {
+		detail += " (" + ver + ")"
+	}
+
+	if workerType == "opencode_server" {
+		detail += " — singleton mode: shared process across sessions"
+	}
+	return StepResult{Name: "worker_dep", Status: "pass", Detail: detail}
 }
 
 // ─── Step 4: Messaging platform ─────────────────────────────────────────────
@@ -435,14 +708,23 @@ func collectPlatformConfig(reader *bufio.Reader, platform string, credPrompts ma
 		return messagingPlatformConfig{credentials: map[string]string{}}
 	}
 
+	ShowPlatformGuide(strings.ToLower(platform))
+
 	cfg := messagingPlatformConfig{
 		enabled:     true,
 		credentials: map[string]string{},
 	}
 
 	for envKey, promptText := range credPrompts {
-		if val := prompt(reader, "  "+promptText); val != "" {
-			cfg.credentials[envKey] = val
+		validate := credentialValidators[envKey]
+		if validate != nil {
+			if val := promptWithValidation(reader, "  "+promptText, validate); val != "" {
+				cfg.credentials[envKey] = val
+			}
+		} else {
+			if val := prompt(reader, "  "+promptText); val != "" {
+				cfg.credentials[envKey] = val
+			}
 		}
 	}
 
@@ -555,7 +837,7 @@ func sortedKeys(m map[string]string) []string {
 
 // ─── Step 6.5: STT Check ─────────────────────────────────────────────────────
 
-func stepSTTCheck(configPath string) StepResult {
+func stepSTTCheck(configPath string, reader *bufio.Reader) StepResult {
 	checkers.SetConfigPath(configPath)
 	sttCheckers := cli.DefaultRegistry.ByCategory("stt")
 
@@ -570,14 +852,38 @@ func stepSTTCheck(configPath string) StepResult {
 		}
 	}
 
-	if len(details) > 0 {
-		return StepResult{
-			Name:   "stt_check",
-			Status: "warn",
-			Detail: "STT deps incomplete:\n  " + strings.Join(details, "\n  "),
+	if len(details) == 0 {
+		return StepResult{Name: "stt_check", Status: "pass", Detail: "STT environment ready"}
+	}
+
+	// Interactive install prompt
+	if reader != nil {
+		fmt.Fprint(os.Stderr, output.SectionHeader("STT Dependencies"))
+		for _, d := range details {
+			fmt.Fprintf(os.Stderr, "  %s %s\n", output.StatusSymbol("warn"), d)
+		}
+		if promptYesNo(reader, "Install STT dependencies?") {
+			if err := installSTTDeps(); err != nil {
+				details = append(details, "install failed: "+err.Error())
+			} else {
+				return StepResult{Name: "stt_check", Status: "pass", Detail: "STT dependencies installed"}
+			}
 		}
 	}
-	return StepResult{Name: "stt_check", Status: "pass", Detail: "STT environment ready"}
+
+	return StepResult{
+		Name:   "stt_check",
+		Status: "warn",
+		Detail: "STT deps incomplete:\n  " + strings.Join(details, "\n  "),
+	}
+}
+
+func installSTTDeps() error {
+	cmd := exec.Command("python3", "-m", "pip", "install", "--quiet", "funasr-onnx", "modelscope")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("%s: %w", strings.TrimSpace(string(out)), err)
+	}
+	return nil
 }
 
 // ─── Step 7: Verify ─────────────────────────────────────────────────────────
@@ -590,15 +896,22 @@ func stepVerify(configPath string) StepResult {
 	var allCheckers []cli.Checker
 	allCheckers = append(allCheckers, cli.DefaultRegistry.ByCategory("environment")...)
 	allCheckers = append(allCheckers, cli.DefaultRegistry.ByCategory("config")...)
+	allCheckers = append(allCheckers, cli.DefaultRegistry.ByCategory("dependencies")...)
+	allCheckers = append(allCheckers, cli.DefaultRegistry.ByCategory("security")...)
+	allCheckers = append(allCheckers, cli.DefaultRegistry.ByCategory("runtime")...)
+	allCheckers = append(allCheckers, cli.DefaultRegistry.ByCategory("messaging")...)
 	allCheckers = append(allCheckers, cli.DefaultRegistry.ByCategory("stt")...)
+	allCheckers = append(allCheckers, cli.DefaultRegistry.ByCategory("agent_config")...)
 
-	var passCount, failCount int
+	var passCount, warnCount, failCount int
 	var details []string
 	for _, c := range allCheckers {
 		d := c.Check(context.Background())
 		switch d.Status {
 		case cli.StatusPass:
 			passCount++
+		case cli.StatusWarn:
+			warnCount++
 		case cli.StatusFail:
 			failCount++
 			details = append(details, d.Name+": "+d.Message)
@@ -608,7 +921,11 @@ func stepVerify(configPath string) StepResult {
 	if failCount > 0 {
 		return StepResult{Name: "verify", Status: "fail", Detail: strings.Join(details, "; ")}
 	}
-	return StepResult{Name: "verify", Status: "pass", Detail: fmt.Sprintf("%d checks passed", passCount)}
+	detail := fmt.Sprintf("%d passed", passCount)
+	if warnCount > 0 {
+		detail += fmt.Sprintf(", %d warnings", warnCount)
+	}
+	return StepResult{Name: "verify", Status: "pass", Detail: detail}
 }
 
 func loadEnvFile(dir string) {
@@ -643,11 +960,52 @@ func loadEnvFile(dir string) {
 
 // ─── Prompt helpers ─────────────────────────────────────────────────────────
 
-func promptKeepOrReconfigure() bool {
-	fmt.Fprintf(os.Stderr, "? Keep existing configuration? %s: ", output.Bold("[Y/n]"))
-	line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
-	line = strings.TrimSpace(strings.ToLower(line))
-	return line != "n" && line != "no"
+func promptWithValidation(reader *bufio.Reader, question string, validate func(string) error) string {
+	for {
+		val := prompt(reader, question)
+		if val == "" {
+			return "" // empty = auto-generate or skip
+		}
+		if err := validate(val); err != nil {
+			fmt.Fprintf(os.Stderr, "  %s %s\n", output.StatusSymbol("fail"), err.Error())
+			continue
+		}
+		return val
+	}
+}
+
+// credentialValidators maps env keys to format validation functions.
+var credentialValidators = map[string]func(string) error{
+	"HOTPLEX_MESSAGING_SLACK_BOT_TOKEN": func(val string) error {
+		if !strings.HasPrefix(val, "xoxb-") {
+			return fmt.Errorf("slack Bot Token must start with xoxb-")
+		}
+		if len(val) < 20 {
+			return fmt.Errorf("token appears too short")
+		}
+		return nil
+	},
+	"HOTPLEX_MESSAGING_SLACK_APP_TOKEN": func(val string) error {
+		if !strings.HasPrefix(val, "xapp-") {
+			return fmt.Errorf("slack App Token must start with xapp-")
+		}
+		if len(val) < 20 {
+			return fmt.Errorf("token appears too short")
+		}
+		return nil
+	},
+	"HOTPLEX_MESSAGING_FEISHU_APP_ID": func(val string) error {
+		if !strings.HasPrefix(val, "cli_") {
+			return fmt.Errorf("feishu App ID must start with cli_")
+		}
+		return nil
+	},
+	"HOTPLEX_MESSAGING_FEISHU_APP_SECRET": func(val string) error {
+		if len(val) < 16 {
+			return fmt.Errorf("app Secret appears too short")
+		}
+		return nil
+	},
 }
 
 func prompt(reader *bufio.Reader, question string) string {
