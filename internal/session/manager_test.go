@@ -773,7 +773,7 @@ func (w *mockWorker) Type() worker.WorkerType { return w.workerType }
 func (w *mockWorker) SupportsResume() bool    { return false }
 func (w *mockWorker) SupportsStreaming() bool { return true }
 func (w *mockWorker) SupportsTools() bool     { return true }
-func (w *mockWorker) EnvWhitelist() []string  { return nil }
+func (w *mockWorker) EnvBlocklist() []string  { return nil }
 func (w *mockWorker) SessionStoreDir() string { return "" }
 func (w *mockWorker) MaxTurns() int           { return w.maxTurns }
 func (w *mockWorker) Modalities() []string    { return []string{"text", "code"} }

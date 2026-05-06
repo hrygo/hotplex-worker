@@ -62,19 +62,16 @@ var (
 	_ WorkerCommander       = (*Worker)(nil)
 )
 
-// Environment variable whitelist for OpenCode Server worker.
-// These variables are passed through to the opencode serve process.
-// All other environment variables are stripped for security isolation.
-var openCodeSrvEnvWhitelist = []string{
-	// System environment
-	"HOME", "USER", "SHELL", "PATH", "TERM",
-	"LANG", "LC_ALL", "PWD",
-	// OpenCode API configuration
-	"OPENAI_API_KEY", "OPENAI_BASE_URL",
-	"OPENCODE_API_KEY", "OPENCODE_BASE_URL",
-	// External LLM API Keys
-	"DASHSCOPE_API_KEY", "MINIMAX_API_KEY",
-	"ZHIPU_API_KEY", "DEEPSEEK_API_KEY", "OPENROUTER_API_KEY",
+// Env blocklist for OpenCode Server worker.
+// All os.Environ() vars are passed through by default, except those listed here.
+var openCodeSrvEnvBlocklist = []string{
+	// Nested agent detection.
+	"CLAUDECODE",
+	// Gateway-internal secrets (prefix match).
+	"HOTPLEX_",
+	// Claude Code specific vars — not relevant for OCS worker.
+	"CLAUDE_",
+	"ANTHROPIC_",
 }
 
 const (
@@ -173,7 +170,7 @@ func (w *Worker) Type() worker.WorkerType { return worker.TypeOpenCodeSrv }
 func (w *Worker) SupportsResume() bool    { return true }
 func (w *Worker) SupportsStreaming() bool { return true }
 func (w *Worker) SupportsTools() bool     { return true }
-func (w *Worker) EnvWhitelist() []string  { return openCodeSrvEnvWhitelist }
+func (w *Worker) EnvBlocklist() []string  { return openCodeSrvEnvBlocklist }
 func (w *Worker) SessionStoreDir() string { return "" }
 func (w *Worker) MaxTurns() int           { return 0 }
 func (w *Worker) Modalities() []string    { return []string{"text", "code"} }

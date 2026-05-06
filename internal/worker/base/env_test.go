@@ -10,8 +10,7 @@ import (
 	"github.com/hrygo/hotplex/internal/worker"
 )
 
-func TestBuildEnv_BasicWhitelist(t *testing.T) {
-	// Set up test environment.
+func TestBuildEnv_BlocklistFiltersBlockedVars(t *testing.T) {
 	os.Setenv("HOME", "/home/test")
 	os.Setenv("PATH", "/usr/bin")
 	os.Setenv("SECRET_KEY", "should-be-filtered")
@@ -26,40 +25,31 @@ func TestBuildEnv_BasicWhitelist(t *testing.T) {
 		Env:        nil,
 	}
 
-	whitelist := []string{"HOME", "PATH"}
-	env := BuildEnv(session, whitelist, "test-worker")
+	blocklist := []string{"SECRET_KEY"}
+	env := BuildEnv(session, blocklist, "test-worker")
 
-	// Check that whitelisted vars are present.
+	// Blocked vars should NOT be present.
+	for _, e := range env {
+		require.NotEqual(t, "SECRET_KEY=should-be-filtered", e, "SECRET_KEY should be blocked")
+	}
+
+	// Non-blocked vars should pass through.
 	foundHOME := false
 	foundPATH := false
 	for _, e := range env {
-		if strings.HasPrefix(e, "HOME=") {
+		if e == "HOME=/home/test" {
 			foundHOME = true
-			require.Equal(t, "HOME=/home/test", e)
 		}
-		if strings.HasPrefix(e, "PATH=") {
+		if e == "PATH=/usr/bin" {
 			foundPATH = true
-			require.Equal(t, "PATH=/usr/bin", e)
 		}
 	}
-	require.True(t, foundHOME, "HOME should be in env")
-	require.True(t, foundPATH, "PATH should be in env")
+	require.True(t, foundHOME, "HOME should pass through")
+	require.True(t, foundPATH, "PATH should pass through")
 
-	// Check HOTPLEX vars.
-	foundSessionID := false
-	foundWorkerType := false
-	for _, e := range env {
-		if strings.HasPrefix(e, "HOTPLEX_SESSION_ID=") {
-			foundSessionID = true
-			require.Equal(t, "HOTPLEX_SESSION_ID=test-session", e)
-		}
-		if strings.HasPrefix(e, "HOTPLEX_WORKER_TYPE=") {
-			foundWorkerType = true
-			require.Equal(t, "HOTPLEX_WORKER_TYPE=test-worker", e)
-		}
-	}
-	require.True(t, foundSessionID, "HOTPLEX_SESSION_ID should be in env")
-	require.True(t, foundWorkerType, "HOTPLEX_WORKER_TYPE should be in env")
+	// HOTPLEX vars are always added.
+	require.Contains(t, env, "HOTPLEX_SESSION_ID=test-session")
+	require.Contains(t, env, "HOTPLEX_WORKER_TYPE=test-worker")
 }
 
 func TestBuildEnv_SessionVarsOverride(t *testing.T) {
@@ -75,28 +65,18 @@ func TestBuildEnv_SessionVarsOverride(t *testing.T) {
 		},
 	}
 
-	whitelist := []string{"HOME", "MY_VAR"}
-	env := BuildEnv(session, whitelist, "test-worker")
+	blocklist := []string{}
+	env := BuildEnv(session, blocklist, "test-worker")
 
-	// MY_VAR is whitelisted, so it appears once (from os.Environ).
-	// The session.Env loop skips keys already in whitelist.
-	count := 0
-	for _, e := range env {
-		if strings.HasPrefix(e, "MY_VAR=") {
-			count++
-		}
-	}
-	require.Equal(t, 1, count, "MY_VAR should appear once (whitelisted keys skip session.Env loop)")
-
-	// The value should be from os.Environ, not session.Env.
+	// session.Env should override os.Environ value.
 	found := false
 	for _, e := range env {
-		if e == "MY_VAR=original-value" {
+		if strings.HasPrefix(e, "MY_VAR=") {
+			require.Equal(t, "MY_VAR=session-value", e, "session.Env should override os.Environ")
 			found = true
-			break
 		}
 	}
-	require.True(t, found, "MY_VAR should have value from os.Environ")
+	require.True(t, found, "MY_VAR should be present")
 }
 
 func TestBuildEnv_HotPlexVars(t *testing.T) {
@@ -107,25 +87,13 @@ func TestBuildEnv_HotPlexVars(t *testing.T) {
 		Env:        nil,
 	}
 
-	whitelist := []string{}
-	env := BuildEnv(session, whitelist, "claude-code")
+	env := BuildEnv(session, nil, "claude-code")
 
-	foundSessionID := false
-	foundWorkerType := false
-	for _, e := range env {
-		if e == "HOTPLEX_SESSION_ID=session-123" {
-			foundSessionID = true
-		}
-		if e == "HOTPLEX_WORKER_TYPE=claude-code" {
-			foundWorkerType = true
-		}
-	}
-	require.True(t, foundSessionID, "HOTPLEX_SESSION_ID should be set correctly")
-	require.True(t, foundWorkerType, "HOTPLEX_WORKER_TYPE should be set correctly")
+	require.Contains(t, env, "HOTPLEX_SESSION_ID=session-123")
+	require.Contains(t, env, "HOTPLEX_WORKER_TYPE=claude-code")
 }
 
 func TestBuildEnv_StripNestedAgent(t *testing.T) {
-	// Set up test environment with CLAUDECODE= present.
 	os.Setenv("CLAUDECODE", "nested-agent-config")
 	os.Setenv("HOME", "/home/test")
 	defer os.Unsetenv("CLAUDECODE")
@@ -138,19 +106,21 @@ func TestBuildEnv_StripNestedAgent(t *testing.T) {
 		Env:        nil,
 	}
 
-	whitelist := []string{"HOME", "CLAUDECODE"}
-	env := BuildEnv(session, whitelist, "test-worker")
+	// CLAUDECODE is in the blocklist AND stripped by StripNestedAgent.
+	blocklist := []string{"CLAUDECODE"}
+	env := BuildEnv(session, blocklist, "test-worker")
 
-	// CLAUDECODE= should be stripped even if whitelisted.
 	for _, e := range env {
 		require.NotEqual(t, "CLAUDECODE=nested-agent-config", e, "CLAUDECODE should be stripped")
 		require.NotEqual(t, "CLAUDECODE=", e, "CLAUDECODE should be stripped")
 	}
 }
 
-func TestBuildEnv_EmptyWhitelist(t *testing.T) {
+func TestBuildEnv_EmptyBlocklistPassesAll(t *testing.T) {
 	os.Setenv("HOME", "/home/test")
+	os.Setenv("SOME_CUSTOM_VAR", "custom-value")
 	defer os.Unsetenv("HOME")
+	defer os.Unsetenv("SOME_CUSTOM_VAR")
 
 	session := worker.SessionInfo{
 		SessionID:  "test-session",
@@ -159,18 +129,21 @@ func TestBuildEnv_EmptyWhitelist(t *testing.T) {
 		Env:        nil,
 	}
 
-	whitelist := []string{}
-	env := BuildEnv(session, whitelist, "test-worker")
+	env := BuildEnv(session, nil, "test-worker")
 
-	// Should only have HOTPLEX vars plus HOME from os.Environ() if it matches session.Env.
-	// Since session.Env is nil and whitelist is empty, HOME should NOT be included.
+	// Empty blocklist = all os.Environ vars pass through.
 	foundHOME := false
+	foundCustom := false
 	for _, e := range env {
-		if strings.HasPrefix(e, "HOME=") {
+		if e == "HOME=/home/test" {
 			foundHOME = true
 		}
+		if e == "SOME_CUSTOM_VAR=custom-value" {
+			foundCustom = true
+		}
 	}
-	require.False(t, foundHOME, "HOME should not be in env when not whitelisted and not in session.Env")
+	require.True(t, foundHOME, "HOME should pass through with empty blocklist")
+	require.True(t, foundCustom, "SOME_CUSTOM_VAR should pass through with empty blocklist")
 }
 
 func TestBuildEnv_SessionOnlyVars(t *testing.T) {
@@ -187,35 +160,21 @@ func TestBuildEnv_SessionOnlyVars(t *testing.T) {
 		},
 	}
 
-	whitelist := []string{"HOME"}
-	env := BuildEnv(session, whitelist, "test-worker")
+	env := BuildEnv(session, nil, "test-worker")
 
-	// Custom vars from session.Env should be included.
-	foundCustom := false
-	foundAnother := false
-	for _, e := range env {
-		if e == "CUSTOM_VAR=custom-value" {
-			foundCustom = true
-		}
-		if e == "ANOTHER=another-value" {
-			foundAnother = true
-		}
-	}
-	require.True(t, foundCustom, "CUSTOM_VAR from session.Env should be included")
-	require.True(t, foundAnother, "ANOTHER from session.Env should be included")
+	require.Contains(t, env, "CUSTOM_VAR=custom-value")
+	require.Contains(t, env, "ANOTHER=another-value")
 }
 
-func TestBuildEnv_PrefixWhitelist(t *testing.T) {
+func TestBuildEnv_PrefixBlocklist(t *testing.T) {
 	os.Setenv("HOME", "/home/test")
-	os.Setenv("OTEL_SERVICE_NAME", "hotplex-gateway")
-	os.Setenv("OTEL_EXPORTER", "console")
-	os.Setenv("OTEL_BSP_MAX_EXPORT_BATCH_SIZE", "512")
-	os.Setenv("NON_OTEL_VAR", "should-be-filtered")
+	os.Setenv("HOTPLEX_JWT_SECRET", "super-secret")
+	os.Setenv("HOTPLEX_ADMIN_TOKEN_1", "admin-secret")
+	os.Setenv("HOTPLEX_CUSTOM_VAR", "should-be-blocked")
 	defer os.Unsetenv("HOME")
-	defer os.Unsetenv("OTEL_SERVICE_NAME")
-	defer os.Unsetenv("OTEL_EXPORTER")
-	defer os.Unsetenv("OTEL_BSP_MAX_EXPORT_BATCH_SIZE")
-	defer os.Unsetenv("NON_OTEL_VAR")
+	defer os.Unsetenv("HOTPLEX_JWT_SECRET")
+	defer os.Unsetenv("HOTPLEX_ADMIN_TOKEN_1")
+	defer os.Unsetenv("HOTPLEX_CUSTOM_VAR")
 
 	session := worker.SessionInfo{
 		SessionID:  "test-session",
@@ -224,30 +183,137 @@ func TestBuildEnv_PrefixWhitelist(t *testing.T) {
 		Env:        nil,
 	}
 
-	// OTEL_ with trailing "_" is a prefix match.
-	whitelist := []string{"HOME", "OTEL_"}
-	env := BuildEnv(session, whitelist, "test-worker")
+	// HOTPLEX_ with trailing "_" is a prefix match.
+	blocklist := []string{"HOTPLEX_"}
+	env := BuildEnv(session, blocklist, "test-worker")
 
-	foundServiceName := false
-	foundExporter := false
-	foundBatchSize := false
-	foundNonOtel := false
+	// HOME should pass through.
+	foundHOME := false
 	for _, e := range env {
-		if e == "OTEL_SERVICE_NAME=hotplex-gateway" {
-			foundServiceName = true
-		}
-		if e == "OTEL_EXPORTER=console" {
-			foundExporter = true
-		}
-		if e == "OTEL_BSP_MAX_EXPORT_BATCH_SIZE=512" {
-			foundBatchSize = true
-		}
-		if strings.HasPrefix(e, "NON_OTEL_VAR=") {
-			foundNonOtel = true
+		if e == "HOME=/home/test" {
+			foundHOME = true
 		}
 	}
-	require.True(t, foundServiceName, "OTEL_SERVICE_NAME should be included via prefix match")
-	require.True(t, foundExporter, "OTEL_EXPORTER should be included via prefix match")
-	require.True(t, foundBatchSize, "OTEL_BSP_MAX_EXPORT_BATCH_SIZE should be included via prefix match")
-	require.False(t, foundNonOtel, "NON_OTEL_VAR should not be included")
+	require.True(t, foundHOME, "HOME should pass through")
+
+	// All HOTPLEX_ vars should be blocked.
+	for _, e := range env {
+		require.False(t, strings.HasPrefix(e, "HOTPLEX_JWT_SECRET="), "HOTPLEX_JWT_SECRET should be blocked")
+		require.False(t, strings.HasPrefix(e, "HOTPLEX_ADMIN_TOKEN_1="), "HOTPLEX_ADMIN_TOKEN_1 should be blocked")
+		require.False(t, strings.HasPrefix(e, "HOTPLEX_CUSTOM_VAR="), "HOTPLEX_CUSTOM_VAR should be blocked")
+	}
+
+	// HOTPLEX_SESSION_ID and HOTPLEX_WORKER_TYPE are added after filtering.
+	require.Contains(t, env, "HOTPLEX_SESSION_ID=test-session")
+	require.Contains(t, env, "HOTPLEX_WORKER_TYPE=test-worker")
+}
+
+func TestBuildEnv_ConfigEnvOverrides(t *testing.T) {
+	os.Setenv("MY_VAR", "original")
+	defer os.Unsetenv("MY_VAR")
+
+	session := worker.SessionInfo{
+		SessionID:  "test-session",
+		UserID:     "test-user",
+		ProjectDir: "/tmp",
+		Env:        nil,
+		ConfigEnv:  []string{"MY_VAR=overridden"},
+	}
+
+	env := BuildEnv(session, nil, "test-worker")
+
+	// ConfigEnv should override os.Environ value.
+	found := false
+	for _, e := range env {
+		if strings.HasPrefix(e, "MY_VAR=") {
+			require.Equal(t, "MY_VAR=overridden", e, "ConfigEnv should override os.Environ")
+			found = true
+		}
+	}
+	require.True(t, found, "MY_VAR should be present")
+}
+
+func TestBuildEnv_WorkerSecretStripping(t *testing.T) {
+	os.Setenv("HOTPLEX_WORKER_GITHUB_TOKEN", "from-dotenv")
+	os.Setenv("GITHUB_TOKEN", "from-system")
+	os.Setenv("HOME", "/home/test")
+	defer os.Unsetenv("HOTPLEX_WORKER_GITHUB_TOKEN")
+	defer os.Unsetenv("GITHUB_TOKEN")
+	defer os.Unsetenv("HOME")
+
+	session := worker.SessionInfo{
+		SessionID:  "test-session",
+		UserID:     "test-user",
+		ProjectDir: "/tmp",
+		Env:        nil,
+	}
+
+	env := BuildEnv(session, nil, "test-worker")
+
+	require.Contains(t, env, "GITHUB_TOKEN=from-dotenv", "stripped HOTPLEX_WORKER_ var should be injected")
+	for _, e := range env {
+		require.NotEqual(t, "GITHUB_TOKEN=from-system", e, "system-level var should be blocked when HOTPLEX_WORKER_ override exists")
+		require.False(t, strings.HasPrefix(e, "HOTPLEX_WORKER_GITHUB_TOKEN="), "HOTPLEX_WORKER_ prefixed version should not appear")
+	}
+}
+
+func TestBuildEnv_GatewayVarsNotStripped(t *testing.T) {
+	os.Setenv("HOTPLEX_JWT_SECRET", "jwt-secret")
+	os.Setenv("HOTPLEX_ADMIN_TOKEN_1", "admin-token")
+	os.Setenv("HOTPLEX_WORKER_GITHUB_TOKEN", "github-token")
+	defer os.Unsetenv("HOTPLEX_JWT_SECRET")
+	defer os.Unsetenv("HOTPLEX_ADMIN_TOKEN_1")
+	defer os.Unsetenv("HOTPLEX_WORKER_GITHUB_TOKEN")
+
+	session := worker.SessionInfo{
+		SessionID:  "test-session",
+		UserID:     "test-user",
+		ProjectDir: "/tmp",
+		Env:        nil,
+	}
+
+	env := BuildEnv(session, nil, "test-worker")
+
+	// Gateway-internal HOTPLEX_ vars should NOT be stripped or passed through.
+	for _, e := range env {
+		require.False(t, strings.HasPrefix(e, "JWT_SECRET="), "JWT_SECRET should not be injected")
+		require.False(t, strings.HasPrefix(e, "ADMIN_TOKEN_1="), "ADMIN_TOKEN_1 should not be injected")
+	}
+	// Only HOTPLEX_WORKER_ vars are stripped.
+	require.Contains(t, env, "GITHUB_TOKEN=github-token", "HOTPLEX_WORKER_ var should be stripped")
+}
+
+func TestBuildEnv_SystemVarPassesWithoutWorkerOverride(t *testing.T) {
+	os.Setenv("MY_SECRET", "system-value")
+	defer os.Unsetenv("MY_SECRET")
+
+	session := worker.SessionInfo{
+		SessionID:  "test-session",
+		UserID:     "test-user",
+		ProjectDir: "/tmp",
+		Env:        nil,
+	}
+
+	env := BuildEnv(session, nil, "test-worker")
+	require.Contains(t, env, "MY_SECRET=system-value", "system var should pass when no HOTPLEX_WORKER_ override exists")
+}
+
+func TestBuildEnv_PriorityOrder(t *testing.T) {
+	os.Setenv("MY_KEY", "system")
+	os.Setenv("HOTPLEX_WORKER_MY_KEY", "from-stripping")
+	defer os.Unsetenv("MY_KEY")
+	defer os.Unsetenv("HOTPLEX_WORKER_MY_KEY")
+
+	session := worker.SessionInfo{
+		SessionID:  "test-session",
+		UserID:     "test-user",
+		ProjectDir: "/tmp",
+		Env: map[string]string{
+			"MY_KEY": "from-session",
+		},
+		ConfigEnv: []string{"MY_KEY=from-config"},
+	}
+
+	env := BuildEnv(session, nil, "test-worker")
+	require.Contains(t, env, "MY_KEY=from-config", "ConfigEnv should have highest priority")
 }

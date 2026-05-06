@@ -61,7 +61,7 @@ type Bridge struct {
 	agentConfigDir     string        // agent config directory path; "" = disabled
 	turnTimeout        time.Duration // per-turn timeout; 0 = disabled
 	workerEnv          []string      // extra env vars from worker.environment config
-	workerEnvWhitelist []string      // extra whitelist entries from worker.env_whitelist config
+	workerEnvBlocklist []string      // extra blocklist entries from worker.env_blocklist config
 
 	accum   map[string]*sessionAccumulator // per-session stats accumulator
 	accumMu sync.Mutex
@@ -92,7 +92,7 @@ func NewBridge(deps BridgeDeps) *Bridge {
 		agentConfigDir:     deps.AgentConfigDir,
 		turnTimeout:        deps.TurnTimeout,
 		workerEnv:          deps.WorkerEnv,
-		workerEnvWhitelist: deps.WorkerEnvWhitelist,
+		workerEnvBlocklist: deps.WorkerEnvBlocklist,
 		retryCancel:        make(map[string]chan struct{}),
 		accum:              make(map[string]*sessionAccumulator),
 		crashTracker:       make(map[string]*crashHistory),
@@ -123,7 +123,7 @@ func (b *Bridge) StartSession(ctx context.Context, id, userID, botID string, wt 
 		ProjectDir:      workDir,
 		AllowedTools:    si.AllowedTools,
 		ConfigEnv:       b.workerEnv,
-		ConfigWhitelist: b.workerEnvWhitelist,
+		ConfigBlocklist: b.workerEnvBlocklist,
 	}
 
 	// Inject Slack context for CLI subcommand auto-resolution.
@@ -208,7 +208,7 @@ func (b *Bridge) resumeWithOpts(ctx context.Context, id, workDir string, opts fo
 		WorkerSessionID: si.WorkerSessionID,
 		ProjectDir:      workDir,
 		ConfigEnv:       b.workerEnv,
-		ConfigWhitelist: b.workerEnvWhitelist,
+		ConfigBlocklist: b.workerEnvBlocklist,
 	}
 
 	// Inject Slack context for CLI subcommand auto-resolution (same as StartSession).

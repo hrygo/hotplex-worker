@@ -28,7 +28,7 @@ func TestOpenCodeServerWorker_Capabilities(t *testing.T) {
 	require.True(t, w.SupportsResume())
 	require.True(t, w.SupportsStreaming())
 	require.True(t, w.SupportsTools())
-	require.NotNil(t, w.EnvWhitelist())
+	require.NotNil(t, w.EnvBlocklist())
 	require.Empty(t, w.SessionStoreDir())
 	require.Zero(t, w.MaxTurns())
 	require.Equal(t, []string{"text", "code"}, w.Modalities())
@@ -46,17 +46,15 @@ func TestOpenCodeServerWorker_New(t *testing.T) {
 	require.Nil(t, w.httpConn)
 }
 
-func TestOpenCodeServerWorker_EnvWhitelist(t *testing.T) {
+func TestOpenCodeServerWorker_EnvBlocklist(t *testing.T) {
 	t.Parallel()
 	w := New()
 
-	wl := w.EnvWhitelist()
-	require.Contains(t, wl, "OPENAI_API_KEY")
-	require.Contains(t, wl, "OPENAI_BASE_URL")
-	require.Contains(t, wl, "OPENCODE_API_KEY")
-	require.Contains(t, wl, "OPENCODE_BASE_URL")
-	require.Contains(t, wl, "HOME")
-	require.Contains(t, wl, "PATH")
+	bl := w.EnvBlocklist()
+	require.Contains(t, bl, "CLAUDECODE")
+	require.Contains(t, bl, "HOTPLEX_")
+	require.Contains(t, bl, "CLAUDE_")
+	require.Contains(t, bl, "ANTHROPIC_")
 }
 
 func TestOpenCodeServerWorker_ConnBeforeStart(t *testing.T) {

@@ -134,7 +134,7 @@ func (w *simulatedWorker) Type() worker.WorkerType { return w.workerType }
 func (w *simulatedWorker) SupportsResume() bool    { return true }
 func (w *simulatedWorker) SupportsStreaming() bool { return true }
 func (w *simulatedWorker) SupportsTools() bool     { return true }
-func (w *simulatedWorker) EnvWhitelist() []string  { return nil }
+func (w *simulatedWorker) EnvBlocklist() []string  { return nil }
 func (w *simulatedWorker) SessionStoreDir() string { return "" }
 func (w *simulatedWorker) MaxTurns() int           { return 0 }
 func (w *simulatedWorker) Modalities() []string    { return []string{"text"} }

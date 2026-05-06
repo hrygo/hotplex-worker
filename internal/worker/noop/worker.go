@@ -25,7 +25,7 @@ func (Capabilities) Type() worker.WorkerType { return worker.TypeUnknown }
 func (Capabilities) SupportsResume() bool    { return false }
 func (Capabilities) SupportsStreaming() bool { return false }
 func (Capabilities) SupportsTools() bool     { return false }
-func (Capabilities) EnvWhitelist() []string  { return nil }
+func (Capabilities) EnvBlocklist() []string  { return nil }
 func (Capabilities) SessionStoreDir() string { return "" }
 func (Capabilities) MaxTurns() int           { return 0 }
 func (Capabilities) Modalities() []string    { return nil }

@@ -155,7 +155,7 @@ func (b *Bridge) attemptResumeFallback(p fallbackParams) bool {
 		WorkerSessionID: si.WorkerSessionID,
 		ProjectDir:      p.workDir,
 		ConfigEnv:       b.workerEnv,
-		ConfigWhitelist: b.workerEnvWhitelist,
+		ConfigBlocklist: b.workerEnvBlocklist,
 	}
 
 	// Inject Slack context for CLI subcommand auto-resolution (same as StartSession).

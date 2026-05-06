@@ -28,5 +28,5 @@ type BridgeDeps struct {
 	AgentConfigDir     string
 	TurnTimeout        time.Duration
 	WorkerEnv          []string // extra env vars from worker.environment config
-	WorkerEnvWhitelist []string // extra whitelist entries from worker.env_whitelist config
+	WorkerEnvBlocklist []string // extra blocklist entries from worker.env_blocklist config
 }

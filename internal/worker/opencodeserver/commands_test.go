@@ -1018,7 +1018,7 @@ func TestWorkerCapabilities(t *testing.T) {
 	require.True(t, w.SupportsResume())
 	require.True(t, w.SupportsStreaming())
 	require.True(t, w.SupportsTools())
-	require.NotNil(t, w.EnvWhitelist())
+	require.NotNil(t, w.EnvBlocklist())
 	require.Equal(t, "", w.SessionStoreDir())
 	require.Equal(t, 0, w.MaxTurns())
 	require.Equal(t, []string{"text", "code"}, w.Modalities())

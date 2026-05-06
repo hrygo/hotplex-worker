@@ -305,7 +305,7 @@ type WorkerConfig struct {
 	ExecutionTimeout time.Duration        `mapstructure:"execution_timeout"`
 	TurnTimeout      time.Duration        `mapstructure:"turn_timeout"`
 	AllowedEnvs      []string             `mapstructure:"allowed_envs"`
-	EnvWhitelist     []string             `mapstructure:"env_whitelist"`
+	EnvBlocklist     []string             `mapstructure:"env_blocklist"`
 	DefaultWorkDir   string               `mapstructure:"default_work_dir"`
 	PIDDir           string               `mapstructure:"pid_dir"`
 	AutoRetry        AutoRetryConfig      `mapstructure:"auto_retry"`
@@ -439,7 +439,7 @@ func Default() *Config {
 			ExecutionTimeout: 30 * time.Minute,
 			TurnTimeout:      0, // disabled by default; execution_timeout catches zombies
 			AllowedEnvs:      nil,
-			EnvWhitelist:     nil,
+			EnvBlocklist:     nil,
 			DefaultWorkDir:   filepath.Join(HotplexHome(), "workspace"),
 			PIDDir:           filepath.Join(HotplexHome(), ".pids"),
 			AutoRetry:        AutoRetryConfig{Enabled: true, MaxRetries: 9, BaseDelay: 5 * time.Second, MaxDelay: 120 * time.Second, RetryInput: "继续", NotifyUser: true},
@@ -703,18 +703,18 @@ func loadRecursive(filePath string, opts LoadOptions, visited []string) (*Config
 	}
 	cfg.Worker.Environment = expanded
 
-	// Post-process: normalize allowed_envs into env_whitelist.
+	// Post-process: normalize allowed_envs into env_blocklist.
 	if len(cfg.Worker.AllowedEnvs) > 0 {
 		seen := make(map[string]bool)
-		for _, e := range cfg.Worker.EnvWhitelist {
+		for _, e := range cfg.Worker.EnvBlocklist {
 			seen[e] = true
 		}
 		for _, e := range cfg.Worker.AllowedEnvs {
 			seen[e] = true
 		}
-		cfg.Worker.EnvWhitelist = nil
+		cfg.Worker.EnvBlocklist = nil
 		for e := range seen {
-			cfg.Worker.EnvWhitelist = append(cfg.Worker.EnvWhitelist, e)
+			cfg.Worker.EnvBlocklist = append(cfg.Worker.EnvBlocklist, e)
 		}
 	}
 
