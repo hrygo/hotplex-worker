@@ -20,7 +20,7 @@ tags:
 ┌─────────────────────────────────────────────────────────┐
 │  Layer 1: hotplexd → Worker (HotPlex 控制)               │
 │           exec.Command("claude", ...)                    │
-│           ✅ 白名单环境变量、SafeEnvBuilder              │
+│           ✅ Blocklist 环境变量过滤、HOTPLEX_WORKER_ 前缀剥离 │
 └─────────────────────────────────────────────────────────┘
                           │
                           ▼

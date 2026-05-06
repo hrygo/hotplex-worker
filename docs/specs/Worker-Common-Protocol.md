@@ -44,7 +44,7 @@ completion_date: 2026-04-04
 │  • NDJSON 安全序列化                                             │
 │  • 背压处理策略                                                  │
 │  • 分层终止流程                                                  │
-│  • 环境变量白名单规范                                            │
+│  • 环境变量 blocklist 规范                                         │
 │  • Capability 接口定义                                            │
 └─────────────────────────────────────────────────────────────────┘
                               │
@@ -56,7 +56,7 @@ completion_date: 2026-04-04
 │  • BaseWorker: Terminate/Kill/Wait/Health/LastIO                 │
 │  • proc.Manager: PGID 隔离进程管理                               │
 │  • base.Conn: TrySend 非阻塞发送                                 │
-│  • base.BuildEnv: 白名单 + HOTPLEX_* 注入                        │
+│  • base.BuildEnv: blocklist + HOTPLEX_WORKER_ 前缀注入             │
 │  • Security: StripNestedAgent()                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -309,15 +309,15 @@ cmd.SysProcAttr = attr
 
 ---
 
-## 6. 环境变量白名单规范
+## 6. 环境变量 blocklist 规范
 
-### 6.1 白名单分层
+### 6.1 Blocklist 机制
 
-每个 Worker 必须定义三层环境变量白名单：
+每个 Worker 通过 `EnvBlocklist()` 返回需要阻止的环境变量列表，不在 blocklist 中的变量默认传递给 Worker 进程：
 
 | 层级 | 变量类型 | 说明 |
 |------|----------|------|
-| **系统层** | `HOME`, `USER`, `PATH`, `TERM`, `LANG`, `LC_ALL`, `PWD` | 基础系统环境 |
+| **系统层** | `HOME`, `USER`, `PATH`, `TERM`, `LANG`, `LC_ALL`, `PWD` | 默认传递的系统环境 |
 | **供应商层** | `OPENAI_*`, `ANTHROPIC_*`, `OPENCODE_*` | API 密钥和端点 |
 | **HotPlex 层** | `HOTPLEX_SESSION_ID`, `HOTPLEX_WORKER_TYPE` | 会话追踪 |
 
@@ -325,29 +325,31 @@ cmd.SysProcAttr = attr
 
 ```go
 // internal/worker/base/env.go
-func BuildEnv(session worker.SessionInfo, whitelist []string, workerTypeLabel string) []string {
+func BuildEnv(session worker.SessionInfo, blocklist []string, workerTypeLabel string) []string {
     env := os.Environ()
 
-    // 1. 过滤白名单
-    whitelistSet := make(map[string]bool)
-    for _, v := range whitelist {
-        whitelistSet[v] = true
+    // 1. 过滤 blocklist
+    blocklistSet := make(map[string]bool)
+    for _, v := range blocklist {
+        blocklistSet[v] = true
     }
 
-    // 支持前缀匹配（如 OPENAI_*）
+    // 支持前缀匹配（如 AWS_*）
     filtered := make([]string, 0, len(env))
     for _, e := range env {
         key := strings.SplitN(e, "=", 2)[0]
-        if whitelistSet[key] || hasPrefixMatch(key, whitelist) {
+        if !blocklistSet[key] && !hasPrefixMatch(key, blocklist) {
             filtered = append(filtered, e)
         }
     }
 
-    // 2. 注入 HotPlex 变量
-    filtered = append(filtered,
-        "HOTPLEX_SESSION_ID="+session.SessionID,
-        "HOTPLEX_WORKER_TYPE="+workerTypeLabel,
-    )
+    // 2. 注入 HotPlex 变量（从 HOTPLEX_WORKER_ 前缀环境变量中提取）
+    for _, e := range os.Environ() {
+        if strings.HasPrefix(e, "HOTPLEX_WORKER_") {
+            stripped := strings.TrimPrefix(e, "HOTPLEX_WORKER_")
+            filtered = append(filtered, stripped)
+        }
+    }
 
     // 3. 追加 Session 环境变量
     for k, v := range session.Env {
@@ -371,8 +373,8 @@ func hasPrefixMatch(key string, patterns []string) bool {
 
 | 变量 | 说明 | 示例 |
 |------|------|------|
-| `HOTPLEX_SESSION_ID` | 会话唯一标识 | `sess_abc123` |
-| `HOTPLEX_WORKER_TYPE` | Worker 类型标签 | `claude-code`, `opencode-server` |
+| `HOTPLEX_WORKER_SESSION_ID` | 会话唯一标识（注入时前缀被剥离） | `sess_abc123` |
+| `HOTPLEX_WORKER_TYPE` | Worker 类型标签（注入时前缀被剥离） | `claude-code`, `opencode-server` |
 
 ### 6.4 StripNestedAgent
 
@@ -411,7 +413,7 @@ type Worker interface {
     SupportsTools() bool      // 是否支持工具调用
 
     // 环境与资源
-    EnvWhitelist() []string    // 环境变量白名单
+    EnvBlocklist() []string    // 环境变量阻止列表
     SessionStoreDir() string   // 本地会话存储目录（无则为空）
     MaxTurns() int            // 最大轮次（0=无限制）
     Modalities() []string     // 支持的模态（text, code, image）
@@ -445,7 +447,7 @@ const (
 | `SupportsResume()` | ✅ | ✅ |
 | `SupportsStreaming()` | ✅ | ✅ |
 | `SupportsTools()` | ✅ | ✅ |
-| `EnvWhitelist()` | `ANTHROPIC_*` | `OPENAI_*`, `OPENCODE_*` |
+| `EnvBlocklist()` | `ANTHROPIC_*` | `OPENAI_*`, `OPENCODE_*` |
 | `SessionStoreDir()` | `~/.claude/...` | `""` |
 | `MaxTurns()` | 可配置 | 0（无限制） |
 | `Modalities()` | `["text", "code"]` | `["text", "code"]` |
@@ -517,7 +519,7 @@ if exitCode != 0 {
 |------|------|------|
 | BaseWorker | `internal/worker/base/worker.go` | 共享生命周期管理 |
 | base.Conn | `internal/worker/base/conn.go` | stdio 连接（TrySend） |
-| base.BuildEnv | `internal/worker/base/env.go` | 白名单 + HOTPLEX_* 注入 |
+| base.BuildEnv | `internal/worker/base/env.go` | blocklist + HOTPLEX_WORKER_ 前缀注入 |
 | proc.Manager | `internal/worker/proc/manager.go` | PGID 隔离进程管理 |
 | AEP Codec | `pkg/aep/codec.go` | NDJSON 编解码 |
 | StripNestedAgent | `internal/security/env.go` | 嵌套调用防护 |
@@ -556,7 +558,7 @@ if exitCode != 0 {
 | NDJSON 安全序列化 | ✅ 已实现 | `pkg/aep/codec.go` |
 | 背压处理策略 | ✅ 已实现 | `base/conn.go` |
 | 分层终止流程 | ✅ 已实现 | `base/worker.go`, `proc/manager.go` |
-| 环境变量白名单 | ✅ 已实现 | `base/env.go` |
+| 环境变量 blocklist | ✅ 已实现 | `base/env.go` |
 | Capability 接口 | ✅ 已实现 | `internal/worker/worker.go` |
 | StripNestedAgent | ✅ 已实现 | `security/env.go` |
 
@@ -566,6 +568,6 @@ if exitCode != 0 {
 - ✅ **NDJSON 安全**：U+2028/U+2029 自动转义，防止解析截断
 - ✅ **背压策略统一**：256 channel，delta 静默丢弃，control 不得丢弃
 - ✅ **分层终止**：SIGTERM → 5s → SIGKILL，优雅关闭
-- ✅ **环境变量隔离**：白名单 + 前缀匹配 + HOTPLEX_* 注入
+- ✅ **环境变量隔离**：blocklist + 前缀匹配 + HOTPLEX_WORKER_ 前缀注入
 - ✅ **PGID 隔离**：信号正确传播到所有子进程
 - ✅ **防嵌套调用**：StripNestedAgent 移除 CLAUDECODE=

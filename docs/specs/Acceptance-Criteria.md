@@ -472,11 +472,11 @@ version: v1.0
 - Given Worker 已 Start, When Close(), Then stdin/stdout/stderr 全部关闭，Recv channel 关闭，无文件描述符泄漏
 
 ### WK-002 — Capabilities 接口正确声明各 Worker 类型能力
-**描述**: Capabilities 接口返回 Type / SupportsResume / SupportsStreaming / SupportsTools / EnvWhitelist / SessionStoreDir。
+**描述**: Capabilities 接口返回 Type / SupportsResume / SupportsStreaming / SupportsTools / EnvBlocklist / SessionStoreDir。
 
 **验收标准**:
 - Given ClaudeCode Worker, When Capabilities 检查, Then Type()=='claude_code', SupportsResume()==true, SessionStoreDir() 返回非空路径
-- Given Worker, When Capabilities 检查, Then Type()=='opencode_server', SupportsResume()==true，EnvWhitelist 列出允许的环境变量名
+- Given Worker, When Capabilities 检查, Then Type()=='opencode_server', SupportsResume()==true，EnvBlocklist 列出需要阻止的环境变量名
 
 ### WK-003 — Claude Code Worker：--resume 恢复持久会话
 **描述**: Claude Code 适配器通过 --print --session-id 和 --resume 参数实现持久化。
@@ -698,55 +698,59 @@ version: v1.0
 **验收标准**:
 - Given 存在恶意 URL 被阻止, When SSRFValidator.Validate 执行, Then slog.Warn 被调用，包含 url、kind、reason 字段
 
-### SEC-030 — BaseEnvWhitelist 限制基础环境变量
-**描述**: Worker 进程只能接收 BaseEnvWhitelist 中的系统变量: HOME, USER, SHELL, PATH, TERM, LANG, LC_ALL, PWD。
+### SEC-030 ~ SEC-036 — [已废弃] 环境变量白名单机制
+> **注**: SEC-030 至 SEC-036 已被 blocklist 实现取代。
+> 原先的 whitelist 模式（`SafeEnvBuilder`、`BuildWorkerEnv`、`IsSensitive`、`BaseEnvWhitelist`、`WorkerEnvWhitelist`）
+> 已迁移为 blocklist + `HOTPLEX_WORKER_` 前缀剥离模式，实现于 `base.BuildEnv()`。
+> 详见 `internal/worker/base/env.go`。
+
+### SEC-030 — EnvBlocklist 阻止敏感环境变量传递
+**描述**: Worker 进程的环境变量通过 blocklist 机制过滤，阻止敏感变量（如密钥、凭证）传递给子进程。
 
 **验收标准**:
-- Given os.Getenv('HOME') 返回非空, When SafeEnvBuilder.Build, Then 结果中包含 HOME=<value>
-- Given os.Getenv('RANDOM_VAR') 返回非空, When SafeEnvBuilder.Build, Then 结果中不包含 RANDOM_VAR
+- Given os.Getenv('HOME') 返回非空, When base.BuildEnv, Then 结果中包含 HOME=<value>（非敏感变量默认传递）
+- Given 环境变量键在 blocklist 中, When base.BuildEnv, Then 该变量被过滤，不传递给 Worker
 
-### SEC-031 — Worker 类型特定白名单正确注入
-**描述**: AddWorkerType 根据 worker 类型注入对应环境变量。
-
-**验收标准**:
-- Given workerType = 'claude-code', When AddWorkerType 后 Build, Then whitelisted vars 包含 CLAUDE_API_KEY, CLAUDE_MODEL, CLAUDE_BASE_URL
-
-### SEC-032 — ProtectedEnvVars 绝对不可被覆盖
-**描述**: SafeEnvBuilder.AddHotPlexVar 和 AddSecret 必须拒绝任何尝试设置 ProtectedEnvVars 中的变量。
+### SEC-031 — Worker 类型特定环境变量正确注入
+**描述**: Worker 适配器通过 `EnvBlocklist()` 返回各自需要阻止的环境变量列表。
 
 **验收标准**:
-- Given AddHotPlexVar('HOME', '/evil/path'), When AddHotPlexVar, Then 返回 error 且包含 'protected system variable'
-- Given AddHotPlexVar('PATH', '/usr/bin:/evil'), When AddHotPlexVar, Then 返回 error (PATH 在 ProtectedEnvVars)
-- Given AddHotPlexVar('HOTPLEX_SESSION_ID', 'valid-id'), When AddHotPlexVar, Then 返回 nil (非 ProtectedEnvVars)
+- Given workerType = 'claude-code', When Worker.EnvBlocklist() 被调用, Then 返回该 Worker 类型的 blocklist
 
-### SEC-033 — 敏感模式检测正确识别秘密信息
-**描述**: IsSensitive 通过前缀和正则模式检测敏感环境变量，BuildWorkerEnv 对匹配项返回 [REDACTED]。
+### SEC-032 — Protected 变量绝对不可被覆盖
+**描述**: base.BuildEnv 保证受保护的系统变量不被恶意覆盖。
 
 **验收标准**:
-- Given key = 'AWS_ACCESS_KEY_ID', When IsSensitive, Then 返回 true (AWS_ 前缀)
-- Given key = 'DATABASE_URL', When IsSensitive, Then 返回 true (exact match)
-- Given key = 'USERNAME', When IsSensitive, Then 返回 false (无敏感模式)
+- Given 受保护变量列表, When base.BuildEnv 构建, Then 这些变量始终使用系统原始值
+
+### SEC-033 — 敏感变量检测正确识别秘密信息
+**描述**: blocklist 机制通过模式匹配检测敏感环境变量并阻止传递。
+
+**验收标准**:
+- Given key = 'AWS_ACCESS_KEY_ID', When blocklist 匹配, Then 该变量被阻止 (AWS_ 前缀匹配)
+- Given key = 'DATABASE_URL', When blocklist 匹配, Then 该变量被阻止 (exact match)
+- Given key = 'USERNAME', When blocklist 匹配, Then 该变量不被阻止 (非敏感模式)
 
 ### SEC-034 — 保护变量始终被剥离
-**描述**: BuildWorkerEnv 必须无条件剥离 protectedVars 中的变量 (CLAUDECODE, GATEWAY_ADDR, GATEWAY_TOKEN)。
+**描述**: base.BuildEnv 必须无条件剥离 protected 变量 (CLAUDECODE, GATEWAY_ADDR, GATEWAY_TOKEN)。
 
 **验收标准**:
-- Given env map 中存在 CLAUDECODE='...', When BuildWorkerEnv, Then 结果中不包含 CLAUDECODE
-- Given env map 中存在 GATEWAY_TOKEN='secret', When BuildWorkerEnv, Then 结果中不包含 GATEWAY_TOKEN
+- Given env 中存在 CLAUDECODE='...', When base.BuildEnv, Then 结果中不包含 CLAUDECODE
+- Given env 中存在 GATEWAY_TOKEN='secret', When base.BuildEnv, Then 结果中不包含 GATEWAY_TOKEN
 
 ### SEC-035 — HotPlex 必需变量正确注入
-**描述**: SafeEnvBuilder 必须支持 HOTPLEX_SESSION_ID 和 HOTPLEX_WORKER_TYPE 作为必需变量注入。
+**描述**: base.BuildEnv 通过 `HOTPLEX_WORKER_` 前缀自动注入 Worker 所需变量（去除前缀后作为最终键名）。
 
 **验收标准**:
-- Given AddHotPlexVar('HOTPLEX_SESSION_ID', 'sess-123'), When Build, Then env 中包含 HOTPLEX_SESSION_ID=sess-123
-- Given AddHotPlexVar('HOTPLEX_WORKER_TYPE', 'claude-code'), When Build, Then env 中包含 HOTPLEX_WORKER_TYPE=claude-code
+- Given 环境变量含 HOTPLEX_WORKER_SESSION_ID='sess-123', When base.BuildEnv, Then env 中包含 SESSION_ID=sess-123
+- Given 环境变量含 HOTPLEX_WORKER_TYPE='claude-code', When base.BuildEnv, Then env 中包含 WORKER_TYPE=claude-code
 
-### SEC-036 — Go 运行时环境变量白名单受保护
-**描述**: GOPROXY, GOSUMDB 在 GoEnvWhitelist 中允许传递给 Worker，但 GOPATH/GOROOT 在 ProtectedEnvVars 中不可被覆盖。
+### SEC-036 — Go 运行时环境变量受保护
+**描述**: GOPROXY, GOSUMDB 等变量默认传递给 Worker，但 GOPATH/GOROOT 在 blocklist 中不可被覆盖。
 
 **验收标准**:
-- Given SafeEnvBuilder 默认初始化, When Build, Then whitelisted vars 包含 GOPROXY, GOSUMDB
-- Given AddHotPlexVar('GOPATH', '/evil'), When AddHotPlexVar, Then 返回 error (GOPATH 在 ProtectedEnvVars)
+- Given base.BuildEnv 默认执行, Then 传递 GOPROXY, GOSUMDB
+- Given 尝试覆盖 GOPATH, When blocklist 检查, Then 返回使用系统原始值
 
 ### SEC-037 — 嵌套 Agent 调用被阻止
 **描述**: StripNestedAgent 从环境变量切片中移除 CLAUDECODE=，防止 Worker 进程启动嵌套的 Claude Code Agent。
@@ -1296,7 +1300,7 @@ version: v1.0
 2. Gateway 连接管理（握手、重连去重、Bridge 路由、goroutine shutdown）
 3. Session SQLite WAL、状态机、GC、mutex 规范
 4. Worker SessionConn 接口、PGID 隔离、分层终止、输出限制
-5. 安全：JWT ES256/JTI/Claims、命令白名单、双层验证、SafePathJoin、SSRF CIDR/DNSRebind、Env 白名单/Protected/Sensitive、AllowedTools
+5. 安全：JWT ES256/JTI/Claims、命令白名单、双层验证、SafePathJoin、SSRF CIDR/DNSRebind、Env blocklist/Protected/Sensitive、AllowedTools
 6. Admin API 核心端点 + 认证链 + 权限矩阵
 7. 配置加载/ExpandEnv/验证/SecretProvider/深度合并
 8. 可观测性核心：日志格式/级别、Prometheus 命名/RED/USE、OTel Span

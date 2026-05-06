@@ -384,7 +384,7 @@ data: {"version":"aep/v1","id":"evt_yyy","seq":2,"session_id":"sess_xxx","timest
 
 ## 7. 环境变量
 
-### 7.1 白名单
+### 7.1 环境变量
 
 | 变量                                    | 说明              | 实现位置                |
 | --------------------------------------- | ----------------- | ----------------------- |
@@ -543,7 +543,7 @@ Start
 func (w *Worker) Resume(ctx context.Context, session worker.SessionInfo) error {
     // 1. 启动 serve 进程
     args := []string{"serve", "--port", fmt.Sprintf("%d", defaultServePort)}
-    env := base.BuildEnv(session, openCodeSrvEnvWhitelist, "opencode-server")
+    env := base.BuildEnv(session, openCodeSrvEnvBlocklist, "opencode-server")
 
     // 2. 等待服务器就绪
     // 3. 使用现有 session_id 复用连接
@@ -698,7 +698,7 @@ func (w *Worker) Type() worker.WorkerType { return worker.TypeOpenCodeSrv }
 func (w *Worker) SupportsResume() bool    { return true }   // ✅ Server 模式支持
 func (w *Worker) SupportsStreaming() bool { return true }   // ✅ SSE 流式
 func (w *Worker) SupportsTools() bool     { return true }   // ✅ 工具调用
-func (w *Worker) EnvWhitelist() []string { return openCodeSrvEnvWhitelist }
+func (w *Worker) EnvBlocklist() []string { return openCodeSrvEnvBlocklist }
 func (w *Worker) SessionStoreDir() string { return "" }     // Server 不使用本地存储
 func (w *Worker) MaxTurns() int          { return 0 }      // 无限制
 func (w *Worker) Modalities() []string   { return []string{"text", "code"} }

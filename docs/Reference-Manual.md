@@ -155,12 +155,9 @@ db:
   max_lifetime: 24h
   idle_timeout: 60m
   execution_timeout: 30m
-  env_whitelist:
-    - HOME
-    - PATH
-    - CLAUDE_API_KEY
-    - CLAUDE_MODEL
-    - CLAUDE_BASE_URL
+  env_blocklist:
+    - CLAUDECODE_*
+    - HOTPLEX_*
 
 security:
   api_key_header: "X-API-Key"
@@ -317,7 +314,7 @@ pool:
 - `gateway.addr`, `gateway.tls_*`
 - `db.path`, `db.events_path`
 - `security.*` (except JWT runtime rotation)
-- `worker.max_lifetime`, `worker.idle_timeout`, `worker.env_whitelist`
+- `worker.max_lifetime`, `worker.idle_timeout`, `worker.env_blocklist`
 
 ---
 

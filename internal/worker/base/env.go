@@ -50,7 +50,8 @@ func setOrAppend(env []string, entry string) []string {
 //
 // Blocklist entries ending with "_" are treated as prefix matches.
 func BuildEnv(session worker.SessionInfo, blocklist []string, workerTypeLabel string) []string {
-	env := make([]string, 0, len(os.Environ()))
+	environ := os.Environ()
+	env := make([]string, 0, len(environ))
 
 	// Build blocklist set, tracking prefix entries.
 	blockSet := make(map[string]bool)
@@ -76,7 +77,7 @@ func BuildEnv(session worker.SessionInfo, blocklist []string, workerTypeLabel st
 	// HOTPLEX_WORKER_GITHUB_TOKEN → GITHUB_TOKEN.
 	// Only HOTPLEX_WORKER_ prefix is stripped; other HOTPLEX_* vars are untouched.
 	stripMap := make(map[string]string)
-	for _, e := range os.Environ() {
+	for _, e := range environ {
 		key, val, ok := strings.Cut(e, "=")
 		if !ok {
 			continue
@@ -92,7 +93,7 @@ func BuildEnv(session worker.SessionInfo, blocklist []string, workerTypeLabel st
 	}
 
 	// Phase 2: Filter os.Environ() through blocklist + dynamic blocks.
-	for _, e := range os.Environ() {
+	for _, e := range environ {
 		key, _, ok := strings.Cut(e, "=")
 		if !ok {
 			continue
@@ -140,18 +141,7 @@ func BuildEnv(session worker.SessionInfo, blocklist []string, workerTypeLabel st
 		if e == "" || !strings.Contains(e, "=") {
 			continue
 		}
-		key, _, _ := strings.Cut(e, "=")
-		replaced := false
-		for i, existing := range env {
-			if strings.HasPrefix(existing, key+"=") {
-				env[i] = e
-				replaced = true
-				break
-			}
-		}
-		if !replaced {
-			env = append(env, e)
-		}
+		env = setOrAppend(env, e)
 	}
 
 	return env

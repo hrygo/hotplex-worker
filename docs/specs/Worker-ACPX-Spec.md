@@ -274,13 +274,13 @@ acpx 透传以下变量给底层 Agent：
 | **API Key 注入** | 通过环境变量或 acpx 配置注入 |
 | **工作目录限制** | 通过 `--cwd` 参数限制 |
 
-### 4.4 环境变量白名单
+### 4.4 环境变量 blocklist
 
-基于 agent 类型动态构建 EnvWhitelist：
+基于 agent 类型动态构建 EnvBlocklist：
 
 ```go
-// EnvWhitelist 返回给定 agent 类型的环境变量白名单。
-func EnvWhitelist(agent string) []string {
+// EnvBlocklist 返回给定 agent 类型的环境变量阻止列表。
+func EnvBlocklist(agent string) []string {
     base := []string{
         "PATH", "HOME", "USER",
         "ACPX_CONFIG", "ACPX_STORE_DIR",
@@ -309,7 +309,7 @@ func EnvWhitelist(agent string) []string {
 **使用示例**：
 
 ```go
-env := base.BuildEnv(session, EnvWhitelist(w.agent))
+env := base.BuildEnv(session, EnvBlocklist(w.agent))
 ```
 
 ---

@@ -169,9 +169,8 @@ Worker 进程启动时的工作目录遵循以下优先级覆盖逻辑：
 | `execution_timeout` | duration | `30m` | — | **僵死检测周期**（Zombie IO Timeout）。Worker 在执行中（RUNNING 状态）无任何 I/O 输出反馈的最大时长。用于检测并强制清理卡死、陷入无限循环或无响应的 Worker 进程，防止会话永久阻塞。 |
 | `default_work_dir` | string | `~/.hotplex/workspace` | — | Worker 进程的默认工作目录。当 session 或 platform 未指定 `work_dir` 时使用。`~` 自动展开为用户主目录。目录不存在时自动创建（`mkdir -p`） |
 | `pid_dir` | string | `~/.hotplex/.pids/` | — | PID 文件目录。proc.Manager 在启动 Worker 时写入 PID 文件用于孤儿进程清理。网关重启时自动扫描此目录，杀死不再有父进程的孤儿 Worker |
-| `allowed_envs` | []string | `[]` | — | 额外透传给 Worker 的环境变量名白名单。这些环境变量从网关进程继承到 Worker 子进程。与 `env_whitelist` 合并去重 |
-| `env_whitelist` | []string | `["PATH", "HOME", ...]` | — | 安全透传的环境变量白名单。Worker 进程默认**不继承**网关的任何环境变量（安全隔离），仅白名单中的变量会被透传。`allowed_envs` 会被合并到此列表 |
-| `environment` | []string | `[]` | ✅ | 额外注入 Worker 进程的环境变量列表。每个条目支持 `KEY=VALUE` 或 `KEY=${VAR}` 格式。这是唯一支持 `${VAR}` 展开的配置字段，引用未设置变量（无默认值）的条目会被静默丢弃。与 `env_whitelist` 合并生效 |
+| `env_blocklist` | []string | `[]` | — | 环境变量黑名单。默认所有 `os.Environ()` 变量透传给 Worker，仅黑名单中的变量被过滤。条目以 `_` 结尾时按前缀匹配（如 `HOTPLEX_` 阻止所有 `HOTPLEX_*` 变量）。`HOTPLEX_WORKER_` 前缀的变量会被剥离前缀后注入（如 `HOTPLEX_WORKER_GITHUB_TOKEN` → `GITHUB_TOKEN`） |
+| `environment` | []string | `[]` | ✅ | 额外注入 Worker 进程的环境变量列表。每个条目支持 `KEY=VALUE` 或 `KEY=${VAR}` 格式。这是唯一支持 `${VAR}` 展开的配置字段，引用未设置变量（无默认值）的条目会被静默丢弃。优先级最高，覆盖所有其他来源 |
 
 ### worker.auto_retry — LLM 自动重试
 
