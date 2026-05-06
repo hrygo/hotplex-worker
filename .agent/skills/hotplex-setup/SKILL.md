@@ -161,7 +161,7 @@ Token 无效时重新询问，不继续后续步骤。
 
 API 调用失败时提供手动查找指引：
 - Slack：头像 → 三个点 → "Copy member ID"
-- 飞书：管理后台 → 组织架构 → 找到 Open ID
+- 飞书：API 调试台或调用 OpenAPI 获取 Open ID（管理后台组织架构仅能查看 User ID）
 
 ### 第六步：配置工作目录（可选）
 
@@ -178,7 +178,6 @@ HOTPLEX_MESSAGING_FEISHU_WORK_DIR=/path/to/project
 **Worker 类型**：
 - `claude_code`（默认）— Claude Code CLI
 - `opencode_server` — OpenCode Server（单例进程）
-- `pi` — Pi-mono
 
 ```
 HOTPLEX_MESSAGING_SLACK_WORKER_TYPE=claude_code
@@ -191,7 +190,53 @@ HOTPLEX_MESSAGING_FEISHU_WORKER_TYPE=claude_code
 # HOTPLEX_AGENT_CONFIG_DIR=~/.hotplex/agent-configs/
 ```
 
-### 第八步：部署服务
+### 第八步：Agent 个性化配置
+
+**为什么需要个性化？** 默认模板提供通用 AI 编程助手人格。个性化后 Agent 能适配你的技术栈、工作风格和沟通偏好，显著提升协作效率。
+
+**触发条件**：
+- 基础设施配置已完成（onboard 或手动配置过）
+- `~/.hotplex/agent-configs/` 目录存在
+
+**检测流程**：
+1. 读取 `~/.hotplex/agent-configs/` 目录下的所有文件
+2. 检查 USER.md 是否仍为默认模板（含空字段或 `<!-- -->` 注释占位符）
+3. 如果全部已个性化 → 跳过，展示当前配置摘要
+4. 如果有未个性化文件 → 启动交互式引导
+
+**Phase A — 用户画像 (USER.md)**：
+  "你主要使用什么编程语言和框架？"
+  "你的角色是什么？（如：后端工程师、全栈开发者）"
+  "你偏好简洁回复还是详细解释？"
+  "代码审查时希望 Agent 关注哪些方面？"
+  → 收集后写入 USER.md 对应字段，替换默认示例值
+
+**Phase B — Agent 人格微调 (SOUL.md)**：
+  "当前 Agent 人格已配置为 [展示关键特征]。需要调整吗？"
+  "沟通语言偏好？（默认：用户语言 + 英文术语）"
+  "输出密度偏好？（默认：结论先行，省略开场白）"
+  → 仅修改用户明确要求的字段，未提及的保持默认
+
+**Phase C — 3 级 Fallback 策略引导**：
+  "当前配置层级："
+  "  全局：~/.hotplex/agent-configs/SOUL.md（当前生效）"
+  "  平台：~/.hotplex/agent-configs/slack/SOUL.md（未配置）"
+  "  Bot：~/.hotplex/agent-configs/slack/U12345/SOUL.md（未配置）"
+  "是否需要平台级或 Bot 级定制？"
+  → 如需要，引导创建对应目录和文件
+
+**Phase D — 确认与写入**：
+  展示所有变更的 diff
+  "确认写入？[Y/n]"
+  → 写入后自动生效（热重载）
+
+**关键规则**：
+- **幂等**：重复运行只更新用户明确回答的字段
+- **最小变更**：不重写整个文件，用 diff 展示 + 精确编辑
+- **尊重现有配置**：已个性化的内容不覆盖，除非用户明确要求
+- **AI 判断**：当用户回答模糊时，推理合理默认值并展示给用户确认
+
+### 第九步：部署服务
 
 **用户级服务（推荐，无需 root）**：
 ```bash
@@ -211,7 +256,7 @@ sudo hotplex service start
 make dev
 ```
 
-### 第九步：验证安装
+### 第十步：验证安装
 
 ```bash
 # 1. 二进制可执行
@@ -281,7 +326,7 @@ hotplex service restart
 
 **STT 问题**（约占 5% 的故障）：
 - 本地 STT：检查 funasr-onnx、modelscope、模型下载
-- 云端 STT：申请飞书权限（https://open.feishu.cn/app/cli_a954eab23678dbb5/auth?q=speech_to_text:speech）
+- 云端 STT：飞书开发者后台 → 你的应用 → 权限管理 → 搜索 `speech_to_text`
 
 详细故障排查见 `references/troubleshooting.md`。
 

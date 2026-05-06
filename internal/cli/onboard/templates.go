@@ -50,7 +50,7 @@ func BuildConfigYAML(opts ConfigTemplateOptions) string {
 # ─────────────────────────────────────────────────────────────────────────────
 
 gateway:
-  addr: ":8888"
+  addr: "localhost:8888"
   ping_interval: 54s
   pong_timeout: 60s
   write_timeout: 10s
@@ -62,7 +62,7 @@ gateway:
 
 	b.WriteString(`admin:
   enabled: true
-  addr: ":9999"
+  addr: "localhost:9999"
   rate_limit_enabled: true
   requests_per_sec: 10
   burst: 20
@@ -76,7 +76,7 @@ gateway:
 db:
   path: "~/.hotplex/data/hotplex.db"
   wal_mode: true
-  busy_timeout: 500ms
+  busy_timeout: 5s
 
 `)
 
@@ -128,7 +128,6 @@ worker:
   max_lifetime: 24h
   idle_timeout: 60m
   execution_timeout: 30m
-  type: %q
 
   auto_retry:
     enabled: true
@@ -138,7 +137,7 @@ worker:
     retry_input: "继续"
     notify_user: true
 
-`, workerType)
+`)
 
 	if workerType == "opencode_server" {
 		b.WriteString(`  # OpenCode Server singleton process (shared across all sessions)
@@ -174,7 +173,7 @@ log:
 			GroupPolicy:    defaultStr(opts.SlackGroupPolicy, "allowlist"),
 			RequireMention: defaultBool(opts.SlackRequireMention, true),
 			AllowFrom:      opts.SlackAllowFrom,
-			Extra:          "    socket_mode: true\n    worker_type: \"claude_code\"\n    stt_provider: \"local\"\n    stt_local_cmd: \"python3 ~/.hotplex/scripts/stt_server.py --model iic/SenseVoiceSmall\"\n    stt_local_idle_ttl: 1h\n",
+			Extra:          "    socket_mode: true\n    worker_type: \"claude_code\"\n    stt_provider: \"local\"\n    stt_local_cmd: \"python3 ~/.hotplex/scripts/stt_server.py\"\n    stt_local_idle_ttl: 1h\n",
 		})
 	}
 
@@ -186,7 +185,7 @@ log:
 			GroupPolicy:    defaultStr(opts.FeishuGroupPolicy, "allowlist"),
 			RequireMention: defaultBool(opts.FeishuRequireMention, true),
 			AllowFrom:      opts.FeishuAllowFrom,
-			Extra:          "    worker_type: \"claude_code\"\n    stt_provider: \"feishu+local\"\n    stt_local_cmd: \"python3 ~/.hotplex/scripts/stt_server.py --model iic/SenseVoiceSmall\"\n    stt_local_idle_ttl: 1h\n",
+			Extra:          "    worker_type: \"claude_code\"\n    stt_provider: \"feishu+local\"\n    stt_local_cmd: \"python3 ~/.hotplex/scripts/stt_server.py\"\n    stt_local_idle_ttl: 1h\n",
 		})
 	}
 
@@ -222,16 +221,17 @@ func writeKeptPlatform(b *strings.Builder, opts ConfigTemplateOptions, platform 
 	return true
 }
 
-// extractPlatformBlock reads the existing config file and extracts the YAML block
-// for the given platform (e.g., "slack"), preserving custom settings.
-func extractPlatformBlock(configPath, platform string) string {
+// extractBlock reads the existing config file and extracts the YAML block
+// for the given key at the specified indent level. Supports both top-level
+// keys (indent="") and nested keys (indent="  " for messaging children).
+func extractBlock(configPath, key, indent string) string {
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		return ""
 	}
 
 	lines := strings.Split(string(data), "\n")
-	marker := "  " + platform + ":"
+	marker := indent + key + ":"
 
 	start := -1
 	for i, line := range lines {
@@ -244,30 +244,34 @@ func extractPlatformBlock(configPath, platform string) string {
 		return ""
 	}
 
-	// Find block end: next sibling at 2-space indent under "messaging:",
-	// or a top-level key (col 0), or EOF.
+	markerLen := len(indent)
 	end := len(lines)
 	for i := start + 1; i < len(lines); i++ {
 		line := lines[i]
 		if line == "" {
 			continue
 		}
-		// Column 0 = top-level key (end of messaging section)
-		if line[0] != ' ' {
-			end = i
-			break
-		}
-		// Exactly 2-space indent = sibling under messaging: (next platform)
-		if strings.HasPrefix(line, "  ") && !strings.HasPrefix(line, "    ") && line[0] != '#' {
-			trimmed := strings.TrimSpace(line)
-			if idx := strings.Index(trimmed, ":"); idx > 0 && !strings.Contains(trimmed[:idx], " ") {
-				end = i
+		spaces := 0
+		for _, ch := range line {
+			if ch == ' ' {
+				spaces++
+			} else {
 				break
 			}
+		}
+		if spaces <= markerLen && line[spaces] != '#' {
+			end = i
+			break
 		}
 	}
 
 	return strings.Join(lines[start:end], "\n") + "\n"
+}
+
+// extractPlatformBlock reads the existing config file and extracts the YAML block
+// for the given platform (e.g., "slack"), preserving custom settings.
+func extractPlatformBlock(configPath, platform string) string {
+	return extractBlock(configPath, platform, "  ")
 }
 
 func writeStringList(b *strings.Builder, key string, items []string) {
@@ -295,7 +299,8 @@ func defaultBool(p *bool, def bool) bool {
 }
 
 func GenerateSecret() string {
-	b := make([]byte, 48)
+	// ES256 requires exactly 32 bytes; decodeJWTSecret rejects other lengths.
+	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		panic("crypto/rand.Read failed: " + err.Error())
 	}

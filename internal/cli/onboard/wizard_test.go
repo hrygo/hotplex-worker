@@ -90,7 +90,6 @@ func TestStepWorkerDep(t *testing.T) {
 	}{
 		{"claude_code", "claude_code", false},
 		{"opencode_server", "opencode_server", false},
-		{"pi", "pi", true},
 		{"unknown", "unknown", true},
 	}
 	for _, tt := range tests {
@@ -101,7 +100,8 @@ func TestStepWorkerDep(t *testing.T) {
 			if tt.wantSkip {
 				require.Equal(t, "skip", s.Status)
 			} else {
-				require.Equal(t, "pass", s.Status)
+				// Level 2 (--version) may fail if binary absent → "warn" is acceptable
+				require.Contains(t, []string{"pass", "warn"}, s.Status)
 			}
 		})
 	}
@@ -325,6 +325,12 @@ func TestRun_NonInteractive(t *testing.T) {
 		t.Skip("skipping: environment pre-check fails on this system: " + s.Detail)
 	}
 
+	// Suppress wizard UI output during test
+	devNull, _ := os.Open(os.DevNull)
+	orig := os.Stderr
+	os.Stderr = devNull
+	defer func() { os.Stderr = orig; devNull.Close() }()
+
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.yaml")
 	origDir, _ := os.Getwd()
@@ -368,6 +374,12 @@ func TestRun_NonInteractive_WithSlack(t *testing.T) {
 	if s.Status == "fail" {
 		t.Skip("skipping: environment pre-check fails on this system: " + s.Detail)
 	}
+
+	// Suppress wizard UI output during test
+	devNull, _ := os.Open(os.DevNull)
+	orig := os.Stderr
+	os.Stderr = devNull
+	defer func() { os.Stderr = orig; devNull.Close() }()
 
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.yaml")
@@ -455,5 +467,5 @@ func TestGenerateSecret(t *testing.T) {
 	require.NotEmpty(t, s1)
 	require.NotEmpty(t, s2)
 	require.NotEqual(t, s1, s2)
-	require.Len(t, s1, 64) // base64 of 48 bytes
+	require.Len(t, s1, 44) // base64 of 32 bytes (ES256 key)
 }

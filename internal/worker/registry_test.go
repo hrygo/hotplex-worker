@@ -42,9 +42,9 @@ func TestRegister(t *testing.T) {
 
 	t.Run("duplicate registration triggers panic", func(t *testing.T) {
 		withRegistry(t, func() {
-			Register(TypePimon, func() (Worker, error) { return nil, nil })
+			Register(TypeACPX, func() (Worker, error) { return nil, nil })
 			require.Panics(t, func() {
-				Register(TypePimon, func() (Worker, error) { return nil, nil })
+				Register(TypeACPX, func() (Worker, error) { return nil, nil })
 			}, "Register called twice for same type must panic")
 		})
 	})
@@ -99,7 +99,7 @@ func TestRegisteredTypes(t *testing.T) {
 		withRegistry(t, func() {
 			Register(TypeClaudeCode, func() (Worker, error) { return nil, nil })
 			Register(TypeOpenCodeSrv, func() (Worker, error) { return nil, nil })
-			Register(TypePimon, func() (Worker, error) { return nil, nil })
+			Register(TypeACPX, func() (Worker, error) { return nil, nil })
 
 			types := RegisteredTypes()
 			require.Len(t, types, 3)
@@ -110,7 +110,7 @@ func TestRegisteredTypes(t *testing.T) {
 			}
 			require.True(t, typeSet[TypeClaudeCode])
 			require.True(t, typeSet[TypeOpenCodeSrv])
-			require.True(t, typeSet[TypePimon])
+			require.True(t, typeSet[TypeACPX])
 		})
 	})
 }

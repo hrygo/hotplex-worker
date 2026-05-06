@@ -475,5 +475,4 @@ var allWorkerTypes = []struct {
 	{"claude_code", string(worker.TypeClaudeCode)},
 	{"opencode_server", string(worker.TypeOpenCodeSrv)},
 	{"acpx", string(worker.TypeACPX)},
-	{"pi_mono", string(worker.TypePimon)},
 }
