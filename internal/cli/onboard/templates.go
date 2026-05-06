@@ -50,7 +50,7 @@ func BuildConfigYAML(opts ConfigTemplateOptions) string {
 # ─────────────────────────────────────────────────────────────────────────────
 
 gateway:
-  addr: ":8888"
+  addr: "localhost:8888"
   ping_interval: 54s
   pong_timeout: 60s
   write_timeout: 10s
@@ -62,7 +62,7 @@ gateway:
 
 	b.WriteString(`admin:
   enabled: true
-  addr: ":9999"
+  addr: "localhost:9999"
   rate_limit_enabled: true
   requests_per_sec: 10
   burst: 20
@@ -76,7 +76,7 @@ gateway:
 db:
   path: "~/.hotplex/data/hotplex.db"
   wal_mode: true
-  busy_timeout: 500ms
+  busy_timeout: 5s
 
 `)
 
@@ -128,7 +128,6 @@ worker:
   max_lifetime: 24h
   idle_timeout: 60m
   execution_timeout: 30m
-  type: %q
 
   auto_retry:
     enabled: true
@@ -138,7 +137,7 @@ worker:
     retry_input: "继续"
     notify_user: true
 
-`, workerType)
+`)
 
 	if workerType == "opencode_server" {
 		b.WriteString(`  # OpenCode Server singleton process (shared across all sessions)
@@ -174,7 +173,7 @@ log:
 			GroupPolicy:    defaultStr(opts.SlackGroupPolicy, "allowlist"),
 			RequireMention: defaultBool(opts.SlackRequireMention, true),
 			AllowFrom:      opts.SlackAllowFrom,
-			Extra:          "    socket_mode: true\n    worker_type: \"claude_code\"\n    stt_provider: \"local\"\n    stt_local_cmd: \"python3 ~/.hotplex/scripts/stt_server.py --model iic/SenseVoiceSmall\"\n    stt_local_idle_ttl: 1h\n",
+			Extra:          "    socket_mode: true\n    worker_type: \"claude_code\"\n    stt_provider: \"local\"\n    stt_local_cmd: \"python3 ~/.hotplex/scripts/stt_server.py\"\n    stt_local_idle_ttl: 1h\n",
 		})
 	}
 
@@ -186,7 +185,7 @@ log:
 			GroupPolicy:    defaultStr(opts.FeishuGroupPolicy, "allowlist"),
 			RequireMention: defaultBool(opts.FeishuRequireMention, true),
 			AllowFrom:      opts.FeishuAllowFrom,
-			Extra:          "    worker_type: \"claude_code\"\n    stt_provider: \"feishu+local\"\n    stt_local_cmd: \"python3 ~/.hotplex/scripts/stt_server.py --model iic/SenseVoiceSmall\"\n    stt_local_idle_ttl: 1h\n",
+			Extra:          "    worker_type: \"claude_code\"\n    stt_provider: \"feishu+local\"\n    stt_local_cmd: \"python3 ~/.hotplex/scripts/stt_server.py\"\n    stt_local_idle_ttl: 1h\n",
 		})
 	}
 

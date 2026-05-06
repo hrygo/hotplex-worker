@@ -1182,6 +1182,11 @@ func stepBinaryInstall(reader *bufio.Reader, opts WizardOptions) StepResult {
 		return StepResult{Name: stepName, Status: "fail", Detail: "resolve symlink: " + err.Error()}
 	}
 
+	// Guard: skip if running from a test binary (go test -c produces *.test)
+	if strings.HasSuffix(filepath.Base(binPath), ".test") {
+		return StepResult{Name: stepName, Status: "skip", Detail: "running from test binary"}
+	}
+
 	exeName := "hotplex"
 	if runtime.GOOS == "windows" {
 		exeName = "hotplex.exe"
