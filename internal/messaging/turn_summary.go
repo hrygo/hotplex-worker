@@ -88,8 +88,7 @@ func ExtractTurnSummary(env *events.Envelope) TurnSummaryData {
 }
 
 // FormatTurnSummary produces a compact single-line turn summary.
-// Format: "ModelName · N% · ⏱ Xs · 🔧 N (Tool×M, ...)"
-// Returns empty string if no meaningful data is available.
+// Format: "ModelName · N% · 🔧 N (Tool×M, ...) · ⏱ Timer Xs"
 func FormatTurnSummary(d TurnSummaryData) string {
 	var parts []string
 
@@ -105,13 +104,13 @@ func FormatTurnSummary(d TurnSummaryData) string {
 		parts = append(parts, fmt.Sprintf("%d%%", pct))
 	}
 
-	if d.TurnDurationMs > 0 {
-		parts = append(parts, "⏱ "+FormatDuration(d.TurnDurationMs))
-	}
-
 	if d.ToolCallCount > 0 {
 		toolStr := FormatToolNames(d.ToolNames, d.ToolCallCount)
 		parts = append(parts, "🔧 "+toolStr)
+	}
+
+	if d.TurnDurationMs > 0 {
+		parts = append(parts, "⏱ Timer "+FormatDuration(d.TurnDurationMs))
 	}
 
 	return strings.Join(parts, " · ")
@@ -272,14 +271,14 @@ func FormatTurnSummaryRich(d TurnSummaryData) string {
 		lines = append(lines, "🔧 "+FormatToolNames(d.ToolNames, d.ToolCallCount))
 	}
 
-	// Line 6: Duration (merged Turn + Session)
-	if durStr := FormatDurationParts(d); durStr != "" {
-		lines = append(lines, "⏱ "+durStr)
-	}
-
-	// Line 7: Tokens (turn + session total)
+	// Line 6: Tokens (turn + session total)
 	if tokStr := FormatTokenUsage(d); tokStr != "" {
 		lines = append(lines, "💎 Tokens "+tokStr)
+	}
+
+	// Line 7: Duration (merged Turn + Session)
+	if durStr := FormatDurationParts(d); durStr != "" {
+		lines = append(lines, "⏱ Timer "+durStr)
 	}
 
 	return strings.Join(lines, "\n")
