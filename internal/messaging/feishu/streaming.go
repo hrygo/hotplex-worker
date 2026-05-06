@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -334,6 +335,11 @@ func (c *StreamingCardController) startFlushLoop() {
 
 func (c *StreamingCardController) flushLoop() {
 	defer c.flushWg.Done()
+	defer func() {
+		if r := recover(); r != nil {
+			c.log.Error("feishu: panic in flushLoop", "panic", r, "stack", string(debug.Stack()))
+		}
+	}()
 	ticker := time.NewTicker(flushInterval)
 	defer ticker.Stop()
 

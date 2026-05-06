@@ -378,6 +378,11 @@ func (h *Hub) HandleHTTP(
 // The broadcast channel is never closed — sendBroadcast uses ctx.Done() to
 // detect shutdown, and this function drains remaining messages non-blockingly.
 func (h *Hub) Run() {
+	defer func() {
+		if r := recover(); r != nil {
+			h.log.Error("hub: panic in Run", "panic", r, "stack", string(debug.Stack()))
+		}
+	}()
 	// Start periodic cleanup for throttler
 	throttleCleanup := time.NewTicker(10 * time.Minute)
 	defer throttleCleanup.Stop()
