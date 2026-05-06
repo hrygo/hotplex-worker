@@ -60,7 +60,7 @@ func Init(ctx context.Context, log *slog.Logger, serviceName string) {
 		res, err := resource.New(ctx,
 			resource.WithAttributes(
 				semconv.ServiceName(serviceName),
-				semconv.ServiceVersion("1.5.3"),
+				semconv.ServiceVersion("1.5.4"),
 			),
 		)
 		if err != nil {
