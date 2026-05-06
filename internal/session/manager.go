@@ -376,9 +376,15 @@ func (m *Manager) TransitionWithInput(ctx context.Context, id string, to events.
 		if maxTurns > 0 && ms.TurnCount > maxTurns {
 			m.log.Warn("session: max turns exceeded, initiating anti-pollution restart",
 				"session_id", id, "turn_count", ms.TurnCount, "max_turns", maxTurns)
-			_ = ms.worker.Kill()
+			if err := ms.worker.Kill(); err != nil {
+				m.log.Warn("session: worker kill failed during max-turns cleanup",
+					"session_id", id, "err", err)
+			}
 			if events.IsValidTransition(from, events.StateTerminated) {
-				_ = m.transitionState(ctx, ms, from, events.StateTerminated, "max_turns")
+				if err := m.transitionState(ctx, ms, from, events.StateTerminated, "max_turns"); err != nil {
+					m.log.Error("session: max-turns state transition failed, session may be orphaned",
+						"session_id", id, "err", err)
+				}
 			}
 			return ErrMaxTurnsReached
 		}
@@ -701,7 +707,10 @@ func (m *Manager) ListActive() []*SessionInfo {
 
 	sessions := make([]*SessionInfo, 0, len(m.sessions))
 	for _, ms := range m.sessions {
-		sessions = append(sessions, &ms.info)
+		ms.mu.RLock()
+		info := ms.info
+		ms.mu.RUnlock()
+		sessions = append(sessions, &info)
 	}
 	return sessions
 }
