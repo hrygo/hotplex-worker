@@ -117,10 +117,12 @@ func (c *AnthropicClient) ChatStream(ctx context.Context, prompt string) (<-chan
 		for stream.Next() {
 			event := stream.Current()
 			if event.Type == "content_block_delta" {
-				// The SDK uses a union for Delta.
-				// We need to use the Text field if available.
 				if event.Delta.Text != "" {
-					streamChan <- event.Delta.Text
+					select {
+					case streamChan <- event.Delta.Text:
+					case <-ctx.Done():
+						return
+					}
 				}
 			}
 		}

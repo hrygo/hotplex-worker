@@ -5,7 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"log/slog"
+	"fmt"
 
 	lru "github.com/hashicorp/golang-lru/v2"
 )
@@ -60,8 +60,7 @@ func (c *CachedClient) Analyze(ctx context.Context, prompt string, target any) e
 
 	jsonData, err := json.Marshal(target)
 	if err != nil {
-		slog.Default().Warn("cachedclient: failed to marshal analyze result for cache", "err", err)
-		return nil
+		return fmt.Errorf("cachedclient: marshal analyze result for cache: %w", err)
 	}
 
 	c.cache.Add(key, CacheEntry{JSONData: jsonData})

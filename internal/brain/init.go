@@ -315,43 +315,44 @@ func (w *enhancedBrainWrapper) recordMetricsForAnalyze(timer *llm.RequestTimer, 
 }
 
 func (w *enhancedBrainWrapper) ChatStream(ctx context.Context, prompt string) (<-chan string, error) {
-	// Apply pre-computed timeout from config
+	// Apply pre-computed timeout. cancel is deferred inside the goroutine
+	// so the timeout context outlives this function call.
+	var streamCancel context.CancelFunc
 	if w.timeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, w.timeout)
-		// Cancel must not fire when ChatStream returns — it would kill the
-		// streaming goroutine immediately. The goroutine inherits ctx and
-		// relies on its timeout for lifecycle management.
-		_ = cancel
+		ctx, streamCancel = context.WithTimeout(ctx, w.timeout)
 	}
 
-	// Select model and apply rate limiting
 	model := w.selectModel(ctx, "", llm.ScenarioChat)
 	if err := w.applyRateLimit(ctx, model); err != nil {
+		if streamCancel != nil {
+			streamCancel()
+		}
 		return nil, err
 	}
 
-	// Start metrics timer
 	timer := w.startMetricsTimer(model, "chat_stream")
 	inputTokens := 0
 	if w.costCalculator != nil {
 		inputTokens = w.costCalculator.CountTokens(prompt)
 	}
 
-	// Get the stream from client
 	stream, err := w.client.ChatStream(ctx, prompt)
 	if err != nil {
-		// Record metrics on error
+		if streamCancel != nil {
+			streamCancel()
+		}
 		if timer != nil {
 			timer.Record(int64(inputTokens), 0, 0, err)
 		}
 		return nil, err
 	}
 
-	// Wrap the stream to track output tokens and respect context cancellation
 	outputChan := make(chan string)
 
 	go func() {
+		if streamCancel != nil {
+			defer streamCancel()
+		}
 		defer close(outputChan)
 		if stream == nil {
 			return
@@ -363,7 +364,6 @@ func (w *enhancedBrainWrapper) ChatStream(ctx context.Context, prompt string) (<
 				return
 			case token, ok := <-stream:
 				if !ok {
-					// Stream closed - record final metrics
 					if timer != nil {
 						cost := 0.0
 						if w.costCalculator != nil {

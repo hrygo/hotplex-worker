@@ -2,6 +2,7 @@ package brain
 
 import (
 	"context"
+	"sync"
 
 	"github.com/hrygo/hotplex/internal/brain/llm"
 )
@@ -65,23 +66,28 @@ type ObservableBrain interface {
 type HealthStatus = llm.HealthStatus
 
 var (
-	globalBrain Brain
+	globalBrainMu sync.RWMutex
+	globalBrain   Brain
 )
 
 // Global returns the globally configured Brain instance.
 // If no brain is configured, it returns nil.
 func Global() Brain {
+	globalBrainMu.RLock()
+	defer globalBrainMu.RUnlock()
 	return globalBrain
 }
 
 // SetGlobal sets the global Brain instance.
 func SetGlobal(b Brain) {
+	globalBrainMu.Lock()
+	defer globalBrainMu.Unlock()
 	globalBrain = b
 }
 
 // GetRouter returns the global router if the brain supports routing.
 func GetRouter() *llm.Router {
-	if rb, ok := globalBrain.(interface{ GetRouter() *llm.Router }); ok {
+	if rb, ok := Global().(interface{ GetRouter() *llm.Router }); ok {
 		return rb.GetRouter()
 	}
 	return nil
@@ -89,7 +95,7 @@ func GetRouter() *llm.Router {
 
 // GetRateLimiter returns the global rate limiter if available.
 func GetRateLimiter() *llm.RateLimiter {
-	if rb, ok := globalBrain.(interface{ GetRateLimiter() *llm.RateLimiter }); ok {
+	if rb, ok := Global().(interface{ GetRateLimiter() *llm.RateLimiter }); ok {
 		return rb.GetRateLimiter()
 	}
 	return nil
