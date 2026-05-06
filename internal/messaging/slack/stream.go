@@ -16,12 +16,13 @@ import (
 )
 
 const (
-	flushInterval    = 150 * time.Millisecond
-	flushSize        = 20 // rune count threshold for immediate flush
-	maxAppendRetries = 3
-	retryDelay       = 50 * time.Millisecond
-	maxAppendSize    = 3000 // Slack limit ~4000, safety margin
-	StreamTTL        = 10 * time.Minute
+	flushInterval     = 150 * time.Millisecond
+	flushSize         = 20 // rune count threshold for immediate flush
+	maxAppendRetries  = 3
+	retryDelay        = 50 * time.Millisecond
+	maxAppendSize     = 3000             // Slack limit ~4000, safety margin
+	StreamTTL         = 10 * time.Minute // server-side streaming limit (undocumented, aligned with Feishu)
+	StreamRotationTTL = 6 * time.Minute  // proactive rotation before server limit (aligned with Feishu)
 )
 
 func isStreamStateError(err error) bool {
@@ -123,10 +124,10 @@ type NativeStreamingWriter struct {
 	// Post-stream table upgrade: accumulates full content for table detection on Close.
 	fullContent strings.Builder
 
-	// TTL 监控
-	streamStartTime  time.Time
-	streamExpired    bool
-	ttlWarningLogged bool
+	// TTL rotation
+	streamStartTime time.Time
+	streamExpired   bool
+	skipFallback    bool // suppress fallback PostMessage during rotation
 }
 
 // NewNativeStreamingWriter creates a new streaming writer for Slack.
@@ -163,20 +164,6 @@ func (w *NativeStreamingWriter) Write(p []byte) (int, error) {
 	}
 	if len(p) == 0 {
 		return 0, nil
-	}
-
-	// Check TTL
-	if !w.started && !w.streamStartTime.IsZero() {
-		if time.Since(w.streamStartTime) > StreamTTL {
-			w.streamExpired = true
-			if !w.ttlWarningLogged {
-				w.ttlWarningLogged = true
-				w.log.Warn("slack: stream TTL exceeded before start",
-					"channel", w.channelID, "thread", w.threadTS,
-					"ttl", StreamTTL, "elapsed", time.Since(w.streamStartTime).Round(time.Second))
-			}
-			return 0, fmt.Errorf("stream expired after %v", StreamTTL)
-		}
 	}
 
 	// 首次调用：用首个 payload 启动流（替代占位符，直接展示真实内容）
@@ -220,6 +207,27 @@ func (w *NativeStreamingWriter) Write(p []byte) (int, error) {
 		}
 	}
 	return len(p), nil
+}
+
+// Expired reports whether the stream has exceeded the rotation TTL.
+// Used by writeWithStreaming to proactively replace the stream before
+// Slack's server-side streaming limit kicks in.
+func (w *NativeStreamingWriter) Expired() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.streamStartTime.IsZero() || !w.started || w.closed {
+		return false
+	}
+	return time.Since(w.streamStartTime) > StreamRotationTTL
+}
+
+// SetSkipFallback suppresses the fallback PostMessage in Close().
+// Called by writeWithStreaming before rotation to prevent sending
+// duplicate content when the stream's output is already displayed.
+func (w *NativeStreamingWriter) SetSkipFallback() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.skipFallback = true
 }
 
 // flushLoop background goroutine: periodic + threshold-triggered flush.
@@ -332,6 +340,7 @@ func (w *NativeStreamingWriter) Close() error {
 	}
 	w.closed = true
 	streamExpired := w.streamExpired
+	shouldSkipFallback := w.skipFallback
 	w.mu.Unlock()
 
 	close(w.closeChan)
@@ -352,7 +361,7 @@ func (w *NativeStreamingWriter) Close() error {
 	integrityOK := len(failedChunks) == 0 && bytesWritten == bytesFlushed
 	duration := time.Since(w.streamStartTime).Round(time.Millisecond)
 
-	if !integrityOK || streamExpired {
+	if (!integrityOK || streamExpired) && !shouldSkipFallback {
 		w.log.Warn("slack: stream closed with issues",
 			"channel", w.channelID, "thread", w.threadTS,
 			"duration", duration,
@@ -395,7 +404,7 @@ func (w *NativeStreamingWriter) Close() error {
 		w.onComplete(w.messageTS)
 	}
 
-	if !integrityOK || streamExpired {
+	if (!integrityOK || streamExpired) && !shouldSkipFallback {
 		var fallbackText string
 		if streamExpired {
 			fallbackText = "⚠️ *Stream expired, sending complete content:*\n\n"

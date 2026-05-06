@@ -96,7 +96,7 @@ func TestFormatTurnSummary_Full(t *testing.T) {
 		TurnDurationMs: 42000,
 	}
 	got := FormatTurnSummary(d)
-	require.Equal(t, "Sonnet · 24% · ⏱ 42s · 🔧 12 (Read×5, Edit×3, Bash×2, Grep×2)", got)
+	require.Equal(t, "Sonnet · 24% · 🔧 12 (Read×5, Edit×3, Bash×2, Grep×2) · ⏱ Timer 42s", got)
 }
 
 func TestFormatTurnSummary_ToolNamesEmpty(t *testing.T) {
@@ -107,7 +107,7 @@ func TestFormatTurnSummary_ToolNamesEmpty(t *testing.T) {
 		TurnDurationMs: 12000,
 	}
 	got := FormatTurnSummary(d)
-	require.Equal(t, "Sonnet · ⏱ 12s · 🔧 5", got)
+	require.Equal(t, "Sonnet · 🔧 5 · ⏱ Timer 12s", got)
 }
 
 func TestFormatTurnSummary_NoModel(t *testing.T) {
@@ -135,7 +135,7 @@ func TestFormatTurnSummary_NoTools(t *testing.T) {
 	}
 	got := FormatTurnSummary(d)
 	require.NotContains(t, got, "🔧")
-	require.Contains(t, got, "Sonnet · 24% · ⏱ 5s")
+	require.Contains(t, got, "Sonnet · 24% · ⏱ Timer 5s")
 }
 
 func TestFormatTurnSummary_Minimal(t *testing.T) {
@@ -144,7 +144,7 @@ func TestFormatTurnSummary_Minimal(t *testing.T) {
 		TurnDurationMs: 3000,
 	}
 	got := FormatTurnSummary(d)
-	require.Equal(t, "⏱ 3s", got)
+	require.Equal(t, "⏱ Timer 3s", got)
 }
 
 func TestFormatTurnSummary_Empty(t *testing.T) {
@@ -309,7 +309,7 @@ func TestFormatTurnSummaryRich_Full(t *testing.T) {
 	require.Contains(t, got, "🔧 12 (")
 	require.Contains(t, got, "📂")
 	require.Contains(t, got, "🌿 feat/117-turn-summary")
-	require.Contains(t, got, "⏱ 42s · Σ 12m30s")
+	require.Contains(t, got, "⏱ Timer 42s · Σ 12m30s")
 	require.Contains(t, got, "💎 Tokens")
 	require.Contains(t, got, "12K↓ · 2K↑ · Σ48.4K↓ · Σ2K↑")
 }
@@ -317,7 +317,7 @@ func TestFormatTurnSummaryRich_Full(t *testing.T) {
 func TestFormatTurnSummaryRich_Minimal(t *testing.T) {
 	t.Parallel()
 	got := FormatTurnSummaryRich(TurnSummaryData{TurnDurationMs: 3000})
-	require.Contains(t, got, "⏱ 3s")
+	require.Contains(t, got, "⏱ Timer 3s")
 }
 
 func TestFormatTurnSummaryRich_Empty(t *testing.T) {

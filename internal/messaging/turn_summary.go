@@ -87,9 +87,17 @@ func ExtractTurnSummary(env *events.Envelope) TurnSummaryData {
 	}
 }
 
+// clampContextPct rounds contextPct to the nearest integer and caps at 100.
+func clampContextPct(contextPct float64) int {
+	pct := int(contextPct + 0.5)
+	if pct > 100 {
+		return 100
+	}
+	return pct
+}
+
 // FormatTurnSummary produces a compact single-line turn summary.
-// Format: "ModelName · N% · ⏱ Xs · 🔧 N (Tool×M, ...)"
-// Returns empty string if no meaningful data is available.
+// Format: "ModelName · N% · 🔧 N (Tool×M, ...) · ⏱ Timer Xs"
 func FormatTurnSummary(d TurnSummaryData) string {
 	var parts []string
 
@@ -98,20 +106,16 @@ func FormatTurnSummary(d TurnSummaryData) string {
 	}
 
 	if d.ContextWindow > 0 && d.ContextFill > 0 {
-		pct := int(d.ContextPct + 0.5)
-		if pct > 100 {
-			pct = 100
-		}
-		parts = append(parts, fmt.Sprintf("%d%%", pct))
-	}
-
-	if d.TurnDurationMs > 0 {
-		parts = append(parts, "⏱ "+FormatDuration(d.TurnDurationMs))
+		parts = append(parts, fmt.Sprintf("%d%%", clampContextPct(d.ContextPct)))
 	}
 
 	if d.ToolCallCount > 0 {
 		toolStr := FormatToolNames(d.ToolNames, d.ToolCallCount)
 		parts = append(parts, "🔧 "+toolStr)
+	}
+
+	if d.TurnDurationMs > 0 {
+		parts = append(parts, "⏱ Timer "+FormatDuration(d.TurnDurationMs))
 	}
 
 	return strings.Join(parts, " · ")
@@ -209,7 +213,7 @@ func TruncatePath(p string, maxComponents int) string {
 
 	// Detect and preserve Windows drive letter (e.g. "C:").
 	if prefix == "" {
-		if len(p) >= 2 && p[1] == ':' && (p[0] >= 'A' && p[0] <= 'Z' || p[0] >= 'a' && p[0] <= 'z') {
+		if len(p) >= 2 && p[1] == ':' && ((p[0] >= 'A' && p[0] <= 'Z') || (p[0] >= 'a' && p[0] <= 'z')) {
 			prefix = p[:2]
 			p = p[2:]
 		}
@@ -236,50 +240,38 @@ func TruncatePath(p string, maxComponents int) string {
 func FormatTurnSummaryRich(d TurnSummaryData) string {
 	var lines []string
 
-	// Line 1: Turn count
 	if d.TurnCount > 0 {
 		lines = append(lines, fmt.Sprintf("🔄 #%d", d.TurnCount))
 	}
 
-	// Line 2: Model
 	if d.ModelName != "" {
 		lines = append(lines, "🤖 "+d.ModelName)
 	}
 
-	// Line 2: Context window
 	if d.ContextWindow > 0 && d.ContextFill > 0 {
-		pct := int(d.ContextPct + 0.5)
-		if pct > 100 {
-			pct = 100
-		}
 		used := FormatTokenCount(int(d.ContextFill))
 		max := FormatTokenCount(int(d.ContextWindow))
-		lines = append(lines, fmt.Sprintf("🧠 Context %d%% · %s/%s", pct, used, max))
+		lines = append(lines, fmt.Sprintf("🧠 Context %d%% · %s/%s", clampContextPct(d.ContextPct), used, max))
 	}
 
-	// Line 3: Git branch
 	if d.GitBranch != "" {
 		lines = append(lines, "🌿 "+d.GitBranch)
 	}
 
-	// Line 4: Work directory
 	if d.WorkDir != "" {
 		lines = append(lines, "📂 "+TruncatePath(d.WorkDir, 3))
 	}
 
-	// Line 5: Tools
 	if d.ToolCallCount > 0 {
 		lines = append(lines, "🔧 "+FormatToolNames(d.ToolNames, d.ToolCallCount))
 	}
 
-	// Line 6: Duration (merged Turn + Session)
-	if durStr := FormatDurationParts(d); durStr != "" {
-		lines = append(lines, "⏱ "+durStr)
-	}
-
-	// Line 7: Tokens (turn + session total)
 	if tokStr := FormatTokenUsage(d); tokStr != "" {
 		lines = append(lines, "💎 Tokens "+tokStr)
+	}
+
+	if durStr := FormatDurationParts(d); durStr != "" {
+		lines = append(lines, "⏱ Timer "+durStr)
 	}
 
 	return strings.Join(lines, "\n")
@@ -305,25 +297,23 @@ func FormatTokenUsage(d TurnSummaryData) string {
 		return ""
 	}
 	var tokParts []string
-	if d.TurnInputTok > 0 || d.TurnOutputTok > 0 {
-		var tp []string
-		if d.TurnInputTok > 0 {
-			tp = append(tp, FormatTokenCount(int(d.TurnInputTok))+"↓")
-		}
-		if d.TurnOutputTok > 0 {
-			tp = append(tp, FormatTokenCount(int(d.TurnOutputTok))+"↑")
-		}
-		tokParts = append(tokParts, strings.Join(tp, " · "))
+	if s := tokenPair(d.TurnInputTok, d.TurnOutputTok, ""); s != "" {
+		tokParts = append(tokParts, s)
 	}
-	if d.TotalInputTok > 0 || d.TotalOutputTok > 0 {
-		var tp []string
-		if d.TotalInputTok > 0 {
-			tp = append(tp, "Σ"+FormatTokenCount(int(d.TotalInputTok))+"↓")
-		}
-		if d.TotalOutputTok > 0 {
-			tp = append(tp, "Σ"+FormatTokenCount(int(d.TotalOutputTok))+"↑")
-		}
-		tokParts = append(tokParts, strings.Join(tp, " · "))
+	if s := tokenPair(d.TotalInputTok, d.TotalOutputTok, "Σ"); s != "" {
+		tokParts = append(tokParts, s)
 	}
 	return strings.Join(tokParts, " · ")
+}
+
+// tokenPair builds "X↓ · Y↑" (with optional prefix on each value) for a single input/output pair.
+func tokenPair(inputTok, outputTok int64, prefix string) string {
+	var parts []string
+	if inputTok > 0 {
+		parts = append(parts, prefix+FormatTokenCount(int(inputTok))+"↓")
+	}
+	if outputTok > 0 {
+		parts = append(parts, prefix+FormatTokenCount(int(outputTok))+"↑")
+	}
+	return strings.Join(parts, " · ")
 }
