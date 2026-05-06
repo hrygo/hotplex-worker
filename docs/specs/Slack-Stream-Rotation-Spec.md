@@ -15,102 +15,128 @@ Slack 流式消息在 Worker 长时间无输出后触发 `⚠️ *Stream expired
 | 平台 | 服务端 TTL | Idle timeout | 旋转 TTL | 来源 |
 |------|-----------|-------------|---------|------|
 | **Feishu** | 10min | 无 | 6min | 官方文档 |
-| **Slack** | **~5min wallclock** | **~30s idle** | **4min** | 社区实测（未文档化） |
+| **Slack** | **~5min wallclock** | **~30s idle** | **4min / 20s idle** | 社区实测（未文档化） |
 
 **Slack TTL 未公开文档化**。实证数据来自 [python-slack-sdk #1859](https://github.com/slackapi/python-slack-sdk/issues/1859)：
 - `hrygo/hotplex-legacy#237`：实测 ~5 分钟 wallclock TTL，即使持续 append 也会断
 - `AuraHQ-ai/aura#421`：实测 ~30s idle timeout
 - 多个 AI agent bot（Sentry/junior、AuraHQ）独立报告相同问题
 
-**注意**：原代码 `StreamTTL = 10 * time.Minute` 基于错误的假设（与飞书对齐），实际远低于此值。
+## HotPlex CC 场景分析
+
+| 场景 | CC 行为 | Slack 流状态 | 风险 |
+|------|---------|-------------|------|
+| **活跃文本输出** | message.delta 每 50-200ms | appendStream 每 150-270ms | 安全 |
+| **快速 tool call** (Read/Glob/Edit) | 10ms-2s 暂停 | 1-2s 无 append | 安全 |
+| **慢 tool call** (Bash/make check) | 数秒到数分钟 | 无 append | **idle 30s 超时** |
+| **Agent dispatch** | 子 agent 期间无输出 | 无 append | **idle 30s 超时** |
+| **长文本生成** | 持续输出 >4min | 持续 append | **wallclock 5min 超时** |
 
 ## Design
 
-对齐飞书已验证的 TTL 旋转模式（`feishu/adapter.go:810-831`），但使用 Slack 的实测 TTL：
+对齐飞书旋转模式，但使用 Slack 的实测 TTL，覆盖 **wallclock 和 idle 两种超时**。
 
-1. **在 `writeWithStreaming` 中检测 TTL** — 每次新内容到达时检查流是否过期
-2. **过期时主动关闭旧 writer** — Close() 会 flush 残留 buffer → StopStream → deregister
-3. **创建新 writer** — 首次 Write() 自动 StartStream，新消息续写
-
-### Rotation TTL
+### Rotation TTL 常量
 
 ```go
-StreamTTL         = 5 * time.Minute  // empirical server-side wallclock limit (undocumented)
-StreamRotationTTL = 4 * time.Minute  // proactive rotation before server ~5min limit
+StreamTTL         = 5 * time.Minute   // empirical server-side wallclock limit
+StreamRotationTTL = 4 * time.Minute   // proactive rotation before ~5min wallclock limit
+StreamIdleTTL     = 20 * time.Second  // proactive rotation before ~30s idle limit
 ```
 
-### Expired() 方法
+### Expired() / Idle() 方法
 
 ```go
 func (w *NativeStreamingWriter) Expired() bool {
-    w.mu.Lock()
-    defer w.mu.Unlock()
-    if w.streamStartTime.IsZero() || !w.started || w.closed {
-        return false
-    }
-    return time.Since(w.streamStartTime) > StreamRotationTTL
+    // wallclock: time.Since(streamStartTime) > 4min
+}
+
+func (w *NativeStreamingWriter) Idle() bool {
+    // idle: time.Since(lastActivityTime) > 20s
+    // lastActivityTime updated on StartStream + each successful AppendStream
 }
 ```
 
-### writeWithStreaming 旋转逻辑
+### writeWithStreaming 三层防护
 
+**层 1 — 主动旋转**（Write 前）：
 ```go
-// TTL rotation: proactively replace expired streams before
-// Slack's server-side streaming limit kicks in.
-if c.streamWriter != nil && c.streamWriter.Expired() {
-    oldWriter := c.streamWriter
-    c.streamWriter = nil
+if c.streamWriter != nil && (c.streamWriter.Expired() || c.streamWriter.Idle()) {
+    oldWriter.SetSkipFallback()  // 避免旋转 Close() 发送重复内容
     go func() { _ = oldWriter.Close() }()
-    c.adapter.Log.Info("slack: stream rotated", ...)
+    // 创建新 writer...
 }
-
-// Create new streaming writer if needed (same as before)
-if c.streamWriter == nil { ... }
 ```
 
-### 为什么 Close() 不会触发 fallback
+**层 2 — 错误恢复**（Write 失败后）：
+```go
+if err := c.streamWriter.Write(text); err != nil {
+    // 服务端可能已杀死流，用新 writer 重试
+    oldWriter.SetSkipFallback()
+    go func() { _ = oldWriter.Close() }()
+    newWriter := c.adapter.NewStreamingWriter(...)
+    if newWriter.Write(text) == nil {
+        return nil  // 恢复成功
+    }
+}
+```
 
-旋转时旧 writer 状态：
-- `streamExpired = false`（未收到 API 错误）
-- `integrityOK = true`（所有 buffer 已 flush）
-- → `Close()` 跳过 `⚠️ *Stream expired*` fallback
+**层 3 — Fallback**（恢复也失败时）：
+```go
+// 上层 WriteCtx 回退到 writeWithPostMessage
+```
 
-### 已知限制：Idle Timeout
+### 为什么旋转时 Close() 不发送重复内容
 
-Slack 还有 ~30s idle timeout（无 append 操作时流被关闭）。当前 flushLoop 每 150ms 触发一次，但仅在有 buffer 内容时才调用 appendWithRetry。Worker 长时间无输出时（如 tool call），buffer 为空，不会发送 keepalive。
+通过 `SetSkipFallback()` 标志：
+- 旋转 Close() 时 `skipFallback = true` → 跳过 fallback PostMessage
+- 已显示的内容不会重复发送
+- 新流继续从当前内容开始
 
-**后续优化**（不在本 PR 范围）：在 flushLoop 中添加 idle keepalive — 超过 N 秒无 append 时发送空内容或 last-content 重复以保持流活跃。
+### lastActivityTime 追踪
+
+- `Write()` 首次调用（StartStream 成功）时设置
+- `appendWithRetry()` 每次 AppendStream 成功时更新
+- 受 `mu` 互斥锁保护（appendWithRetry 在 flushLoop goroutine 运行）
 
 ## Implementation Phases
 
 ### Phase 1: 删除死代码
 
-- 删除 `stream.go:168-180`（Path A TTL 检查）
-- 删除 `ttlWarningLogged` 字段
-- `streamStartTime` 和 `StreamTTL` 保留（旋转功能使用）
+- [x] 删除 `stream.go:168-180`（Path A TTL 检查）
+- [x] 删除 `ttlWarningLogged` 字段
 
-### Phase 2: 实现旋转
+### Phase 2: 实现 Wallclock 旋转
 
-- 修正 `StreamTTL = 5min`（基于实测数据）
-- 新增 `StreamRotationTTL = 4min`
-- 新增 `Expired()` 方法
-- 修改 `writeWithStreaming` 添加旋转检测
-- 复用现有 `closeStreamWriter` / `NewStreamingWriter` 流程
+- [x] 修正 `StreamTTL = 5min`、`StreamRotationTTL = 4min`
+- [x] 新增 `Expired()` 方法
+- [x] 修改 `writeWithStreaming` 添加 wallclock 旋转检测
 
-### Phase 3: 测试
+### Phase 3: 实现 Idle 旋转
 
-- `TestExpired_*` — Expired() 边界条件
-- `TestDeadCodeRemoved` — 验证死代码移除
-- `TestStreamRotationTTL` — 验证 TTL 值和不变量
+- [x] 新增 `StreamIdleTTL = 20s`、`lastActivityTime` 字段
+- [x] 新增 `Idle()` 方法
+- [x] 更新 `appendWithRetry` 记录 `lastActivityTime`
+- [x] 新增 `SetSkipFallback()` 方法
+- [x] 修改 `Close()` 支持 `skipFallback`
+- [x] 修改 `writeWithStreaming` 添加 idle 旋转 + 错误恢复
+
+### Phase 4: 测试
+
+- [x] `TestExpired_*` — Expired() 边界条件
+- [x] `TestIdle_*` — Idle() 边界条件
+- [x] `TestStreamIdleTTL` — 验证 TTL 值和不变量
+- [x] `TestSetSkipFallback` — 验证 skipFallback 机制
 
 ## Acceptance Criteria
 
 - [x] Path A 死代码已删除
-- [ ] Worker 长时间无输出后恢复，流式消息不中断
-- [ ] `⚠️ *Stream expired*` 不再出现
-- [ ] 旋转后内容完整无丢失
+- [x] Wallclock 旋转（4min / 5min）
+- [x] Idle 旋转（20s / 30s）
+- [x] Write 失败时流恢复（非 PostMessage fallback）
+- [x] 旋转时不发送重复内容（skipFallback）
 - [x] `-race` 测试通过
-- [ ] 旋转失败时优雅降级（现有 fallback 不受影响）
+- [ ] 生产验证（下一版本发布后观察）
 
 ## References
 

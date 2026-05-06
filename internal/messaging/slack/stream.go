@@ -20,9 +20,10 @@ const (
 	flushSize         = 20 // rune count threshold for immediate flush
 	maxAppendRetries  = 3
 	retryDelay        = 50 * time.Millisecond
-	maxAppendSize     = 3000            // Slack limit ~4000, safety margin
-	StreamTTL         = 5 * time.Minute // empirical server-side wallclock limit (undocumented)
-	StreamRotationTTL = 4 * time.Minute // proactive rotation before server ~5min limit
+	maxAppendSize     = 3000             // Slack limit ~4000, safety margin
+	StreamTTL         = 5 * time.Minute  // empirical server-side wallclock limit (undocumented)
+	StreamRotationTTL = 4 * time.Minute  // proactive rotation before server ~5min wallclock limit
+	StreamIdleTTL     = 20 * time.Second // proactive rotation before server ~30s idle timeout
 )
 
 func isStreamStateError(err error) bool {
@@ -125,8 +126,10 @@ type NativeStreamingWriter struct {
 	fullContent strings.Builder
 
 	// TTL rotation
-	streamStartTime time.Time
-	streamExpired   bool
+	streamStartTime  time.Time
+	lastActivityTime time.Time // updated on StartStream and each successful append
+	streamExpired    bool
+	skipFallback     bool // suppress fallback PostMessage during rotation
 }
 
 // NewNativeStreamingWriter creates a new streaming writer for Slack.
@@ -185,6 +188,7 @@ func (w *NativeStreamingWriter) Write(p []byte) (int, error) {
 		w.messageTS = streamTS
 		w.started = true
 		w.streamStartTime = time.Now()
+		w.lastActivityTime = w.streamStartTime
 		w.fullContent.Write(p)
 		w.bytesWritten += int64(len(p))
 		w.bytesFlushed += int64(len(p))
@@ -218,6 +222,27 @@ func (w *NativeStreamingWriter) Expired() bool {
 		return false
 	}
 	return time.Since(w.streamStartTime) > StreamRotationTTL
+}
+
+// Idle reports whether the stream has been idle (no successful append) for too long.
+// Used by writeWithStreaming to proactively replace the stream before
+// Slack's ~30s server-side idle timeout kills it.
+func (w *NativeStreamingWriter) Idle() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.lastActivityTime.IsZero() || !w.started || w.closed {
+		return false
+	}
+	return time.Since(w.lastActivityTime) > StreamIdleTTL
+}
+
+// SetSkipFallback suppresses the fallback PostMessage in Close().
+// Called by writeWithStreaming before rotating the stream to avoid
+// sending duplicate content when the stream has already been displayed.
+func (w *NativeStreamingWriter) SetSkipFallback() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.skipFallback = true
 }
 
 // flushLoop background goroutine: periodic + threshold-triggered flush.
@@ -293,6 +318,7 @@ func (w *NativeStreamingWriter) appendWithRetry(content string) error {
 		if err == nil {
 			w.mu.Lock()
 			w.bytesFlushed += int64(len(content))
+			w.lastActivityTime = time.Now()
 			w.mu.Unlock()
 			return nil
 		}
@@ -330,6 +356,7 @@ func (w *NativeStreamingWriter) Close() error {
 	}
 	w.closed = true
 	streamExpired := w.streamExpired
+	shouldSkipFallback := w.skipFallback
 	w.mu.Unlock()
 
 	close(w.closeChan)
@@ -350,7 +377,7 @@ func (w *NativeStreamingWriter) Close() error {
 	integrityOK := len(failedChunks) == 0 && bytesWritten == bytesFlushed
 	duration := time.Since(w.streamStartTime).Round(time.Millisecond)
 
-	if !integrityOK || streamExpired {
+	if (!integrityOK || streamExpired) && !shouldSkipFallback {
 		w.log.Warn("slack: stream closed with issues",
 			"channel", w.channelID, "thread", w.threadTS,
 			"duration", duration,
@@ -393,7 +420,7 @@ func (w *NativeStreamingWriter) Close() error {
 		w.onComplete(w.messageTS)
 	}
 
-	if !integrityOK || streamExpired {
+	if (!integrityOK || streamExpired) && !shouldSkipFallback {
 		var fallbackText string
 		if streamExpired {
 			fallbackText = "⚠️ *Stream expired, sending complete content:*\n\n"

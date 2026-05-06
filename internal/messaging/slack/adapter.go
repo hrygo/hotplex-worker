@@ -829,10 +829,11 @@ func (c *SlackConn) writeWithStreaming(ctx context.Context, text string) error {
 	c.streamWriterMu.Lock()
 	defer c.streamWriterMu.Unlock()
 
-	// TTL rotation: proactively replace expired streams before
-	// Slack's server-side streaming limit kicks in.
-	if c.streamWriter != nil && c.streamWriter.Expired() {
+	// TTL rotation: proactively replace expired/idle streams before
+	// Slack's server-side limits kick in (~5min wallclock, ~30s idle).
+	if c.streamWriter != nil && (c.streamWriter.Expired() || c.streamWriter.Idle()) {
 		oldWriter := c.streamWriter
+		oldWriter.SetSkipFallback()
 		c.streamWriter = nil
 		go func() { _ = oldWriter.Close() }()
 		c.adapter.Log.Info("slack: stream rotated",
@@ -856,6 +857,32 @@ func (c *SlackConn) writeWithStreaming(ctx context.Context, text string) error {
 	}
 
 	_, err := c.streamWriter.Write([]byte(text))
+	if err != nil {
+		// Stream expired during write (server killed it while idle).
+		// Retry with a fresh stream instead of falling back to PostMessage.
+		if c.streamWriter != nil {
+			oldWriter := c.streamWriter
+			oldWriter.SetSkipFallback()
+			c.streamWriter = nil
+			go func() { _ = oldWriter.Close() }()
+
+			writer := c.adapter.NewStreamingWriter(ctx, c.channelID, c.threadTS, func(ts string) {
+				c.streamWriterMu.Lock()
+				if c.threadTS == "" && ts != "" {
+					c.threadTS = ts
+				}
+				c.streamWriterMu.Unlock()
+			})
+			if writer != nil {
+				c.streamWriter = writer
+				if _, retryErr := c.streamWriter.Write([]byte(text)); retryErr == nil {
+					c.adapter.Log.Info("slack: stream recovered after expiry",
+						"channel", c.channelID)
+					return nil
+				}
+			}
+		}
+	}
 	return err
 }
 

@@ -297,3 +297,55 @@ func TestStreamRotationTTL(t *testing.T) {
 	require.Less(t, StreamRotationTTL, StreamTTL,
 		"rotation TTL must be less than server TTL")
 }
+
+func TestStreamIdleTTL(t *testing.T) {
+	require.Equal(t, 20*time.Second, StreamIdleTTL,
+		"idle TTL should be 20 seconds (server idle limit ~30s)")
+	require.Less(t, StreamIdleTTL, StreamRotationTTL,
+		"idle TTL must be less than rotation TTL")
+}
+
+func TestIdle_NewWriter(t *testing.T) {
+	w := &NativeStreamingWriter{}
+	require.False(t, w.Idle(), "new writer should not be idle")
+}
+
+func TestIdle_ActiveWithinTTL(t *testing.T) {
+	w := &NativeStreamingWriter{
+		started:          true,
+		lastActivityTime: time.Now(),
+	}
+	require.False(t, w.Idle(), "active stream should not be idle")
+}
+
+func TestIdle_ExceededIdleTTL(t *testing.T) {
+	w := &NativeStreamingWriter{
+		started:          true,
+		lastActivityTime: time.Now().Add(-StreamIdleTTL - time.Second),
+	}
+	require.True(t, w.Idle(), "stream exceeding idle TTL should be idle")
+}
+
+func TestIdle_ClosedWriter(t *testing.T) {
+	w := &NativeStreamingWriter{
+		started:          true,
+		closed:           true,
+		lastActivityTime: time.Now().Add(-StreamIdleTTL - time.Hour),
+	}
+	require.False(t, w.Idle(), "closed writer should not report idle")
+}
+
+func TestIdle_ZeroActivityTime(t *testing.T) {
+	w := &NativeStreamingWriter{
+		started:          true,
+		lastActivityTime: time.Time{},
+	}
+	require.False(t, w.Idle(), "zero activity time should not report idle")
+}
+
+func TestSetSkipFallback(t *testing.T) {
+	w := &NativeStreamingWriter{}
+	require.False(t, w.skipFallback, "default should be false")
+	w.SetSkipFallback()
+	require.True(t, w.skipFallback, "after SetSkipFallback should be true")
+}
