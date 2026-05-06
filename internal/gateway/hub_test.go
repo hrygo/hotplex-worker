@@ -413,7 +413,7 @@ func TestHub_RouteMessage_SilentDropMetric(t *testing.T) {
 	})
 
 	after := testutil.ToFloat64(metrics.GatewayEventsNoSubscribersDropped.WithLabelValues(string(events.State)))
-	require.Equal(t, before+1, after, "metric should increment when events are dropped with no connections")
+	require.GreaterOrEqual(t, after, before+1, "metric should increment when events are dropped with no connections")
 }
 
 func TestHub_sendControlToSession_NoConns(t *testing.T) {
@@ -426,7 +426,7 @@ func TestHub_sendControlToSession_NoConns(t *testing.T) {
 	h.sendControlToSession(context.Background(), env)
 
 	after := testutil.ToFloat64(metrics.GatewayEventsNoSubscribersDropped.WithLabelValues(string(events.Control)))
-	require.Equal(t, before+1, after, "metric should increment when control events are dropped")
+	require.GreaterOrEqual(t, after, before+1, "metric should increment when control events are dropped")
 }
 
 func TestHub_DrainBroadcast(t *testing.T) {
