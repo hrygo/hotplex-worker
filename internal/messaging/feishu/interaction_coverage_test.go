@@ -3,6 +3,7 @@ package feishu
 import (
 	"context"
 	"io"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -281,6 +282,36 @@ func TestCheckPendingInteraction_PermissionAllow_Variants(t *testing.T) {
 			require.True(t, consumed)
 			pr := capturedMetadata["permission_response"].(map[string]any)
 			require.True(t, pr["allowed"].(bool))
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Args preview backtick stripping (mirrors production logic in interaction.go)
+// ---------------------------------------------------------------------------
+
+func TestArgsPreview_BacktickStripping(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		args string
+		want string
+	}{
+		{"plain text", "hello world", "hello world"},
+		{"nested backticks", "plan with ```code``` inside", "plan with code inside"},
+		{"multiple blocks", "```a``` and ```b```", "a and b"},
+		{"triple at boundaries", "```start end```", "start end"},
+		{"long args truncated", strings.Repeat("x", 501) + "```", strings.Repeat("x", 500) + "..."},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			preview := tt.args
+			if len(preview) > 500 {
+				preview = preview[:500] + "..."
+			}
+			preview = strings.ReplaceAll(preview, "```", "")
+			require.Equal(t, tt.want, preview)
 		})
 	}
 }

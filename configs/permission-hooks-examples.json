@@ -1,0 +1,47 @@
+{
+  "_comment": "PermissionRequest Hooks examples for HotPlex. Copy to .claude/settings.json and customize.",
+  "hooks": {
+    "PermissionRequest": [
+      {
+        "_comment": "Auto-approve read operations",
+        "matcher": "Read",
+        "hooks": [{ "type": "command", "command": "echo '{\"decision\": \"allow\"}'" }]
+      },
+      {
+        "_comment": "Auto-approve file writes",
+        "matcher": "Write",
+        "hooks": [{ "type": "command", "command": "echo '{\"decision\": \"allow\"}'" }]
+      },
+      {
+        "_comment": "Auto-approve file edits",
+        "matcher": "Edit",
+        "hooks": [{ "type": "command", "command": "echo '{\"decision\": \"allow\"}'" }]
+      },
+      {
+        "_comment": "Auto-approve git operations",
+        "matcher": "Bash(git *)",
+        "hooks": [{ "type": "command", "command": "echo '{\"decision\": \"allow\"}'" }]
+      },
+      {
+        "_comment": "Auto-approve Go toolchain",
+        "matcher": "Bash(go *)",
+        "hooks": [{ "type": "command", "command": "echo '{\"decision\": \"allow\"}'" }]
+      },
+      {
+        "_comment": "Auto-approve make targets",
+        "matcher": "Bash(make *)",
+        "hooks": [{ "type": "command", "command": "echo '{\"decision\": \"allow\"}'" }]
+      },
+      {
+        "_comment": "Auto-approve npm/npx",
+        "matcher": "Bash(npm *)",
+        "hooks": [{ "type": "command", "command": "echo '{\"decision\": \"allow\"}'" }]
+      },
+      {
+        "_comment": "Auto-approve ls/cat",
+        "matcher": "Bash(ls *)",
+        "hooks": [{ "type": "command", "command": "echo '{\"decision\": \"allow\"}'" }]
+      }
+    ]
+  }
+}

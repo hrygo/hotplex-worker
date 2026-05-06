@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -29,8 +30,16 @@ var _ worker.Worker = (*Worker)(nil)
 // Thread-safe via atomic.Value. Default: ["claude"].
 var commandParts atomic.Value // []string
 
+// permissionPrompt controls whether --permission-prompt-tool stdio is passed to Claude Code.
+var permissionPrompt atomic.Value // bool
+
+// permissionAutoApprove lists tool names to auto-approve without user interaction.
+var permissionAutoApprove atomic.Value // []string
+
 func init() {
 	commandParts.Store([]string{"claude"})
+	permissionPrompt.Store(false)
+	permissionAutoApprove.Store([]string{})
 }
 
 // InitConfig applies Claude Code worker configuration.
@@ -41,9 +50,31 @@ func InitConfig(cfg config.ClaudeCodeConfig) {
 	}
 	parts := strings.Fields(cmd)
 	commandParts.Store(parts)
+	permissionPrompt.Store(cfg.PermissionPrompt)
+	autoApprove := cfg.PermissionAutoApprove
+	if autoApprove == nil {
+		autoApprove = []string{}
+	}
+	permissionAutoApprove.Store(autoApprove)
 	if err := security.RegisterCommand(parts[0]); err != nil {
 		slog.Default().Error("claudecode: failed to register command", "command", parts[0], "err", err)
 	}
+}
+
+// autoApproveTool checks if a control request's tool name is in the auto-approve list.
+// If matched, it sends an allow response and returns true.
+func autoApproveTool(ctrl *ControlHandler, cr *ControlRequestPayload) bool {
+	list := permissionAutoApprove.Load()
+	if list == nil {
+		return false
+	}
+	toolNames, ok := list.([]string)
+	if !ok || !slices.Contains(toolNames, cr.ToolName) {
+		return false
+	}
+	ctrl.log.Info("auto-approved permission request", "tool", cr.ToolName, "request_id", cr.RequestID)
+	_ = ctrl.SendPermissionResponse(cr.RequestID, true, "auto-approved")
+	return true
 }
 
 // Env whitelist for Claude Code worker.
@@ -225,7 +256,12 @@ func (w *Worker) buildCLIArgs(session worker.SessionInfo, resume bool) []string 
 		"--verbose", // Required for stream-json mode
 		"--output-format", "stream-json",
 		"--input-format", "stream-json",
-		"--permission-prompt-tool", "stdio", // Enable control_request/control_response protocol
+	}
+
+	// Conditionally enable permission prompt tool for interaction chain.
+	// When disabled, Claude Code auto-denies ask results in headless mode.
+	if pp, _ := permissionPrompt.Load().(bool); pp {
+		args = append(args, "--permission-prompt-tool", "stdio")
 	}
 
 	// Only two session modes:
@@ -238,9 +274,11 @@ func (w *Worker) buildCLIArgs(session worker.SessionInfo, resume bool) []string 
 	}
 
 	// Permission mode: default bypass (preserves existing behavior), configurable override.
-	// --permission-prompt-tool stdio + --dangerously-skip-permissions:
+	// --permission-prompt-tool stdio + --dangerously-skip-permissions (both enabled):
 	//   - Normal operations: step 2a bypass → allow (no control_request)
 	//   - Bypass-immune ops (.claude/, .git/, shell config): step 1g → ask → control_request
+	// --permission-prompt-tool disabled (default):
+	//   - All ask results auto-denied by Claude Code in headless mode
 	if session.SkipPermissions {
 		args = append(args, "--dangerously-skip-permissions")
 	} else if session.PermissionMode != "" {
@@ -308,6 +346,11 @@ func (w *Worker) Input(ctx context.Context, content string, metadata map[string]
 			reqID, _ := permResp["request_id"].(string)
 			allowed, _ := permResp["allowed"].(bool)
 			reason, _ := permResp["reason"].(string)
+
+			w.Log.Info("claudecode: sending permission response to stdin",
+				"request_id", reqID,
+				"allowed", allowed,
+				"session_id", w.sessionID)
 
 			if err := w.control.SendPermissionResponse(reqID, allowed, reason); err != nil {
 				return fmt.Errorf("claudecode: permission response: %w", err)
@@ -651,6 +694,10 @@ func (w *Worker) readOutput(ctx context.Context) {
 						)
 						w.trySend(env)
 					} else {
+						// Check auto-approve list before forwarding to user
+						if autoApproveTool(w.control, cr) {
+							continue
+						}
 						// Other tools → PermissionRequest event
 						var input map[string]any
 						if len(cr.Input) > 0 {

@@ -733,16 +733,19 @@ func (c *SlackConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		}
 		return nil
 	case events.PermissionRequest:
+		c.closeStreamWriter() // finalize any active stream before interaction
 		c.notifyStatus(ctx, "Permission request...")
 		err := c.sendPermissionRequest(ctx, env)
 		c.clearStatus(ctx)
 		return err
 	case events.QuestionRequest:
+		c.closeStreamWriter()
 		c.notifyStatus(ctx, "Awaiting response...")
 		qErr := c.sendQuestionRequest(ctx, env)
 		c.clearStatus(ctx)
 		return qErr
 	case events.ElicitationRequest:
+		c.closeStreamWriter()
 		c.notifyStatus(ctx, "Gathering input...")
 		eErr := c.sendElicitationRequest(ctx, env)
 		c.clearStatus(ctx)
