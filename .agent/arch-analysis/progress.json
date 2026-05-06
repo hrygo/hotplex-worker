@@ -1,1357 +1,278 @@
 {
   "version": 1,
-  "last_updated": "2026-04-30T08:42:00+08:00",
-  "total_cycles": 49,
+  "last_updated": "2026-05-06T13:22:00+08:00",
+  "total_cycles": 18,
   "modules": {
     "internal/gateway": {
-      "analysis_count": 3,
-      "aspects_covered": [
-        "solid",
-        "dry",
-        "coupling",
-        "error-handling",
-        "concurrency",
-        "resource-mgmt"
-      ],
-      "aspects_pending": [
-        "performance",
-        "scalability",
-        "security",
-        "observability",
-        "testability",
-        "code-quality"
-      ],
-      "issues_created": [
-        66,
-        76
-      ],
-      "findings_total": 10,
-      "last_analyzed": "2026-04-30T02:10:00+08:00",
+      "analysis_count": 2,
+      "aspects_covered": ["solid", "dry", "coupling", "error-handling"],
+      "aspects_pending": ["concurrency", "resource-mgmt", "performance", "scalability", "security", "observability", "testability", "code-quality"],
+      "issues_created": [198, 199, 216],
+      "findings_total": 16,
       "findings_dropped": [
-        {
-          "finding": "b.accum map unbounded growth (bridge.go)",
-          "reason": "Low ROI — negligible at current scale (<100 concurrent sessions); map entries keyed by session ID, cleaned when session terminates"
-        },
-        {
-          "finding": "context.Background() in goroutines (bridge.go)",
-          "reason": "By design — background tasks outlive request context; correct pattern for goroutines spawned at startup"
-        },
-        {
-          "finding": "session_stats.go silent json.Unmarshal error (line 172)",
-          "reason": "Low ROI — best-effort data extraction from worker JSON; failure produces empty optional fields, not incorrect behavior"
-        },
-        {
-          "finding": "LLMRetryController.attempts map never cleaned for crashed sessions",
-          "reason": "Low ROI — ~100 bytes per entry, bounded by total session count; gateway restart clears all entries"
-        },
-        {
-          "finding": "No connection count semaphore (unbounded goroutines per WS)",
-          "reason": "Standard Go WS pattern; OS fd limits provide backpressure; PoolManager enforces business-level quota"
-        },
-        {
-          "finding": "pcEntry.Close panic could leak PlatformConn",
-          "reason": "Already covered by Issue 76 (send-on-closed-channel race)"
-        }
-      ]
+        {"finding": "SessionManager sub-interfaces unused", "reason": "Low ROI — no narrow consumers, structural noise only"},
+        {"finding": "Event type switch statement", "reason": "Low ROI — 12 cases, idiomatic Go"},
+        {"finding": "Envelope construction pattern", "reason": "Low ROI — NewEnvelope already serves as constructor"},
+        {"finding": "pkg/events imported in 24/30 files", "reason": "Low ROI — pkg/ is stable public package, facade is over-engineering"},
+        {"finding": "*Hub/*Bridge/*JWTValidator concrete deps", "reason": "Low ROI — tests exist and work, extracting 7+ method interfaces is large effort"},
+        {"finding": "worker/noop leaked to production code", "reason": "Low ROI — only 2 imports, minor"},
+        {"finding": "conn.go performInit dual error reporting", "reason": "Low ROI — not harmful, just inconsistent logging"},
+        {"finding": "Zero sentinel errors for gateway failures", "reason": "Low ROI — only cmd/ callers, string parsing acceptable"}
+      ],
+      "last_analyzed": "2026-05-06T13:10:00+08:00",
+      "stats": {"files": 31, "lines": 11931}
     },
     "internal/session": {
-      "analysis_count": 3,
-      "aspects_covered": [
-        "solid",
-        "dry",
-        "coupling",
-        "error-handling",
-        "concurrency",
-        "resource-mgmt",
-        "performance"
-      ],
-      "aspects_pending": [
-        "scalability",
-        "security",
-        "observability",
-        "testability",
-        "code-quality"
-      ],
-      "issues_created": [
-        69,
-        77,
-        84
-      ],
-      "findings_total": 11,
+      "analysis_count": 2,
+      "aspects_covered": ["coupling", "error-handling", "solid", "dry"],
+      "aspects_pending": ["concurrency", "resource-mgmt", "performance", "scalability", "security", "observability", "testability", "code-quality"],
+      "issues_created": [202, 217],
+      "findings_total": 14,
       "findings_dropped": [
-        {
-          "finding": "Manager god object (30+ methods)",
-          "reason": "Most methods are thin wrappers; acceptable at current scale"
-        },
-        {
-          "finding": "Package-level queries map",
-          "reason": "Standard Go pattern, read-only after init"
-        },
-        {
-          "finding": "OnTerminate/StateNotifier callbacks vs event bus",
-          "reason": "Simpler than event bus at current scale"
-        },
-        {
-          "finding": "ctx deadline check repetition",
-          "reason": "Low severity — clean win but not impactful enough to justify dedicated finding"
-        },
-        {
-          "finding": "transitionState mutex release window for DB write",
-          "reason": "By design — reduces lock hold time; rollback path correct; state machine validation protects against most races"
-        },
-        {
-          "finding": "Append drops records when channel full (conversation_store.go:142-154)",
-          "reason": "Intentional backpressure for analytics store; warning log provides observability; nil return prevents callers from treating analytics failures as business errors"
-        },
-        {
-          "finding": "PoolManager double-release already well-designed",
-          "reason": "Already has error logging, metrics, and memory cleanup on double-release — not an issue"
-        },
-        {
-          "finding": "Upsert re-marshals Context/PlatformKey JSON on every state transition (store.go:104-141)",
-          "reason": "Low ROI — maps are small (<10 keys), json.Marshal <1us, not hot path; optimization adds dirty-field tracking complexity for marginal gain"
-        },
-        {
-          "finding": "sessions map unbounded growth for terminated sessions (manager.go)",
-          "reason": "Low ROI — bounded by gateway restart cycle, ~200 bytes per entry; terminated sessions intentionally kept as resume decision flags per GC comment"
-        },
-        {
-          "finding": "DeleteTerminated issues individual cascade deletes per session in loop (store.go:268-271)",
-          "reason": "Low ROI — GC runs infrequently (60s interval), few terminated sessions per cycle; batch DELETE WHERE session_id IN (...) is an optimization for a non-hot path"
-        }
+        {"finding": "worker.WorkerType coupling", "reason": "Low ROI — string alias, no behavior"},
+        {"finding": "OnTerminate/StateNotifier function pointers", "reason": "Low ROI — set-once callbacks, simple pattern"},
+        {"finding": "GetExpired* unwrapped errors", "reason": "Low ROI — GC callers already log and continue"},
+        {"finding": "DeletePhysical ignores kill error", "reason": "Low ROI — intentional best-effort for admin op"},
+        {"finding": "ErrMemoryExceeded co-location", "reason": "Low ROI — discoverability only"},
+        {"finding": "mockStore extra method", "reason": "Low ROI — test-only artifact"},
+        {"finding": "collectIDs drops scan errors", "reason": "Low ROI — practically impossible to trigger"},
+        {"finding": "Manager God Object full decomposition", "reason": "Medium ROI — large effort, phased in issue #217 as P3"}
       ],
-      "last_analyzed": "2026-04-30T06:09:00+08:00"
+      "last_analyzed": "2026-05-06T13:22:00+08:00",
+      "stats": {"files": 11, "lines": 4651}
     },
     "internal/messaging": {
-      "analysis_count": 3,
-      "aspects_covered": [
-        "solid",
-        "dry",
-        "coupling",
-        "error-handling",
-        "concurrency",
-        "resource-mgmt",
-        "scalability"
-      ],
-      "aspects_pending": [
-        "performance",
-        "security",
-        "observability",
-        "testability",
-        "code-quality"
-      ],
-      "issues_created": [
-        78
-      ],
-      "findings_total": 2,
+      "analysis_count": 1,
+      "aspects_covered": ["solid", "dry"],
+      "aspects_pending": ["coupling", "error-handling", "concurrency", "resource-mgmt", "performance", "scalability", "security", "observability", "testability", "code-quality"],
+      "issues_created": [204, 205],
+      "findings_total": 10,
       "findings_dropped": [
-        {
-          "finding": "Extract*Data triple duplication (interaction.go:192-257)",
-          "reason": "Medium severity DRY, but functions are stable and rarely change; generic helper adds abstraction cost for ~30 line savings"
-        },
-        {
-          "finding": "MakeSlackEnvelope/MakeFeishuEnvelope near-duplication (bridge.go:106-140)",
-          "reason": "Already in scope of issue #65 (messaging adapter refactoring)"
-        },
-        {
-          "finding": "Bridge tight coupling to session.DerivePlatformSessionKey",
-          "reason": "Intentional — messaging bridge must derive session keys; abstracting would add complexity without benefit"
-        },
-        {
-          "finding": "AdapterConfig.Extras weakly-typed map[string]any",
-          "reason": "Managed at current scale (2 adapters); typed config struct only warranted if many more adapters added"
-        },
-        {
-          "finding": "control_command.go mixed concerns (control + worker + help)",
-          "reason": "Functions are cohesive around command parsing/display; 301 lines, splitting adds file count without real benefit"
-        },
-        {
-          "finding": "CancelAll leaves timer goroutines running (interaction.go)",
-          "reason": "Bounded by DefaultInteractionTimeout (5 min); goroutines exit cleanly when Complete returns false"
-        },
-        {
-          "finding": "PlatformAdapter fields not synchronized (platform_adapter.go)",
-          "reason": "Sequential init (ConfigureWith before Start) makes races impossible in practice"
-        },
-        {
-          "finding": "PersistentSTT.Transcribe holds mutex during I/O (stt/stt.go)",
-          "reason": "Intentional serialization; subprocess is single-threaded; context provides cancellation"
-        },
-        {
-          "finding": "LocalSTT template command construction (stt/stt.go)",
-          "reason": "Generated temp paths contain no spaces; exec.Command prevents shell injection"
-        },
-        {
-          "finding": "GetAll/GetBySession return internal PendingInteraction pointers",
-          "reason": "Function closure is typically read-only; low mutation risk"
-        },
-        {
-          "finding": "CancelAll doesn't stop timer goroutines for cancelled interactions (interaction.go:179-189)",
-          "reason": "Low ROI — goroutines bounded by 5min TTL, exit cleanly when Complete returns false; adding stop channel per interaction increases complexity for marginal memory savings"
-        },
-        {
-          "finding": "PersistentSTT.start ignores context parameter (stt/stt.go:230)",
-          "reason": "Low ROI — subprocess launch is fast (<1s typically); context cancellation during start has negligible real-world impact"
-        },
-        {
-          "finding": "SharedTranscriber ref counting mutex could be avoided with atomic-only approach",
-          "reason": "Low ROI — mutex needed for Close() logic (check ref, then close); removing mutex would require restructuring for marginal simplification"
-        }
+        {"finding": "PlatformAdapter init-then-overwrite pattern", "reason": "Low confidence — documented 5-step init pattern, intentional design"},
+        {"finding": "ExtractPermissionData inconsistent decode", "reason": "Low ROI — single function, works correctly, small surface"},
+        {"finding": "AdapterConfig.Extras untyped bag", "reason": "Low ROI — change cascades to all adapter configs, large effort"}
       ],
-      "last_analyzed": "2026-04-30T06:14:00+08:00"
-    },
-    "internal/messaging/slack": {
-      "analysis_count": 3,
-      "aspects_covered": [
-        "solid",
-        "dry",
-        "coupling",
-        "error-handling",
-        "concurrency",
-        "resource-mgmt",
-        "performance"
-      ],
-      "aspects_pending": [
-        "scalability",
-        "security",
-        "observability",
-        "testability",
-        "code-quality"
-      ],
-      "issues_created": [
-        70
-      ],
-      "findings_total": 4,
-      "findings_dropped": [
-        {
-          "finding": "workDir package-level variable without synchronization (status.go:541-544)",
-          "reason": "Already identified and fixed in previous session (obs 17336)"
-        },
-        {
-          "finding": "context.Background() in probe goroutine (adapter.go:156)",
-          "reason": "By design — startup probe runs independently of request context"
-        },
-        {
-          "finding": "context.Background() in interaction SendResponse callback (interaction.go:422)",
-          "reason": "By design — original request context gone when interaction fires; 30s timeout provides bound"
-        },
-        {
-          "finding": "context.Background() in SlackConn.Close clearStatus (adapter.go:986)",
-          "reason": "By design — cleanup during close, original ctx may be cancelled"
-        },
-        {
-          "finding": "NativeStreamingWriter ctx stored in struct (stream.go:95)",
-          "reason": "By design — long-lived streaming session needs ctx across goroutines; Close creates fresh ctx for cleanup"
-        },
-        {
-          "finding": "setStatusWithEmojiFallback TOCTOU on emojiState (status.go:641-643)",
-          "reason": "Protected by upstream SlackConn.handlerMu serialization per thread — not a real race"
-        },
-        {
-          "finding": "flushBuffer re-buffer ordering during rate limit (stream.go:240-244)",
-          "reason": "Low severity — rate limit window is milliseconds; re-buffered content is same data; total output correct"
-        },
-        {
-          "finding": "UserCache.Close() missing wg.Wait() for sweep goroutine (mention.go:49-56)",
-          "reason": "Low ROI — goroutine exits within one sweep interval (10min) after stopCh close; no data race risk; adding WaitGroup is trivial but impact is negligible"
-        },
-        {
-          "finding": "activeConns map grows unboundedly during adapter lifetime (adapter.go:79, 441-453)",
-          "reason": "Low ROI — ~200 bytes per conn; bounded by unique channel+thread pairs; 10K threads = 2MB; adding TTL cleanup adds complexity for marginal savings"
-        },
-        {
-          "finding": "localFileToImagePart peak memory ~3x file size for base64 encoding (image_blocks.go:71-89)",
-          "reason": "Low ROI — only triggered for AI-generated images; 5MB cap limits damage to ~17MB peak; streaming base64 encoding adds complexity for rare edge case"
-        }
-      ],
-      "last_analyzed": "2026-04-30T06:38:00+08:00"
-    },
-    "internal/messaging/feishu": {
-      "analysis_count": 3,
-      "aspects_covered": [
-        "solid",
-        "dry",
-        "coupling",
-        "error-handling",
-        "concurrency",
-        "resource-mgmt",
-        "performance"
-      ],
-      "aspects_pending": [
-        "scalability",
-        "security",
-        "observability",
-        "testability",
-        "code-quality"
-      ],
-      "issues_created": [
-        71,
-        82
-      ],
-      "findings_total": 6,
-      "findings_dropped": [
-        {
-          "finding": "sendSkillsList DRY between Slack/Feishu",
-          "reason": "Already using shared messaging helpers; further abstraction has low ROI"
-        },
-        {
-          "finding": "ChatQueue coupling concerns",
-          "reason": "Well-designed per-chatID serialization; no issues found"
-        },
-        {
-          "finding": "FeishuConn↔Adapter bidirectional reference",
-          "reason": "Standard Go pattern for method delegation; not a coupling issue"
-        },
-        {
-          "finding": "context.Background() in registerInteraction SendResponse (interaction.go:163)",
-          "reason": "By design — original request context gone when interaction timeout fires; nil bridge check present"
-        },
-        {
-          "finding": "context.Background() in ChatQueue task context (chat_queue.go:93)",
-          "reason": "By design — background tasks outlive request context; chatTaskTimeout provides bound"
-        },
-        {
-          "finding": "buildInteractionCard ignores json.Encode error (interaction.go:315)",
-          "reason": "Safe by construction — card structure always well-formed (string values, maps, slices)"
-        },
-        {
-          "finding": "checkPendingInteraction ack sendTextMessage error ignored (interaction.go:264)",
-          "reason": "Best-effort acknowledgment — not critical path; appropriate to ignore"
-        },
-        {
-          "finding": "Media file cleanup (no TempBaseDir/media/ sweep)",
-          "reason": "Cross-cutting concern shared with Slack adapter — not feishu-specific; Low ROI"
-        },
-        {
-          "finding": "StreamingCardController.buf strings.Builder unbounded growth",
-          "reason": "Bounded by StreamTTL (6min rotation); typical responses 1-10KB; Low ROI"
-        },
-        {
-          "finding": "buildCardContent per-call bytes.Buffer allocation",
-          "reason": "Small allocation, GC-friendly; same pattern as Slack; Low ROI"
-        }
-      ],
-      "last_analyzed": "2026-04-30T06:43:00+08:00"
+      "last_analyzed": "2026-05-06T10:50:00+08:00",
+      "stats": {"files": 103, "lines": 28947},
+      "sub_modules": ["messaging/slack", "messaging/feishu"]
     },
     "internal/worker": {
-      "analysis_count": 3,
-      "aspects_covered": [
-        "solid",
-        "dry",
-        "coupling",
-        "error-handling",
-        "concurrency",
-        "resource-mgmt",
-        "performance"
-      ],
-      "aspects_pending": [
-        "scalability",
-        "security",
-        "observability",
-        "testability",
-        "code-quality"
-      ],
-      "issues_created": [],
-      "findings_total": 0,
+      "analysis_count": 1,
+      "aspects_covered": ["solid", "dry"],
+      "aspects_pending": ["coupling", "error-handling", "concurrency", "resource-mgmt", "performance", "scalability", "security", "observability", "testability", "code-quality"],
+      "issues_created": [206],
+      "findings_total": 8,
       "findings_dropped": [
-        {
-          "finding": "SessionInfo god struct (20+ fields, 5 concerns)",
-          "reason": "Data carrier only, no logic; splitting adds complexity without behavior change"
-        },
-        {
-          "finding": "Worker interface 16 methods (ISP concern)",
-          "reason": "Already mitigated by optional interfaces (InputRecoverer, InPlaceReseter, WorkerSessionIDHandler)"
-        },
-        {
-          "finding": "BaseWorker depends on concrete *proc.Manager",
-          "reason": "Current test coverage adequate via nil-safe patterns; extracting interface adds abstraction for marginal benefit"
-        },
-        {
-          "finding": "Terminate/Kill/Wait lock-unlock-nil pattern repeated 3x",
-          "reason": "Idiomatic Go, ~6 lines total; extracting helper reduces clarity"
-        },
-        {
-          "finding": "InPlaceReseter naming (should be Resetter)",
-          "reason": "Phase 4 Code Quality; minor naming, not actionable at architecture level"
-        },
-        {
-          "finding": "Send uses aep.Encode (no EAGAIN retry) vs SendUserMessage uses WriteAll (EAGAIN retry)",
-          "reason": "Phase 2 Error Handling; control messages typically small, unlikely to exceed pipe buffer"
-        },
-        {
-          "finding": "Conn.Send closed-check race with Close (conn.go:59-76)",
-          "reason": "By design — race window handled by error propagation; write to closed fd returns error correctly"
-        },
-        {
-          "finding": "Manager.Terminate ctx.Done() returns without cleanup (manager.go:207-209)",
-          "reason": "Caller-controlled context pattern; Kill() available for forced cleanup"
-        },
-        {
-          "finding": "Manager.Kill holds mu during cmd.Wait (manager.go:225)",
-          "reason": "ReadLine copies scanner under lock then releases; Kill sends SIGKILL which unblocks scanner.Scan()"
-        },
-        {
-          "finding": "drainStderr reads m.stderr without lock (manager.go:367)",
-          "reason": "Go os.File operations are goroutine-safe; Close() unblocks Read() with error"
-        }
+        {"finding": "Capabilities boilerplate methods", "reason": "Low ROI — idiomatic Go pattern, extracting adds unnecessary abstraction"},
+        {"finding": "Worker interface too many methods (11)", "reason": "Low ROI — all implementations need all methods"},
+        {"finding": "Permission envelope construction duplication", "reason": "Low ROI — input sources differ significantly between adapters"},
+        {"finding": "claudecode/worker.go file size (~770 lines)", "reason": "Low ROI — responsibilities are cohesive, split has no benefit"},
+        {"finding": "singleton.Load() global access in OCS", "reason": "Low confidence — documented intentional singleton pattern"}
       ],
-      "last_analyzed": "2026-04-30T07:07:00+08:00"
-    },
-    "internal/worker/opencodeserver": {
-      "analysis_count": 3,
-      "aspects_covered": [
-        "solid",
-        "dry",
-        "coupling",
-        "error-handling",
-        "concurrency",
-        "resource-mgmt",
-        "performance"
-      ],
-      "aspects_pending": [
-        "scalability",
-        "security",
-        "observability",
-        "testability",
-        "code-quality"
-      ],
-      "issues_created": [
-        83,
-        85
-      ],
-      "findings_total": 2,
-      "findings_dropped": [
-        {
-          "finding": "Terminate/Kill identical (16 lines)",
-          "reason": "Intentional by design — OCS Worker doesn't own process; both operations just release ref + close SSE"
-        },
-        {
-          "finding": "Worker delegation nil-check repeated 4x (Compact/Clear/Rewind/SendControlRequest)",
-          "reason": "Each method is 4 lines; extracting helper adds complexity for minimal savings"
-        },
-        {
-          "finding": "worker.go 825 lines mixing 6 concerns",
-          "reason": "SSE reader and conn tightly coupled to Worker; extraction would require passing internal state"
-        },
-        {
-          "finding": "httpPost (worker.go) vs doRequest (commands.go) similar HTTP patterns",
-          "reason": "Different contexts (permission replies vs general API); merging creates awkward coupling"
-        },
-        {
-          "finding": "ControlRequester/WorkerCommander interfaces local to this package",
-          "reason": "No current pain point; moving to worker/ package only warranted when more adapters need them"
-        },
-        {
-          "finding": "singleton.go atomic.Pointer CAS pattern correct",
-          "reason": "Exemplary design — CompareAndSwap prevents double-init, lazy start on first Acquire"
-        },
-        {
-          "finding": "commands.go Clear sessionID mutation without sync",
-          "reason": "Serialized by upstream session manager — only one operation per session at a time"
-        },
-        {
-          "finding": "worker.go httpConn lifecycle managed by closeOnce",
-          "reason": "Exemplary — sync.Once prevents double-close, Terminate/Kill both delegate to releaseRef"
-        },
-        {
-          "finding": "newHTTPClient() wasted allocation in Worker.New()",
-          "reason": "Trivial — single allocation replaced by singleton's client in Start(); Low ROI"
-        },
-        {
-          "finding": "lastKnownModel/lastAssistantMessageID scan N messages per call",
-          "reason": "Infrequent operations (only during Compact/Rewind); acceptable at current scale"
-        }
-      ],
-      "last_analyzed": "2026-04-30T07:08:00+08:00"
+      "last_analyzed": "2026-05-06T10:58:00+08:00",
+      "stats": {"files": 48, "lines": 11365},
+      "sub_modules": ["worker/opencodeserver"]
     },
     "internal/config": {
-      "analysis_count": 3,
-      "aspects_covered": [
-        "solid",
-        "dry",
-        "coupling",
-        "error-handling",
-        "concurrency"
-      ],
-      "aspects_pending": [
-        "resource-mgmt",
-        "performance",
-        "scalability",
-        "security",
-        "observability",
-        "testability",
-        "code-quality"
-      ],
-      "issues_created": [
-        72
-      ],
-      "findings_total": 1,
+      "analysis_count": 1,
+      "aspects_covered": ["solid", "dry"],
+      "aspects_pending": ["coupling", "error-handling", "concurrency", "resource-mgmt", "performance", "scalability", "security", "observability", "testability", "code-quality"],
+      "issues_created": [207],
+      "findings_total": 2,
       "findings_dropped": [
-        {
-          "finding": "Config god struct (11 top-level sections)",
-          "reason": "Intentional design — atomic config snapshots via ConfigStore.Swap() require single struct; splitting breaks atomicity guarantee"
-        },
-        {
-          "finding": "SlackConfig/FeishuConfig shared policy fields (7 identical fields)",
-          "reason": "Already partially addressed by STTConfig squash; platforms may diverge in future; extracting MessagingPolicyConfig is premature"
-        },
-        {
-          "finding": "resolveField reflection without caching",
-          "reason": "Used only in hot reload diff (rare operation); performance is acceptable"
-        },
-        {
-          "finding": "loadRecursive creates new viper instance per call",
-          "reason": "Only runs at startup; typical depth is 2-3 levels; not a performance concern"
-        },
-        {
-          "finding": "reload() benign race on close",
-          "reason": "Phase 2 concurrency concern; worst case is one extra reload after close — benign"
-        }
+        {"finding": "config.go file size (923 lines)", "reason": "Low ROI — responsibilities are cohesive around config management"},
+        {"finding": "HotReloadableFields/StaticFields hardcoded maps", "reason": "Low ROI — intentional design, each field's reloadability is a deliberate decision"},
+        {"finding": "Load() 30+ BindEnv calls", "reason": "Low ROI — Viper API limitation, not a design issue"},
+        {"finding": "normalizePaths() hardcoded list", "reason": "Low ROI — short list, easy to maintain"},
+        {"finding": "Watcher 3 separate mutexes", "reason": "Low confidence — intentional pattern to reduce lock contention"}
       ],
-      "last_analyzed": "2026-04-30T02:45:09+08:00"
-    },
-    "internal/agentconfig": {
-      "analysis_count": 3,
-      "aspects_covered": [
-        "solid",
-        "dry",
-        "coupling",
-        "error-handling",
-        "concurrency",
-        "resource-mgmt",
-        "performance"
-      ],
-      "aspects_pending": [
-        "scalability",
-        "security",
-        "observability",
-        "testability",
-        "code-quality"
-      ],
-      "issues_created": [
-        80
-      ],
-      "findings_total": 1,
-      "findings_dropped": [
-        {
-          "finding": "BuildSystemPrompt 5 repeated xmlSection pattern (fmt.Sprintf with tag+directive+content)",
-          "reason": "Each block is only 3 lines; extracting helper saves ~5 lines total, LOW ROI"
-        },
-        {
-          "finding": "B/C channel structural similarity (check fields → build sections → wrap in outer tag)",
-          "reason": "Different semantics (directives vs context); abstracting reduces clarity, LOW confidence"
-        },
-        {
-          "finding": "Load() disk I/O per session start without caching",
-          "reason": "Low ROI — files are small (max 40KB total), reads are fast; config may change between calls (hot-reload); caching adds invalidation complexity"
-        },
-        {
-          "finding": "stripFrontmatter creates bufio.Scanner per call",
-          "reason": "Low ROI — frontmatter is tiny (<100 bytes typically); scanner overhead negligible vs disk I/O; strings.Index alternative is less readable"
-        }
-      ],
-      "last_analyzed": "2026-04-30T07:38:00+08:00"
+      "last_analyzed": "2026-05-06T11:05:00+08:00",
+      "stats": {"files": 7, "lines": 2743}
     },
     "internal/security": {
-      "analysis_count": 2,
-      "aspects_covered": [
-        "solid",
-        "dry",
-        "coupling",
-        "error-handling",
-        "concurrency"
-      ],
-      "aspects_pending": [
-        "resource-mgmt",
-        "performance",
-        "scalability",
-        "security",
-        "observability",
-        "testability",
-        "code-quality"
-      ],
-      "issues_created": [
-        73
-      ],
-      "findings_total": 2,
+      "analysis_count": 1,
+      "aspects_covered": ["solid", "dry"],
+      "aspects_pending": ["coupling", "error-handling", "concurrency", "resource-mgmt", "performance", "scalability", "security", "observability", "testability", "code-quality"],
+      "issues_created": [208],
+      "findings_total": 3,
       "findings_dropped": [
-        {
-          "finding": "IsProtectedEnvVar linear scan vs map",
-          "reason": "Only 16 entries; negligible perf difference; style preference, not a bug"
-        },
-        {
-          "finding": "AuthenticateRequest non-constant-time map lookup",
-          "reason": "Theoretical timing attack; network jitter dominates at gateway scale; ValidateAPIKey already uses subtle.ConstantTimeCompare"
-        },
-        {
-          "finding": "Whitelist map pattern repeated 3x (command/tool/model)",
-          "reason": "Intentional for security visibility — each whitelist deserves explicit code review"
-        },
-        {
-          "finding": "newJTIBlacklist goroutine in constructor",
-          "reason": "Phase 2 resource mgmt concern — multiple JWTValidator instances spawn multiple sweep goroutines"
-        },
-        {
-          "finding": "auth.go imports config+events coupling",
-          "reason": "Legitimate dependency — security validates config structures and envelope formats"
-        },
-        {
-          "finding": "jtiBlacklist.Stop() double-close panic risk",
-          "reason": "By design — single caller during gateway shutdown; JWTValidator.Stop() guards with nil check"
-        },
-        {
-          "finding": "RegisterCommand writes AllowedCommands map without sync",
-          "reason": "Init-time only — called during startup before concurrent access begins"
-        },
-        {
-          "finding": "AuthenticateRequest non-constant-time map lookup",
-          "reason": "Phase 1 already dropped — security concern, not error handling/concurrency"
-        },
-        {
-          "finding": "SafeEnvBuilder.Build() non-deterministic map iteration",
-          "reason": "Environment variable order is functionally irrelevant; builder used sequentially during worker startup"
-        }
+        {"finding": "command.go has 3 concerns (whitelist, dangerous chars, bash policy)", "reason": "Low ROI — all command-security related, cohesive within the file"},
+        {"finding": "ValidateAPIKey placement in jwt.go instead of auth.go", "reason": "Low ROI — just file organization, no functional impact"},
+        {"finding": "AllowedTools/AllowedModels hardcoded maps", "reason": "Low ROI — intentional for security, new entries require code review"},
+        {"finding": "sensitiveEnvPrefixes redundant entries", "reason": "Low ROI — defense-in-depth, extra entries add safety margin"},
+        {"finding": "Platform-specific ConfigureFromConfig duplication", "reason": "Low confidence — build tags require separate files, Windows differs intentionally"},
+        {"finding": "Two parallel worker env construction paths", "reason": "Low ROI — different use cases, both needed"}
       ],
-      "last_analyzed": "2026-04-30T05:09:04+08:00"
+      "last_analyzed": "2026-05-06T11:22:00+08:00",
+      "stats": {"files": 19, "lines": 4812}
+    },
+    "internal/agentconfig": {
+      "analysis_count": 1,
+      "aspects_covered": ["solid", "dry"],
+      "aspects_pending": ["coupling", "error-handling", "concurrency", "resource-mgmt", "performance", "scalability", "security", "observability", "testability", "code-quality"],
+      "issues_created": [],
+      "findings_total": 0,
+      "findings_dropped": [
+        {"finding": "BuildSystemPrompt repetitive XML wrapping (5 similar blocks)", "reason": "Low ROI — 88-line function, explicit is better than abstract for security-sensitive prompt assembly"},
+        {"finding": "configFiles list vs Load hardcoded 5 file names", "reason": "Low ROI — adding config files is rare, current approach is auditable"},
+        {"finding": "B/C channel assembly symmetry", "reason": "Low ROI — symmetry is inherent to the domain"}
+      ],
+      "last_analyzed": "2026-05-06T11:24:00+08:00",
+      "stats": {"files": 3, "lines": 651}
     },
     "internal/admin": {
-      "analysis_count": 3,
-      "aspects_covered": [
-        "solid",
-        "dry",
-        "coupling",
-        "error-handling",
-        "concurrency",
-        "resource-mgmt",
-        "performance"
-      ],
-      "aspects_pending": [
-        "scalability",
-        "security",
-        "observability",
-        "testability",
-        "code-quality"
-      ],
-      "issues_created": [
-        74
-      ],
-      "findings_total": 1,
-      "findings_dropped": [
-        {
-          "finding": "Scope-check boilerplate repeated ~10 times (hasScope pattern)",
-          "reason": "Idiomatic Go HTTP handler style; explicit scope checks are clearer than middleware-based route-to-scope mapping"
-        },
-        {
-          "finding": "SessionManagerProvider.List() returns []any losing type safety",
-          "reason": "Intentional tradeoff for package isolation — avoids importing session types into admin"
-        },
-        {
-          "finding": "Mux() returns empty ServeMux every call",
-          "reason": "Routes registered externally in cmd/hotplex/routes.go; standard Go pattern"
-        },
-        {
-          "finding": "time.Since(startTime) appears in HandleStats + HandleHealth",
-          "reason": "Trivial 2-line duplication, not worth extracting"
-        },
-        {
-          "finding": "validateToken uses == instead of subtle.ConstantTimeCompare",
-          "reason": "Phase 4 Security concern — noted for future cycle; admin API typically on localhost/trusted network"
-        },
-        {
-          "finding": "clientIP trusts X-Forwarded-For without validation",
-          "reason": "Phase 4 Security concern — spoofing risk if admin API exposed directly; typically behind reverse proxy"
-        },
-        {
-          "finding": "extractBearerToken allows access_token query param",
-          "reason": "Phase 4 Security concern — token in URL leaks to logs/referrer; standard OAuth pattern but worth reviewing"
-        },
-        {
-          "finding": "respondJSON silently ignores json.Encode error",
-          "reason": "Low ROI — all callers pass simple JSON-safe data (maps with string/int/bool values)"
-        },
-        {
-          "finding": "HandleStats logs List error but continues with potentially nil sessions",
-          "reason": "Low severity — diagnostic endpoint returns session_active from Stats() independently"
-        },
-        {
-          "finding": "HandleStats type assertion loop O(N) per session (handlers.go:23-37)",
-          "reason": "Low ROI — diagnostic endpoint, infrequent calls, N typically <100 sessions"
-        },
-        {
-          "finding": "logRingBuffer.Recent allocates new slice per call (logbuf.go:58)",
-          "reason": "Low ROI — fixed 100-entry capacity, diagnostic endpoint, ~50KB per call"
-        },
-        {
-          "finding": "validateToken linear scan of cfg.Admin.Tokens (admin.go:165-166)",
-          "reason": "Low ROI — typically 1-5 admin tokens; O(N) negligible at this scale"
-        }
-      ],
-      "last_analyzed": "2026-04-30T07:40:00+08:00"
-    },
-    "internal/aep": {
-      "analysis_count": 3,
-      "aspects_covered": [
-        "solid",
-        "dry",
-        "coupling",
-        "error-handling",
-        "concurrency",
-        "resource-mgmt",
-        "performance"
-      ],
-      "aspects_pending": [
-        "scalability",
-        "security",
-        "observability",
-        "testability",
-        "code-quality"
-      ],
-      "issues_created": [
-        75
-      ],
-      "findings_total": 1,
-      "findings_dropped": [
-        {
-          "finding": "EncodeJSON shares marshal preamble with Encode/EncodeChunk (3 occurrences of 5 lines)",
-          "reason": "LOW ROI — extracting helper saves ~10 lines with no readability improvement"
-        },
-        {
-          "finding": "Module path in progress.json is internal/aep but actual path is pkg/aep",
-          "reason": "Cosmetic tracking issue, not a code finding"
-        },
-        {
-          "finding": "Encode/EncodeJSON mutates input envelope (Version + Timestamp)",
-          "reason": "By design — ensures correct protocol fields before encoding; envelope reuse is extremely rare"
-        }
-      ],
-      "last_analyzed": "2026-04-30T08:07:00+08:00"
-    },
-    "internal/cli": {
-      "analysis_count": 3,
-      "aspects_covered": [
-        "solid",
-        "dry",
-        "coupling",
-        "error-handling",
-        "concurrency",
-        "resource-mgmt",
-        "performance"
-      ],
-      "aspects_pending": [
-        "scalability",
-        "security",
-        "observability",
-        "testability",
-        "code-quality"
-      ],
-      "issues_created": [
-        81
-      ],
-      "findings_total": 1,
-      "findings_dropped": [
-        {
-          "finding": "Config path not set guard repeated 4x in config.go checkers (~20 lines)",
-          "reason": "LOW ROI — extracting helper saves ~15 lines but adds indirection; explicit guards are easier to read"
-        },
-        {
-          "finding": "config.Load() called 5x across config.go + security.go checkers",
-          "reason": "Intentional — each checker is independent by design; doctor command runs infrequently; config parsing is fast"
-        },
-        {
-          "finding": "Diagnostic struct construction pattern (Name/Category repetition across all checkers)",
-          "reason": "Idiomatic Go value construction; extracting c.diag() helper adds indirection for minimal savings"
-        },
-        {
-          "finding": "wizard.go 702 lines mixing prompting, config generation, file I/O, display",
-          "reason": "Steps clearly delineated with section comments; splitting adds file count without real benefit for a CLI wizard"
-        },
-        {
-          "finding": "unsetEnvVar non-atomic write (security.go:346-370)",
-          "reason": "Low ROI — CLI tool, not daemon; crash during file rewrite is extremely rare; .env is recoverable via wizard"
-        },
-        {
-          "finding": "configPath package-level variable no synchronization (config.go:18)",
-          "reason": "Low confidence — CLI tools are single-threaded; SetConfigPath called once at startup, read by checkers in same goroutine"
-        }
-      ],
-      "last_analyzed": "2026-04-30T08:08:00+08:00"
-    },
-    "internal/skills": {
-      "analysis_count": 2,
-      "aspects_covered": [
-        "solid",
-        "dry",
-        "coupling",
-        "error-handling",
-        "concurrency"
-      ],
-      "aspects_pending": [
-        "resource-mgmt",
-        "performance",
-        "scalability",
-        "security",
-        "observability",
-        "testability",
-        "code-quality"
-      ],
+      "analysis_count": 1,
+      "aspects_covered": ["solid", "dry"],
+      "aspects_pending": ["coupling", "error-handling", "concurrency", "resource-mgmt", "performance", "scalability", "security", "observability", "testability", "code-quality"],
       "issues_created": [],
       "findings_total": 0,
       "findings_dropped": [
-        {
-          "finding": "parseSkillFile/ParseFrontmatter share ~15 lines of file-read + frontmatter + desc processing",
-          "reason": "LOW ROI — different audiences (internal scanner vs public API), different desc processing (truncation only in public)"
-        },
-        {
-          "finding": "scanDirs hardcodes 4 directory paths",
-          "reason": "Intentional — fixed set of known locations; abstracting adds complexity without benefit"
-        },
-        {
-          "finding": "List() returns cached slice reference (potential mutation)",
-          "reason": "Skill is a value type; callers are read-only; no in-place modification in codebase"
-        },
-        {
-          "finding": "List() ignores context.Context parameter",
-          "reason": "Small directories (<20 files), infrequent scans (5min TTL), context propagation adds complexity with marginal benefit"
-        },
-        {
-          "finding": "sweep goroutine started in constructor",
-          "reason": "Standard pattern consistent with jtiBlacklist; Close() provides clean shutdown"
-        }
+        {"finding": "Scope check pattern repeated 10+ times in handlers", "reason": "Low ROI — idiomatic Go HTTP handler pattern, extracting to middleware requires route-scope mapping and adds complexity"},
+        {"finding": "HandleWorkerHealth bypasses respondJSON helper", "reason": "Low ROI — single instance, minor inconsistency"},
+        {"finding": "limit query param parsing duplicated in ListSessions and HandleLogs", "reason": "Low ROI — only 2 instances, extracting adds indirection"},
+        {"finding": "Provider interfaces return `any` causing type assertions in handlers", "reason": "Low ROI — changing return types cascades through all callers"},
+        {"finding": "addCORSHeaders in sessions.go instead of middleware.go", "reason": "Low ROI — just file placement, no functional impact"}
       ],
-      "last_analyzed": "2026-04-30T05:10:30+08:00"
+      "last_analyzed": "2026-05-06T11:30:00+08:00",
+      "stats": {"files": 11, "lines": 1629}
     },
-    "internal/metrics": {
-      "analysis_count": 3,
-      "aspects_covered": [
-        "solid",
-        "dry",
-        "coupling",
-        "error-handling",
-        "concurrency",
-        "resource-mgmt",
-        "performance"
-      ],
-      "aspects_pending": [
-        "scalability",
-        "security",
-        "observability",
-        "testability",
-        "code-quality"
-      ],
-      "issues_created": [
-        86
-      ],
-      "findings_total": 1,
-      "findings_dropped": [],
-      "last_analyzed": "2026-04-30T08:42:00+08:00"
-    },
-    "internal/tracing": {
-      "analysis_count": 3,
-      "aspects_covered": [
-        "solid",
-        "dry",
-        "coupling",
-        "error-handling",
-        "concurrency",
-        "resource-mgmt",
-        "performance"
-      ],
-      "aspects_pending": [
-        "scalability",
-        "security",
-        "observability",
-        "testability",
-        "code-quality"
-      ],
-      "issues_created": [],
-      "findings_total": 0,
-      "findings_dropped": [
-        {
-          "finding": "SpanFromContext creates new noop TracerProvider per call (tracing.go:102-107)",
-          "reason": "Low ROI — ~32 bytes per call, ~1000 calls/sec at peak = 32KB/s, GC handles trivially; noop.Span.Start() is zero-op"
-        },
-        {
-          "finding": "noopTracer() creates new noopTracerProvider per call (tracing.go:97-99)",
-          "reason": "Same as SpanFromContext — negligible allocation at current scale"
-        }
-      ],
-      "last_analyzed": "2026-04-30T08:42:00+08:00"
-    },
-    "pkg/events": {
-      "analysis_count": 2,
-      "aspects_covered": [
-        "solid",
-        "dry",
-        "coupling",
-        "error-handling",
-        "concurrency"
-      ],
-      "aspects_pending": [
-        "resource-mgmt",
-        "performance",
-        "scalability",
-        "security",
-        "observability",
-        "testability",
-        "code-quality"
-      ],
-      "issues_created": [],
-      "findings_total": 0,
-      "last_analyzed": "2026-04-30T05:47:00+08:00",
-      "findings_dropped": [
-        {
-          "finding": "Clone() silently returns empty Envelope on Marshal/Unmarshal failure (events.go:102-112)",
-          "reason": "Low confidence + Low ROI — Marshal/Unmarshal failure on JSON-safe Data types is practically impossible; empty Envelope fallback prevents nil panics; changing signature requires propagating errors through entire gateway routing pipeline"
-        }
-      ]
-    },
-    "cmd/hotplex": {
-      "analysis_count": 3,
-      "aspects_covered": [
-        "solid",
-        "dry",
-        "coupling",
-        "error-handling",
-        "concurrency",
-        "resource-mgmt",
-        "performance"
-      ],
-      "aspects_pending": [
-        "scalability",
-        "security",
-        "observability",
-        "testability",
-        "code-quality"
-      ],
-      "issues_created": [
-        79
-      ],
+    "internal/eventstore": {
+      "analysis_count": 1,
+      "aspects_covered": ["solid", "dry"],
+      "aspects_pending": ["coupling", "error-handling", "concurrency", "resource-mgmt", "performance", "scalability", "security", "observability", "testability", "code-quality"],
+      "issues_created": [210],
       "findings_total": 2,
       "findings_dropped": [
-        {
-          "finding": "sttCache transcribers not cleaned up on gateway shutdown (messaging_init.go)",
-          "reason": "Medium confidence — gateway process exit handles subprocess cleanup at OS level; PGID isolation ensures orphans get SIGHUP; graceful shutdown closes adapters before exit; adding explicit cleanup function is good practice but not critical"
-        },
-        {
-          "finding": "status.go creates http.Client per invocation",
-          "reason": "Low ROI — CLI command runs once and exits; connection reuse irrelevant"
-        }
+        {"finding": "Append parameter list duplicated in SQLiteStore.Append and sqliteTx.Append", "reason": "Low ROI — same SQL query, parameters must match, extracting adds indirection for 2 instances"},
+        {"finding": "withDefaultTimeout repeated 8 times in store methods", "reason": "Low ROI — idiomatic Go pattern for per-method context timeout"},
+        {"finding": "scanEvents/scanTurns empty check pattern duplication", "reason": "Low ROI — 2 instances of 3-line pattern, not worth a helper"}
       ],
-      "last_analyzed": "2026-04-30T08:38:00+08:00"
+      "last_analyzed": "2026-05-06T11:38:00+08:00",
+      "stats": {"files": 5, "lines": 1667}
+    },
+    "internal/cli": {
+      "analysis_count": 1,
+      "aspects_covered": ["solid", "dry"],
+      "aspects_pending": ["coupling", "error-handling", "concurrency", "resource-mgmt", "performance", "scalability", "security", "observability", "testability", "code-quality"],
+      "issues_created": [213],
+      "findings_total": 4,
+      "findings_dropped": [
+        {"finding": "loadEnvFile duplication in onboard/wizard.go and slack/client.go", "reason": "Already covered in issue 212 (cross-package finding)"},
+        {"finding": "GenerateSecret duplication across checkers", "reason": "Low ROI — different encoding/base variants, minor duplication"},
+        {"finding": "scanDir() boilerplate in agentconfig.go", "reason": "Low ROI — 3 one-liner methods, not worth abstracting"},
+        {"finding": "Slack/Feishu platform branching in wizard.go", "reason": "Low ROI — only 2 platforms exist, adding third is rare"},
+        {"finding": "configPath == '' guard repeated 8+ times (D3)", "reason": "Symptom of S1 (global state), resolved when S1 is fixed"}
+      ],
+      "last_analyzed": "2026-05-06T12:35:00+08:00",
+      "stats": {"files": 44, "lines": 6748}
+    },
+    "internal/skills": {
+      "analysis_count": 1,
+      "aspects_covered": ["solid", "dry"],
+      "aspects_pending": ["coupling", "error-handling", "concurrency", "resource-mgmt", "performance", "scalability", "security", "observability", "testability", "code-quality"],
+      "issues_created": [],
+      "findings_total": 0,
+      "findings_dropped": [
+        {"finding": "Description trimming duplication (3 lines in parseSkillFile + ParseFrontmatter)", "reason": "Low ROI — 3-line duplication in 621-line module, extracting adds indirection for negligible benefit"},
+        {"finding": "Hardcoded scan directory suffixes (.claude/.agents)", "reason": "Low ROI — 4 entries, explicit is better than abstract, adding new directories is rare"},
+        {"finding": "parseSkillFile and ParseFrontmatter overlap", "reason": "Low ROI — different return types and responsibilities, by design"},
+        {"finding": "evictOldest O(n) scan under write lock", "reason": "Low ROI — maxCacheEntries=100, microseconds operation"},
+        {"finding": "CollapseSpaces exported generic utility", "reason": "Low confidence + Low ROI — only used within this module"}
+      ],
+      "last_analyzed": "2026-05-06T12:00:00+08:00",
+      "stats": {"files": 4, "lines": 621}
+    },
+    "internal/service": {
+      "analysis_count": 1,
+      "aspects_covered": ["solid", "dry"],
+      "aspects_pending": ["coupling", "error-handling", "concurrency", "resource-mgmt", "performance", "scalability", "security", "observability", "testability", "code-quality"],
+      "issues_created": [],
+      "findings_total": 0,
+      "findings_dropped": [
+        {"finding": "Windows SCM connectSCM + OpenService boilerplate in 4 methods", "reason": "Low ROI — error handling differs per method, Windows SCM is stable, extracting adds complexity"},
+        {"finding": "Darwin/Windows identical Restart implementation", "reason": "Low ROI — 7 lines each, very stable code, base struct extraction is over-engineering"},
+        {"finding": "LogDir vs logDirForHome near-duplication", "reason": "Low ROI — 3-line functions serving different purposes, minimal impact"},
+        {"finding": "Darwin Start already-loaded handling", "reason": "Low ROI — platform-specific behavior, correct as-is"}
+      ],
+      "last_analyzed": "2026-05-06T12:10:00+08:00",
+      "stats": {"files": 10, "lines": 1092}
+    },
+    "internal/updater": {
+      "analysis_count": 1,
+      "aspects_covered": ["solid", "dry"],
+      "aspects_pending": ["coupling", "error-handling", "concurrency", "resource-mgmt", "performance", "scalability", "security", "observability", "testability", "code-quality"],
+      "issues_created": [],
+      "findings_total": 0,
+      "findings_dropped": [
+        {"finding": "HTTP request pattern in Check/Download/VerifyChecksum (3 methods, ~8 lines each)", "reason": "Low ROI — 3 instances, different error handling and response types, extracting adds indirection"},
+        {"finding": "testIsWritablePath duplicates IsWritable logic", "reason": "Low ROI — test-only, intentional to avoid calling executablePath() which resolves running binary"},
+        {"finding": "executablePath vs service.ResolveBinaryPath similarity", "reason": "Low ROI — different purposes (running exe vs PATH lookup), not true duplication"}
+      ],
+      "last_analyzed": "2026-05-06T12:20:00+08:00",
+      "stats": {"files": 2, "lines": 671}
+    },
+    "pkg/events": {
+      "analysis_count": 1,
+      "aspects_covered": ["solid", "dry"],
+      "aspects_pending": ["coupling", "error-handling", "concurrency", "resource-mgmt", "performance", "scalability", "security", "observability", "testability", "code-quality"],
+      "issues_created": [215],
+      "findings_total": 1,
+      "findings_dropped": [
+        {"finding": "IntFloat vs ToInt64 overlap", "reason": "Low ROI — different return types (int vs int64), intentional"},
+        {"finding": "MapContextUsageResponse/MapMCPStatusResponse pattern similarity", "reason": "Low ROI — structures differ significantly, extracting common logic is over-engineering"},
+        {"finding": "WorkerStdioCommand.IsPassthrough switch statement", "reason": "Low ROI — 6 commands, stable, OCP impact negligible"},
+        {"finding": "SessionState state machine in events package", "reason": "Low ROI — naturally associated with StateData, only ~50 lines"}
+      ],
+      "last_analyzed": "2026-05-06T12:55:00+08:00",
+      "stats": {"files": 4, "lines": 1648}
+    },
+    "pkg/aep": {
+      "analysis_count": 1,
+      "aspects_covered": ["solid", "dry"],
+      "aspects_pending": ["coupling", "error-handling", "concurrency", "resource-mgmt", "performance", "scalability", "security", "observability", "testability", "code-quality"],
+      "issues_created": [214],
+      "findings_total": 2,
+      "findings_dropped": [
+        {"finding": "NewPingEnvelope doesn't reuse NewEnvelope constructor", "reason": "Low ROI — Ping sets Priority field, difference is justified, fix is cosmetic"},
+        {"finding": "escapeJSTerminators/EscapeJSTerminators dual export", "reason": "Low ROI — standard Go pattern for exposing internal function, no real issue"}
+      ],
+      "last_analyzed": "2026-05-06T12:45:00+08:00",
+      "stats": {"files": 2, "lines": 688}
+    },
+    "cmd/hotplex": {
+      "analysis_count": 1,
+      "aspects_covered": ["solid", "dry"],
+      "aspects_pending": ["coupling", "error-handling", "concurrency", "resource-mgmt", "performance", "scalability", "security", "observability", "testability", "code-quality"],
+      "issues_created": [212],
+      "findings_total": 3,
+      "findings_dropped": [
+        {"finding": "gateway_run.go size (548 lines)", "reason": "Low ROI — intentional composition root pattern, cohesive DI wiring"},
+        {"finding": "splitHostPort in security.go vs net.SplitHostPort", "reason": "Low ROI — 6-line local helper, avoids net import edge cases"},
+        {"finding": "messaging_init.go Gate construction duplication between Slack/Feishu", "reason": "Low ROI — already covered in messaging module issues #204, #205"},
+        {"finding": "admin_adapters.go adapter boilerplate", "reason": "Low ROI — necessary for DIP between cmd and internal/admin packages"}
+      ],
+      "last_analyzed": "2026-05-06T12:25:00+08:00",
+      "stats": {"files": 36, "lines": 3697}
     }
   },
-  "issues": [
-    {
-      "number": 66,
-      "title": "refactor(gateway): SOLID + DRY + Coupling findings",
-      "modules": [
-        "internal/gateway"
-      ],
-      "created_at": "2026-04-29T21:52:00+08:00"
-    },
-    {
-      "number": 69,
-      "title": "refactor(session): SOLID + DRY + Coupling findings",
-      "modules": [
-        "internal/session"
-      ],
-      "created_at": "2026-04-29T22:30:00+08:00"
-    },
-    {
-      "number": 70,
-      "title": "refactor(messaging/slack): SOLID + DRY + Coupling findings",
-      "modules": [
-        "internal/messaging/slack"
-      ],
-      "created_at": "2026-04-29T22:50:00+08:00"
-    },
-    {
-      "number": 71,
-      "title": "fix(messaging/feishu): SOLID + DRY + Coupling findings",
-      "modules": [
-        "internal/messaging/feishu"
-      ],
-      "created_at": "2026-04-29T23:12:00+08:00"
-    },
-    {
-      "number": 72,
-      "title": "chore(config): applyMessagingEnv DRY violation — 20 repetitive env var mappings",
-      "modules": [
-        "internal/config"
-      ],
-      "created_at": "2026-04-29T23:45:00+08:00"
-    },
-    {
-      "number": 73,
-      "title": "refactor(security): ES256 key derivation DRY + tool whitelist duplication",
-      "modules": [
-        "internal/security"
-      ],
-      "created_at": "2026-04-30T00:11:00+08:00"
-    },
-    {
-      "number": 74,
-      "title": "refactor(admin): extract CORS handling to middleware",
-      "modules": [
-        "internal/admin"
-      ],
-      "created_at": "2026-04-30T12:37:00+08:00"
-    },
-    {
-      "number": 75,
-      "title": "chore(aep): remove dead EncodeChunk function",
-      "modules": [
-        "pkg/aep"
-      ],
-      "created_at": "2026-04-30T12:45:00+08:00"
-    },
-    {
-      "number": 76,
-      "title": "fix(gateway): error handling and concurrency findings",
-      "modules": [
-        "internal/gateway"
-      ],
-      "created_at": "2026-04-30T01:48:00+08:00"
-    },
-    {
-      "number": 77,
-      "title": "fix(session): error handling and concurrency findings — Phase 2",
-      "modules": [
-        "internal/session"
-      ],
-      "created_at": "2026-04-30T02:15:00+08:00"
-    },
-    {
-      "number": 78,
-      "title": "fix(messaging): error handling and concurrency findings — Phase 2",
-      "modules": [
-        "internal/messaging"
-      ],
-      "created_at": "2026-04-30T02:40:00+08:00"
-    },
-    {
-      "number": 79,
-      "title": "fix(cmd/hotplex): silent HTTP server startup failure and incorrect shutdown exit code",
-      "modules": [
-        "cmd/hotplex"
-      ],
-      "created_at": "2026-04-30T03:13:02+08:00"
-    },
-    {
-      "number": 80,
-      "title": "fix(agentconfig): readFile swallows all os.ReadFile errors including permission denied",
-      "modules": [
-        "internal/agentconfig"
-      ],
-      "created_at": "2026-04-30T03:39:30+08:00"
-    },
-    {
-      "number": 81,
-      "title": "fix(cli): wizard stepAgentConfig ignores write error, creating empty unrecoverable config files",
-      "modules": [
-        "internal/cli"
-      ],
-      "created_at": "2026-04-30T04:07:30+08:00"
-    },
-    {
-      "number": 82,
-      "title": "fix(messaging/feishu): ChatQueue wg.Add race window with Close",
-      "modules": [
-        "internal/messaging/feishu"
-      ],
-      "created_at": "2026-04-30T04:15:00+08:00"
-    },
-    {
-      "number": 83,
-      "title": "fix(worker/ocs): readSSE send-on-closed-channel race during termination",
-      "modules": [
-        "internal/worker/opencodeserver"
-      ],
-      "created_at": "2026-04-30T04:43:39+08:00"
-    },
-    {
-      "number": 84,
-      "title": "fix(session): sequential worker termination in Close causes O(N*5s) shutdown latency",
-      "modules": [
-        "internal/session"
-      ],
-      "created_at": "2026-04-30T06:09:00+08:00"
-    },
-    {
-      "number": 85,
-      "title": "fix(worker/ocs): http.Client.Timeout breaks long-lived SSE streams",
-      "modules": [
-        "internal/worker/opencodeserver"
-      ],
-      "created_at": "2026-04-30T07:08:00+08:00"
-    },
-    {
-      "number": 86,
-      "title": "perf(metrics): unbounded Prometheus cardinality from session_id label on delta metrics",
-      "modules": [
-        "internal/metrics"
-      ],
-      "created_at": "2026-04-30T08:42:00+08:00"
-    }
-  ],
+  "issues": [198, 199, 202, 204, 205, 206, 207, 208, 210, 212, 213, 214, 215, 216, 217],
   "recent_activity": [
-    {
-      "cycle": 49,
-      "module": "internal/metrics + internal/tracing",
-      "aspects": [
-        "resource-mgmt",
-        "performance"
-      ],
-      "findings": 1,
-      "issue": 86,
-      "dropped": 2,
-      "note": "Phase 2+3 resource-mgmt+performance: metrics 157L pure Prometheus declarations. Found: GatewayDeltaCoalescedTotal + GatewayDeltaFlushTotal use session_id label causing unbounded cardinality (Medium, High confidence, High ROI). tracing 135L sync.Once init + graceful Shutdown — zero findings. 2 dropped (noopTracer allocation per SpanFromContext call negligible at current scale).",
-      "timestamp": "2026-04-30T08:42:00+08:00"
-    },
-    {
-      "cycle": 48,
-      "module": "cmd/hotplex",
-      "aspects": [
-        "resource-mgmt",
-        "performance"
-      ],
-      "findings": 0,
-      "issue": null,
-      "dropped": 2,
-      "note": "Phase 2+3 resource-mgmt+performance: CLI entry point with DI wiring. gateway_run.go ordered shutdown exemplary (signal→cancel→tracing→hub→configWatcher→sessionMgr→HTTP). All 14 files analyzed: gateway_run (456L), routes (228L), messaging_init (227L), banner (159L), security (183L), doctor (151L), onboard (150L), status (96L), config_cmd (62L), serve (50L), pid (50L), version (47L), dev (30L), main (58L). Zero actionable findings. 2 dropped (sttCache cleanup non-critical, http.Client per-invocation acceptable).",
-      "timestamp": "2026-04-30T08:38:00+08:00"
-    },
-    {
-      "cycle": 36,
-      "module": "internal/metrics + internal/tracing",
-      "aspects": [
-        "error-handling",
-        "concurrency"
-      ],
-      "findings": 0,
-      "issue": null,
-      "dropped": 0,
-      "note": "Phase 2 batch: metrics is pure Prometheus declarations (no logic, goroutine-safe by design). tracing uses sync.Once idempotent init with graceful degradation to noop tracer on all errors. Both modules zero findings.",
-      "timestamp": "2026-04-30T05:37:21+08:00"
-    },
-    {
-      "cycle": 34,
-      "module": "internal/skills",
-      "aspects": [
-        "error-handling",
-        "concurrency"
-      ],
-      "findings": 0,
-      "issue": null,
-      "dropped": 3,
-      "note": "Phase 2 error-handling+concurrency: best-effort design philosophy — silent nil returns for discovery failures appropriate. RWMutex cache with no-lock I/O pattern correct. sweep goroutine clean lifecycle via stopCh. Zero actionable findings. 3 dropped (cached slice ref safe, ctx ignored low ROI, sweep goroutine standard).",
-      "timestamp": "2026-04-30T05:10:30+08:00"
-    },
-    {
-      "cycle": 33,
-      "module": "internal/security",
-      "aspects": [
-        "error-handling",
-        "concurrency"
-      ],
-      "findings": 0,
-      "issue": null,
-      "dropped": 4,
-      "note": "Phase 2 error-handling+concurrency: exemplary design throughout — lock-copy-unlock in ReloadKeys, sync.Map for jtiBlacklist, structured SSRFProtectionError, clean goroutine lifecycle with stopCh, comprehensive test coverage. Zero actionable findings. 4 dropped (double-close by design, init-time only, security not eh/cc, map order irrelevant).",
-      "timestamp": "2026-04-30T05:09:04+08:00"
-    },
-    {
-      "cycle": 32,
-      "module": "internal/worker/opencodeserver",
-      "aspects": [
-        "error-handling",
-        "concurrency"
-      ],
-      "findings": 1,
-      "issue": 83,
-      "dropped": 3,
-      "note": "Phase 2 error-handling+concurrency: readSSE send-on-closed-channel race — reads recvCh under lock but sends after unlock, conn.Close() closes recvCh creating panic window (High). Root cause: http.NewRequest without context. SingletonProcessManager exemplary — atomic.Pointer CAS, crashCh per-lifecycle isolation, ref counting. 3 dropped.",
-      "timestamp": "2026-04-30T04:43:39+08:00"
-    },
-    {
-      "cycle": 31,
-      "module": "internal/messaging/slack",
-      "aspects": [
-        "error-handling",
-        "concurrency"
-      ],
-      "findings": 0,
-      "issue": null,
-      "dropped": 3,
-      "note": "Phase 2 error-handling+concurrency: exemplary design — panic recovery in all event handlers, 3-layer BlockKit fallback, handlerMu per-thread serialization, lock-copy-unlock Close pattern, proper WaitGroup lifecycle. Zero actionable findings.",
-      "timestamp": "2026-04-30T04:40:00+08:00"
-    },
-    {
-      "cycle": 30,
-      "module": "internal/messaging/feishu",
-      "aspects": [
-        "error-handling",
-        "concurrency"
-      ],
-      "findings": 1,
-      "issue": 82,
-      "dropped": 4,
-      "note": "Phase 2 error-handling+concurrency: ChatQueue wg.Add race window with Close (Medium). Exemplary error wrapping throughout. 4 dropped (context.Background usage by design, json.Encode safe by construction, ack best-effort).",
-      "timestamp": "2026-04-30T04:15:00+08:00"
-    },
-    {
-      "cycle": 29,
-      "module": "internal/cli",
-      "aspects": [
-        "error-handling",
-        "concurrency"
-      ],
-      "findings": 1,
-      "issue": 81,
-      "dropped": 2,
-      "note": "Phase 2 error-handling+concurrency: wizard stepAgentConfig ignores WriteString error creating empty unrecoverable config files (Medium). CheckerRegistry sync.RWMutex correct. 2 dropped (non-atomic env write, configPath no sync).",
-      "timestamp": "2026-04-30T04:07:30+08:00"
-    },
-    {
-      "cycle": 28,
-      "module": "internal/agentconfig",
-      "aspects": [
-        "error-handling",
-        "concurrency"
-      ],
-      "findings": 1,
-      "issue": 80,
-      "dropped": 0,
-      "note": "Phase 2 error-handling+concurrency: readFile swallows all os.ReadFile errors including permission denied (Medium). Zero concurrency issues — pure stateless library.",
-      "timestamp": "2026-04-30T03:39:30+08:00"
-    },
-    {
-      "cycle": 27,
-      "module": "internal/aep",
-      "aspects": [
-        "error-handling",
-        "concurrency"
-      ],
-      "findings": 0,
-      "issue": null,
-      "dropped": 1,
-      "note": "Phase 2 error-handling+concurrency: pure stateless codec library — exemplary error wrapping, zero shared mutable state. No actionable findings.",
-      "timestamp": "2026-04-30T03:38:30+08:00"
-    },
-    {
-      "cycle": 26,
-      "module": "cmd/hotplex",
-      "aspects": [
-        "error-handling",
-        "concurrency"
-      ],
-      "findings": 2,
-      "issue": 79,
-      "dropped": 0,
-      "note": "Phase 2 error-handling+concurrency: serverErr channel never consumed — silent startup failure (High), runGateway returns ctx.Err on clean shutdown — incorrect exit code (Medium)",
-      "timestamp": "2026-04-30T03:13:02+08:00"
-    },
-    {
-      "cycle": 25,
-      "module": "internal/admin",
-      "aspects": [
-        "error-handling",
-        "concurrency"
-      ],
-      "findings": 0,
-      "issue": null,
-      "dropped": 5,
-      "note": "Phase 2 error-handling+concurrency: well-designed HTTP facade with Provider interfaces, proper panic recovery in middleware, synchronized rate limiter and log buffer. Zero actionable findings. 3 observations deferred to Phase 4 Security.",
-      "timestamp": "2026-04-30T03:09:28+08:00"
-    },
-    {
-      "cycle": 24,
-      "module": "internal/config",
-      "aspects": [
-        "error-handling",
-        "concurrency"
-      ],
-      "findings": 0,
-      "issue": null,
-      "dropped": 0,
-      "note": "Phase 2 error-handling+concurrency: exemplary design — atomic.Pointer lock-free reads, 3 independent mutexes with no nesting, bounded callback goroutines via semaphore, panic recovery in observers, cycle detection in inheritance. Zero actionable findings.",
-      "timestamp": "2026-04-30T02:45:09+08:00"
-    },
-    {
-      "cycle": 23,
-      "module": "internal/worker",
-      "aspects": [
-        "error-handling",
-        "concurrency"
-      ],
-      "findings": 0,
-      "issue": null,
-      "dropped": 4,
-      "note": "Phase 2 error-handling+concurrency: exemplary design — lock-copy-unlock, layered termination, atomic pidfile writes, PID recycling defense, panic recovery in ReadLine/drainStderr. Zero actionable findings.",
-      "timestamp": "2026-04-30T02:45:00+08:00"
-    },
-    {
-      "cycle": 22,
-      "module": "internal/messaging",
-      "aspects": [
-        "error-handling",
-        "concurrency"
-      ],
-      "findings": 2,
-      "issue": 78,
-      "dropped": 5,
-      "note": "Phase 2 error-handling+concurrency: watchTimeout SendResponse panic crash (Critical), idleMonitor self-cancels ctx bypassing graceful shutdown (Medium)",
-      "timestamp": "2026-04-30T02:40:00+08:00"
-    },
-    {
-      "cycle": 21,
-      "module": "internal/session",
-      "aspects": [
-        "error-handling",
-        "concurrency"
-      ],
-      "findings": 5,
-      "issue": 77,
-      "dropped": 3,
-      "note": "Phase 2 error-handling+concurrency: callback panic crash (Critical), DeletePhysical non-transactional cascade (High), AppendAudit race (Medium), ListActive mutable pointers (Medium), context.Background() violations (Medium)",
-      "timestamp": "2026-04-30T02:15:00+08:00"
-    },
-    {
-      "cycle": 20,
-      "module": "internal/gateway",
-      "aspects": [
-        "resource-mgmt"
-      ],
-      "findings": 0,
-      "issue": null,
-      "dropped": 3,
-      "note": "Phase 2 complete — gateway resource management is exemplary: ordered shutdown, clear goroutine exit paths, comprehensive cleanup chains",
-      "timestamp": "2026-04-30T02:10:00+08:00"
-    },
-    {
-      "cycle": 19,
-      "module": "internal/gateway",
-      "aspects": [
-        "error-handling",
-        "concurrency"
-      ],
-      "findings": 2,
-      "issue": 76,
-      "dropped": 3,
-      "note": "Phase 2 started — pcEntry WriteCtx/Close race + error classification string matching DRY",
-      "timestamp": "2026-04-30T01:48:00+08:00"
-    },
-    {
-      "cycle": 41,
-      "module": "internal/messaging/feishu",
-      "aspects": [
-        "resource-mgmt",
-        "performance"
-      ],
-      "findings": 0,
-      "issue": null,
-      "timestamp": "2026-04-30T06:43:00+08:00",
-      "note": "Zero actionable findings — exemplary resource management and performance patterns"
-    }
+    {"cycle": 2, "module": "internal/session", "aspects": ["coupling", "error-handling"], "issues": [202], "time": "2026-05-06T10:45:00+08:00"},
+    {"cycle": 3, "module": "internal/messaging", "aspects": ["solid", "dry"], "issues": [204, 205], "time": "2026-05-06T10:50:00+08:00"},
+    {"cycle": 4, "module": "internal/worker", "aspects": ["solid", "dry"], "issues": [206], "time": "2026-05-06T10:58:00+08:00"},
+    {"cycle": 5, "module": "internal/config", "aspects": ["solid", "dry"], "issues": [207], "time": "2026-05-06T11:05:00+08:00"},
+    {"cycle": 6, "module": "internal/security", "aspects": ["solid", "dry"], "issues": [208], "time": "2026-05-06T11:22:00+08:00"},
+    {"cycle": 7, "module": "internal/agentconfig", "aspects": ["solid", "dry"], "issues": [], "time": "2026-05-06T11:24:00+08:00"},
+    {"cycle": 8, "module": "internal/admin", "aspects": ["solid", "dry"], "issues": [], "time": "2026-05-06T11:30:00+08:00"},
+    {"cycle": 9, "module": "internal/eventstore", "aspects": ["solid", "dry"], "issues": [210], "time": "2026-05-06T11:38:00+08:00"},
+    {"cycle": 10, "module": "internal/skills", "aspects": ["solid", "dry"], "issues": [], "time": "2026-05-06T12:00:00+08:00"},
+    {"cycle": 11, "module": "internal/service", "aspects": ["solid", "dry"], "issues": [], "time": "2026-05-06T12:10:00+08:00"},
+    {"cycle": 12, "module": "internal/updater", "aspects": ["solid", "dry"], "issues": [], "time": "2026-05-06T12:20:00+08:00"},
+    {"cycle": 13, "module": "cmd/hotplex", "aspects": ["solid", "dry"], "issues": [212], "time": "2026-05-06T12:25:00+08:00"},
+    {"cycle": 14, "module": "internal/cli", "aspects": ["solid", "dry"], "issues": [213], "time": "2026-05-06T12:35:00+08:00"},
+    {"cycle": 15, "module": "pkg/aep", "aspects": ["solid", "dry"], "issues": [214], "time": "2026-05-06T12:45:00+08:00"},
+    {"cycle": 16, "module": "pkg/events", "aspects": ["solid", "dry"], "issues": [215], "time": "2026-05-06T12:55:00+08:00"},
+    {"cycle": 17, "module": "internal/gateway", "aspects": ["coupling", "error-handling"], "issues": [216], "time": "2026-05-06T13:10:00+08:00"},
+    {"cycle": 18, "module": "internal/session", "aspects": ["solid", "dry"], "issues": [217], "time": "2026-05-06T13:22:00+08:00"}
   ]
 }
