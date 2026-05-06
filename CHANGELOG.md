@@ -1,5 +1,42 @@
 # Changelog
 
+## [1.5.4] - 2026-05-06
+
+### Summary
+
+v1.5.4 是一次 patch 版本更新，聚焦于 **交互系统安全加固与数据完整性**。修复交互管道两级数据丢失 bug（Question/Elicitation 字段丢失 + OwnerID 未持久化）形成的连锁失败链，飞书/Slack 双平台增加 OwnerID 验证防止群聊未授权操作。Worker stdin 写入统一为单 mutex 序列化防止 NDJSON 交错。同时修复 OCS 响应安全限制、turn summary 显示问题、config audit 内存增长等多项 bug。
+
+### Added
+
+- **Messaging/Slack**: Text-based interaction fallback — 当 Block Kit 按钮不可用时，用户可通过文本（"allow/deny/accept/decline \<requestID\>"）响应交互。(#197)
+- **Messaging/Feishu**: Card 发送失败自动回退纯文本 — 与 Slack invalid_blocks fallback 对齐。(#197)
+
+### Changed
+
+- **Config**: STT 模式自动推断 — 移除 `stt_local_mode` 配置项，由 `stt_local_cmd` 中是否包含 `{file}` 占位符自动判断 ephemeral/persistent 模式。(#186)
+- **Messaging**: Turn Summary 共享 helper 提取 — `FormatDurationParts`/`FormatTokenUsage` 统一至 turn_summary.go，消除飞书/Slack 重复格式化代码。(#194)
+- **Messaging/Feishu**: Turn Summary 改用专用卡片格式，cooldown 检查使用 atomic CAS 消除 TOCTOU 竞态。(#194)
+- **Client/SDK**: `decodeAs` 迁移至 `events.DecodeAs[T]` — 支持泛型类型透传，删除冗余测试。(#178)
+
+### Fixed
+
+- **Messaging**: 交互管道数据丢失 — `ExtractQuestionData`/`ExtractElicitationData` 在 `map[string]any` 分支丢失 `questions` 字段，改用 `events.DecodeAs[T]` 修复。(#195)
+- **Session**: OwnerID 未持久化 — `upsert_session` SQL ON CONFLICT 不更新 `owner_id`，导致 session resume 后交互响应静默失败。(#196)
+- **Gateway Core**: OwnerID 未注入 Worker 信封 — worker 发出的 permission/question/elicitation envelope 缺少 OwnerID，交互响应无法路由。(#191)
+- **Gateway Core**: `handleCD` 路径提取错误 — `map[string]any` 分支读取 `d["path"]` 而非 `d["details"]["path"]`。(#197)
+- **Gateway Core**: TruncatePath 显示误导 — 含隐藏目录的深路径截断显示 `/.hotplex/workspace` 而非 `~/.hotplex/workspace`，增加 home 目录替换。(#185)
+- **Gateway Core**: Detached HEAD 显示空分支 — 改为显示短 commit hash。(#194)
+- **Worker/OCS**: 4 处未限制的错误响应读取 — 添加 `io.LimitReader(resp.Body, 4096)` 防止 OOM，URL path segment 使用 `url.PathEscape` 防止注入。(#145)
+- **Worker/ClaudeCode**: Stdin 写入交错 — `Conn.Send`/`SendUserMessage` 改为持锁写入，`ControlHandler` 共享同一 mutex 统一序列化。(#197)
+- **Messaging**: CancelAll 后 timeout goroutine 复活 — 新增 `cancelCh` 机制，`CancelAll` 关闭 channel 停止 `watchTimeout`。(#197)
+- **CLI**: `loadEnvFile` 重复写入 + 受保护变量过滤 — `.env` 重复 key 消除，跳过 HOME/PATH 等受保护变量。(#150)
+- **Config**: Audit log 无限增长 — 添加 `maxAuditLen(256)` 上限，static callbacks 合并为单 goroutine 触发。(#146)
+
+### Security
+
+- **Messaging**: 飞书/Slack 交互响应 OwnerID 验证 — 飞书 `checkPendingInteraction` 增加 userID 参数，Slack `handleInteractionEvent` 改为 Get→验证→Complete 防止 TOCTOU 竞态。(#197)
+- **Session**: Admin 所有权绕过增加审计日志 — 记录 admin_user_id、session_id、session_owner。(#143)
+
 ## [1.5.3] - 2026-05-05
 
 ### Summary
