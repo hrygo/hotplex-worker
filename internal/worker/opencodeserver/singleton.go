@@ -255,6 +255,7 @@ func (s *SingletonProcessManager) discoverPort(stdout *os.File, timeout time.Dur
 	ch := make(chan result, 1)
 
 	go func() {
+		defer func() { _ = stdout.Close() }()
 		scanner := bufio.NewScanner(stdout)
 		deadline := time.After(timeout)
 		for scanner.Scan() {

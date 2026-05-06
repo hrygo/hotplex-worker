@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -573,6 +574,10 @@ func (w *Worker) readOutput(ctx context.Context) {
 	// close the OLD Conn that it was actually reading from.
 	entryConn := w.Conn()
 	defer func() {
+		if r := recover(); r != nil {
+			w.BaseWorker.Log.Error("claudecode: readOutput panic",
+				"session_id", w.sessionID, "panic", r, "stack", string(debug.Stack()))
+		}
 		if entryConn != nil {
 			_ = entryConn.Close()
 		}
