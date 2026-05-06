@@ -421,3 +421,35 @@ export interface TurnSessionStats {
 4. `slack/adapter.go` — Done case + sendTurnSummary
 5. `feishu/adapter.go` — Done case + sendTurnSummary
 6. `make lint && make test` 验证
+
+---
+
+## 7. 配置开关
+
+Turn summary 可通过配置开关控制是否发送，默认开启。
+
+### 7.1 配置方式
+
+**YAML**（`configs/config.yaml`）：
+
+```yaml
+messaging:
+  turn_summary_enabled: false  # 关闭 turn summary 输出
+```
+
+**环境变量**：
+
+```bash
+HOTPLEX_MESSAGING_TURN_SUMMARY_ENABLED=false
+```
+
+### 7.2 实现位置
+
+| 文件 | 说明 |
+|------|------|
+| `internal/config/config.go` | `MessagingConfig.TurnSummaryEnabled` 字段定义、默认值 `true`、环境变量映射 |
+| `cmd/hotplex/messaging_init.go` | 注入到 `AdapterConfig.Extras["turn_summary_enabled"]` |
+| `internal/messaging/slack/adapter.go` | `Adapter.turnSummaryEnabled` + WriteCtx 门控 |
+| `internal/messaging/feishu/adapter.go` | `Adapter.turnSummaryEnabled` + WriteCtx 门控 |
+
+关闭时，Slack 不触发 `sendTurnSummary` goroutine；飞书保留 `Log.Info` 遥测日志但不发送卡片。

@@ -161,6 +161,8 @@ type Config struct {
 type MessagingConfig struct {
 	Slack  SlackConfig  `mapstructure:"slack"`
 	Feishu FeishuConfig `mapstructure:"feishu"`
+
+	TurnSummaryEnabled bool `mapstructure:"turn_summary_enabled"`
 }
 
 // STT constants for provider values.
@@ -489,6 +491,7 @@ func Default() *Config {
 			Enabled: true,
 		},
 		Messaging: MessagingConfig{
+			TurnSummaryEnabled: true,
 			Feishu: FeishuConfig{
 				RequireMention: true,
 				DMPolicy:       "allowlist",
@@ -837,6 +840,11 @@ func applyMessagingEnv(cfg *Config) {
 	}
 	if v := os.Getenv("HOTPLEX_MESSAGING_FEISHU_REQUIRE_MENTION"); v != "" {
 		cfg.Messaging.Feishu.RequireMention = strings.EqualFold(v, "true")
+	}
+
+	// Global messaging env vars.
+	if v := os.Getenv("HOTPLEX_MESSAGING_TURN_SUMMARY_ENABLED"); v != "" {
+		cfg.Messaging.TurnSummaryEnabled = strings.EqualFold(v, "true")
 	}
 
 	// Slice env vars (comma-separated)

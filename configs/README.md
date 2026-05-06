@@ -223,6 +223,14 @@ Worker 进程启动时的工作目录遵循以下优先级覆盖逻辑：
 | `level` | string | `info` | ✅ | 最低日志级别。`debug` 输出所有事件流转细节（每个收发的事件），适合开发调试。`info` 仅输出关键生命周期事件（连接注册、会话创建/终止等）。`warn`/`error` 仅输出异常情况。热重载通过 `slog.LevelVar` 即时生效，无需重启 |
 | `format` | string | `json` | ❌ | 日志格式。`json` 为结构化 JSON（适合日志聚合系统如 ELK/Loki）。`text` 为人类可读的 key=value 格式（适合终端直接查看）。Makefile `dev-logs` 使用 `tail -f` 展示。**启动后不可变更**——Handler 在初始化时确定格式 |
 
+### messaging — 消息平台全局设置
+
+控制所有消息平台（Slack/飞书）的共享行为。
+
+| 字段 | 类型 | 默认值 | 热重载 | 说明 |
+|:-----|:-----|:-------|:------:|:-----|
+| `turn_summary_enabled` | bool | `true` | ❌ | 是否在每次会话回合完成后发送 turn summary（回合摘要）。关闭后 Slack 不发送 TableBlock 摘要，飞书不发送 CardKit 卡片（但飞书仍保留 `Log.Info` 遥测日志）。通过环境变量 `HOTPLEX_MESSAGING_TURN_SUMMARY_ENABLED` 覆盖。**启动时确定**，运行中变更需重启 |
+
 ### messaging.slack — Slack Socket Mode
 
 通过 Slack Socket Mode 建立 WebSocket 连接到 Slack 服务器，实现无需公网入口的消息收发。消息经过 chunker（长消息拆分）→ dedup（TTL 去重）→ format（Markdown 转换）→ rate limiter → send 的流水线处理。Streaming 使用 SlackStreamingWriter，以 150ms 间隔、20 rune 阈值增量更新消息。
@@ -290,6 +298,7 @@ Worker 进程启动时的工作目录遵循以下优先级覆盖逻辑：
 | `HOTPLEX_POOL_MAX_MEMORY_PER_USER` | 否 | 覆盖 `pool.max_memory_per_user` |
 | `HOTPLEX_MESSAGING_SLACK_*` | 否 | 覆盖 `messaging.slack.*` 全部字段 |
 | `HOTPLEX_MESSAGING_FEISHU_*` | 否 | 覆盖 `messaging.feishu.*` 全部字段 |
+| `HOTPLEX_MESSAGING_TURN_SUMMARY_ENABLED` | 否 | 覆盖 `messaging.turn_summary_enabled` |
 
 ---
 
