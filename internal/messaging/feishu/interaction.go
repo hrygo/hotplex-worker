@@ -34,11 +34,13 @@ func (c *FeishuConn) sendPermissionRequest(ctx context.Context, env *events.Enve
 		if len(preview) > 500 {
 			preview = preview[:500] + "..."
 		}
+		// Strip triple backticks to prevent nested code blocks.
+		preview = strings.ReplaceAll(preview, "```", "")
 		header += fmt.Sprintf("\n```\n%s\n```", preview)
 	}
 
-	// Instruction text
-	footer := "---\n💬 回复 **允许** 或 **拒绝** 来响应此请求"
+	// Instruction text with request ID for reference
+	footer := fmt.Sprintf("---\n📋 请求ID: `%s`\n💬 回复 **允许/同意/ok** 或 **拒绝/取消/no** 来响应此请求", data.ID)
 
 	cardJSON := buildInteractionCard(header, footer)
 
@@ -224,9 +226,9 @@ func (a *Adapter) checkPendingInteraction(ctx context.Context, text, userID stri
 
 	switch matched.Type {
 	case events.PermissionRequest:
-		allowed := normalized == "允许" || normalized == "allow" || normalized == "yes" || normalized == "是"
-		if !allowed && normalized != "拒绝" && normalized != "deny" && normalized != "no" && normalized != "否" {
-			return false // not a recognized permission response
+		allowed := isPermissionAllow(normalized)
+		if !allowed && !isPermissionDeny(normalized) {
+			return false
 		}
 		reason := ""
 		if !allowed {
@@ -339,6 +341,26 @@ func buildInteractionCard(body, footer string) string {
 	}
 
 	return encodeCard(card)
+}
+
+// isPermissionAllow checks if the normalized text is a permission-allow keyword.
+func isPermissionAllow(s string) bool {
+	switch s {
+	case "允许", "allow", "yes", "是", "同意", "ok", "y", "好", "好的", "确认", "approve":
+		return true
+	default:
+		return false
+	}
+}
+
+// isPermissionDeny checks if the normalized text is a permission-deny keyword.
+func isPermissionDeny(s string) bool {
+	switch s {
+	case "拒绝", "deny", "no", "否", "取消", "cancel", "n", "不", "不要", "reject":
+		return true
+	default:
+		return false
+	}
 }
 
 // truncate shortens a string to maxLen.

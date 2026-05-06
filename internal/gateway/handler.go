@@ -99,13 +99,30 @@ func (h *Handler) handleInput(ctx context.Context, env *events.Envelope) error {
 		if md["permission_response"] != nil ||
 			md["question_response"] != nil ||
 			md["elicitation_response"] != nil {
+			respType := "unknown"
+			switch {
+			case md["permission_response"] != nil:
+				respType = "permission"
+			case md["question_response"] != nil:
+				respType = "question"
+			case md["elicitation_response"] != nil:
+				respType = "elicitation"
+			}
 			w := h.sm.GetWorker(env.SessionID)
 			if w != nil {
+				h.log.Info("gateway: routing interaction response",
+					"type", respType,
+					"session_id", env.SessionID)
 				if err := w.Input(ctx, content, md); err != nil {
-					h.log.Warn("gateway: worker interaction response", "err", err, "session_id", env.SessionID)
+					h.log.Warn("gateway: worker interaction response failed",
+						"err", err,
+						"type", respType,
+						"session_id", env.SessionID)
 				}
 			} else {
-				h.log.Warn("gateway: interaction response but no worker", "session_id", env.SessionID)
+				h.log.Warn("gateway: interaction response dropped — no worker",
+					"type", respType,
+					"session_id", env.SessionID)
 			}
 			return nil
 		}

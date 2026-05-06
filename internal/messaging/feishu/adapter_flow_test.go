@@ -720,3 +720,68 @@ func TestAdapterFlow_RegisterInteraction_CallbackConsumed(t *testing.T) {
 	require.True(t, consumed)
 	require.Equal(t, 0, a.Interactions.Len())
 }
+
+// ---------------------------------------------------------------------------
+// WriteCtx interaction events close stream controller
+// ---------------------------------------------------------------------------
+
+func TestWriteCtx_InteractionEvents_ClosesStreamCtrl(t *testing.T) {
+	// Do NOT mark parallel: modifies conn fields directly.
+	tests := []struct {
+		name      string
+		eventType events.Kind
+		data      any
+	}{
+		{
+			"PermissionRequest",
+			events.PermissionRequest,
+			events.PermissionRequestData{ID: "r1", ToolName: "Bash"},
+		},
+		{
+			"QuestionRequest",
+			events.QuestionRequest,
+			events.QuestionRequestData{ID: "q1"},
+		},
+		{
+			"ElicitationRequest",
+			events.ElicitationRequest,
+			events.ElicitationRequestData{ID: "e1", MCPServerName: "srv"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			a := newTestAdapter(t)
+			a.Interactions = messaging.NewInteractionManager(discardLogger)
+
+			conn := a.GetOrCreateConn("chat_close_test", "")
+			conn.mu.Lock()
+			conn.sessionID = "sess-close"
+			conn.platformMsgID = "msg_001"
+			conn.startedAt = time.Now()
+			conn.mu.Unlock()
+
+			// Set up an active typing reaction indicator to verify clearActiveIndicators runs.
+			conn.mu.Lock()
+			conn.typingRid = "typing_rid_test"
+			conn.mu.Unlock()
+
+			env := &events.Envelope{
+				Version:   events.Version,
+				SessionID: "sess-close",
+				Event: events.Event{
+					Type: tt.eventType,
+					Data: tt.data,
+				},
+			}
+
+			_ = conn.WriteCtx(context.Background(), env)
+
+			// Verify typing reaction was cleared by clearActiveIndicators.
+			conn.mu.RLock()
+			got := conn.typingRid
+			conn.mu.RUnlock()
+			require.Empty(t, got, "typingRid should be cleared after %s event", tt.name)
+		})
+	}
+}

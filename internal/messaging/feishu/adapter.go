@@ -676,16 +676,28 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		c.cycleReaction(ctx, timelineEmoji(elapsed))
 		return nil
 	case events.PermissionRequest:
+		streamCtrl := c.clearActiveIndicators(ctx)
+		if streamCtrl != nil && streamCtrl.IsCreated() {
+			_ = streamCtrl.Close(ctx)
+		}
 		rid := c.setProcessingReaction(ctx)
 		pErr := c.sendPermissionRequest(ctx, env)
 		c.clearProcessingReaction(ctx, rid)
 		return pErr
 	case events.QuestionRequest:
+		streamCtrl := c.clearActiveIndicators(ctx)
+		if streamCtrl != nil && streamCtrl.IsCreated() {
+			_ = streamCtrl.Close(ctx)
+		}
 		rid := c.setProcessingReaction(ctx)
 		qErr := c.sendQuestionRequest(ctx, env)
 		c.clearProcessingReaction(ctx, rid)
 		return qErr
 	case events.ElicitationRequest:
+		streamCtrl := c.clearActiveIndicators(ctx)
+		if streamCtrl != nil && streamCtrl.IsCreated() {
+			_ = streamCtrl.Close(ctx)
+		}
 		rid := c.setProcessingReaction(ctx)
 		eErr := c.sendElicitationRequest(ctx, env)
 		c.clearProcessingReaction(ctx, rid)

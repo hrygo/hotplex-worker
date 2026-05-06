@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/hrygo/hotplex/internal/config"
 	"github.com/hrygo/hotplex/internal/worker"
 )
 
@@ -224,7 +226,8 @@ func TestBuildCLIArgs_AllOptions(t *testing.T) {
 	require.Contains(t, args, "--json-schema", "/schemas/output.json")
 	require.Contains(t, args, "--include-hook-events")
 	require.Contains(t, args, "--include-partial-messages")
-	require.Contains(t, args, "--permission-prompt-tool", "stdio")
+	// --permission-prompt-tool not present by default (disabled)
+	require.NotContains(t, args, "--permission-prompt-tool")
 	// Custom PermissionMode="plan" → no --dangerously-skip-permissions
 	require.NotContains(t, args, "--dangerously-skip-permissions")
 	require.NotContains(t, args, "--system-prompt") // replace mode not set
@@ -327,13 +330,14 @@ func TestBuildCLIArgs_Minimal(t *testing.T) {
 	}
 
 	args := w.buildCLIArgs(session, false)
-	// resume=false → --session-id minimal-session, 11 tokens total:
+	// resume=false → --session-id minimal-session, 9 tokens total:
 	// --print --verbose --output-format stream-json --input-format stream-json
-	// --permission-prompt-tool stdio --session-id minimal-session --dangerously-skip-permissions
-	require.Len(t, args, 11)
+	// --session-id minimal-session --dangerously-skip-permissions
+	// (--permission-prompt-tool stdio NOT included: default is disabled)
+	require.Len(t, args, 9)
 	require.Contains(t, args, "--print")
 	require.Contains(t, args, "--verbose")
-	require.Contains(t, args, "--permission-prompt-tool", "stdio")
+	require.NotContains(t, args, "--permission-prompt-tool")
 	require.Contains(t, args, "--session-id", "minimal-session")
 	require.Contains(t, args, "--dangerously-skip-permissions")
 	require.NotContains(t, args, "--resume")
@@ -352,6 +356,39 @@ func TestBuildCLIArgs_Bare(t *testing.T) {
 
 	args := w.buildCLIArgs(session, false)
 	require.Contains(t, args, "--bare")
+}
+
+func TestBuildCLIArgs_PermissionPromptEnabled(t *testing.T) {
+	// Do NOT use t.Parallel() — InitConfig mutates global state (security.RegisterCommand map).
+	// Enable permission prompt via InitConfig (simulates config.yaml permission_prompt: true)
+	InitConfig(config.ClaudeCodeConfig{Command: "claude", PermissionPrompt: true})
+	defer InitConfig(config.ClaudeCodeConfig{Command: "claude"}) // reset to default
+
+	w := New()
+	session := worker.SessionInfo{
+		SessionID:  "pp-session",
+		UserID:     "test-user",
+		ProjectDir: "/tmp",
+	}
+
+	args := w.buildCLIArgs(session, false)
+	require.Contains(t, args, "--permission-prompt-tool", "stdio")
+}
+
+func TestBuildCLIArgs_PermissionPromptDisabled(t *testing.T) {
+	// Do NOT use t.Parallel() — same reason as PermissionPromptEnabled.
+	// Ensure default is disabled
+	InitConfig(config.ClaudeCodeConfig{Command: "claude", PermissionPrompt: false})
+
+	w := New()
+	session := worker.SessionInfo{
+		SessionID:  "pp-off-session",
+		UserID:     "test-user",
+		ProjectDir: "/tmp",
+	}
+
+	args := w.buildCLIArgs(session, false)
+	require.NotContains(t, args, "--permission-prompt-tool")
 }
 
 func TestBuildCLIArgs_AllowedDirs(t *testing.T) {
@@ -620,4 +657,123 @@ func TestHasSessionFiles_JSONLExists(t *testing.T) {
 		}
 	}
 	require.True(t, found, "JSONL file should be detected as a valid session file")
+}
+
+func TestAutoApproveTool_MatchingTool(t *testing.T) {
+	original := permissionAutoApprove.Load()
+	defer permissionAutoApprove.Store(original)
+
+	permissionAutoApprove.Store([]string{"ExitPlanMode"})
+
+	var buf bytes.Buffer
+	ctrl := NewControlHandler(slog.Default(), &buf)
+	cr := &ControlRequestPayload{
+		Subtype:   "can_use_tool",
+		ToolName:  "ExitPlanMode",
+		RequestID: "req-123",
+	}
+
+	result := autoApproveTool(ctrl, cr)
+	require.True(t, result, "should auto-approve ExitPlanMode")
+
+	// Verify a response was written to stdin (buf)
+	require.NotEmpty(t, buf.String(), "should send permission response")
+	require.Contains(t, buf.String(), `"allowed":true`)
+	require.Contains(t, buf.String(), "auto-approved")
+}
+
+func TestAutoApproveTool_NonMatchingTool(t *testing.T) {
+	original := permissionAutoApprove.Load()
+	defer permissionAutoApprove.Store(original)
+
+	permissionAutoApprove.Store([]string{"ExitPlanMode"})
+
+	var buf bytes.Buffer
+	ctrl := NewControlHandler(slog.Default(), &buf)
+	cr := &ControlRequestPayload{
+		Subtype:   "can_use_tool",
+		ToolName:  "Bash",
+		RequestID: "req-456",
+	}
+
+	result := autoApproveTool(ctrl, cr)
+	require.False(t, result, "should not auto-approve Bash")
+	require.Empty(t, buf.String(), "should not send any response")
+}
+
+func TestAutoApproveTool_EmptyOrNilList(t *testing.T) {
+	original := permissionAutoApprove.Load()
+	defer permissionAutoApprove.Store(original)
+
+	tests := []struct {
+		name  string
+		store any // []string or nil-equivalent
+	}{
+		{"empty slice", []string{}},
+		{"nil stored as empty", []string{}}, // InitConfig normalizes nil → []string{}
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			permissionAutoApprove.Store(tt.store)
+
+			var buf bytes.Buffer
+			ctrl := NewControlHandler(slog.Default(), &buf)
+			cr := &ControlRequestPayload{
+				Subtype:   "can_use_tool",
+				ToolName:  "ExitPlanMode",
+				RequestID: "req-empty",
+			}
+
+			result := autoApproveTool(ctrl, cr)
+			require.False(t, result, "should not auto-approve with empty list")
+			require.Empty(t, buf.String())
+		})
+	}
+}
+
+func TestInitConfig_PermissionSettings(t *testing.T) {
+	origCmd := commandParts.Load()
+	origPP := permissionPrompt.Load()
+	origAA := permissionAutoApprove.Load()
+	defer func() {
+		commandParts.Store(origCmd)
+		permissionPrompt.Store(origPP)
+		permissionAutoApprove.Store(origAA)
+	}()
+
+	tests := []struct {
+		name     string
+		cfg      config.ClaudeCodeConfig
+		wantList []string
+		wantPP   bool
+	}{
+		{
+			name: "with auto-approve tools",
+			cfg: config.ClaudeCodeConfig{
+				Command:               "claude",
+				PermissionPrompt:      true,
+				PermissionAutoApprove: []string{"ExitPlanMode", "Read"},
+			},
+			wantList: []string{"ExitPlanMode", "Read"},
+			wantPP:   true,
+		},
+		{
+			name: "nil auto-approve normalized to empty",
+			cfg: config.ClaudeCodeConfig{
+				Command:               "claude",
+				PermissionPrompt:      false,
+				PermissionAutoApprove: nil,
+			},
+			wantList: []string{},
+			wantPP:   false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			InitConfig(tt.cfg)
+			require.Equal(t, []string{"claude"}, commandParts.Load())
+			require.Equal(t, tt.wantPP, permissionPrompt.Load().(bool))
+			require.Equal(t, tt.wantList, permissionAutoApprove.Load())
+		})
+	}
 }

@@ -2138,3 +2138,75 @@ func TestAdapter_Platform(t *testing.T) {
 	a := &Adapter{}
 	require.Equal(t, messaging.PlatformSlack, a.Platform())
 }
+
+// ---------------------------------------------------------------------------
+// WriteCtx interaction events close stream writer
+// ---------------------------------------------------------------------------
+
+func TestWriteCtx_InteractionEvents_ClosesStream(t *testing.T) {
+	// Do NOT mark parallel: modifies streamWriter field on conn.
+	tests := []struct {
+		name      string
+		eventType events.Kind
+		data      any
+	}{
+		{
+			"PermissionRequest",
+			events.PermissionRequest,
+			events.PermissionRequestData{ID: "r1", ToolName: "Bash"},
+		},
+		{
+			"QuestionRequest",
+			events.QuestionRequest,
+			events.QuestionRequestData{ID: "q1"},
+		},
+		{
+			"ElicitationRequest",
+			events.ElicitationRequest,
+			events.ElicitationRequestData{ID: "e1", MCPServerName: "srv"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ta := testAdapter()
+			ta.Interactions = messaging.NewInteractionManager(
+				slog.New(slog.NewTextHandler(io.Discard, nil)),
+			)
+
+			conn := &SlackConn{
+				adapter:   ta,
+				channelID: "C_test",
+				threadTS:  "123.000",
+			}
+
+			// Simulate an active stream writer.
+			writer := NewNativeStreamingWriter(
+				context.Background(), ta.client, "C_test", "123.000", "T1",
+				nil, slog.New(slog.NewTextHandler(io.Discard, nil)), nil, nil,
+			)
+			conn.streamWriterMu.Lock()
+			conn.streamWriter = writer
+			conn.streamWriterMu.Unlock()
+
+			env := &events.Envelope{
+				Version:   events.Version,
+				SessionID: "sess-close-test",
+				Event: events.Event{
+					Type: tt.eventType,
+					Data: tt.data,
+				},
+			}
+
+			// WriteCtx will call closeStreamWriter then attempt to send the
+			// interaction UI (which fails with invalid_auth on dummy token).
+			_ = conn.WriteCtx(context.Background(), env)
+
+			// Verify the stream writer was closed (niled out).
+			conn.streamWriterMu.Lock()
+			got := conn.streamWriter
+			conn.streamWriterMu.Unlock()
+			require.Nil(t, got, "streamWriter should be nil after %s event", tt.name)
+		})
+	}
+}
