@@ -57,13 +57,14 @@ func NewConn(log *slog.Logger, stdin *os.File, userID, sessionID string) *Conn {
 // Send delivers a message to the worker runtime via stdin using NDJSON encoding.
 func (c *Conn) Send(ctx context.Context, msg *events.Envelope) error {
 	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	if c.closed {
-		c.mu.Unlock()
 		return fmt.Errorf("base: connection closed")
 	}
-	c.mu.Unlock()
 
-	// Write NDJSON to stdin.
+	// Write NDJSON to stdin while holding the lock to prevent interleaving
+	// with ControlHandler writes on the same fd.
 	if err := aep.Encode(c.stdin, msg); err != nil {
 		if IsDeadProcessError(err) {
 			return fmt.Errorf("base: worker process is not running or stdin is closed")
@@ -76,12 +77,12 @@ func (c *Conn) Send(ctx context.Context, msg *events.Envelope) error {
 
 func (c *Conn) SendUserMessage(ctx context.Context, content string) error {
 	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	if c.closed {
-		c.mu.Unlock()
 		return fmt.Errorf("base: connection closed")
 	}
 	c.lastInput = content // capture for crash recovery re-delivery
-	c.mu.Unlock()
 
 	msg := claudeUserMessage{
 		Type: "user",
@@ -122,6 +123,12 @@ func (c *Conn) TrySend(env *events.Envelope) bool {
 	default:
 		return false
 	}
+}
+
+// WriteMu returns the mutex that protects stdin writes.
+// ControlHandler should use this same mutex to serialize stdin access.
+func (c *Conn) WriteMu() *sync.Mutex {
+	return &c.mu
 }
 
 // Close terminates the connection and releases resources.

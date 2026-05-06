@@ -36,7 +36,7 @@ func TestCheckPendingInteraction_QuestionResponse(t *testing.T) {
 		},
 	})
 
-	consumed := a.checkPendingInteraction(context.Background(), "my answer", conn)
+	consumed := a.checkPendingInteraction(context.Background(), "my answer", "owner_123", conn)
 	require.True(t, consumed)
 	require.NotNil(t, capturedMetadata)
 	qr, ok := capturedMetadata["question_response"].(map[string]any)
@@ -67,7 +67,7 @@ func TestCheckPendingInteraction_ElicitationAccept(t *testing.T) {
 		},
 	})
 
-	consumed := a.checkPendingInteraction(context.Background(), "accept", conn)
+	consumed := a.checkPendingInteraction(context.Background(), "accept", "owner_123", conn)
 	require.True(t, consumed)
 	er := capturedMetadata["elicitation_response"].(map[string]any)
 	require.Equal(t, "accept", er["action"])
@@ -96,7 +96,7 @@ func TestCheckPendingInteraction_ElicitationDecline(t *testing.T) {
 		},
 	})
 
-	consumed := a.checkPendingInteraction(context.Background(), "decline", conn)
+	consumed := a.checkPendingInteraction(context.Background(), "decline", "owner_123", conn)
 	require.True(t, consumed)
 	er := capturedMetadata["elicitation_response"].(map[string]any)
 	require.Equal(t, "decline", er["action"])
@@ -125,7 +125,7 @@ func TestCheckPendingInteraction_PermissionDeny(t *testing.T) {
 		},
 	})
 
-	consumed := a.checkPendingInteraction(context.Background(), "拒绝", conn)
+	consumed := a.checkPendingInteraction(context.Background(), "拒绝", "owner_123", conn)
 	require.True(t, consumed)
 	pr := capturedMetadata["permission_response"].(map[string]any)
 	require.False(t, pr["allowed"].(bool))
@@ -150,7 +150,7 @@ func TestCheckPendingInteraction_NotPermissionText(t *testing.T) {
 		SendResponse: func(metadata map[string]any) {},
 	})
 
-	consumed := a.checkPendingInteraction(context.Background(), "random text", conn)
+	consumed := a.checkPendingInteraction(context.Background(), "random text", "owner_123", conn)
 	require.False(t, consumed)
 }
 
@@ -172,7 +172,7 @@ func TestCheckPendingInteraction_NoMatchingSession(t *testing.T) {
 		SendResponse: func(metadata map[string]any) {},
 	})
 
-	consumed := a.checkPendingInteraction(context.Background(), "allow", conn)
+	consumed := a.checkPendingInteraction(context.Background(), "allow", "owner_123", conn)
 	require.False(t, consumed)
 }
 
@@ -236,7 +236,7 @@ func TestCheckPendingInteraction_ElicitationDecline_CN(t *testing.T) {
 		},
 	})
 
-	consumed := a.checkPendingInteraction(context.Background(), "取消", conn)
+	consumed := a.checkPendingInteraction(context.Background(), "取消", "owner_123", conn)
 	require.True(t, consumed)
 	er := capturedMetadata["elicitation_response"].(map[string]any)
 	require.Equal(t, "decline", er["action"])
@@ -277,7 +277,7 @@ func TestCheckPendingInteraction_PermissionAllow_Variants(t *testing.T) {
 				},
 			})
 
-			consumed := a.checkPendingInteraction(context.Background(), tt.text, conn)
+			consumed := a.checkPendingInteraction(context.Background(), tt.text, "owner_123", conn)
 			require.True(t, consumed)
 			pr := capturedMetadata["permission_response"].(map[string]any)
 			require.True(t, pr["allowed"].(bool))
