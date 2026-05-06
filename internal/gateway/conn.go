@@ -460,6 +460,14 @@ func (c *Conn) sendInitError(code events.ErrorCode, msg string) {
 func (c *Conn) WritePump() {
 	ticker := time.NewTicker(pingPeriod)
 	defer ticker.Stop()
+	defer func() {
+		if r := recover(); r != nil {
+			c.log.Error("gateway: panic in WritePump", "session_id", c.sessionID, "panic", r, "stack", string(debug.Stack()))
+			c.mu.Lock()
+			c.closed = true
+			c.mu.Unlock()
+		}
+	}()
 
 	for {
 		select {
