@@ -44,4 +44,4 @@ description: "Workspace rules for HotPlex non-interactive agent"
 - 平台级：~/.hotplex/agent-configs/slack/AGENTS.md
 - Bot 级：~/.hotplex/agent-configs/slack/U12345/AGENTS.md
 
-使用 `hotplex-setup` skill 进行交互式个性化配置。
+使用 `hotplex-setup` skill 进行交互式个性化配置。修改后对新会话生效。

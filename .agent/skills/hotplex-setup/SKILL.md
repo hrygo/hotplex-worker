@@ -161,7 +161,7 @@ Token 无效时重新询问，不继续后续步骤。
 
 API 调用失败时提供手动查找指引：
 - Slack：头像 → 三个点 → "Copy member ID"
-- 飞书：管理后台 → 组织架构 → 找到 Open ID
+- 飞书：API 调试台或调用 OpenAPI 获取 Open ID（管理后台组织架构仅能查看 User ID）
 
 ### 第六步：配置工作目录（可选）
 
@@ -178,7 +178,6 @@ HOTPLEX_MESSAGING_FEISHU_WORK_DIR=/path/to/project
 **Worker 类型**：
 - `claude_code`（默认）— Claude Code CLI
 - `opencode_server` — OpenCode Server（单例进程）
-- `pi` — Pi-mono
 
 ```
 HOTPLEX_MESSAGING_SLACK_WORKER_TYPE=claude_code
@@ -327,7 +326,7 @@ hotplex service restart
 
 **STT 问题**（约占 5% 的故障）：
 - 本地 STT：检查 funasr-onnx、modelscope、模型下载
-- 云端 STT：申请飞书权限（https://open.feishu.cn/app/cli_a954eab23678dbb5/auth?q=speech_to_text:speech）
+- 云端 STT：飞书开发者后台 → 你的应用 → 权限管理 → 搜索 `speech_to_text`
 
 详细故障排查见 `references/troubleshooting.md`。
 

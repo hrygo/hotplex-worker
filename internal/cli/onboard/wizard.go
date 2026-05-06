@@ -461,7 +461,7 @@ func (wctx *wizardContext) runRequiredConfig() StepResult {
 		wctx.adminToken = GenerateSecret()
 		fmt.Fprintln(os.Stderr, "  → Generated admin token")
 	}
-	wctx.workerType = promptChoice(wctx.reader, "Worker type", []string{"claude_code", "opencode_server", "pi"})
+	wctx.workerType = promptChoice(wctx.reader, "Worker type", []string{"claude_code", "opencode_server"})
 	return StepResult{Name: "required_config", Status: "pass", Detail: "worker=" + wctx.workerType}
 }
 
@@ -742,7 +742,7 @@ func collectPlatformConfig(reader *bufio.Reader, platform string, credPrompts ma
 
 func stepConfigGen(opts WizardOptions, tplOpts ConfigTemplateOptions) (StepResult, bool) {
 	if _, err := os.Stat(opts.ConfigPath); err == nil && !opts.Force {
-		return StepResult{Name: "config_gen", Status: "skip", Detail: "config file already exists (use --force to overwrite)"}, false
+		return StepResult{Name: "config_gen", Status: "skip", Detail: "preserved existing config (no changes needed)"}, false
 	}
 
 	dir := filepath.Dir(opts.ConfigPath)
@@ -904,7 +904,7 @@ func stepVerify(configPath string) StepResult {
 	allCheckers = append(allCheckers, cli.DefaultRegistry.ByCategory("agent_config")...)
 
 	var passCount, warnCount, failCount int
-	var details []string
+	var failLines []string
 	for _, c := range allCheckers {
 		d := c.Check(context.Background())
 		switch d.Status {
@@ -914,12 +914,19 @@ func stepVerify(configPath string) StepResult {
 			warnCount++
 		case cli.StatusFail:
 			failCount++
-			details = append(details, d.Name+": "+d.Message)
+			line := d.Name + ": " + d.Message
+			if d.Detail != "" {
+				line += "\n  missing: " + d.Detail
+			}
+			if d.FixHint != "" {
+				line += "\n  → " + d.FixHint
+			}
+			failLines = append(failLines, line)
 		}
 	}
 
 	if failCount > 0 {
-		return StepResult{Name: "verify", Status: "fail", Detail: strings.Join(details, "; ")}
+		return StepResult{Name: "verify", Status: "fail", Detail: strings.Join(failLines, "\n")}
 	}
 	detail := fmt.Sprintf("%d passed", passCount)
 	if warnCount > 0 {

@@ -90,7 +90,6 @@ func TestStepWorkerDep(t *testing.T) {
 	}{
 		{"claude_code", "claude_code", false},
 		{"opencode_server", "opencode_server", false},
-		{"pi", "pi", true},
 		{"unknown", "unknown", true},
 	}
 	for _, tt := range tests {
@@ -456,5 +455,5 @@ func TestGenerateSecret(t *testing.T) {
 	require.NotEmpty(t, s1)
 	require.NotEmpty(t, s2)
 	require.NotEqual(t, s1, s2)
-	require.Len(t, s1, 64) // base64 of 48 bytes
+	require.Len(t, s1, 44) // base64 of 32 bytes (ES256 key)
 }

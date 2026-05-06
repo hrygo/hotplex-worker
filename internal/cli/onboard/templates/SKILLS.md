@@ -40,4 +40,4 @@ STT 自动转写，等同文本处理。
 - 平台级：~/.hotplex/agent-configs/slack/SKILLS.md
 - Bot 级：~/.hotplex/agent-configs/slack/U12345/SKILLS.md
 
-使用 `hotplex-setup` skill 进行交互式个性化配置。
+使用 `hotplex-setup` skill 进行交互式个性化配置。修改后对新会话生效。
