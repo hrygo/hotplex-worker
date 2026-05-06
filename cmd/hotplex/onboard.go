@@ -57,6 +57,7 @@ Supports non-interactive mode for automated deployments.`,
 				FeishuGroupPolicy: feishuGroupPolicy,
 				InstallService:    installService,
 				ServiceLevel:      serviceLevel,
+				Version:           versionString(),
 			})
 			if err != nil {
 				return err
@@ -66,10 +67,20 @@ Supports non-interactive mode for automated deployments.`,
 			fmt.Fprintf(os.Stderr, "  %s %s\n\n", output.Bold("HotPlex Onboard"), output.Dim(versionString()))
 
 			for _, step := range result.Steps {
-				fmt.Fprintf(os.Stderr, "  %s %-20s %s\n",
-					output.StatusSymbol(step.Status),
-					output.Bold(step.Name),
-					output.Dim(step.Detail))
+				lines := strings.Split(step.Detail, "\n")
+				if len(lines) == 1 {
+					fmt.Fprintf(os.Stderr, "  %s %-20s %s\n",
+						output.StatusSymbol(step.Status),
+						output.Bold(step.Name),
+						output.Dim(step.Detail))
+				} else {
+					fmt.Fprintf(os.Stderr, "  %s %s\n",
+						output.StatusSymbol(step.Status),
+						output.Bold(step.Name))
+					for _, l := range lines {
+						fmt.Fprintf(os.Stderr, "      %s\n", output.Dim(l))
+					}
+				}
 			}
 
 			fmt.Fprintln(os.Stderr)
@@ -92,9 +103,29 @@ Supports non-interactive mode for automated deployments.`,
 
 			switch result.Action {
 			case "keep":
-				fmt.Fprint(os.Stderr, output.CommandBox("hotplex doctor"))
+				fmt.Fprint(os.Stderr, output.CommandBox(
+					"hotplex doctor",
+					"hotplex gateway start",
+				))
 			default:
-				fmt.Fprint(os.Stderr, output.CommandBox("hotplex gateway start"))
+				fmt.Fprint(os.Stderr, output.CommandBox(
+					"hotplex gateway start",
+					"hotplex doctor",
+					"open http://localhost:8888",
+				))
+			}
+
+			// Agent personalization bridge hint
+			if len(result.AgentConfigNew) > 0 {
+				fmt.Fprint(os.Stderr, output.NoteBox("Agent Personalization",
+					"Default templates created at ~/.hotplex/agent-configs/\n"+
+						"To customize your AI coding partner, start a conversation\n"+
+						"and request \"hotplex-setup\" for interactive guided setup.\n\n"+
+						"This will help you configure:\n"+
+						"  • Agent personality and communication style (SOUL.md)\n"+
+						"  • Your technical profile and preferences (USER.md)\n"+
+						"  • Workflow preferences and autonomy (AGENTS.md)\n"+
+						"  • Per-platform or per-bot customizations (3-level fallback)"))
 			}
 			return nil
 		},
@@ -152,6 +183,7 @@ func displayAgentConfigPanel(created []string) {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintf(os.Stderr, "  %s\n", output.Dim("根据需要编辑这些文件来定制 Agent 行为。"))
-	fmt.Fprintf(os.Stderr, "  %s\n", output.Dim("修改后自动生效（支持热重载），无需重启网关。"))
+	fmt.Fprintf(os.Stderr, "  %s\n", output.Dim("修改后对新会话生效（下次创建 session 时加载）。"))
 	fmt.Fprintf(os.Stderr, "  %s\n\n", output.Dim("支持平台和 Bot 级覆盖：slack/SOUL.md、slack/U12345/SOUL.md"))
+	fmt.Fprintf(os.Stderr, "  %s\n", output.Dim("使用 hotplex-setup skill 交互式定制 Agent 人格和偏好。"))
 }

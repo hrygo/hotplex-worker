@@ -119,6 +119,12 @@ func TestHasEnvValue(t *testing.T) {
 // ─── displayExistingConfig (just ensure no panic) ────────────────────────────
 
 func TestDisplayExistingConfig(t *testing.T) {
+	// Suppress UI output during test
+	devNull, _ := os.Open(os.DevNull)
+	orig := os.Stderr
+	os.Stderr = devNull
+	defer func() { os.Stderr = orig; devNull.Close() }()
+
 	ec := &ExistingConfig{
 		ConfigPath:    "/tmp/config.yaml",
 		EnvPath:       "/tmp/.env",

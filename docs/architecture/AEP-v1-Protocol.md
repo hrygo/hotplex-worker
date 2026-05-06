@@ -118,7 +118,7 @@ tags:
 | 字段 | 必选 | 说明 |
 |------|------|------|
 | `version` | 是 | 协议版本，必须为 `aep/v1`（同时存在于 Envelope 层和 data 层） |
-| `worker_type` | 是 | Worker 类型标识（如 `claude_code`、`pi-mono`） |
+| `worker_type` | 是 | Worker 类型标识（如 `claude_code`、`opencode_server`） |
 | `session_id` | 否 | 有值 = resume 已有 session；空 = 创建新 session |
 | `auth` | 否 | 鉴权载荷（非浏览器或无需 Cookie 环境必传，包含 JWT 等 Token 认证信息） |
 | `config` | 否 | Worker 配置 |
@@ -452,7 +452,7 @@ Session 状态为 `running` 时，拒绝 input，返回 `error`（`SESSION_BUSY`
 | `message_id` | 是 | 关联的 `message.start` 的 ID |
 | `content` | 是 | 增量文本内容 |
 
-对于 raw stdout Worker（如 pi-mono），Worker Adapter 将每行 stdout 转换为 `message.delta { content: "..." }`，`message_id` 由 Gateway 分配。
+对于 raw stdout Worker，Worker Adapter 将每行 stdout 转换为 `message.delta { content: "..." }`，`message_id` 由 Gateway 分配。
 
 > **Backpressure**：`message.delta` 可被 backpressure 静默丢弃（bounded channel 满时）。丢弃的 delta 不消耗 seq。如果本轮有过丢弃，`done.dropped` 为 `true`。
 

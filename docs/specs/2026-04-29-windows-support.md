@@ -249,7 +249,6 @@ func HotplexHome() string {
 |-------------|--------------|------|
 | Claude Code | ✅ 支持 | Claude Code 官方支持 Windows (WSL/原生) |
 | OpenCode Server | ⚠️ 待确认 | 需验证 OCS 是否发布 Windows 二进制 |
-| Pi-mono | ❌ 不支持 | 实验性协议，暂不考虑 |
 
 **OCS 降级策略**:
 ```go

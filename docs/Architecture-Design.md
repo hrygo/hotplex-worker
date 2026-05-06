@@ -43,7 +43,6 @@ graph TD
     subgraph "Worker Runtimes"
         Claude[Claude Code CLI]
         OpenCode[OpenCode Server]
-        Pi[Pi-mono]
     end
 
     Web & SDK --> WS

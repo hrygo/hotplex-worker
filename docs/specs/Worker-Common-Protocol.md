@@ -434,7 +434,6 @@ type Worker interface {
 const (
     TypeClaudeCode  WorkerType = "claude-code"
     TypeOpenCodeSrv WorkerType = "opencode-server"
-    TypePimon       WorkerType = "pimon"
 )
 ```
 

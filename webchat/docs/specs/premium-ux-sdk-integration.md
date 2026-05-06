@@ -7,7 +7,7 @@
 ## 1. 设计哲学与架构原则 (Design Philosophy)
 
 1. **SDK-Native (原生驱动)**：彻底摒弃自定义的复杂状态机。全面拥抱 `@assistant-ui/react` 的 `ExternalStoreAdapter` 与 Vercel AI SDK 的 Content Part 数据模型。
-2. **Agent-Agnostic UI (智能体无关渲染)**：WebChat 需作为统一抽象层，无论是 Claude Code, OpenCodeServer 还是 Pi-mono，均提供一致的 "思考-执行-输出" 视觉体验。
+2. **Agent-Agnostic UI (智能体无关渲染)**：WebChat 需作为统一抽象层，无论是 Claude Code 还是 OpenCodeServer，均提供一致的 "思考-执行-输出" 视觉体验。
 3. **Developer-First (开发者优先体验)**：相比普通 Chat，需强化**工作目录感知 (Workspace Awareness)**、**高保真代码展示 (Monaco/Diff)** 和 **终端模拟 (Terminal Output)**。
 
 ## 2. 核心集成规范 (Core SDK Integration)

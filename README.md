@@ -131,17 +131,18 @@ HotPlex sits between frontend clients and backend AI coding agents, featuring a 
 └────┬─────┘   └────┬─────┘   └────┬─────┘
      │              │              │
      └──────────────┼──────────────┘
-                    │  WebSocket / AEP v1
+                    │
               ┌─────┴─────┐
-              │  HotPlex  │  Session · Auth · Retry · B/C Config
-              │  Gateway  │  Metrics · Tracing · Admin · Meta-Core
+              │  HotPlex  │
+              │  Gateway  │
               └─────┬─────┘
-     ┌──────────────┼──────────────┐
-     │              │              │
-┌────┴─────┐  ┌────┴──────┐  ┌───┴───────┐
-│  Claude  │  │  OpenCode │  │  Pi-mono  │
-│  Code    │  │  Server   │  │           │
-└──────────┘  └───────────┘  └───────────┘
+                    │
+         ┌──────────┴──────────┐
+         │                     │
+   ┌─────┴─────┐          ┌────┴──────┐
+   │  Claude   │          │  OpenCode │
+   │  Code     │          │  Server   │
+   └───────────┘          └───────────┘
 ```
 
 ## 🔗 SDKs & Libraries
@@ -187,28 +188,28 @@ func main() {
 
 ## 🛠️ Configuration
 
-| Key                        | Default                      | Description                                       |
-| :------------------------- | :--------------------------- | :------------------------------------------------ |
-| `agent_config.enabled`     | `true`                       | Enable agent personality/context injection        |
-| `webchat.enabled`          | `true`                       | Serve embedded webchat SPA from gateway           |
-| `worker.auto_retry.enabled`| `true`                       | Intelligent LLM retry with exponential backoff    |
-| `gateway.addr`             | `localhost:8888`             | WebSocket gateway address                         |
-| `admin.addr`               | `localhost:9999`             | Admin API address                                 |
-| `db.path`                  | `~/.hotplex/data/hotplex.db` | SQLite database path                              |
-| `log.level`                | `info`                       | Log level: debug, info, warn, error               |
+| Key                         | Default                      | Description                                    |
+| :-------------------------- | :--------------------------- | :--------------------------------------------- |
+| `agent_config.enabled`      | `true`                       | Enable agent personality/context injection     |
+| `webchat.enabled`           | `true`                       | Serve embedded webchat SPA from gateway        |
+| `worker.auto_retry.enabled` | `true`                       | Intelligent LLM retry with exponential backoff |
+| `gateway.addr`              | `localhost:8888`             | WebSocket gateway address                      |
+| `admin.addr`                | `localhost:9999`             | Admin API address                              |
+| `db.path`                   | `~/.hotplex/data/hotplex.db` | SQLite database path                           |
+| `log.level`                 | `info`                       | Log level: debug, info, warn, error            |
 
 > [!TIP]
 > See [Config Reference](docs/management/Config-Reference.md) for the full list of environment variables and YAML settings.
 
 ## 📖 Documentation
 
-| Area                | Guide                                                                                                                                                     |
-| :------------------ | :-------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Getting Started** | [Quick Start](docs/User-Manual.md) · [Reference Manual](docs/Reference-Manual.md) · [Whitepaper](docs/Product-Whitepaper.md)                              |
-| **Protocol**        | [AEP v1 Specification](docs/architecture/AEP-v1-Protocol.md)                                                                                              |
+| Area                | Guide                                                                                                                                                                                            |
+| :------------------ | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Getting Started** | [Quick Start](docs/User-Manual.md) · [Reference Manual](docs/Reference-Manual.md) · [Whitepaper](docs/Product-Whitepaper.md)                                                                     |
+| **Protocol**        | [AEP v1 Specification](docs/architecture/AEP-v1-Protocol.md)                                                                                                                                     |
 | **Architecture**    | [Gateway Design](docs/architecture/Worker-Gateway-Design.md) · [Agent Config Design](docs/architecture/Agent-Config-Design.md) · [Meta-Cognition Design](internal/agentconfig/META-COGNITION.md) |
-| **Security**        | [Authentication](docs/security/Security-Authentication.md) · [SSRF Protection](docs/security/SSRF-Protection.md)                                          |
-| **Operations**      | [Admin API](docs/management/Admin-API-Design.md) · [Observability](docs/management/Observability-Design.md) · [Testing](docs/testing/Testing-Strategy.md) |
+| **Security**        | [Authentication](docs/security/Security-Authentication.md) · [SSRF Protection](docs/security/SSRF-Protection.md)                                                                                 |
+| **Operations**      | [Admin API](docs/management/Admin-API-Design.md) · [Observability](docs/management/Observability-Design.md) · [Testing](docs/testing/Testing-Strategy.md)                                        |
 
 ## 👥 Contributing
 
