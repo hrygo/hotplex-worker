@@ -181,6 +181,9 @@ webchat:
 # ─────────────────────────────────────────────────────────────────────────────
 
 messaging:
+  # Send turn summary after each completed turn (default: true).
+  # turn_summary_enabled: true
+
   slack:
     enabled: false
     socket_mode: true

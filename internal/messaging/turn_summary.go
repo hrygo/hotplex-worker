@@ -13,6 +13,47 @@ import (
 
 const TurnSummaryCooldown = 5 * time.Minute
 
+// TurnSummaryField is a labeled key-value pair for turn summary display.
+type TurnSummaryField struct {
+	Label string
+	Value string
+}
+
+// Fields returns the ordered list of non-empty fields for turn summary display.
+// Used by all rendering paths (compact text, rich text, table) to ensure consistency.
+func (d TurnSummaryData) Fields() []TurnSummaryField {
+	var fields []TurnSummaryField
+
+	if d.TurnCount > 0 {
+		fields = append(fields, TurnSummaryField{"🔄 Turn", fmt.Sprintf("#%d", d.TurnCount)})
+	}
+	if d.ModelName != "" {
+		fields = append(fields, TurnSummaryField{"🤖 Model", d.ModelName})
+	}
+	if d.ContextWindow > 0 && d.ContextFill > 0 {
+		used := FormatTokenCount(int(d.ContextFill))
+		max := FormatTokenCount(int(d.ContextWindow))
+		fields = append(fields, TurnSummaryField{"🧠 Context", fmt.Sprintf("%d%% · %s/%s", clampContextPct(d.ContextPct), used, max)})
+	}
+	if d.ToolCallCount > 0 {
+		fields = append(fields, TurnSummaryField{"🔧 Tools", FormatToolNames(d.ToolNames, d.ToolCallCount)})
+	}
+	if d.WorkDir != "" {
+		fields = append(fields, TurnSummaryField{"📂 Dir", TruncatePath(d.WorkDir, 3)})
+	}
+	if d.GitBranch != "" {
+		fields = append(fields, TurnSummaryField{"🌿 Branch", d.GitBranch})
+	}
+	if durStr := FormatDurationParts(d); durStr != "" {
+		fields = append(fields, TurnSummaryField{"⏱ Timer", durStr})
+	}
+	if tokStr := FormatTokenUsage(d); tokStr != "" {
+		fields = append(fields, TurnSummaryField{"💎 Tokens", tokStr})
+	}
+
+	return fields
+}
+
 // TurnSummaryData holds per-turn summary fields extracted from a Done envelope.
 type TurnSummaryData struct {
 	ContextPct      float64
@@ -238,42 +279,14 @@ func TruncatePath(p string, maxComponents int) string {
 // Used as the primary format for Feishu and rich fallback for Slack.
 // Returns empty string if no meaningful data is available.
 func FormatTurnSummaryRich(d TurnSummaryData) string {
-	var lines []string
-
-	if d.TurnCount > 0 {
-		lines = append(lines, fmt.Sprintf("🔄 #%d", d.TurnCount))
+	fields := d.Fields()
+	if len(fields) == 0 {
+		return ""
 	}
-
-	if d.ModelName != "" {
-		lines = append(lines, "🤖 "+d.ModelName)
+	lines := make([]string, len(fields))
+	for i, f := range fields {
+		lines[i] = f.Label + " " + f.Value
 	}
-
-	if d.ContextWindow > 0 && d.ContextFill > 0 {
-		used := FormatTokenCount(int(d.ContextFill))
-		max := FormatTokenCount(int(d.ContextWindow))
-		lines = append(lines, fmt.Sprintf("🧠 Context %d%% · %s/%s", clampContextPct(d.ContextPct), used, max))
-	}
-
-	if d.GitBranch != "" {
-		lines = append(lines, "🌿 "+d.GitBranch)
-	}
-
-	if d.WorkDir != "" {
-		lines = append(lines, "📂 "+TruncatePath(d.WorkDir, 3))
-	}
-
-	if d.ToolCallCount > 0 {
-		lines = append(lines, "🔧 "+FormatToolNames(d.ToolNames, d.ToolCallCount))
-	}
-
-	if tokStr := FormatTokenUsage(d); tokStr != "" {
-		lines = append(lines, "💎 Tokens "+tokStr)
-	}
-
-	if durStr := FormatDurationParts(d); durStr != "" {
-		lines = append(lines, "⏱ Timer "+durStr)
-	}
-
 	return strings.Join(lines, "\n")
 }
 

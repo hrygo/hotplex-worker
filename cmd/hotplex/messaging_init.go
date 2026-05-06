@@ -82,6 +82,7 @@ func startMessagingAdapters(ctx context.Context, deps *GatewayDeps) ([]messaging
 			Bridge:  msgBridge,
 			Extras:  make(map[string]any),
 		}
+		acfg.Extras["turn_summary_enabled"] = appCfg.Messaging.TurnSummaryEnabled
 
 		switch pt {
 		case messaging.PlatformSlack:

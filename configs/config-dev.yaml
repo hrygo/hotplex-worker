@@ -35,6 +35,7 @@ log:
   format: "text"
 
 messaging:
+  turn_summary_enabled: true
   slack:
     enabled: true
   feishu:

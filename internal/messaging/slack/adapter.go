@@ -69,6 +69,7 @@ type Adapter struct {
 	isAssistantCapable atomic.Bool
 	assistantEnabled   *bool
 	transcriber        stt.Transcriber
+	turnSummaryEnabled bool
 
 	rateLimiter   *ChannelRateLimiter
 	slashLimiter  *SlashRateLimiter
@@ -103,6 +104,9 @@ func (a *Adapter) ConfigureWith(config messaging.AdapterConfig) error {
 	}
 	if t, ok := config.Extras["transcriber"].(stt.Transcriber); ok && t != nil {
 		a.transcriber = t
+	}
+	if v, ok := config.Extras["turn_summary_enabled"].(bool); ok {
+		a.turnSummaryEnabled = v
 	}
 
 	return nil
@@ -737,7 +741,7 @@ func (c *SlackConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		c.clearStatus(ctx)
 		c.adapter.Interactions.CancelAll(env.SessionID)
 		c.closeStreamWriter()
-		if env.Event.Type == events.Done {
+		if env.Event.Type == events.Done && c.adapter.turnSummaryEnabled {
 			go c.sendTurnSummary(ctx, env)
 		}
 		if env.Event.Type == events.Error {
@@ -1161,38 +1165,12 @@ func (c *SlackConn) buildTurnSummaryTable(d messaging.TurnSummaryData) []slack.B
 		slack.ColumnSetting{Align: slack.ColumnAlignmentLeft, IsWrapped: true},
 	)
 
-	if d.TurnCount > 0 {
-		table.AddRow(richTextCell("🔄 Turn"), richTextCell(fmt.Sprintf("#%d", d.TurnCount)))
-	}
-	if d.ModelName != "" {
-		table.AddRow(richTextCell("🤖 Model"), richTextCell(d.ModelName))
-	}
-	if d.ContextWindow > 0 && d.ContextFill > 0 {
-		pct := int(d.ContextPct + 0.5)
-		if pct > 100 {
-			pct = 100
+	for _, f := range d.Fields() {
+		val := f.Value
+		if f.Label == "🔧 Tools" {
+			val = formatToolNamesSlack(d.ToolNames, d.ToolCallCount)
 		}
-		used := messaging.FormatTokenCount(int(d.ContextFill))
-		max := messaging.FormatTokenCount(int(d.ContextWindow))
-		table.AddRow(richTextCell("🧠 Context"), richTextCell(fmt.Sprintf("%d%% · %s/%s", pct, used, max)))
-	}
-	if d.ToolCallCount > 0 {
-		toolStr := formatToolNamesSlack(d.ToolNames, d.ToolCallCount)
-		table.AddRow(richTextCell("🔧 Tools"), richTextCell(toolStr))
-	}
-	if d.WorkDir != "" {
-		table.AddRow(richTextCell("📂 Dir"), richTextCell(messaging.TruncatePath(d.WorkDir, 3)))
-	}
-	if d.GitBranch != "" {
-		table.AddRow(richTextCell("🌿 Branch"), richTextCell(d.GitBranch))
-	}
-	// Duration (merged Turn + Session)
-	if durStr := messaging.FormatDurationParts(d); durStr != "" {
-		table.AddRow(richTextCell("⏱ Time"), richTextCell(durStr))
-	}
-	// Tokens (turn + session total)
-	if tokStr := messaging.FormatTokenUsage(d); tokStr != "" {
-		table.AddRow(richTextCell("💎 Tokens"), richTextCell(tokStr))
+		table.AddRow(richTextCell(f.Label), richTextCell(val))
 	}
 
 	return []slack.Block{table}
