@@ -176,7 +176,7 @@ func TestCheckPendingInteraction_NoInteractions(t *testing.T) {
 	conn := &FeishuConn{chatID: "chat123", adapter: a}
 
 	// No interactions registered → should return false (not consumed)
-	consumed := a.checkPendingInteraction(context.Background(), "hello", conn)
+	consumed := a.checkPendingInteraction(context.Background(), "hello", "owner_123", conn)
 	require.False(t, consumed)
 }
 

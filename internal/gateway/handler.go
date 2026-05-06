@@ -488,15 +488,10 @@ func (h *Handler) handleGC(ctx context.Context, env *events.Envelope) error {
 }
 
 func (h *Handler) handleCD(ctx context.Context, env *events.Envelope) error {
-	// Extract path from control data.
+	d, ok := events.DecodeAs[events.ControlData](env.Event.Data)
 	var path string
-	switch d := env.Event.Data.(type) {
-	case events.ControlData:
-		if d.Details != nil {
-			path, _ = d.Details["path"].(string)
-		}
-	case map[string]any:
-		path, _ = d["path"].(string)
+	if ok && d.Details != nil {
+		path, _ = d.Details["path"].(string)
 	}
 
 	// /cd with no arg: return current workDir.

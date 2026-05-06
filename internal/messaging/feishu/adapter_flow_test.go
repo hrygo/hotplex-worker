@@ -716,7 +716,7 @@ func TestAdapterFlow_RegisterInteraction_CallbackConsumed(t *testing.T) {
 	require.Equal(t, 1, a.Interactions.Len())
 
 	// Consume the interaction via checkPendingInteraction.
-	consumed := a.checkPendingInteraction(context.Background(), "允许", conn)
+	consumed := a.checkPendingInteraction(context.Background(), "允许", "owner-ricb", conn)
 	require.True(t, consumed)
 	require.Equal(t, 0, a.Interactions.Len())
 }

@@ -164,7 +164,7 @@ func TestFeishuConn_WriteCtx_PermissionRequest_NilClient(t *testing.T) {
 
 	err := conn.WriteCtx(context.Background(), env)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "send permission card")
+	require.Contains(t, err.Error(), "send permission request")
 }
 
 func TestFeishuConn_WriteCtx_QuestionRequest_NilClient(t *testing.T) {
@@ -197,7 +197,7 @@ func TestFeishuConn_WriteCtx_QuestionRequest_NilClient(t *testing.T) {
 
 	err := conn.WriteCtx(context.Background(), env)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "send question card")
+	require.Contains(t, err.Error(), "send question request")
 }
 
 func TestFeishuConn_WriteCtx_ElicitationRequest_NilClient(t *testing.T) {
@@ -232,5 +232,5 @@ func TestFeishuConn_WriteCtx_ElicitationRequest_NilClient(t *testing.T) {
 
 	err := conn.WriteCtx(context.Background(), env)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "send elicitation card")
+	require.Contains(t, err.Error(), "send elicitation request")
 }
