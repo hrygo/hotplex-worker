@@ -20,11 +20,13 @@ const interactionActionPrefix = "hp_interact"
 func (a *Adapter) handleInteractionEvent(ctx context.Context, evt socketmode.Event) {
 	callback, ok := evt.Data.(slack.InteractionCallback)
 	if !ok {
+		a.Log.Debug("slack: interaction event: unexpected data type", "type", fmt.Sprintf("%T", evt.Data))
 		return
 	}
 
 	// Only handle block kit button actions
 	if callback.Type != slack.InteractionTypeBlockActions {
+		a.Log.Debug("slack: interaction event: ignoring non-block-actions type", "type", callback.Type)
 		return
 	}
 
@@ -177,6 +179,8 @@ func (c *SlackConn) sendPermissionRequest(ctx context.Context, env *events.Envel
 		if len(preview) > 500 {
 			preview = preview[:500] + "..."
 		}
+		// Strip triple backticks to prevent nested code blocks in Block Kit.
+		preview = strings.ReplaceAll(preview, "```", "")
 		headerText += fmt.Sprintf("\n```%s```", preview)
 	}
 
@@ -498,24 +502,37 @@ func (a *Adapter) checkPendingInteraction(ctx context.Context, text, channelID, 
 	if requestID != "" {
 		if pi, ok := a.Interactions.Get(requestID); ok {
 			matched = pi
+		} else {
+			a.Log.Debug("slack: interaction text lookup failed, request_id not in pending map",
+				"request_id", requestID,
+				"action", action,
+				"pending_count", a.Interactions.Len())
 		}
 	}
 
-	// Fallback: most recent pending interaction for raw text (question only).
+	// Fallback: most recent pending interaction.
 	if matched == nil {
 		candidates := a.Interactions.GetAll()
 		if len(candidates) == 0 {
 			return false
 		}
-		// Only raw text (no action keyword) matches question requests.
-		if action != "" {
-			return false
-		}
 		candidate := candidates[0]
-		if candidate.Type != events.QuestionRequest {
-			return false
+		// Action keyword + no requestID match: try to match action to interaction type.
+		if action != "" {
+			if (action == "allow" || action == "deny") && candidate.Type == events.PermissionRequest {
+				matched = candidate
+			} else if (action == "accept" || action == "decline") && candidate.Type == events.ElicitationRequest {
+				matched = candidate
+			} else {
+				return false
+			}
+		} else {
+			// Raw text (no action keyword) matches question requests only.
+			if candidate.Type != events.QuestionRequest {
+				return false
+			}
+			matched = candidate
 		}
-		matched = candidate
 	}
 
 	if matched.OwnerID != "" && matched.OwnerID != userID {

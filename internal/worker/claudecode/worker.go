@@ -324,6 +324,11 @@ func (w *Worker) Input(ctx context.Context, content string, metadata map[string]
 			allowed, _ := permResp["allowed"].(bool)
 			reason, _ := permResp["reason"].(string)
 
+			w.Log.Info("claudecode: sending permission response to stdin",
+				"request_id", reqID,
+				"allowed", allowed,
+				"session_id", w.sessionID)
+
 			if err := w.control.SendPermissionResponse(reqID, allowed, reason); err != nil {
 				return fmt.Errorf("claudecode: permission response: %w", err)
 			}
