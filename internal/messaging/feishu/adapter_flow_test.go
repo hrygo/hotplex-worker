@@ -15,7 +15,7 @@ func TestAdapterFlow_HandleTextMessage_NilBridge(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
 	// No bridge → early return nil.
-	err := a.handleTextMessage(context.Background(), "msg1", "ch1", "p2p", "user1", "hello", "", "")
+	err := a.handleTextMessage(context.Background(), "msg1", "ch1", "p2p", "user1", "hello", "", "", false)
 	require.NoError(t, err)
 }
 
@@ -38,7 +38,7 @@ func TestAdapterFlow_HandleTextMessage_WithInteractionConsumed(t *testing.T) {
 	})
 
 	// "允许" consumed as interaction response → returns nil (not an error).
-	err := a.handleTextMessage(context.Background(), "msg1", "ch1", "p2p", "user1", "允许", "", "")
+	err := a.handleTextMessage(context.Background(), "msg1", "ch1", "p2p", "user1", "允许", "", "", false)
 	require.NoError(t, err)
 }
 

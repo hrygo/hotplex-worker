@@ -18,6 +18,7 @@ import (
 	"github.com/hrygo/hotplex/internal/messaging/feishu"
 	_ "github.com/hrygo/hotplex/internal/messaging/slack"
 	"github.com/hrygo/hotplex/internal/messaging/stt"
+	"github.com/hrygo/hotplex/internal/messaging/tts"
 )
 
 var (
@@ -117,6 +118,9 @@ func startMessagingAdapters(ctx context.Context, deps *GatewayDeps) ([]messaging
 			acfg.Extras["app_secret"] = appCfg.Messaging.Feishu.AppSecret
 			if t := buildFeishuTranscriber(appCfg.Messaging.Feishu, log); t != nil {
 				acfg.Extras["transcriber"] = t
+			}
+			if p := buildFeishuTTSPipeline(appCfg, log); p != nil {
+				acfg.Extras["tts_pipeline"] = p
 			}
 		}
 
@@ -246,4 +250,23 @@ func expandCommand(cmd string) string {
 		}
 	}
 	return strings.Join(parts, " ")
+}
+
+func buildFeishuTTSPipeline(cfg *config.Config, log *slog.Logger) *feishu.TTSPipeline {
+	ttsCfg := cfg.Messaging.Feishu.TTSConfig
+	if !ttsCfg.Enabled {
+		return nil
+	}
+
+	var synth tts.Synthesizer
+	switch ttsCfg.TTSProvider {
+	case "edge":
+		synth = tts.NewEdgeSynthesizer(ttsCfg.Voice, log)
+	default:
+		log.Warn("feishu: unknown tts_provider, TTS disabled", "provider", ttsCfg.TTSProvider)
+		return nil
+	}
+
+	client := lark.NewClient(cfg.Messaging.Feishu.AppID, cfg.Messaging.Feishu.AppSecret)
+	return feishu.NewTTSPipeline(synth, client, ttsCfg.MaxChars, log)
 }

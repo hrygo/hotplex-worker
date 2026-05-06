@@ -190,6 +190,18 @@ func (c STTConfig) IsPersistent() bool {
 	return c.LocalCmd != "" && !strings.Contains(c.LocalCmd, "{file}")
 }
 
+// TTSConfig holds text-to-speech settings. Squashed into platform configs.
+type TTSConfig struct {
+	// Enabled controls whether voice replies are sent for voice-triggered turns.
+	Enabled bool `mapstructure:"tts_enabled"`
+	// Provider: "edge" (Microsoft Edge TTS, free), "local" (external command), "" (disabled).
+	TTSProvider string `mapstructure:"tts_provider"`
+	// Voice name for Edge TTS (e.g. "zh-CN-XiaoxiaoNeural", "zh-CN-YunxiNeural").
+	Voice string `mapstructure:"tts_voice"`
+	// MaxChars limits the LLM summary length before TTS synthesis.
+	MaxChars int `mapstructure:"tts_max_chars"`
+}
+
 // SlackConfig holds Slack Socket Mode adapter settings.
 type SlackConfig struct {
 	Enabled             bool     `mapstructure:"enabled"`
@@ -210,6 +222,7 @@ type SlackConfig struct {
 	ReconnectMaxDelay  time.Duration `mapstructure:"reconnect_max_delay"`
 
 	STTConfig `mapstructure:",squash"`
+	TTSConfig `mapstructure:",squash"`
 }
 
 // FeishuConfig holds Feishu WebSocket adapter settings.
@@ -228,9 +241,9 @@ type FeishuConfig struct {
 	AllowGroupFrom []string `mapstructure:"allow_group_from"`
 
 	STTConfig `mapstructure:",squash"`
+	TTSConfig `mapstructure:",squash"`
 }
 
-// AdminConfig holds admin API settings.
 type AdminConfig struct {
 	Enabled            bool                `mapstructure:"enabled"`
 	Addr               string              `mapstructure:"addr"`
@@ -501,6 +514,11 @@ func Default() *Config {
 					LocalCmd:     "python3 " + filepath.Join(HotplexHome(), "scripts", "stt_server.py"),
 					LocalIdleTTL: time.Hour,
 				},
+				TTSConfig: TTSConfig{
+					TTSProvider: "edge",
+					Voice:       "zh-CN-XiaoxiaoNeural",
+					MaxChars:    2000,
+				},
 			},
 			Slack: SlackConfig{
 				RequireMention: true,
@@ -596,6 +614,10 @@ func Load(filePath string, opts LoadOptions) (*Config, error) {
 	_ = v.BindEnv("messaging.feishu.stt_provider")
 	_ = v.BindEnv("messaging.feishu.stt_local_cmd")
 	_ = v.BindEnv("messaging.feishu.stt_local_idle_ttl")
+	_ = v.BindEnv("messaging.feishu.tts_enabled")
+	_ = v.BindEnv("messaging.feishu.tts_provider")
+	_ = v.BindEnv("messaging.feishu.tts_voice")
+	_ = v.BindEnv("messaging.feishu.tts_max_chars")
 
 	if err := v.Unmarshal(cfg); err != nil {
 		return nil, fmt.Errorf("config: environment override: %w", err)

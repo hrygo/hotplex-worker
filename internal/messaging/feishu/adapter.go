@@ -48,6 +48,7 @@ type Adapter struct {
 	botOpenID          string
 	transcriber        Transcriber
 	turnSummaryEnabled bool
+	ttsPipeline        *TTSPipeline
 
 	mu          sync.RWMutex
 	chatQueue   *ChatQueue
@@ -77,6 +78,9 @@ func (a *Adapter) ConfigureWith(config messaging.AdapterConfig) error {
 	}
 	if v, ok := config.Extras["turn_summary_enabled"].(bool); ok {
 		a.turnSummaryEnabled = v
+	}
+	if p, ok := config.Extras["tts_pipeline"].(*TTSPipeline); ok && p != nil {
+		a.ttsPipeline = p
 	}
 
 	return nil
@@ -236,8 +240,9 @@ func (a *Adapter) fetchBotOpenID(ctx context.Context) error {
 }
 
 // processMediaAttachments downloads media files and runs STT on audio,
-// returning file paths and transcriptions to be appended to the message text.
-func (a *Adapter) processMediaAttachments(ctx context.Context, medias []*MediaInfo) (paths, transcriptions []string) {
+// returning file paths, transcriptions to be appended to the message text,
+// and whether any audio was successfully transcribed (for TTS trigger).
+func (a *Adapter) processMediaAttachments(ctx context.Context, medias []*MediaInfo) (paths, transcriptions []string, hasAudioTranscription bool) {
 	for _, m := range medias {
 		// Audio + STT: try transcription, conditionally skip disk write.
 		if m.Type == "audio" && a.transcriber != nil {
@@ -249,6 +254,7 @@ func (a *Adapter) processMediaAttachments(ctx context.Context, medias []*MediaIn
 			transcription, sttErr := a.transcriber.Transcribe(ctx, data)
 			if sttErr == nil && transcription != "" {
 				transcriptions = append(transcriptions, transcription)
+				hasAudioTranscription = true
 				// Pure cloud STT: skip disk write entirely.
 				if !a.transcriber.RequiresDisk() {
 					continue
@@ -325,8 +331,10 @@ func (a *Adapter) handleMessage(ctx context.Context, event *larkim.P2MessageRece
 	text = messaging.SanitizeText(text)
 
 	// Download media to local files and build structured prompt.
+	var _hasVoice bool
 	if len(medias) > 0 {
-		paths, transcriptions := a.processMediaAttachments(ctx, medias)
+		paths, transcriptions, hasVoice := a.processMediaAttachments(ctx, medias)
+		_hasVoice = hasVoice
 		if len(paths) > 0 || len(transcriptions) > 0 {
 			text = BuildMediaPrompt(text, paths, medias, transcriptions)
 		}
@@ -393,7 +401,7 @@ func (a *Adapter) handleMessage(ctx context.Context, event *larkim.P2MessageRece
 			"text_len", len(text),
 		)
 
-		return a.handleTextMessage(qtx, messageID, chatID, chatType, userID, text, threadKey, replyToMsgID)
+		return a.handleTextMessage(qtx, messageID, chatID, chatType, userID, text, threadKey, replyToMsgID, _hasVoice)
 	})
 }
 
@@ -409,12 +417,19 @@ func isBotMentioned(mentions []*larkim.MentionEvent, botOpenID string) bool {
 	return false
 }
 
-func (a *Adapter) handleTextMessage(ctx context.Context, platformMsgID, channelID, chatType, userID, text, threadKey, replyToMsgID string) error {
+func (a *Adapter) handleTextMessage(ctx context.Context, platformMsgID, channelID, chatType, userID, text, threadKey, replyToMsgID string, voiceTriggered bool) error {
 	if a.Bridge() == nil {
 		return nil
 	}
 
 	conn := a.GetOrCreateConn(channelID, threadKey)
+
+	// Mark this connection as voice-triggered for TTS reply on Done.
+	if voiceTriggered {
+		conn.mu.Lock()
+		conn.voiceTriggered = true
+		conn.mu.Unlock()
+	}
 
 	envelope := a.Bridge().MakeFeishuEnvelope(channelID, threadKey, userID, text, conn.WorkDir(), a.botOpenID)
 	if envelope == nil {
@@ -476,7 +491,7 @@ func (a *Adapter) handleTextMessage(ctx context.Context, platformMsgID, channelI
 }
 
 func (a *Adapter) HandleTextMessage(ctx context.Context, platformMsgID, channelID, teamID, threadTS, userID, text string) error {
-	return a.handleTextMessage(ctx, platformMsgID, channelID, "p2p", userID, text, "", "")
+	return a.handleTextMessage(ctx, platformMsgID, channelID, "p2p", userID, text, "", "", false)
 }
 
 func (a *Adapter) GetOrCreateConn(chatID, threadKey string) *FeishuConn {
@@ -536,6 +551,7 @@ type FeishuConn struct {
 	startedAt         time.Time // when the user sent the current message
 	workDir           string    // current workDir identity for session key derivation
 	lastSummarySentMs atomic.Int64
+	voiceTriggered    bool // true when this turn was initiated by a voice message
 }
 
 func NewFeishuConn(adapter *Adapter, chatID, threadKey, workDir string) *FeishuConn {
@@ -663,6 +679,23 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		if streamCtrl != nil && streamCtrl.IsCreated() {
 			closeErr = streamCtrl.Close(ctx)
 		}
+
+		// TTS voice reply: only when this turn was triggered by a voice message.
+		if c.adapter.ttsPipeline != nil && c.voiceTriggered {
+			var fullText string
+			if streamCtrl != nil {
+				fullText = streamCtrl.Content()
+			}
+			if fullText != "" {
+				c.mu.RLock()
+				chatID := c.chatID
+				replyID := c.replyToMsgID
+				c.mu.RUnlock()
+				go c.adapter.ttsPipeline.Process(ctx, fullText, chatID, replyID)
+			}
+			c.voiceTriggered = false
+		}
+
 		return closeErr
 	case events.Error:
 		streamCtrl := c.clearActiveIndicators(ctx)
