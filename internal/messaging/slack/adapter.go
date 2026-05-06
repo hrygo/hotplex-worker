@@ -69,6 +69,7 @@ type Adapter struct {
 	isAssistantCapable atomic.Bool
 	assistantEnabled   *bool
 	transcriber        stt.Transcriber
+	turnSummaryEnabled bool
 
 	rateLimiter   *ChannelRateLimiter
 	slashLimiter  *SlashRateLimiter
@@ -103,6 +104,9 @@ func (a *Adapter) ConfigureWith(config messaging.AdapterConfig) error {
 	}
 	if t, ok := config.Extras["transcriber"].(stt.Transcriber); ok && t != nil {
 		a.transcriber = t
+	}
+	if v, ok := config.Extras["turn_summary_enabled"].(bool); ok {
+		a.turnSummaryEnabled = v
 	}
 
 	return nil
@@ -722,7 +726,7 @@ func (c *SlackConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		c.clearStatus(ctx)
 		c.adapter.Interactions.CancelAll(env.SessionID)
 		c.closeStreamWriter()
-		if env.Event.Type == events.Done {
+		if env.Event.Type == events.Done && c.adapter.turnSummaryEnabled {
 			go c.sendTurnSummary(ctx, env)
 		}
 		if env.Event.Type == events.Error {

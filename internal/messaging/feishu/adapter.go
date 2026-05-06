@@ -41,12 +41,13 @@ func init() {
 type Adapter struct {
 	messaging.BaseAdapter[*FeishuConn]
 
-	appID       string
-	appSecret   string
-	wsClient    *ws.Client
-	larkClient  *lark.Client
-	botOpenID   string
-	transcriber Transcriber
+	appID              string
+	appSecret          string
+	wsClient           *ws.Client
+	larkClient         *lark.Client
+	botOpenID          string
+	transcriber        Transcriber
+	turnSummaryEnabled bool
 
 	mu          sync.RWMutex
 	chatQueue   *ChatQueue
@@ -73,6 +74,9 @@ func (a *Adapter) ConfigureWith(config messaging.AdapterConfig) error {
 	// Platform-specific extras.
 	if t, ok := config.Extras["transcriber"].(Transcriber); ok && t != nil {
 		a.transcriber = t
+	}
+	if v, ok := config.Extras["turn_summary_enabled"].(bool); ok {
+		a.turnSummaryEnabled = v
 	}
 
 	return nil
@@ -646,7 +650,9 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 			"tool_calls", d.ToolCallCount,
 			"input_tok", d.TotalInputTok,
 		)
-		go c.sendTurnSummaryCard(d)
+		if c.adapter.turnSummaryEnabled {
+			go c.sendTurnSummaryCard(d)
+		}
 
 		var closeErr error
 		if streamCtrl != nil && streamCtrl.IsCreated() {
