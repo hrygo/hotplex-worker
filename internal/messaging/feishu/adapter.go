@@ -1282,42 +1282,14 @@ func encodeCard(card map[string]any) string {
 // buildTurnSummaryCard builds a CardKit v2 card with column_set rows matching
 // Slack's TableBlock layout: two columns per row (label | value).
 func buildTurnSummaryCard(d messaging.TurnSummaryData) string {
-	var elements []map[string]any
-
-	if d.TurnCount > 0 {
-		elements = append(elements, tableRow("🔄 Turn", fmt.Sprintf("#%d", d.TurnCount)))
-	}
-	if d.ModelName != "" {
-		elements = append(elements, tableRow("🤖 Model", d.ModelName))
-	}
-	if d.ContextWindow > 0 && d.ContextFill > 0 {
-		pct := int(d.ContextPct + 0.5)
-		if pct > 100 {
-			pct = 100
-		}
-		used := messaging.FormatTokenCount(int(d.ContextFill))
-		max := messaging.FormatTokenCount(int(d.ContextWindow))
-		elements = append(elements, tableRow("🧠 Context", fmt.Sprintf("%d%% · %s/%s", pct, used, max)))
-	}
-	if d.ToolCallCount > 0 {
-		toolStr := messaging.FormatToolNames(d.ToolNames, d.ToolCallCount)
-		elements = append(elements, tableRow("🔧 Tools", toolStr))
-	}
-	if d.WorkDir != "" {
-		elements = append(elements, tableRow("📂 Dir", messaging.TruncatePath(d.WorkDir, 3)))
-	}
-	if d.GitBranch != "" {
-		elements = append(elements, tableRow("🌿 Branch", d.GitBranch))
-	}
-	if durStr := messaging.FormatDurationParts(d); durStr != "" {
-		elements = append(elements, tableRow("⏱ Time", durStr))
-	}
-	if tokStr := messaging.FormatTokenUsage(d); tokStr != "" {
-		elements = append(elements, tableRow("💎 Tokens", tokStr))
-	}
-
-	if len(elements) == 0 {
+	fields := d.Fields()
+	if len(fields) == 0 {
 		return ""
+	}
+
+	elements := make([]map[string]any, len(fields))
+	for i, f := range fields {
+		elements[i] = tableRow(f.Label, f.Value)
 	}
 
 	card := map[string]any{
