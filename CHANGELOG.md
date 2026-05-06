@@ -1,5 +1,42 @@
 # Changelog
 
+## [1.6.0] - 2026-05-06
+
+### Summary
+
+v1.6.0 是一次 minor 版本更新，聚焦于 **Onboard 体验重构** 和 **Gateway 可靠性加固**。Onboard Wizard 经历全面改造：新增步骤注册表支持增量重跑、凭据校验、binary PATH 安装，并修复了安全默认值（localhost 绑定）和测试二进制覆盖 PATH 的严重 bug。Gateway Core 获得多层 panic recovery 和 FD leak 修复。Slack 适配器新增流式轮转消除 Stream expired 降级。Worker 新增 permission_prompt 可配置和 interaction chain 三个 P0 修复。
+
+### Added
+
+- **CLI**: Onboard wizard step registry with three run modes — full config, keep existing, and incremental step selection. (#203)
+- **CLI**: Binary install step — auto-installs hotplex to PATH after onboard (SHA256 verification, cross-platform rc file config).
+- **CLI**: Credential validation for Slack (xoxb-/xapp-) and Feishu (cli_) tokens during onboard input.
+- **CLI**: Agent config template deployment during onboard with 3-level fallback documentation.
+- **Worker**: `permission_prompt` config option under `worker.claude_code` to control `--permission-prompt-tool stdio`. (#201)
+- **Worker**: `permission_auto_approve` list for silent tool approval (default: ExitPlanMode). (#201)
+- **Messaging**: Slack stream rotation — proactive 6min wallclock rotation aligned with Feishu pattern, eliminating Stream expired fallback. (#211)
+
+### Changed
+
+- **Messaging**: Interaction chain hardening — close active stream writer before sending interaction events (Slack/Feishu), strip nested backticks from args preview, fallback candidate matching for lost request IDs. (#201)
+- **Messaging**: Feishu permission text matching expanded vocabulary (added "同意", "ok", "好的", "确认", "取消" etc.).
+- **Messaging**: Turn summary refactored — extracted clampContextPct/tokenPair helpers, renamed Timer field.
+- **Gateway Core**: WritePump, Hub.Run, and bridge w.Wait goroutine all now have panic recovery with graceful cleanup. (#221)
+- **Gateway Core**: handleInput returns error on worker failure instead of silent nil. (#221)
+- **Worker**: Pi-mono adapter removed — was a stub with no real implementation, cleaned from 27 files.
+
+### Fixed
+
+- **CLI**: Onboard generated `gateway.addr: ":8888"` binding to 0.0.0.0 — now correctly uses `localhost:8888`. (#203)
+- **CLI**: Onboard generated `db.busy_timeout: 500ms` — now matches code default of `5s`.
+- **CLI**: Onboard `stepBinaryInstall` copied test binary to PATH during `go test` — added `.test` suffix guard.
+- **CLI**: Onboard hallucination audit — corrected Feishu Open ID lookup instructions, hot reload claims, and STT URL.
+- **Session**: Data race in `ListActive` — missing RLock on SessionInfo field reads. (#220)
+- **Session**: Silent error swallow in `TransitionWithInput` max-turns cleanup and `scanSession` unmarshal. (#220)
+- **Worker**: Panic in `readOutput` goroutine without recovery (claudecode adapter). (#220)
+- **Worker**: FD leak — stdin/stdout/stderr file descriptors not closed after process exit. (#220)
+- **Event Store**: Nil map panic in `Collector.Capture` after `Close()`. (#220)
+
 ## [1.5.4] - 2026-05-06
 
 ### Summary

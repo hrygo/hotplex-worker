@@ -21,7 +21,7 @@ GOOS         := $(shell go env GOOS)
 GOARCH       := $(shell go env GOARCH)
 GIT_SHA      := $(shell git rev-parse --short=8 HEAD 2>/dev/null || echo "unknown")
 BUILD_TIME   := $(shell date '+%Y-%m-%dT%H:%M:%S%z')
-LDFLAGS      := -s -w -X main.version=v1.5.4 -X main.buildTime=$(BUILD_TIME)
+LDFLAGS      := -s -w -X main.version=v1.6.0 -X main.buildTime=$(BUILD_TIME)
 BUILD_OPTS   := -trimpath
 
 GATEWAY_PID   := $(HOME)/.hotplex/.pids/gateway.pid
