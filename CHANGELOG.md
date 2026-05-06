@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.6.1] - 2026-05-06
+
+### Summary
+
+v1.6.1 是一次 patch 版本更新，聚焦于 **Worker 环境变量安全隔离重构**。将脆弱的 allow-by-default 白名单替换为 deny-by-default 黑名单，修复 Windows 平台因系统变量被过滤导致的 Worker 启动失败。新增 `HOTPLEX_WORKER_` 前缀剥离机制，让用户在 .env 中配置的密钥（如 `HOTPLEX_WORKER_GITHUB_TOKEN`）安全注入 Worker 子进程。清理了 735 行死代码，修复了 `allowed_envs` 配置项的语义反转 bug，并全面同步了文档和规格。
+
+### Added
+
+- **Worker**: `HOTPLEX_WORKER_` prefix stripping — secrets in .env prefixed with `HOTPLEX_WORKER_` are automatically stripped and injected into worker subprocess env (e.g., `HOTPLEX_WORKER_GITHUB_TOKEN` → `GITHUB_TOKEN`). Gateway-internal `HOTPLEX_*` vars are never exposed.
+- **Messaging**: `turn_summary_enabled` config toggle to control whether turn summary messages are sent after each completed turn (default: true). (#223)
+
+### Changed
+
+- **Worker**: Environment variable filtering inverted from whitelist to blocklist — all `os.Environ()` vars pass through by default; only explicitly blocked entries are filtered. This fixes Windows compatibility where system vars (SystemRoot, ProgramFiles, etc.) were previously stripped. (307ae85)
+- **Worker**: Blocklist entries ending with `_` are treated as prefix matches (e.g., `HOTPLEX_` blocks all `HOTPLEX_*` vars).
+- **Worker**: `BuildEnv` optimized — single `os.Environ()` snapshot instead of 3 calls; Phase 7 reuses `setOrAppend` helper.
+- **Messaging**: TurnSummary rendering deduplicated — extracted `Fields()` method consolidating field selection across Slack/Feishu paths. (#223)
+- **Security**: Removed dead code — `SafeEnvBuilder`, `BuildWorkerEnv`, `IsSensitive`, `env_builder.go` (~735 lines). `base.BuildEnv` is now the sole env construction path.
+- **Configuration**: Removed broken `allowed_envs` field (its entries were incorrectly merged into blocklist, blocking vars instead of allowing them). Use `env_blocklist` or `HOTPLEX_WORKER_` prefix instead.
+- **Docs**: All documentation synchronized from whitelist to blocklist terminology — Env-Whitelist-Strategy rewritten as Blocklist Strategy, spec docs (SEC-030~036), config reference, and README updated.
+
 ## [1.6.0] - 2026-05-06
 
 ### Summary
