@@ -7,6 +7,8 @@ import (
 	"os"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/hrygo/hotplex/configs"
 )
 
 // ConfigTemplateOptions carries wizard inputs that drive config generation.
@@ -30,7 +32,7 @@ type ConfigTemplateOptions struct {
 
 // DefaultConfigYAML returns the embedded config.yaml as-is (no mutations).
 func DefaultConfigYAML() string {
-	return string(embeddedConfigYAML)
+	return string(configs.EmbeddedConfigYAML)
 }
 
 // BuildConfigYAML returns a config.yaml with wizard mutations applied.
@@ -40,11 +42,11 @@ func DefaultConfigYAML() string {
 // (note: yaml.Marshal drops comments from the original).
 func BuildConfigYAML(opts ConfigTemplateOptions) (string, error) {
 	if !needsMutation(opts) {
-		return string(embeddedConfigYAML), nil
+		return string(configs.EmbeddedConfigYAML), nil
 	}
 
 	var root yaml.Node
-	if err := yaml.Unmarshal(embeddedConfigYAML, &root); err != nil {
+	if err := yaml.Unmarshal(configs.EmbeddedConfigYAML, &root); err != nil {
 		panic("embedded config.yaml parse error: " + err.Error())
 	}
 

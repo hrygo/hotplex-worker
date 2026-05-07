@@ -192,15 +192,8 @@ quality: fmt lint test
 	@echo "  $(GREEN)✓ All checks passed$(RESET)"
 	@echo ""
 
-check: quality build check-embed-assets
+check: quality build
 	@echo "  $(GREEN)✓ CI check passed$(RESET)"
-
-.PHONY: check-embed-assets
-check-embed-assets:
-	@diff configs/config.yaml internal/cli/onboard/assets/config.yaml > /dev/null 2>&1 || \
-		(echo "$(RED)✗ embedded assets drifted from configs/$(RESET)"; \
-		 echo "  Run: cp configs/config.yaml internal/cli/onboard/assets/config.yaml"; exit 1)
-	@echo "  $(GREEN)✓ embed assets in sync$(RESET)"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Dev Environment
