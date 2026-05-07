@@ -297,18 +297,19 @@ func TestBuildSystemPrompt(t *testing.T) {
 		prompt := BuildSystemPrompt(cfg)
 		require.Contains(t, prompt, "<directives>")
 		require.Contains(t, prompt, "<rules>")
-		require.NotContains(t, prompt, "<persona>")
-		require.Contains(t, prompt, "<context>")
 		require.Contains(t, prompt, "<hotplex>")
+		require.NotContains(t, prompt, "<persona>")
+		require.NotContains(t, prompt, "<context>")
 		require.NotContains(t, prompt, "<user>")
 		require.NotContains(t, prompt, "<memory>")
 	})
 
-	t.Run("C-channel includes hotplex metacognition + user content", func(t *testing.T) {
+	t.Run("C-channel only still injects hotplex into B-channel", func(t *testing.T) {
 		cfg := &AgentConfigs{User: "User only", Memory: "Memory only"}
 		prompt := BuildSystemPrompt(cfg)
-		require.Contains(t, prompt, "<context>")
+		require.Contains(t, prompt, "<directives>")
 		require.Contains(t, prompt, "<hotplex>")
+		require.Contains(t, prompt, "<context>")
 		require.Contains(t, prompt, "<user>")
 		require.Contains(t, prompt, "User only")
 		require.Contains(t, prompt, "<memory>")
