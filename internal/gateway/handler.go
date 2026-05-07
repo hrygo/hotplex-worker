@@ -36,6 +36,7 @@ type Handler struct {
 // SkillsLocator discovers skills from the filesystem.
 type SkillsLocator interface {
 	List(ctx context.Context, homeDir, workDir string) ([]skills.Skill, error)
+	Close()
 }
 
 // NewHandler creates a new message handler.

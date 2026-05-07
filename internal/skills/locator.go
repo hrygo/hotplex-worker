@@ -95,6 +95,7 @@ func (l *Locator) sweep() {
 			}
 			l.mu.Unlock()
 		case <-l.stopCh:
+			l.log.Debug("skills: sweep goroutine stopped")
 			return
 		}
 	}
