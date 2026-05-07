@@ -458,3 +458,95 @@ func TestManager_Start_AllowedTools(t *testing.T) {
 		require.True(t, m.IsRunning())
 	})
 }
+
+// --- TestManager_WaitOnce_Dedup -----------------------------------------------
+// Verify that waitOnce sync.Once correctly deduplicates cmd.Wait() across
+// Terminate→Wait and Kill→Wait call sequences.
+
+func TestManager_WaitOnce_TerminateThenWait(t *testing.T) {
+	if testRaceEnabled {
+		t.Skip("skipping: real process tests cause TSAN OOM under -race")
+	}
+
+	t.Parallel()
+
+	t.Run("Wait after Terminate returns cached result", func(t *testing.T) {
+		t.Parallel()
+		m := New(Opts{Logger: slog.Default()})
+		ctx := context.Background()
+
+		_, _, _, err := m.Start(ctx, "sleep", []string{"60"}, nil, "")
+		require.NoError(t, err)
+		t.Cleanup(func() { m.Close() })
+
+		err = m.Terminate(ctx, 5*time.Second)
+		require.NoError(t, err)
+
+		// Wait after Terminate: waitOnce already fired via the <-done path.
+		// Signal-killed processes have exit code -1 and cmd.Wait returns ExitError.
+		code, waitErr := m.Wait()
+		require.Equal(t, -1, code)
+		require.Error(t, waitErr)
+		require.False(t, m.IsRunning())
+	})
+
+	t.Run("Wait after Terminate ctx cancel triggers Kill", func(t *testing.T) {
+		t.Parallel()
+		m := New(Opts{Logger: slog.Default()})
+		ctx := context.Background()
+
+		_, _, _, err := m.Start(ctx, "sleep", []string{"60"}, nil, "")
+		require.NoError(t, err)
+		t.Cleanup(func() { m.Close() })
+
+		cancelCtx, cancel := context.WithCancel(ctx)
+		cancel() // immediately cancel -> ctx.Done -> Kill()
+
+		err = m.Terminate(cancelCtx, 5*time.Second)
+		require.NoError(t, err) // Kill() returns nil
+
+		_, waitErr := m.Wait()
+		require.Error(t, waitErr) // exec.ExitError: signal
+		require.False(t, m.IsRunning())
+	})
+}
+
+func TestManager_WaitOnce_KillThenWait(t *testing.T) {
+	if testRaceEnabled {
+		t.Skip("skipping: real process tests cause TSAN OOM under -race")
+	}
+
+	t.Parallel()
+
+	t.Run("Wait after Kill returns cached result", func(t *testing.T) {
+		t.Parallel()
+		m := New(Opts{Logger: slog.Default()})
+		ctx := context.Background()
+
+		_, _, _, err := m.Start(ctx, "sleep", []string{"60"}, nil, "")
+		require.NoError(t, err)
+		t.Cleanup(func() { m.Close() })
+
+		err = m.Kill()
+		require.NoError(t, err)
+
+		_, waitErr := m.Wait()
+		require.Error(t, waitErr) // exec.ExitError: signal: killed
+		require.False(t, m.IsRunning())
+	})
+
+	t.Run("double Wait returns same result", func(t *testing.T) {
+		t.Parallel()
+		m := New(Opts{Logger: slog.Default()})
+		ctx := context.Background()
+
+		_, _, _, err := m.Start(ctx, "echo", []string{"done"}, nil, "")
+		require.NoError(t, err)
+		t.Cleanup(func() { m.Close() })
+
+		code1, err1 := m.Wait()
+		code2, err2 := m.Wait()
+		require.Equal(t, code1, code2)
+		require.Equal(t, err1, err2)
+	})
+}
