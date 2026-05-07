@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -163,6 +164,47 @@ func TestBridge_Handle_NilAdapter_EmptyBotID(t *testing.T) {
 	}
 	_ = b.Handle(context.Background(), env, nil)
 	require.Equal(t, "", capturedBotID, "nil adapter must pass empty botID")
+}
+
+// IES-1: Handle() assigns monotonically increasing seq via hub.NextSeq.
+func TestBridge_Handle_AssignsSeq(t *testing.T) {
+	t.Parallel()
+
+	b := newTestBridge()
+	b.handler = &mockHandler{}
+
+	var seqCalls int64
+	b.hub = &seqTrackingHub{nextSeqFn: func(sessionID string) int64 {
+		return atomic.AddInt64(&seqCalls, 1)
+	}}
+
+	env := &events.Envelope{
+		SessionID: "sid1",
+		OwnerID:   "owner1",
+		Event: events.Event{
+			Type: events.Input,
+			Data: map[string]any{"content": "hello"},
+		},
+	}
+	require.Equal(t, int64(0), env.Seq, "seq should be 0 before Handle")
+
+	err := b.Handle(context.Background(), env, nil)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), env.Seq, "Handle must assign seq via hub.NextSeq")
+	require.Equal(t, int64(1), atomic.LoadInt64(&seqCalls), "NextSeq should be called exactly once")
+}
+
+// seqTrackingHub implements HubInterface with an injectable NextSeq function.
+type seqTrackingHub struct {
+	nextSeqFn func(sessionID string) int64
+}
+
+func (h *seqTrackingHub) JoinPlatformSession(_ string, _ PlatformConn) {}
+func (h *seqTrackingHub) NextSeq(sessionID string) int64 {
+	if h.nextSeqFn != nil {
+		return h.nextSeqFn(sessionID)
+	}
+	return 1
 }
 
 // C2: Handle() returns error when StartPlatformSession fails.
