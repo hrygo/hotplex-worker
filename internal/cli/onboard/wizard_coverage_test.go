@@ -279,30 +279,38 @@ func TestReadExistingEnvCredentials_NoFile(t *testing.T) {
 	require.Empty(t, result)
 }
 
-// ─── extractPlatformBlock ────────────────────────────────────────────────────
+// ─── BuildConfigYAML kept platform (AST block replacement) ─────────────────
 
-func TestExtractPlatformBlock(t *testing.T) {
+func TestBuildConfigYAML_KeptPlatform(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.yaml")
-	require.NoError(t, os.WriteFile(cfgPath, []byte("messaging:\n  slack:\n    enabled: true\n    token: xoxb\n  feishu:\n    enabled: false\n"), 0o644))
+	require.NoError(t, os.WriteFile(cfgPath, []byte("messaging:\n  slack:\n    enabled: true\n    dm_policy: open\n    custom_key: preserved\n  feishu:\n    enabled: false\n"), 0o644))
 
-	block := extractPlatformBlock(cfgPath, "slack")
-	require.Contains(t, block, "enabled: true")
-	require.Contains(t, block, "token: xoxb")
-	require.NotContains(t, block, "feishu")
+	result := BuildConfigYAML(ConfigTemplateOptions{
+		WorkerType:         "claude_code",
+		KeptPlatforms:      map[string]bool{"slack": true},
+		ExistingConfigPath: cfgPath,
+	})
+	require.Contains(t, result, "dm_policy: open")
+	require.Contains(t, result, "custom_key: preserved")
 }
 
-func TestExtractPlatformBlock_NotFound(t *testing.T) {
+func TestBuildConfigYAML_KeptPlatformNotFound(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.yaml")
 	require.NoError(t, os.WriteFile(cfgPath, []byte("messaging:\n  slack:\n    enabled: true\n"), 0o644))
 
-	block := extractPlatformBlock(cfgPath, "discord")
-	require.Empty(t, block)
+	// Keeping a non-existent platform — should not panic.
+	result := BuildConfigYAML(ConfigTemplateOptions{
+		WorkerType:         "claude_code",
+		KeptPlatforms:      map[string]bool{"discord": true},
+		ExistingConfigPath: cfgPath,
+	})
+	require.Contains(t, result, "messaging:")
 }
 
 // ─── stepAgentConfig ─────────────────────────────────────────────────────────
