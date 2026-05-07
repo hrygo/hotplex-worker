@@ -135,7 +135,10 @@ worker:
     patterns: []
 
   claude_code:
-    command: "claude"
+    # Command to start Claude Code worker. Default: "claude"
+    # To use a custom path or binary name (e.g. "ccr"), change this value
+    # or set HOTPLEX_WORKER_CLAUDE_CODE_COMMAND environment variable.
+    command: "${HOTPLEX_WORKER_CLAUDE_CODE_COMMAND:-claude}"
     # Enable --permission-prompt-tool stdio for forwarding permission requests
     # to Slack/Feishu interaction UI. When false (default), Claude Code auto-denies
     # permission requests in headless mode (no user interaction).
@@ -146,7 +149,10 @@ worker:
       - "ExitPlanMode"
 
   opencode_server:
-    command: "opencode"
+    # Command to start OpenCode Server. Default: "opencode"
+    # To use a custom path or binary name, change this value
+    # or set HOTPLEX_WORKER_OPENCODE_SERVER_COMMAND environment variable.
+    command: "${HOTPLEX_WORKER_OPENCODE_SERVER_COMMAND:-opencode}"
     idle_drain_period: 30m
     ready_timeout: 10s
     ready_poll_interval: 200ms

@@ -741,8 +741,26 @@ func loadRecursive(filePath string, opts LoadOptions, visited []string) (*Config
 	return cfg, nil
 }
 
-// normalizePaths expands ~ and resolves relative paths for all config path fields.
+// normalizePaths expands ~ and resolves relative paths for all config path fields,
+// and expands ${VAR} references in command templates.
 func (c *Config) normalizePaths() {
+	// 1. Expand environment variables in command templates and addresses.
+	for _, ef := range []*string{
+		&c.Gateway.Addr,
+		&c.Admin.Addr,
+		&c.Worker.ClaudeCode.Command,
+		&c.Worker.OpenCodeServer.Command,
+		&c.Messaging.Slack.LocalCmd,
+		&c.Messaging.Feishu.LocalCmd,
+		&c.Messaging.Feishu.KokoroModelPath,
+		&c.Messaging.Slack.KokoroModelPath,
+	} {
+		if *ef != "" {
+			*ef = ExpandEnv(*ef)
+		}
+	}
+
+	// 2. Expand ~ and normalize paths.
 	for _, pf := range []*string{
 		&c.DB.Path,
 		&c.DB.EventsPath,
