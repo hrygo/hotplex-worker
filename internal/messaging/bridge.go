@@ -94,6 +94,11 @@ func (b *Bridge) Handle(ctx context.Context, env *events.Envelope, pc PlatformCo
 		b.hub.JoinPlatformSession(env.SessionID, pc)
 	}
 
+	// Assign monotonically increasing seq (messaging path lacks conn.go's NextSeq call).
+	if b.hub != nil {
+		env.Seq = b.hub.NextSeq(env.SessionID)
+	}
+
 	return b.handler.Handle(ctx, env)
 }
 
