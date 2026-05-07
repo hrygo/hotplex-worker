@@ -3,46 +3,40 @@
   "evals": [
     {
       "id": 1,
-      "name": "fresh-install-setup",
+      "name": "fresh-install-doctor-driven",
       "prompt": "I just cloned HotPlex and need to set up the complete environment. Check all dependencies and guide me through installation.",
-      "expected_output": "Skill should execute comprehensive environment detection: OS/architecture check, Go 1.26+ verification, Python 3.10+ check, port availability (8888/9999), systemd/launchd availability, write permissions, API key presence (.env), STT dependencies (funasr-onnx, modelscope, SenseVoice model), and generate config files. Should provide clear fix instructions for any missing items.",
+      "expected_output": "Skill should run `hotplex doctor --json` first. If hotplex is not installed, guide through binary install + `hotplex onboard`. Should parse the doctor JSON report and address each failed/warned item by category (environment, config, dependencies, security, runtime, messaging, stt, tts, agent_config). Should NOT manually check each dependency one by one — rely on doctor output.",
       "files": [],
       "assertions": [
         {
-          "name": "os-detected",
-          "text": "Operating system and architecture detected",
+          "name": "doctor-first",
+          "text": "Runs hotplex doctor as first diagnostic step",
           "check_type": "output_contains",
-          "pattern": "OS|architecture|Linux|macOS|Windows|amd64|arm64"
+          "pattern": "hotplex doctor|doctor --json|diagnostic"
         },
         {
-          "name": "go-version-checked",
-          "text": "Go version verified as 1.26+",
+          "name": "json-parsing",
+          "text": "Parses JSON report structure (summary, diagnostics)",
           "check_type": "output_contains",
-          "pattern": "Go|golang|1\\.26|version"
+          "pattern": "summary|diagnostics|pass|warn|fail|category"
         },
         {
-          "name": "ports-checked",
-          "text": "Gateway (8888) and admin (9999) ports checked",
+          "name": "category-handling",
+          "text": "Handles diagnostics by category (environment, config, dependencies, etc.)",
           "check_type": "output_contains",
-          "pattern": "port|8888|9999|available|occupied"
+          "pattern": "environment|config|dependencies|security|runtime|messaging"
         },
         {
-          "name": "dependencies-verified",
-          "text": "Core dependencies checked (Go, Python, systemd/launchd)",
+          "name": "onboard-mentioned",
+          "text": "Mentions hotplex onboard as installation option",
           "check_type": "output_contains",
-          "pattern": "Python|systemd|launchd|service"
+          "pattern": "onboard|wizard"
         },
         {
-          "name": "stt-checked",
-          "text": "STT dependencies verified (funasr-onnx, modelscope, model)",
+          "name": "fix-guidance",
+          "text": "Provides targeted fix for each failed item",
           "check_type": "output_contains",
-          "pattern": "STT|funasr|modelscope|SenseVoice|model"
-        },
-        {
-          "name": "fix-provided",
-          "text": "Clear fix instructions provided for missing items",
-          "check_type": "output_contains",
-          "pattern": "install|setup|fix|run:|brew|apt|pip"
+          "pattern": "install|fix|chmod|brew|apt|pip|config"
         }
       ]
     },
@@ -50,77 +44,131 @@
       "id": 2,
       "name": "stt-troubleshooting",
       "prompt": "STT isn't working. The error says 'stt_once.py not found'. Help me fix the STT setup.",
-      "expected_output": "Skill should detect STT issue, check Python packages (funasr-onnx, modelscope), verify STT model download status (~897MB in ~/.cache/modelscope), check STT configuration in config.yaml, and provide targeted fix: install missing packages, download model, configure STT provider (feishu_cloud vs local), and test STT functionality.",
+      "expected_output": "Skill should identify this as an STT issue, check Python packages (funasr-onnx, modelscope), verify STT model download status, check STT configuration, and provide targeted fix. Should reference references/stt.md for detailed STT configuration.",
       "files": [],
       "assertions": [
         {
-          "name": "stt-issue-detected",
-          "text": "STT problem identified",
+          "name": "stt-issue-identified",
+          "text": "Identifies STT problem from context",
           "check_type": "output_contains",
-          "pattern": "STT|stt_once|not found|error"
+          "pattern": "STT|stt_once|not found|语音"
         },
         {
           "name": "packages-checked",
-          "text": "Python packages verified (funasr-onnx, modelscope)",
+          "text": "Checks Python packages (funasr-onnx, modelscope)",
           "check_type": "output_contains",
           "pattern": "funasr-onnx|modelscope|pip|package"
         },
         {
-          "name": "model-checked",
-          "text": "STT model presence verified",
+          "name": "model-verified",
+          "text": "Verifies STT model presence",
           "check_type": "output_contains",
-          "pattern": "SenseVoice|model|~897MB|\\.cache|modelscope"
+          "pattern": "SenseVoice|model|modelscope|cache"
         },
         {
-          "name": "config-verified",
-          "text": "STT configuration checked",
+          "name": "config-checked",
+          "text": "Checks STT configuration",
           "check_type": "output_contains",
-          "pattern": "config\\.yaml|stt_provider|feishu_cloud|local"
+          "pattern": "stt_provider|config|feishu_cloud|local"
         },
         {
           "name": "fix-instructions",
-          "text": "Targeted fix instructions provided",
+          "text": "Provides targeted fix instructions",
           "check_type": "output_contains",
-          "pattern": "install|pip install|python3|modelscope|download"
+          "pattern": "install|pip install|python3|download|stt"
         }
       ]
     },
     {
       "id": 3,
-      "name": "minimal-verification",
-      "prompt": "Quick check if HotPlex environment is ready to run.",
-      "expected_output": "Skill should run fast-path checks (QuickChecks): Go version, port availability, .env file presence, and binary existence. Should pass all checks with green checkmarks or report specific blockers.",
+      "name": "tts-ffmpeg-missing",
+      "prompt": "HotPlex doctor 报告 tts.runtime 失败，说 ffmpeg 未找到。怎么修复？",
+      "expected_output": "Skill should identify this as a TTS/ffmpeg issue, provide platform-specific ffmpeg installation commands, explain why ffmpeg is needed (MP3 to Opus conversion for voice messages), and reference references/tts.md for detailed TTS configuration.",
       "files": [],
       "assertions": [
         {
-          "name": "quick-checks",
-          "text": "Fast-path verification executed",
+          "name": "tts-issue-identified",
+          "text": "Identifies TTS/ffmpeg issue",
           "check_type": "output_contains",
-          "pattern": "✓|✗|check|verif"
+          "pattern": "TTS|tts|ffmpeg|语音"
         },
         {
-          "name": "go-verified",
-          "text": "Go version checked",
+          "name": "ffmpeg-install",
+          "text": "Provides ffmpeg installation commands for relevant platform",
           "check_type": "output_contains",
-          "pattern": "Go|golang"
+          "pattern": "brew install ffmpeg|apt install ffmpeg|choco install ffmpeg"
         },
         {
-          "name": "ports-verified",
-          "text": "Ports availability checked",
+          "name": "why-ffmpeg",
+          "text": "Explains why ffmpeg is needed",
           "check_type": "output_contains",
-          "pattern": "8888|9999|port"
+          "pattern": "Opus|MP3|转码|转换|audio|voice"
         },
         {
-          "name": "env-checked",
-          "text": ".env file presence verified",
+          "name": "tts-reference",
+          "text": "References TTS documentation for details",
           "check_type": "output_contains",
-          "pattern": "\\.env|environment"
+          "pattern": "tts\\.md|TTS 配置|TTS 详细"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "name": "chinese-onboard",
+      "prompt": "我第一次使用 HotPlex，需要帮忙安装和配置飞书对接。",
+      "expected_output": "Skill should guide user through: 1) Install HotPlex binary, 2) Run `hotplex onboard` for interactive setup, 3) Focus on Feishu-specific configuration (app_id, app_secret), 4) Validate credentials, 5) Verify with doctor.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "install-guidance",
+          "text": "Provides installation guidance",
+          "check_type": "output_contains",
+          "pattern": "install|安装|onboard|curl|brew"
         },
         {
-          "name": "result-reported",
-          "text": "Clear pass/fail result reported",
+          "name": "feishu-config",
+          "text": "Covers Feishu-specific configuration",
           "check_type": "output_contains",
-          "pattern": "ready|blocker|issue|pass|fail"
+          "pattern": "飞书|feishu|app_id|app_secret|cli_"
+        },
+        {
+          "name": "credential-validation",
+          "text": "Mentions credential validation",
+          "check_type": "output_contains",
+          "pattern": "验证|validate|curl|token"
+        },
+        {
+          "name": "verify-step",
+          "text": "Includes verification step",
+          "check_type": "output_contains",
+          "pattern": "doctor|验证|verify|health"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "name": "quick-verification",
+      "prompt": "Quick check if HotPlex environment is ready to run.",
+      "expected_output": "Skill should run `hotplex doctor --json` as the primary diagnostic. Parse the summary field. If all pass, confirm ready. If failures, list them by category with quick fix hints.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "doctor-run",
+          "text": "Runs hotplex doctor for quick check",
+          "check_type": "output_contains",
+          "pattern": "doctor|diagnostic|check"
+        },
+        {
+          "name": "result-interpreted",
+          "text": "Interprets and reports the result clearly",
+          "check_type": "output_contains",
+          "pattern": "ready|blocker|pass|fail|issue|就绪"
+        },
+        {
+          "name": "fix-hints",
+          "text": "Provides fix hints for any issues found",
+          "check_type": "output_contains",
+          "pattern": "fix|install|resolve|修复"
         }
       ]
     }

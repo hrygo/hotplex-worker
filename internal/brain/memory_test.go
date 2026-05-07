@@ -34,6 +34,10 @@ func (m *mockBrainForMemory) Chat(ctx context.Context, prompt string) (string, e
 	return "mock summary", nil
 }
 
+func (m *mockBrainForMemory) ChatWithOptions(ctx context.Context, prompt string, opts ChatOptions) (string, error) {
+	return m.Chat(ctx, prompt)
+}
+
 func (m *mockBrainForMemory) Analyze(ctx context.Context, prompt string, target any) error {
 	m.analyzeCnt++
 	if m.analyzeFn != nil {

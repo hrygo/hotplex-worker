@@ -757,7 +757,11 @@ func stepConfigGen(opts WizardOptions, tplOpts ConfigTemplateOptions) (StepResul
 		return StepResult{Name: "config_gen", Status: "fail", Detail: "create config dir: " + err.Error()}, false
 	}
 
-	if err := os.WriteFile(opts.ConfigPath, []byte(BuildConfigYAML(tplOpts)), 0o600); err != nil {
+	cfg, err := BuildConfigYAML(tplOpts)
+	if err != nil {
+		return StepResult{Name: "config_gen", Status: "fail", Detail: "build config: " + err.Error()}, false
+	}
+	if err := os.WriteFile(opts.ConfigPath, []byte(cfg), 0o600); err != nil {
 		return StepResult{Name: "config_gen", Status: "fail", Detail: "write config: " + err.Error()}, false
 	}
 	return StepResult{Name: "config_gen", Status: "pass", Detail: opts.ConfigPath}, true

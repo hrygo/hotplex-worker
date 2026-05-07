@@ -19,12 +19,20 @@ var (
 	_ ObservableBrain = (*enhancedBrainWrapper)(nil)
 )
 
+// ChatOptions controls LLM generation parameters.
+// Re-exported from llm package for convenience.
+type ChatOptions = llm.ChatOptions
+
 // Brain represents the core "System 1" intelligence for HotPlex.
 // It provides fast, structured, and low-cost reasoning capabilities.
 type Brain interface {
 	// Chat generates a plain text response for a given prompt.
 	// Best used for simple questions, greetings, or summarization.
 	Chat(ctx context.Context, prompt string) (string, error)
+
+	// ChatWithOptions generates a response with fine-grained control over LLM parameters.
+	// Zero-value fields use provider defaults (MaxTokens=0 → provider default, Temperature=nil → provider default).
+	ChatWithOptions(ctx context.Context, prompt string, opts ChatOptions) (string, error)
 
 	// Analyze performs structured analysis and returns the result in the target struct.
 	// The target must be a pointer to a struct that can be unmarshaled from JSON.

@@ -42,6 +42,21 @@ func (r *RetryClient) Chat(ctx context.Context, prompt string) (string, error) {
 	return result, err
 }
 
+func (r *RetryClient) ChatWithOptions(ctx context.Context, prompt string, opts ChatOptions) (string, error) {
+	if r.maxRetries == 0 {
+		return r.client.ChatWithOptions(ctx, prompt, opts)
+	}
+
+	var result string
+	err := r.executeWithBackoff(ctx, func() error {
+		var err error
+		result, err = r.client.ChatWithOptions(ctx, prompt, opts)
+		return err
+	})
+
+	return result, err
+}
+
 // Analyze implements the Analyze method with retry logic.
 func (r *RetryClient) Analyze(ctx context.Context, prompt string, target any) error {
 	if r.maxRetries == 0 {
