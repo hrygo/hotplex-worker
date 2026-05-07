@@ -340,7 +340,8 @@ git push fork --delete feat/<feature-name>
 - **背压**: 丢弃 `message.delta`，保留 `state`/`done`/`error`
 - **Seq 分配**: Per-session 原子单调计数器
 - **进程终止**: 3 层（SIGTERM → 等待 5s → SIGKILL）
-- **Agent 配置**: **B 通道** (`<hotplex>` + `<directives>`) + **C 通道** (`<context>`)
+- **Agent 配置**: **B 通道** (`<directives>`): `<hotplex>`(META-COGNITION.md, go:embed, 始终存在且排首位) + `<persona>`(SOUL) + `<rules>`(AGENTS) + `<skills>`(SKILLS) → **C 通道** (`<context>`): `<user>`(USER) + `<memory>`(MEMORY)
+- **元认知层**: `internal/agentconfig/META-COGNITION.md` 定义 Worker 的身份边界（不管理 Transport/状态/协议）、B/C 通道冲突隔离法则（directives 无条件覆盖 context）、配置替换的"命中即终止"机制、配置修改 SOP（禁止改全局来影响 Bot）
 - **XML 安全**: 强制开启 **XML Sanitizer**，对保留标签进行 HTML 转义预防注入
 - **Windows 注入**: 强制使用 **临时文件注入**（`--append-system-prompt-file`），严禁使用内联参数防止 cmd.exe 截断
 
@@ -451,9 +452,10 @@ hotplex slack react add --channel <id> --ts <ts> --emoji white_check_mark
 ### 配置文件
 
 - Agent 配置目录：`~/.hotplex/agent-configs/`
-- B 通道：SOUL.md、AGENTS.md、SKILLS.md
-- C 通道：USER.md、MEMORY.md
-- 三级 fallback：全局 → 平台（slack/）→ Bot（slack/U12345/），每文件独立解析
+- B 通道（`<directives>`）：`META-COGNITION.md`(go:embed, 首位) + SOUL.md + AGENTS.md + SKILLS.md
+- C 通道（`<context>`）：USER.md + MEMORY.md
+- 三级 fallback：全局 → 平台（slack/）→ Bot（slack/U12345/），每文件独立解析，命中即终止
+- 配置热更新：仅在 session 初始化或 `/reset` 时加载，运行中修改不立即生效
 
 ### 最大文件
 
