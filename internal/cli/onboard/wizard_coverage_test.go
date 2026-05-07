@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
 
 // ─── ExistingConfig methods ──────────────────────────────────────────────────
@@ -288,11 +289,12 @@ func TestBuildConfigYAML_KeptPlatform(t *testing.T) {
 	cfgPath := filepath.Join(dir, "config.yaml")
 	require.NoError(t, os.WriteFile(cfgPath, []byte("messaging:\n  slack:\n    enabled: true\n    dm_policy: open\n    custom_key: preserved\n  feishu:\n    enabled: false\n"), 0o644))
 
-	result := BuildConfigYAML(ConfigTemplateOptions{
+	result, err := BuildConfigYAML(ConfigTemplateOptions{
 		WorkerType:         "claude_code",
 		KeptPlatforms:      map[string]bool{"slack": true},
 		ExistingConfigPath: cfgPath,
 	})
+	require.NoError(t, err)
 	require.Contains(t, result, "dm_policy: open")
 	require.Contains(t, result, "custom_key: preserved")
 }
@@ -305,13 +307,139 @@ func TestBuildConfigYAML_KeptPlatformNotFound(t *testing.T) {
 	require.NoError(t, os.WriteFile(cfgPath, []byte("messaging:\n  slack:\n    enabled: true\n"), 0o644))
 
 	// Keeping a non-existent platform — should not panic.
-	result := BuildConfigYAML(ConfigTemplateOptions{
+	result, err := BuildConfigYAML(ConfigTemplateOptions{
 		WorkerType:         "claude_code",
 		KeptPlatforms:      map[string]bool{"discord": true},
 		ExistingConfigPath: cfgPath,
 	})
+	require.NoError(t, err)
 	require.Contains(t, result, "messaging:")
 }
+
+// ─── needsMutation (all branches) ─────────────────────────────────────────
+
+func TestNeedsMutation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		opts ConfigTemplateOptions
+		want bool
+	}{
+		{"all defaults", ConfigTemplateOptions{}, false},
+		{"slack enabled", ConfigTemplateOptions{SlackEnabled: true}, true},
+		{"feishu enabled", ConfigTemplateOptions{FeishuEnabled: true}, true},
+		{"kept platforms", ConfigTemplateOptions{KeptPlatforms: map[string]bool{"slack": true}}, true},
+		{"slack allow_from", ConfigTemplateOptions{SlackAllowFrom: []string{"U123"}}, true},
+		{"feishu allow_from", ConfigTemplateOptions{FeishuAllowFrom: []string{"ou_abc"}}, true},
+		{"slack dm_policy", ConfigTemplateOptions{SlackDMPolicy: "open"}, true},
+		{"slack group_policy", ConfigTemplateOptions{SlackGroupPolicy: "open"}, true},
+		{"feishu dm_policy", ConfigTemplateOptions{FeishuDMPolicy: "open"}, true},
+		{"feishu group_policy", ConfigTemplateOptions{FeishuGroupPolicy: "open"}, true},
+		{"slack require_mention", ConfigTemplateOptions{SlackRequireMention: boolPtr(false)}, true},
+		{"feishu require_mention", ConfigTemplateOptions{FeishuRequireMention: boolPtr(true)}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tt.want, needsMutation(tt.opts))
+		})
+	}
+}
+
+// ─── BuildConfigYAML Feishu-specific mutation ───────────────────────────────
+
+func TestBuildConfigYAML_FeishuEnabled(t *testing.T) {
+	t.Parallel()
+
+	got, err := BuildConfigYAML(ConfigTemplateOptions{
+		FeishuEnabled:     true,
+		FeishuDMPolicy:    "open",
+		FeishuGroupPolicy: "open",
+		WorkerType:        "claude_code",
+	})
+	require.NoError(t, err)
+	require.Contains(t, got, "feishu:")
+	require.Contains(t, got, `dm_policy: "open"`)
+	require.Contains(t, got, `group_policy: "open"`)
+}
+
+// ─── BuildConfigYAML error propagation ──────────────────────────────────────
+
+func TestBuildConfigYAML_InvalidExistingConfig(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yaml")
+	require.NoError(t, os.WriteFile(cfgPath, []byte("not: [valid: yaml: {{{"), 0o644))
+
+	_, err := BuildConfigYAML(ConfigTemplateOptions{
+		KeptPlatforms:      map[string]bool{"slack": true},
+		ExistingConfigPath: cfgPath,
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "parse existing config")
+}
+
+func TestBuildConfigYAML_MissingExistingConfig(t *testing.T) {
+	t.Parallel()
+
+	_, err := BuildConfigYAML(ConfigTemplateOptions{
+		KeptPlatforms:      map[string]bool{"slack": true},
+		ExistingConfigPath: "/nonexistent/config.yaml",
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "read existing config")
+}
+
+// ─── yamlutil helpers ───────────────────────────────────────────────────────
+
+func TestLookupKey_NilNode(t *testing.T) {
+	t.Parallel()
+	require.Nil(t, lookupKey(nil, "any"))
+}
+
+func TestLookupKey_NonMappingNode(t *testing.T) {
+	t.Parallel()
+	require.Nil(t, lookupKey(&yaml.Node{Kind: yaml.ScalarNode}, "any"))
+}
+
+func TestSetScalar_AddsKey(t *testing.T) {
+	t.Parallel()
+	m := &yaml.Node{Kind: yaml.MappingNode}
+	setScalar(m, "new_key", "value")
+	require.Equal(t, "value", lookupKey(m, "new_key").Value)
+}
+
+func TestReplaceBlock_AppendsMissingKey(t *testing.T) {
+	t.Parallel()
+
+	dst := &yaml.Node{Kind: yaml.MappingNode, Content: []*yaml.Node{
+		{Kind: yaml.ScalarNode, Value: "messaging"},
+		{Kind: yaml.MappingNode, Content: []*yaml.Node{
+			{Kind: yaml.ScalarNode, Value: "feishu"},
+			{Kind: yaml.MappingNode},
+		}},
+	}}
+	src := &yaml.Node{Kind: yaml.MappingNode, Content: []*yaml.Node{
+		{Kind: yaml.ScalarNode, Value: "messaging"},
+		{Kind: yaml.MappingNode, Content: []*yaml.Node{
+			{Kind: yaml.ScalarNode, Value: "slack"},
+			{Kind: yaml.MappingNode, Content: []*yaml.Node{
+				{Kind: yaml.ScalarNode, Value: "enabled"},
+				{Kind: yaml.ScalarNode, Value: "true"},
+			}},
+		}},
+	}}
+
+	replaceBlock(dst, src, "messaging", "slack")
+
+	msg := lookupKey(dst, "messaging")
+	require.NotNil(t, lookupKey(msg, "slack"))
+	require.Equal(t, "true", lookupKey(lookupKey(msg, "slack"), "enabled").Value)
+}
+
+func boolPtr(v bool) *bool { return &v }
 
 // ─── stepAgentConfig ─────────────────────────────────────────────────────────
 

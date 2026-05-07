@@ -8,7 +8,7 @@ import (
 
 // lookupKey returns the value node for key in a MappingNode, or nil.
 func lookupKey(node *yaml.Node, key string) *yaml.Node {
-	if node.Kind != yaml.MappingNode {
+	if node == nil || node.Kind != yaml.MappingNode {
 		return nil
 	}
 	for i := 0; i+1 < len(node.Content); i += 2 {
@@ -38,6 +38,9 @@ func lookupPath(root *yaml.Node, path ...string) *yaml.Node {
 // setScalar sets a scalar value for key in a MappingNode.
 // Adds the key if it does not exist.
 func setScalar(mapping *yaml.Node, key, value string) {
+	if mapping == nil || mapping.Kind != yaml.MappingNode {
+		return
+	}
 	if v := lookupKey(mapping, key); v != nil {
 		v.Value = value
 		return
@@ -50,6 +53,9 @@ func setScalar(mapping *yaml.Node, key, value string) {
 
 // setBool sets a boolean value for key in a MappingNode.
 func setBool(mapping *yaml.Node, key string, value bool) {
+	if mapping == nil || mapping.Kind != yaml.MappingNode {
+		return
+	}
 	if v := lookupKey(mapping, key); v != nil {
 		v.Value = fmt.Sprintf("%t", value)
 		v.Tag = "!!bool"
@@ -64,6 +70,9 @@ func setBool(mapping *yaml.Node, key string, value bool) {
 // setStringList replaces (or adds) a sequence of strings for key.
 // If values is empty the key is removed entirely.
 func setStringList(mapping *yaml.Node, key string, values []string) {
+	if mapping == nil || mapping.Kind != yaml.MappingNode {
+		return
+	}
 	// Remove existing key.
 	for i := 0; i+1 < len(mapping.Content); i += 2 {
 		if mapping.Content[i].Value == key {
@@ -88,6 +97,7 @@ func setStringList(mapping *yaml.Node, key string, values []string) {
 
 // replaceBlock deep-copies a mapping subtree from src into dst at the given path.
 // Path elements are nested mapping keys, e.g. ("messaging", "slack").
+// If the key does not exist in dst, it is appended.
 func replaceBlock(dst, src *yaml.Node, path ...string) {
 	srcBlock := lookupPath(src, path...)
 	if srcBlock == nil {
@@ -105,6 +115,11 @@ func replaceBlock(dst, src *yaml.Node, path ...string) {
 			return
 		}
 	}
+	// Key not found in destination — append it.
+	parent.Content = append(parent.Content,
+		&yaml.Node{Kind: yaml.ScalarNode, Value: key},
+		copied,
+	)
 }
 
 func deepCopyNode(n *yaml.Node) *yaml.Node {

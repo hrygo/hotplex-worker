@@ -41,14 +41,14 @@ func main() {
 	}
 
 	// Test dynamic behavior
-	yaml2 := onboard.BuildConfigYAML(onboard.ConfigTemplateOptions{SlackEnabled: true})
+	yaml2, _ := onboard.BuildConfigYAML(onboard.ConfigTemplateOptions{SlackEnabled: true})
 	if !strings.Contains(yaml2, "    enabled: true") || !strings.Contains(yaml2, "slack:") {
 		fmt.Println("FAIL: SlackEnabled=true not reflected")
 	}
 
 	// Test feishu enabled
 	trueVal := true
-	yaml3 := onboard.BuildConfigYAML(onboard.ConfigTemplateOptions{FeishuEnabled: true, FeishuRequireMention: &trueVal, FeishuDMPolicy: "open"})
+	yaml3, _ := onboard.BuildConfigYAML(onboard.ConfigTemplateOptions{FeishuEnabled: true, FeishuRequireMention: &trueVal, FeishuDMPolicy: "open"})
 	if !strings.Contains(yaml3, "feishu:\n    enabled: true") {
 		fmt.Println("FAIL: FeishuEnabled=true not reflected")
 	}

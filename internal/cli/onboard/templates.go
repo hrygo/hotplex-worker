@@ -3,6 +3,7 @@ package onboard
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"fmt"
 	"os"
 
 	"gopkg.in/yaml.v3"
@@ -37,9 +38,9 @@ func DefaultConfigYAML() string {
 // embedded file is returned verbatim to preserve comments and formatting.
 // Otherwise, the file is parsed into a YAML AST, mutated, and re-serialised
 // (note: yaml.Marshal drops comments from the original).
-func BuildConfigYAML(opts ConfigTemplateOptions) string {
+func BuildConfigYAML(opts ConfigTemplateOptions) (string, error) {
 	if !needsMutation(opts) {
-		return string(embeddedConfigYAML)
+		return string(embeddedConfigYAML), nil
 	}
 
 	var root yaml.Node
@@ -50,13 +51,15 @@ func BuildConfigYAML(opts ConfigTemplateOptions) string {
 	// Preserve existing platform blocks when the user chose to keep them.
 	if opts.ExistingConfigPath != "" && len(opts.KeptPlatforms) > 0 {
 		data, err := os.ReadFile(opts.ExistingConfigPath)
-		if err == nil {
-			var existing yaml.Node
-			if yaml.Unmarshal(data, &existing) == nil {
-				for platform := range opts.KeptPlatforms {
-					replaceBlock(&root, &existing, "messaging", platform)
-				}
-			}
+		if err != nil {
+			return "", fmt.Errorf("read existing config %q for block preservation: %w", opts.ExistingConfigPath, err)
+		}
+		var existing yaml.Node
+		if err := yaml.Unmarshal(data, &existing); err != nil {
+			return "", fmt.Errorf("parse existing config %q: %w", opts.ExistingConfigPath, err)
+		}
+		for platform := range opts.KeptPlatforms {
+			replaceBlock(&root, &existing, "messaging", platform)
 		}
 	}
 
@@ -77,9 +80,10 @@ func BuildConfigYAML(opts ConfigTemplateOptions) string {
 
 	out, err := yaml.Marshal(&root)
 	if err != nil {
-		panic("config marshal error: " + err.Error())
+		return "", fmt.Errorf("marshal config after mutations (slack=%v feishu=%v kept=%v): %w",
+			opts.SlackEnabled, opts.FeishuEnabled, opts.KeptPlatforms, err)
 	}
-	return string(out)
+	return string(out), nil
 }
 
 func applyPlatformOpts(n *yaml.Node, enabled bool, dmPolicy, groupPolicy string, requireMention *bool, allowFrom []string) {
