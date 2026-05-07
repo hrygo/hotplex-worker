@@ -1,7 +1,7 @@
 {
   "version": 2,
-  "last_updated": "2026-05-08T00:35:00+08:00",
-  "total_cycles": 21,
+  "last_updated": "2026-05-08T01:13:00+08:00",
+  "total_cycles": 25,
   "modules": {
     "internal/gateway": {
       "analysis_count": 2,
@@ -86,9 +86,9 @@
       "sub_modules": ["worker/opencodeserver"]
     },
     "internal/config": {
-      "analysis_count": 1,
-      "aspects_covered": ["solid", "dry"],
-      "aspects_pending": ["coupling", "error-handling", "concurrency", "resource-mgmt", "performance", "scalability", "security", "observability", "testability", "code-quality"],
+      "analysis_count": 2,
+      "aspects_covered": ["solid", "dry", "coupling", "error-handling"],
+      "aspects_pending": ["concurrency", "resource-mgmt", "performance", "scalability", "security", "observability", "testability", "code-quality"],
       "issues_created": [207],
       "findings_total": 2,
       "findings_dropped": [
@@ -96,9 +96,14 @@
         {"finding": "HotReloadableFields/StaticFields hardcoded maps", "reason": "Low ROI — intentional design, each field's reloadability is a deliberate decision"},
         {"finding": "Load() 30+ BindEnv calls", "reason": "Low ROI — Viper API limitation, not a design issue"},
         {"finding": "normalizePaths() hardcoded list", "reason": "Low ROI — short list, easy to maintain"},
-        {"finding": "Watcher 3 separate mutexes", "reason": "Low confidence — intentional pattern to reduce lock contention"}
+        {"finding": "Watcher 3 separate mutexes", "reason": "Low confidence — intentional pattern to reduce lock contention"},
+        {"finding": "decodeJWTSecret silent nil (error-handling)", "reason": "Duplicate of issue 270 — fully covered"},
+        {"finding": "watcher.reload() failure only Warn, no metric counter", "reason": "Low ROI — already logged, metric is nice-to-have"},
+        {"finding": "Watcher.Close() no drain of in-flight goroutines", "reason": "Low ROI for error-handling aspect — belongs to resource-mgmt/concurrency phase"},
+        {"finding": "ConfigStore.Swap() observer goroutines no error feedback", "reason": "Low ROI — fire-and-forget is standard Observer pattern"},
+        {"finding": "loadRecursive uses global slog.Warn instead of injected logger", "reason": "Low ROI — single call site, no functional impact"}
       ],
-      "last_analyzed": "2026-05-06T11:05:00+08:00",
+      "last_analyzed": "2026-05-08T01:13:00+08:00",
       "stats": {"files": 7, "lines": 2743}
     },
     "internal/security": {
@@ -273,7 +278,22 @@
     {"number": 199, "verdict": "valid", "action": "confirmed", "audited_at": "2026-05-08T00:35:00+08:00"},
     {"number": 204, "verdict": "valid", "action": "confirmed", "audited_at": "2026-05-08T00:35:00+08:00"},
     {"number": 206, "verdict": "partial", "action": "updated", "audited_at": "2026-05-08T00:35:00+08:00", "note": "Finding 1 (metadata dispatch) fixed via base.DispatchMetadata. Finding 2 (Terminate/Kill copy-paste) still valid."},
-    {"number": 207, "verdict": "valid", "action": "confirmed", "audited_at": "2026-05-08T00:35:00+08:00"}
+    {"number": 207, "verdict": "valid", "action": "confirmed", "audited_at": "2026-05-08T00:35:00+08:00"},
+    {"number": 224, "verdict": "valid", "action": "confirmed", "audited_at": "2026-05-08T00:42:00+08:00"},
+    {"number": 226, "verdict": "valid", "action": "confirmed", "audited_at": "2026-05-08T00:42:00+08:00"},
+    {"number": 227, "verdict": "valid", "action": "confirmed", "audited_at": "2026-05-08T00:42:00+08:00"},
+    {"number": 228, "verdict": "valid", "action": "confirmed", "audited_at": "2026-05-08T00:42:00+08:00"},
+    {"number": 229, "verdict": "valid", "action": "confirmed", "audited_at": "2026-05-08T00:42:00+08:00"},
+    {"number": 231, "verdict": "valid", "action": "confirmed", "audited_at": "2026-05-08T00:53:00+08:00"},
+    {"number": 237, "verdict": "valid", "action": "confirmed", "audited_at": "2026-05-08T00:53:00+08:00", "note": "Worse than described: base/worker.go:118 sets Proc=nil after Wait(), Close() permanently unreachable"},
+    {"number": 239, "verdict": "valid", "action": "confirmed", "audited_at": "2026-05-08T00:53:00+08:00"},
+    {"number": 240, "verdict": "valid", "action": "confirmed", "audited_at": "2026-05-08T00:53:00+08:00", "note": "Critical security: session hijack via missing userID ownership check"},
+    {"number": 241, "verdict": "valid", "action": "confirmed", "audited_at": "2026-05-08T00:53:00+08:00"},
+    {"number": 242, "verdict": "valid", "action": "confirmed", "audited_at": "2026-05-08T01:03:00+08:00"},
+    {"number": 243, "verdict": "valid", "action": "confirmed", "audited_at": "2026-05-08T01:03:00+08:00"},
+    {"number": 244, "verdict": "valid", "action": "confirmed", "audited_at": "2026-05-08T01:03:00+08:00"},
+    {"number": 245, "verdict": "valid", "action": "confirmed", "audited_at": "2026-05-08T01:03:00+08:00"},
+    {"number": 246, "verdict": "valid", "action": "confirmed", "audited_at": "2026-05-08T01:03:00+08:00"}
   ],
   "recent_activity": [
     {"cycle": 2, "module": "internal/session", "aspects": ["coupling", "error-handling"], "issues": [202], "time": "2026-05-06T10:45:00+08:00"},
@@ -295,6 +315,10 @@
     {"cycle": 18, "module": "internal/session", "aspects": ["solid", "dry"], "issues": [217], "time": "2026-05-06T13:22:00+08:00"},
     {"cycle": 19, "module": "internal/messaging", "aspects": ["coupling", "error-handling"], "issues": [218], "time": "2026-05-06T13:32:00+08:00"},
     {"cycle": 20, "module": "internal/worker", "aspects": ["coupling", "error-handling"], "issues": [219], "time": "2026-05-06T13:42:00+08:00"},
-    {"cycle": 21, "mode": "audit", "issues_audited": [198, 199, 204, 206, 207], "closed": 0, "updated": 1, "confirmed": 4, "time": "2026-05-08T00:35:00+08:00"}
+    {"cycle": 21, "mode": "audit", "issues_audited": [198, 199, 204, 206, 207], "closed": 0, "updated": 1, "confirmed": 4, "time": "2026-05-08T00:35:00+08:00"},
+    {"cycle": 22, "mode": "audit", "issues_audited": [224, 226, 227, 228, 229], "closed": 0, "updated": 0, "confirmed": 5, "time": "2026-05-08T00:42:00+08:00"},
+    {"cycle": 23, "mode": "audit", "issues_audited": [231, 237, 239, 240, 241], "closed": 0, "updated": 1, "confirmed": 4, "time": "2026-05-08T00:53:00+08:00"},
+    {"cycle": 24, "mode": "audit", "issues_audited": [242, 243, 244, 245, 246], "closed": 0, "updated": 0, "confirmed": 5, "time": "2026-05-08T01:03:00+08:00"},
+    {"cycle": 25, "module": "internal/config", "aspects": ["coupling", "error-handling"], "issues": [], "time": "2026-05-08T01:13:00+08:00"}
   ]
 }
