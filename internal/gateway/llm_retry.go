@@ -68,8 +68,12 @@ func (c *LLMRetryController) ShouldRetry(sessionID string, errData *events.Error
 		text += "\n" + string(errData.Code)
 	}
 
+	c.mu.Lock()
+	patterns := c.patterns
+	c.mu.Unlock()
+
 	matched := false
-	for _, pat := range c.patterns {
+	for _, pat := range patterns {
 		if pat.MatchString(text) {
 			matched = true
 			break
