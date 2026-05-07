@@ -1,7 +1,7 @@
 {
   "version": 1,
   "last_updated": "2026-05-07T07:58:49.000000+08:00",
-  "total_cycles": 113,
+  "total_cycles": 114,
   "modules": {
     "internal/gateway": {
       "analysis_count": 8,
@@ -373,7 +373,7 @@
       ]
     },
     "internal/worker": {
-      "analysis_count": 7,
+      "analysis_count": 8,
       "aspects_covered": [
         "solid",
         "dry",
@@ -394,9 +394,10 @@
         225,
         237,
         244,
-        258
+        258,
+        269
       ],
-      "findings_total": 21,
+      "findings_total": 23,
       "findings_dropped": [
         {
           "finding": "Capabilities boilerplate methods",
@@ -465,9 +466,25 @@
         {
           "finding": "unexported-env-utility-helpers",
           "reason": "Low confidence — no current external consumers need them"
+        },
+        {
+          "finding": "ocs-start-writes-without-lock",
+          "reason": "Low confidence — single owner pattern, SessionManager serializes Start/Terminate"
+        },
+        {
+          "finding": "ocs-sessionid-unsynchronized",
+          "reason": "Low confidence — single owner, single goroutine write"
+        },
+        {
+          "finding": "claudecode-cancel-read-without-lock",
+          "reason": "Low confidence — set-once pattern in StartLocked"
+        },
+        {
+          "finding": "claudecode-readoutput-control-without-lock",
+          "reason": "Low confidence — single reader goroutine, control set in StartLocked"
         }
       ],
-      "last_analyzed": "2026-05-07T05:51:20.074700",
+      "last_analyzed": "2026-05-07T08:12:10+08:00",
       "stats": {
         "files": 48,
         "lines": 11365
@@ -1328,20 +1345,10 @@
     264,
     265,
     267,
-    268
+    268,
+    269
   ],
   "recent_activity": [
-    {
-      "cycle": 94,
-      "module": "pkg/events",
-      "aspects": [
-        "testability",
-        "code-quality"
-      ],
-      "findings": 2,
-      "issue": 252,
-      "timestamp": "2026-05-07T04:49:11.154122+08:00"
-    },
     {
       "cycle": 95,
       "module": "internal/config",
@@ -1567,6 +1574,17 @@
       "issue": 268,
       "note": "Phase 2 re-analysis — Feishu card ctx leak + Dedup double-close + Slack CPU spin",
       "timestamp": "2026-05-07T07:58:49.000000+08:00"
+    },
+    {
+      "cycle": 114,
+      "module": "internal/worker",
+      "aspects": [
+        "error-handling",
+        "concurrency"
+      ],
+      "findings": 2,
+      "issue": 269,
+      "timestamp": "2026-05-07T08:12:10+08:00"
     }
   ]
 }
