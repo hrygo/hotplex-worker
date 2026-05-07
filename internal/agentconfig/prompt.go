@@ -13,7 +13,7 @@ var hotplexMetacognition string // computed once at init
 
 func init() {
 	if embeddedMetacognition != "" {
-		hotplexMetacognition = "<hotplex>\n" + embeddedMetacognition + "\n</hotplex>"
+		hotplexMetacognition = "    <hotplex>\n" + embeddedMetacognition + "\n    </hotplex>"
 	}
 }
 
@@ -39,56 +39,56 @@ func BuildSystemPrompt(configs *AgentConfigs) string {
 		}
 		if configs.Soul != "" {
 			b = append(b, fmt.Sprintf(
-				"<persona>\n在所有交互中自然地代入并体现此人格定位。\n\n%s\n</persona>",
+				"    <persona>\n    在所有交互中自然地代入并体现此人格定位。\n\n%s\n    </persona>",
 				sanitize(configs.Soul),
 			))
 		}
 		if configs.Agents != "" {
 			b = append(b, fmt.Sprintf(
-				"<rules>\n视为强制性的工作空间行为约束。\n\n%s\n</rules>",
+				"    <rules>\n    视为强制性的工作空间行为约束。\n\n%s\n    </rules>",
 				sanitize(configs.Agents),
 			))
 		}
 		if configs.Skills != "" {
 			b = append(b, fmt.Sprintf(
-				"<skills>\n在相关时调用这些能力。\n\n%s\n</skills>",
+				"    <skills>\n    在相关时调用这些能力。\n\n%s\n    </skills>",
 				sanitize(configs.Skills),
 			))
 		}
-		groups = append(groups, "<directives>\n核心行为准则 —— 除非用户有明确的反向指令，否则必须严格遵守。\n\n"+
+		groups = append(groups, "  <directives>\n  核心行为准则 —— 除非用户有明确的反向指令，否则必须严格遵守。\n\n"+
 			joinLines(b)+
-			"\n\n</directives>")
+			"\n  </directives>")
 	}
 
 	// C-channel: reference context.
 	// We add a strict isolation notice (P5) to prevent C-channel noise from overriding B-channel instructions.
 	if configs.User != "" || configs.Memory != "" {
 		var c []string
-		c = append(c, "<notice>\n以下 [context] 区域提供了执行任务所需的关键背景与事实。你应该在不违反 [directives] 的前提下，尽可能深度参考并采纳这些信息。若两者冲突，以 [directives] 为准。\n</notice>")
+		c = append(c, "    <notice>\n    以下 [context] 区域提供了执行任务所需的关键背景与事实。你应该在不违反 [directives] 的前提下，尽可能深度参考并采纳这些信息。若两者冲突，以 [directives] 为准。\n    </notice>")
 		if configs.User != "" {
 			c = append(c, fmt.Sprintf(
-				"<user>\n深入理解用户的偏好、习惯与专业背景，提供个性化的服务体验。\n\n%s\n</user>",
+				"    <user>\n    深入理解用户的偏好、习惯与专业背景，提供个性化的服务体验。\n\n%s\n    </user>",
 				sanitize(configs.User),
 			))
 		}
 		if configs.Memory != "" {
 			c = append(c, fmt.Sprintf(
-				"<memory>\n回顾历史交互记录，确保任务执行的连贯性与深度。\n\n%s\n</memory>",
+				"    <memory>\n    回顾历史交互记录，确保任务执行的连贯性与深度。\n\n%s\n    </memory>",
 				sanitize(configs.Memory),
 			))
 		}
-		groups = append(groups, "<context>\n提供执行任务所需的背景与事实依据。\n\n"+
+		groups = append(groups, "  <context>\n  提供执行任务所需的背景与事实依据。\n\n"+
 			joinLines(c)+
-			"\n\n</context>")
+			"\n  </context>")
 	}
 
 	if len(groups) == 0 {
 		return ""
 	}
 
-	return "<agent-configuration>\n\n" +
+	return "<agent-configuration>\n" +
 		joinLines(groups) +
-		"\n\n</agent-configuration>"
+		"\n</agent-configuration>"
 }
 
 func joinLines(parts []string) string {
