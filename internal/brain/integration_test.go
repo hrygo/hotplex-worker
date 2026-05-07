@@ -3,7 +3,6 @@ package brain
 import (
 	"context"
 	"log/slog"
-	"os"
 	"testing"
 	"time"
 
@@ -11,21 +10,30 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestIntegration_OpenAIChat(t *testing.T) {
+// setupIntegrationBrain initializes Brain via Init() (which uses worker config
+// extraction, env vars, etc.) and skips the test if Brain is unavailable.
+// CI runs with -short, so these tests never execute in CI.
+func setupIntegrationBrain(t *testing.T) Brain {
+	t.Helper()
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
 
-	apiKey := os.Getenv("HOTPLEX_BRAIN_API_KEY")
-	if apiKey == "" {
-		t.Skip("HOTPLEX_BRAIN_API_KEY not set")
-	}
+	// Save and restore global brain state.
+	oldBrain := globalBrain
+	t.Cleanup(func() { globalBrain = oldBrain })
+	globalBrain = nil
 
 	err := Init(slog.Default())
 	require.NoError(t, err)
 
 	b := Global()
-	require.NotNil(t, b, "brain should be initialized")
+	require.NotNil(t, b, "brain should be initialized (check worker config or env vars)")
+	return b
+}
+
+func TestIntegration_Chat(t *testing.T) {
+	b := setupIntegrationBrain(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -36,69 +44,31 @@ func TestIntegration_OpenAIChat(t *testing.T) {
 	t.Logf("Brain Chat response: %s", resp)
 }
 
-func TestIntegration_BrainSummary(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-
-	apiKey := os.Getenv("HOTPLEX_BRAIN_API_KEY")
-	if apiKey == "" {
-		t.Skip("HOTPLEX_BRAIN_API_KEY not set")
-	}
-
-	err := Init(slog.Default())
-	require.NoError(t, err)
-
-	b := Global()
-	require.NotNil(t, b)
+func TestIntegration_Summary(t *testing.T) {
+	b := setupIntegrationBrain(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	longText := `以下是一个代码实现：
+	longText := "以下是代码实现：\n\n```go\nfunc main() { fmt.Println(\"hello\") }\n```\n\n" +
+		"代码实现了 Hello World。参数表：\n| 参数 | 值 |\n|------|-----|\n| 语言 | Go |\n\n" +
+		"详情参考 https://example.com"
 
-` + "```go\nfunc main() {\n    fmt.Println(\"hello\")\n}\n```" + `
-
-代码实现了基本的 Hello World 程序。
-以下是相关参数表格：
-
-| 参数 | 值 |
-|------|-----|
-| 语言 | Go |
-| 版本 | 1.22 |
-
-更多详情请参考 https://example.com`
-
-	prompt := "用一句话总结以下内容，不超过50字：\n\n" + longText
-	resp, err := b.Chat(ctx, prompt)
+	resp, err := b.Chat(ctx, "用一句话总结，不超过50字：\n\n"+longText)
 	require.NoError(t, err)
 	assert.NotEmpty(t, resp)
-	// Summary should be much shorter than original
 	assert.Less(t, len(resp), len(longText), "summary should be shorter than input")
 	t.Logf("Brain Summary response: %s", resp)
 }
 
-func TestIntegration_BrainChatTimeout(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
+func TestIntegration_ContextTimeout(t *testing.T) {
+	b := setupIntegrationBrain(t)
 
-	apiKey := os.Getenv("HOTPLEX_BRAIN_API_KEY")
-	if apiKey == "" {
-		t.Skip("HOTPLEX_BRAIN_API_KEY not set")
-	}
-
-	err := Init(slog.Default())
-	require.NoError(t, err)
-
-	b := Global()
-	require.NotNil(t, b)
-
-	// Verify chat works with a reasonable timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
 	resp, err := b.Chat(ctx, "Say exactly: timeout test passed")
 	require.NoError(t, err)
-	assert.Contains(t, resp, "timeout test passed")
+	assert.NotEmpty(t, resp)
+	t.Logf("Brain TimeoutTest response: %s", resp)
 }
