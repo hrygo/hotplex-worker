@@ -26,6 +26,7 @@ import (
 	"log/slog"
 	"regexp"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/time/rate"
@@ -133,12 +134,12 @@ type SafetyGuard struct {
 	rateLimitRPS   float64                  // Configured RPS (0 = disabled)
 	rateLimitBurst int                      // Configured burst
 
-	// Metrics for monitoring (protected by mu)
-	totalChecks      int64 // Total number of CheckInput calls
-	blockedInputs    int64 // Inputs blocked by guard
-	blockedOutputs   int64 // Outputs blocked/sanitized
-	sanitizedInputs  int64 // Inputs that were sanitized
-	rateLimitedCount int64 // Requests rate limited
+	// Metrics for monitoring (lock-free via atomic)
+	totalChecks      atomic.Int64 // Total number of CheckInput calls
+	blockedInputs    atomic.Int64 // Inputs blocked by guard
+	blockedOutputs   atomic.Int64 // Outputs blocked/sanitized
+	sanitizedInputs  atomic.Int64 // Inputs that were sanitized
+	rateLimitedCount atomic.Int64 // Requests rate limited
 
 	mu sync.RWMutex // Protects metrics, limiters, and pattern updates
 }
@@ -217,9 +218,7 @@ func (g *SafetyGuard) CheckInput(ctx context.Context, input string) *GuardResult
 // CheckInputWithUser validates input for safety concerns with explicit user context.
 // The userID parameter enables per-user rate limiting.
 func (g *SafetyGuard) CheckInputWithUser(ctx context.Context, input, userID string) *GuardResult {
-	g.mu.Lock()
-	g.totalChecks++
-	g.mu.Unlock()
+	g.totalChecks.Add(1)
 
 	if !g.config.Enabled || !g.config.InputGuardEnabled {
 		return &GuardResult{
@@ -233,9 +232,7 @@ func (g *SafetyGuard) CheckInputWithUser(ctx context.Context, input, userID stri
 	if g.rateLimitRPS > 0 && userID != "" {
 		limiter := g.getOrCreateLimiter(userID)
 		if !limiter.Allow() {
-			g.mu.Lock()
-			g.rateLimitedCount++
-			g.mu.Unlock()
+			g.rateLimitedCount.Add(1)
 
 			return &GuardResult{
 				Safe:        false,
@@ -261,9 +258,7 @@ func (g *SafetyGuard) CheckInputWithUser(ctx context.Context, input, userID stri
 	// Pattern-based detection
 	for _, pattern := range g.banPatterns {
 		if pattern.MatchString(input) {
-			g.mu.Lock()
-			g.blockedInputs++
-			g.mu.Unlock()
+			g.blockedInputs.Add(1)
 
 			return &GuardResult{
 				Safe:           false,
@@ -342,9 +337,7 @@ Return JSON:
 	}
 
 	if !analysis.Safe {
-		g.mu.Lock()
-		g.blockedInputs++
-		g.mu.Unlock()
+		g.blockedInputs.Add(1)
 
 		return &GuardResult{
 			Safe:        false,
@@ -396,9 +389,7 @@ func (g *SafetyGuard) CheckOutput(output string) *GuardResult {
 	}
 
 	if sensitiveFound {
-		g.mu.Lock()
-		g.blockedOutputs++
-		g.mu.Unlock()
+		g.blockedOutputs.Add(1)
 
 		return &GuardResult{
 			Safe:           true,
@@ -429,7 +420,7 @@ func (g *SafetyGuard) SanitizeOutput(output string) string {
 // AnalyzeDangerEvent analyzes a danger.blocked event for context.
 func (g *SafetyGuard) AnalyzeDangerEvent(ctx context.Context, event map[string]interface{}) (string, error) {
 	if g.brain == nil {
-		return "", fmt.Errorf("brain not configured")
+		return "", ErrBrainNotConfigured
 	}
 
 	// Extract relevant information from event
@@ -481,11 +472,11 @@ func (g *SafetyGuard) Stats() map[string]interface{} {
 		"input_guard":      g.config.InputGuardEnabled,
 		"output_guard":     g.config.OutputGuardEnabled,
 		"chat2config":      g.config.Chat2ConfigEnabled,
-		"total_checks":     g.totalChecks,
-		"blocked_inputs":   g.blockedInputs,
-		"blocked_outputs":  g.blockedOutputs,
-		"sanitized_inputs": g.sanitizedInputs,
-		"rate_limited":     g.rateLimitedCount,
+		"total_checks":     g.totalChecks.Load(),
+		"blocked_inputs":   g.blockedInputs.Load(),
+		"blocked_outputs":  g.blockedOutputs.Load(),
+		"sanitized_inputs": g.sanitizedInputs.Load(),
+		"rate_limited":     g.rateLimitedCount.Load(),
 		"active_limiters":  len(g.userLimiters),
 		"ban_patterns":     len(g.banPatterns),
 		"sensitivity":      g.config.Sensitivity,
@@ -576,7 +567,7 @@ func (g *SafetyGuard) ParseConfigIntent(ctx context.Context, msg string) (*Confi
 	}
 
 	if g.brain == nil {
-		return nil, fmt.Errorf("brain not configured")
+		return nil, ErrBrainNotConfigured
 	}
 
 	var intent ConfigIntent
@@ -703,7 +694,7 @@ func (g *SafetyGuard) handleLimitConfig(_ context.Context, intent *ConfigIntent)
 // DiagnoseError analyzes an error and provides diagnostic suggestions.
 func (g *SafetyGuard) DiagnoseError(ctx context.Context, err error, eventContext map[string]interface{}) (string, error) {
 	if g.brain == nil {
-		return "", fmt.Errorf("brain not configured")
+		return "", ErrBrainNotConfigured
 	}
 
 	prompt := fmt.Sprintf(`Analyze this error and provide diagnostic suggestions.
@@ -745,7 +736,7 @@ func InitGuard(config GuardConfig, logger *slog.Logger) error {
 	var initErr error
 	guardOnce.Do(func() {
 		if Global() == nil {
-			initErr = fmt.Errorf("brain not configured")
+			initErr = ErrBrainNotConfigured
 			return
 		}
 

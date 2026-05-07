@@ -55,6 +55,8 @@ import (
 
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
+
+	"github.com/hrygo/hotplex/internal/brain/llm"
 )
 
 // Turn represents a single conversation turn (user + assistant exchange).
@@ -252,7 +254,7 @@ func (c *ContextCompressor) compress(ctx context.Context, sessionID string) (*Se
 	for _, t := range toCompress {
 		oldTokens += t.TokenCount
 	}
-	summaryTokens := c.estimateTokens(summary)
+	summaryTokens := llm.EstimateTokens(summary)
 
 	// Update history
 	history.Turns = preserved
@@ -397,56 +399,12 @@ func (c *ContextCompressor) Stats() map[string]interface{} {
 	}
 }
 
-// Token estimation constants based on GPT tokenizer characteristics.
-const (
-	// ASCII characters (English, numbers, basic punctuation) average ~4 chars per token.
-	tokenCharsPerASCII = 4.0
-	// CJK characters (Chinese, Japanese, Korean) average ~1.5 chars per token.
-	tokenCharsPerCJK = 1.5
-	// Other Unicode characters average ~3 chars per token.
-	tokenCharsPerOther = 3.0
-)
-
 // Context compression limits.
 const (
 	// MaxTurnsForSummary is the maximum number of turns to include in summary generation.
 	// Prevents excessive token usage when building summary prompts.
 	MaxTurnsForSummary = 20
 )
-
-// estimateTokens estimates token count for a string using character-type-aware estimation.
-// This provides better accuracy than simple length division, especially for mixed-language text.
-func (c *ContextCompressor) estimateTokens(text string) int {
-	if text == "" {
-		return 0
-	}
-
-	var asciiCount, cjkCount, otherCount float64
-
-	for _, r := range text {
-		switch {
-		case r < 128: // ASCII range
-			asciiCount++
-		case r >= 0x4E00 && r <= 0x9FFF: // CJK Unified Ideographs
-			cjkCount++
-		case r >= 0x3040 && r <= 0x30FF: // Japanese Hiragana/Katakana
-			cjkCount++
-		case r >= 0xAC00 && r <= 0xD7AF: // Korean Hangul
-			cjkCount++
-		default:
-			otherCount++
-		}
-	}
-
-	// Calculate estimated tokens for each character type
-	asciiTokens := asciiCount / tokenCharsPerASCII
-	cjkTokens := cjkCount / tokenCharsPerCJK
-	otherTokens := otherCount / tokenCharsPerOther
-
-	// Round up to ensure we don't underestimate
-	total := asciiTokens + cjkTokens + otherTokens
-	return int(total + 0.5)
-}
 
 // updateCompressionRatio updates the running average compression ratio.
 func (c *ContextCompressor) updateCompressionRatio(ratio float64) {
@@ -587,7 +545,7 @@ func (m *MemoryManager) GenerateUserContext(userID string) string {
 // ExtractPreferences uses Brain to extract preferences from conversation.
 func (m *MemoryManager) ExtractPreferences(ctx context.Context, userID, conversation string) error {
 	if m.brain == nil {
-		return fmt.Errorf("brain not configured")
+		return ErrBrainNotConfigured
 	}
 
 	var extracted struct {

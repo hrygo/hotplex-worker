@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
-	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
@@ -71,26 +70,16 @@ func (c *AnthropicClient) Chat(ctx context.Context, prompt string) (string, erro
 
 // Analyze requests JSON formatted output.
 func (c *AnthropicClient) Analyze(ctx context.Context, prompt string, target any) error {
-	if !strings.Contains(strings.ToLower(prompt), "json") {
-		prompt += "\n\nIMPORTANT: Return ONLY valid JSON."
-	}
+	prompt = ensureJSONPrompt(prompt)
 
 	respText, err := c.Chat(ctx, prompt)
 	if err != nil {
 		return err
 	}
 
-	cleaned := strings.TrimSpace(respText)
-	if strings.HasPrefix(cleaned, "```") {
-		lines := strings.Split(cleaned, "\n")
-		if len(lines) >= 2 && (strings.HasPrefix(lines[0], "```json") || strings.HasPrefix(lines[0], "```")) {
-			cleaned = strings.Join(lines[1:len(lines)-1], "\n")
-		}
-	}
-
-	err = json.Unmarshal([]byte(cleaned), target)
-	if err != nil {
-		return fmt.Errorf("failed to unmarshal JSON content: %w. CONTENT: %s", err, cleaned)
+	cleaned := cleanJSONResponse(respText)
+	if err := json.Unmarshal([]byte(cleaned), target); err != nil {
+		return formatUnmarshalError(err, cleaned)
 	}
 
 	return nil
@@ -137,18 +126,5 @@ func (c *AnthropicClient) ChatStream(ctx context.Context, prompt string) (<-chan
 
 // HealthCheck performs a simple health check.
 func (c *AnthropicClient) HealthCheck(ctx context.Context) HealthStatus {
-	start := time.Now()
-	_, err := c.Chat(ctx, "ping")
-	latency := time.Since(start).Milliseconds()
-
-	status := HealthStatus{
-		Healthy:   err == nil,
-		Provider:  "anthropic",
-		Model:     c.model,
-		LatencyMs: latency,
-	}
-	if err != nil {
-		status.Error = err.Error()
-	}
-	return status
+	return healthCheckFromChat(ctx, c.Chat, "anthropic", c.model)
 }

@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"strings"
-	"time"
 
 	"github.com/sashabaranov/go-openai"
 )
@@ -70,26 +68,7 @@ func NewOpenAIClient(apiKey, endpoint, model string, logger *slog.Logger) *OpenA
 
 // HealthCheck performs a simple health check by making a minimal API call.
 func (c *OpenAIClient) HealthCheck(ctx context.Context) HealthStatus {
-	start := time.Now()
-
-	// Simple ping with minimal prompt
-	_, err := c.Chat(ctx, "ping")
-	latency := time.Since(start).Milliseconds()
-
-	status := HealthStatus{
-		Provider:  "openai",
-		Model:     c.model,
-		LatencyMs: latency,
-	}
-
-	if err != nil {
-		status.Healthy = false
-		status.Error = err.Error()
-	} else {
-		status.Healthy = true
-	}
-
-	return status
+	return healthCheckFromChat(ctx, c.Chat, "openai", c.model)
 }
 
 // Chat generates a simple plain text completion.
@@ -121,10 +100,7 @@ func (c *OpenAIClient) Chat(ctx context.Context, prompt string) (string, error) 
 // Analyze requests JSON formatted output from the model.
 // It uses "ResponseFormat: {Type: JSON_OBJECT}" to ensure model compatibility for structured reasoning.
 func (c *OpenAIClient) Analyze(ctx context.Context, prompt string, target any) error {
-	// Instruct the model to return JSON if it's not explicitly in the prompt
-	if !strings.Contains(strings.ToLower(prompt), "json") {
-		prompt = prompt + "\n\nIMPORTANT: Return ONLY valid JSON."
-	}
+	prompt = ensureJSONPrompt(prompt)
 
 	resp, err := c.client.CreateChatCompletion(
 		ctx,
@@ -150,10 +126,9 @@ func (c *OpenAIClient) Analyze(ctx context.Context, prompt string, target any) e
 		return fmt.Errorf("zero choices in response")
 	}
 
-	content := resp.Choices[0].Message.Content
-	err = json.Unmarshal([]byte(content), target)
-	if err != nil {
-		return fmt.Errorf("failed to unmarshal JSON content: %w. CONTENT: %s", err, content)
+	content := cleanJSONResponse(resp.Choices[0].Message.Content)
+	if err := json.Unmarshal([]byte(content), target); err != nil {
+		return formatUnmarshalError(err, content)
 	}
 
 	return nil

@@ -2,10 +2,14 @@ package brain
 
 import (
 	"context"
+	"errors"
 	"sync"
 
 	"github.com/hrygo/hotplex/internal/brain/llm"
 )
+
+// ErrBrainNotConfigured is returned when a brain feature is used without a configured LLM backend.
+var ErrBrainNotConfigured = errors.New("brain not configured")
 
 // Compile-time interface verification
 var (

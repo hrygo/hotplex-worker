@@ -211,24 +211,9 @@ func (cc *CostCalculator) CalculateCost(modelName string, inputTokens, outputTok
 	return inputCost + outputCost, nil
 }
 
-// CountTokens estimates token count from text.
-// This is a simple approximation; for production use, consider using tiktoken.
+// CountTokens estimates token count from text using CJK-aware estimation.
 func (cc *CostCalculator) CountTokens(text string) int {
-	// Simple approximation: ~4 characters per token for English
-	// This varies by language and model
-	if text == "" {
-		return 0
-	}
-
-	// Count words as a better approximation
-	words := strings.Fields(text)
-	if len(words) > 0 {
-		// Average token per word ratio is ~1.3 for English
-		return int(float64(len(words)) * 1.3)
-	}
-
-	// Fallback to character-based estimate
-	return len(text) / 4
+	return EstimateTokens(text)
 }
 
 // CountTokensFromMessages counts tokens from OpenAI messages.

@@ -240,6 +240,15 @@ func (r *IntentRouter) detectIntent(ctx context.Context, msg string) *IntentResu
 //
 // Returns nil if the case is not clear-cut and needs Brain analysis.
 // Code keywords ("function", "debug", etc.) force Brain analysis for accuracy.
+
+// Pre-allocated slices to avoid per-call allocations.
+var (
+	fastPathGreetings  = []string{"hi", "hello", "hey", "good morning", "good afternoon", "good evening", "howdy"}
+	fastPathThanks     = []string{"thank", "thanks", "thx", "ty"}
+	fastPathStatusCmds = []string{"status", "ping", "are you there", "you there", "are you online"}
+	fastPathCodeWords  = []string{"function", "class", "method", "variable", "bug", "error", "fix", "implement", "refactor", "test", "deploy", "build", "compile", "debug", "code", "file", "directory"}
+)
+
 func (r *IntentRouter) fastPathDetection(msg string) *IntentResult {
 	msg = strings.TrimSpace(strings.ToLower(msg))
 
@@ -254,8 +263,7 @@ func (r *IntentRouter) fastPathDetection(msg string) *IntentResult {
 	}
 
 	// Greetings
-	greetings := []string{"hi", "hello", "hey", "good morning", "good afternoon", "good evening", "howdy"}
-	for _, g := range greetings {
+	for _, g := range fastPathGreetings {
 		if msg == g || strings.HasPrefix(msg, g+" ") || strings.HasPrefix(msg, g+"!") {
 			return &IntentResult{
 				Type:       IntentTypeChat,
@@ -267,8 +275,8 @@ func (r *IntentRouter) fastPathDetection(msg string) *IntentResult {
 	}
 
 	// Thank you messages
-	thanks := []string{"thank", "thanks", "thx", "ty"}
-	for _, t := range thanks {
+	// Thanks
+	for _, t := range fastPathThanks {
 		if strings.Contains(msg, t) && len(msg) < MaxThankMessageLength {
 			return &IntentResult{
 				Type:       IntentTypeChat,
@@ -280,8 +288,8 @@ func (r *IntentRouter) fastPathDetection(msg string) *IntentResult {
 	}
 
 	// Status commands
-	statusCmds := []string{"status", "ping", "are you there", "you there", "are you online"}
-	for _, s := range statusCmds {
+	// Status commands
+	for _, s := range fastPathStatusCmds {
 		if strings.Contains(msg, s) {
 			return &IntentResult{
 				Type:       IntentTypeCommand,
@@ -303,8 +311,8 @@ func (r *IntentRouter) fastPathDetection(msg string) *IntentResult {
 	}
 
 	// Code-related keywords strongly suggest task intent
-	codeKeywords := []string{"function", "class", "method", "variable", "bug", "error", "fix", "implement", "refactor", "test", "deploy", "build", "compile", "debug", "code", "file", "directory"}
-	for _, kw := range codeKeywords {
+	// Code keywords
+	for _, kw := range fastPathCodeWords {
 		if strings.Contains(msg, kw) {
 			return nil // Needs deeper analysis
 		}

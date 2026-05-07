@@ -11,6 +11,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/hrygo/hotplex/internal/brain/llm"
 )
 
 // ========================================
@@ -560,48 +562,26 @@ func TestContextCompressor_ForceCompress_NoSession(t *testing.T) {
 // ========================================
 
 func TestEstimateTokens_Empty(t *testing.T) {
-	mockBrain := &mockBrainForMemory{}
-	config := DefaultCompressionConfig()
-	config.CleanupInterval = 0
 
-	compressor := NewContextCompressor(mockBrain, config, slog.Default())
-	assert.Equal(t, 0, compressor.estimateTokens(""))
+	assert.Equal(t, 0, llm.EstimateTokens(""))
 }
 
 func TestEstimateTokens_ASCII(t *testing.T) {
-	mockBrain := &mockBrainForMemory{}
-	config := DefaultCompressionConfig()
-	config.CleanupInterval = 0
-
-	compressor := NewContextCompressor(mockBrain, config, slog.Default())
-
 	// 100 ASCII chars ~ 25 tokens (100/4)
-	tokens := compressor.estimateTokens("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	tokens := llm.EstimateTokens("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 	assert.Greater(t, tokens, 20)
 	assert.Less(t, tokens, 30)
 }
 
 func TestEstimateTokens_CJK(t *testing.T) {
-	mockBrain := &mockBrainForMemory{}
-	config := DefaultCompressionConfig()
-	config.CleanupInterval = 0
-
-	compressor := NewContextCompressor(mockBrain, config, slog.Default())
-
 	// CJK characters are denser (~1.5 chars per token)
 	text := "这是一个中文测试文本用来验证"
-	tokens := compressor.estimateTokens(text)
+	tokens := llm.EstimateTokens(text)
 	assert.Greater(t, tokens, 5)
 }
 
 func TestEstimateTokens_Mixed(t *testing.T) {
-	mockBrain := &mockBrainForMemory{}
-	config := DefaultCompressionConfig()
-	config.CleanupInterval = 0
-
-	compressor := NewContextCompressor(mockBrain, config, slog.Default())
-
-	tokens := compressor.estimateTokens("Hello 你好 World 世界")
+	tokens := llm.EstimateTokens("Hello 你好 World 世界")
 	assert.Greater(t, tokens, 0)
 }
 
@@ -884,28 +864,17 @@ func TestCompressionConfig_JSONTags(t *testing.T) {
 // ========================================
 
 func TestEstimateTokens_MixedContent(t *testing.T) {
-	mockBrain := &mockBrainForMemory{}
-	c := NewContextCompressor(mockBrain, CompressionConfig{
-		Enabled:         true,
-		TokenThreshold:  10000,
-		CleanupInterval: 0, // Disable cleanup daemon
-	}, slog.Default())
-	defer c.Stop()
-
 	// Mixed ASCII + CJK
-	tokens := c.estimateTokens("Hello world! Chinese text")
+	tokens := llm.EstimateTokens("Hello world! Chinese text")
 	assert.Greater(t, tokens, 0)
-
 	// All ASCII
-	tokensASCII := c.estimateTokens("This is a plain ASCII text.")
+	tokensASCII := llm.EstimateTokens("This is a plain ASCII text.")
 	assert.Greater(t, tokensASCII, 0)
-
 	// CJK characters
-	tokensCJK := c.estimateTokens("Chinese text")
+	tokensCJK := llm.EstimateTokens("Chinese text")
 	assert.Greater(t, tokensCJK, 0)
-
 	// Other unicode (emoji etc.)
-	tokensEmoji := c.estimateTokens("Hello!")
+	tokensEmoji := llm.EstimateTokens("Hello!")
 	assert.Greater(t, tokensEmoji, 0)
 }
 

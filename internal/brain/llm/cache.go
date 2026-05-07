@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"sync/atomic"
 
 	lru "github.com/hashicorp/golang-lru/v2"
 )
@@ -21,6 +22,8 @@ type CacheEntry struct {
 type CachedClient struct {
 	client LLMClient
 	cache  *lru.Cache[string, CacheEntry]
+	hits   atomic.Int64
+	misses atomic.Int64
 }
 
 // NewCachedClient creates a new cached client wrapper.
@@ -35,9 +38,11 @@ func NewCachedClient(client LLMClient, cacheSize int) *CachedClient {
 func (c *CachedClient) Chat(ctx context.Context, prompt string) (string, error) {
 	key := c.makeKey(prompt, false)
 	if entry, found := c.cache.Get(key); found {
+		c.hits.Add(1)
 		return entry.Response, nil
 	}
 
+	c.misses.Add(1)
 	response, err := c.client.Chat(ctx, prompt)
 	if err != nil {
 		return "", err
@@ -50,9 +55,11 @@ func (c *CachedClient) Chat(ctx context.Context, prompt string) (string, error) 
 func (c *CachedClient) Analyze(ctx context.Context, prompt string, target any) error {
 	key := c.makeKey(prompt, true)
 	if entry, found := c.cache.Get(key); found {
+		c.hits.Add(1)
 		return json.Unmarshal(entry.JSONData, target)
 	}
 
+	c.misses.Add(1)
 	err := c.client.Analyze(ctx, prompt, target)
 	if err != nil {
 		return err
@@ -89,7 +96,7 @@ func (c *CachedClient) ClearCache() {
 }
 
 func (c *CachedClient) CacheStats() (keys, hits, misses int) {
-	return c.cache.Len(), 0, 0
+	return c.cache.Len(), int(c.hits.Load()), int(c.misses.Load())
 }
 
 func (c *CachedClient) UnderlyingClient() LLMClient {
