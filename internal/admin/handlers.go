@@ -16,7 +16,9 @@ func (a *AdminAPI) HandleStats(w http.ResponseWriter, r *http.Request) {
 	total, _, _ := a.sm.Stats()
 	sessions, err := a.sm.List(r.Context(), "", "", 0, 0)
 	if err != nil {
-		a.log.Warn("admin: failed to list sessions", "err", err)
+		a.log.Error("admin: failed to list sessions for stats", "err", err)
+		http.Error(w, "failed to query sessions", http.StatusServiceUnavailable)
+		return
 	}
 
 	byType := make(map[string]map[string]any)
@@ -267,8 +269,8 @@ func (a *AdminAPI) HandleDebugSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	snap, dbgErr := a.sm.DebugSnapshot(id)
-	if !dbgErr {
+	snap, dbgOK := a.sm.DebugSnapshot(id)
+	if !dbgOK {
 		a.log.Warn("admin: failed to get debug snapshot", "session_id", id)
 	}
 
@@ -276,6 +278,7 @@ func (a *AdminAPI) HandleDebugSession(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, map[string]any{
 		"session": siMap,
 		"debug": map[string]any{
+			"available":     dbgOK,
 			"has_worker":    snap.HasWorker,
 			"turn_count":    snap.TurnCount,
 			"last_seq_sent": a.hub.NextSeqPeek(id),

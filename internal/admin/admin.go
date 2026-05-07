@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"runtime/debug"
+	"sync/atomic"
 	"time"
 
 	"github.com/hrygo/hotplex/internal/config"
@@ -73,8 +74,8 @@ type AdminAPI struct {
 	hub           HubProvider
 	bridge        BridgeProvider
 	configWatcher ConfigWatcherProvider
-	rateLimiter   *simpleRateLimiter
-	allowedCIDRs  []string
+	rateLimiter   atomic.Value // *simpleRateLimiter
+	allowedCIDRs  atomic.Value // []string
 	version       func() string
 	newSessionID  func() string
 }
@@ -130,16 +131,16 @@ func (a *AdminAPI) Middleware(next http.Handler) http.Handler {
 			}
 		}()
 
-		if a.rateLimiter != nil {
-			if !a.rateLimiter.Allow() {
+		if rl, _ := a.rateLimiter.Load().(*simpleRateLimiter); rl != nil {
+			if !rl.Allow() {
 				http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
 				return
 			}
 		}
 
-		if len(a.allowedCIDRs) > 0 {
+		if cidrs, _ := a.allowedCIDRs.Load().([]string); len(cidrs) > 0 {
 			addr := clientIP(r)
-			if !ipAllowed(addr, a.allowedCIDRs) {
+			if !ipAllowed(addr, cidrs) {
 				a.log.Warn("admin: IP not whitelisted", "ip", addr)
 				http.Error(w, "IP not allowed", http.StatusForbidden)
 				return
@@ -184,9 +185,9 @@ func (a *AdminAPI) validateToken(token string) ([]string, bool) {
 }
 
 func (a *AdminAPI) SetRateLimiter(rl *simpleRateLimiter) {
-	a.rateLimiter = rl
+	a.rateLimiter.Store(rl)
 }
 
 func (a *AdminAPI) SetAllowedCIDRs(cidrs []string) {
-	a.allowedCIDRs = cidrs
+	a.allowedCIDRs.Store(cidrs)
 }
