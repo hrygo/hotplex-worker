@@ -20,11 +20,12 @@ type cacheEntry struct {
 
 // Locator discovers skills from the filesystem with TTL-based caching.
 type Locator struct {
-	log    *slog.Logger
-	cache  map[string]*cacheEntry
-	mu     sync.RWMutex
-	ttl    time.Duration
-	stopCh chan struct{}
+	log       *slog.Logger
+	cache     map[string]*cacheEntry
+	mu        sync.RWMutex
+	ttl       time.Duration
+	stopCh    chan struct{}
+	closeOnce sync.Once
 }
 
 // NewLocator creates a skill locator with TTL cache.
@@ -72,8 +73,11 @@ func (l *Locator) List(_ context.Context, homeDir, workDir string) ([]Skill, err
 }
 
 // Close stops the background sweep goroutine.
+// It is safe to call multiple times (uses sync.Once).
 func (l *Locator) Close() {
-	close(l.stopCh)
+	l.closeOnce.Do(func() {
+		close(l.stopCh)
+	})
 }
 
 func (l *Locator) sweep() {
