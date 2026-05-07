@@ -118,6 +118,8 @@ func (h *Handler) handleInput(ctx context.Context, env *events.Envelope) error {
 						"err", err,
 						"type", respType,
 						"session_id", env.SessionID)
+				} else if h.bridge != nil {
+					h.bridge.CaptureInbound(env.SessionID, env.Seq, events.Input, env.Event.Data)
 				}
 			} else {
 				h.log.Warn("gateway: interaction response dropped — no worker",

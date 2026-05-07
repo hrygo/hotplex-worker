@@ -144,6 +144,7 @@ type PlatformAdapter struct {
 // HubInterface is the subset of gateway.Hub methods needed by platform adapters.
 type HubInterface interface {
 	JoinPlatformSession(sessionID string, pc PlatformConn)
+	NextSeq(sessionID string) int64
 }
 
 // HandlerInterface is the subset of gateway.Handler methods needed by platform adapters.

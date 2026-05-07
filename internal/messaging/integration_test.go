@@ -106,6 +106,8 @@ type mockHub struct{}
 
 func (m *mockHub) JoinPlatformSession(sessionID string, pc PlatformConn) {}
 
+func (m *mockHub) NextSeq(sessionID string) int64 { return 1 }
+
 var uuidV5Regex = regexp.MustCompile(`[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}`)
 
 func TestBridge_MakeSlackEnvelope(t *testing.T) {

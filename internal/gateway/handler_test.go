@@ -2,8 +2,10 @@ package gateway
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"log/slog"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -12,7 +14,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/hrygo/hotplex/internal/config"
+	"github.com/hrygo/hotplex/internal/eventstore"
 	"github.com/hrygo/hotplex/internal/session"
+	"github.com/hrygo/hotplex/internal/sqlutil"
 	"github.com/hrygo/hotplex/internal/worker"
 	noopworker "github.com/hrygo/hotplex/internal/worker/noop"
 	"github.com/hrygo/hotplex/pkg/aep"
@@ -997,4 +1001,105 @@ func TestHandleInput_NoMetadata_FallsThrough(t *testing.T) {
 	require.NoError(t, err)
 	sm.AssertExpectations(t)
 	w.AssertExpectations(t)
+}
+
+// ─── CaptureInbound tests ────────────────────────────────────────────────────
+
+// newBridgeWithCollector creates a Bridge with a real Collector backed by an
+// in-memory SQLite store, for verifying CaptureInbound persistence.
+func newBridgeWithCollector(t *testing.T) (*Bridge, *eventstore.SQLiteStore) {
+	t.Helper()
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	db, err := sql.Open(sqlutil.DriverName, dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS events (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		session_id TEXT NOT NULL,
+		seq INTEGER NOT NULL,
+		type TEXT NOT NULL,
+		data TEXT NOT NULL,
+		direction TEXT NOT NULL DEFAULT 'outbound',
+		source TEXT NOT NULL DEFAULT 'normal'
+			CHECK(source IN ('normal', 'crash', 'timeout', 'fresh_start')),
+		created_at INTEGER NOT NULL
+	)`)
+	require.NoError(t, err)
+
+	store := eventstore.NewSQLiteStore(db)
+	collector := eventstore.NewCollector(store, slog.Default())
+
+	return &Bridge{log: slog.Default(), collector: collector}, store
+}
+
+// IES-2: interaction response (permission/question/elicitation) triggers CaptureInbound.
+func TestHandleInput_InteractionResponse_CaptureInbound(t *testing.T) {
+	tests := []struct {
+		name     string
+		metadata map[string]any
+	}{
+		{"permission_response", map[string]any{"permission_response": map[string]any{"tool_call_id": "tc1", "decision": "allow"}}},
+		{"question_response", map[string]any{"question_response": map[string]any{"answer": "yes"}}},
+		{"elicitation_response", map[string]any{"elicitation_response": map[string]any{"value": "/tmp"}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sm := new(mockInputSM)
+			w := new(mockWorkerForHandler)
+			sm.On("GetWorker", "s1").Return(w)
+			w.On("Input", mock.Anything, "ok", mock.Anything).Return(nil)
+
+			br, store := newBridgeWithCollector(t)
+			h := &Handler{
+				log:    slog.Default(),
+				hub:    nil,
+				sm:     sm,
+				bridge: br,
+			}
+
+			env := inputEnvelopeWithMetadata("s1", "ok", tt.metadata)
+			env.Seq = 42
+			err := h.handleInput(context.Background(), env)
+			require.NoError(t, err)
+
+			// Close collector to flush pending events, then verify inbound was stored.
+			require.NoError(t, br.collector.Close())
+			page, err := store.QueryBySession(context.Background(), "s1", 0, eventstore.CursorLatest, 10)
+			require.NoError(t, err)
+			require.Len(t, page.Events, 1, "expected exactly one inbound event")
+			require.Equal(t, "inbound", page.Events[0].Direction)
+			require.Equal(t, int64(42), page.Events[0].Seq)
+			require.Equal(t, string(events.Input), page.Events[0].Type)
+		})
+	}
+}
+
+// IES-3: normal input triggers CaptureInbound.
+func TestHandleInput_NormalInput_CaptureInbound(t *testing.T) {
+	sm := new(mockInputSM)
+	w := new(mockWorkerForHandler)
+	sm.On("Get", "s1").Return(&session.SessionInfo{State: events.StateRunning}, nil)
+	sm.On("GetWorker", "s1").Return(w)
+	w.On("Input", mock.Anything, "hello", mock.Anything).Return(nil)
+
+	br, store := newBridgeWithCollector(t)
+	h := &Handler{
+		log:    slog.Default(),
+		hub:    nil,
+		sm:     sm,
+		bridge: br,
+	}
+
+	env := inputEnvelope("s1", "hello")
+	env.Seq = 7
+	err := h.handleInput(context.Background(), env)
+	require.NoError(t, err)
+
+	require.NoError(t, br.collector.Close())
+	page, err := store.QueryBySession(context.Background(), "s1", 0, eventstore.CursorLatest, 10)
+	require.NoError(t, err)
+	require.Len(t, page.Events, 1)
+	require.Equal(t, "inbound", page.Events[0].Direction)
+	require.Equal(t, int64(7), page.Events[0].Seq)
 }
