@@ -30,12 +30,11 @@ func Init(logger *slog.Logger) error {
 	// 1. Initialize base client based on Protocol
 	switch config.Model.Protocol {
 	case "anthropic":
-		baseClient = llm.NewAnthropicClient("", config.Model.Endpoint, config.Model.Model, logger)
+		baseClient = llm.NewAnthropicClient(config.Model.APIKey, config.Model.Endpoint, config.Model.Model, logger)
 		logger.Info("Anthropic brain client initialized", "model", config.Model.Model)
 	case "openai":
 	default:
-		// Default to OpenAI compatible client
-		baseClient = llm.NewOpenAIClient("", config.Model.Endpoint, config.Model.Model, logger)
+		baseClient = llm.NewOpenAIClient(config.Model.APIKey, config.Model.Endpoint, config.Model.Model, logger)
 		logger.Debug("OpenAI brain client initialized", "model", config.Model.Model)
 	}
 
