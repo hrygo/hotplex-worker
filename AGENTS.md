@@ -1,6 +1,6 @@
 # HotPlex 项目知识库
 
-**最后更新**: 2026-05-07 · **分支**: main · **版本**: v1.7.0
+**最后更新**: 2026-05-08 · **分支**: main · **版本**: v1.7.0
 
 ---
 
@@ -150,7 +150,7 @@ cp configs/env.example .env
 - `claudecode/` - Claude Code 适配器 (stdio, `--print --session-id`)
 - `opencodeserver/` - Open Code Server 适配器（单例进程, HTTP+SSE）
 - `proc/` - 跨平台进程生命周期管理 (PGID/Job Object)
-- `base/` - 共享 BaseWorker + Conn
+- `base/` - 共享 BaseWorker + Conn + MetadataHandler
 
 **支撑模块**：
 - `config/` - Viper 配置 + 热重载 + 继承 + 审计/回滚
@@ -466,18 +466,17 @@ hotplex slack react add --channel <id> --ts <ts> --emoji white_check_mark
 | `init_test.go` (brain) | 1472 |
 | `conn_test.go` | 1424 |
 | `adapter.go` (feishu) | 1384 |
-| `wizard.go` (onboard) | 1377 |
+| `wizard.go` (onboard) | 1380 |
 | `adapter.go` (slack) | 1366 |
 | `guard_test.go` (brain) | 1179 |
 | `hub_test.go` | 1172 |
+| `handler_test.go` | 1105 |
 | `memory_test.go` (brain) | 1062 |
 | `commands_test.go` (ocs) | 1050 |
 | `router_test.go` (brain) | 1035 |
-| `handler_test.go` | 1000 |
 | `manager.go` | 998 |
 | `e2e_test.go` (slack) | 970 |
-| `config.go` | 952 |
-| `worker.go` (ocs) | 873 |
+| `worker.go` (ocs) | 878 |
 | `streaming.go` (feishu) | 870 |
-| `worker.go` (claudecode) | 855 |
-| `handler.go` | 840 |
+| `worker.go` (claudecode) | 846 |
+| `handler.go` | 843 |

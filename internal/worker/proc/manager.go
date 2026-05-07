@@ -37,6 +37,10 @@ type Manager struct {
 	exited   bool
 	exitCode int
 
+	// waitOnce ensures cmd.Wait() is called exactly once across Terminate/Wait/Kill.
+	waitOnce sync.Once
+	waitErr  error // captured by waitOnce closure
+
 	// scanner reads stdout line-by-line with a 10MB per-line cap.
 	// Created in Start(); safe to call ReadLine() concurrently from one goroutine.
 	scanner      *bufio.Scanner
@@ -195,7 +199,7 @@ func (m *Manager) Terminate(ctx context.Context, gracePeriod time.Duration) erro
 	// Wait for exit with deadline.
 	done := make(chan struct{})
 	go func() {
-		_ = m.cmd.Wait()
+		m.waitOnce.Do(func() { m.waitErr = m.cmd.Wait() })
 		close(done)
 	}()
 
@@ -211,7 +215,8 @@ func (m *Manager) Terminate(ctx context.Context, gracePeriod time.Duration) erro
 		m.log.Warn("proc: graceful shutdown timeout, force killing", "pgid", pgid)
 		return m.Kill()
 	case <-ctx.Done():
-		return ctx.Err()
+		m.log.Warn("proc: context cancelled during termination, force killing", "pgid", pgid)
+		return m.Kill()
 	}
 }
 
@@ -232,7 +237,7 @@ func (m *Manager) Kill() error {
 		_ = ForceKill(m.pgid)
 		m.log.Info("proc: force killed", "pgid", m.pgid)
 	}
-	_ = m.cmd.Wait()
+	m.waitOnce.Do(func() { m.waitErr = m.cmd.Wait() })
 	m.captureExitCodeLocked()
 	m.untrackPID(m.pidKey)
 	m.mu.Unlock()
@@ -250,9 +255,9 @@ func (m *Manager) Wait() (int, error) {
 		return -1, fmt.Errorf("proc: not started")
 	}
 
-	err := m.cmd.Wait()
+	m.waitOnce.Do(func() { m.waitErr = m.cmd.Wait() })
 	m.captureExitCodeLocked()
-	return m.exitCode, err
+	return m.exitCode, m.waitErr
 }
 
 // PID returns the process ID, or -1 if not started.
