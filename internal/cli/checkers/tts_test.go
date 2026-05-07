@@ -42,7 +42,7 @@ func TestTTSEnvironmentChecker_ConfigLoadFails(t *testing.T) {
 
 func TestTTSEnvironmentChecker_TTSDisabled(t *testing.T) {
 	dir := t.TempDir()
-	path := writeTTSConfig(t, dir, false, false)
+	path := writeTTSConfig(t, dir, ttsConfigOpts{})
 	defer resetConfigPath()
 	SetConfigPath(path)
 
@@ -52,10 +52,9 @@ func TestTTSEnvironmentChecker_TTSDisabled(t *testing.T) {
 	require.Contains(t, d.Message, "not configured")
 }
 
-func TestTTSEnvironmentChecker_FeishuTTSEnabled(t *testing.T) {
+func TestTTSEnvironmentChecker_FeishuEdgeTTSEnabled(t *testing.T) {
 	dir := t.TempDir()
-	// Feishu enabled + TTS enabled → needs ffmpeg.
-	path := writeTTSConfig(t, dir, false, true)
+	path := writeTTSConfig(t, dir, ttsConfigOpts{feishuEnabled: true, feishuTTS: true, feishuProvider: "edge"})
 	defer resetConfigPath()
 	SetConfigPath(path)
 
@@ -68,10 +67,9 @@ func TestTTSEnvironmentChecker_FeishuTTSEnabled(t *testing.T) {
 	}
 }
 
-func TestTTSEnvironmentChecker_SlackTTSEnabled(t *testing.T) {
+func TestTTSEnvironmentChecker_SlackEdgeTTSEnabled(t *testing.T) {
 	dir := t.TempDir()
-	// Slack TTS also uses Edge TTS → MP3 → ffmpeg Opus.
-	path := writeTTSConfig(t, dir, true, false)
+	path := writeTTSConfig(t, dir, ttsConfigOpts{slackEnabled: true, slackTTS: true, slackProvider: "edge"})
 	defer resetConfigPath()
 	SetConfigPath(path)
 
@@ -83,47 +81,103 @@ func TestTTSEnvironmentChecker_SlackTTSEnabled(t *testing.T) {
 		require.NotEmpty(t, d.FixHint)
 	}
 }
+
+// --- Kokoro Provider Tests ---
+
+func TestTTSEnvironmentChecker_KokoroProvider(t *testing.T) {
+	dir := t.TempDir()
+	path := writeTTSConfig(t, dir, ttsConfigOpts{feishuEnabled: true, feishuTTS: true, feishuProvider: "edge+kokoro"})
+	defer resetConfigPath()
+	SetConfigPath(path)
+
+	c := ttsEnvironmentChecker{}
+	d := c.Check(context.Background())
+	// Should require ffmpeg + onnxruntime + espeak-ng
+	require.Contains(t, []cli.Status{cli.StatusPass, cli.StatusFail}, d.Status)
+}
+
+func TestTTSEnvironmentChecker_KokoroOnlyProvider(t *testing.T) {
+	dir := t.TempDir()
+	path := writeTTSConfig(t, dir, ttsConfigOpts{feishuEnabled: true, feishuTTS: true, feishuProvider: "kokoro"})
+	defer resetConfigPath()
+	SetConfigPath(path)
+
+	c := ttsEnvironmentChecker{}
+	d := c.Check(context.Background())
+	require.Contains(t, []cli.Status{cli.StatusPass, cli.StatusFail}, d.Status)
+}
+
+// --- ttsRequirements Unit Tests ---
 
 func TestTTSRequirements(t *testing.T) {
 	tests := []struct {
-		name        string
-		slackTTS    bool
-		feishuTTS   bool
-		needsFFmpeg bool
+		name            string
+		opts            ttsConfigOpts
+		wantFFmpeg      bool
+		wantOnnxRuntime bool
+		wantEspeakNG    bool
 	}{
-		{"both_disabled", false, false, false},
-		{"slack_only", true, false, true},
-		{"feishu_only", false, true, true},
-		{"both_enabled", true, true, true},
+		{"both_disabled", ttsConfigOpts{}, false, false, false},
+		{"slack_edge", ttsConfigOpts{slackEnabled: true, slackTTS: true, slackProvider: "edge"}, true, false, false},
+		{"feishu_edge", ttsConfigOpts{feishuEnabled: true, feishuTTS: true, feishuProvider: "edge"}, true, false, false},
+		{"feishu_edge_kokoro", ttsConfigOpts{feishuEnabled: true, feishuTTS: true, feishuProvider: "edge+kokoro"}, true, true, true},
+		{"feishu_kokoro_only", ttsConfigOpts{feishuEnabled: true, feishuTTS: true, feishuProvider: "kokoro"}, true, true, true},
+		{"both_edge", ttsConfigOpts{slackEnabled: true, slackTTS: true, slackProvider: "edge", feishuEnabled: true, feishuTTS: true, feishuProvider: "edge"}, true, false, false},
+		{"both_kokoro", ttsConfigOpts{slackEnabled: true, slackTTS: true, slackProvider: "edge+kokoro", feishuEnabled: true, feishuTTS: true, feishuProvider: "edge+kokoro"}, true, true, true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := t.TempDir()
-			path := writeTTSConfig(t, dir, tt.slackTTS, tt.feishuTTS)
+			path := writeTTSConfig(t, dir, tt.opts)
 			defer resetConfigPath()
 			SetConfigPath(path)
 
 			got := ttsRequirements()
-			require.Equal(t, tt.needsFFmpeg, got)
+			require.Equal(t, tt.wantFFmpeg, got.FFmpeg, "FFmpeg mismatch")
+			require.Equal(t, tt.wantOnnxRuntime, got.OnnxRuntime, "OnnxRuntime mismatch")
+			require.Equal(t, tt.wantEspeakNG, got.EspeakNG, "EspeakNG mismatch")
 		})
 	}
 }
 
-// writeTTSConfig creates a minimal config YAML with TTS settings.
-// Slack TTS is enabled when slackTTS=true, Feishu when feishuTTS=true.
-func writeTTSConfig(t *testing.T, dir string, slackTTS, feishuTTS bool) string {
+func TestKokoroProvider(t *testing.T) {
+	t.Parallel()
+	require.True(t, kokoroProvider("kokoro"))
+	require.True(t, kokoroProvider("edge+kokoro"))
+	require.False(t, kokoroProvider("edge"))
+	require.False(t, kokoroProvider(""))
+}
+
+// --- Helpers ---
+
+type ttsConfigOpts struct {
+	slackEnabled   bool
+	slackTTS       bool
+	slackProvider  string
+	feishuEnabled  bool
+	feishuTTS      bool
+	feishuProvider string
+}
+
+func writeTTSConfig(t *testing.T, dir string, opts ttsConfigOpts) string {
 	t.Helper()
+
 	yaml := "gateway:\n  addr: \":8888\"\nmessaging:\n"
-	yaml += "  slack:\n    enabled: " + strconv.FormatBool(slackTTS || feishuTTS)
-	yaml += "\n    tts_enabled: " + strconv.FormatBool(slackTTS)
-	if slackTTS {
-		yaml += "\n    tts_provider: edge"
+
+	// Slack section
+	yaml += "  slack:\n    enabled: " + strconv.FormatBool(opts.slackEnabled)
+	yaml += "\n    tts_enabled: " + strconv.FormatBool(opts.slackTTS)
+	if opts.slackTTS && opts.slackProvider != "" {
+		yaml += "\n    tts_provider: " + opts.slackProvider
 	}
-	yaml += "\n  feishu:\n    enabled: true"
-	yaml += "\n    tts_enabled: " + strconv.FormatBool(feishuTTS)
-	if feishuTTS {
-		yaml += "\n    tts_provider: edge"
+	yaml += "\n"
+
+	// Feishu section
+	yaml += "  feishu:\n    enabled: " + strconv.FormatBool(opts.feishuEnabled)
+	yaml += "\n    tts_enabled: " + strconv.FormatBool(opts.feishuTTS)
+	if opts.feishuTTS && opts.feishuProvider != "" {
+		yaml += "\n    tts_provider: " + opts.feishuProvider
 	}
 	yaml += "\n"
 
