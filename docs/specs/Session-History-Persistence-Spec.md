@@ -1,3 +1,11 @@
+---
+type: spec
+tags:
+  - project/HotPlex
+date: 2026-04-28
+status: draft
+progress: 40
+---
 # 会话持久化与按需分页加载 (Session History Persistence)
 
 > **Issue**: #51

@@ -1,3 +1,11 @@
+---
+type: spec
+tags:
+  - project/HotPlex
+date: 2026-05-01
+status: draft
+progress: 70
+---
 # Turn Summary Spec — Issue #117
 
 每轮 Done 时，向用户发送本轮摘要信息。

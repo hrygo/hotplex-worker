@@ -1,3 +1,11 @@
+---
+type: spec
+tags:
+  - project/HotPlex
+date: 2026-04-20
+status: proposed
+progress: 0
+---
 # [FE] Revamp WebChat: Elegant Out-of-the-Box Messaging UI (AEP v1)
 
 ## 🎯 Vision Overview

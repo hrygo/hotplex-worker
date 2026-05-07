@@ -1,3 +1,11 @@
+---
+type: spec
+tags:
+  - project/HotPlex
+date: 2026-04-29
+status: proposed
+progress: 30
+---
 # HotPlex Windows 支持规范
 
 **状态**: Proposed

@@ -1,3 +1,11 @@
+---
+type: spec
+tags:
+  - project/HotPlex
+date: 2026-04-22
+status: implemented
+progress: 95
+---
 # HotPlex CLI 自配置/自检测/自修复设计文档
 
 > **日期**: 2026-04-22

@@ -1,4 +1,11 @@
-<<<<<<< HEAD
+---
+type: spec
+tags:
+  - project/HotPlex
+date: 2026-05-05
+status: implemented
+progress: 90
+---
 # Slack Stream Rotation Spec
 
 > Issue: #209 | Branch: `feat/slack-stream-rotation`

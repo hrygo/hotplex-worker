@@ -1,3 +1,11 @@
+---
+type: spec
+tags:
+  - project/HotPlex
+date: 2026-04-25
+status: proposed
+progress: 0
+---
 # Specification: Onboard Wizard Refactoring via go:embed & YAML AST Mutation
 
 ## 1. Problem Statement
