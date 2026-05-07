@@ -1,7 +1,7 @@
 {
   "version": 2,
   "last_updated": "2026-05-08T01:55:00+08:00",
-  "total_cycles": 27,
+  "total_cycles": 31,
   "modules": {
     "internal/gateway": {
       "analysis_count": 2,
@@ -142,39 +142,45 @@
       "stats": {"files": 3, "lines": 651}
     },
     "internal/admin": {
-      "analysis_count": 1,
-      "aspects_covered": ["solid", "dry"],
-      "aspects_pending": ["coupling", "error-handling", "concurrency", "resource-mgmt", "performance", "scalability", "security", "observability", "testability", "code-quality"],
-      "issues_created": [],
-      "findings_total": 0,
+      "analysis_count": 2,
+      "aspects_covered": ["solid", "dry", "coupling", "error-handling"],
+      "aspects_pending": ["concurrency", "resource-mgmt", "performance", "scalability", "security", "observability", "testability", "code-quality"],
+      "issues_created": [292],
+      "findings_total": 2,
       "findings_dropped": [
         {"finding": "Scope check pattern repeated 10+ times in handlers", "reason": "Low ROI — idiomatic Go HTTP handler pattern, extracting to middleware requires route-scope mapping and adds complexity"},
         {"finding": "HandleWorkerHealth bypasses respondJSON helper", "reason": "Low ROI — single instance, minor inconsistency"},
         {"finding": "limit query param parsing duplicated in ListSessions and HandleLogs", "reason": "Low ROI — only 2 instances, extracting adds indirection"},
         {"finding": "Provider interfaces return `any` causing type assertions in handlers", "reason": "Low ROI — changing return types cascades through all callers"},
-        {"finding": "addCORSHeaders in sessions.go instead of middleware.go", "reason": "Low ROI — just file placement, no functional impact"}
+        {"finding": "addCORSHeaders in sessions.go instead of middleware.go", "reason": "Low ROI — just file placement, no functional impact"},
+        {"finding": "HandleStats type assertion fragility si.(map[string]any)", "reason": "Low ROI — same root cause as Provider interfaces returning any, covered by existing finding"},
+        {"finding": "Coupling: admin uses Provider interfaces for DI isolation", "reason": "No issue — positive finding, correct DIP pattern"}
       ],
-      "last_analyzed": "2026-05-06T11:30:00+08:00",
+      "last_analyzed": "2026-05-08T02:00:00+08:00",
       "stats": {"files": 11, "lines": 1629}
     },
     "internal/eventstore": {
-      "analysis_count": 1,
-      "aspects_covered": ["solid", "dry"],
-      "aspects_pending": ["coupling", "error-handling", "concurrency", "resource-mgmt", "performance", "scalability", "security", "observability", "testability", "code-quality"],
-      "issues_created": [210],
-      "findings_total": 2,
+      "analysis_count": 2,
+      "aspects_covered": ["solid", "dry", "coupling", "error-handling"],
+      "aspects_pending": ["concurrency", "resource-mgmt", "performance", "scalability", "security", "observability", "testability", "code-quality"],
+      "issues_created": [210, 293],
+      "findings_total": 3,
       "findings_dropped": [
         {"finding": "Append parameter list duplicated in SQLiteStore.Append and sqliteTx.Append", "reason": "Low ROI — same SQL query, parameters must match, extracting adds indirection for 2 instances"},
         {"finding": "withDefaultTimeout repeated 8 times in store methods", "reason": "Low ROI — idiomatic Go pattern for per-method context timeout"},
-        {"finding": "scanEvents/scanTurns empty check pattern duplication", "reason": "Low ROI — 2 instances of 3-line pattern, not worth a helper"}
+        {"finding": "scanEvents/scanTurns empty check pattern duplication", "reason": "Low ROI — 2 instances of 3-line pattern, not worth a helper"},
+        {"finding": "flushBatch partial commit on individual append failures", "reason": "Subsumed by issue 249 (partial-batch-commit-undocumented-untested)"},
+        {"finding": "append silent JSON unmarshal error in deltaAccumulator", "reason": "Low ROI — data always from internal event system, malformed JSON practically impossible"},
+        {"finding": "Close() always returns nil even when pending flushes dropped", "reason": "Low ROI — consistent with best-effort design, documented behavior"},
+        {"finding": "Coupling: zero findings — module has clean one-directional dependency graph", "reason": "No issue — positive finding, module well-isolated"}
       ],
-      "last_analyzed": "2026-05-06T11:38:00+08:00",
+      "last_analyzed": "2026-05-08T02:18:00+08:00",
       "stats": {"files": 5, "lines": 1667}
     },
     "internal/cli": {
-      "analysis_count": 1,
-      "aspects_covered": ["solid", "dry"],
-      "aspects_pending": ["coupling", "error-handling", "concurrency", "resource-mgmt", "performance", "scalability", "security", "observability", "testability", "code-quality"],
+      "analysis_count": 2,
+      "aspects_covered": ["solid", "dry", "coupling", "error-handling"],
+      "aspects_pending": ["concurrency", "resource-mgmt", "performance", "scalability", "security", "observability", "testability", "code-quality"],
       "issues_created": [213],
       "findings_total": 4,
       "findings_dropped": [
@@ -182,15 +188,19 @@
         {"finding": "GenerateSecret duplication across checkers", "reason": "Low ROI — different encoding/base variants, minor duplication"},
         {"finding": "scanDir() boilerplate in agentconfig.go", "reason": "Low ROI — 3 one-liner methods, not worth abstracting"},
         {"finding": "Slack/Feishu platform branching in wizard.go", "reason": "Low ROI — only 2 platforms exist, adding third is rare"},
-        {"finding": "configPath == '' guard repeated 8+ times (D3)", "reason": "Symptom of S1 (global state), resolved when S1 is fixed"}
+        {"finding": "configPath == '' guard repeated 8+ times (D3)", "reason": "Symptom of S1 (global state), resolved when S1 is fixed"},
+        {"finding": "Coupling: leaf module with clean one-directional dependencies", "reason": "No issue — positive finding, well-isolated CLI module"},
+        {"finding": "loadEnvFile os.Setenv error silently ignored in both implementations", "reason": "Low ROI — intentional best-effort for CLI tool, security.IsProtected guard already present"},
+        {"finding": "wizard.go stepMessaging StepResult return value discarded", "reason": "Low ROI — not an error return, StepResult is reconstructed from config state"},
+        {"finding": "resolveJWTSecret silently ignores config.Load errors", "reason": "Low ROI — correct behavior for diagnostic checker, reports the real problem (missing secret)"}
       ],
-      "last_analyzed": "2026-05-06T12:35:00+08:00",
+      "last_analyzed": "2026-05-08T02:25:00+08:00",
       "stats": {"files": 44, "lines": 6748}
     },
     "internal/skills": {
-      "analysis_count": 1,
-      "aspects_covered": ["solid", "dry"],
-      "aspects_pending": ["coupling", "error-handling", "concurrency", "resource-mgmt", "performance", "scalability", "security", "observability", "testability", "code-quality"],
+      "analysis_count": 2,
+      "aspects_covered": ["solid", "dry", "coupling", "error-handling"],
+      "aspects_pending": ["concurrency", "resource-mgmt", "performance", "scalability", "security", "observability", "testability", "code-quality"],
       "issues_created": [],
       "findings_total": 0,
       "findings_dropped": [
@@ -198,9 +208,14 @@
         {"finding": "Hardcoded scan directory suffixes (.claude/.agents)", "reason": "Low ROI — 4 entries, explicit is better than abstract, adding new directories is rare"},
         {"finding": "parseSkillFile and ParseFrontmatter overlap", "reason": "Low ROI — different return types and responsibilities, by design"},
         {"finding": "evictOldest O(n) scan under write lock", "reason": "Low ROI — maxCacheEntries=100, microseconds operation"},
-        {"finding": "CollapseSpaces exported generic utility", "reason": "Low confidence + Low ROI — only used within this module"}
+        {"finding": "CollapseSpaces exported generic utility", "reason": "Low confidence + Low ROI — only used within this module"},
+        {"finding": "Coupling: zero internal dependencies, one consumer (gateway/handler.go)", "reason": "No issue — positive finding, exemplary leaf module"},
+        {"finding": "scanDirs silently ignores directory scan errors", "reason": "Low ROI — intentional best-effort design for filesystem scanner"},
+        {"finding": "parseSkillFile returns nil on all errors (read/parse/missing name)", "reason": "Low ROI — correct pattern for best-effort skill discovery"},
+        {"finding": "Locator.List ignores context parameter (_ context.Context)", "reason": "Low ROI — already evaluated in prior analysis, skill scan is typically <100ms"},
+        {"finding": "Locator.List never returns error (always nil)", "reason": "Low ROI — misleading signature but not harmful, best-effort by design"}
       ],
-      "last_analyzed": "2026-05-06T12:00:00+08:00",
+      "last_analyzed": "2026-05-08T02:34:00+08:00",
       "stats": {"files": 4, "lines": 621}
     },
     "internal/service": {
@@ -276,7 +291,7 @@
       "stats": {"files": 36, "lines": 3697}
     }
   },
-  "issues": [198, 199, 202, 204, 205, 206, 207, 208, 210, 212, 213, 214, 215, 216, 217, 218, 219, 290],
+  "issues": [198, 199, 202, 204, 205, 206, 207, 208, 210, 212, 213, 214, 215, 216, 217, 218, 219, 290, 293],
   "audited_issues": [
     {"number": 198, "verdict": "valid", "action": "confirmed", "audited_at": "2026-05-08T00:35:00+08:00"},
     {"number": 199, "verdict": "valid", "action": "confirmed", "audited_at": "2026-05-08T00:35:00+08:00"},
@@ -325,6 +340,10 @@
     {"cycle": 24, "mode": "audit", "issues_audited": [242, 243, 244, 245, 246], "closed": 0, "updated": 0, "confirmed": 5, "time": "2026-05-08T01:03:00+08:00"},
     {"cycle": 25, "module": "internal/config", "aspects": ["coupling", "error-handling"], "issues": [], "time": "2026-05-08T01:13:00+08:00"},
     {"cycle": 26, "module": "internal/security", "aspects": ["coupling", "error-handling"], "issues": [290], "time": "2026-05-08T01:54:00+08:00"},
-    {"cycle": 27, "module": "internal/agentconfig", "aspects": ["coupling", "error-handling"], "issues": [], "time": "2026-05-08T01:55:00+08:00"}
+    {"cycle": 27, "module": "internal/agentconfig", "aspects": ["coupling", "error-handling"], "issues": [], "time": "2026-05-08T01:55:00+08:00"},
+    {"cycle": 28, "module": "internal/admin", "aspects": ["coupling", "error-handling"], "issues": [292], "time": "2026-05-08T02:00:00+08:00"},
+    {"cycle": 29, "module": "internal/eventstore", "aspects": ["coupling", "error-handling"], "issues": [293], "time": "2026-05-08T02:18:00+08:00"},
+    {"cycle": 30, "module": "internal/cli", "aspects": ["coupling", "error-handling"], "issues": [], "time": "2026-05-08T02:25:00+08:00"},
+    {"cycle": 31, "module": "internal/skills", "aspects": ["coupling", "error-handling"], "issues": [], "time": "2026-05-08T02:34:00+08:00"}
   ]
 }
