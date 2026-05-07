@@ -330,11 +330,11 @@ func TestBuildSystemPrompt(t *testing.T) {
 	t.Run("behavioral directives present per section", func(t *testing.T) {
 		cfg := &AgentConfigs{Soul: "S", Agents: "A", Skills: "K", User: "U", Memory: "M"}
 		prompt := BuildSystemPrompt(cfg)
-		require.Contains(t, prompt, "Embody this persona naturally")
-		require.Contains(t, prompt, "mandatory workspace constraints")
-		require.Contains(t, prompt, "Apply these capabilities when relevant")
-		require.Contains(t, prompt, "Tailor responses to this user")
-		require.Contains(t, prompt, "Recall relevant past context")
+		require.Contains(t, prompt, "自然地代入并体现此人格定位")
+		require.Contains(t, prompt, "视为强制性的工作空间行为约束")
+		require.Contains(t, prompt, "在相关时调用这些能力")
+		require.Contains(t, prompt, "提供个性化的服务体验")
+		require.Contains(t, prompt, "确保任务执行的连贯性与深度")
 	})
 }
 

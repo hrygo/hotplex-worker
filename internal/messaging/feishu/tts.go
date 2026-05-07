@@ -65,7 +65,7 @@ func (p *TTSPipeline) Process(ctx context.Context, fullText, chatID, replyToMsgI
 	summary, err := p.summarize(ctx, fullText)
 	if err != nil {
 		p.log.Warn("tts: summary failed, using truncated text", "err", err)
-		summary = truncateText(fullText, p.maxChars)
+		summary = tts.TruncateText(fullText, p.maxChars)
 	}
 	if summary == "" {
 		return
@@ -100,7 +100,7 @@ func (p *TTSPipeline) summarize(ctx context.Context, fullText string) (string, e
 		return "", fmt.Errorf("brain not initialized")
 	}
 	// Cap input to avoid blowing up the prompt — 5x maxChars gives the LLM enough context.
-	capped := truncateText(fullText, p.maxChars*5)
+	capped := tts.TruncateText(fullText, p.maxChars*5)
 	prompt := fmt.Sprintf(ttsSummaryPrompt, p.maxChars, capped)
 	result, err := b.Chat(ctx, prompt)
 	if err != nil {
@@ -170,15 +170,4 @@ func (p *TTSPipeline) uploadAudio(ctx context.Context, opusData []byte) (string,
 		return "", fmt.Errorf("feishu file create: empty response")
 	}
 	return *resp.Data.FileKey, nil
-}
-
-func truncateText(s string, maxLen int) string {
-	runes := []rune(s)
-	if len(runes) <= maxLen {
-		return s
-	}
-	if maxLen > 3 {
-		return string(runes[:maxLen-3]) + "..."
-	}
-	return string(runes[:maxLen])
 }
