@@ -1,5 +1,39 @@
 # Changelog
 
+## [1.7.0] - 2026-05-07
+
+### Summary
+
+v1.7.0 是一次 minor 版本更新，聚焦于 **LLM 编排能力** 和 **语音交互管道**。新增 Brain 模块作为 Gateway 内置的 LLM 编排层（支持 OpenAI/Anthropic 双协议，含重试/缓存/限流/熔断装饰器链），实现飞书和 Slack 双平台的 voice-in → voice-out 全链路管道（STT → Brain 摘要 → Edge TTS → Opus 编码 → 音频消息回传）。Agent Config 获得 Windows 命令注入防护和 XML 标签清洗，Brain 模块经过严格清理删除 ~2700 行死代码并修复 4 个并发安全缺陷。
+
+### Added
+
+- **Brain**: LLM orchestration module — lightweight Chat()/ChatStream() interface with OpenAI and Anthropic protocol support, decorator chain (retry → cache → rate limit → circuit breaker → metrics), model routing, and cost estimation. Fail-open design: missing API key = graceful degradation. (#273)
+- **Messaging/Feishu**: TTS voice reply pipeline — voice input detected → Brain text summary → Edge TTS synthesis → FFmpeg MP3→Opus conversion → Feishu audio message upload. Configurable voice, max chars, and concurrency limiter. (#273)
+- **Messaging/Slack**: TTS voice reply pipeline mirroring Feishu behavior — identical voice-triggered flow with Slack file upload integration. (#273)
+- **Configuration**: Onboard wizard enhanced with environment-backed worker commands and contextual tips in generated config and .env files.
+
+### Changed
+
+- **Agent Config**: Windows command injection prevention — switch from inline `--append-system-prompt` to temporary file injection (`--append-system-prompt-file`) to avoid cmd.exe argument mangling.
+- **Agent Config**: XML tag sanitization in system prompt builder — unreserved XML tags are HTML-escaped to prevent prompt injection through config files.
+- **Agent Config**: META-COGNITION.md enhanced with P0–P4 decision tree, config modification SOP, and self-correction protocol. Moved to B-channel (directives) for higher authority.
+- **Brain**: Simplified API key resolution to 3 clear priority levels — dedicated `HOTPLEX_BRAIN_*` env vars → worker config file extraction (`~/.claude/settings.json`) → system env vars (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`). Removed `PROVIDER_TYPE` concept.
+- **Brain**: Removed ~2700 lines of dead code — 7 unused components (failover, priority, budget, health, observable, builder, presets), 3 dead interfaces, duplicate LLM client wrappers. Extracted shared helpers, promoted atomic counters, consolidated token estimation.
+
+### Fixed
+
+- **Brain**: 4 critical concurrency issues — ChatStream context cancel causing goroutine leaks, globalBrain unprotected concurrent access, Anthropic streaming goroutine leak on ctx cancellation, CachedClient silently swallowing json.Marshal errors. (#273)
+- **Brain**: API key not wired to LLM client constructors — hardcoded empty string bypassed config resolution entirely.
+- **Brain**: IntentRouter data race (int64 counters → atomic.Int64) and MetricsCollector nil panic on OTel instrument creation failure.
+- **Messaging/TTS**: `voiceTriggered` data race (bool → atomic.Bool), TTS goroutine using platform writer's 30s context instead of independent 60s context, text truncation off-by-3.
+- **Messaging/Feishu**: Content() extraction moved before Close() to prevent empty text on TTS pipeline, brain input truncated to 5× maxChars before LLM summary.
+- **CLI**: Onboard wizard missing worker commands in generated config.yaml and .env files.
+
+### Security
+
+- **Agent Config**: Windows cmd.exe argument injection mitigated via temporary file-based prompt injection. Unreserved XML tags in agent configs are sanitized at prompt assembly time.
+
 ## [1.6.1] - 2026-05-06
 
 ### Summary
