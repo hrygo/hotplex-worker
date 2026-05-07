@@ -37,6 +37,10 @@ func (m *mockLLMClientForBrain) Chat(ctx context.Context, prompt string) (string
 	return "mock chat response", nil
 }
 
+func (m *mockLLMClientForBrain) ChatWithOptions(ctx context.Context, prompt string, opts llm.ChatOptions) (string, error) {
+	return m.Chat(ctx, prompt)
+}
+
 func (m *mockLLMClientForBrain) Analyze(ctx context.Context, prompt string, target any) error {
 	m.analyzeCount++
 	if m.analyzeFn != nil {

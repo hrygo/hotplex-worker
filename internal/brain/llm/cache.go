@@ -52,6 +52,23 @@ func (c *CachedClient) Chat(ctx context.Context, prompt string) (string, error) 
 	return response, nil
 }
 
+func (c *CachedClient) ChatWithOptions(ctx context.Context, prompt string, opts ChatOptions) (string, error) {
+	key := c.makeOptsKey(prompt, opts)
+	if entry, found := c.cache.Get(key); found {
+		c.hits.Add(1)
+		return entry.Response, nil
+	}
+
+	c.misses.Add(1)
+	response, err := c.client.ChatWithOptions(ctx, prompt, opts)
+	if err != nil {
+		return "", err
+	}
+
+	c.cache.Add(key, CacheEntry{Response: response})
+	return response, nil
+}
+
 func (c *CachedClient) Analyze(ctx context.Context, prompt string, target any) error {
 	key := c.makeKey(prompt, true)
 	if entry, found := c.cache.Get(key); found {
@@ -89,6 +106,11 @@ func (c *CachedClient) makeKey(prompt string, isAnalyze bool) string {
 		prefix = "analyze"
 	}
 	return prefix + ":" + hex.EncodeToString(h[:])
+}
+
+func (c *CachedClient) makeOptsKey(prompt string, opts ChatOptions) string {
+	h := sha256.Sum256([]byte(prompt))
+	return fmt.Sprintf("chatopt:%d:%.2f:%s", opts.MaxTokens, opts.Temperature, hex.EncodeToString(h[:]))
 }
 
 func (c *CachedClient) ClearCache() {

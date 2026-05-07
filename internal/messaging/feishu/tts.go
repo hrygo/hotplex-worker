@@ -89,7 +89,7 @@ func (p *TTSPipeline) summarize(ctx context.Context, fullText string) (string, e
 	}
 	capped := tts.TruncateText(fullText, tts.SummaryInputCap)
 	prompt := fmt.Sprintf(tts.TTSSummaryPrompt, p.maxChars, capped)
-	result, err := b.Chat(ctx, prompt)
+	result, err := b.ChatWithOptions(ctx, prompt, tts.SummaryChatOpts)
 	if err != nil {
 		return "", fmt.Errorf("brain chat: %w", err)
 	}

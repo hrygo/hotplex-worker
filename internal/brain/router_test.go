@@ -32,6 +32,10 @@ func (m *mockBrainForRouter) Chat(ctx context.Context, prompt string) (string, e
 	return "mock response", nil
 }
 
+func (m *mockBrainForRouter) ChatWithOptions(ctx context.Context, prompt string, opts ChatOptions) (string, error) {
+	return m.Chat(ctx, prompt)
+}
+
 func (m *mockBrainForRouter) Analyze(ctx context.Context, prompt string, target any) error {
 	m.analyzeCnt++
 	if m.analyzeFn != nil {

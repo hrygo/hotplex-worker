@@ -186,6 +186,23 @@ func (w *enhancedBrainWrapper) Chat(ctx context.Context, prompt string) (string,
 	return w.ChatWithModel(ctx, "", prompt)
 }
 
+func (w *enhancedBrainWrapper) ChatWithOptions(ctx context.Context, prompt string, opts llm.ChatOptions) (string, error) {
+	ctx, cancel := w.applyTimeout(ctx)
+	defer cancel()
+
+	model := w.selectModel(ctx, "", llm.ScenarioChat)
+
+	if err := w.applyRateLimit(ctx, model); err != nil {
+		return "", err
+	}
+
+	timer := w.startMetricsTimer(model, "chat")
+	result, err := w.client.ChatWithOptions(ctx, prompt, opts)
+	w.recordMetrics(timer, model, prompt, result, err)
+
+	return result, err
+}
+
 func (w *enhancedBrainWrapper) Analyze(ctx context.Context, prompt string, target any) error {
 	return w.AnalyzeWithModel(ctx, "", prompt, target)
 }

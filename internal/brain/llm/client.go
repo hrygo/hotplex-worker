@@ -9,10 +9,18 @@ import (
 	"github.com/sashabaranov/go-openai"
 )
 
+// ChatOptions controls LLM generation parameters.
+// Zero-value fields use the provider's default.
+type ChatOptions struct {
+	MaxTokens   int     // 0 = provider default (Anthropic: 4096, OpenAI: API default)
+	Temperature float64 // 0 = provider default (omit from request)
+}
+
 // LLMClient defines the interface for LLM interactions.
 // All client wrappers must implement this interface.
 type LLMClient interface {
 	Chat(ctx context.Context, prompt string) (string, error)
+	ChatWithOptions(ctx context.Context, prompt string, opts ChatOptions) (string, error)
 	Analyze(ctx context.Context, prompt string, target any) error
 	ChatStream(ctx context.Context, prompt string) (<-chan string, error)
 	HealthCheck(ctx context.Context) HealthStatus
@@ -94,6 +102,30 @@ func (c *OpenAIClient) Chat(ctx context.Context, prompt string) (string, error) 
 		return "", fmt.Errorf("zero choices in response")
 	}
 
+	return resp.Choices[0].Message.Content, nil
+}
+
+func (c *OpenAIClient) ChatWithOptions(ctx context.Context, prompt string, opts ChatOptions) (string, error) {
+	req := openai.ChatCompletionRequest{
+		Model: c.model,
+		Messages: []openai.ChatCompletionMessage{
+			{Role: openai.ChatMessageRoleUser, Content: prompt},
+		},
+	}
+	if opts.MaxTokens > 0 {
+		req.MaxTokens = opts.MaxTokens
+	}
+	if opts.Temperature > 0 {
+		req.Temperature = float32(opts.Temperature)
+	}
+
+	resp, err := c.client.CreateChatCompletion(ctx, req)
+	if err != nil {
+		return "", fmt.Errorf("openai chat error: %w", err)
+	}
+	if len(resp.Choices) == 0 {
+		return "", fmt.Errorf("zero choices in response")
+	}
 	return resp.Choices[0].Message.Content, nil
 }
 

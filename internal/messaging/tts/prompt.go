@@ -1,5 +1,7 @@
 package tts
 
+import "github.com/hrygo/hotplex/internal/brain"
+
 // SummaryInputCap limits the input text length sent to the LLM for summarization.
 // Independent of MaxChars to ensure sufficient context even when MaxChars is small.
 const SummaryInputCap = 2000
@@ -20,3 +22,11 @@ const TTSSummaryPrompt = `你是一位语音播报编辑。将以下 AI 助手�
 
 AI 回复：
 %s`
+
+// SummaryChatOpts controls LLM generation for TTS summaries.
+// MaxTokens=256 covers 150 Chinese characters (~225 tokens) with margin.
+// Temperature=0.3 ensures consistent, focused summaries.
+var SummaryChatOpts = brain.ChatOptions{
+	MaxTokens:   256,
+	Temperature: 0.3,
+}

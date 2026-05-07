@@ -68,6 +68,40 @@ func (c *AnthropicClient) Chat(ctx context.Context, prompt string) (string, erro
 	return result.String(), nil
 }
 
+func (c *AnthropicClient) ChatWithOptions(ctx context.Context, prompt string, opts ChatOptions) (string, error) {
+	mt := int64(4096)
+	if opts.MaxTokens > 0 {
+		mt = int64(opts.MaxTokens)
+	}
+
+	params := anthropic.MessageNewParams{
+		Model:     c.model,
+		MaxTokens: mt,
+		Messages: []anthropic.MessageParam{
+			anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
+		},
+	}
+	if opts.Temperature > 0 {
+		params.Temperature = anthropic.Float(opts.Temperature)
+	}
+
+	resp, err := c.client.Messages.New(ctx, params)
+	if err != nil {
+		return "", fmt.Errorf("anthropic chat error: %w", err)
+	}
+	if len(resp.Content) == 0 {
+		return "", fmt.Errorf("zero content in response")
+	}
+
+	var result strings.Builder
+	for _, block := range resp.Content {
+		if block.Type == "text" {
+			result.WriteString(block.Text)
+		}
+	}
+	return result.String(), nil
+}
+
 // Analyze requests JSON formatted output.
 func (c *AnthropicClient) Analyze(ctx context.Context, prompt string, target any) error {
 	prompt = ensureJSONPrompt(prompt)
