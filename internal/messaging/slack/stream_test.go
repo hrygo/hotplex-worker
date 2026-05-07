@@ -292,7 +292,7 @@ func TestDeadCodeRemoved(t *testing.T) {
 }
 
 func TestStreamRotationTTL(t *testing.T) {
-	require.Equal(t, 6*time.Minute, StreamRotationTTL, "rotation TTL should be 6 minutes (aligned with Feishu)")
+	require.Equal(t, 500*time.Second, StreamRotationTTL, "rotation TTL should be 500 seconds (aligned with Feishu)")
 	require.Less(t, StreamRotationTTL, StreamTTL,
 		"rotation TTL must be less than server TTL")
 }
