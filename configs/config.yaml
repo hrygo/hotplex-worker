@@ -216,7 +216,7 @@ messaging:
     group_policy: "allowlist"
     require_mention: true
     # STT (Speech-to-Text)
-    stt_provider: "feishu+local"
+    stt_provider: "local"
     stt_local_cmd: "python3 ~/.hotplex/scripts/stt_server.py"
     stt_local_idle_ttl: 1h
     # TTS (Text-to-Speech) — voice replies for voice-triggered turns

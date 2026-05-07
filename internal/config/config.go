@@ -519,7 +519,7 @@ func Default() *Config {
 				DMPolicy:       "allowlist",
 				GroupPolicy:    "allowlist",
 				STTConfig: STTConfig{
-					Provider:     "feishu+local",
+					Provider:     "local",
 					LocalCmd:     "python3 " + filepath.Join(HotplexHome(), "scripts", "stt_server.py"),
 					LocalIdleTTL: time.Hour,
 				},

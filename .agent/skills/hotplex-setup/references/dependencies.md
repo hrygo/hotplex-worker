@@ -148,6 +148,127 @@ ls -lh ~/.cache/modelscope/hub/models/iic/SenseVoiceSmall/
 
 ---
 
+## ffmpeg（TTS 语音回复必需）
+
+Slack 和飞书语音回复均使用 Edge TTS 生成 MP3，再通过 ffmpeg 转码为 Opus 格式。只要 `tts_enabled=true`，ffmpeg 就是必需的。
+
+### macOS
+
+```bash
+brew install ffmpeg
+
+# 验证
+ffmpeg -version | head -1
+```
+
+### Linux (Ubuntu/Debian)
+
+```bash
+sudo apt install -y ffmpeg
+
+# 验证
+ffmpeg -version | head -1
+```
+
+### Windows
+
+```powershell
+choco install ffmpeg -y
+# 或: winget install Gyan.FFmpeg
+
+# 验证
+ffmpeg -version
+```
+
+---
+
+## Kokoro TTS 依赖（可选，本地 CPU 推理）
+
+当 `tts_provider` 设置为 `edge+kokoro` 时，需要以下系统库来运行 Kokoro-82M 本地推理引擎。
+
+### onnxruntime (v1.17+)
+
+Kokoro ONNX 模型的推理后端。
+
+**macOS**：
+```bash
+brew install onnxruntime
+
+# 验证
+pkg-config --modversion libonnxruntime
+```
+
+**Linux (Ubuntu/Debian)**：
+```bash
+sudo apt install -y libonnxruntime-dev
+
+# 验证
+pkg-config --modversion libonnxruntime
+# 或检查库文件
+ldconfig -p | grep onnxruntime
+```
+
+**Windows**：
+```powershell
+choco install onnxruntime -y
+
+# 验证：检查 onnxruntime.dll 是否在 PATH
+where onnxruntime
+```
+
+**手动安装（所有平台）**：
+
+从 https://github.com/microsoft/onnxruntime/releases 下载对应平台的预编译包。
+
+Linux 需设置环境变量：
+```bash
+export LD_LIBRARY_PATH=/path/to/onnxruntime/lib:$LD_LIBRARY_PATH
+```
+
+### espeak-ng
+
+Kokoro TTS 的文本转音素（G2P）引擎，将文本转换为 IPA 音素序列。
+
+**macOS**：
+```bash
+brew install espeak-ng
+
+# 验证
+espeak-ng --version
+```
+
+**Linux (Ubuntu/Debian)**：
+```bash
+sudo apt install -y espeak-ng
+
+# 验证
+espeak-ng --version
+```
+
+**Windows**：
+```powershell
+choco install espeak-ng -y
+
+# 验证
+espeak-ng --version
+```
+
+**从源码安装（所有平台）**：
+
+见 https://github.com/espeak-ng/espeak-ng/releases
+
+### Kokoro 模型资产
+
+| 文件 | 说明 | 大小 |
+|------|------|------|
+| `kokoro-v1.0.onnx` | Kokoro-82M 模型权重 | ~82MB |
+| `voices/*.bin` | 音色向量（如 `af_heart.bin`） | 几 KB 每个 |
+| `config/vocab.json` | 音素→Token 映射字典 | ~100KB |
+
+模型文件将在首次使用时自动下载，或手动放置到 `~/.hotplex/assets/` 目录。
+
+---
+
 ## Make（源码构建需要）
 
 ### macOS
@@ -223,6 +344,27 @@ else
     echo "⚠️  SenseVoice 模型未下载"
 fi
 
+# ffmpeg（飞书 TTS 必需）
+if command -v ffmpeg &> /dev/null; then
+    echo "✅ ffmpeg: $(ffmpeg -version | head -1)"
+else
+    echo "❌ ffmpeg 未安装（飞书 TTS 需要）"
+fi
+
+# onnxruntime（Kokoro TTS 可选）
+if pkg-config --modversion libonnxruntime &> /dev/null 2>&1; then
+    echo "✅ onnxruntime: $(pkg-config --modversion libonnxruntime)"
+else
+    echo "⚠️  onnxruntime 未安装（Kokoro TTS 可选）"
+fi
+
+# espeak-ng（Kokoro TTS 可选）
+if command -v espeak-ng &> /dev/null; then
+    echo "✅ espeak-ng 已安装"
+else
+    echo "⚠️  espeak-ng 未安装（Kokoro TTS 可选）"
+fi
+
 # Make
 if command -v make &> /dev/null; then
     echo "✅ Make: $(make --version | head -1)"
@@ -256,11 +398,30 @@ fi
 
 **A**: 详见 `references/stt.md` 的故障排查部分。
 
+### Q: ffmpeg 安装后飞书 TTS 仍然报错？
+
+**A**: 确认 ffmpeg 在 PATH 中：
+```bash
+which ffmpeg
+ffmpeg -version | head -1
+```
+如果使用 systemd 服务，确保服务环境中包含 ffmpeg 的 PATH。
+
+### Q: Kokoro TTS 的 onnxruntime CGO 找不到库？
+
+**A**: 设置 `LD_LIBRARY_PATH`（Linux）或 `DYLD_LIBRARY_PATH`（macOS）：
+```bash
+export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+```
+或在配置中指定 onnxruntime 库路径。
+
 ### Q: Windows 下如何安装依赖？
 
 **A**:
 1. Go: https://go.dev/dl/
 2. Python: https://www.python.org/downloads/
 3. Git: https://git-scm.com/download/win
-4. Python 包: 在 PowerShell 中运行 `pip install funasr-onnx modelscope`
-5. 模型: 运行 Python 下载命令（同上）
+4. ffmpeg: `choco install ffmpeg`
+5. Python 包: 在 PowerShell 中运行 `pip install funasr-onnx modelscope`
+6. Kokoro: `choco install onnxruntime espeak-ng`
+7. 模型: 运行 Python 下载命令（同上）
