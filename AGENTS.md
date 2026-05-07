@@ -137,15 +137,19 @@ cp configs/env.example .env
 - `interaction/` - Q&A 交互流转
 
 **Brain** (LLM 编排层)：
-- `brain.go` - 核心逻辑与客户端包装
-- `guard.go` - 输入/输出安全审计 (Safety Guard)
-- `router.go` - 意图分发 (Intent Router)
-- `summary.go` - 响应摘要与压缩
-- `cost.go` - Token 计数与成本估算
+- `brain.go` - 核心接口 (Brain/StreamingBrain/RoutableBrain/ObservableBrain) + 全局单例
+- `init.go` - Init() 编排 + enhancedBrainWrapper 中间件链 (retry → cache → rate limit)
+- `config.go` - 13 子配置 + 4 层 API key 发现
+- `guard.go` - 输入/输出安全审计 (Safety Guard)、威胁检测、Chat2Config
+- `router.go` - 意图分发 (Intent Router)、LRU 缓存、快速路径检测
+- `memory.go` - 上下文压缩 + 用户偏好提取 + TTL 清理
+- `extractor.go` - 从 Claude Code / OpenCode 配置文件提取凭证
+- `llm/` - LLM 客户端子包：OpenAI/Anthropic 客户端 + 装饰器链 (retry/cache/ratelimit/circuit/metrics) + 模型路由 + 成本估算
 
 **Worker**：
-- `claudecode/` - Claude Code 适配器
-- `opencodeserver/` - Open Code Server 适配器（单例进程）
+- `claudecode/` - Claude Code 适配器 (stdio, `--print --session-id`)
+- `opencodeserver/` - Open Code Server 适配器（单例进程, HTTP+SSE）
+- `proc/` - 跨平台进程生命周期管理 (PGID/Job Object)
 - `base/` - 共享 BaseWorker + Conn
 
 **支撑模块**：
@@ -157,6 +161,8 @@ cp configs/env.example .env
 - `service/` - 跨平台系统服务管理（systemd/launchd/SCM）
 - `eventstore/` - 会话事件持久化 + delta 聚合
 - `updater/` - 自更新（GitHub API、sha256 校验、原子替换）
+- `sqlutil/` - SQLite CGO/no-CGO 驱动切换（build tags）
+- `webchat/` - 嵌入式 Next.js SPA (go:embed)
 
 ### 公共包 (`pkg/`)
 
@@ -454,15 +460,22 @@ hotplex slack react add --channel <id> --ts <ts> --emoji white_check_mark
 | 文件 | 行数 |
 |------|------|
 | `manager_test.go` | 2249 |
-| `adapter_test.go` (slack) | 2138 |
+| `adapter_test.go` (slack) | 2212 |
+| `init_test.go` (brain) | 1472 |
 | `conn_test.go` | 1424 |
-| `adapter.go` (slack) | 1321 |
-| `adapter.go` (feishu) | 1267 |
-| `hub_test.go` | 1103 |
+| `adapter.go` (feishu) | 1384 |
+| `wizard.go` (onboard) | 1377 |
+| `adapter.go` (slack) | 1366 |
+| `guard_test.go` (brain) | 1179 |
+| `hub_test.go` | 1172 |
+| `memory_test.go` (brain) | 1062 |
 | `commands_test.go` (ocs) | 1050 |
-| `manager.go` | 984 |
-| `security_test.go` | 929 |
-| `config.go` | 923 |
-| `worker.go` (ocs) | 860 |
-| `streaming.go` (feishu) | 857 |
-| `handler.go` | 823 |
+| `router_test.go` (brain) | 1035 |
+| `handler_test.go` | 1000 |
+| `manager.go` | 998 |
+| `e2e_test.go` (slack) | 970 |
+| `config.go` | 952 |
+| `worker.go` (ocs) | 873 |
+| `streaming.go` (feishu) | 870 |
+| `worker.go` (claudecode) | 855 |
+| `handler.go` | 840 |
