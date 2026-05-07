@@ -93,7 +93,8 @@ func (p *TTSPipeline) summarize(ctx context.Context, fullText string) (string, e
 	if err != nil {
 		return "", fmt.Errorf("brain chat: %w", err)
 	}
-	return strings.TrimSpace(result), nil
+	result = tts.SanitizeForSpeech(strings.TrimSpace(result))
+	return result, nil
 }
 
 func (p *TTSPipeline) sendAudio(ctx context.Context, chatID, replyToMsgID string, opusData []byte) error {
@@ -102,7 +103,7 @@ func (p *TTSPipeline) sendAudio(ctx context.Context, chatID, replyToMsgID string
 		return fmt.Errorf("upload audio: %w", err)
 	}
 
-	msgContent := fmt.Sprintf(`{"file_key":%q}`, fileKey)
+	msgContent := fmt.Sprintf(`{"file_key":%q,"duration":%d}`, fileKey, tts.EstimateAudioDurationMs(len(opusData)))
 	req := larkim.NewCreateMessageReqBuilder().
 		ReceiveIdType("chat_id").
 		Body(larkim.NewCreateMessageReqBodyBuilder().

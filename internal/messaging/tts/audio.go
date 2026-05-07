@@ -39,6 +39,19 @@ func MP3ToOpus(ctx context.Context, mp3Data []byte) ([]byte, error) {
 	return out, nil
 }
 
+// EstimateAudioDurationMs estimates audio duration in milliseconds from Opus bytes.
+// Opus at 16kbps mono ≈ 2000 bytes/sec. Required by Feishu audio messages.
+func EstimateAudioDurationMs(opusBytes int) int {
+	if opusBytes <= 0 {
+		return 1000
+	}
+	ms := opusBytes * 1000 / 2000
+	if ms < 1000 {
+		return 1000
+	}
+	return ms
+}
+
 // EstimateAudioDuration estimates audio duration in seconds from Opus bytes.
 // Opus at 16kbps mono ≈ 2000 bytes/sec. Used for logging only.
 func EstimateAudioDuration(opusBytes int) int {

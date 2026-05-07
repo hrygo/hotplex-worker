@@ -16,7 +16,8 @@ import (
 )
 
 // TTSPipeline processes AI responses into voice messages for Slack:
-// full text → LLM summary → Edge TTS → MP3 → FFmpeg Opus → Slack file upload.
+// full text → LLM summary → Edge TTS → MP3 → Slack file upload.
+// Slack natively supports MP3 inline playback, so no Opus conversion needed.
 type TTSPipeline struct {
 	synthesizer tts.Synthesizer
 	client      *slack.Client
@@ -55,20 +56,15 @@ func (p *TTSPipeline) Process(ctx context.Context, fullText, channelID, threadTS
 		return
 	}
 
+	// Edge TTS outputs MP3 directly — Slack supports MP3 inline playback.
 	mp3Data, err := p.synthesizer.Synthesize(ctx, summary)
 	if err != nil {
 		p.log.Warn("tts: synthesis failed", "err", err)
 		return
 	}
 
-	opusData, err := tts.MP3ToOpus(ctx, mp3Data)
-	if err != nil {
-		p.log.Warn("tts: mp3→opus conversion failed", "err", err)
-		return
-	}
-
-	duration := tts.EstimateAudioDuration(len(opusData))
-	if err := p.uploadAndSend(ctx, channelID, threadTS, opusData); err != nil {
+	duration := tts.EstimateAudioDurationMs(len(mp3Data)) / 1000
+	if err := p.uploadAndSend(ctx, channelID, threadTS, mp3Data); err != nil {
 		p.log.Warn("tts: send audio failed", "err", err)
 		return
 	}
@@ -86,15 +82,16 @@ func (p *TTSPipeline) summarize(ctx context.Context, fullText string) (string, e
 	if err != nil {
 		return "", fmt.Errorf("brain chat: %w", err)
 	}
-	return strings.TrimSpace(result), nil
+	result = tts.SanitizeForSpeech(strings.TrimSpace(result))
+	return result, nil
 }
 
-func (p *TTSPipeline) uploadAndSend(ctx context.Context, channelID, threadTS string, opusData []byte) error {
+func (p *TTSPipeline) uploadAndSend(ctx context.Context, channelID, threadTS string, mp3Data []byte) error {
 	params := slack.UploadFileParameters{
-		Filename: "tts_reply.opus",
+		Filename: "voice_reply.mp3",
 		Title:    "Voice Reply",
-		Reader:   bytes.NewReader(opusData),
-		FileSize: len(opusData),
+		Reader:   bytes.NewReader(mp3Data),
+		FileSize: len(mp3Data),
 		Channel:  channelID,
 	}
 	if threadTS != "" {
