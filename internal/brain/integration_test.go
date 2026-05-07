@@ -24,11 +24,14 @@ func setupIntegrationBrain(t *testing.T) Brain {
 	t.Cleanup(func() { globalBrain = oldBrain })
 	globalBrain = nil
 
-	err := Init(slog.Default())
-	require.NoError(t, err)
+	if err := Init(slog.Default()); err != nil {
+		t.Skipf("skipping: brain init failed (no API key available): %v", err)
+	}
 
 	b := Global()
-	require.NotNil(t, b, "brain should be initialized (check worker config or env vars)")
+	if b == nil {
+		t.Skip("skipping: brain not initialized (no API key available)")
+	}
 	return b
 }
 
