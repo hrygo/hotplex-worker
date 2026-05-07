@@ -76,7 +76,7 @@ func TestConfig_DefaultValues(t *testing.T) {
 	_ = os.Unsetenv("ANTHROPIC_API_KEY")
 	_ = os.Unsetenv("OPENAI_API_KEY")
 	_ = os.Unsetenv("DEEPSEEK_API_KEY")
-	_ = os.Unsetenv("HOTPLEX_PROVIDER_TYPE")           // Prevent CLI extractor interference
+	_ = os.Setenv("HOTPLEX_BRAIN_WORKER_EXTRACT", "false")
 	_ = os.Setenv("HOTPLEX_BRAIN_API_KEY", "test-key") // Required to use HOTPLEX_BRAIN_*
 	_ = os.Setenv("HOTPLEX_BRAIN_PROVIDER", "openai")  // Ensure predictable provider for default test
 

@@ -197,50 +197,37 @@ type Config struct {
 // Resolution order (first non-empty API key wins):
 //
 //  1. HOTPLEX_BRAIN_API_KEY  — Brain's own dedicated key
-//  2. CLI Extractor          — ~/.claude/settings.json or ~/.config/opencode/opencode.json
-//  3. Provider env vars      — HOTPLEX_PROVIDER_TYPE selects ANTHROPIC_API_KEY / OPENAI_API_KEY / etc.
-//  4. System env vars        — scan ANTHROPIC_API_KEY → OPENAI_API_KEY → SILICONFLOW_API_KEY → DEEPSEEK_API_KEY
-//  5. Disabled               — no key found, Brain degrades gracefully
+//  2. Worker config files    — scan ~/.claude/settings.json then ~/.config/opencode/opencode.json
+//  3. System env vars        — scan ANTHROPIC_API_KEY → OPENAI_API_KEY → SILICONFLOW_API_KEY → DEEPSEEK_API_KEY
+//  4. Disabled               — no key found, Brain degrades gracefully
 func LoadConfigFromEnv() Config {
 	// ── 1. Brain's own configuration (HOTPLEX_BRAIN_*) ──
 	if apiKey := os.Getenv("HOTPLEX_BRAIN_API_KEY"); apiKey != "" {
-		protocol := getEnv("HOTPLEX_BRAIN_PROTOCOL",
-			protocolForProvider(getEnv("HOTPLEX_BRAIN_PROVIDER", "openai")))
+		provider := getEnv("HOTPLEX_BRAIN_PROVIDER", "openai")
+		protocol := getEnv("HOTPLEX_BRAIN_PROTOCOL", protocolForProvider(provider))
 		model := getEnv("HOTPLEX_BRAIN_MODEL", defaultModelForProtocol(protocol))
-		return buildConfig(apiKey,
-			getEnv("HOTPLEX_BRAIN_PROVIDER", "openai"),
-			protocol, model, os.Getenv("HOTPLEX_BRAIN_ENDPOINT"))
+		return buildConfig(apiKey, provider, protocol, model, os.Getenv("HOTPLEX_BRAIN_ENDPOINT"))
 	}
 
-	// ── 2. Worker config discovery (CLI Extractor) ──
-	providerType := getEnv("HOTPLEX_PROVIDER_TYPE", "")
-	if cfg := extractFromCLI(providerType); cfg != nil {
-		return *cfg
-	}
-
-	// ── 3. Provider-keyed env vars ──
-	if providerType == "" {
-		providerType = getEnv("HOTPLEX_BRAIN_PROVIDER", "")
-	}
-	if providerType != "" {
-		if cfg := fromProviderEnv(providerType); cfg != nil {
+	// ── 2. Worker config discovery ──
+	if getBoolEnv("HOTPLEX_BRAIN_WORKER_EXTRACT", true) {
+		if cfg := extractFromWorker(); cfg != nil {
 			return *cfg
 		}
 	}
 
-	// ── 4. System env vars scan ──
+	// ── 3. System env vars scan ──
 	for _, src := range systemKeySources {
 		if apiKey := os.Getenv(src.envKey); apiKey != "" {
-			return buildConfig(apiKey, src.provider, src.protocol,
-				getEnv("HOTPLEX_PROVIDER_MODEL", src.defaultModel), os.Getenv(src.baseURLEnv))
+			return buildConfig(apiKey, src.provider, src.protocol, src.defaultModel, os.Getenv(src.baseURLEnv))
 		}
 	}
 
-	// ── 5. No key found — disabled ──
+	// ── 4. No key found — disabled ──
 	return buildConfig("", "openai", "openai", "gpt-4o", "")
 }
 
-// systemKeySources defines the scan order for system env vars (step 4).
+// systemKeySources defines the scan order for system env vars (step 3).
 var systemKeySources = []struct {
 	envKey, provider, protocol, defaultModel, baseURLEnv string
 }{
@@ -250,101 +237,57 @@ var systemKeySources = []struct {
 	{"DEEPSEEK_API_KEY", "openai", "openai", "deepseek-chat", "DEEPSEEK_BASE_URL"},
 }
 
-// extractFromCLI tries to extract config from worker CLI settings files.
-// Only activated when HOTPLEX_PROVIDER_TYPE is explicitly set.
-func extractFromCLI(providerType string) *Config {
-	if providerType == "" {
-		return nil
-	}
-
-	var extracted *ExtractedConfig
-	switch providerType {
-	case "claude-code", "anthropic":
-		extracted, _ = NewClaudeCodeExtractor().Extract()
-	case "opencode":
-		extracted, _ = NewOpenCodeExtractor().Extract()
-	}
-	if extracted == nil || extracted.APIKey == "" {
-		return nil
-	}
-
-	endpoint := os.Getenv("HOTPLEX_BRAIN_ENDPOINT")
-	if endpoint == "" {
-		endpoint = extracted.Endpoint
-	}
-	model := os.Getenv("HOTPLEX_PROVIDER_MODEL")
-	if model == "" {
-		model = extracted.Model
-	}
-
-	var provider, protocol string
-	switch {
-	case providerType == "claude-code" || providerType == "anthropic":
-		provider = "anthropic"
-		protocol = "anthropic"
-		if model == "" {
-			model = "claude-3-7-sonnet-latest"
-		}
-	case strings.Contains(model, "/"):
-		parts := strings.SplitN(model, "/", 2)
-		provider = parts[0]
-		protocol = provider
-	default:
-		provider = providerType
-		protocol = provider
-	}
-	if model == "" {
-		model = "gpt-4o"
-	}
-
-	cfg := buildConfig(extracted.APIKey, provider, protocol, model, endpoint)
-	return &cfg
+// extractors defines the ordered scan list for worker config discovery.
+var extractors = []struct {
+	name     string
+	extract  func() (*ExtractedConfig, error)
+	provider string
+	protocol string
+	defModel string
+}{
+	{"claude-code", func() (*ExtractedConfig, error) { return NewClaudeCodeExtractor().Extract() },
+		"anthropic", "anthropic", "claude-3-7-sonnet-latest"},
+	{"opencode", func() (*ExtractedConfig, error) { return NewOpenCodeExtractor().Extract() },
+		"openai", "openai", "gpt-4o"},
 }
 
-// fromProviderEnv resolves config from provider-specific system env vars.
-func fromProviderEnv(providerType string) *Config {
-	model := os.Getenv("HOTPLEX_PROVIDER_MODEL")
-	switch providerType {
-	case "claude-code", "anthropic":
-		if apiKey := os.Getenv("ANTHROPIC_API_KEY"); apiKey != "" {
-			if model == "" {
-				model = "claude-3-7-sonnet-latest"
-			}
-			cfg := buildConfig(apiKey, "anthropic", "anthropic", model, os.Getenv("ANTHROPIC_BASE_URL"))
-			return &cfg
+// extractFromWorker scans worker config files in order; first hit wins.
+func extractFromWorker() *Config {
+	for _, ext := range extractors {
+		extracted, err := ext.extract()
+		if err != nil || extracted == nil || extracted.APIKey == "" {
+			continue
 		}
-	case "siliconflow":
-		if apiKey := os.Getenv("SILICONFLOW_API_KEY"); apiKey != "" {
-			if model == "" {
-				model = "deepseek-ai/DeepSeek-V3"
-			}
-			cfg := buildConfig(apiKey, "openai", "openai", model,
-				getEnv("SILICONFLOW_BASE_URL", "https://api.siliconflow.cn/v1"))
-			return &cfg
+
+		endpoint := os.Getenv("HOTPLEX_BRAIN_ENDPOINT")
+		if endpoint == "" {
+			endpoint = extracted.Endpoint
 		}
-	case "deepseek":
-		if apiKey := os.Getenv("DEEPSEEK_API_KEY"); apiKey != "" {
-			if model == "" {
-				model = "deepseek-chat"
-			}
-			cfg := buildConfig(apiKey, "openai", "openai", model,
-				getEnv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"))
-			return &cfg
+		model := os.Getenv("HOTPLEX_BRAIN_MODEL")
+		if model == "" {
+			model = extracted.Model
 		}
-	default:
-		if apiKey := os.Getenv("OPENAI_API_KEY"); apiKey != "" {
-			if model == "" {
-				model = "gpt-4o"
-			}
-			cfg := buildConfig(apiKey, "openai", "openai", model, os.Getenv("OPENAI_BASE_URL"))
-			return &cfg
+		if model == "" {
+			model = ext.defModel
 		}
+
+		provider := ext.provider
+		protocol := ext.protocol
+		// OpenCode uses "provider/model" format — extract provider from prefix.
+		if strings.Contains(model, "/") {
+			parts := strings.SplitN(model, "/", 2)
+			provider = parts[0]
+			protocol = provider
+		}
+
+		cfg := buildConfig(extracted.APIKey, provider, protocol, model, endpoint)
+		return &cfg
 	}
 	return nil
 }
 
 func protocolForProvider(provider string) string {
-	if provider == "anthropic" || provider == "claude-code" {
+	if provider == "anthropic" {
 		return "anthropic"
 	}
 	return "openai"

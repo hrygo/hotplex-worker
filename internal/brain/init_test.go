@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -493,7 +492,7 @@ func TestInit_Disabled(t *testing.T) {
 	t.Setenv("ANTHROPIC_API_KEY", "")
 	t.Setenv("DEEPSEEK_API_KEY", "")
 	t.Setenv("SILICONFLOW_API_KEY", "")
-	t.Setenv("HOTPLEX_PROVIDER_TYPE", "")
+	t.Setenv("HOTPLEX_BRAIN_WORKER_EXTRACT", "false")
 
 	err := Init(slog.Default())
 	assert.NoError(t, err)
@@ -729,7 +728,7 @@ func TestEnhancedBrainWrapper_ChatWithModel_RateLimited(t *testing.T) {
 
 func TestConfig_Defaults_WhenNoEnv(t *testing.T) {
 	// Clear provider type to prevent CLI extractor from interfering
-	t.Setenv("HOTPLEX_PROVIDER_TYPE", "")
+	t.Setenv("HOTPLEX_BRAIN_WORKER_EXTRACT", "false")
 	// Set required API key to activate HOTPLEX_BRAIN_* env vars
 	t.Setenv("HOTPLEX_BRAIN_API_KEY", "test-key")
 	t.Setenv("HOTPLEX_BRAIN_PROVIDER", "openai")
@@ -743,63 +742,61 @@ func TestConfig_Defaults_WhenNoEnv(t *testing.T) {
 	assert.Equal(t, 30, config.Model.TimeoutS)
 }
 
-func TestConfig_AnthropicProviderType(t *testing.T) {
-	// Note: ClaudeCodeExtractor reads from ~/.claude/settings.json which may
-	// have an API key set (e.g., PROXY_MANAGED). If extraction succeeds,
-	// Enabled will be true and provider/protocol will be anthropic.
-	//
-	// If neither Claude Code CLI nor ANTHROPIC_API_KEY is available,
-	// Group 2b falls through to default → "openai", making the assertion
-	// impossible to satisfy. Skip in that case.
+func TestConfig_AnthropicViaWorkerExtract(t *testing.T) {
 	_, err := NewClaudeCodeExtractor().Extract()
 	hasClaudeCode := err == nil
-	hasAnthropicKey := os.Getenv("ANTHROPIC_API_KEY") != ""
-	if !hasClaudeCode && !hasAnthropicKey {
-		t.Skip("TestConfig_AnthropicProviderType requires Claude Code CLI with API key or ANTHROPIC_API_KEY")
+	if !hasClaudeCode {
+		t.Skip("No ~/.claude/settings.json found")
 	}
 
 	t.Setenv("HOTPLEX_BRAIN_API_KEY", "")
 	t.Setenv("OPENAI_API_KEY", "")
 	t.Setenv("DEEPSEEK_API_KEY", "")
 	t.Setenv("SILICONFLOW_API_KEY", "")
-	t.Setenv("HOTPLEX_PROVIDER_TYPE", "claude-code")
 	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("HOTPLEX_BRAIN_WORKER_EXTRACT", "true")
 
 	config := LoadConfigFromEnv()
 
-	// Provider and protocol should always be anthropic for claude-code type
+	assert.True(t, config.Enabled)
 	assert.Equal(t, "anthropic", config.Model.Provider)
 	assert.Equal(t, "anthropic", config.Model.Protocol)
 }
 
-func TestConfig_SiliconflowProviderType(t *testing.T) {
+func TestConfig_SiliconflowViaSystemEnv(t *testing.T) {
 	t.Setenv("HOTPLEX_BRAIN_API_KEY", "")
-	t.Setenv("HOTPLEX_PROVIDER_TYPE", "siliconflow")
+	t.Setenv("HOTPLEX_BRAIN_WORKER_EXTRACT", "false")
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("OPENAI_API_KEY", "")
+	t.Setenv("DEEPSEEK_API_KEY", "")
 	t.Setenv("SILICONFLOW_API_KEY", "sf-test-key")
 
 	config := LoadConfigFromEnv()
 
 	assert.True(t, config.Enabled)
 	assert.Equal(t, "openai", config.Model.Provider)
-	assert.Equal(t, "openai", config.Model.Protocol)
-	assert.Contains(t, config.Model.Endpoint, "siliconflow")
+	assert.Equal(t, "deepseek-ai/DeepSeek-V3", config.Model.Model)
 }
 
-func TestConfig_DeepseekProviderType(t *testing.T) {
+func TestConfig_DeepseekViaSystemEnv(t *testing.T) {
 	t.Setenv("HOTPLEX_BRAIN_API_KEY", "")
-	t.Setenv("HOTPLEX_PROVIDER_TYPE", "deepseek")
+	t.Setenv("HOTPLEX_BRAIN_WORKER_EXTRACT", "false")
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("OPENAI_API_KEY", "")
+	t.Setenv("SILICONFLOW_API_KEY", "")
 	t.Setenv("DEEPSEEK_API_KEY", "ds-test-key")
 
 	config := LoadConfigFromEnv()
 
 	assert.True(t, config.Enabled)
 	assert.Equal(t, "openai", config.Model.Provider)
-	assert.Contains(t, config.Model.Endpoint, "deepseek")
+	assert.Equal(t, "deepseek-chat", config.Model.Model)
 }
 
-func TestConfig_OpenAIFallback(t *testing.T) {
+func TestConfig_OpenAIViaSystemEnv(t *testing.T) {
 	t.Setenv("HOTPLEX_BRAIN_API_KEY", "")
-	t.Setenv("HOTPLEX_PROVIDER_TYPE", "openai")
+	t.Setenv("HOTPLEX_BRAIN_WORKER_EXTRACT", "false")
+	t.Setenv("ANTHROPIC_API_KEY", "")
 	t.Setenv("OPENAI_API_KEY", "oa-test-key")
 
 	config := LoadConfigFromEnv()
@@ -818,24 +815,18 @@ func TestConfig_EndpointOverride(t *testing.T) {
 	assert.Equal(t, "https://custom.api.example.com/v1", config.Model.Endpoint)
 }
 
-func TestConfig_AnthropicEndpointFallback(t *testing.T) {
+func TestConfig_AnthropicViaSystemEnvWithEndpoint(t *testing.T) {
 	t.Setenv("HOTPLEX_BRAIN_API_KEY", "")
-	t.Setenv("HOTPLEX_BRAIN_ENDPOINT", "")
-	t.Setenv("HOTPLEX_PROVIDER_TYPE", "claude-code")
+	t.Setenv("HOTPLEX_BRAIN_WORKER_EXTRACT", "false")
+	t.Setenv("OPENAI_API_KEY", "")
 	t.Setenv("ANTHROPIC_API_KEY", "ant-test-key")
-	// t.Setenv sets env for this test; the ClaudeCodeExtractor reads
-	// from ~/.claude/settings.json which may have an endpoint set,
-	// and that extracted endpoint takes precedence over the env var.
-	// So we test the extraction path is working (endpoint is non-empty).
 	t.Setenv("ANTHROPIC_BASE_URL", "https://custom.anthropic.com")
 
 	config := LoadConfigFromEnv()
 
 	assert.True(t, config.Enabled)
 	assert.Equal(t, "anthropic", config.Model.Provider)
-	// Endpoint comes from ClaudeCodeExtractor (settings.json) if present,
-	// otherwise falls back to ANTHROPIC_BASE_URL env var.
-	assert.NotEmpty(t, config.Model.Endpoint)
+	assert.Equal(t, "https://custom.anthropic.com", config.Model.Endpoint)
 }
 
 func TestConfig_AllSubconfigsHaveDefaults(t *testing.T) {
@@ -844,7 +835,7 @@ func TestConfig_AllSubconfigsHaveDefaults(t *testing.T) {
 	t.Setenv("ANTHROPIC_API_KEY", "")
 	t.Setenv("DEEPSEEK_API_KEY", "")
 	t.Setenv("SILICONFLOW_API_KEY", "")
-	t.Setenv("HOTPLEX_PROVIDER_TYPE", "openai")
+	t.Setenv("HOTPLEX_BRAIN_WORKER_EXTRACT", "false")
 
 	config := LoadConfigFromEnv()
 
@@ -1055,7 +1046,8 @@ func TestParseStringList_EmptyElements(t *testing.T) {
 
 func TestConfig_OpenAIEndpointFallback(t *testing.T) {
 	t.Setenv("HOTPLEX_BRAIN_API_KEY", "")
-	t.Setenv("HOTPLEX_PROVIDER_TYPE", "openai")
+	t.Setenv("HOTPLEX_BRAIN_WORKER_EXTRACT", "false")
+	t.Setenv("ANTHROPIC_API_KEY", "")
 	t.Setenv("OPENAI_API_KEY", "oa-test-key")
 	t.Setenv("OPENAI_BASE_URL", "https://custom.openai.com/v1")
 
@@ -1157,13 +1149,12 @@ func TestConfig_AdminUsers(t *testing.T) {
 	assert.Equal(t, []string{"user1", "user2", "user3"}, config.Guard.AdminUsers)
 }
 
-func TestConfig_OpenCodeProviderType(t *testing.T) {
-	// Note: os.UserHomeDir() on macOS uses getpwuid, not $HOME.
-	// The temp file approach only works on Linux where HOME is respected.
-	// So we test with the real opencode config file if it exists,
-	// verifying that HOTPLEX_PROVIDER_TYPE=opencode triggers the extractor.
+func TestConfig_OpenCodeWorkerExtract(t *testing.T) {
 	t.Setenv("HOTPLEX_BRAIN_API_KEY", "")
-	t.Setenv("HOTPLEX_PROVIDER_TYPE", "opencode")
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("OPENAI_API_KEY", "")
+	t.Setenv("SILICONFLOW_API_KEY", "")
+	t.Setenv("DEEPSEEK_API_KEY", "")
 	t.Setenv("ANTHROPIC_API_KEY", "")
 	t.Setenv("OPENAI_API_KEY", "")
 	t.Setenv("SILICONFLOW_API_KEY", "")
@@ -1173,7 +1164,7 @@ func TestConfig_OpenCodeProviderType(t *testing.T) {
 
 	// If real opencode config exists and has the provider/model format,
 	// provider/protocol should equal the parsed provider name.
-	// If no config found, falls through to Group 2b.
+	// If no config found, falls through to system env scan.
 	// Either way: provider and protocol should match (both non-empty when enabled).
 	if config.Enabled {
 		assert.Equal(t, config.Model.Provider, config.Model.Protocol,
