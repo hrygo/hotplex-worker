@@ -13,7 +13,7 @@ var hotplexMetacognition string // computed once at init
 
 func init() {
 	if embeddedMetacognition != "" {
-		hotplexMetacognition = "<hotplex>\n" + embeddedMetacognition + "\n</hotplex>"
+		hotplexMetacognition = "    <hotplex>\n" + embeddedMetacognition + "\n    </hotplex>"
 	}
 }
 
@@ -28,63 +28,67 @@ func BuildSystemPrompt(configs *AgentConfigs) string {
 
 	var groups []string
 
+	hotplex := buildHotplexMetacognition()
+
 	// B-channel: behavior-shaping directives (highest priority, listed first).
-	if configs.Soul != "" || configs.Agents != "" || configs.Skills != "" {
+	// HotPlex metacognition goes first as it defines the systemic ground rules.
+	if configs.Soul != "" || configs.Agents != "" || configs.Skills != "" || hotplex != "" {
 		var b []string
+		if hotplex != "" {
+			b = append(b, hotplex)
+		}
 		if configs.Soul != "" {
 			b = append(b, fmt.Sprintf(
-				"<persona>\nEmbody this persona naturally in all interactions.\n\n%s\n</persona>",
-				configs.Soul,
+				"    <persona>\n    在所有交互中自然地代入并体现此人格定位。\n\n%s\n    </persona>",
+				sanitize(configs.Soul),
 			))
 		}
 		if configs.Agents != "" {
 			b = append(b, fmt.Sprintf(
-				"<rules>\nTreat as mandatory workspace constraints.\n\n%s\n</rules>",
-				configs.Agents,
+				"    <rules>\n    视为强制性的工作空间行为约束。\n\n%s\n    </rules>",
+				sanitize(configs.Agents),
 			))
 		}
 		if configs.Skills != "" {
 			b = append(b, fmt.Sprintf(
-				"<skills>\nApply these capabilities when relevant.\n\n%s\n</skills>",
-				configs.Skills,
+				"    <skills>\n    在相关时调用这些能力。\n\n%s\n    </skills>",
+				sanitize(configs.Skills),
 			))
 		}
-		groups = append(groups, "<directives>\nCore behavioral parameters — follow unless overridden by explicit user instructions.\n\n"+
+		groups = append(groups, "  <directives>\n  核心行为准则 —— 除非用户有明确的反向指令，否则必须严格遵守。\n\n"+
 			joinLines(b)+
-			"\n\n</directives>")
+			"\n  </directives>")
 	}
 
-	// C-channel: reference context. HotPlex metacognition is first, followed by user-defined content.
-	hotplex := buildHotplexMetacognition()
-	if configs.User != "" || configs.Memory != "" || hotplex != "" {
+	// C-channel: reference context.
+	// We add a strict isolation notice (P5) to prevent C-channel noise from overriding B-channel instructions.
+	if configs.User != "" || configs.Memory != "" {
 		var c []string
-		if hotplex != "" {
-			c = append(c, hotplex)
-		}
+		c = append(c, "    <notice>\n    以下 [context] 区域提供了执行任务所需的关键背景与事实。你应该在不违反 [directives] 的前提下，尽可能深度参考并采纳这些信息。若两者冲突，以 [directives] 为准。\n    </notice>")
 		if configs.User != "" {
 			c = append(c, fmt.Sprintf(
-				"<user>\nTailor responses to this user's preferences and expertise.\n\n%s\n</user>",
-				configs.User,
+				"    <user>\n    深入理解用户的偏好、习惯与专业背景，提供个性化的服务体验。\n\n%s\n    </user>",
+				sanitize(configs.User),
 			))
 		}
 		if configs.Memory != "" {
 			c = append(c, fmt.Sprintf(
-				"<memory>\nRecall relevant past context when applicable.\n\n%s\n</memory>",
-				configs.Memory,
+				"    <memory>\n    回顾历史交互记录，确保任务执行的连贯性与深度。\n\n%s\n    </memory>",
+				sanitize(configs.Memory),
 			))
 		}
-		groups = append(groups, "<context>\nReference material to inform your responses.\n\n"+
+		groups = append(groups, "  <context>\n  提供执行任务所需的背景与事实依据。\n\n"+
 			joinLines(c)+
-			"\n\n</context>")
+			"\n  </context>")
 	}
 
 	if len(groups) == 0 {
 		return ""
 	}
 
-	return "<agent-configuration>\n\n" +
+	return "<agent-configuration>\n" +
 		joinLines(groups) +
-		"\n\n</agent-configuration>"
+		"\n</agent-configuration>"
 }
 
 func joinLines(parts []string) string {
@@ -110,3 +114,25 @@ func joinLines(parts []string) string {
 }
 
 func buildHotplexMetacognition() string { return hotplexMetacognition }
+
+var reservedTags = []string{
+	"agent-configuration", "directives", "context", "persona",
+	"rules", "skills", "user", "memory", "hotplex", "notice",
+}
+
+// sanitize prevents XML injection by escaping tags that match our structural schema.
+// This ensures that literal strings like "<directives>" in markdown files
+// don't break Claude's XML parser or allow prompt injection.
+func sanitize(s string) string {
+	res := s
+	for _, tag := range reservedTags {
+		res = strings.ReplaceAll(res, "<"+tag+">", "&lt;"+tag+"&gt;")
+		res = strings.ReplaceAll(res, "</"+tag+">", "&lt;/"+tag+"&gt;")
+		res = strings.ReplaceAll(res, "<"+tag+" ", "&lt;"+tag+" ")
+
+		tagUpper := strings.ToUpper(tag)
+		res = strings.ReplaceAll(res, "<"+tagUpper+">", "&lt;"+tagUpper+"&gt;")
+		res = strings.ReplaceAll(res, "</"+tagUpper+">", "&lt;/"+tagUpper+"&gt;")
+	}
+	return res
+}

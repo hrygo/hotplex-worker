@@ -118,9 +118,7 @@ pool:
 
 `)
 
-	workerType := defaultStr(opts.WorkerType, "claude_code")
-
-	fmt.Fprintf(&b, `# ─────────────────────────────────────────────────────────────────────────────
+	b.WriteString(`# ─────────────────────────────────────────────────────────────────────────────
 # WORKER
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -139,16 +137,23 @@ worker:
 
 `)
 
-	if workerType == "opencode_server" {
-		b.WriteString(`  # OpenCode Server singleton process (shared across all sessions)
+	b.WriteString(`  # Claude Code worker startup (fork per session)
+  claude_code:
+    # Command to start Claude Code worker. Default: "claude"
+    # To use a custom path, edit here or set HOTPLEX_WORKER_CLAUDE_CODE_COMMAND env var.
+    command: "claude"
+
+  # OpenCode Server singleton process (shared across all sessions)
   opencode_server:
+    # Command to start OpenCode Server. Default: "opencode"
+    # To use a custom path, edit here or set HOTPLEX_WORKER_OPENCODE_SERVER_COMMAND env var.
+    command: "opencode"
     idle_drain_period: 30m    # keep process alive 30m after last session
     ready_timeout: 10s        # max wait for server startup
     ready_poll_interval: 200ms
     http_timeout: 30s
 
 `)
-	}
 
 	b.WriteString(`# ─────────────────────────────────────────────────────────────────────────────
 # LOGGING
@@ -284,7 +289,7 @@ func writeStringList(b *strings.Builder, key string, items []string) {
 	}
 }
 
-func defaultStr(s, def string) string {
+func defaultStr(s, def string) string { //nolint:unparam // def varies if more usage added
 	if s == "" {
 		return def
 	}

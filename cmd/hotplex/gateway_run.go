@@ -19,6 +19,7 @@ import (
 
 	"github.com/hrygo/hotplex/internal/admin"
 	"github.com/hrygo/hotplex/internal/assets"
+	"github.com/hrygo/hotplex/internal/brain"
 	"github.com/hrygo/hotplex/internal/config"
 	"github.com/hrygo/hotplex/internal/eventstore"
 	"github.com/hrygo/hotplex/internal/gateway"
@@ -235,6 +236,11 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 		Handler:        handler,
 		Bridge:         bridge,
 		ConfigWatcher:  configWatcher,
+	}
+
+	// Brain: lightweight LLM layer for TTS summarization (fail-open).
+	if err := brain.Init(log); err != nil {
+		log.Warn("Brain initialization failed (fail-open)", "error", err)
 	}
 
 	msgAdapters, adapterStatuses := startMessagingAdapters(ctx, deps)

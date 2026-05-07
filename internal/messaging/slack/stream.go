@@ -435,6 +435,13 @@ func (w *NativeStreamingWriter) Close() error {
 	return nil
 }
 
+// Content returns the full accumulated text (thread-safe).
+func (w *NativeStreamingWriter) Content() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.fullContent.String()
+}
+
 // buildTableStopOpts constructs MsgOption slice with table Block Kit for chat.stopStream.
 // Returns nil if no tables found or blocks cannot be built.
 // Blocks are passed atomically during stream stop to avoid block_mismatch
