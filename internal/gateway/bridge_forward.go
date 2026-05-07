@@ -401,7 +401,34 @@ func (b *Bridge) captureDirected(sessionID string, seq int64, eventType events.K
 		b.log.Warn("bridge: capture marshal failed", "session_id", sessionID, "type", eventType, "direction", direction, "err", err)
 		return
 	}
+	if eventType == events.ToolResult {
+		ed = truncateToolResultOutput(ed)
+	}
 	b.collector.Capture(sessionID, seq, eventType, ed, direction, eventstore.SourceNormal)
+}
+
+const maxToolResultOutputLen = 128
+
+// truncateToolResultOutput truncates the output field in a tool_result JSON payload.
+func truncateToolResultOutput(raw json.RawMessage) json.RawMessage {
+	var v struct {
+		ID     string `json:"id"`
+		Output any    `json:"output"`
+		Error  string `json:"error"`
+	}
+	if json.Unmarshal(raw, &v) != nil {
+		return raw
+	}
+	s, ok := v.Output.(string)
+	if !ok || len(s) <= maxToolResultOutputLen {
+		return raw
+	}
+	v.Output = s[:maxToolResultOutputLen]
+	truncated, err := json.Marshal(v)
+	if err != nil {
+		return raw
+	}
+	return truncated
 }
 
 // captureSyntheticEvent writes a synthetic done-like event for crash/timeout/fresh_start scenarios.
