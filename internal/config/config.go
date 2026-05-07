@@ -194,12 +194,19 @@ func (c STTConfig) IsPersistent() bool {
 type TTSConfig struct {
 	// Enabled controls whether voice replies are sent for voice-triggered turns.
 	Enabled bool `mapstructure:"tts_enabled"`
-	// Provider: "edge" (Microsoft Edge TTS, free), "local" (external command), "" (disabled).
+	// Provider: "edge" (Microsoft Edge TTS, free), "edge+kokoro" (Edge primary + Kokoro CPU fallback), "" (disabled).
 	TTSProvider string `mapstructure:"tts_provider"`
 	// Voice name for Edge TTS (e.g. "zh-CN-XiaoxiaoNeural", "zh-CN-YunxiNeural").
 	Voice string `mapstructure:"tts_voice"`
 	// MaxChars limits the LLM summary length before TTS synthesis.
 	MaxChars int `mapstructure:"tts_max_chars"`
+	// KokoroModelPath is the path to the Kokoro ONNX model file (used when provider is "edge+kokoro").
+	KokoroModelPath string `mapstructure:"tts_kokoro_model_path"`
+	// KokoroVoice is the Kokoro voice preset name (default "af_heart").
+	KokoroVoice string `mapstructure:"tts_kokoro_voice"`
+	// KokoroIdleTimeout controls how long the Kokoro model stays resident in memory
+	// after its last use before being automatically unloaded. Default 30m.
+	KokoroIdleTimeout time.Duration `mapstructure:"tts_kokoro_idle_timeout"`
 }
 
 // SlackConfig holds Slack Socket Mode adapter settings.
@@ -337,6 +344,7 @@ type ClaudeCodeConfig struct {
 
 // OpenCodeServerConfig holds OpenCode Server singleton process settings.
 type OpenCodeServerConfig struct {
+	Command           string        `mapstructure:"command"` // binary + optional subcommand, e.g. "opencode" or "opencode serve"
 	IdleDrainPeriod   time.Duration `mapstructure:"idle_drain_period"`
 	ReadyTimeout      time.Duration `mapstructure:"ready_timeout"`
 	ReadyPollInterval time.Duration `mapstructure:"ready_poll_interval"`
@@ -457,6 +465,7 @@ func Default() *Config {
 			PIDDir:           filepath.Join(HotplexHome(), ".pids"),
 			AutoRetry:        AutoRetryConfig{Enabled: true, MaxRetries: 9, BaseDelay: 5 * time.Second, MaxDelay: 120 * time.Second, RetryInput: "继续", NotifyUser: true},
 			OpenCodeServer: OpenCodeServerConfig{
+				Command:           "opencode",
 				IdleDrainPeriod:   30 * time.Minute,
 				ReadyTimeout:      10 * time.Second,
 				ReadyPollInterval: 200 * time.Millisecond,
@@ -597,6 +606,7 @@ func Load(filePath string, opts LoadOptions) (*Config, error) {
 	_ = v.BindEnv("worker.auto_retry.enabled")
 	_ = v.BindEnv("worker.auto_retry.max_retries")
 	_ = v.BindEnv("worker.claude_code.command")
+	_ = v.BindEnv("worker.opencode_server.command")
 	_ = v.BindEnv("worker.opencode_server.idle_drain_period")
 	_ = v.BindEnv("worker.opencode_server.ready_timeout")
 	_ = v.BindEnv("worker.opencode_server.ready_poll_interval")

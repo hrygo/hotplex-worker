@@ -1,7 +1,7 @@
 {
   "version": 2,
-  "last_updated": "2026-05-07T08:56:50.000000+08:00",
-  "total_cycles": 118,
+  "last_updated": "2026-05-07T12:12:47.622959+08:00",
+  "total_cycles": 130,
   "modules": {
     "internal/gateway": {
       "analysis_count": 8,
@@ -35,107 +35,107 @@
       "findings_dropped": [
         {
           "finding": "SeqGen sync.Map memory leak",
-          "reason": "False positive \u2014 Remove() is called in removeSession when last conn leaves"
+          "reason": "False positive — Remove() is called in removeSession when last conn leaves"
         },
         {
           "finding": "SessionManager sub-interfaces unused",
-          "reason": "Low ROI \u2014 no narrow consumers, structural noise only"
+          "reason": "Low ROI — no narrow consumers, structural noise only"
         },
         {
           "finding": "Event type switch statement",
-          "reason": "Low ROI \u2014 12 cases, idiomatic Go"
+          "reason": "Low ROI — 12 cases, idiomatic Go"
         },
         {
           "finding": "Envelope construction pattern",
-          "reason": "Low ROI \u2014 NewEnvelope already serves as constructor"
+          "reason": "Low ROI — NewEnvelope already serves as constructor"
         },
         {
           "finding": "pkg/events imported in 24/30 files",
-          "reason": "Low ROI \u2014 pkg/ is stable public package, facade is over-engineering"
+          "reason": "Low ROI — pkg/ is stable public package, facade is over-engineering"
         },
         {
           "finding": "*Hub/*Bridge/*JWTValidator concrete deps",
-          "reason": "Low ROI \u2014 tests exist and work, extracting 7+ method interfaces is large effort"
+          "reason": "Low ROI — tests exist and work, extracting 7+ method interfaces is large effort"
         },
         {
           "finding": "worker/noop leaked to production code",
-          "reason": "Low ROI \u2014 only 2 imports, minor"
+          "reason": "Low ROI — only 2 imports, minor"
         },
         {
           "finding": "conn.go performInit dual error reporting",
-          "reason": "Low ROI \u2014 not harmful, just inconsistent logging"
+          "reason": "Low ROI — not harmful, just inconsistent logging"
         },
         {
           "finding": "Zero sentinel errors for gateway failures",
-          "reason": "Low ROI \u2014 only cmd/ callers, string parsing acceptable"
+          "reason": "Low ROI — only cmd/ callers, string parsing acceptable"
         },
         {
           "finding": "events.Clone JSON round-trip overhead in bridge_forward.go",
-          "reason": "Low ROI \u2014 acceptable at ~50 events/sec scale, fix requires unsafe/dirty tricks"
+          "reason": "Low ROI — acceptable at ~50 events/sec scale, fix requires unsafe/dirty tricks"
         },
         {
           "finding": "Hub.Run single-goroutine serialization bottleneck",
-          "reason": "Low confidence \u2014 intentional design for message ordering, bottleneck only at thousands of connections"
+          "reason": "Low confidence — intentional design for message ordering, bottleneck only at thousands of connections"
         },
         {
           "finding": "routeMessage connection slice allocation per message",
-          "reason": "Low ROI \u2014 minor, bounded by per-session connection count (typically 1-3)"
+          "reason": "Low ROI — minor, bounded by per-session connection count (typically 1-3)"
         },
         {
           "finding": "Error message internal detail leakage to authenticated clients",
-          "reason": "Low ROI \u2014 only visible to authenticated users, not exploitable"
+          "reason": "Low ROI — only visible to authenticated users, not exploitable"
         },
         {
-          "finding": "*Hub concrete type coupling \u2014 no Hub interface",
-          "reason": "Medium ROI \u2014 mockHandlerHub workaround exists, large refactor for test-only benefit"
+          "finding": "*Hub concrete type coupling — no Hub interface",
+          "reason": "Medium ROI — mockHandlerHub workaround exists, large refactor for test-only benefit"
         },
         {
           "finding": "Package-level mutable git cache state in bridge_forward.go",
-          "reason": "Low ROI \u2014 tests work with current approach, sync.Once ensures correctness"
+          "reason": "Low ROI — tests work with current approach, sync.Once ensures correctness"
         },
         {
           "finding": "~35 context.Background() in request paths",
-          "reason": "Low ROI \u2014 known gap, requires Conn lifecycle architectural change"
+          "reason": "Low ROI — known gap, requires Conn lifecycle architectural change"
         },
         {
           "finding": "Bridge God Object (27 methods, 8 responsibilities)",
-          "reason": "Medium ROI \u2014 gradual improvement, no single PR target, bridge files already split"
+          "reason": "Medium ROI — gradual improvement, no single PR target, bridge files already split"
         },
         {
           "finding": "routeMessage runtime type assertion breaks polymorphism",
-          "reason": "Low confidence \u2014 documented tradeoff for lazy encoding optimization"
+          "reason": "Low confidence — documented tradeoff for lazy encoding optimization"
         },
         {
           "finding": "Unused exported sentinels in init.go",
-          "reason": "Low ROI \u2014 3 unused vars, minor cleanup"
+          "reason": "Low ROI — 3 unused vars, minor cleanup"
         },
         {
           "finding": "content-extraction-overlap",
-          "reason": "Medium confidence, Low ROI \u2014 functions handle different event type subsets"
+          "reason": "Medium confidence, Low ROI — functions handle different event type subsets"
         },
         {
           "finding": "apism-interface-incomplete",
-          "reason": "Low confidence \u2014 SessionInfo is stable DTO, ISP isolation ROI low"
+          "reason": "Low confidence — SessionInfo is stable DTO, ISP isolation ROI low"
         },
         {
           "finding": "error-notify-sender-duplication",
-          "reason": "Medium confidence, Low ROI \u2014 6-line functions, unification marginal"
+          "reason": "Medium confidence, Low ROI — 6-line functions, unification marginal"
         },
         {
           "finding": "attemptResumeFallback uses context.Background() for retry operations",
-          "reason": "Low ROI \u2014 design trade-off, shutdown timeout prevents indefinite blocking"
+          "reason": "Low ROI — design trade-off, shutdown timeout prevents indefinite blocking"
         },
         {
           "finding": "injectSessionStats silently swallows JSON marshal/unmarshal errors",
-          "reason": "Very Low ROI \u2014 DoneData only contains serializable types in practice"
+          "reason": "Very Low ROI — DoneData only contains serializable types in practice"
         },
         {
           "finding": "respondJSON silently discards JSON encode errors",
-          "reason": "Very Low ROI \u2014 all callers pass well-typed structs"
+          "reason": "Very Low ROI — all callers pass well-typed structs"
         },
         {
           "finding": "crashTracker entries linger for non-graceful session termination",
-          "reason": "Very Low ROI \u2014 5-minute time-based expiry prevents unbounded growth"
+          "reason": "Very Low ROI — 5-minute time-based expiry prevents unbounded growth"
         }
       ],
       "last_analyzed": "2026-05-07T07:37:30.000000+08:00",
@@ -173,83 +173,83 @@
       "findings_dropped": [
         {
           "finding": "worker.WorkerType coupling",
-          "reason": "Low ROI \u2014 string alias, no behavior"
+          "reason": "Low ROI — string alias, no behavior"
         },
         {
           "finding": "OnTerminate/StateNotifier function pointers",
-          "reason": "Low ROI \u2014 set-once callbacks, simple pattern"
+          "reason": "Low ROI — set-once callbacks, simple pattern"
         },
         {
           "finding": "GetExpired* unwrapped errors",
-          "reason": "Low ROI \u2014 GC callers already log and continue"
+          "reason": "Low ROI — GC callers already log and continue"
         },
         {
           "finding": "DeletePhysical ignores kill error",
-          "reason": "Low ROI \u2014 intentional best-effort for admin op"
+          "reason": "Low ROI — intentional best-effort for admin op"
         },
         {
           "finding": "ErrMemoryExceeded co-location",
-          "reason": "Low ROI \u2014 discoverability only"
+          "reason": "Low ROI — discoverability only"
         },
         {
           "finding": "mockStore extra method",
-          "reason": "Low ROI \u2014 test-only artifact"
+          "reason": "Low ROI — test-only artifact"
         },
         {
           "finding": "collectIDs drops scan errors",
-          "reason": "Low ROI \u2014 practically impossible to trigger"
+          "reason": "Low ROI — practically impossible to trigger"
         },
         {
           "finding": "Manager God Object full decomposition",
-          "reason": "Medium ROI \u2014 large effort, phased in issue #217 as P3"
+          "reason": "Medium ROI — large effort, phased in issue #217 as P3"
         },
         {
           "finding": "MaxTurns anti-pollution has no Prometheus metric counter",
-          "reason": "Low ROI \u2014 Warn-level log already tracks these events, metric counter is nice-to-have"
+          "reason": "Low ROI — Warn-level log already tracks these events, metric counter is nice-to-have"
         },
         {
           "finding": "GC scan has no summary metrics (scanned/terminated counts, duration)",
-          "reason": "Low ROI \u2014 per-session Warn logs provide sufficient visibility"
+          "reason": "Low ROI — per-session Warn logs provide sufficient visibility"
         },
         {
           "finding": "PoolManager not behind interface",
-          "reason": "Low ROI \u2014 tests work with real pool, internal component"
+          "reason": "Low ROI — tests work with real pool, internal component"
         },
         {
           "finding": "mockStore not shared across packages",
-          "reason": "Low ROI \u2014 single consumer currently"
+          "reason": "Low ROI — single consumer currently"
         },
         {
           "finding": "OnTerminate/StateNotifier callback synchronization",
-          "reason": "Low ROI \u2014 set once at startup before use"
+          "reason": "Low ROI — set once at startup before use"
         },
         {
           "finding": "CreateWithBot 10 parameters",
-          "reason": "Low ROI \u2014 options struct is style preference"
+          "reason": "Low ROI — options struct is style preference"
         },
         {
           "finding": "transitionState decomposition (78 lines, 12 branches)",
-          "reason": "Medium ROI \u2014 already documented as P3 in issue 217"
+          "reason": "Medium ROI — already documented as P3 in issue 217"
         },
         {
           "finding": "raw-function-callbacks-vs-interfaces",
-          "reason": "Medium confidence, Low ROI \u2014 current pattern works, interface adds unnecessary abstraction"
+          "reason": "Medium confidence, Low ROI — current pattern works, interface adds unnecessary abstraction"
         },
         {
           "finding": "Get() uses context.Background() with no store timeout",
-          "reason": "Low ROI \u2014 read path, SQLite queries are fast"
+          "reason": "Low ROI — read path, SQLite queries are fast"
         },
         {
           "finding": "GetExpiredMaxLifetime/GetExpiredIdle return bare errors",
-          "reason": "Low ROI \u2014 callers log the errors, wrapping only helps tooling"
+          "reason": "Low ROI — callers log the errors, wrapping only helps tooling"
         },
         {
           "finding": "Compact VACUUM error not wrapped",
-          "reason": "Very Low ROI \u2014 admin operation, not hot path"
+          "reason": "Very Low ROI — admin operation, not hot path"
         },
         {
           "finding": "PoolManager.Acquire + AttachWorker double-count metric",
-          "reason": "Very Low ROI \u2014 defensive dead-code path, errors.As always succeeds"
+          "reason": "Very Low ROI — defensive dead-code path, errors.As always succeeds"
         }
       ],
       "last_analyzed": "2026-05-07T07:46:55.000000+08:00",
@@ -287,31 +287,31 @@
       "findings_dropped": [
         {
           "finding": "PlatformAdapter init-then-overwrite pattern",
-          "reason": "Low confidence \u2014 documented 5-step init pattern, intentional design"
+          "reason": "Low confidence — documented 5-step init pattern, intentional design"
         },
         {
           "finding": "ExtractPermissionData inconsistent decode",
-          "reason": "Low ROI \u2014 single function, works correctly, small surface"
+          "reason": "Low ROI — single function, works correctly, small surface"
         },
         {
           "finding": "AdapterConfig.Extras untyped bag",
-          "reason": "Low ROI \u2014 change cascades to all adapter configs, large effort"
+          "reason": "Low ROI — change cascades to all adapter configs, large effort"
         },
         {
           "finding": "checkPendingInteraction behavioral divergence between Slack/Feishu",
-          "reason": "Low confidence \u2014 platform-specific interaction patterns, abstraction reduces customizability"
+          "reason": "Low confidence — platform-specific interaction patterns, abstraction reduces customizability"
         },
         {
           "finding": "ConnPool factory no error return",
-          "reason": "Low confidence \u2014 factory creates local structs (not IO), cannot fail"
+          "reason": "Low confidence — factory creates local structs (not IO), cannot fail"
         },
         {
           "finding": "bridge.go extractPlatformKey best-effort design",
-          "reason": "Low confidence \u2014 intentional best-effort, nil platformKey is valid fallback"
+          "reason": "Low confidence — intentional best-effort, nil platformKey is valid fallback"
         },
         {
           "finding": "Dedup and ConnPool have no Prometheus metrics",
-          "reason": "Low ROI \u2014 simple bounded cache components, logging provides sufficient visibility"
+          "reason": "Low ROI — simple bounded cache components, logging provides sufficient visibility"
         },
         {
           "finding": "Dead sanitize exports (IsControlChar, IsSurrogate, StripBOM)",
@@ -319,11 +319,11 @@
         },
         {
           "finding": "Dedup eviction path untested",
-          "reason": "False positive \u2014 TestDedup_TryRecord_FIFOEvict already covers eviction"
+          "reason": "False positive — TestDedup_TryRecord_FIFOEvict already covers eviction"
         },
         {
           "finding": "AdapterConfig.Extras untyped map[string]any",
-          "reason": "Low ROI \u2014 change cascades to all adapter configs, already dropped in cycle 67"
+          "reason": "Low ROI — change cascades to all adapter configs, already dropped in cycle 67"
         },
         {
           "finding": "FormatSecurityError stringly-typed classification",
@@ -331,35 +331,35 @@
         },
         {
           "finding": "helpTextOnce sync.Once singleton limits test isolation",
-          "reason": "Low ROI \u2014 help text is genuinely static"
+          "reason": "Low ROI — help text is genuinely static"
         },
         {
           "finding": "SendResponse bare closure unmockable",
-          "reason": "Medium ROI \u2014 common Go callback pattern, already noted in issue 224"
+          "reason": "Medium ROI — common Go callback pattern, already noted in issue 224"
         },
         {
           "finding": "bridge-srp-envelope-factory",
-          "reason": "Medium confidence, Low ROI \u2014 convenience wrappers, splitting adds indirection"
+          "reason": "Medium confidence, Low ROI — convenience wrappers, splitting adds indirection"
         },
         {
           "finding": "platform-adapter-interface-isp",
-          "reason": "Low confidence \u2014 current 5-method interface works, splitting adds complexity"
+          "reason": "Low confidence — current 5-method interface works, splitting adds complexity"
         },
         {
           "finding": "extract-platform-keys-ocp",
-          "reason": "Medium confidence, Low ROI \u2014 only 2 platforms, switch is clear"
+          "reason": "Medium confidence, Low ROI — only 2 platforms, switch is clear"
         },
         {
           "finding": "Slack error/message goroutine captures caller ctx for fire-and-forget",
-          "reason": "Low ROI \u2014 non-critical notification, Slack API call is fast"
+          "reason": "Low ROI — non-critical notification, Slack API call is fast"
         },
         {
           "finding": "PersistentSTT.kill() double-close on resources",
-          "reason": "Very Low ROI \u2014 mutex protects, Go handles double-close safely"
+          "reason": "Very Low ROI — mutex protects, Go handles double-close safely"
         },
         {
           "finding": "idleMonitor holds mu during 5s graceful shutdown",
-          "reason": "Low ROI \u2014 only triggered during idle when no requests incoming"
+          "reason": "Low ROI — only triggered during idle when no requests incoming"
         }
       ],
       "last_analyzed": "2026-05-07T07:58:49.000000+08:00",
@@ -401,39 +401,39 @@
       "findings_dropped": [
         {
           "finding": "Capabilities boilerplate methods",
-          "reason": "Low ROI \u2014 idiomatic Go pattern, extracting adds unnecessary abstraction"
+          "reason": "Low ROI — idiomatic Go pattern, extracting adds unnecessary abstraction"
         },
         {
           "finding": "Worker interface too many methods (11)",
-          "reason": "Low ROI \u2014 all implementations need all methods"
+          "reason": "Low ROI — all implementations need all methods"
         },
         {
           "finding": "Permission envelope construction duplication",
-          "reason": "Low ROI \u2014 input sources differ significantly between adapters"
+          "reason": "Low ROI — input sources differ significantly between adapters"
         },
         {
           "finding": "claudecode/worker.go file size (~770 lines)",
-          "reason": "Low ROI \u2014 responsibilities are cohesive, split has no benefit"
+          "reason": "Low ROI — responsibilities are cohesive, split has no benefit"
         },
         {
           "finding": "singleton.Load() global access in OCS",
-          "reason": "Low confidence \u2014 documented intentional singleton pattern"
+          "reason": "Low confidence — documented intentional singleton pattern"
         },
         {
           "finding": "Duplicate env blocklist CLAUDECODE+HOTPLEX_ entries",
-          "reason": "Low ROI \u2014 only 2 locations, adapters have different runtime-specific entries"
+          "reason": "Low ROI — only 2 locations, adapters have different runtime-specific entries"
         },
         {
           "finding": "proc.Manager coupling to internal/security",
-          "reason": "Low confidence \u2014 intentional design, proc is the enforcement point"
+          "reason": "Low confidence — intentional design, proc is the enforcement point"
         },
         {
           "finding": "OCS readSSE silent failure after session creation",
-          "reason": "Medium confidence \u2014 may be handled in bridge.forwardEvents, needs cross-module verification"
+          "reason": "Medium confidence — may be handled in bridge.forwardEvents, needs cross-module verification"
         },
         {
           "finding": "drainStderr logs worker stderr at Info level, could leak sensitive info",
-          "reason": "Low ROI \u2014 stderr output is essential for debugging worker issues, filtering would reduce observability"
+          "reason": "Low ROI — stderr output is essential for debugging worker issues, filtering would reduce observability"
         },
         {
           "finding": "proc.Manager.Wait() FD leak",
@@ -441,47 +441,47 @@
         },
         {
           "finding": "dead mapper wrappers",
-          "reason": "FALSE POSITIVE \u2014 used in mapper_test.go"
+          "reason": "FALSE POSITIVE — used in mapper_test.go"
         },
         {
           "finding": "duplicated interaction dispatch",
-          "reason": "Low confidence \u2014 CC and OCS use fundamentally different mechanisms by design"
+          "reason": "Low confidence — CC and OCS use fundamentally different mechanisms by design"
         },
         {
           "finding": "context.Background() for SSE lifecycle",
-          "reason": "FALSE POSITIVE \u2014 intentional, SSE connection outlives request context"
+          "reason": "FALSE POSITIVE — intentional, SSE connection outlives request context"
         },
         {
           "finding": "OCS singleton not injectable",
-          "reason": "Low confidence, Low ROI \u2014 singleton pattern is intentional for shared process"
+          "reason": "Low confidence, Low ROI — singleton pattern is intentional for shared process"
         },
         {
           "finding": "empty content not validated",
-          "reason": "Low confidence, Low ROI \u2014 validated upstream in gateway handler"
+          "reason": "Low confidence, Low ROI — validated upstream in gateway handler"
         },
         {
           "finding": "worker-embeds-capabilities-isp",
-          "reason": "Medium confidence, Low ROI \u2014 noop uses Capabilities struct workaround, splitting adds complexity"
+          "reason": "Medium confidence, Low ROI — noop uses Capabilities struct workaround, splitting adds complexity"
         },
         {
           "finding": "unexported-env-utility-helpers",
-          "reason": "Low confidence \u2014 no current external consumers need them"
+          "reason": "Low confidence — no current external consumers need them"
         },
         {
           "finding": "ocs-start-writes-without-lock",
-          "reason": "Low confidence \u2014 single owner pattern, SessionManager serializes Start/Terminate"
+          "reason": "Low confidence — single owner pattern, SessionManager serializes Start/Terminate"
         },
         {
           "finding": "ocs-sessionid-unsynchronized",
-          "reason": "Low confidence \u2014 single owner, single goroutine write"
+          "reason": "Low confidence — single owner, single goroutine write"
         },
         {
           "finding": "claudecode-cancel-read-without-lock",
-          "reason": "Low confidence \u2014 set-once pattern in StartLocked"
+          "reason": "Low confidence — set-once pattern in StartLocked"
         },
         {
           "finding": "claudecode-readoutput-control-without-lock",
-          "reason": "Low confidence \u2014 single reader goroutine, control set in StartLocked"
+          "reason": "Low confidence — single reader goroutine, control set in StartLocked"
         }
       ],
       "last_analyzed": "2026-05-07T08:12:10+08:00",
@@ -520,47 +520,47 @@
       "findings_dropped": [
         {
           "finding": "config.go file size (923 lines)",
-          "reason": "Low ROI \u2014 responsibilities are cohesive around config management"
+          "reason": "Low ROI — responsibilities are cohesive around config management"
         },
         {
           "finding": "HotReloadableFields/StaticFields hardcoded maps",
-          "reason": "Low ROI \u2014 intentional design, each field's reloadability is a deliberate decision"
+          "reason": "Low ROI — intentional design, each field's reloadability is a deliberate decision"
         },
         {
           "finding": "Load() 30+ BindEnv calls",
-          "reason": "Low ROI \u2014 Viper API limitation, not a design issue"
+          "reason": "Low ROI — Viper API limitation, not a design issue"
         },
         {
           "finding": "normalizePaths() hardcoded list",
-          "reason": "Low ROI \u2014 short list, easy to maintain"
+          "reason": "Low ROI — short list, easy to maintain"
         },
         {
           "finding": "Watcher 3 separate mutexes",
-          "reason": "Low confidence \u2014 intentional pattern to reduce lock contention"
+          "reason": "Low confidence — intentional pattern to reduce lock contention"
         },
         {
           "finding": "applyMessagingEnv reflection fragility",
-          "reason": "Low ROI \u2014 already noted in cycle 5, Viper limitation, fixing requires architectural change"
+          "reason": "Low ROI — already noted in cycle 5, Viper limitation, fixing requires architectural change"
         },
         {
           "finding": "ConfigStore.Swap unbounded goroutines for observers",
-          "reason": "Low ROI \u2014 in practice <5 observers, minimal impact"
+          "reason": "Low ROI — in practice <5 observers, minimal impact"
         },
         {
           "finding": "resolveField reflection could panic on unexported fields",
-          "reason": "Low confidence \u2014 all Config fields are exported, theoretical only"
+          "reason": "Low confidence — all Config fields are exported, theoretical only"
         },
         {
           "finding": "decodeJWTSecret silently returns nil on decode failure",
-          "reason": "False positive \u2014 RequireSecrets() catches empty JWTSecret at line 130"
+          "reason": "False positive — RequireSecrets() catches empty JWTSecret at line 130"
         },
         {
           "finding": "decodeJWTSecret silently returns nil on decode failure",
-          "reason": "False positive \u2014 RequireSecrets() catches empty JWTSecret at line 130"
+          "reason": "False positive — RequireSecrets() catches empty JWTSecret at line 130"
         },
         {
           "finding": "load-bindenv-repetitive-list",
-          "reason": "Viper known limitation \u2014 AutomaticEnv cannot map nested keys without explicit BindEnv registration"
+          "reason": "Viper known limitation — AutomaticEnv cannot map nested keys without explicit BindEnv registration"
         },
         {
           "finding": "apply-messaging-env-slack-feishu-duplication",
@@ -568,23 +568,23 @@
         },
         {
           "finding": "expand-abs-home-error-silent",
-          "reason": "Low confidence \u2014 intentional for test environments where HOME may not be set"
+          "reason": "Low confidence — intentional for test environments where HOME may not be set"
         },
         {
           "finding": "resolvefield-placeholder-strings",
-          "reason": "Low ROI \u2014 display-only for audit logging, not error propagation"
+          "reason": "Low ROI — display-only for audit logging, not error propagation"
         },
         {
           "finding": "reload-no-mu-concurrency",
-          "reason": "Low confidence \u2014 event loop + debounce serializes reload calls"
+          "reason": "Low confidence — event loop + debounce serializes reload calls"
         },
         {
           "finding": "close-no-wait-run-goroutine",
-          "reason": "Low confidence \u2014 ctx cancellation + fsnotify close ensure goroutine exit"
+          "reason": "Low confidence — ctx cancellation + fsnotify close ensure goroutine exit"
         },
         {
           "finding": "configstore-swap-unbounded-goroutines",
-          "reason": "Low confidence \u2014 Watcher debounce (500ms) bounds Swap call rate"
+          "reason": "Low confidence — Watcher debounce (500ms) bounds Swap call rate"
         }
       ],
       "last_analyzed": "2026-05-07T08:17:20+08:00",
@@ -621,35 +621,35 @@
       "findings_dropped": [
         {
           "finding": "BuildSystemPrompt repetitive XML wrapping (5 similar blocks)",
-          "reason": "Low ROI \u2014 88-line function, explicit is better than abstract for security-sensitive prompt assembly"
+          "reason": "Low ROI — 88-line function, explicit is better than abstract for security-sensitive prompt assembly"
         },
         {
           "finding": "configFiles list vs Load hardcoded 5 file names",
-          "reason": "Low ROI \u2014 adding config files is rare, current approach is auditable"
+          "reason": "Low ROI — adding config files is rare, current approach is auditable"
         },
         {
           "finding": "B/C channel assembly symmetry",
-          "reason": "Low ROI \u2014 symmetry is inherent to the domain"
+          "reason": "Low ROI — symmetry is inherent to the domain"
         },
         {
           "finding": "registercommand-no-sync",
-          "reason": "Low confidence \u2014 init() is single-threaded, no actual race"
+          "reason": "Low confidence — init() is single-threaded, no actual race"
         },
         {
           "finding": "exported-mutable-allowlists",
-          "reason": "Low ROI \u2014 design choice for configuration flexibility"
+          "reason": "Low ROI — design choice for configuration flexibility"
         },
         {
           "finding": "validateurl-unparseable-dns",
-          "reason": "Low confidence \u2014 DNS protocol guarantees parseable responses"
+          "reason": "Low confidence — DNS protocol guarantees parseable responses"
         },
         {
           "finding": "authrequest-map-non-constant-time",
-          "reason": "Low ROI \u2014 standard API key validation approach"
+          "reason": "Low ROI — standard API key validation approach"
         },
         {
           "finding": "jtiblacklist-sweep-no-waitgroup",
-          "reason": "Low confidence \u2014 channel close ensures goroutine exit"
+          "reason": "Low confidence — channel close ensures goroutine exit"
         }
       ],
       "last_analyzed": "2026-05-07T08:26:41+08:00",
@@ -684,39 +684,39 @@
       "findings_dropped": [
         {
           "finding": "Append parameter list duplicated in SQLiteStore.Append and sqliteTx.Append",
-          "reason": "Low ROI \u2014 same SQL query, parameters must match, extracting adds indirection for 2 instances"
+          "reason": "Low ROI — same SQL query, parameters must match, extracting adds indirection for 2 instances"
         },
         {
           "finding": "withDefaultTimeout repeated 8 times in store methods",
-          "reason": "Low ROI \u2014 idiomatic Go pattern for per-method context timeout"
+          "reason": "Low ROI — idiomatic Go pattern for per-method context timeout"
         },
         {
           "finding": "scanEvents/scanTurns empty check pattern duplication",
-          "reason": "Low ROI \u2014 2 instances of 3-line pattern, not worth a helper"
+          "reason": "Low ROI — 2 instances of 3-line pattern, not worth a helper"
         },
         {
           "finding": "QueryTurnStats silently skips scan errors (continue)",
-          "reason": "Medium confidence, Low ROI \u2014 SQL schema is app-controlled, scan failures extremely rare in practice"
+          "reason": "Medium confidence, Low ROI — SQL schema is app-controlled, scan failures extremely rare in practice"
         },
         {
           "finding": "flushBatch best-effort on individual append failures",
-          "reason": "Low ROI \u2014 intentional design, individual failures are logged"
+          "reason": "Low ROI — intentional design, individual failures are logged"
         },
         {
           "finding": "send() drops events on full channel",
-          "reason": "Low ROI \u2014 intentional backpressure with 2048 buffer, logged"
+          "reason": "Low ROI — intentional backpressure with 2048 buffer, logged"
         },
         {
           "finding": "Collector.Close() closeC double-close risk",
-          "reason": "Medium confidence \u2014 same pattern as #236/#238, shutdown-only call path, covered by existing issues"
+          "reason": "Medium confidence — same pattern as #236/#238, shutdown-only call path, covered by existing issues"
         },
         {
           "finding": "context.Background() in flushBatch",
-          "reason": "FALSE POSITIVE \u2014 background writer goroutine needs independent lifecycle, not a request path"
+          "reason": "FALSE POSITIVE — background writer goroutine needs independent lifecycle, not a request path"
         },
         {
           "finding": "duplicated-rows-close-defer-pattern (4 instances)",
-          "reason": "Low ROI \u2014 idiomatic Go pattern, explicit is clearer than callback abstraction"
+          "reason": "Low ROI — idiomatic Go pattern, explicit is clearer than callback abstraction"
         }
       ],
       "last_analyzed": "2026-05-07T06:36:47.335714+08:00",
@@ -756,15 +756,15 @@
         },
         {
           "finding": "GenerateSecret duplication across checkers",
-          "reason": "Low ROI \u2014 different encoding/base variants, minor duplication"
+          "reason": "Low ROI — different encoding/base variants, minor duplication"
         },
         {
           "finding": "scanDir() boilerplate in agentconfig.go",
-          "reason": "Low ROI \u2014 3 one-liner methods, not worth abstracting"
+          "reason": "Low ROI — 3 one-liner methods, not worth abstracting"
         },
         {
           "finding": "Slack/Feishu platform branching in wizard.go",
-          "reason": "Low ROI \u2014 only 2 platforms exist, adding third is rare"
+          "reason": "Low ROI — only 2 platforms exist, adding third is rare"
         },
         {
           "finding": "configPath == '' guard repeated 8+ times (D3)",
@@ -772,7 +772,7 @@
         },
         {
           "finding": "Unpinned pip packages in STT checker hints",
-          "reason": "False positive \u2014 hint text shown to users, not actual install commands"
+          "reason": "False positive — hint text shown to users, not actual install commands"
         },
         {
           "finding": "context.Background() in wizard.go CLI code",
@@ -817,7 +817,7 @@
       "findings_dropped": [
         {
           "finding": "List() ignores context parameter",
-          "reason": "Low ROI \u2014 skill dirs small, scan fast"
+          "reason": "Low ROI — skill dirs small, scan fast"
         },
         {
           "finding": "scanDirs swallows scanDir errors",
@@ -825,11 +825,11 @@
         },
         {
           "finding": "List() TOCTOU between RLock and Lock",
-          "reason": "Low ROI \u2014 redundant but correct"
+          "reason": "Low ROI — redundant but correct"
         },
         {
           "finding": "ParseFrontmatter vs parseSkillFile truncation inconsistency",
-          "reason": "Low ROI \u2014 intentional for different audiences"
+          "reason": "Low ROI — intentional for different audiences"
         }
       ],
       "last_analyzed": "2026-05-07T06:55:07.854472+08:00",
@@ -863,35 +863,35 @@
       "findings_dropped": [
         {
           "finding": "enableLinger error silently discarded",
-          "reason": "Low ROI \u2014 intentionally best-effort, linger not available on all systems"
+          "reason": "Low ROI — intentionally best-effort, linger not available on all systems"
         },
         {
           "finding": "LogDir swallows UserHomeDir error",
-          "reason": "Low ROI \u2014 $HOME always set, error manifests downstream"
+          "reason": "Low ROI — $HOME always set, error manifests downstream"
         },
         {
           "finding": "Darwin Status reports running for loaded but crashed services",
-          "reason": "Low ROI \u2014 pragmatic for KeepAlive=true services"
+          "reason": "Low ROI — pragmatic for KeepAlive=true services"
         },
         {
           "finding": "parseLaunchctlPID TrimRight fragility",
-          "reason": "Low ROI \u2014 works correctly for known launchctl output format"
+          "reason": "Low ROI — works correctly for known launchctl output format"
         },
         {
           "finding": "unitPath/plistPath duplicated path logic",
-          "reason": "Low ROI \u2014 platform-specific similarity is expected pattern"
+          "reason": "Low ROI — platform-specific similarity is expected pattern"
         },
         {
           "finding": "Restart() stop-then-start no rollback",
-          "reason": "Low severity, Medium confidence \u2014 service restart failure after stop is rare, user can manually restart"
+          "reason": "Low severity, Medium confidence — service restart failure after stop is rare, user can manually restart"
         },
         {
           "finding": "exec.Command.CombinedOutput + TrimSpace 4x in darwin",
-          "reason": "Low ROI \u2014 single-file internal, different error message formatting per call site"
+          "reason": "Low ROI — single-file internal, different error message formatting per call site"
         },
         {
           "finding": "cmd.Stdout/Stderr assignment 3x in Logs()",
-          "reason": "Low ROI \u2014 only 2 lines, command construction differs significantly"
+          "reason": "Low ROI — only 2 lines, command construction differs significantly"
         }
       ],
       "last_analyzed": "2026-05-07T06:46:28.960192+08:00",
@@ -924,19 +924,19 @@
       "findings_dropped": [
         {
           "finding": "Download creates fresh http.Client ignoring parent transport",
-          "reason": "Low ROI \u2014 intentional for longer download timeout"
+          "reason": "Low ROI — intentional for longer download timeout"
         },
         {
           "finding": "Replace has microsecond gap between renames",
-          "reason": "Low ROI \u2014 classic atomic swap limitation, tiny window"
+          "reason": "Low ROI — classic atomic swap limitation, tiny window"
         },
         {
           "finding": "findChecksum does not handle * prefix",
-          "reason": "Low ROI \u2014 GitHub checksums use standard format"
+          "reason": "Low ROI — GitHub checksums use standard format"
         },
         {
           "finding": "IsWritable/IsDocker package-level functions untestable",
-          "reason": "Low ROI \u2014 CLI convenience functions, not hot path"
+          "reason": "Low ROI — CLI convenience functions, not hot path"
         }
       ],
       "last_analyzed": "2026-05-07T07:06:12.000000+08:00",
@@ -969,39 +969,39 @@
       "findings_dropped": [
         {
           "finding": "IntFloat vs ToInt64 overlap",
-          "reason": "Low ROI \u2014 different return types (int vs int64), intentional"
+          "reason": "Low ROI — different return types (int vs int64), intentional"
         },
         {
           "finding": "MapContextUsageResponse/MapMCPStatusResponse pattern similarity",
-          "reason": "Low ROI \u2014 structures differ significantly, extracting common logic is over-engineering"
+          "reason": "Low ROI — structures differ significantly, extracting common logic is over-engineering"
         },
         {
           "finding": "WorkerStdioCommand.IsPassthrough switch statement",
-          "reason": "Low ROI \u2014 6 commands, stable, OCP impact negligible"
+          "reason": "Low ROI — 6 commands, stable, OCP impact negligible"
         },
         {
           "finding": "SessionState state machine in events package",
-          "reason": "Low ROI \u2014 naturally associated with StateData, only ~50 lines"
+          "reason": "Low ROI — naturally associated with StateData, only ~50 lines"
         },
         {
           "finding": "Clone() silent failure returns empty Envelope",
-          "reason": "Low confidence \u2014 Envelope fields are all JSON-serializable, marshal/unmarshal failure is practically unreachable"
+          "reason": "Low confidence — Envelope fields are all JSON-serializable, marshal/unmarshal failure is practically unreachable"
         },
         {
           "finding": "DecodeAs[T] ignores JSON marshal/unmarshal errors",
-          "reason": "Low confidence \u2014 standard Go pattern for loose type conversion, error paths unreachable with AEP data types"
+          "reason": "Low confidence — standard Go pattern for loose type conversion, error paths unreachable with AEP data types"
         },
         {
           "finding": "Consumers manually type-switch Event.Data instead of using DecodeAs",
-          "reason": "Cross-package concern \u2014 fix in consumers, pkg/events already provides DecodeAs as canonical extraction"
+          "reason": "Cross-package concern — fix in consumers, pkg/events already provides DecodeAs as canonical extraction"
         },
         {
           "finding": "MessageStartData is strict subset of MessageData",
-          "reason": "Low ROI \u2014 protocol type domain overlap is inherent, embedding couples serialization"
+          "reason": "Low ROI — protocol type domain overlap is inherent, embedding couples serialization"
         },
         {
           "finding": "interface{} vs any style inconsistency in events.go",
-          "reason": "Low ROI \u2014 cosmetic only, no functional impact"
+          "reason": "Low ROI — cosmetic only, no functional impact"
         }
       ],
       "last_analyzed": "2026-05-07T07:26:30.000000+08:00",
@@ -1036,31 +1036,31 @@
       "findings_dropped": [
         {
           "finding": "NewPingEnvelope doesn't reuse NewEnvelope constructor",
-          "reason": "Low ROI \u2014 Ping sets Priority field, difference is justified, fix is cosmetic"
+          "reason": "Low ROI — Ping sets Priority field, difference is justified, fix is cosmetic"
         },
         {
           "finding": "escapeJSTerminators/EscapeJSTerminators dual export",
-          "reason": "Low ROI \u2014 standard Go pattern for exposing internal function, no real issue"
+          "reason": "Low ROI — standard Go pattern for exposing internal function, no real issue"
         },
         {
           "finding": "Encode/EncodeJSON mutate input envelope (Version, Timestamp)",
-          "reason": "Low confidence \u2014 intentional for performance, callers are sequential"
+          "reason": "Low confidence — intentional for performance, callers are sequential"
         },
         {
           "finding": "nowFunc mutable package-level variable",
-          "reason": "Low confidence \u2014 standard Go testing pattern, safe in practice"
+          "reason": "Low confidence — standard Go testing pattern, safe in practice"
         },
         {
           "finding": "Encode/EncodeJSON share identical 4-line preamble",
-          "reason": "Low ROI \u2014 only 2 functions, preamble is trivial, extracting adds indirection"
+          "reason": "Low ROI — only 2 functions, preamble is trivial, extracting adds indirection"
         },
         {
           "finding": "Decode strict vs DecodeLine lenient unknown-field handling",
-          "reason": "Medium confidence \u2014 may be intentional for stream vs line-delimited modes"
+          "reason": "Medium confidence — may be intentional for stream vs line-delimited modes"
         },
         {
           "finding": "NewPingEnvelope bypasses NewEnvelope",
-          "reason": "Already dropped in prior pass \u2014 Priority field difference justifies direct construction"
+          "reason": "Already dropped in prior pass — Priority field difference justifies direct construction"
         }
       ],
       "last_analyzed": "2026-05-07T07:17:40.000000+08:00",
@@ -1096,27 +1096,27 @@
       "findings_dropped": [
         {
           "finding": "gateway_run.go size (548 lines)",
-          "reason": "Low ROI \u2014 intentional composition root pattern, cohesive DI wiring"
+          "reason": "Low ROI — intentional composition root pattern, cohesive DI wiring"
         },
         {
           "finding": "splitHostPort in security.go vs net.SplitHostPort",
-          "reason": "Low ROI \u2014 6-line local helper, avoids net import edge cases"
+          "reason": "Low ROI — 6-line local helper, avoids net import edge cases"
         },
         {
           "finding": "messaging_init.go Gate construction duplication between Slack/Feishu",
-          "reason": "Low ROI \u2014 already covered in messaging module issues #204, #205"
+          "reason": "Low ROI — already covered in messaging module issues #204, #205"
         },
         {
           "finding": "admin_adapters.go adapter boilerplate",
-          "reason": "Low ROI \u2014 necessary for DIP between cmd and internal/admin packages"
+          "reason": "Low ROI — necessary for DIP between cmd and internal/admin packages"
         },
         {
           "finding": "shutdown discards parent tracing context",
-          "reason": "Intentional \u2014 shutdown needs independent timeout, not tied to cancelled parent"
+          "reason": "Intentional — shutdown needs independent timeout, not tied to cancelled parent"
         },
         {
           "finding": "config.Load() duplicated across command files",
-          "reason": "Normal CLI pattern \u2014 each command is separate process invocation"
+          "reason": "Normal CLI pattern — each command is separate process invocation"
         },
         {
           "finding": "package-level STT cache no test seam",
@@ -1161,55 +1161,55 @@
       "findings_dropped": [
         {
           "finding": "Scope check pattern repeated 10+ times in handlers",
-          "reason": "Low ROI \u2014 idiomatic Go HTTP handler pattern, extracting to middleware requires route-scope mapping and adds complexity"
+          "reason": "Low ROI — idiomatic Go HTTP handler pattern, extracting to middleware requires route-scope mapping and adds complexity"
         },
         {
           "finding": "HandleWorkerHealth bypasses respondJSON helper",
-          "reason": "Low ROI \u2014 single instance, minor inconsistency"
+          "reason": "Low ROI — single instance, minor inconsistency"
         },
         {
           "finding": "limit query param parsing duplicated in ListSessions and HandleLogs",
-          "reason": "Low ROI \u2014 only 2 instances, extracting adds indirection"
+          "reason": "Low ROI — only 2 instances, extracting adds indirection"
         },
         {
           "finding": "Provider interfaces return `any` causing type assertions in handlers",
-          "reason": "Low ROI \u2014 changing return types cascades through all callers"
+          "reason": "Low ROI — changing return types cascades through all callers"
         },
         {
           "finding": "addCORSHeaders in sessions.go instead of middleware.go",
-          "reason": "Low ROI \u2014 just file placement, no functional impact"
+          "reason": "Low ROI — just file placement, no functional impact"
         },
         {
           "finding": "LogRing package-level global variable",
-          "reason": "Low confidence \u2014 common pattern for logging infra, tests work fine"
+          "reason": "Low confidence — common pattern for logging infra, tests work fine"
         },
         {
           "finding": "sessions.go direct imports of worker/events bypassing provider abstraction",
-          "reason": "Low ROI \u2014 minor inconsistency, abstraction would be over-engineering for 2 imports"
+          "reason": "Low ROI — minor inconsistency, abstraction would be over-engineering for 2 imports"
         },
         {
           "finding": "CORS wildcard Access-Control-Allow-Origin: *",
-          "reason": "Low ROI \u2014 admin API bound to localhost only by default"
+          "reason": "Low ROI — admin API bound to localhost only by default"
         },
         {
           "finding": "Query string parameters for session creation",
-          "reason": "Low ROI \u2014 admin API, not user-facing"
+          "reason": "Low ROI — admin API, not user-facing"
         },
         {
           "finding": "handlers.go vs sessions.go file split inconsistency",
-          "reason": "Cosmetic issue \u2014 file organization is subjective, refactoring ROI low"
+          "reason": "Cosmetic issue — file organization is subjective, refactoring ROI low"
         },
         {
           "finding": "session-manager-provider-fat-interface",
-          "reason": "Medium confidence, Low ROI \u2014 single consumer, splitting adds complexity"
+          "reason": "Medium confidence, Low ROI — single consumer, splitting adds complexity"
         },
         {
           "finding": "handle-health-undocumented-auth-bypass",
-          "reason": "High confidence but Low ROI \u2014 just needs a doc comment"
+          "reason": "High confidence but Low ROI — just needs a doc comment"
         },
         {
           "finding": "session-lookup-2x-duplication",
-          "reason": "High confidence but Low ROI \u2014 only 2 locations"
+          "reason": "High confidence but Low ROI — only 2 locations"
         }
       ],
       "last_analyzed": "2026-05-07T08:38:46.000000+08:00",
@@ -1243,23 +1243,23 @@
       "findings_dropped": [
         {
           "finding": "BuildSystemPrompt repetitive XML wrapping (5 similar blocks)",
-          "reason": "Low ROI \u2014 88-line function, explicit is better than abstract for security-sensitive prompt assembly"
+          "reason": "Low ROI — 88-line function, explicit is better than abstract for security-sensitive prompt assembly"
         },
         {
           "finding": "configFiles list vs Load hardcoded 5 file names",
-          "reason": "Low ROI \u2014 adding config files is rare, current approach is auditable"
+          "reason": "Low ROI — adding config files is rare, current approach is auditable"
         },
         {
           "finding": "B/C channel assembly symmetry",
-          "reason": "Low ROI \u2014 symmetry is inherent to the domain"
+          "reason": "Low ROI — symmetry is inherent to the domain"
         },
         {
           "finding": "hardcoded os.* calls no FS interface",
-          "reason": "Premature abstraction \u2014 module small, t.TempDir() tests sufficient"
+          "reason": "Premature abstraction — module small, t.TempDir() tests sufficient"
         },
         {
           "finding": "stripFrontmatter drops newline after ---",
-          "reason": "No functional impact \u2014 markdown rendering unaffected"
+          "reason": "No functional impact — markdown rendering unaffected"
         },
         {
           "finding": "HasGlobalFiles untested",
@@ -1267,7 +1267,7 @@
         },
         {
           "finding": "buildHotplexMetacognition trivial wrapper",
-          "reason": "Informational \u2014 not a real issue"
+          "reason": "Informational — not a real issue"
         }
       ],
       "last_analyzed": "2026-05-07T06:06:16.054505",
@@ -1396,138 +1396,6 @@
   ],
   "recent_activity": [
     {
-      "cycle": 99,
-      "module": "internal/messaging",
-      "aspects": [
-        "solid",
-        "dry"
-      ],
-      "findings": 7,
-      "issue": 257,
-      "note": "Re-analysis \u2014 Slack/Feishu cross-module DRY violations",
-      "timestamp": "2026-05-07T05:37:49.277873"
-    },
-    {
-      "cycle": 100,
-      "module": "internal/worker",
-      "aspects": [
-        "solid",
-        "dry"
-      ],
-      "findings": 5,
-      "issue": 258,
-      "note": "Re-analysis \u2014 milestone cycle 100",
-      "timestamp": "2026-05-07T05:51:20.074704"
-    },
-    {
-      "cycle": 101,
-      "module": "internal/admin",
-      "aspects": [
-        "solid",
-        "dry"
-      ],
-      "findings": 7,
-      "issue": 259,
-      "note": "Re-analysis \u2014 admin handler DRY violations",
-      "timestamp": "2026-05-07T05:59:15.909629"
-    },
-    {
-      "cycle": 102,
-      "module": "internal/agentconfig",
-      "aspects": [
-        "solid",
-        "dry"
-      ],
-      "findings": 0,
-      "issue": null,
-      "note": "Re-analysis \u2014 no significant findings (healthy module)",
-      "timestamp": "2026-05-07T06:06:16.054507"
-    },
-    {
-      "cycle": 103,
-      "module": "cmd/hotplex",
-      "aspects": [
-        "solid",
-        "dry"
-      ],
-      "findings": 6,
-      "issue": 260,
-      "note": "Re-analysis \u2014 gateway lifecycle dispatch duplication + config diffing inconsistency",
-      "timestamp": "2026-05-07T06:19:14.846833+08:00"
-    },
-    {
-      "cycle": 104,
-      "module": "internal/cli",
-      "aspects": [
-        "solid",
-        "dry"
-      ],
-      "findings": 6,
-      "issue": 261,
-      "note": "Re-analysis \u2014 wizard god-file + yaml/envfile parsing duplication across 3 subpackages",
-      "timestamp": "2026-05-07T06:27:41.466767+08:00"
-    },
-    {
-      "cycle": 105,
-      "module": "internal/eventstore",
-      "aspects": [
-        "solid",
-        "dry"
-      ],
-      "findings": 4,
-      "issue": 262,
-      "note": "Re-analysis \u2014 accumulator get-or-create duplication, reverse slice, scan reuse",
-      "timestamp": "2026-05-07T06:36:47.335714+08:00"
-    },
-    {
-      "cycle": 106,
-      "module": "internal/service",
-      "aspects": [
-        "solid",
-        "dry"
-      ],
-      "findings": 2,
-      "issue": 263,
-      "note": "Re-analysis \u2014 darwin stop/uninstall extraction + unix install write helper",
-      "timestamp": "2026-05-07T06:46:28.960192+08:00"
-    },
-    {
-      "cycle": 107,
-      "module": "internal/skills",
-      "aspects": [
-        "solid",
-        "dry"
-      ],
-      "findings": 0,
-      "issue": null,
-      "note": "Re-analysis \u2014 no significant findings (healthy module, confirmed clean)",
-      "timestamp": "2026-05-07T06:55:07.854472+08:00"
-    },
-    {
-      "cycle": 108,
-      "module": "internal/updater",
-      "aspects": [
-        "solid",
-        "dry"
-      ],
-      "findings": 0,
-      "issue": null,
-      "note": "Re-analysis \u2014 no significant findings (healthy module, single cohesive file)",
-      "timestamp": "2026-05-07T07:06:12.000000+08:00"
-    },
-    {
-      "cycle": 109,
-      "module": "pkg/aep",
-      "aspects": [
-        "solid",
-        "dry"
-      ],
-      "findings": 1,
-      "issue": 264,
-      "note": "Re-analysis \u2014 duplicate NewEnvelope across aep/events packages",
-      "timestamp": "2026-05-07T07:17:40.000000+08:00"
-    },
-    {
       "cycle": 110,
       "module": "pkg/events",
       "aspects": [
@@ -1536,7 +1404,7 @@
       ],
       "findings": 0,
       "issue": null,
-      "note": "Re-analysis \u2014 no significant findings (healthy module, consumer-side concerns noted)",
+      "note": "Re-analysis — no significant findings (healthy module, consumer-side concerns noted)",
       "timestamp": "2026-05-07T07:26:30.000000+08:00"
     },
     {
@@ -1548,7 +1416,7 @@
       ],
       "findings": 2,
       "issue": 265,
-      "note": "Phase 2 re-analysis \u2014 LLMRetryController patterns data race + ctrlCancel not deferred",
+      "note": "Phase 2 re-analysis — LLMRetryController patterns data race + ctrlCancel not deferred",
       "timestamp": "2026-05-07T07:37:30.000000+08:00"
     },
     {
@@ -1560,7 +1428,7 @@
       ],
       "findings": 3,
       "issue": 267,
-      "note": "Phase 2 re-analysis \u2014 silent store error in getManagedSession + max-turns orphan + AttachWorker lock ordering",
+      "note": "Phase 2 re-analysis — silent store error in getManagedSession + max-turns orphan + AttachWorker lock ordering",
       "timestamp": "2026-05-07T07:46:55.000000+08:00"
     },
     {
@@ -1572,7 +1440,7 @@
       ],
       "findings": 3,
       "issue": 268,
-      "note": "Phase 2 re-analysis \u2014 Feishu card ctx leak + Dedup double-close + Slack CPU spin",
+      "note": "Phase 2 re-analysis — Feishu card ctx leak + Dedup double-close + Slack CPU spin",
       "timestamp": "2026-05-07T07:58:49.000000+08:00"
     },
     {
@@ -1633,6 +1501,172 @@
       "updated": 1,
       "confirmed": 4,
       "timestamp": "2026-05-07T08:56:50.000000+08:00"
+    },
+    {
+      "cycle": 119,
+      "mode": "audit",
+      "issues_audited": [
+        205,
+        207,
+        212,
+        213,
+        214
+      ],
+      "closed": 1,
+      "updated": 0,
+      "confirmed": 4,
+      "timestamp": "2026-05-07T10:37:54.000000+08:00"
+    },
+    {
+      "cycle": 120,
+      "mode": "audit",
+      "issues_audited": [
+        215,
+        217,
+        224,
+        225,
+        226
+      ],
+      "closed": 0,
+      "updated": 0,
+      "confirmed": 5,
+      "timestamp": "2026-05-07T10:44:51.000000+08:00"
+    },
+    {
+      "cycle": 121,
+      "mode": "audit",
+      "issues_audited": [
+        227,
+        228,
+        229,
+        230,
+        231
+      ],
+      "closed": 0,
+      "updated": 0,
+      "confirmed": 5,
+      "timestamp": "2026-05-07T10:54:16.000000+08:00"
+    },
+    {
+      "cycle": 122,
+      "mode": "audit",
+      "issues_audited": [
+        232,
+        233,
+        234,
+        235,
+        236
+      ],
+      "closed": 0,
+      "updated": 0,
+      "confirmed": 5,
+      "timestamp": "2026-05-07T11:03:59.000000+08:00"
+    },
+    {
+      "cycle": 123,
+      "mode": "audit",
+      "issues_audited": [
+        237,
+        238,
+        239,
+        240,
+        241
+      ],
+      "closed": 0,
+      "updated": 0,
+      "confirmed": 5,
+      "timestamp": "2026-05-07T11:14:45.000000+08:00"
+    },
+    {
+      "cycle": 125,
+      "mode": "audit",
+      "issues_audited": [
+        242,
+        243,
+        244,
+        245,
+        246
+      ],
+      "closed": 0,
+      "updated": 0,
+      "confirmed": 5,
+      "timestamp": "2026-05-07T11:27:05.593633+08:00"
+    },
+    {
+      "cycle": 126,
+      "mode": "audit",
+      "issues_audited": [
+        247,
+        248,
+        249,
+        250,
+        251
+      ],
+      "closed": 0,
+      "updated": 0,
+      "confirmed": 5,
+      "timestamp": "2026-05-07T11:33:15.222640+08:00"
+    },
+    {
+      "cycle": 127,
+      "mode": "audit",
+      "issues_audited": [
+        252,
+        253,
+        254,
+        255,
+        256
+      ],
+      "closed": 0,
+      "updated": 0,
+      "confirmed": 5,
+      "timestamp": "2026-05-07T11:42:55.115859+08:00"
+    },
+    {
+      "cycle": 128,
+      "mode": "audit",
+      "issues_audited": [
+        257,
+        258,
+        259,
+        260,
+        261
+      ],
+      "closed": 0,
+      "updated": 0,
+      "confirmed": 5,
+      "timestamp": "2026-05-07T11:52:54.955685+08:00"
+    },
+    {
+      "cycle": 129,
+      "mode": "audit",
+      "issues_audited": [
+        262,
+        263,
+        264,
+        265,
+        267
+      ],
+      "closed": 0,
+      "updated": 0,
+      "confirmed": 5,
+      "timestamp": "2026-05-07T12:03:05.606991+08:00"
+    },
+    {
+      "cycle": 130,
+      "mode": "audit",
+      "issues_audited": [
+        268,
+        269,
+        270,
+        271,
+        272
+      ],
+      "closed": 0,
+      "updated": 0,
+      "confirmed": 5,
+      "timestamp": "2026-05-07T12:12:47.622959+08:00",
+      "note": "FINAL AUDIT ROUND — all 59 issues now audited"
     }
   ],
   "audited_issues": [
@@ -1665,6 +1699,361 @@
       "verdict": "mixed",
       "action": "updated",
       "audited_at": "2026-05-07T08:56:50.000000+08:00"
+    },
+    {
+      "number": 205,
+      "verdict": "partially-invalid",
+      "action": "closed",
+      "audited_at": "2026-05-07T10:37:54.000000+08:00",
+      "detail": "F1/F2 fabricated code patterns, F3 overstated, F5 valid"
+    },
+    {
+      "number": 207,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T10:37:54.000000+08:00",
+      "detail": "Both findings confirmed at exact line numbers"
+    },
+    {
+      "number": 212,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T10:37:54.000000+08:00",
+      "detail": "All findings confirmed at exact line numbers"
+    },
+    {
+      "number": 213,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T10:37:54.000000+08:00",
+      "detail": "Global state, dir writable, OS hardcoded all confirmed"
+    },
+    {
+      "number": 214,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T10:37:54.000000+08:00",
+      "detail": "Encode duplication and decode strictness gap confirmed"
+    },
+    {
+      "number": 215,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T10:44:51.000000+08:00",
+      "detail": "NewEnvelope duplication confirmed"
+    },
+    {
+      "number": 217,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T10:44:51.000000+08:00",
+      "detail": "God Object confirmed, lines shifted 984->998"
+    },
+    {
+      "number": 224,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T10:44:51.000000+08:00",
+      "detail": "Dead SessionManager injection confirmed, sm never read"
+    },
+    {
+      "number": 225,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T10:44:51.000000+08:00",
+      "detail": "Input metadata dispatch pattern and OCS Wait confirmed"
+    },
+    {
+      "number": 226,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T10:44:51.000000+08:00",
+      "detail": "decodeJWTSecret silent nil return confirmed"
+    },
+    {
+      "number": 227,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T10:54:16.000000+08:00",
+      "detail": "Data race theoretical, respondJSON error confirmed"
+    },
+    {
+      "number": 228,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T10:54:16.000000+08:00",
+      "detail": "respondJSON swallows errors, scope issue confirmed"
+    },
+    {
+      "number": 229,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T10:54:16.000000+08:00",
+      "detail": "Silent truncation at loader.go:61-66 and :147-149"
+    },
+    {
+      "number": 230,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T10:54:16.000000+08:00",
+      "detail": "Valid but overlaps with 212/213 for env-file and checker findings"
+    },
+    {
+      "number": 231,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T10:54:16.000000+08:00",
+      "detail": "loadEnvFile missing IsProtected, splitHostPort IPv6 bug"
+    },
+    {
+      "number": 232,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T11:03:59.000000+08:00",
+      "detail": "Locator.Close panics, no sync.Once"
+    },
+    {
+      "number": 233,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T11:03:59.000000+08:00",
+      "detail": "DecodeLine overlaps 214, IsSessionBusy type assertion confirmed"
+    },
+    {
+      "number": 234,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T11:03:59.000000+08:00",
+      "detail": "WritePump panic recovery races with Close on done channel"
+    },
+    {
+      "number": 235,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T11:03:59.000000+08:00",
+      "detail": "TOCTOU race during DB write in transitionState"
+    },
+    {
+      "number": 236,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T11:03:59.000000+08:00",
+      "detail": "Dedup.Close panics, same pattern as 232"
+    },
+    {
+      "number": 237,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T11:14:45.000000+08:00",
+      "detail": "proc.Manager Wait leaks pipe FDs"
+    },
+    {
+      "number": 238,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T11:14:45.000000+08:00",
+      "detail": "jtiBlacklist Stop panics, same pattern as 232/236"
+    },
+    {
+      "number": 239,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T11:14:45.000000+08:00",
+      "detail": "pcEntry RuneCountInString O(content_size) allocation"
+    },
+    {
+      "number": 240,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T11:14:45.000000+08:00",
+      "detail": "performInit missing user ownership check on reconnect"
+    },
+    {
+      "number": 241,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T11:14:45.000000+08:00",
+      "detail": "Admin API missing structured audit logging"
+    },
+    {
+      "number": 242,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T11:27:05.593633+08:00"
+    },
+    {
+      "number": 243,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T11:27:05.593633+08:00"
+    },
+    {
+      "number": 244,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T11:27:05.593633+08:00"
+    },
+    {
+      "number": 245,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T11:27:05.593633+08:00"
+    },
+    {
+      "number": 246,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T11:27:05.593633+08:00"
+    },
+    {
+      "number": 247,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T11:33:15.222640+08:00"
+    },
+    {
+      "number": 248,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T11:33:15.222640+08:00"
+    },
+    {
+      "number": 249,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T11:33:15.222640+08:00"
+    },
+    {
+      "number": 250,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T11:33:15.222640+08:00"
+    },
+    {
+      "number": 251,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T11:33:15.222640+08:00"
+    },
+    {
+      "number": 252,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T11:42:55.115859+08:00"
+    },
+    {
+      "number": 253,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T11:42:55.115859+08:00"
+    },
+    {
+      "number": 254,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T11:42:55.115859+08:00"
+    },
+    {
+      "number": 255,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T11:42:55.115859+08:00"
+    },
+    {
+      "number": 256,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T11:42:55.115859+08:00"
+    },
+    {
+      "number": 257,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T11:52:54.955685+08:00"
+    },
+    {
+      "number": 258,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T11:52:54.955685+08:00"
+    },
+    {
+      "number": 259,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T11:52:54.955685+08:00"
+    },
+    {
+      "number": 260,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T11:52:54.955685+08:00"
+    },
+    {
+      "number": 261,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T11:52:54.955685+08:00"
+    },
+    {
+      "number": 262,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T12:03:05.606991+08:00"
+    },
+    {
+      "number": 263,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T12:03:05.606991+08:00"
+    },
+    {
+      "number": 264,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T12:03:05.606991+08:00"
+    },
+    {
+      "number": 265,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T12:03:05.606991+08:00"
+    },
+    {
+      "number": 267,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T12:03:05.606991+08:00"
+    },
+    {
+      "number": 268,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T12:12:47.622959+08:00"
+    },
+    {
+      "number": 269,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T12:12:47.622959+08:00"
+    },
+    {
+      "number": 270,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T12:12:47.622959+08:00"
+    },
+    {
+      "number": 271,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T12:12:47.622959+08:00"
+    },
+    {
+      "number": 272,
+      "verdict": "valid",
+      "action": "confirmed",
+      "audited_at": "2026-05-07T12:12:47.622959+08:00"
     }
   ]
 }

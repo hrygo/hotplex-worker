@@ -146,6 +146,7 @@ worker:
       - "ExitPlanMode"
 
   opencode_server:
+    command: "opencode"
     idle_drain_period: 30m
     ready_timeout: 10s
     ready_poll_interval: 200ms

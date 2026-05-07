@@ -241,6 +241,7 @@ git push fork --delete feat/<feature-name>
 | Session 管理 | `internal/session/manager.go` | 状态机、原子操作 |
 | WebSocket 协议 | `internal/gateway/conn.go` | ReadPump/WritePump |
 | LLM 重试 | `internal/gateway/llm_retry.go` | 可重试错误检测 |
+| Worker 启动命令 | `configs/config.yaml` | `claude_code.command` / `opencode_server.command` |
 | 路由注册 | `cmd/hotplex/routes.go` | HTTP 路由 |
 
 ### 跨平台兼容

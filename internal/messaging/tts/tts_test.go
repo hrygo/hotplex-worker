@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -123,4 +124,273 @@ func TestMockSynthesizer_Success(t *testing.T) {
 	data, err := m.Synthesize(context.Background(), "hello")
 	require.NoError(t, err)
 	assert.Equal(t, []byte("fake-opus-audio"), data)
+}
+
+// --- FallbackSynthesizer Tests ---
+
+func TestFallbackSynthesizer_PrimarySuccess(t *testing.T) {
+	t.Parallel()
+
+	primary := &mockSynthesizer{
+		synthesizeFn: func(_ context.Context, _ string) ([]byte, error) {
+			return []byte("primary-audio"), nil
+		},
+	}
+	secondary := &mockSynthesizer{
+		synthesizeFn: func(_ context.Context, _ string) ([]byte, error) {
+			return []byte("secondary-audio"), nil
+		},
+	}
+
+	fb := NewFallbackSynthesizer(primary, secondary, slog.Default())
+	data, err := fb.Synthesize(context.Background(), "hello")
+	require.NoError(t, err)
+	assert.Equal(t, []byte("primary-audio"), data)
+}
+
+func TestFallbackSynthesizer_FallsBackOnPrimaryError(t *testing.T) {
+	t.Parallel()
+
+	primary := &mockSynthesizer{
+		synthesizeFn: func(_ context.Context, _ string) ([]byte, error) {
+			return nil, errors.New("primary failed")
+		},
+	}
+	secondary := &mockSynthesizer{
+		synthesizeFn: func(_ context.Context, _ string) ([]byte, error) {
+			return []byte("secondary-audio"), nil
+		},
+	}
+
+	fb := NewFallbackSynthesizer(primary, secondary, slog.Default())
+	data, err := fb.Synthesize(context.Background(), "hello")
+	require.NoError(t, err)
+	assert.Equal(t, []byte("secondary-audio"), data)
+}
+
+func TestFallbackSynthesizer_SkipsFallbackOnContextCancelled(t *testing.T) {
+	t.Parallel()
+
+	primary := &mockSynthesizer{
+		synthesizeFn: func(_ context.Context, _ string) ([]byte, error) {
+			return nil, errors.New("primary failed")
+		},
+	}
+	secondaryCalled := false
+	secondary := &mockSynthesizer{
+		synthesizeFn: func(_ context.Context, _ string) ([]byte, error) {
+			secondaryCalled = true
+			return []byte("secondary-audio"), nil
+		},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	fb := NewFallbackSynthesizer(primary, secondary, slog.Default())
+	_, err := fb.Synthesize(ctx, "hello")
+	assert.Error(t, err)
+	assert.False(t, secondaryCalled, "secondary should not be called when ctx is cancelled")
+}
+
+// mockCloserSynthesizer implements both Synthesizer and Closer.
+type mockCloserSynthesizer struct {
+	mockSynthesizer
+	closeCalled bool
+	closeErr    error
+}
+
+func (m *mockCloserSynthesizer) Close(_ context.Context) error {
+	m.closeCalled = true
+	return m.closeErr
+}
+
+func TestFallbackSynthesizer_ClosesBothSynthesizers(t *testing.T) {
+	t.Parallel()
+
+	primary := &mockCloserSynthesizer{}
+	secondary := &mockCloserSynthesizer{}
+
+	fb := NewFallbackSynthesizer(primary, secondary, slog.Default())
+	err := fb.Close(context.Background())
+	require.NoError(t, err)
+	assert.True(t, primary.closeCalled)
+	assert.True(t, secondary.closeCalled)
+}
+
+func TestFallbackSynthesizer_CloseCollectsErrors(t *testing.T) {
+	t.Parallel()
+
+	primary := &mockCloserSynthesizer{closeErr: errors.New("primary close err")}
+	secondary := &mockCloserSynthesizer{closeErr: errors.New("secondary close err")}
+
+	fb := NewFallbackSynthesizer(primary, secondary, slog.Default())
+	err := fb.Close(context.Background())
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "primary close")
+	assert.Contains(t, err.Error(), "secondary close")
+}
+
+// --- KokoroSynthesizer Tests ---
+
+func TestKokoroSynthesizer_ImplementsInterfaces(t *testing.T) {
+	t.Parallel()
+
+	var _ Synthesizer = (*KokoroSynthesizer)(nil)
+	var _ Closer = (*KokoroSynthesizer)(nil)
+}
+
+func TestNewKokoroSynthesizer_Defaults(t *testing.T) {
+	t.Parallel()
+
+	k := NewKokoroSynthesizer("model.onnx", "", slog.Default())
+	require.NotNil(t, k)
+	assert.Equal(t, "af_heart", k.voice)
+	assert.Equal(t, 30*time.Minute, k.idleTimeout)
+	assert.False(t, k.isLoaded)
+	assert.False(t, k.closed)
+}
+
+func TestNewKokoroSynthesizerWithOptions_CustomTimeout(t *testing.T) {
+	t.Parallel()
+
+	k := NewKokoroSynthesizerWithOptions("model.onnx", "custom_voice", 5*time.Minute, slog.Default())
+	assert.Equal(t, "custom_voice", k.voice)
+	assert.Equal(t, 5*time.Minute, k.idleTimeout)
+}
+
+func TestNewKokoroSynthesizerWithOptions_NegativeTimeout(t *testing.T) {
+	t.Parallel()
+
+	k := NewKokoroSynthesizerWithOptions("model.onnx", "", -1, slog.Default())
+	assert.Equal(t, 30*time.Minute, k.idleTimeout, "negative timeout should fall back to 30m default")
+}
+
+func TestKokoroSynthesizer_LazyLoads(t *testing.T) {
+	t.Parallel()
+
+	k := NewKokoroSynthesizer("model.onnx", "af_heart", slog.Default())
+	assert.False(t, k.isLoaded, "model should not be loaded before first Synthesize")
+
+	// Synthesize triggers lazy load (stub returns error, but model should be loaded)
+	_, _ = k.Synthesize(context.Background(), "hello")
+
+	k.mu.Lock()
+	assert.True(t, k.isLoaded, "model should be loaded after Synthesize")
+	k.mu.Unlock()
+}
+
+func TestKokoroSynthesizer_EmptyText(t *testing.T) {
+	t.Parallel()
+
+	k := NewKokoroSynthesizer("model.onnx", "", slog.Default())
+	_, err := k.Synthesize(context.Background(), "")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "empty text")
+}
+
+func TestKokoroSynthesizer_RejectsAfterClose(t *testing.T) {
+	t.Parallel()
+
+	k := NewKokoroSynthesizer("model.onnx", "", slog.Default())
+	// Load it first
+	_, _ = k.Synthesize(context.Background(), "hello")
+
+	err := k.Close(context.Background())
+	require.NoError(t, err)
+
+	k.mu.Lock()
+	assert.True(t, k.closed)
+	assert.False(t, k.isLoaded, "model should be unloaded after Close")
+	k.mu.Unlock()
+
+	// Synthesize after Close should return ErrSynthesizerClosed
+	_, err = k.Synthesize(context.Background(), "hello again")
+	assert.ErrorIs(t, err, ErrSynthesizerClosed)
+}
+
+func TestKokoroSynthesizer_IdleUnload(t *testing.T) {
+	t.Parallel()
+
+	k := NewKokoroSynthesizerWithOptions("model.onnx", "", 100*time.Millisecond, slog.Default())
+
+	// Trigger lazy load
+	_, _ = k.Synthesize(context.Background(), "hello")
+
+	k.mu.Lock()
+	assert.True(t, k.isLoaded)
+	k.mu.Unlock()
+
+	// Wait for idle timer to fire
+	time.Sleep(300 * time.Millisecond)
+
+	k.mu.Lock()
+	loaded := k.isLoaded
+	k.mu.Unlock()
+	assert.False(t, loaded, "model should be unloaded after idle timeout")
+}
+
+func TestKokoroSynthesizer_IdleTimerResets(t *testing.T) {
+	t.Parallel()
+
+	k := NewKokoroSynthesizerWithOptions("model.onnx", "", 200*time.Millisecond, slog.Default())
+
+	// First call
+	_, _ = k.Synthesize(context.Background(), "hello")
+
+	k.mu.Lock()
+	assert.True(t, k.isLoaded)
+	k.mu.Unlock()
+
+	// After 100ms, call again (should reset timer)
+	time.Sleep(100 * time.Millisecond)
+	_, _ = k.Synthesize(context.Background(), "hello again")
+
+	// After another 100ms (total 200ms from start, but only 100ms from last use)
+	time.Sleep(100 * time.Millisecond)
+
+	k.mu.Lock()
+	loaded := k.isLoaded
+	k.mu.Unlock()
+	assert.True(t, loaded, "model should still be loaded because timer was reset")
+
+	// Wait for the full idle period from last use
+	time.Sleep(200 * time.Millisecond)
+
+	k.mu.Lock()
+	loaded = k.isLoaded
+	k.mu.Unlock()
+	assert.False(t, loaded, "model should be unloaded after full idle timeout")
+}
+
+// --- Factory Tests ---
+
+func TestNewConfiguredSynthesizer(t *testing.T) {
+	t.Parallel()
+
+	cfg := SynthesizerConfig{
+		EdgeVoice:         "zh-CN-YunxiNeural",
+		KokoroModelPath:   "/tmp/model.onnx",
+		KokoroVoice:       "af_heart",
+		KokoroIdleTimeout: 5 * time.Minute,
+	}
+	synth := NewConfiguredSynthesizer(cfg, slog.Default())
+	require.NotNil(t, synth)
+
+	fb, ok := synth.(*FallbackSynthesizer)
+	require.True(t, ok, "should return a FallbackSynthesizer")
+	require.NotNil(t, fb.primary)
+	require.NotNil(t, fb.secondary)
+}
+
+func TestNewConfiguredSynthesizer_DefaultVoice(t *testing.T) {
+	t.Parallel()
+
+	synth := NewConfiguredSynthesizer(SynthesizerConfig{}, slog.Default())
+	fb, ok := synth.(*FallbackSynthesizer)
+	require.True(t, ok)
+
+	edge, ok := fb.primary.(*EdgeSynthesizer)
+	require.True(t, ok)
+	assert.Equal(t, "zh-CN-XiaoxiaoNeural", edge.voice)
 }

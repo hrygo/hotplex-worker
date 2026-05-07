@@ -262,6 +262,13 @@ func buildFeishuTTSPipeline(cfg *config.Config, log *slog.Logger) *feishu.TTSPip
 	switch ttsCfg.TTSProvider {
 	case "edge":
 		synth = tts.NewEdgeSynthesizer(ttsCfg.Voice, log)
+	case "edge+kokoro":
+		synth = tts.NewConfiguredSynthesizer(tts.SynthesizerConfig{
+			EdgeVoice:         ttsCfg.Voice,
+			KokoroModelPath:   ttsCfg.KokoroModelPath,
+			KokoroVoice:       ttsCfg.KokoroVoice,
+			KokoroIdleTimeout: ttsCfg.KokoroIdleTimeout,
+		}, log)
 	default:
 		log.Warn("feishu: unknown tts_provider, TTS disabled", "provider", ttsCfg.TTSProvider)
 		return nil

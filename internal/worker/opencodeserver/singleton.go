@@ -10,6 +10,7 @@ import (
 	"os"
 	"regexp"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -190,11 +191,19 @@ func (s *SingletonProcessManager) startProcessLocked(ctx context.Context) error 
 		"--port", strconv.Itoa(port),
 	}
 
-	env := s.buildEnv()
+	parts := strings.Fields(s.cfg.Command)
+	if len(parts) == 0 {
+		parts = []string{"opencode"}
+	}
+	binary := parts[0]
+	fullArgs := make([]string, 0, len(parts)-1+len(args))
+	fullArgs = append(fullArgs, parts[1:]...)
+	fullArgs = append(fullArgs, args...)
 
+	env := s.buildEnv()
 	s.proc = proc.New(proc.Opts{Logger: s.log})
 
-	stdin, stdout, _, err := s.proc.Start(context.Background(), "opencode", args, env, "")
+	stdin, stdout, _, err := s.proc.Start(context.Background(), binary, fullArgs, env, "")
 	if err != nil {
 		s.proc = nil
 		s.state = stateIdle
