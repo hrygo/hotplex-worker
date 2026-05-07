@@ -27,7 +27,7 @@ type TTSPipeline struct {
 
 func NewTTSPipeline(synthesizer tts.Synthesizer, client *slack.Client, maxChars int, log *slog.Logger) *TTSPipeline {
 	if maxChars <= 0 {
-		maxChars = 2000
+		maxChars = 150
 	}
 	return &TTSPipeline{
 		synthesizer: synthesizer,
@@ -36,7 +36,6 @@ func NewTTSPipeline(synthesizer tts.Synthesizer, client *slack.Client, maxChars 
 		sem:         semaphore.NewWeighted(2),
 		log:         log,
 	}
-
 }
 
 // Process runs the full TTS pipeline. Call from a goroutine.
@@ -81,9 +80,9 @@ func (p *TTSPipeline) summarize(ctx context.Context, fullText string) (string, e
 	if b == nil {
 		return "", fmt.Errorf("brain not initialized")
 	}
-	capped := tts.TruncateText(fullText, p.maxChars*5)
-	prompt := fmt.Sprintf(ttsSummaryPrompt, p.maxChars, capped)
-	result, err := b.Chat(ctx, prompt)
+	capped := tts.TruncateText(fullText, tts.SummaryInputCap)
+	prompt := fmt.Sprintf(tts.TTSSummaryPrompt, p.maxChars, capped)
+	result, err := b.ChatWithOptions(ctx, prompt, tts.SummaryChatOpts)
 	if err != nil {
 		return "", fmt.Errorf("brain chat: %w", err)
 	}
@@ -108,15 +107,3 @@ func (p *TTSPipeline) uploadAndSend(ctx context.Context, channelID, threadTS str
 	}
 	return nil
 }
-
-const ttsSummaryPrompt = `将以下 AI 助手的回复转换为适合语音播报的自然语言。
-规则：
-- 跳过所有代码块和技术细节，用简短描述替代（如"已提供代码实现"）
-- 跳过表格，概括为文字描述
-- 跳过 URL 链接
-- 保留核心结论和关键信息
-- 使用口语化表达，避免书面语
-- 控制在 %d 字符以内
-
-AI 回复：
-%s`

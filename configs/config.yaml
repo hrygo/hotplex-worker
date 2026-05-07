@@ -53,11 +53,14 @@ admin:
 
 db:
   path: ~/.hotplex/data/hotplex.db
-  events_path: ~/.hotplex/data/events.db
+  events_path: ""           # Deprecated: events table lives in hotplex.db
   wal_mode: true
   busy_timeout: 5s
-  max_open_conns: 2
+  max_open_conns: 3         # 1 writer + 2 readers for shared session/event store
   vacuum_threshold: 0.2     # VACUUM when 20%+ free pages
+  cache_size_kib: 8192
+  mmap_size_mib: 64
+  wal_autocheckpoint: 2000
 
 # ─────────────────────────────────────────────────────────────────────────────
 # SECURITY & AUTH
@@ -187,7 +190,7 @@ webchat:
 
 messaging:
   # Send turn summary after each completed turn (default: true).
-  # turn_summary_enabled: true
+  turn_summary_enabled: true
 
   slack:
     enabled: false
@@ -200,6 +203,11 @@ messaging:
     stt_provider: "local"
     stt_local_cmd: "python3 ~/.hotplex/scripts/stt_server.py"
     stt_local_idle_ttl: 1h
+    # TTS (Text-to-Speech) — voice replies for voice-triggered turns
+    tts_enabled: true
+    tts_provider: "edge"
+    tts_voice: "zh-CN-XiaoxiaoNeural"
+    tts_max_chars: 150
 
   feishu:
     enabled: false
@@ -208,11 +216,11 @@ messaging:
     group_policy: "allowlist"
     require_mention: true
     # STT (Speech-to-Text)
-    stt_provider: "feishu+local"
+    stt_provider: "local"
     stt_local_cmd: "python3 ~/.hotplex/scripts/stt_server.py"
     stt_local_idle_ttl: 1h
     # TTS (Text-to-Speech) — voice replies for voice-triggered turns
-    # tts_enabled: false
-    # tts_provider: "edge"
-    # tts_voice: "zh-CN-XiaoxiaoNeural"
-    # tts_max_chars: 2000
+    tts_enabled: true
+    tts_provider: "edge"
+    tts_voice: "zh-CN-XiaoxiaoNeural"
+    tts_max_chars: 150

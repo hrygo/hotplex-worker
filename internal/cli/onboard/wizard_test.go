@@ -437,11 +437,12 @@ func TestDefaultConfigYAML(t *testing.T) {
 
 func TestBuildConfigYAML_SlackEnabled(t *testing.T) {
 	t.Parallel()
-	got := BuildConfigYAML(ConfigTemplateOptions{
+	got, err := BuildConfigYAML(ConfigTemplateOptions{
 		SlackEnabled:  true,
 		SlackDMPolicy: "open",
 		WorkerType:    "claude_code",
 	})
+	require.NoError(t, err)
 	require.Contains(t, got, "enabled: true")
 	require.Contains(t, got, "dm_policy: \"open\"")
 	require.Contains(t, got, "feishu:")
@@ -450,11 +451,12 @@ func TestBuildConfigYAML_SlackEnabled(t *testing.T) {
 
 func TestBuildConfigYAML_AllowFrom(t *testing.T) {
 	t.Parallel()
-	got := BuildConfigYAML(ConfigTemplateOptions{
+	got, err := BuildConfigYAML(ConfigTemplateOptions{
 		FeishuEnabled:   true,
 		FeishuAllowFrom: []string{"ou_abc123", "ou_def456"},
 		WorkerType:      "claude_code",
 	})
+	require.NoError(t, err)
 	require.Contains(t, got, "ou_abc123")
 	require.Contains(t, got, "ou_def456")
 	require.Contains(t, got, "allow_from:")

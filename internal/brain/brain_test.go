@@ -110,6 +110,10 @@ func (m *mockBrain) Chat(ctx context.Context, prompt string) (string, error) {
 	return "mock response", nil
 }
 
+func (m *mockBrain) ChatWithOptions(ctx context.Context, prompt string, opts ChatOptions) (string, error) {
+	return m.Chat(ctx, prompt)
+}
+
 func (m *mockBrain) Analyze(ctx context.Context, prompt string, target any) error {
 	return nil
 }
@@ -167,6 +171,10 @@ func (m *slowMockBrain) Chat(ctx context.Context, prompt string) (string, error)
 	case <-time.After(1 * time.Second):
 		return "response", nil
 	}
+}
+
+func (m *slowMockBrain) ChatWithOptions(ctx context.Context, prompt string, opts ChatOptions) (string, error) {
+	return m.Chat(ctx, prompt)
 }
 
 func (m *slowMockBrain) Analyze(ctx context.Context, prompt string, target any) error {

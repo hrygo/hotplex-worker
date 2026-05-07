@@ -314,6 +314,16 @@ func (c *CircuitClient) Chat(ctx context.Context, prompt string) (string, error)
 	return result, err
 }
 
+func (c *CircuitClient) ChatWithOptions(ctx context.Context, prompt string, opts ChatOptions) (string, error) {
+	var result string
+	err := c.breaker.Execute(ctx, func() error {
+		var err error
+		result, err = c.client.ChatWithOptions(ctx, prompt, opts)
+		return err
+	})
+	return result, err
+}
+
 // Analyze implements the Analyze method with circuit breaker protection.
 func (c *CircuitClient) Analyze(ctx context.Context, prompt string, target any) error {
 	return c.breaker.Execute(ctx, func() error {

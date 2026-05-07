@@ -146,10 +146,14 @@ func sttSummary(passed, failed []string) string {
 }
 
 func installHint(pkg string) string {
-	if runtime.GOOS == "darwin" {
+	switch runtime.GOOS {
+	case "darwin":
 		return "brew install " + pkg
+	case "windows":
+		return "choco install " + pkg + "  # or: winget install " + pkg
+	default:
+		return "sudo apt install " + pkg
 	}
-	return "apt install " + pkg
 }
 
 func init() {

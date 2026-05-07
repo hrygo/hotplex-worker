@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"sync/atomic"
 
 	lru "github.com/hashicorp/golang-lru/v2"
@@ -52,6 +53,23 @@ func (c *CachedClient) Chat(ctx context.Context, prompt string) (string, error) 
 	return response, nil
 }
 
+func (c *CachedClient) ChatWithOptions(ctx context.Context, prompt string, opts ChatOptions) (string, error) {
+	key := c.makeOptsKey(prompt, opts)
+	if entry, found := c.cache.Get(key); found {
+		c.hits.Add(1)
+		return entry.Response, nil
+	}
+
+	c.misses.Add(1)
+	response, err := c.client.ChatWithOptions(ctx, prompt, opts)
+	if err != nil {
+		return "", err
+	}
+
+	c.cache.Add(key, CacheEntry{Response: response})
+	return response, nil
+}
+
 func (c *CachedClient) Analyze(ctx context.Context, prompt string, target any) error {
 	key := c.makeKey(prompt, true)
 	if entry, found := c.cache.Get(key); found {
@@ -89,6 +107,15 @@ func (c *CachedClient) makeKey(prompt string, isAnalyze bool) string {
 		prefix = "analyze"
 	}
 	return prefix + ":" + hex.EncodeToString(h[:])
+}
+
+func (c *CachedClient) makeOptsKey(prompt string, opts ChatOptions) string {
+	h := sha256.Sum256([]byte(prompt))
+	tempStr := "def"
+	if opts.Temperature != nil {
+		tempStr = strconv.FormatFloat(*opts.Temperature, 'f', -1, 64)
+	}
+	return fmt.Sprintf("chatopt:%d:%s:%s", opts.MaxTokens, tempStr, hex.EncodeToString(h[:]))
 }
 
 func (c *CachedClient) ClearCache() {

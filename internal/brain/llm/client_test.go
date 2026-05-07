@@ -18,6 +18,11 @@ func (m *MockLLMClient) Chat(ctx context.Context, prompt string) (string, error)
 	return args.String(0), args.Error(1)
 }
 
+func (m *MockLLMClient) ChatWithOptions(ctx context.Context, prompt string, opts ChatOptions) (string, error) {
+	args := m.Called(ctx, prompt, opts)
+	return args.String(0), args.Error(1)
+}
+
 func (m *MockLLMClient) Analyze(ctx context.Context, prompt string, target any) error {
 	args := m.Called(ctx, prompt, target)
 	return args.Error(0)

@@ -45,6 +45,10 @@ func (m *mockBrainForGuard) Chat(ctx context.Context, prompt string) (string, er
 	return "default mock response", nil
 }
 
+func (m *mockBrainForGuard) ChatWithOptions(ctx context.Context, prompt string, opts ChatOptions) (string, error) {
+	return m.Chat(ctx, prompt)
+}
+
 func (m *mockBrainForGuard) Analyze(ctx context.Context, prompt string, target any) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

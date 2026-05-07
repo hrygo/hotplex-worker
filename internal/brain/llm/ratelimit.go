@@ -316,6 +316,13 @@ func (c *RateLimitedClient) Chat(ctx context.Context, prompt string) (string, er
 	return c.client.Chat(ctx, prompt)
 }
 
+func (c *RateLimitedClient) ChatWithOptions(ctx context.Context, prompt string, opts ChatOptions) (string, error) {
+	if err := c.limiter.Wait(ctx); err != nil {
+		return "", err
+	}
+	return c.client.ChatWithOptions(ctx, prompt, opts)
+}
+
 // Analyze implements rate-limited analyze.
 func (c *RateLimitedClient) Analyze(ctx context.Context, prompt string, target any) error {
 	if err := c.limiter.Wait(ctx); err != nil {

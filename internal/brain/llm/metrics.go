@@ -341,6 +341,13 @@ func (m *MetricsClient) Chat(ctx context.Context, prompt string) (string, error)
 	return result, err
 }
 
+func (m *MetricsClient) ChatWithOptions(ctx context.Context, prompt string, opts ChatOptions) (string, error) {
+	timer := NewRequestTimer(m.metrics, m.model, "chat")
+	result, err := m.client.ChatWithOptions(ctx, prompt, opts)
+	timer.Record(0, 0, 0, err)
+	return result, err
+}
+
 // Analyze implements the Analyze method with metrics collection.
 func (m *MetricsClient) Analyze(ctx context.Context, prompt string, target any) error {
 	timer := NewRequestTimer(m.metrics, m.model, "analyze")
