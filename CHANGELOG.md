@@ -1,5 +1,30 @@
 # Changelog
 
+## [1.7.1] - 2026-05-08
+
+### Summary
+
+v1.7.1 是一次 patch 版本更新，聚焦于 **稳定性修复** 和 **TTS 体验优化**。修复了 Gateway 事件持久化缺失、Worker 进程资源泄漏、Admin API 数据竞争等 5 个生产级缺陷。新增 `ChatWithOptions` LLM 参数控制接口精准约束 TTS 摘要输出长度，TTS 默认启用语音回复并优化为 150 字符上限（~37s 音频）。Onboard 向导重构为 go:embed + YAML AST 单一数据源。
+
+### Added
+
+- **Brain**: `ChatWithOptions(ctx, prompt, opts)` interface — `MaxTokens` and `Temperature` (*float64, nil=default) thread through the entire decorator chain (retry → cache → rate limit → circuit → metrics → Brain wrapper). TTS callers use `SummaryChatOpts{MaxTokens: 256, Temperature: 0.3}`. (#282)
+- **Messaging/TTS**: Voice replies enabled by default for voice-triggered turns; max_chars lowered to 150 (~37s audio) to fit Feishu's 60s voice cap. Shared summary prompt extracted to `tts/prompt.go`. (#282)
+- **CLI/Onboard**: TTS dependency checker — validates ffmpeg and edge-tts availability with cross-platform install hints. (#282)
+
+### Changed
+
+- **CLI/Onboard**: Wizard config generation refactored from 314-line string builder to `go:embed` + YAML AST manipulation — `configs/config.yaml` is now the single source of truth. (#282)
+- **Worker**: OCS `Wait()` now blocks with 2s grace window instead of immediate return, preventing silent zombie sessions after crash. Metadata dispatch unified into `base.InputMetadataHandler`. (#285)
+
+### Fixed
+
+- **Gateway**: Inbound events never stored — messaging envelopes constructed without Seq assignment, causing `v_turns` aggregation failure. Also capture interaction responses (permission/question/elicitation) as inbound events. (#275)
+- **Worker**: `proc.Manager` resource leak — ctx.Done() path now calls `Kill()` instead of returning early; `cmd.Wait()` protected by `sync.Once` against concurrent calls. (#285, #269)
+- **Admin**: Data race in rate limiter and CIDR allowlist (mutex-protected → `atomic.Value`); `HandleStats` returns 503 instead of 200+empty when session list fails. (#285, #272)
+- **Skills**: `Locator.Close()` panic on double invocation — channel close protected by `sync.Once`. Goroutine leak on gateway shutdown — `Close()` added to shutdown sequence. (#279, #281)
+- **Brain**: `ChatOptions.Temperature` changed from `float64` to `*float64` — supports explicit deterministic output (temp=0) without zero-value ambiguity. Cache key precision fixed (`strconv.FormatFloat` replaces `%.2f`). (#282)
+
 ## [1.7.0] - 2026-05-07
 
 ### Summary
