@@ -11,9 +11,16 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	onnxruntime "github.com/yalue/onnxruntime_go"
+)
+
+// onnxInitOnce ensures the ONNX Runtime environment is initialized exactly once.
+var (
+	onnxInitOnce sync.Once
+	onnxInitErr  error
 )
 
 // KokoroSynthesizer uses local CPU with ONNX model (Kokoro-82M).
@@ -32,6 +39,7 @@ type KokoroSynthesizer struct {
 	idleTimer      *time.Timer
 	closed         bool
 	activeRequests sync.WaitGroup
+	activeCount    atomic.Int32
 
 	// Runtime state (guarded by mu)
 	session *onnxruntime.DynamicAdvancedSession
@@ -53,6 +61,9 @@ func NewKokoroSynthesizerWithOptions(modelPath, voice string, idleTimeout time.D
 	}
 	if idleTimeout <= 0 {
 		idleTimeout = 30 * time.Minute
+	}
+	if log == nil {
+		log = slog.Default()
 	}
 
 	// Derive asset paths from model directory.
@@ -96,10 +107,14 @@ func (k *KokoroSynthesizer) Synthesize(ctx context.Context, text string) ([]byte
 	k.idleTimer = time.AfterFunc(k.idleTimeout, k.unloadOnIdle)
 
 	// 3. Track active request count, then release lock for inference.
+	k.activeCount.Add(1)
 	k.activeRequests.Add(1)
 	k.mu.Unlock()
 
-	defer k.activeRequests.Done()
+	defer func() {
+		k.activeCount.Add(-1)
+		k.activeRequests.Done()
+	}()
 
 	// 4. G2P: text → IPA phonemes
 	phonemes, err := k.phonemize(ctx, text)
@@ -129,33 +144,32 @@ func (k *KokoroSynthesizer) Synthesize(ctx context.Context, text string) ([]byte
 func (k *KokoroSynthesizer) load(_ context.Context) error {
 	k.log.Info("tts: loading kokoro model into memory", "path", k.modelPath, "voice", k.voicePath)
 
-	// Initialize ONNX Runtime environment if not already initialized.
-	if !onnxruntime.IsInitialized() {
-		libPath, err := findOnnxRuntimeLibrary()
-		if err != nil {
-			return fmt.Errorf("onnxruntime library not found: %w (install with: brew install onnxruntime / apt install libonnxruntime-dev)", err)
+	// Initialize ONNX Runtime environment exactly once.
+	onnxInitOnce.Do(func() {
+		if !onnxruntime.IsInitialized() {
+			var libPath string
+			if libPath, onnxInitErr = findOnnxRuntimeLibrary(); onnxInitErr != nil {
+				return
+			}
+			onnxruntime.SetSharedLibraryPath(libPath)
+			onnxInitErr = onnxruntime.InitializeEnvironment()
 		}
-		onnxruntime.SetSharedLibraryPath(libPath)
-		if err := onnxruntime.InitializeEnvironment(); err != nil {
-			return fmt.Errorf("onnxruntime init: %w", err)
-		}
+	})
+	if onnxInitErr != nil {
+		return fmt.Errorf("onnxruntime library not found: %w (install with: brew install onnxruntime / apt install libonnxruntime-dev)", onnxInitErr)
 	}
 
-	// Load vocab.
+	// Load into locals to avoid partial state on failure.
 	vocab, err := loadVocab(k.vocabPath)
 	if err != nil {
 		return fmt.Errorf("load vocab: %w", err)
 	}
-	k.vocab = vocab
 
-	// Load voice style embedding.
 	style, err := loadVoiceEmbedding(k.voicePath)
 	if err != nil {
 		return fmt.Errorf("load voice %s: %w", k.voicePath, err)
 	}
-	k.style = style
 
-	// Discover model I/O names.
 	inputs, outputs, err := onnxruntime.GetInputOutputInfo(k.modelPath)
 	if err != nil {
 		return fmt.Errorf("inspect model: %w", err)
@@ -169,16 +183,19 @@ func (k *KokoroSynthesizer) load(_ context.Context) error {
 	for i, out := range outputs {
 		outputNames[i] = out.Name
 	}
-	k.inputNames = inputNames
-	k.outputNames = outputNames
 
-	// Create ONNX session.
 	session, err := onnxruntime.NewDynamicAdvancedSession(
 		k.modelPath, inputNames, outputNames, nil,
 	)
 	if err != nil {
 		return fmt.Errorf("create onnx session: %w", err)
 	}
+
+	// Assign all fields atomically.
+	k.vocab = vocab
+	k.style = style
+	k.inputNames = inputNames
+	k.outputNames = outputNames
 	k.session = session
 
 	k.log.Info("tts: kokoro model loaded", "inputs", inputNames, "outputs", outputNames, "vocab_size", len(vocab))
@@ -197,13 +214,21 @@ func (k *KokoroSynthesizer) unloadOnIdle() {
 		return
 	}
 
+	// If inference is in progress, reschedule the check.
+	if k.activeCount.Load() > 0 {
+		k.idleTimer = time.AfterFunc(k.idleTimeout, k.unloadOnIdle)
+		return
+	}
+
 	k.log.Info("tts: kokoro model idle, unloading to release resources", "idle_timeout", k.idleTimeout)
 	k.unload()
 }
 
 func (k *KokoroSynthesizer) unload() {
 	if k.session != nil {
-		_ = k.session.Destroy()
+		if err := k.session.Destroy(); err != nil {
+			k.log.Error("tts: kokoro session destroy failed", "error", err)
+		}
 		k.session = nil
 	}
 	if k.idleTimer != nil {
@@ -217,17 +242,26 @@ func (k *KokoroSynthesizer) unload() {
 func (k *KokoroSynthesizer) Close(_ context.Context) error {
 	k.mu.Lock()
 	k.closed = true
+	if k.idleTimer != nil {
+		k.idleTimer.Stop()
+		k.idleTimer = nil
+	}
+	k.mu.Unlock()
+
+	// Wait for in-flight requests to complete before destroying the session.
+	k.activeRequests.Wait()
+
+	k.mu.Lock()
 	k.unload()
 	k.mu.Unlock()
 
-	k.activeRequests.Wait()
 	return nil
 }
 
 // --- G2P via espeak-ng CLI ---
 
 func (k *KokoroSynthesizer) phonemize(ctx context.Context, text string) (string, error) {
-	cmd := exec.CommandContext(ctx, "espeak-ng", "--ipa=3", "-q", text)
+	cmd := exec.CommandContext(ctx, "espeak-ng", "--ipa=3", "-q", "--", text)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -280,7 +314,12 @@ func (k *KokoroSynthesizer) tokenize(ipa string) []int64 {
 
 // --- ONNX Inference ---
 
-func (k *KokoroSynthesizer) infer(_ context.Context, tokens []int64) ([]float32, error) {
+func (k *KokoroSynthesizer) infer(ctx context.Context, tokens []int64) ([]float32, error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
 	k.mu.Lock()
 	session := k.session
 	inputNames := k.inputNames

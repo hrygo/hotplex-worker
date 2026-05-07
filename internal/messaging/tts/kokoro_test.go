@@ -61,6 +61,30 @@ func TestEncodePCMFloat32ToWAV_Empty(t *testing.T) {
 	require.Len(t, wav, 44) // Just the header
 }
 
+func TestEncodePCMFloat32ToWAV_NaNInf(t *testing.T) {
+	t.Parallel()
+
+	samples := []float32{
+		float32(math.NaN()),
+		float32(math.Inf(1)),
+		float32(math.Inf(-1)),
+		0.5,
+	}
+	wav := encodePCMFloat32ToWAV(samples)
+	require.Len(t, wav, 44+len(samples)*2)
+
+	readInt16 := func(i int) int16 {
+		return int16(binary.LittleEndian.Uint16(wav[44+i*2:]))
+	}
+
+	// NaN and Inf should be treated as 0.
+	assert.Equal(t, int16(0), readInt16(0))
+	assert.Equal(t, int16(0), readInt16(1))
+	assert.Equal(t, int16(0), readInt16(2))
+	// Normal value should pass through.
+	assert.Equal(t, int16(16383), readInt16(3))
+}
+
 // --- Vocab Loading Tests ---
 
 func TestLoadVocab_PhonemeToID(t *testing.T) {

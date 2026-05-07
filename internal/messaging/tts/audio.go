@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"math"
 	"os/exec"
 )
 
@@ -87,8 +88,10 @@ func encodePCMFloat32ToWAV(samples []float32) []byte {
 
 	// Convert float32 samples to int16.
 	for i, s := range samples {
-		// Clamp to [-1.0, 1.0] then scale to int16 range.
-		if s > 1.0 {
+		// Handle NaN/Inf from bad model output, then clamp.
+		if math.IsNaN(float64(s)) || math.IsInf(float64(s), 0) {
+			s = 0
+		} else if s > 1.0 {
 			s = 1.0
 		} else if s < -1.0 {
 			s = -1.0
