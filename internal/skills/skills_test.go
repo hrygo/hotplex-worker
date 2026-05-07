@@ -62,6 +62,16 @@ func TestLocator_Close(t *testing.T) {
 	require.NotPanics(t, func() { l.Close() })
 }
 
+func TestLocator_DoubleClose_NoPanic(t *testing.T) {
+	t.Parallel()
+
+	l := NewLocator(slog.Default(), time.Minute)
+	// First close should not panic
+	require.NotPanics(t, func() { l.Close() })
+	// Second close should also not panic (sync.Once guarantees single execution)
+	require.NotPanics(t, func() { l.Close() })
+}
+
 func TestLocator_EvictOldest(t *testing.T) {
 	t.Parallel()
 
