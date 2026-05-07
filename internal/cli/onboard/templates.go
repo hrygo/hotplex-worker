@@ -60,8 +60,10 @@ func BuildConfigYAML(opts ConfigTemplateOptions) (string, error) {
 		if err := yaml.Unmarshal(data, &existing); err != nil {
 			return "", fmt.Errorf("parse existing config %q: %w", opts.ExistingConfigPath, err)
 		}
-		for platform := range opts.KeptPlatforms {
-			replaceBlock(&root, &existing, "messaging", platform)
+		for platform, kept := range opts.KeptPlatforms {
+			if kept {
+				replaceBlock(&root, &existing, "messaging", platform)
+			}
 		}
 	}
 

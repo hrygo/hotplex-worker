@@ -31,7 +31,7 @@ type Brain interface {
 	Chat(ctx context.Context, prompt string) (string, error)
 
 	// ChatWithOptions generates a response with fine-grained control over LLM parameters.
-	// Zero-value fields use provider defaults (MaxTokens=0 → provider default, Temperature=0 → provider default).
+	// Zero-value fields use provider defaults (MaxTokens=0 → provider default, Temperature=nil → provider default).
 	ChatWithOptions(ctx context.Context, prompt string, opts ChatOptions) (string, error)
 
 	// Analyze performs structured analysis and returns the result in the target struct.
