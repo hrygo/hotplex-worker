@@ -1,3 +1,11 @@
+---
+type: spec
+tags:
+  - project/HotPlex
+date: 2026-05-06
+status: draft
+progress: 10
+---
 # HotPlex Onboard UX 改进设计文档
 
 > **日期**: 2026-05-06

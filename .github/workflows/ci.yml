@@ -52,7 +52,7 @@ jobs:
             size=$(echo "$blob_info" | awk '{print $2}')
             path=$(echo "$blob_info" | awk '{print $3}')
             case "$path" in
-              assets/*|docs/asserts/*|docs/channels/*/guides/*) continue ;;
+              assets/*|docs/assets/*|docs/channels/*/guides/*) continue ;;
             esac
             if [ "$size" -gt 1048576 ] 2>/dev/null; then
               OVERSIZED="$OVERSIZED

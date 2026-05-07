@@ -1,3 +1,11 @@
+---
+type: spec
+tags:
+  - project/HotPlex
+date: 2026-05-04
+status: implemented
+progress: 100
+---
 # Turn Summary WorkDir/GitBranch Fix Spec
 
 > 版本: v1.0

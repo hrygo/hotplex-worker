@@ -1,3 +1,11 @@
+---
+type: spec
+tags:
+  - project/HotPlex
+date: 2026-05-03
+status: implemented
+progress: 100
+---
 # Per-Bot Agent Config Specification
 
 > Issue: #127

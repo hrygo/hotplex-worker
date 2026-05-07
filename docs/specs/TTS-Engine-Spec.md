@@ -1,3 +1,11 @@
+---
+type: spec
+tags:
+  - project/HotPlex
+date: 2026-05-07
+status: draft
+progress: 15
+---
 # TTS 混合引擎实现规范 (v1.0)
 
 **最后更新**: 2026-05-07
