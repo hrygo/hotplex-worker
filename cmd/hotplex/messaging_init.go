@@ -12,11 +12,13 @@ import (
 
 	lark "github.com/larksuite/oapi-sdk-go/v3"
 
+	slackapi "github.com/slack-go/slack"
+
 	"github.com/hrygo/hotplex/internal/agentconfig"
 	"github.com/hrygo/hotplex/internal/config"
 	"github.com/hrygo/hotplex/internal/messaging"
 	"github.com/hrygo/hotplex/internal/messaging/feishu"
-	_ "github.com/hrygo/hotplex/internal/messaging/slack"
+	"github.com/hrygo/hotplex/internal/messaging/slack"
 	"github.com/hrygo/hotplex/internal/messaging/stt"
 	"github.com/hrygo/hotplex/internal/messaging/tts"
 )
@@ -103,6 +105,9 @@ func startMessagingAdapters(ctx context.Context, deps *GatewayDeps) ([]messaging
 			acfg.Extras["reconnect_max_delay"] = appCfg.Messaging.Slack.ReconnectMaxDelay
 			if t := buildSlackTranscriber(appCfg.Messaging.Slack, log); t != nil {
 				acfg.Extras["transcriber"] = t
+			}
+			if p := buildSlackTTSPipeline(appCfg, log); p != nil {
+				acfg.Extras["tts_pipeline"] = p
 			}
 		case messaging.PlatformFeishu:
 			gateway := messaging.NewGate(
@@ -250,6 +255,32 @@ func expandCommand(cmd string) string {
 		}
 	}
 	return strings.Join(parts, " ")
+}
+
+func buildSlackTTSPipeline(cfg *config.Config, log *slog.Logger) *slack.TTSPipeline {
+	ttsCfg := cfg.Messaging.Slack.TTSConfig
+	if !ttsCfg.Enabled {
+		return nil
+	}
+
+	var synth tts.Synthesizer
+	switch ttsCfg.TTSProvider {
+	case "edge":
+		synth = tts.NewEdgeSynthesizer(ttsCfg.Voice, log)
+	case "edge+kokoro":
+		synth = tts.NewConfiguredSynthesizer(tts.SynthesizerConfig{
+			EdgeVoice:         ttsCfg.Voice,
+			KokoroModelPath:   ttsCfg.KokoroModelPath,
+			KokoroVoice:       ttsCfg.KokoroVoice,
+			KokoroIdleTimeout: ttsCfg.KokoroIdleTimeout,
+		}, log)
+	default:
+		log.Warn("slack: unknown tts_provider, TTS disabled", "provider", ttsCfg.TTSProvider)
+		return nil
+	}
+
+	client := slackapi.New(cfg.Messaging.Slack.BotToken, slackapi.OptionAppLevelToken(cfg.Messaging.Slack.AppToken))
+	return slack.NewTTSPipeline(synth, client, ttsCfg.MaxChars, log)
 }
 
 func buildFeishuTTSPipeline(cfg *config.Config, log *slog.Logger) *feishu.TTSPipeline {
