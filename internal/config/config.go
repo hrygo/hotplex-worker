@@ -128,7 +128,11 @@ func (c *Config) Validate() []string {
 func (c *Config) RequireSecrets() error {
 	var missing []string
 	if len(c.Security.JWTSecret) == 0 {
-		missing = append(missing, "security.jwt_secret")
+		if os.Getenv("HOTPLEX_JWT_SECRET") != "" {
+			missing = append(missing, "security.jwt_secret (set but invalid: must be 32-byte raw or base64-encoded)")
+		} else {
+			missing = append(missing, "security.jwt_secret")
+		}
 	} else if len(c.Security.JWTSecret) < 32 {
 		missing = append(missing, "security.jwt_secret (must decode to exactly 32 bytes for ES256)")
 	}
@@ -726,6 +730,9 @@ func loadRecursive(filePath string, opts LoadOptions, visited []string) (*Config
 	// This matches the client token generator's key loading behavior.
 	if secret := sp.Get("HOTPLEX_JWT_SECRET"); secret != "" {
 		cfg.Security.JWTSecret = decodeJWTSecret(secret)
+		if cfg.Security.JWTSecret == nil {
+			slog.Warn("config: HOTPLEX_JWT_SECRET set but invalid format (must be 32-byte raw or base64-encoded 32 bytes)", "length", len(secret))
+		}
 	}
 
 	// Numbered environment variables for slices (e.g. HOTPLEX_ADMIN_TOKEN_1..N)
