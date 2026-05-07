@@ -378,26 +378,18 @@ func (w *NativeStreamingWriter) Close() error {
 	cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Build table blocks before stopping stream so we can pass them atomically.
-	// Passing blocks during stop avoids the block_mismatch error from chat.update
-	// (rich_text blocks created by markdown_text cannot be replaced via chat.update).
-	var stopOpts []slack.MsgOption
-	if integrityOK && !streamExpired {
-		stopOpts = w.buildTableStopOpts()
-	}
-
-	var stopErr error
-	if len(stopOpts) > 0 {
-		_, _, stopErr = w.client.StopStreamContext(cleanupCtx, w.channelID, w.messageTS, stopOpts...)
-		if stopErr != nil {
-			w.log.Debug("slack: stop stream with table blocks failed, retrying plain", "err", stopErr)
-			_, _, stopErr = w.client.StopStreamContext(cleanupCtx, w.channelID, w.messageTS)
-		}
-	} else {
-		_, _, stopErr = w.client.StopStreamContext(cleanupCtx, w.channelID, w.messageTS)
-	}
+	// Phase 1: Plain stop — chat.stopStream with blocks keeps markdown_text
+	// AND appends blocks, causing content duplication. Stop without blocks first.
+	_, _, stopErr := w.client.StopStreamContext(cleanupCtx, w.channelID, w.messageTS)
 	if stopErr != nil {
 		w.log.Warn("slack: stop stream failed", "channel", w.channelID, "err", stopErr)
+	}
+
+	// Phase 2: Upgrade tables via chat.update — Slack mrkdwn does NOT render
+	// pipe tables (OpenClaw #26660); Block Kit TableBlock is required.
+	// chat.update after stop replaces the finalized rich_text blocks atomically.
+	if integrityOK && !streamExpired && !shouldSkipFallback {
+		w.upgradeTableBlocks(cleanupCtx)
 	}
 
 	if w.onComplete != nil {
@@ -442,37 +434,33 @@ func (w *NativeStreamingWriter) Content() string {
 	return w.fullContent.String()
 }
 
-// buildTableStopOpts constructs MsgOption slice with table Block Kit for chat.stopStream.
-// Returns nil if no tables found or blocks cannot be built.
-// Blocks are passed atomically during stream stop to avoid block_mismatch
-// (rich_text blocks from markdown_text cannot be replaced via chat.update).
-func (w *NativeStreamingWriter) buildTableStopOpts() []slack.MsgOption {
+// upgradeTableBlocks upgrades the stopped stream message with Block Kit
+// TableBlock rendering via chat.update. Slack's mrkdwn does not render pipe
+// tables natively — TableBlock is required for proper table display.
+func (w *NativeStreamingWriter) upgradeTableBlocks(ctx context.Context) {
 	w.mu.Lock()
 	content := w.fullContent.String()
 	w.mu.Unlock()
 
 	if content == "" {
-		return nil
+		return
 	}
-
 	segments, tables := ExtractTables(content)
 	if len(tables) == 0 {
-		return nil
+		return
 	}
-
 	blocks := BuildTableBlocks(content, segments, tables)
-	if len(blocks) == 0 {
-		return nil
+	if len(blocks) == 0 || len(blocks) > 50 {
+		return
 	}
 
-	if len(blocks) > 50 {
-		w.log.Debug("slack: too many blocks for table upgrade, skipping")
-		return nil
-	}
-
-	return []slack.MsgOption{
+	opts := []slack.MsgOption{
 		slack.MsgOptionBlocks(blocks...),
 		slack.MsgOptionText(content, false),
+	}
+	_, _, _, err := w.client.UpdateMessageContext(ctx, w.channelID, w.messageTS, opts...)
+	if err != nil {
+		w.log.Debug("slack: table block upgrade failed", "channel", w.channelID, "err", err)
 	}
 }
 
