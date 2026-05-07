@@ -7,8 +7,6 @@ import (
 	"log/slog"
 	"sync"
 	"time"
-
-	"github.com/lib-x/edgetts"
 )
 
 // ErrSynthesizerClosed is returned when Synthesize is called after Close.
@@ -78,10 +76,10 @@ func (f *FallbackSynthesizer) Close(ctx context.Context) error {
 // --- Edge-TTS Implementation (Primary) ---
 
 // EdgeSynthesizer uses Microsoft Edge TTS (free, no API key required).
+// Implemented natively via WebSocket without third-party dependencies.
 type EdgeSynthesizer struct {
-	client *edgetts.Client
-	voice  string
-	log    *slog.Logger
+	voice string
+	log   *slog.Logger
 }
 
 func NewEdgeSynthesizer(voice string, log *slog.Logger) *EdgeSynthesizer {
@@ -89,9 +87,8 @@ func NewEdgeSynthesizer(voice string, log *slog.Logger) *EdgeSynthesizer {
 		voice = "zh-CN-XiaoxiaoNeural"
 	}
 	return &EdgeSynthesizer{
-		client: edgetts.New(edgetts.WithVoice(voice)),
-		voice:  voice,
-		log:    log,
+		voice: voice,
+		log:   log,
 	}
 }
 
@@ -100,9 +97,9 @@ func (s *EdgeSynthesizer) Synthesize(ctx context.Context, text string) ([]byte, 
 		return nil, fmt.Errorf("tts: empty text")
 	}
 
-	data, err := s.client.Bytes(ctx, text)
+	data, err := synthesizeEdge(ctx, text, s.voice)
 	if err != nil {
-		return nil, fmt.Errorf("tts edge: %w", err)
+		return nil, err
 	}
 
 	s.log.Debug("tts: synthesized (edge)", "voice", s.voice, "text_len", len(text), "audio_len", len(data))
