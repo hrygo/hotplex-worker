@@ -25,6 +25,8 @@ graph TD
         subgraph "Bridge Layer"
             MB[Messaging Bridge]
             IA[Interaction Manager]
+            Brain[Brain Orchestration]
+            TTS[TTS Engine]
         end
 
         subgraph "Core Layer"
@@ -47,13 +49,15 @@ graph TD
 
     Web & SDK --> WS
     Chat --> MB
-    MB --> SM
+    MB --> Brain
+    Brain --> TTS
+    Brain --> SM
     WS --> SM
     SM --> PM
     PM --> WM
     WM --> WA
     WA --> PR
-    PR --> Claude & OpenCode & Pi
+    PR --> Claude & OpenCode
 ```
 
 ---
@@ -85,7 +89,10 @@ graph TD
 2.  **资源配额治理**：全局与单用户维度的并发会话数限制及内存预测追踪 (Memory-aware Pool)。
 3.  **LLM 自动重试**：内置 429/5xx 等典型 LLM 错误的正则识别与指数退避自动重试机制（默认最多 9 次）。
 4.  **配置热重载**：支持不中断服务的情况下更新关键运行参数，并具备版本回滚能力。
-5.  **Agent 配置注入**：通过 B/C 双通道机制，将人格 (SOUL.md)、规则 (AGENTS.md)、工具指南 (SKILLS.md)、用户画像 (USER.md) 和持久记忆 (MEMORY.md) 自动注入到 Worker 会话。支持平台变体（如 SOUL.slack.md）和大小限制（12K/文件，60K 总计）。详见 [Agent Config 设计文档](architecture/Agent-Config-Design.md)。
+5.  **Agent 配置注入**：通过 B/C 双通道机制将人格注入 Worker。**B 通道** (Directives) 拥有绝对权威，**元认知 (META-COGNITION)** 已被提升至 B 通道首位。内置 **XML Sanitizer** 防止配置内容破坏 XML 结构。Windows 下采用 **临时文件式注入** 规避 shell 转义陷阱。详见 [Agent Config 设计文档](architecture/Agent-Config-Design.md)。
+
+### 3.3 Brain 编排与 TTS (Brain & TTS)
+新增 `internal/brain` 作为轻量级 LLM 编排层，负责意图分发 (Intent Router) 与响应摘要 (Summary)。配合 `internal/messaging/tts` 中的 Edge-TTS 引擎，实现了 Feishu 等渠道的**双向语音交互流水线**（语音输入 -> 文本响应 -> AI 摘要 -> 语音回传）。
 
 ---
 
@@ -95,7 +102,7 @@ HotPlex 构建了四层安全防御体系：
 1.  **认证层**：ES256 JWT 签名验证 + API Key 校验。
 2.  **隔离层**：独立的进程组 (PGID) 隔离，禁止 Worker 访问网关环境变量。
 3.  **网络层**：SSRF 防护（私有 IP 阻断）、URL 白名单校验。
-4.  **内容层**：Shell 元字符过滤、敏感环境变量自动脱敏。
+4.  **内容层**：Shell 元字符过滤、敏感环境变量自动脱敏、XML 配置沙盒化。
 
 ---
 

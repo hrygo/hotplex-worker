@@ -1,6 +1,6 @@
 # HotPlex 项目知识库
 
-**最后更新**: 2026-05-07 · **分支**: main · **版本**: v1.6.1
+**最后更新**: 2026-05-07 · **分支**: main · **版本**: v1.7.0
 
 ---
 
@@ -127,12 +127,21 @@ cp configs/env.example .env
 - `key.go` - UUIDv5 确定性 session ID
 - `pool.go` - 全局 + 每用户配额
 
-**Messaging** (Slack/飞书)：
+**Messaging** (Slack/飞书/TTS)：
 - `bridge.go` - SessionStarter + ConnFactory
 - `platform_adapter.go` - 基础适配器
 - `control_command.go` - 斜杠命令解析
 - `slack/` - Socket Mode 适配器
 - `feishu/` - WS 适配器 + STT
+- `tts/` - Edge-TTS 语音合成 + FFmpeg Opus 转换
+- `interaction/` - Q&A 交互流转
+
+**Brain** (LLM 编排层)：
+- `brain.go` - 核心逻辑与客户端包装
+- `guard.go` - 输入/输出安全审计 (Safety Guard)
+- `router.go` - 意图分发 (Intent Router)
+- `summary.go` - 响应摘要与压缩
+- `cost.go` - Token 计数与成本估算
 
 **Worker**：
 - `claudecode/` - Claude Code 适配器
@@ -325,7 +334,9 @@ git push fork --delete feat/<feature-name>
 - **背压**: 丢弃 `message.delta`，保留 `state`/`done`/`error`
 - **Seq 分配**: Per-session 原子单调计数器
 - **进程终止**: 3 层（SIGTERM → 等待 5s → SIGKILL）
-- **Agent 配置**: B 通道（`<directives>`）+ C 通道（`<context>`）
+- **Agent 配置**: **B 通道** (`<hotplex>` + `<directives>`) + **C 通道** (`<context>`)
+- **XML 安全**: 强制开启 **XML Sanitizer**，对保留标签进行 HTML 转义预防注入
+- **Windows 注入**: 强制使用 **临时文件注入**（`--append-system-prompt-file`），严禁使用内联参数防止 cmd.exe 截断
 
 ---
 

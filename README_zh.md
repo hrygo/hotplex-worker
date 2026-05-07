@@ -15,7 +15,7 @@
 
 <p align="center">
   <a href="https://github.com/hrygo/hotplex/actions/workflows/ci.yml"><img src="https://github.com/hrygo/hotplex/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <img src="https://img.shields.io/badge/Version-v1.6.1-10B981?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/Version-v1.7.0-10B981?style=flat-square" alt="Version">
   <a href="https://github.com/hrygo/hotplex/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-3B82F6?style=flat-square" alt="License"></a>
   <img src="https://img.shields.io/badge/Go-1.26+-00ADD8?style=flat-square&logo=go" alt="Go">
   <img src="https://img.shields.io/badge/Protocol-AEP%20v1-7C3AED?style=flat-square" alt="AEP v1">
@@ -28,11 +28,12 @@
 
 - 🌐 **全协议统一网关** — 基于 **AEP v1 (Agent Exchange Protocol)** WebSocket 标准，抹平不同 AI Coding Agent 的协议差异，提供一致的流式交互与权限控制。
 - 📱 **跨平台分发能力** — **"一次接入，全端覆盖"**。无需修改 Agent 代码即可秒级分发至 Web、Slack (Socket Mode) 和飞书。
-- 🛠️ **多模态编程范式** — 原生集成 SenseVoice-Small 语音转文字引擎，支持通过语音下达指令，开启"语音编程"新纪元。
-- 🤖 **深度配置注入** — 独创 **B/C 双通道** 注入系统：**B 通道** (SOUL/AGENTS/SKILLS) 负责指令约束，**C 通道** (USER/MEMORY) 负责背景上下文。
-- 🧠 **自主元认知内核** — 内置 5 状态机控制核心与 **META-COGNITION** 自模型，支持 LLM 智能重试与 3 层故障自愈，确保极端稳定性。
+- 🛠️ **多模态编程范式** — 原生集成 SenseVoice 语音转文字与 **Edge-TTS 语音合成**，支持"语音下令，语音回传"，开启双向语音编程新纪元。
+- 🤖 **深度配置注入** — 独创 **B/C 双通道** 注入系统。**B 通道** (SOUL/AGENTS/SKILLS) 负责指令约束，**C 通道** (USER/MEMORY) 负责背景上下文。
+- 🧠 **Brain 编排内核** — 新增 `internal/brain` 编排层，支持 LLM 智能总结、意图分发与安全防护（Safety Guard），解耦复杂交互逻辑。
+- 🛡️ **元认知防御基线** — 宪法级 **META-COGNITION** 迁移至 B 通道首位，内置 **XML Sanitizer** 防护，彻底阻断 Prompt 注入与 XML 结构破坏。
 - 🌐 **开箱即用 Web UI** — 内部集成高颜值 Next.js Chat 界面，单二进制文件即可完成从 API 到前端的全栈部署。
-- 🛡️ **企业级安全加固** — 强制 JWT ES256 认证、SSRF 防护，以及基于 PGID 的进程级隔离与孤儿进程自动清理。
+- 🛡️ **企业级安全加固** — 强制 JWT ES256 认证、SSRF 防护、Windows 临时文件式注入（规避 cmd 转义陷阱）及进程级隔离。
 - 📊 **全链路监控审计** — 完整支持 Prometheus 指标、OpenTelemetry 链路追踪及结构化 JSON 日志，掌控每一条指令。
 - 🛠️ **一体化 CLI** — `gateway`、`service`、`slack`、`update`、`config`、`dev`、`onboard`、`doctor`、`security`、`status` 集成在单个二进制中
 - 🌍 **多语言 SDK** — Go、TypeScript、Python、Java 客户端开箱即用
@@ -191,6 +192,8 @@ func main() {
 | 配置项                      | 默认值                       | 说明                                |
 | :-------------------------- | :--------------------------- | :---------------------------------- |
 | `agent_config.enabled`      | `true`                       | 启用 Agent 人格/上下文注入          |
+| `tts.enabled`               | `false`                      | 启用 Edge-TTS 语音回传流水线        |
+| `brain.enabled`             | `false`                      | 启用 Brain LLM 编排层（需 API Key） |
 | `webchat.enabled`           | `true`                       | 从网关提供嵌入式 Web Chat SPA       |
 | `worker.auto_retry.enabled` | `true`                       | LLM 智能重试，支持指数退避          |
 | `gateway.addr`              | `localhost:8888`             | WebSocket 网关地址                  |
