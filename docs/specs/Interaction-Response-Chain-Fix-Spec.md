@@ -617,7 +617,7 @@ func (h *Handler) handleInput(ctx context.Context, env *events.Envelope) error {
 1. **交互响应不应触发命令检测**: `content` 为空且 `metadata` 非空时，跳过 help/control/worker 命令解析。
 2. **交互响应不应触发状态转换**: Worker 等待交互响应时 session 处于 RUNNING 状态，无需 IDLE → RUNNING 转换。
 3. **交互响应不应记录到 ConversationStore**: 空内容的交互响应无需持久化为用户消息。
-4. **交互响应不应 CaptureInbound**: 控制响应不是用户输入，不应进入 replay 缓冲区。
+4. **交互响应应 CaptureInbound**: 用户对 permission/question/elicitation 的响应是有效的用户输入，应纳入审计追踪和会话重放（由 #274 修正）。
 
 ### 3.4 Fix #4: WebChat 补全事件类型（次要）
 
