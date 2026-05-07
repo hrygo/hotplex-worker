@@ -1,7 +1,7 @@
 {
   "version": 1,
   "last_updated": "2026-05-07T07:58:49.000000+08:00",
-  "total_cycles": 114,
+  "total_cycles": 116,
   "modules": {
     "internal/gateway": {
       "analysis_count": 8,
@@ -494,7 +494,7 @@
       ]
     },
     "internal/config": {
-      "analysis_count": 7,
+      "analysis_count": 8,
       "aspects_covered": [
         "solid",
         "dry",
@@ -513,9 +513,10 @@
       "issues_created": [
         207,
         226,
-        253
+        253,
+        270
       ],
-      "findings_total": 6,
+      "findings_total": 7,
       "findings_dropped": [
         {
           "finding": "config.go file size (923 lines)",
@@ -564,16 +565,36 @@
         {
           "finding": "apply-messaging-env-slack-feishu-duplication",
           "reason": "Stable code with good test coverage, refactoring risk > benefit"
+        },
+        {
+          "finding": "expand-abs-home-error-silent",
+          "reason": "Low confidence — intentional for test environments where HOME may not be set"
+        },
+        {
+          "finding": "resolvefield-placeholder-strings",
+          "reason": "Low ROI — display-only for audit logging, not error propagation"
+        },
+        {
+          "finding": "reload-no-mu-concurrency",
+          "reason": "Low confidence — event loop + debounce serializes reload calls"
+        },
+        {
+          "finding": "close-no-wait-run-goroutine",
+          "reason": "Low confidence — ctx cancellation + fsnotify close ensure goroutine exit"
+        },
+        {
+          "finding": "configstore-swap-unbounded-goroutines",
+          "reason": "Low confidence — Watcher debounce (500ms) bounds Swap call rate"
         }
       ],
-      "last_analyzed": "2026-05-07T04:57:49.178882+08:00",
+      "last_analyzed": "2026-05-07T08:17:20+08:00",
       "stats": {
         "files": 7,
         "lines": 2743
       }
     },
     "internal/security": {
-      "analysis_count": 7,
+      "analysis_count": 8,
       "aspects_covered": [
         "solid",
         "dry",
@@ -593,9 +614,10 @@
         208,
         227,
         238,
-        254
+        254,
+        271
       ],
-      "findings_total": 9,
+      "findings_total": 11,
       "findings_dropped": [
         {
           "finding": "BuildSystemPrompt repetitive XML wrapping (5 similar blocks)",
@@ -608,9 +630,29 @@
         {
           "finding": "B/C channel assembly symmetry",
           "reason": "Low ROI — symmetry is inherent to the domain"
+        },
+        {
+          "finding": "registercommand-no-sync",
+          "reason": "Low confidence — init() is single-threaded, no actual race"
+        },
+        {
+          "finding": "exported-mutable-allowlists",
+          "reason": "Low ROI — design choice for configuration flexibility"
+        },
+        {
+          "finding": "validateurl-unparseable-dns",
+          "reason": "Low confidence — DNS protocol guarantees parseable responses"
+        },
+        {
+          "finding": "authrequest-map-non-constant-time",
+          "reason": "Low ROI — standard API key validation approach"
+        },
+        {
+          "finding": "jtiblacklist-sweep-no-waitgroup",
+          "reason": "Low confidence — channel close ensures goroutine exit"
         }
       ],
-      "last_analyzed": "2026-05-07T05:07:36.677629",
+      "last_analyzed": "2026-05-07T08:26:41+08:00",
       "stats": {
         "files": 19,
         "lines": 4812
@@ -1346,31 +1388,11 @@
     265,
     267,
     268,
-    269
+    269,
+    270,
+    271
   ],
   "recent_activity": [
-    {
-      "cycle": 95,
-      "module": "internal/config",
-      "aspects": [
-        "testability",
-        "code-quality"
-      ],
-      "findings": 2,
-      "issue": 253,
-      "timestamp": "2026-05-07T04:57:49.178882+08:00"
-    },
-    {
-      "cycle": 96,
-      "module": "internal/security",
-      "aspects": [
-        "testability",
-        "code-quality"
-      ],
-      "findings": 2,
-      "issue": 254,
-      "timestamp": "2026-05-07T05:07:36.677632"
-    },
     {
       "cycle": 97,
       "module": "internal/gateway",
@@ -1585,6 +1607,28 @@
       "findings": 2,
       "issue": 269,
       "timestamp": "2026-05-07T08:12:10+08:00"
+    },
+    {
+      "cycle": 115,
+      "module": "internal/config",
+      "aspects": [
+        "error-handling",
+        "concurrency"
+      ],
+      "findings": 1,
+      "issue": 270,
+      "timestamp": "2026-05-07T08:17:20+08:00"
+    },
+    {
+      "cycle": 116,
+      "module": "internal/security",
+      "aspects": [
+        "error-handling",
+        "concurrency"
+      ],
+      "findings": 2,
+      "issue": 271,
+      "timestamp": "2026-05-07T08:26:41+08:00"
     }
   ]
 }
