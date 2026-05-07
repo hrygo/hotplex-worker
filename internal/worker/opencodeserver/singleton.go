@@ -266,7 +266,6 @@ func (s *SingletonProcessManager) discoverPort(stdout *os.File, timeout time.Dur
 	go func() {
 		defer func() { _ = stdout.Close() }()
 		scanner := bufio.NewScanner(stdout)
-		deadline := time.After(timeout)
 		for scanner.Scan() {
 			line := scanner.Text()
 			s.log.Debug("opencode-server-singleton: stdout", "line", line)
@@ -274,12 +273,6 @@ func (s *SingletonProcessManager) discoverPort(stdout *os.File, timeout time.Dur
 				p, err := strconv.Atoi(m[1])
 				ch <- result{port: p, err: err}
 				return
-			}
-			select {
-			case <-deadline:
-				ch <- result{err: fmt.Errorf("timeout waiting for port in stdout")}
-				return
-			default:
 			}
 		}
 		if err := scanner.Err(); err != nil {

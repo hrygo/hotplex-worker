@@ -231,32 +231,13 @@ func (w *Worker) Input(ctx context.Context, content string, metadata map[string]
 		return fmt.Errorf("opencodeserver: worker not started")
 	}
 
-	if metadata != nil {
-		if permResp, ok := metadata["permission_response"].(map[string]any); ok {
-			reqID, _ := permResp["request_id"].(string)
-			allowed, _ := permResp["allowed"].(bool)
-			reply := "once"
-			if !allowed {
-				reply = "reject"
-			}
-			return w.httpPost(ctx, fmt.Sprintf("/permission/%s/reply", url.PathEscape(reqID)),
-				map[string]string{"reply": reply})
-		}
-		if qResp, ok := metadata["question_response"].(map[string]any); ok {
-			reqID, _ := qResp["id"].(string)
-			answers, _ := qResp["answers"].(map[string]string)
-			return w.httpPost(ctx, fmt.Sprintf("/question/%s/reply", reqID),
-				map[string][][]string{"answers": answersToArrays(answers)})
-		}
-		if eResp, ok := metadata["elicitation_response"].(map[string]any); ok {
-			reqID, _ := eResp["id"].(string)
-			action, _ := eResp["action"].(string)
-			payload := map[string]any{"action": action}
-			if content, ok := eResp["content"].(map[string]any); ok {
-				payload["content"] = content
-			}
-			return w.httpPost(ctx, fmt.Sprintf("/elicitation/%s/reply", reqID), payload)
-		}
+	handled, err := base.DispatchMetadata(ctx, metadata, w)
+	if err != nil {
+		return err
+	}
+	if handled {
+		w.SetLastIO(time.Now())
+		return nil
 	}
 
 	msg := events.NewEnvelope(
@@ -276,6 +257,28 @@ func (w *Worker) Input(ctx context.Context, content string, metadata map[string]
 
 	w.SetLastIO(time.Now())
 	return nil
+}
+
+func (w *Worker) HandlePermissionResponse(ctx context.Context, reqID string, allowed bool, _ string) error {
+	reply := "once"
+	if !allowed {
+		reply = "reject"
+	}
+	return w.httpPost(ctx, fmt.Sprintf("/permission/%s/reply", url.PathEscape(reqID)),
+		map[string]string{"reply": reply})
+}
+
+func (w *Worker) HandleQuestionResponse(ctx context.Context, reqID string, answers map[string]string) error {
+	return w.httpPost(ctx, fmt.Sprintf("/question/%s/reply", reqID),
+		map[string][][]string{"answers": answersToArrays(answers)})
+}
+
+func (w *Worker) HandleElicitationResponse(ctx context.Context, reqID string, action string, content map[string]any) error {
+	payload := map[string]any{"action": action}
+	if content != nil {
+		payload["content"] = content
+	}
+	return w.httpPost(ctx, fmt.Sprintf("/elicitation/%s/reply", reqID), payload)
 }
 
 // Resume reconnects to an existing session on the shared OpenCode server.
@@ -372,6 +375,8 @@ func (w *Worker) Kill() error {
 
 // Wait reports exit code based on whether the singleton process crashed.
 // 0 = normal session end, 1 = process crashed.
+// Blocks briefly to allow crash detection after Release(); aligns with the
+// blocking Wait() contract defined in the Worker interface.
 func (w *Worker) Wait() (int, error) {
 	if w.singleton == nil {
 		return 0, fmt.Errorf("opencodeserver: not started")
@@ -382,8 +387,8 @@ func (w *Worker) Wait() (int, error) {
 	select {
 	case <-w.crashSub:
 		return 1, nil // process crashed
-	default:
-		return 0, nil // normal session end
+	case <-time.After(2 * time.Second):
+		return 0, nil // no crash detected within grace window
 	}
 }
 

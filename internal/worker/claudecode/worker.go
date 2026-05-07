@@ -339,47 +339,13 @@ func (w *Worker) Input(ctx context.Context, content string, metadata map[string]
 	}
 
 	// Check if this is a control response (permission, question, or elicitation)
-	if metadata != nil {
-		if permResp, ok := metadata["permission_response"].(map[string]any); ok {
-			reqID, _ := permResp["request_id"].(string)
-			allowed, _ := permResp["allowed"].(bool)
-			reason, _ := permResp["reason"].(string)
-
-			w.Log.Info("claudecode: sending permission response to stdin",
-				"request_id", reqID,
-				"allowed", allowed,
-				"session_id", w.sessionID)
-
-			if err := w.control.SendPermissionResponse(reqID, allowed, reason); err != nil {
-				return fmt.Errorf("claudecode: permission response: %w", err)
-			}
-
-			w.SetLastIO(time.Now())
-			return nil
-		}
-		if qResp, ok := metadata["question_response"].(map[string]any); ok {
-			reqID, _ := qResp["id"].(string)
-			answers, _ := qResp["answers"].(map[string]string)
-
-			if err := w.control.SendQuestionResponse(reqID, answers); err != nil {
-				return fmt.Errorf("claudecode: question response: %w", err)
-			}
-
-			w.SetLastIO(time.Now())
-			return nil
-		}
-		if eResp, ok := metadata["elicitation_response"].(map[string]any); ok {
-			reqID, _ := eResp["id"].(string)
-			action, _ := eResp["action"].(string)
-			eContent, _ := eResp["content"].(map[string]any)
-
-			if err := w.control.SendElicitationResponse(reqID, action, eContent); err != nil {
-				return fmt.Errorf("claudecode: elicitation response: %w", err)
-			}
-
-			w.SetLastIO(time.Now())
-			return nil
-		}
+	handled, err := base.DispatchMetadata(ctx, metadata, w)
+	if err != nil {
+		return err
+	}
+	if handled {
+		w.SetLastIO(time.Now())
+		return nil
 	}
 
 	// Normal input: use SendUserMessage for Claude Code's stream-json format
@@ -406,6 +372,31 @@ func (w *Worker) Input(ctx context.Context, content string, metadata map[string]
 	}
 
 	w.SetLastIO(time.Now())
+	return nil
+}
+
+func (w *Worker) HandlePermissionResponse(_ context.Context, reqID string, allowed bool, reason string) error {
+	w.Log.Info("claudecode: sending permission response to stdin",
+		"request_id", reqID,
+		"allowed", allowed,
+		"session_id", w.sessionID)
+	if err := w.control.SendPermissionResponse(reqID, allowed, reason); err != nil {
+		return fmt.Errorf("claudecode: permission response: %w", err)
+	}
+	return nil
+}
+
+func (w *Worker) HandleQuestionResponse(_ context.Context, reqID string, answers map[string]string) error {
+	if err := w.control.SendQuestionResponse(reqID, answers); err != nil {
+		return fmt.Errorf("claudecode: question response: %w", err)
+	}
+	return nil
+}
+
+func (w *Worker) HandleElicitationResponse(_ context.Context, reqID string, action string, content map[string]any) error {
+	if err := w.control.SendElicitationResponse(reqID, action, content); err != nil {
+		return fmt.Errorf("claudecode: elicitation response: %w", err)
+	}
 	return nil
 }
 
