@@ -393,7 +393,7 @@ func (w *Worker) HandleQuestionResponse(_ context.Context, reqID string, answers
 	return nil
 }
 
-func (w *Worker) HandleElicitationResponse(_ context.Context, reqID string, action string, content map[string]any) error {
+func (w *Worker) HandleElicitationResponse(_ context.Context, reqID, action string, content map[string]any) error {
 	if err := w.control.SendElicitationResponse(reqID, action, content); err != nil {
 		return fmt.Errorf("claudecode: elicitation response: %w", err)
 	}

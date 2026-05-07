@@ -273,7 +273,7 @@ func (w *Worker) HandleQuestionResponse(ctx context.Context, reqID string, answe
 		map[string][][]string{"answers": answersToArrays(answers)})
 }
 
-func (w *Worker) HandleElicitationResponse(ctx context.Context, reqID string, action string, content map[string]any) error {
+func (w *Worker) HandleElicitationResponse(ctx context.Context, reqID, action string, content map[string]any) error {
 	payload := map[string]any{"action": action}
 	if content != nil {
 		payload["content"] = content
