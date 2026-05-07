@@ -1,7 +1,9 @@
 package gateway
 
 import (
+	"context"
 	"log/slog"
+	"sync"
 	"testing"
 	"time"
 
@@ -306,4 +308,36 @@ func TestLLMRetryController_UpdateConfig_InvalidPattern(t *testing.T) {
 	})
 	// Should not panic.
 	assert.True(t, true)
+}
+
+func TestLLMRetryController_ConcurrentShouldRetryAndUpdateConfig(t *testing.T) {
+	ctrl := NewLLMRetryController(config.AutoRetryConfig{Enabled: true, MaxRetries: 10}, slog.Default())
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	var wg sync.WaitGroup
+
+	// Writer goroutine: continuously updates config.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for ctx.Err() == nil {
+			ctrl.UpdateConfig(config.AutoRetryConfig{
+				Enabled:    true,
+				MaxRetries: 5,
+				Patterns:   []string{"test-pattern"},
+			})
+		}
+	}()
+
+	// Reader goroutine: continuously calls ShouldRetry.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for ctx.Err() == nil {
+			ctrl.ShouldRetry("session-1", &events.ErrorData{Message: "500 server error"})
+		}
+	}()
+
+	wg.Wait()
 }

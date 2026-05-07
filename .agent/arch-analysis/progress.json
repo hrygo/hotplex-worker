@@ -1,7 +1,7 @@
 {
   "version": 2,
-  "last_updated": "2026-05-08T01:03:00+08:00",
-  "total_cycles": 24,
+  "last_updated": "2026-05-08T01:13:00+08:00",
+  "total_cycles": 25,
   "modules": {
     "internal/gateway": {
       "analysis_count": 2,
@@ -86,9 +86,9 @@
       "sub_modules": ["worker/opencodeserver"]
     },
     "internal/config": {
-      "analysis_count": 1,
-      "aspects_covered": ["solid", "dry"],
-      "aspects_pending": ["coupling", "error-handling", "concurrency", "resource-mgmt", "performance", "scalability", "security", "observability", "testability", "code-quality"],
+      "analysis_count": 2,
+      "aspects_covered": ["solid", "dry", "coupling", "error-handling"],
+      "aspects_pending": ["concurrency", "resource-mgmt", "performance", "scalability", "security", "observability", "testability", "code-quality"],
       "issues_created": [207],
       "findings_total": 2,
       "findings_dropped": [
@@ -96,9 +96,14 @@
         {"finding": "HotReloadableFields/StaticFields hardcoded maps", "reason": "Low ROI — intentional design, each field's reloadability is a deliberate decision"},
         {"finding": "Load() 30+ BindEnv calls", "reason": "Low ROI — Viper API limitation, not a design issue"},
         {"finding": "normalizePaths() hardcoded list", "reason": "Low ROI — short list, easy to maintain"},
-        {"finding": "Watcher 3 separate mutexes", "reason": "Low confidence — intentional pattern to reduce lock contention"}
+        {"finding": "Watcher 3 separate mutexes", "reason": "Low confidence — intentional pattern to reduce lock contention"},
+        {"finding": "decodeJWTSecret silent nil (error-handling)", "reason": "Duplicate of issue 270 — fully covered"},
+        {"finding": "watcher.reload() failure only Warn, no metric counter", "reason": "Low ROI — already logged, metric is nice-to-have"},
+        {"finding": "Watcher.Close() no drain of in-flight goroutines", "reason": "Low ROI for error-handling aspect — belongs to resource-mgmt/concurrency phase"},
+        {"finding": "ConfigStore.Swap() observer goroutines no error feedback", "reason": "Low ROI — fire-and-forget is standard Observer pattern"},
+        {"finding": "loadRecursive uses global slog.Warn instead of injected logger", "reason": "Low ROI — single call site, no functional impact"}
       ],
-      "last_analyzed": "2026-05-06T11:05:00+08:00",
+      "last_analyzed": "2026-05-08T01:13:00+08:00",
       "stats": {"files": 7, "lines": 2743}
     },
     "internal/security": {
@@ -313,6 +318,7 @@
     {"cycle": 21, "mode": "audit", "issues_audited": [198, 199, 204, 206, 207], "closed": 0, "updated": 1, "confirmed": 4, "time": "2026-05-08T00:35:00+08:00"},
     {"cycle": 22, "mode": "audit", "issues_audited": [224, 226, 227, 228, 229], "closed": 0, "updated": 0, "confirmed": 5, "time": "2026-05-08T00:42:00+08:00"},
     {"cycle": 23, "mode": "audit", "issues_audited": [231, 237, 239, 240, 241], "closed": 0, "updated": 1, "confirmed": 4, "time": "2026-05-08T00:53:00+08:00"},
-    {"cycle": 24, "mode": "audit", "issues_audited": [242, 243, 244, 245, 246], "closed": 0, "updated": 0, "confirmed": 5, "time": "2026-05-08T01:03:00+08:00"}
+    {"cycle": 24, "mode": "audit", "issues_audited": [242, 243, 244, 245, 246], "closed": 0, "updated": 0, "confirmed": 5, "time": "2026-05-08T01:03:00+08:00"},
+    {"cycle": 25, "module": "internal/config", "aspects": ["coupling", "error-handling"], "issues": [], "time": "2026-05-08T01:13:00+08:00"}
   ]
 }

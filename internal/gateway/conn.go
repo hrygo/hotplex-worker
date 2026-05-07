@@ -416,6 +416,8 @@ func (c *Conn) performInit(handler *Handler) error {
 	}
 
 	// SEC-008: reject cross-user access on reconnect.
+	// DeriveSessionKey is the primary isolation mechanism; this check provides
+	// defense-in-depth against key collisions or direct UUID lookups.
 	if c.userID != "" && si.UserID != "" && c.userID != si.UserID {
 		c.hub.InitThrottle.RecordFailure(sessionID)
 		c.sendInitError(events.ErrCodeUnauthorized, "user_id mismatch")

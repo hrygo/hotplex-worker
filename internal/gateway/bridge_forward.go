@@ -570,6 +570,7 @@ func gitBranchOf(dir string) string {
 }
 
 // fetchContextUsage queries the worker for precise context usage via control channel.
+// Errors are silently ignored; the caller falls back to aggregated Done stats.
 func fetchContextUsage(cr ControlRequester, acc *sessionAccumulator) {
 	ctrlCtx, ctrlCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer ctrlCancel()

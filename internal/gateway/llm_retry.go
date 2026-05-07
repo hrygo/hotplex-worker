@@ -55,10 +55,17 @@ func NewLLMRetryController(cfg config.AutoRetryConfig, log *slog.Logger) *LLMRet
 // output may legitimately contain strings like "500" or "INTERNAL_ERROR"
 // (e.g., in code comments, JSON data, error messages).
 func (c *LLMRetryController) ShouldRetry(sessionID string, errData *events.ErrorData) (bool, int) {
-	if !c.config.Enabled {
+	if errData == nil {
 		return false, 0
 	}
-	if errData == nil {
+
+	// Snapshot config and patterns under lock to avoid data race with UpdateConfig.
+	c.mu.Lock()
+	enabled := c.config.Enabled
+	patterns := c.patterns
+	c.mu.Unlock()
+
+	if !enabled {
 		return false, 0
 	}
 
@@ -67,10 +74,6 @@ func (c *LLMRetryController) ShouldRetry(sessionID string, errData *events.Error
 	if errData.Code != "" {
 		text += "\n" + string(errData.Code)
 	}
-
-	c.mu.Lock()
-	patterns := c.patterns
-	c.mu.Unlock()
 
 	matched := false
 	for _, pat := range patterns {

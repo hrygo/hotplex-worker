@@ -387,7 +387,11 @@ func (m *Manager) TransitionWithInput(ctx context.Context, id string, to events.
 					ms.info.State = events.StateTerminated
 				}
 			} else {
-				// Transition not valid — force-set to prevent orphan.
+				// Transition not valid from current state — force-set in-memory state to prevent orphan.
+				// Safe because the worker is already killed above. The DB may retain the old state,
+				// but GC will reconcile the inconsistency on the next scan.
+				m.log.Warn("session: max-turns transition invalid, force-terminating in-memory state",
+					"session_id", id, "from_state", from)
 				ms.info.State = events.StateTerminated
 			}
 			return ErrMaxTurnsReached

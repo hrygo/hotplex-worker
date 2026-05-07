@@ -960,6 +960,81 @@ func TestUserIDOwnership_MatchAllowed(t *testing.T) {
 	require.NotContains(t, string(resp), `"code":"unauthorized"`)
 }
 
+// TestUserIDOwnership_EmptyConnectionUserID_Allowed tests that when the connection has
+// no userID (anonymous, no JWT) but the session is owned by a named user, the SEC-008
+// check is bypassed — allowing anonymous reconnects to named-user sessions.
+// This is intentional: either side being empty means ownership cannot be verified,
+// so the check is skipped (backward compatibility with anonymous access).
+func TestUserIDOwnership_EmptyConnectionUserID_Allowed(t *testing.T) {
+	const (
+		sessionIDConst = "sess_empty_conn_user"
+		workerType     = "claude-code"
+		botID          = "bot_anon_reconnect"
+	)
+	// Empty userID in DeriveSessionKey produces a different key than "alice".
+	derivedSIDEmpty := session.DeriveSessionKey("", worker.WorkerType(workerType), sessionIDConst, safeTestWorkDir)
+
+	// Session owned by "alice".
+	existingSession := &session.SessionInfo{
+		ID:         derivedSIDEmpty,
+		UserID:     "alice",
+		BotID:      botID,
+		State:      events.StateIdle,
+		WorkerType: worker.WorkerType(workerType),
+	}
+
+	store := new(mockSessionStoreForBotID)
+	store.Test(t)
+	store.On("Close").Return(nil).Maybe()
+	store.On("Get", mock.Anything, sessionIDConst).Return(nil, session.ErrSessionNotFound)
+	store.On("Get", mock.Anything, derivedSIDEmpty).Return(existingSession, nil)
+
+	cfg := config.Default()
+	cfg.Worker.DefaultWorkDir = safeTestWorkDir
+	hubForTest := newTestHub(t, func(cfg *config.Config) {
+		cfg.Worker.DefaultWorkDir = safeTestWorkDir
+	})
+	mgr, err := session.NewManager(context.Background(), slog.Default(), cfg, nil, store)
+	require.NoError(t, err)
+	t.Cleanup(func() { mgr.Close() })
+
+	var serverConn *websocket.Conn
+	var mu sync.Mutex
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upgrader := websocket.Upgrader{}
+		conn, err := upgrader.Upgrade(w, r, nil)
+		require.NoError(t, err)
+		mu.Lock()
+		serverConn = conn
+		mu.Unlock()
+		go func() {
+			// Empty userID (no JWT) — SEC-008 check should be bypassed.
+			c := newBotIDTestConn(hubForTest, conn, derivedSIDEmpty, "", botID)
+			handler := NewHandler(HandlerDeps{Log: slog.Default(), Hub: hubForTest, SM: mgr})
+			c.ReadPump(handler)
+		}()
+	}))
+	t.Cleanup(server.Close)
+
+	client, _, err := websocket.DefaultDialer.Dial("ws"+server.URL[4:], nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { client.Close() })
+
+	require.Eventually(t, func() bool {
+		mu.Lock()
+		ok := serverConn != nil
+		mu.Unlock()
+		return ok
+	}, 2*time.Second, 10*time.Millisecond)
+
+	// No auth token → empty userID → SEC-008 bypassed → should succeed.
+	initMsg := makeInitEnvelope(sessionIDConst, workerType, "")
+	resp, err := sendWSInit(client, initMsg)
+	require.NoError(t, err)
+	require.Contains(t, string(resp), `"type":"init_ack"`)
+	require.NotContains(t, string(resp), `"code":"unauthorized"`, "empty connection userID should bypass SEC-008")
+}
+
 // TestBotIDIsolation_EmptyBotIDAllowed tests that when bot_id is empty (not specified),
 // sessions can be created and resumed without bot_id restrictions.
 func TestBotIDIsolation_EmptyBotIDAllowed(t *testing.T) {
