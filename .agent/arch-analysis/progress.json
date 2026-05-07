@@ -1,7 +1,7 @@
 {
-  "version": 1,
-  "last_updated": "2026-05-06T13:42:00+08:00",
-  "total_cycles": 20,
+  "version": 2,
+  "last_updated": "2026-05-08T00:35:00+08:00",
+  "total_cycles": 21,
   "modules": {
     "internal/gateway": {
       "analysis_count": 2,
@@ -268,6 +268,13 @@
     }
   },
   "issues": [198, 199, 202, 204, 205, 206, 207, 208, 210, 212, 213, 214, 215, 216, 217, 218, 219],
+  "audited_issues": [
+    {"number": 198, "verdict": "valid", "action": "confirmed", "audited_at": "2026-05-08T00:35:00+08:00"},
+    {"number": 199, "verdict": "valid", "action": "confirmed", "audited_at": "2026-05-08T00:35:00+08:00"},
+    {"number": 204, "verdict": "valid", "action": "confirmed", "audited_at": "2026-05-08T00:35:00+08:00"},
+    {"number": 206, "verdict": "partial", "action": "updated", "audited_at": "2026-05-08T00:35:00+08:00", "note": "Finding 1 (metadata dispatch) fixed via base.DispatchMetadata. Finding 2 (Terminate/Kill copy-paste) still valid."},
+    {"number": 207, "verdict": "valid", "action": "confirmed", "audited_at": "2026-05-08T00:35:00+08:00"}
+  ],
   "recent_activity": [
     {"cycle": 2, "module": "internal/session", "aspects": ["coupling", "error-handling"], "issues": [202], "time": "2026-05-06T10:45:00+08:00"},
     {"cycle": 3, "module": "internal/messaging", "aspects": ["solid", "dry"], "issues": [204, 205], "time": "2026-05-06T10:50:00+08:00"},
@@ -287,6 +294,7 @@
     {"cycle": 17, "module": "internal/gateway", "aspects": ["coupling", "error-handling"], "issues": [216], "time": "2026-05-06T13:10:00+08:00"},
     {"cycle": 18, "module": "internal/session", "aspects": ["solid", "dry"], "issues": [217], "time": "2026-05-06T13:22:00+08:00"},
     {"cycle": 19, "module": "internal/messaging", "aspects": ["coupling", "error-handling"], "issues": [218], "time": "2026-05-06T13:32:00+08:00"},
-    {"cycle": 20, "module": "internal/worker", "aspects": ["coupling", "error-handling"], "issues": [219], "time": "2026-05-06T13:42:00+08:00"}
+    {"cycle": 20, "module": "internal/worker", "aspects": ["coupling", "error-handling"], "issues": [219], "time": "2026-05-06T13:42:00+08:00"},
+    {"cycle": 21, "mode": "audit", "issues_audited": [198, 199, 204, 206, 207], "closed": 0, "updated": 1, "confirmed": 4, "time": "2026-05-08T00:35:00+08:00"}
   ]
 }
