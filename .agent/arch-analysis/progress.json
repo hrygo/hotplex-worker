@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "last_updated": "2026-05-07T07:46:55.000000+08:00",
-  "total_cycles": 112,
+  "last_updated": "2026-05-07T07:58:49.000000+08:00",
+  "total_cycles": 113,
   "modules": {
     "internal/gateway": {
       "analysis_count": 8,
@@ -259,7 +259,7 @@
       }
     },
     "internal/messaging": {
-      "analysis_count": 7,
+      "analysis_count": 8,
       "aspects_covered": [
         "solid",
         "dry",
@@ -280,9 +280,10 @@
         205,
         224,
         236,
-        257
+        257,
+        268
       ],
-      "findings_total": 26,
+      "findings_total": 29,
       "findings_dropped": [
         {
           "finding": "PlatformAdapter init-then-overwrite pattern",
@@ -347,9 +348,21 @@
         {
           "finding": "extract-platform-keys-ocp",
           "reason": "Medium confidence, Low ROI — only 2 platforms, switch is clear"
+        },
+        {
+          "finding": "Slack error/message goroutine captures caller ctx for fire-and-forget",
+          "reason": "Low ROI — non-critical notification, Slack API call is fast"
+        },
+        {
+          "finding": "PersistentSTT.kill() double-close on resources",
+          "reason": "Very Low ROI — mutex protects, Go handles double-close safely"
+        },
+        {
+          "finding": "idleMonitor holds mu during 5s graceful shutdown",
+          "reason": "Low ROI — only triggered during idle when no requests incoming"
         }
       ],
-      "last_analyzed": "2026-05-07T05:37:49.277869",
+      "last_analyzed": "2026-05-07T07:58:49.000000+08:00",
       "stats": {
         "files": 103,
         "lines": 28947
@@ -1314,21 +1327,10 @@
     263,
     264,
     265,
-    267
+    267,
+    268
   ],
   "recent_activity": [
-    {
-      "cycle": 93,
-      "module": "pkg/aep",
-      "aspects": [
-        "testability",
-        "code-quality"
-      ],
-      "findings": 0,
-      "issue": null,
-      "note": "No actionable findings — small well-tested protocol codec, all issues captured in prior cycles",
-      "timestamp": "2026-05-07T04:34:00+08:00"
-    },
     {
       "cycle": 94,
       "module": "pkg/events",
@@ -1553,6 +1555,18 @@
       "issue": 267,
       "note": "Phase 2 re-analysis — silent store error in getManagedSession + max-turns orphan + AttachWorker lock ordering",
       "timestamp": "2026-05-07T07:46:55.000000+08:00"
+    },
+    {
+      "cycle": 113,
+      "module": "internal/messaging",
+      "aspects": [
+        "error-handling",
+        "concurrency"
+      ],
+      "findings": 3,
+      "issue": 268,
+      "note": "Phase 2 re-analysis — Feishu card ctx leak + Dedup double-close + Slack CPU spin",
+      "timestamp": "2026-05-07T07:58:49.000000+08:00"
     }
   ]
 }
