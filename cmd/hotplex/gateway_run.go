@@ -191,12 +191,14 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 		WorkerEnvBlocklist: cfg.Worker.EnvBlocklist,
 	})
 
+	skillsLocator := skills.NewLocator(log, cfg.Skills.CacheTTL)
+
 	handler := gateway.NewHandler(gateway.HandlerDeps{
 		Log:           log,
 		Hub:           hub,
 		SM:            sm,
 		JWTValidator:  jwtValidator,
-		SkillsLocator: skills.NewLocator(log, cfg.Skills.CacheTTL),
+		SkillsLocator: skillsLocator,
 	})
 
 	if cfg.Worker.AutoRetry.Enabled {
@@ -317,7 +319,7 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 	}
 
 	cancel()
-	shutdownGateway(ctx, log, deps, msgAdapters, server, jwtValidator, pidTracker, cleanupWG)
+	shutdownGateway(ctx, log, deps, msgAdapters, server, jwtValidator, skillsLocator, pidTracker, cleanupWG)
 	return nil
 }
 
@@ -429,6 +431,7 @@ func shutdownGateway(
 	msgAdapters []messaging.PlatformAdapterInterface,
 	server *http.Server,
 	jwtValidator *security.JWTValidator,
+	skillsLocator *skills.Locator,
 	pidTracker *proc.Tracker,
 	cleanupWG *sync.WaitGroup,
 ) {
@@ -443,6 +446,8 @@ func shutdownGateway(
 	if err := deps.Hub.Shutdown(shutdownCtx); err != nil {
 		log.Warn("gateway: hub shutdown", "err", err)
 	}
+
+	skillsLocator.Close()
 
 	if deps.ConfigWatcher != nil {
 		_ = deps.ConfigWatcher.Close()
