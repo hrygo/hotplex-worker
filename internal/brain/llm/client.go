@@ -12,9 +12,15 @@ import (
 // ChatOptions controls LLM generation parameters.
 // Zero-value fields use the provider's default.
 type ChatOptions struct {
-	MaxTokens   int     // 0 = provider default (Anthropic: 4096, OpenAI: API default)
-	Temperature float64 // 0 = provider default (omit from request)
+	MaxTokens   int      // 0 = provider default (Anthropic: 4096, OpenAI: API default)
+	Temperature *float64 // nil = provider default; use FloatPtr(0) for deterministic output
 }
+
+// FloatPtr returns a pointer to the given float64 value.
+// Useful for constructing ChatOptions with explicit Temperature values.
+//
+//nolint:newexpr // &v is the idiomatic way to get a pointer to a specific value
+func FloatPtr(v float64) *float64 { return &v }
 
 // LLMClient defines the interface for LLM interactions.
 // All client wrappers must implement this interface.
@@ -115,8 +121,8 @@ func (c *OpenAIClient) ChatWithOptions(ctx context.Context, prompt string, opts 
 	if opts.MaxTokens > 0 {
 		req.MaxTokens = opts.MaxTokens
 	}
-	if opts.Temperature > 0 {
-		req.Temperature = float32(opts.Temperature)
+	if opts.Temperature != nil {
+		req.Temperature = float32(*opts.Temperature)
 	}
 
 	resp, err := c.client.CreateChatCompletion(ctx, req)

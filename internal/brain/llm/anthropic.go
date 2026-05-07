@@ -81,8 +81,8 @@ func (c *AnthropicClient) ChatWithOptions(ctx context.Context, prompt string, op
 			anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
 		},
 	}
-	if opts.Temperature > 0 {
-		params.Temperature = anthropic.Float(opts.Temperature)
+	if opts.Temperature != nil {
+		params.Temperature = anthropic.Float(*opts.Temperature)
 	}
 
 	resp, err := c.client.Messages.New(ctx, params)

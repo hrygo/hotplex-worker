@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"sync/atomic"
 
 	lru "github.com/hashicorp/golang-lru/v2"
@@ -110,7 +111,11 @@ func (c *CachedClient) makeKey(prompt string, isAnalyze bool) string {
 
 func (c *CachedClient) makeOptsKey(prompt string, opts ChatOptions) string {
 	h := sha256.Sum256([]byte(prompt))
-	return fmt.Sprintf("chatopt:%d:%.2f:%s", opts.MaxTokens, opts.Temperature, hex.EncodeToString(h[:]))
+	tempStr := "def"
+	if opts.Temperature != nil {
+		tempStr = strconv.FormatFloat(*opts.Temperature, 'f', -1, 64)
+	}
+	return fmt.Sprintf("chatopt:%d:%s:%s", opts.MaxTokens, tempStr, hex.EncodeToString(h[:]))
 }
 
 func (c *CachedClient) ClearCache() {

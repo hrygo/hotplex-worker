@@ -1,6 +1,9 @@
 package tts
 
-import "github.com/hrygo/hotplex/internal/brain"
+import (
+	"github.com/hrygo/hotplex/internal/brain"
+	"github.com/hrygo/hotplex/internal/brain/llm"
+)
 
 // SummaryInputCap limits the input text length sent to the LLM for summarization.
 // Independent of MaxChars to ensure sufficient context even when MaxChars is small.
@@ -28,5 +31,5 @@ AI 回复：
 // Temperature=0.3 ensures consistent, focused summaries.
 var SummaryChatOpts = brain.ChatOptions{
 	MaxTokens:   256,
-	Temperature: 0.3,
+	Temperature: llm.FloatPtr(0.3),
 }
