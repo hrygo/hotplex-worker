@@ -796,6 +796,170 @@ func TestBotIDIsolation_MatchAllowed(t *testing.T) {
 	require.NotContains(t, string(resp), `"code":"unauthorized"`)
 }
 
+// ─── SEC-008: user_id ownership tests ──────────────────────────────────────────
+
+// TestUserIDOwnership_MismatchRejected tests that reconnecting to a session owned by
+// a different user is rejected with ErrCodeUnauthorized (SEC-008).
+// Defense-in-depth: DeriveSessionKey normally prevents cross-user lookup, but SEC-008
+// guards against key collisions or direct UUID lookups.
+func TestUserIDOwnership_MismatchRejected(t *testing.T) {
+	const (
+		sessionIDConst = "sess_user_ownership"
+		workerType     = "claude-code"
+		botID          = "bot_shared"
+	)
+	derivedSIDAlice := session.DeriveSessionKey("alice", worker.WorkerType(workerType), sessionIDConst, safeTestWorkDir)
+	// Bob's derived key is different from alice's, but mock returns alice's session
+	// to simulate a key collision or direct UUID lookup scenario.
+	derivedSIDBob := session.DeriveSessionKey("bob", worker.WorkerType(workerType), sessionIDConst, safeTestWorkDir)
+
+	jwtKey := newECDSAKey(t)
+	jwtVal := security.NewJWTValidator(jwtKey, "")
+
+	// Session exists, owned by "alice".
+	existingSession := &session.SessionInfo{
+		ID:         derivedSIDAlice,
+		UserID:     "alice",
+		BotID:      botID,
+		State:      events.StateIdle,
+		WorkerType: worker.WorkerType(workerType),
+	}
+
+	// "bob" tries to reconnect to alice's session.
+	tokenBob, err := jwtVal.GenerateTokenWithClaims(&security.JWTClaims{
+		UserID: "bob",
+		BotID:  botID, // same bot_id — should not bypass user check
+	})
+	require.NoError(t, err)
+
+	store := new(mockSessionStoreForBotID)
+	store.Test(t)
+	store.On("Close").Return(nil).Maybe()
+	store.On("Get", mock.Anything, sessionIDConst).Return(nil, session.ErrSessionNotFound)
+	store.On("Get", mock.Anything, derivedSIDBob).Return(existingSession, nil)
+
+	cfg := config.Default()
+	cfg.Worker.DefaultWorkDir = safeTestWorkDir
+	hubForTest := newTestHub(t, func(cfg *config.Config) {
+		cfg.Worker.DefaultWorkDir = safeTestWorkDir
+	})
+	mgr, err := session.NewManager(context.Background(), slog.Default(), cfg, nil, store)
+	require.NoError(t, err)
+	t.Cleanup(func() { mgr.Close() })
+
+	var serverConn *websocket.Conn
+	var mu sync.Mutex
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upgrader := websocket.Upgrader{}
+		conn, err := upgrader.Upgrade(w, r, nil)
+		require.NoError(t, err)
+		mu.Lock()
+		serverConn = conn
+		mu.Unlock()
+		go func() {
+			// Bob connects, same bot_id as alice's session.
+			c := newBotIDTestConn(hubForTest, conn, derivedSIDBob, "bob", botID)
+			handler := NewHandler(HandlerDeps{Log: slog.Default(), Hub: hubForTest, SM: mgr, JWTValidator: jwtVal})
+			c.ReadPump(handler)
+		}()
+	}))
+	t.Cleanup(server.Close)
+
+	client, _, err := websocket.DefaultDialer.Dial("ws"+server.URL[4:], nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { client.Close() })
+
+	require.Eventually(t, func() bool {
+		mu.Lock()
+		ok := serverConn != nil
+		mu.Unlock()
+		return ok
+	}, 2*time.Second, 10*time.Millisecond)
+
+	// Bob sends init to reconnect to alice's session → should be rejected.
+	initMsg := makeInitEnvelope(sessionIDConst, workerType, tokenBob)
+	resp, err := sendWSInit(client, initMsg)
+	require.NoError(t, err)
+	require.Contains(t, string(resp), `"type":"init_ack"`)
+	require.Contains(t, string(resp), `"code":"UNAUTHORIZED"`, "user_id mismatch should return UNAUTHORIZED")
+}
+
+// TestUserIDOwnership_MatchAllowed tests that reconnecting to a session owned by
+// the same user succeeds (SEC-008 happy path).
+func TestUserIDOwnership_MatchAllowed(t *testing.T) {
+	const (
+		sessionIDConst = "sess_user_match"
+		workerType     = "claude-code"
+		botID          = "bot_team"
+	)
+	derivedSID := session.DeriveSessionKey("alice", worker.WorkerType(workerType), sessionIDConst, safeTestWorkDir)
+
+	jwtKey := newECDSAKey(t)
+	jwtVal := security.NewJWTValidator(jwtKey, "")
+	token, err := jwtVal.GenerateTokenWithClaims(&security.JWTClaims{
+		UserID: "alice",
+		BotID:  botID,
+	})
+	require.NoError(t, err)
+
+	existingSession := &session.SessionInfo{
+		ID:         derivedSID,
+		UserID:     "alice",
+		BotID:      botID,
+		State:      events.StateIdle,
+		WorkerType: worker.WorkerType(workerType),
+	}
+
+	store := new(mockSessionStoreForBotID)
+	store.Test(t)
+	store.On("Close").Return(nil).Maybe()
+	store.On("Get", mock.Anything, sessionIDConst).Return(nil, session.ErrSessionNotFound)
+	store.On("Get", mock.Anything, derivedSID).Return(existingSession, nil)
+
+	cfg := config.Default()
+	cfg.Worker.DefaultWorkDir = safeTestWorkDir
+	hubForTest := newTestHub(t, func(cfg *config.Config) {
+		cfg.Worker.DefaultWorkDir = safeTestWorkDir
+	})
+	mgr, err := session.NewManager(context.Background(), slog.Default(), cfg, nil, store)
+	require.NoError(t, err)
+	t.Cleanup(func() { mgr.Close() })
+
+	var serverConn *websocket.Conn
+	var mu sync.Mutex
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upgrader := websocket.Upgrader{}
+		conn, err := upgrader.Upgrade(w, r, nil)
+		require.NoError(t, err)
+		mu.Lock()
+		serverConn = conn
+		mu.Unlock()
+		go func() {
+			c := newBotIDTestConn(hubForTest, conn, derivedSID, "alice", botID)
+			handler := NewHandler(HandlerDeps{Log: slog.Default(), Hub: hubForTest, SM: mgr, JWTValidator: jwtVal})
+			c.ReadPump(handler)
+		}()
+	}))
+	t.Cleanup(server.Close)
+
+	client, _, err := websocket.DefaultDialer.Dial("ws"+server.URL[4:], nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { client.Close() })
+
+	require.Eventually(t, func() bool {
+		mu.Lock()
+		ok := serverConn != nil
+		mu.Unlock()
+		return ok
+	}, 2*time.Second, 10*time.Millisecond)
+
+	initMsg := makeInitEnvelope(sessionIDConst, workerType, token)
+	resp, err := sendWSInit(client, initMsg)
+	require.NoError(t, err)
+	require.Contains(t, string(resp), `"type":"init_ack"`)
+	require.NotContains(t, string(resp), `"code":"unauthorized"`)
+}
+
 // TestBotIDIsolation_EmptyBotIDAllowed tests that when bot_id is empty (not specified),
 // sessions can be created and resumed without bot_id restrictions.
 func TestBotIDIsolation_EmptyBotIDAllowed(t *testing.T) {

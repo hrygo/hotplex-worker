@@ -415,6 +415,14 @@ func (c *Conn) performInit(handler *Handler) error {
 		}
 	}
 
+	// SEC-008: reject cross-user access on reconnect.
+	if c.userID != "" && si.UserID != "" && c.userID != si.UserID {
+		c.hub.InitThrottle.RecordFailure(sessionID)
+		c.sendInitError(events.ErrCodeUnauthorized, "user_id mismatch")
+		metrics.GatewayErrorsTotal.WithLabelValues(string(events.ErrCodeUnauthorized)).Inc()
+		return fmt.Errorf("user_id mismatch: connection=%s session=%s", c.userID, si.UserID)
+	}
+
 	// SEC-007: reject cross-bot access.
 	if c.botID != "" && si.BotID != "" && c.botID != si.BotID {
 		c.hub.InitThrottle.RecordFailure(sessionID)
