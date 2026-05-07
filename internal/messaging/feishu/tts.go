@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"strings"
 
+	"golang.org/x/sync/semaphore"
+
 	"github.com/hrygo/hotplex/internal/brain"
 	"github.com/hrygo/hotplex/internal/messaging/tts"
 
@@ -21,6 +23,7 @@ type TTSPipeline struct {
 	synthesizer tts.Synthesizer
 	client      *lark.Client
 	maxChars    int
+	sem         *semaphore.Weighted
 	log         *slog.Logger
 }
 
@@ -32,6 +35,7 @@ func NewTTSPipeline(synthesizer tts.Synthesizer, client *lark.Client, maxChars i
 		synthesizer: synthesizer,
 		client:      client,
 		maxChars:    maxChars,
+		sem:         semaphore.NewWeighted(2),
 		log:         log,
 	}
 }
@@ -49,7 +53,14 @@ AI 回复：
 %s`
 
 // Process runs the full TTS pipeline. Call from a goroutine.
+// Limits concurrency to avoid overwhelming TTS/LLM resources.
 func (p *TTSPipeline) Process(ctx context.Context, fullText, chatID, replyToMsgID string) {
+	if !p.sem.TryAcquire(1) {
+		p.log.Warn("tts: pipeline busy, dropping voice reply")
+		return
+	}
+	defer p.sem.Release(1)
+
 	// 1. LLM summary via Brain
 	summary, err := p.summarize(ctx, fullText)
 	if err != nil {
@@ -88,7 +99,9 @@ func (p *TTSPipeline) summarize(ctx context.Context, fullText string) (string, e
 	if b == nil {
 		return "", fmt.Errorf("brain not initialized")
 	}
-	prompt := fmt.Sprintf(ttsSummaryPrompt, p.maxChars, fullText)
+	// Cap input to avoid blowing up the prompt — 5x maxChars gives the LLM enough context.
+	capped := truncateText(fullText, p.maxChars*5)
+	prompt := fmt.Sprintf(ttsSummaryPrompt, p.maxChars, capped)
 	result, err := b.Chat(ctx, prompt)
 	if err != nil {
 		return "", fmt.Errorf("brain chat: %w", err)
@@ -120,8 +133,14 @@ func (p *TTSPipeline) sendAudio(ctx context.Context, chatID, replyToMsgID string
 				MsgType("audio").
 				Build()).
 			Build()
-		_, err = p.client.Im.Message.Reply(ctx, replyReq)
-		return err
+		resp, err := p.client.Im.Message.Reply(ctx, replyReq)
+		if err != nil {
+			return fmt.Errorf("reply audio message: %w", err)
+		}
+		if resp == nil {
+			return fmt.Errorf("reply audio message: empty response")
+		}
+		return nil
 	}
 
 	resp, err := p.client.Im.Message.Create(ctx, req)

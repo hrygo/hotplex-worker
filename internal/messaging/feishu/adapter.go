@@ -671,22 +671,25 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 			go c.sendTurnSummaryCard(d)
 		}
 
+		// Extract content before closing — Content() may return empty after Close().
+		var fullText string
+		if streamCtrl != nil && streamCtrl.IsCreated() {
+			fullText = streamCtrl.Content()
+		}
+
 		var closeErr error
 		if streamCtrl != nil && streamCtrl.IsCreated() {
 			closeErr = streamCtrl.Close(ctx)
 		}
 
 		if c.adapter.ttsPipeline != nil && c.voiceTriggered.Load() {
-			var fullText string
-			if streamCtrl != nil {
-				fullText = streamCtrl.Content()
-			}
 			if fullText != "" {
 				c.mu.RLock()
 				chatID := c.chatID
 				replyID := c.replyToMsgID
 				c.mu.RUnlock()
-				ttsCtx, ttsCancel := context.WithTimeout(context.Background(), 60*time.Second)
+				// Detach from request lifecycle but preserve trace context.
+				ttsCtx, ttsCancel := context.WithTimeout(context.WithoutCancel(ctx), 60*time.Second)
 				go func() {
 					defer ttsCancel()
 					c.adapter.ttsPipeline.Process(ttsCtx, fullText, chatID, replyID)

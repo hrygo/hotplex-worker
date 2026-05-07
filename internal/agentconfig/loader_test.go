@@ -313,8 +313,9 @@ func TestBuildSystemPrompt(t *testing.T) {
 		require.Contains(t, prompt, "User only")
 		require.Contains(t, prompt, "<memory>")
 		require.Contains(t, prompt, "Memory only")
-		require.NotContains(t, prompt, "<directives>")
 		require.NotContains(t, prompt, "<persona>")
+		require.NotContains(t, prompt, "<rules>")
+		require.NotContains(t, prompt, "<skills>")
 	})
 
 	t.Run("directives before context", func(t *testing.T) {

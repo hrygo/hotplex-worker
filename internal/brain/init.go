@@ -32,8 +32,8 @@ func Init(logger *slog.Logger) error {
 	case "anthropic":
 		baseClient = llm.NewAnthropicClient(config.Model.APIKey, config.Model.Endpoint, config.Model.Model, logger)
 		logger.Info("Anthropic brain client initialized", "model", config.Model.Model)
-	case "openai":
 	default:
+		// "openai" and any unknown protocol default to OpenAI-compatible API.
 		baseClient = llm.NewOpenAIClient(config.Model.APIKey, config.Model.Endpoint, config.Model.Model, logger)
 		logger.Debug("OpenAI brain client initialized", "model", config.Model.Model)
 	}
