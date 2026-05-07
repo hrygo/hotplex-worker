@@ -11,6 +11,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/hrygo/hotplex/internal/eventstore"
 	"github.com/hrygo/hotplex/internal/metrics"
@@ -420,10 +421,11 @@ func truncateToolResultOutput(raw json.RawMessage) json.RawMessage {
 		return raw
 	}
 	s, ok := v.Output.(string)
-	if !ok || len(s) <= maxToolResultOutputLen {
+	if !ok || utf8.RuneCountInString(s) <= maxToolResultOutputLen {
 		return raw
 	}
-	v.Output = s[:maxToolResultOutputLen]
+	runes := []rune(s)
+	v.Output = string(runes[:maxToolResultOutputLen])
 	truncated, err := json.Marshal(v)
 	if err != nil {
 		return raw
