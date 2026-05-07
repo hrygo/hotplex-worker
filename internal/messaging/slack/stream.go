@@ -378,18 +378,15 @@ func (w *NativeStreamingWriter) Close() error {
 	cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Phase 1: Plain stop — chat.stopStream with blocks keeps markdown_text
-	// AND appends blocks, causing content duplication. Stop without blocks first.
+	// Plain stop — the old code passed MsgOptionBlocks + MsgOptionText(content)
+	// to StopStreamContext, which caused content duplication: MsgOptionText appended
+	// the full text on top of existing markdown_text, same rendering pipeline,
+	// identical appearance x2. MsgOptionBlocks may also conflict with markdown_text
+	// (markdown_text_conflict) or fail via chat.update (block_mismatch on rich_text
+	// blocks created by streaming). Plain stop avoids all of these issues.
 	_, _, stopErr := w.client.StopStreamContext(cleanupCtx, w.channelID, w.messageTS)
 	if stopErr != nil {
 		w.log.Warn("slack: stop stream failed", "channel", w.channelID, "err", stopErr)
-	}
-
-	// Phase 2: Upgrade tables via chat.update — Slack mrkdwn does NOT render
-	// pipe tables (OpenClaw #26660); Block Kit TableBlock is required.
-	// chat.update after stop replaces the finalized rich_text blocks atomically.
-	if integrityOK && !streamExpired && !shouldSkipFallback {
-		w.upgradeTableBlocks(cleanupCtx)
 	}
 
 	if w.onComplete != nil {
@@ -432,36 +429,6 @@ func (w *NativeStreamingWriter) Content() string {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return w.fullContent.String()
-}
-
-// upgradeTableBlocks upgrades the stopped stream message with Block Kit
-// TableBlock rendering via chat.update. Slack's mrkdwn does not render pipe
-// tables natively — TableBlock is required for proper table display.
-func (w *NativeStreamingWriter) upgradeTableBlocks(ctx context.Context) {
-	w.mu.Lock()
-	content := w.fullContent.String()
-	w.mu.Unlock()
-
-	if content == "" {
-		return
-	}
-	segments, tables := ExtractTables(content)
-	if len(tables) == 0 {
-		return
-	}
-	blocks := BuildTableBlocks(content, segments, tables)
-	if len(blocks) == 0 || len(blocks) > 50 {
-		return
-	}
-
-	opts := []slack.MsgOption{
-		slack.MsgOptionBlocks(blocks...),
-		slack.MsgOptionText(content, false),
-	}
-	_, _, _, err := w.client.UpdateMessageContext(ctx, w.channelID, w.messageTS, opts...)
-	if err != nil {
-		w.log.Debug("slack: table block upgrade failed", "channel", w.channelID, "err", err)
-	}
 }
 
 // Compile-time check
