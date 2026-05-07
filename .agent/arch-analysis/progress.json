@@ -1,7 +1,7 @@
 {
   "version": 2,
-  "last_updated": "2026-05-08T00:35:00+08:00",
-  "total_cycles": 21,
+  "last_updated": "2026-05-08T01:03:00+08:00",
+  "total_cycles": 24,
   "modules": {
     "internal/gateway": {
       "analysis_count": 2,
@@ -273,7 +273,22 @@
     {"number": 199, "verdict": "valid", "action": "confirmed", "audited_at": "2026-05-08T00:35:00+08:00"},
     {"number": 204, "verdict": "valid", "action": "confirmed", "audited_at": "2026-05-08T00:35:00+08:00"},
     {"number": 206, "verdict": "partial", "action": "updated", "audited_at": "2026-05-08T00:35:00+08:00", "note": "Finding 1 (metadata dispatch) fixed via base.DispatchMetadata. Finding 2 (Terminate/Kill copy-paste) still valid."},
-    {"number": 207, "verdict": "valid", "action": "confirmed", "audited_at": "2026-05-08T00:35:00+08:00"}
+    {"number": 207, "verdict": "valid", "action": "confirmed", "audited_at": "2026-05-08T00:35:00+08:00"},
+    {"number": 224, "verdict": "valid", "action": "confirmed", "audited_at": "2026-05-08T00:42:00+08:00"},
+    {"number": 226, "verdict": "valid", "action": "confirmed", "audited_at": "2026-05-08T00:42:00+08:00"},
+    {"number": 227, "verdict": "valid", "action": "confirmed", "audited_at": "2026-05-08T00:42:00+08:00"},
+    {"number": 228, "verdict": "valid", "action": "confirmed", "audited_at": "2026-05-08T00:42:00+08:00"},
+    {"number": 229, "verdict": "valid", "action": "confirmed", "audited_at": "2026-05-08T00:42:00+08:00"},
+    {"number": 231, "verdict": "valid", "action": "confirmed", "audited_at": "2026-05-08T00:53:00+08:00"},
+    {"number": 237, "verdict": "valid", "action": "confirmed", "audited_at": "2026-05-08T00:53:00+08:00", "note": "Worse than described: base/worker.go:118 sets Proc=nil after Wait(), Close() permanently unreachable"},
+    {"number": 239, "verdict": "valid", "action": "confirmed", "audited_at": "2026-05-08T00:53:00+08:00"},
+    {"number": 240, "verdict": "valid", "action": "confirmed", "audited_at": "2026-05-08T00:53:00+08:00", "note": "Critical security: session hijack via missing userID ownership check"},
+    {"number": 241, "verdict": "valid", "action": "confirmed", "audited_at": "2026-05-08T00:53:00+08:00"},
+    {"number": 242, "verdict": "valid", "action": "confirmed", "audited_at": "2026-05-08T01:03:00+08:00"},
+    {"number": 243, "verdict": "valid", "action": "confirmed", "audited_at": "2026-05-08T01:03:00+08:00"},
+    {"number": 244, "verdict": "valid", "action": "confirmed", "audited_at": "2026-05-08T01:03:00+08:00"},
+    {"number": 245, "verdict": "valid", "action": "confirmed", "audited_at": "2026-05-08T01:03:00+08:00"},
+    {"number": 246, "verdict": "valid", "action": "confirmed", "audited_at": "2026-05-08T01:03:00+08:00"}
   ],
   "recent_activity": [
     {"cycle": 2, "module": "internal/session", "aspects": ["coupling", "error-handling"], "issues": [202], "time": "2026-05-06T10:45:00+08:00"},
@@ -295,6 +310,9 @@
     {"cycle": 18, "module": "internal/session", "aspects": ["solid", "dry"], "issues": [217], "time": "2026-05-06T13:22:00+08:00"},
     {"cycle": 19, "module": "internal/messaging", "aspects": ["coupling", "error-handling"], "issues": [218], "time": "2026-05-06T13:32:00+08:00"},
     {"cycle": 20, "module": "internal/worker", "aspects": ["coupling", "error-handling"], "issues": [219], "time": "2026-05-06T13:42:00+08:00"},
-    {"cycle": 21, "mode": "audit", "issues_audited": [198, 199, 204, 206, 207], "closed": 0, "updated": 1, "confirmed": 4, "time": "2026-05-08T00:35:00+08:00"}
+    {"cycle": 21, "mode": "audit", "issues_audited": [198, 199, 204, 206, 207], "closed": 0, "updated": 1, "confirmed": 4, "time": "2026-05-08T00:35:00+08:00"},
+    {"cycle": 22, "mode": "audit", "issues_audited": [224, 226, 227, 228, 229], "closed": 0, "updated": 0, "confirmed": 5, "time": "2026-05-08T00:42:00+08:00"},
+    {"cycle": 23, "mode": "audit", "issues_audited": [231, 237, 239, 240, 241], "closed": 0, "updated": 1, "confirmed": 4, "time": "2026-05-08T00:53:00+08:00"},
+    {"cycle": 24, "mode": "audit", "issues_audited": [242, 243, 244, 245, 246], "closed": 0, "updated": 0, "confirmed": 5, "time": "2026-05-08T01:03:00+08:00"}
   ]
 }
