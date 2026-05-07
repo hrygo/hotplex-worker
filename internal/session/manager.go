@@ -382,9 +382,17 @@ func (m *Manager) TransitionWithInput(ctx context.Context, id string, to events.
 			}
 			if events.IsValidTransition(from, events.StateTerminated) {
 				if err := m.transitionState(ctx, ms, from, events.StateTerminated, "max_turns"); err != nil {
-					m.log.Error("session: max-turns state transition failed, session may be orphaned",
+					m.log.Error("session: max-turns state transition failed, force-terminating in-memory state",
 						"session_id", id, "err", err)
+					ms.info.State = events.StateTerminated
 				}
+			} else {
+				// Transition not valid from current state — force-set in-memory state to prevent orphan.
+				// Safe because the worker is already killed above. The DB may retain the old state,
+				// but GC will reconcile the inconsistency on the next scan.
+				m.log.Warn("session: max-turns transition invalid, force-terminating in-memory state",
+					"session_id", id, "from_state", from)
+				ms.info.State = events.StateTerminated
 			}
 			return ErrMaxTurnsReached
 		}
@@ -981,6 +989,9 @@ func (m *Manager) getManagedSession(id string) *managedSession {
 	// Load from Store.
 	info, err := m.store.Get(context.Background(), id)
 	if err != nil {
+		if !errors.Is(err, ErrSessionNotFound) {
+			m.log.Error("session: store lookup failed", "session_id", id, "err", err)
+		}
 		return nil
 	}
 	m.mu.Lock()
