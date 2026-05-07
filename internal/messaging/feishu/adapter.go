@@ -679,7 +679,9 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 
 		var closeErr error
 		if streamCtrl != nil && streamCtrl.IsCreated() {
-			closeErr = streamCtrl.Close(ctx)
+			closeCtx, closeCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			closeErr = streamCtrl.Close(closeCtx)
+			closeCancel()
 		}
 
 		if c.adapter.ttsPipeline != nil && c.voiceTriggered.Load() {
@@ -703,7 +705,11 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		streamCtrl := c.clearActiveIndicators(ctx)
 		c.adapter.Interactions.CancelAll(env.SessionID)
 		if streamCtrl != nil && streamCtrl.IsCreated() {
-			_ = streamCtrl.Close(ctx)
+			closeCtx, closeCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			if err := streamCtrl.Close(closeCtx); err != nil {
+				c.adapter.Log.Warn("feishu: failed to close streaming card on error", "err", err)
+			}
+			closeCancel()
 		}
 		// Extract error text and send as simple message
 		if errMsg := messaging.ExtractErrorMessage(env); errMsg != "" {

@@ -239,8 +239,9 @@ func ValidateAPIKey(provided, expected string) error {
 // ─── JTI Blacklist ────────────────────────────────────────────────────────────
 
 type jtiBlacklist struct {
-	entries sync.Map
-	stopCh  chan struct{}
+	entries  sync.Map
+	stopCh   chan struct{}
+	stopOnce sync.Once
 }
 
 func newJTIBlacklist() *jtiBlacklist {
@@ -295,7 +296,9 @@ func (b *jtiBlacklist) sweep(interval time.Duration) {
 }
 
 func (b *jtiBlacklist) Stop() {
-	close(b.stopCh)
+	b.stopOnce.Do(func() {
+		close(b.stopCh)
+	})
 }
 
 // Size returns the approximate number of entries in the blacklist.

@@ -257,6 +257,9 @@ func (m *Manager) Wait() (int, error) {
 
 	m.waitOnce.Do(func() { m.waitErr = m.cmd.Wait() })
 	m.captureExitCodeLocked()
+	if closeErr := m.closeLocked(); closeErr != nil {
+		m.log.Warn("proc: pipe close after wait", "err", closeErr)
+	}
 	return m.exitCode, m.waitErr
 }
 
@@ -397,22 +400,29 @@ func (m *Manager) drainStderr() {
 func (m *Manager) Close() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	return m.closeLocked()
+}
 
+// closeLocked closes pipe FDs. Caller must hold m.mu.
+func (m *Manager) closeLocked() error {
 	var errs []error
 	if m.stdin != nil {
-		if err := m.stdin.Close(); err != nil {
+		if err := m.stdin.Close(); err != nil && !errors.Is(err, os.ErrClosed) {
 			errs = append(errs, err)
 		}
+		m.stdin = nil
 	}
 	if m.stdout != nil {
-		if err := m.stdout.Close(); err != nil {
+		if err := m.stdout.Close(); err != nil && !errors.Is(err, os.ErrClosed) {
 			errs = append(errs, err)
 		}
+		m.stdout = nil
 	}
 	if m.stderr != nil {
-		if err := m.stderr.Close(); err != nil {
+		if err := m.stderr.Close(); err != nil && !errors.Is(err, os.ErrClosed) {
 			errs = append(errs, err)
 		}
+		m.stderr = nil
 	}
 	if len(errs) > 0 {
 		return fmt.Errorf("proc: close: %v", errs)

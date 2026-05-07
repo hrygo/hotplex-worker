@@ -242,6 +242,7 @@ func (a *Adapter) runSocketMode(ctx context.Context) {
 				// Channel closed — Run() exited. The reconnect goroutine above will
 				// detect this and restart the connection.
 				a.Log.Warn("slack: events channel closed, waiting for reconnect")
+				time.Sleep(500 * time.Millisecond)
 				continue
 			}
 			switch evt.Type {
