@@ -190,6 +190,25 @@ func (c STTConfig) IsPersistent() bool {
 	return c.LocalCmd != "" && !strings.Contains(c.LocalCmd, "{file}")
 }
 
+// TTSConfig holds text-to-speech settings. Squashed into platform configs.
+type TTSConfig struct {
+	// Enabled controls whether voice replies are sent for voice-triggered turns.
+	Enabled bool `mapstructure:"tts_enabled"`
+	// Provider: "edge" (Microsoft Edge TTS, free), "edge+kokoro" (Edge primary + Kokoro CPU fallback), "" (disabled).
+	TTSProvider string `mapstructure:"tts_provider"`
+	// Voice name for Edge TTS (e.g. "zh-CN-XiaoxiaoNeural", "zh-CN-YunxiNeural").
+	Voice string `mapstructure:"tts_voice"`
+	// MaxChars limits the LLM summary length before TTS synthesis.
+	MaxChars int `mapstructure:"tts_max_chars"`
+	// KokoroModelPath is the path to the Kokoro ONNX model file (used when provider is "edge+kokoro").
+	KokoroModelPath string `mapstructure:"tts_kokoro_model_path"`
+	// KokoroVoice is the Kokoro voice preset name (default "af_heart").
+	KokoroVoice string `mapstructure:"tts_kokoro_voice"`
+	// KokoroIdleTimeout controls how long the Kokoro model stays resident in memory
+	// after its last use before being automatically unloaded. Default 30m.
+	KokoroIdleTimeout time.Duration `mapstructure:"tts_kokoro_idle_timeout"`
+}
+
 // SlackConfig holds Slack Socket Mode adapter settings.
 type SlackConfig struct {
 	Enabled             bool     `mapstructure:"enabled"`
@@ -210,6 +229,7 @@ type SlackConfig struct {
 	ReconnectMaxDelay  time.Duration `mapstructure:"reconnect_max_delay"`
 
 	STTConfig `mapstructure:",squash"`
+	TTSConfig `mapstructure:",squash"`
 }
 
 // FeishuConfig holds Feishu WebSocket adapter settings.
@@ -228,9 +248,9 @@ type FeishuConfig struct {
 	AllowGroupFrom []string `mapstructure:"allow_group_from"`
 
 	STTConfig `mapstructure:",squash"`
+	TTSConfig `mapstructure:",squash"`
 }
 
-// AdminConfig holds admin API settings.
 type AdminConfig struct {
 	Enabled            bool                `mapstructure:"enabled"`
 	Addr               string              `mapstructure:"addr"`
@@ -324,6 +344,7 @@ type ClaudeCodeConfig struct {
 
 // OpenCodeServerConfig holds OpenCode Server singleton process settings.
 type OpenCodeServerConfig struct {
+	Command           string        `mapstructure:"command"` // binary + optional subcommand, e.g. "opencode" or "opencode serve"
 	IdleDrainPeriod   time.Duration `mapstructure:"idle_drain_period"`
 	ReadyTimeout      time.Duration `mapstructure:"ready_timeout"`
 	ReadyPollInterval time.Duration `mapstructure:"ready_poll_interval"`
@@ -444,6 +465,7 @@ func Default() *Config {
 			PIDDir:           filepath.Join(HotplexHome(), ".pids"),
 			AutoRetry:        AutoRetryConfig{Enabled: true, MaxRetries: 9, BaseDelay: 5 * time.Second, MaxDelay: 120 * time.Second, RetryInput: "继续", NotifyUser: true},
 			OpenCodeServer: OpenCodeServerConfig{
+				Command:           "opencode",
 				IdleDrainPeriod:   30 * time.Minute,
 				ReadyTimeout:      10 * time.Second,
 				ReadyPollInterval: 200 * time.Millisecond,
@@ -500,6 +522,11 @@ func Default() *Config {
 					Provider:     "feishu+local",
 					LocalCmd:     "python3 " + filepath.Join(HotplexHome(), "scripts", "stt_server.py"),
 					LocalIdleTTL: time.Hour,
+				},
+				TTSConfig: TTSConfig{
+					TTSProvider: "edge",
+					Voice:       "zh-CN-XiaoxiaoNeural",
+					MaxChars:    2000,
 				},
 			},
 			Slack: SlackConfig{
@@ -579,6 +606,7 @@ func Load(filePath string, opts LoadOptions) (*Config, error) {
 	_ = v.BindEnv("worker.auto_retry.enabled")
 	_ = v.BindEnv("worker.auto_retry.max_retries")
 	_ = v.BindEnv("worker.claude_code.command")
+	_ = v.BindEnv("worker.opencode_server.command")
 	_ = v.BindEnv("worker.opencode_server.idle_drain_period")
 	_ = v.BindEnv("worker.opencode_server.ready_timeout")
 	_ = v.BindEnv("worker.opencode_server.ready_poll_interval")
@@ -596,6 +624,10 @@ func Load(filePath string, opts LoadOptions) (*Config, error) {
 	_ = v.BindEnv("messaging.feishu.stt_provider")
 	_ = v.BindEnv("messaging.feishu.stt_local_cmd")
 	_ = v.BindEnv("messaging.feishu.stt_local_idle_ttl")
+	_ = v.BindEnv("messaging.feishu.tts_enabled")
+	_ = v.BindEnv("messaging.feishu.tts_provider")
+	_ = v.BindEnv("messaging.feishu.tts_voice")
+	_ = v.BindEnv("messaging.feishu.tts_max_chars")
 
 	if err := v.Unmarshal(cfg); err != nil {
 		return nil, fmt.Errorf("config: environment override: %w", err)
@@ -709,8 +741,26 @@ func loadRecursive(filePath string, opts LoadOptions, visited []string) (*Config
 	return cfg, nil
 }
 
-// normalizePaths expands ~ and resolves relative paths for all config path fields.
+// normalizePaths expands ~ and resolves relative paths for all config path fields,
+// and expands ${VAR} references in command templates.
 func (c *Config) normalizePaths() {
+	// 1. Expand environment variables in command templates and addresses.
+	for _, ef := range []*string{
+		&c.Gateway.Addr,
+		&c.Admin.Addr,
+		&c.Worker.ClaudeCode.Command,
+		&c.Worker.OpenCodeServer.Command,
+		&c.Messaging.Slack.LocalCmd,
+		&c.Messaging.Feishu.LocalCmd,
+		&c.Messaging.Feishu.KokoroModelPath,
+		&c.Messaging.Slack.KokoroModelPath,
+	} {
+		if *ef != "" {
+			*ef = ExpandEnv(*ef)
+		}
+	}
+
+	// 2. Expand ~ and normalize paths.
 	for _, pf := range []*string{
 		&c.DB.Path,
 		&c.DB.EventsPath,

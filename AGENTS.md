@@ -1,6 +1,6 @@
 # HotPlex 项目知识库
 
-**最后更新**: 2026-05-04 · **分支**: main · **版本**: v1.5.0
+**最后更新**: 2026-05-07 · **分支**: main · **版本**: v1.7.0
 
 ---
 
@@ -127,16 +127,29 @@ cp configs/env.example .env
 - `key.go` - UUIDv5 确定性 session ID
 - `pool.go` - 全局 + 每用户配额
 
-**Messaging** (Slack/飞书)：
+**Messaging** (Slack/飞书/TTS)：
 - `bridge.go` - SessionStarter + ConnFactory
 - `platform_adapter.go` - 基础适配器
 - `control_command.go` - 斜杠命令解析
 - `slack/` - Socket Mode 适配器
 - `feishu/` - WS 适配器 + STT
+- `tts/` - Edge-TTS 语音合成 + FFmpeg Opus 转换
+- `interaction/` - Q&A 交互流转
+
+**Brain** (LLM 编排层)：
+- `brain.go` - 核心接口 (Brain/StreamingBrain/RoutableBrain/ObservableBrain) + 全局单例
+- `init.go` - Init() 编排 + enhancedBrainWrapper 中间件链 (retry → cache → rate limit)
+- `config.go` - 13 子配置 + 4 层 API key 发现
+- `guard.go` - 输入/输出安全审计 (Safety Guard)、威胁检测、Chat2Config
+- `router.go` - 意图分发 (Intent Router)、LRU 缓存、快速路径检测
+- `memory.go` - 上下文压缩 + 用户偏好提取 + TTL 清理
+- `extractor.go` - 从 Claude Code / OpenCode 配置文件提取凭证
+- `llm/` - LLM 客户端子包：OpenAI/Anthropic 客户端 + 装饰器链 (retry/cache/ratelimit/circuit/metrics) + 模型路由 + 成本估算
 
 **Worker**：
-- `claudecode/` - Claude Code 适配器
-- `opencodeserver/` - Open Code Server 适配器（单例进程）
+- `claudecode/` - Claude Code 适配器 (stdio, `--print --session-id`)
+- `opencodeserver/` - Open Code Server 适配器（单例进程, HTTP+SSE）
+- `proc/` - 跨平台进程生命周期管理 (PGID/Job Object)
 - `base/` - 共享 BaseWorker + Conn
 
 **支撑模块**：
@@ -148,6 +161,8 @@ cp configs/env.example .env
 - `service/` - 跨平台系统服务管理（systemd/launchd/SCM）
 - `eventstore/` - 会话事件持久化 + delta 聚合
 - `updater/` - 自更新（GitHub API、sha256 校验、原子替换）
+- `sqlutil/` - SQLite CGO/no-CGO 驱动切换（build tags）
+- `webchat/` - 嵌入式 Next.js SPA (go:embed)
 
 ### 公共包 (`pkg/`)
 
@@ -241,6 +256,7 @@ git push fork --delete feat/<feature-name>
 | Session 管理 | `internal/session/manager.go` | 状态机、原子操作 |
 | WebSocket 协议 | `internal/gateway/conn.go` | ReadPump/WritePump |
 | LLM 重试 | `internal/gateway/llm_retry.go` | 可重试错误检测 |
+| Worker 启动命令 | `configs/config.yaml` | `claude_code.command` / `opencode_server.command` |
 | 路由注册 | `cmd/hotplex/routes.go` | HTTP 路由 |
 
 ### 跨平台兼容
@@ -324,7 +340,10 @@ git push fork --delete feat/<feature-name>
 - **背压**: 丢弃 `message.delta`，保留 `state`/`done`/`error`
 - **Seq 分配**: Per-session 原子单调计数器
 - **进程终止**: 3 层（SIGTERM → 等待 5s → SIGKILL）
-- **Agent 配置**: B 通道（`<directives>`）+ C 通道（`<context>`）
+- **Agent 配置**: **B 通道** (`<directives>`): `<hotplex>`(META-COGNITION.md, go:embed, 始终存在且排首位) + `<persona>`(SOUL) + `<rules>`(AGENTS) + `<skills>`(SKILLS) → **C 通道** (`<context>`): `<user>`(USER) + `<memory>`(MEMORY)
+- **元认知层**: `internal/agentconfig/META-COGNITION.md` 定义 Worker 的身份边界（不管理 Transport/状态/协议）、B/C 通道冲突隔离法则（directives 无条件覆盖 context）、配置替换的"命中即终止"机制、配置修改 SOP（禁止改全局来影响 Bot）
+- **XML 安全**: 强制开启 **XML Sanitizer**，对保留标签进行 HTML 转义预防注入
+- **Windows 注入**: 强制使用 **临时文件注入**（`--append-system-prompt-file`），严禁使用内联参数防止 cmd.exe 截断
 
 ---
 
@@ -433,24 +452,32 @@ hotplex slack react add --channel <id> --ts <ts> --emoji white_check_mark
 ### 配置文件
 
 - Agent 配置目录：`~/.hotplex/agent-configs/`
-- B 通道：SOUL.md、AGENTS.md、SKILLS.md
-- C 通道：USER.md、MEMORY.md
-- 三级 fallback：全局 → 平台（slack/）→ Bot（slack/U12345/），每文件独立解析
+- B 通道（`<directives>`）：`META-COGNITION.md`(go:embed, 首位) + SOUL.md + AGENTS.md + SKILLS.md
+- C 通道（`<context>`）：USER.md + MEMORY.md
+- 三级 fallback：全局 → 平台（slack/）→ Bot（slack/U12345/），每文件独立解析，命中即终止
+- 配置热更新：仅在 session 初始化或 `/reset` 时加载，运行中修改不立即生效
 
 ### 最大文件
 
 | 文件 | 行数 |
 |------|------|
 | `manager_test.go` | 2249 |
-| `adapter_test.go` (slack) | 2138 |
+| `adapter_test.go` (slack) | 2212 |
+| `init_test.go` (brain) | 1472 |
 | `conn_test.go` | 1424 |
-| `adapter.go` (slack) | 1321 |
-| `adapter.go` (feishu) | 1267 |
-| `hub_test.go` | 1103 |
+| `adapter.go` (feishu) | 1384 |
+| `wizard.go` (onboard) | 1377 |
+| `adapter.go` (slack) | 1366 |
+| `guard_test.go` (brain) | 1179 |
+| `hub_test.go` | 1172 |
+| `memory_test.go` (brain) | 1062 |
 | `commands_test.go` (ocs) | 1050 |
-| `manager.go` | 984 |
-| `security_test.go` | 929 |
-| `config.go` | 923 |
-| `worker.go` (ocs) | 860 |
-| `streaming.go` (feishu) | 857 |
-| `handler.go` | 823 |
+| `router_test.go` (brain) | 1035 |
+| `handler_test.go` | 1000 |
+| `manager.go` | 998 |
+| `e2e_test.go` (slack) | 970 |
+| `config.go` | 952 |
+| `worker.go` (ocs) | 873 |
+| `streaming.go` (feishu) | 870 |
+| `worker.go` (claudecode) | 855 |
+| `handler.go` | 840 |

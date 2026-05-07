@@ -243,7 +243,17 @@ CommandMenu），Gateway Core 获得了连接稳定性修复（CAS race guard、
 | `examples/python-client/hotplex_client/__init__.py` | `__version__ = "1.x.x"` |
 | `examples/java-client/pom.xml` | `<version>1.x.x-SNAPSHOT</version>` |
 
-### 4.3 基础设施
+### 4.3 项目文档
+
+| 文件 | 模式 | 示例 |
+|:---|:---|:---|
+| `README.md` | badge `Version-vX.X.X` | `Version-v1.2.0` |
+| `README_zh.md` | badge `Version-vX.X.X` | `Version-v1.2.0` |
+| `AGENTS.md` | 头部 `**版本**: vX.X.X` | `**版本**: v1.2.0` |
+
+> **注意**：`AGENTS.md` 是 `CLAUDE.md` 的符号链接，只需编辑 `AGENTS.md`（这是实际文件），`CLAUDE.md` 会自动同步。
+
+### 4.4 基础设施
 
 | 文件 | 模式 |
 |:---|:---|
@@ -254,11 +264,17 @@ CommandMenu），Gateway Core 获得了连接稳定性修复（CAS race guard、
 更新后，验证所有位置都已更改：
 
 ```bash
-# 将 OLD 替换为先前版本，NEW 替换为目标版本
+# 将 OLD 替换为先前版本（如 1.1.0），确认无残留
 grep -rn "1\.1\.0" cmd/hotplex/main.go Makefile internal/tracing/tracing.go \
   examples/typescript-client/package.json examples/python-client/pyproject.toml \
   examples/python-client/hotplex_client/__init__.py examples/java-client/pom.xml \
-  Dockerfile CHANGELOG.md
+  Dockerfile README.md README_zh.md AGENTS.md CHANGELOG.md
+
+# 确认新版本号已写入（如 1.2.0）
+grep -rn "1\.2\.0" cmd/hotplex/main.go Makefile internal/tracing/tracing.go \
+  examples/typescript-client/package.json examples/python-client/pyproject.toml \
+  examples/python-client/hotplex_client/__init__.py examples/java-client/pom.xml \
+  Dockerfile README.md README_zh.md AGENTS.md CHANGELOG.md
 ```
 
 ## 步骤 5：验证
@@ -307,6 +323,9 @@ git add \
   examples/python-client/hotplex_client/__init__.py \
   examples/java-client/pom.xml \
   Dockerfile \
+  README.md \
+  README_zh.md \
+  AGENTS.md \
   CHANGELOG.md
 
 # 提交
@@ -476,7 +495,14 @@ gh release view vX.X.X
 ## 关键提醒
 
 > [!IMPORTANT]
-> **同步检查**：`cmd/hotplex/main.go` 版本、`Makefile` LDFLAGS 版本和 `CHANGELOG.md` 头部版本必须全部匹配。CI workflow 通过 ldflags 从 git tag 覆盖 `main.version`，但源文件必须对本地构建一致。
+> **同步检查**：以下位置的版本号必须全部匹配，共 12 处：
+> - **Go 核心**：`cmd/hotplex/main.go`、`Makefile`、`internal/tracing/tracing.go`
+> - **SDK**：`examples/{typescript,python,java}-client/` 各自的版本文件
+> - **文档**：`README.md` badge、`README_zh.md` badge、`AGENTS.md` 头部
+> - **基础设施**：`Dockerfile`
+> - **Changelog**：`CHANGELOG.md` 头部
+>
+> CI workflow 通过 ldflags 从 git tag 覆盖 `main.version`，但源文件必须对本地构建一致。
 
 > [!NOTE]
 > **CI 自动发布**：`.github/workflows/release.yml` workflow 在 tag push 时自动处理二进制构建、校验和和 release 创建。手动创建 release 仅用于 workflow_dispatch 或恢复场景。

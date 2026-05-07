@@ -135,6 +135,8 @@ worker:
     patterns: []
 
   claude_code:
+    # Command to start Claude Code worker. Default: "claude"
+    # Override via HOTPLEX_WORKER_CLAUDE_CODE_COMMAND environment variable.
     command: "claude"
     # Enable --permission-prompt-tool stdio for forwarding permission requests
     # to Slack/Feishu interaction UI. When false (default), Claude Code auto-denies
@@ -146,6 +148,9 @@ worker:
       - "ExitPlanMode"
 
   opencode_server:
+    # Command to start OpenCode Server. Default: "opencode"
+    # Override via HOTPLEX_WORKER_OPENCODE_SERVER_COMMAND environment variable.
+    command: "opencode"
     idle_drain_period: 30m
     ready_timeout: 10s
     ready_poll_interval: 200ms
@@ -206,3 +211,8 @@ messaging:
     stt_provider: "feishu+local"
     stt_local_cmd: "python3 ~/.hotplex/scripts/stt_server.py"
     stt_local_idle_ttl: 1h
+    # TTS (Text-to-Speech) — voice replies for voice-triggered turns
+    # tts_enabled: false
+    # tts_provider: "edge"
+    # tts_voice: "zh-CN-XiaoxiaoNeural"
+    # tts_max_chars: 2000

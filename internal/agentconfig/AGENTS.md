@@ -36,9 +36,10 @@ agentconfig/
 Empty content at a level → fall through to next level. Each file resolves independently.
 
 **B/C dual-channel assembly** (BuildSystemPrompt):
-- B-channel `<directives>`: `<persona>` (SOUL) + `<rules>` (AGENTS) + `<skills>` (SKILLS)
-- C-channel `<context>`: `<hotplex>` (meta-cognition, always present) + `<user>` (USER) + `<memory>` (MEMORY)
+- B-channel `<directives>`: `<hotplex>` (meta-cognition, always first) + `<persona>` (SOUL) + `<rules>` (AGENTS) + `<skills>` (SKILLS)
+- C-channel `<context>`: `<user>` (USER) + `<memory>` (MEMORY)
 - B-channel always precedes C-channel
+- `<hotplex>` (META-COGNITION.md via go:embed) is ALWAYS present in B-channel as first element — defines Worker identity, boundaries, conflict resolution
 - Each section has behavioral directives injected automatically
 
 **Size limits**: MaxFileChars per file (truncation), MaxTotalChars total (enforced after all loads). Prevents runaway config sizes.

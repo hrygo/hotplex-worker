@@ -200,7 +200,9 @@ func TestBuildCLIArgs_AllOptions(t *testing.T) {
 		IncludePartialMessages: true,
 	}
 
-	args := w.buildCLIArgs(session, false)
+	args, err := w.buildCLIArgs(session, false)
+	require.NoError(t, err)
+	defer w.cleanupPromptFiles()
 
 	require.Contains(t, args, "--print")
 	require.Contains(t, args, "--verbose")
@@ -213,7 +215,14 @@ func TestBuildCLIArgs_AllOptions(t *testing.T) {
 	require.Contains(t, args, "--disallowed-tools", "WebSearch,Edit")
 	require.Contains(t, args, "--model", "claude-sonnet-4-6")
 	require.Contains(t, args, "--allowed-tools", "Read,Write,Bash")
-	require.Contains(t, args, "--append-system-prompt", "You are a helpful assistant.")
+	// System prompt is now injected via temp file.
+	require.Contains(t, args, "--append-system-prompt-file")
+	require.NotContains(t, args, "--append-system-prompt", "You are a helpful assistant.")
+	// Verify the temp file content.
+	require.Len(t, w.promptFiles, 1)
+	content, readErr := os.ReadFile(w.promptFiles[0])
+	require.NoError(t, readErr)
+	require.Equal(t, "You are a helpful assistant.", string(content))
 	require.Contains(t, args, "--mcp-config", "/path/to/mcp.json")
 	require.Contains(t, args, "--strict-mcp-config")
 	require.Contains(t, args, "--max-turns", "10")
@@ -227,7 +236,7 @@ func TestBuildCLIArgs_AllOptions(t *testing.T) {
 	require.NotContains(t, args, "--permission-prompt-tool")
 	// Custom PermissionMode="plan" → no --dangerously-skip-permissions
 	require.NotContains(t, args, "--dangerously-skip-permissions")
-	require.NotContains(t, args, "--system-prompt") // replace mode not set
+	require.NotContains(t, args, "--system-prompt-file") // replace mode not set
 }
 
 func TestBuildCLIArgs_SystemPromptReplace(t *testing.T) {
@@ -242,9 +251,18 @@ func TestBuildCLIArgs_SystemPromptReplace(t *testing.T) {
 		SystemPromptReplace: "completely new system prompt",
 	}
 
-	args := w.buildCLIArgs(session, false)
-	require.Contains(t, args, "--system-prompt", "completely new system prompt")
-	require.NotContains(t, args, "--append-system-prompt")
+	args, err := w.buildCLIArgs(session, false)
+	require.NoError(t, err)
+	defer w.cleanupPromptFiles()
+
+	// System prompt replace is now via temp file.
+	require.Contains(t, args, "--system-prompt-file")
+	require.NotContains(t, args, "--append-system-prompt-file")
+	// Verify the temp file content.
+	require.Len(t, w.promptFiles, 1)
+	content, readErr := os.ReadFile(w.promptFiles[0])
+	require.NoError(t, readErr)
+	require.Equal(t, "completely new system prompt", string(content))
 }
 
 func TestBuildCLIArgs_Resume(t *testing.T) {
@@ -257,7 +275,8 @@ func TestBuildCLIArgs_Resume(t *testing.T) {
 		ProjectDir: "/tmp",
 	}
 
-	args := w.buildCLIArgs(session, true)
+	args, err := w.buildCLIArgs(session, true)
+	require.NoError(t, err)
 	// resume=true → --resume <session-id>
 	require.Contains(t, args, "--resume")
 	require.Contains(t, args, "resume-session")
@@ -277,7 +296,8 @@ func TestBuildCLIArgs_MaxTurns(t *testing.T) {
 		MaxTurns:   5,
 	}
 
-	args := w.buildCLIArgs(session, false)
+	args, err := w.buildCLIArgs(session, false)
+	require.NoError(t, err)
 	require.Contains(t, args, "--max-turns", "5")
 }
 
@@ -293,7 +313,8 @@ func TestBuildCLIArgs_MCPConfig(t *testing.T) {
 		StrictMCPConfig: true,
 	}
 
-	args := w.buildCLIArgs(session, false)
+	args, err := w.buildCLIArgs(session, false)
+	require.NoError(t, err)
 	require.Contains(t, args, "--mcp-config", "/etc/mcp.json")
 	require.Contains(t, args, "--strict-mcp-config")
 }
@@ -311,7 +332,8 @@ func TestBuildCLIArgs_SkipPermissions(t *testing.T) {
 		SkipPermissions: true,
 	}
 
-	args := w.buildCLIArgs(session, false)
+	args, err := w.buildCLIArgs(session, false)
+	require.NoError(t, err)
 	require.Contains(t, args, "--dangerously-skip-permissions")
 	require.NotContains(t, args, "--permission-mode")
 }
@@ -326,7 +348,8 @@ func TestBuildCLIArgs_Minimal(t *testing.T) {
 		ProjectDir: "/tmp",
 	}
 
-	args := w.buildCLIArgs(session, false)
+	args, err := w.buildCLIArgs(session, false)
+	require.NoError(t, err)
 	// resume=false → --session-id minimal-session, 9 tokens total:
 	// --print --verbose --output-format stream-json --input-format stream-json
 	// --session-id minimal-session --dangerously-skip-permissions
@@ -351,7 +374,8 @@ func TestBuildCLIArgs_Bare(t *testing.T) {
 		Bare:       true,
 	}
 
-	args := w.buildCLIArgs(session, false)
+	args, err := w.buildCLIArgs(session, false)
+	require.NoError(t, err)
 	require.Contains(t, args, "--bare")
 }
 
@@ -368,7 +392,8 @@ func TestBuildCLIArgs_PermissionPromptEnabled(t *testing.T) {
 		ProjectDir: "/tmp",
 	}
 
-	args := w.buildCLIArgs(session, false)
+	args, err := w.buildCLIArgs(session, false)
+	require.NoError(t, err)
 	require.Contains(t, args, "--permission-prompt-tool", "stdio")
 }
 
@@ -384,7 +409,8 @@ func TestBuildCLIArgs_PermissionPromptDisabled(t *testing.T) {
 		ProjectDir: "/tmp",
 	}
 
-	args := w.buildCLIArgs(session, false)
+	args, err := w.buildCLIArgs(session, false)
+	require.NoError(t, err)
 	require.NotContains(t, args, "--permission-prompt-tool")
 }
 
@@ -399,7 +425,8 @@ func TestBuildCLIArgs_AllowedDirs(t *testing.T) {
 		AllowedDirs: []string{"/project/src", "/project/lib"},
 	}
 
-	args := w.buildCLIArgs(session, false)
+	args, err := w.buildCLIArgs(session, false)
+	require.NoError(t, err)
 	require.Contains(t, args, "--add-dir", "/project/src")
 	require.Contains(t, args, "--add-dir", "/project/lib")
 }
@@ -415,7 +442,8 @@ func TestBuildCLIArgs_MaxBudgetUSD(t *testing.T) {
 		MaxBudgetUSD: 0.05,
 	}
 
-	args := w.buildCLIArgs(session, false)
+	args, err := w.buildCLIArgs(session, false)
+	require.NoError(t, err)
 	require.Contains(t, args, "--max-budget-usd", "0.050000")
 }
 
@@ -430,7 +458,8 @@ func TestBuildCLIArgs_JSONSchema(t *testing.T) {
 		JSONSchema: "/schemas/output.json",
 	}
 
-	args := w.buildCLIArgs(session, false)
+	args, err := w.buildCLIArgs(session, false)
+	require.NoError(t, err)
 	require.Contains(t, args, "--json-schema", "/schemas/output.json")
 }
 

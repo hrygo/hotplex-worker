@@ -111,6 +111,11 @@ type Worker struct {
 	// Seq generation (atomic, no mutex needed)
 	seq atomic.Int64
 
+	// promptFiles tracks temp files created for --append-system-prompt-file /
+	// --system-prompt-file. Cleaned up in Terminate. Using files avoids Windows
+	// cmd.exe mangling XML characters (<, >) in inline arguments.
+	promptFiles []string
+
 	// readLineFn reads the next line from stdout. If nil, readOutput uses
 	// proc.ReadLine. Inject a func for unit testing without a real process.
 	readLineFn func() (string, error)
@@ -167,7 +172,10 @@ func (w *Worker) startLocked(_ context.Context, session worker.SessionInfo, resu
 		}
 	}
 
-	args := w.buildCLIArgs(session, resume)
+	args, err := w.buildCLIArgs(session, resume)
+	if err != nil {
+		return fmt.Errorf("claudecode: build args: %w", err)
+	}
 	w.Proc = proc.New(proc.Opts{
 		Logger:       w.Log,
 		AllowedTools: session.AllowedTools,
@@ -187,6 +195,7 @@ func (w *Worker) startLocked(_ context.Context, session worker.SessionInfo, resu
 	bgCtx := context.Background()
 	stdin, _, _, err := w.Proc.Start(bgCtx, binary, fullArgs, base.BuildEnv(session, claudeCodeEnvBlocklist, "claude-code"), session.ProjectDir)
 	if err != nil {
+		w.cleanupPromptFiles()
 		w.Proc = nil
 		return fmt.Errorf("claudecode: start: %w", err)
 	}
@@ -229,7 +238,7 @@ func (w *Worker) startLocked(_ context.Context, session worker.SessionInfo, resu
 // Session mode:
 //   - resume=true:  --resume <session-id>  (恢复已有会话)
 //   - resume=false: --session-id <id>       (创建新会话)
-func (w *Worker) buildCLIArgs(session worker.SessionInfo, resume bool) []string {
+func (w *Worker) buildCLIArgs(session worker.SessionInfo, resume bool) ([]string, error) {
 	args := []string{
 		"--print",
 		"--verbose", // Required for stream-json mode
@@ -275,12 +284,22 @@ func (w *Worker) buildCLIArgs(session worker.SessionInfo, resume bool) []string 
 	if len(session.AllowedTools) > 0 {
 		args = append(args, "--allowed-tools", joinTools(session.AllowedTools))
 	}
+	// System prompt injection: use temp files instead of inline arguments.
+	// On Windows, CLI wrappers (e.g. ccr.cmd) pass args through cmd.exe which
+	// interprets < and > as I/O redirection, mangling XML content in prompts.
+	// File-based injection (--*-file flags) avoids this entirely.
 	if session.SystemPromptReplace != "" {
-		// --system-prompt replaces the default system prompt entirely
-		args = append(args, "--system-prompt", session.SystemPromptReplace)
+		path, err := w.writePromptFile("system-prompt", session.SystemPromptReplace)
+		if err != nil {
+			return nil, fmt.Errorf("write system prompt file: %w", err)
+		}
+		args = append(args, "--system-prompt-file", path)
 	} else if session.SystemPrompt != "" {
-		// --append-system-prompt appends to the existing system prompt
-		args = append(args, "--append-system-prompt", session.SystemPrompt)
+		path, err := w.writePromptFile("append-system-prompt", session.SystemPrompt)
+		if err != nil {
+			return nil, fmt.Errorf("write append system prompt file: %w", err)
+		}
+		args = append(args, "--append-system-prompt-file", path)
 	}
 	if session.MCPConfig != "" {
 		args = append(args, "--mcp-config", session.MCPConfig)
@@ -310,7 +329,7 @@ func (w *Worker) buildCLIArgs(session worker.SessionInfo, resume bool) []string 
 		args = append(args, "--include-partial-messages")
 	}
 
-	return args
+	return args, nil
 }
 
 func (w *Worker) Input(ctx context.Context, content string, metadata map[string]any) error {
@@ -396,6 +415,7 @@ func (w *Worker) Terminate(ctx context.Context) error {
 		w.cancel()
 	}
 
+	w.cleanupPromptFiles()
 	return w.BaseWorker.Terminate(ctx)
 }
 
@@ -781,6 +801,44 @@ func (w *Worker) trySend(env *events.Envelope) {
 // nextSeq generates the next sequence number.
 func (w *Worker) nextSeq() int64 {
 	return w.seq.Add(1)
+}
+
+// writePromptFile writes content to a temp file and tracks it for cleanup.
+// Returns the absolute path to the file. The file is deleted in cleanupPromptFiles
+// which is called from Terminate.
+func (w *Worker) writePromptFile(prefix, content string) (string, error) {
+	f, err := os.CreateTemp("", "hotplex-"+prefix+"-*.txt")
+	if err != nil {
+		return "", fmt.Errorf("create temp file: %w", err)
+	}
+	path := f.Name()
+	if _, err := f.WriteString(content); err != nil {
+		_ = f.Close()
+		_ = os.Remove(path)
+		return "", fmt.Errorf("write temp file: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(path)
+		return "", fmt.Errorf("close temp file: %w", err)
+	}
+	w.promptFiles = append(w.promptFiles, path)
+	return path, nil
+}
+
+// cleanupPromptFiles removes all temp prompt files created for this worker.
+// On Windows, the child process may still hold a file handle briefly after
+// termination, so we retry once after a short delay if deletion fails.
+func (w *Worker) cleanupPromptFiles() {
+	for _, path := range w.promptFiles {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			// Retry once after a short delay for Windows file-lock stragglers.
+			time.Sleep(200 * time.Millisecond)
+			if err2 := os.Remove(path); err2 != nil && !os.IsNotExist(err2) {
+				w.Log.Warn("claudecode: failed to remove prompt file", "path", path, "err", err2)
+			}
+		}
+	}
+	w.promptFiles = nil
 }
 
 // joinTools joins tool names with comma.

@@ -70,6 +70,7 @@ type Adapter struct {
 	assistantEnabled   *bool
 	transcriber        stt.Transcriber
 	turnSummaryEnabled bool
+	ttsPipeline        *TTSPipeline
 
 	rateLimiter   *ChannelRateLimiter
 	slashLimiter  *SlashRateLimiter
@@ -107,6 +108,9 @@ func (a *Adapter) ConfigureWith(config messaging.AdapterConfig) error {
 	}
 	if v, ok := config.Extras["turn_summary_enabled"].(bool); ok {
 		a.turnSummaryEnabled = v
+	}
+	if p, ok := config.Extras["tts_pipeline"].(*TTSPipeline); ok && p != nil {
+		a.ttsPipeline = p
 	}
 
 	return nil
@@ -357,6 +361,8 @@ func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsA
 		return
 	}
 
+	var hasVoice bool
+
 	// Download media files and append paths to text
 	if len(media) > 0 {
 		for _, m := range media {
@@ -365,6 +371,7 @@ func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsA
 			}
 			// Audio + STT: transcribe voice messages to text.
 			if m.Type == mediaTypeAudio && a.transcriber != nil {
+				hasVoice = true
 				if audioText, audioErr := a.handleAudioMessage(ctx, m); audioErr != nil {
 					// STT failed: save audio to disk for worker fallback.
 					if path, saveErr := a.downloadMedia(ctx, m); saveErr == nil {
@@ -379,6 +386,7 @@ func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsA
 			}
 			// Audio without transcriber: save to disk for worker fallback.
 			if m.Type == mediaTypeAudio {
+				hasVoice = true
 				if path, err := a.downloadMedia(ctx, m); err == nil {
 					text += fmt.Sprintf("\n[audio saved to: %s — please use stt_once.py to transcribe]", path)
 				} else {
@@ -450,6 +458,12 @@ func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsA
 	// Set initial assistant status (native API for paid workspaces)
 	if a.isAssistantCapable.Load() && threadTS != "" {
 		_ = a.SetAssistantStatus(ctx, channelID, threadTS, "Initializing...")
+	}
+
+	if hasVoice {
+		if conn := a.GetOrCreateConn(channelID, threadTS); conn != nil {
+			conn.voiceTriggered.Store(true)
+		}
 	}
 
 	if err := a.HandleTextMessage(ctx, platformMsgID, channelID, teamID, threadTS, userID, text); err != nil {
@@ -683,6 +697,7 @@ type SlackConn struct {
 	workDir        string       // current workDir identity for session key derivation
 
 	lastSummarySentMs atomic.Int64 // unix ms of last successful turn summary send
+	voiceTriggered    atomic.Bool
 }
 
 // NewSlackConn creates a platform connection bound to a channel/thread.
@@ -740,13 +755,30 @@ func (c *SlackConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 	case events.Done, events.Error:
 		c.clearStatus(ctx)
 		c.adapter.Interactions.CancelAll(env.SessionID)
+
+		// Extract content before closing — Content() may return empty after Close().
+		var fullText string
+		if w := c.getStreamWriter(); w != nil {
+			fullText = w.Content()
+		}
+
 		c.closeStreamWriter()
 		if env.Event.Type == events.Done && c.adapter.turnSummaryEnabled {
 			go c.sendTurnSummary(ctx, env)
 		}
+		// TTS voice reply (async, non-blocking).
+		if env.Event.Type == events.Done && c.adapter.ttsPipeline != nil && c.voiceTriggered.Load() {
+			if fullText != "" {
+				ttsCtx, ttsCancel := context.WithTimeout(context.WithoutCancel(ctx), 60*time.Second)
+				go func() {
+					defer ttsCancel()
+					c.adapter.ttsPipeline.Process(ttsCtx, fullText, c.channelID, c.threadTS)
+				}()
+			}
+			c.voiceTriggered.Store(false)
+		}
 		if env.Event.Type == events.Error {
 			if errMsg := messaging.ExtractErrorMessage(env); errMsg != "" {
-				// Async: PostMessage is synchronous HTTP and must not block Hub broadcast.
 				go func() { _ = c.writeWithPostMessage(ctx, FormatMrkdwn(errPrefix+errMsg), false) }()
 			}
 		}
@@ -1040,6 +1072,13 @@ func (c *SlackConn) tryFileUpload(ctx context.Context, text string) bool {
 		return true
 	}
 	return false
+}
+
+// getStreamWriter returns the current stream writer (thread-safe).
+func (c *SlackConn) getStreamWriter() *NativeStreamingWriter {
+	c.streamWriterMu.Lock()
+	defer c.streamWriterMu.Unlock()
+	return c.streamWriter
 }
 
 // closeStreamWriter closes and clears the stream writer.

@@ -297,24 +297,26 @@ func TestBuildSystemPrompt(t *testing.T) {
 		prompt := BuildSystemPrompt(cfg)
 		require.Contains(t, prompt, "<directives>")
 		require.Contains(t, prompt, "<rules>")
-		require.NotContains(t, prompt, "<persona>")
-		require.Contains(t, prompt, "<context>")
 		require.Contains(t, prompt, "<hotplex>")
+		require.NotContains(t, prompt, "<persona>")
+		require.NotContains(t, prompt, "<context>")
 		require.NotContains(t, prompt, "<user>")
 		require.NotContains(t, prompt, "<memory>")
 	})
 
-	t.Run("C-channel includes hotplex metacognition + user content", func(t *testing.T) {
+	t.Run("C-channel only still injects hotplex into B-channel", func(t *testing.T) {
 		cfg := &AgentConfigs{User: "User only", Memory: "Memory only"}
 		prompt := BuildSystemPrompt(cfg)
-		require.Contains(t, prompt, "<context>")
+		require.Contains(t, prompt, "<directives>")
 		require.Contains(t, prompt, "<hotplex>")
+		require.Contains(t, prompt, "<context>")
 		require.Contains(t, prompt, "<user>")
 		require.Contains(t, prompt, "User only")
 		require.Contains(t, prompt, "<memory>")
 		require.Contains(t, prompt, "Memory only")
-		require.NotContains(t, prompt, "<directives>")
 		require.NotContains(t, prompt, "<persona>")
+		require.NotContains(t, prompt, "<rules>")
+		require.NotContains(t, prompt, "<skills>")
 	})
 
 	t.Run("directives before context", func(t *testing.T) {
@@ -328,11 +330,11 @@ func TestBuildSystemPrompt(t *testing.T) {
 	t.Run("behavioral directives present per section", func(t *testing.T) {
 		cfg := &AgentConfigs{Soul: "S", Agents: "A", Skills: "K", User: "U", Memory: "M"}
 		prompt := BuildSystemPrompt(cfg)
-		require.Contains(t, prompt, "Embody this persona naturally")
-		require.Contains(t, prompt, "mandatory workspace constraints")
-		require.Contains(t, prompt, "Apply these capabilities when relevant")
-		require.Contains(t, prompt, "Tailor responses to this user")
-		require.Contains(t, prompt, "Recall relevant past context")
+		require.Contains(t, prompt, "自然地代入并体现此人格定位")
+		require.Contains(t, prompt, "视为强制性的工作空间行为约束")
+		require.Contains(t, prompt, "在相关时调用这些能力")
+		require.Contains(t, prompt, "提供个性化的服务体验")
+		require.Contains(t, prompt, "确保任务执行的连贯性与深度")
 	})
 }
 

@@ -15,7 +15,7 @@
 
 <p align="center">
   <a href="https://github.com/hrygo/hotplex/actions/workflows/ci.yml"><img src="https://github.com/hrygo/hotplex/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <img src="https://img.shields.io/badge/Version-v1.5.0-10B981?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/Version-v1.7.0-10B981?style=flat-square" alt="Version">
   <a href="https://github.com/hrygo/hotplex/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-3B82F6?style=flat-square" alt="License"></a>
   <img src="https://img.shields.io/badge/Go-1.26+-00ADD8?style=flat-square&logo=go" alt="Go">
   <img src="https://img.shields.io/badge/Protocol-AEP%20v1-7C3AED?style=flat-square" alt="AEP v1">
@@ -28,13 +28,14 @@
 
 - 🌐 **Universal Agent Gateway** — Abstract any AI Coding Agent protocol into a unified AEP v1 (Agent Exchange Protocol) WebSocket interface for consistent streaming and interaction.
 - 📱 **Cross-Platform Delivery** — **"Write Once, Deploy Anywhere"**. Bridge agents to Web, Slack (Socket Mode), and Feishu (WebSocket) with zero code changes.
-- 🛠️ **Multi-Modal Interaction** — Native Speech-to-Text (SenseVoice-Small) support for a seamless voice-to-code development workflow.
+- 🛠️ **Multi-Modal Interaction** — Native Speech-to-Text (SenseVoice) and **Edge-TTS Voice Reply** support for a complete voice-in, voice-out development workflow.
 - 🤖 **Deep Personality Injection** — Dynamic **B/C dual-channel** injection: **B-channel** (SOUL/AGENTS/SKILLS) for directives and **C-channel** (USER/MEMORY) for context.
-- 🧠 **Autonomous Meta-Cognition** — Built-in 5-state machine with **META-COGNITION** core, intelligent LLM retry, and 3-layer self-healing for unmatched session stability.
+- 🧠 **Brain Orchestration Core** — New `internal/brain` layer for LLM-based summarization, intent routing, and safety guarding, decoupling complex AI logic.
+- 🛡️ **Meta-Cognition Hardening** — Constitutional **META-COGNITION** promoted to the top of B-channel with built-in **XML Sanitizer** to block prompt injection.
 - 🌐 **Embedded Web Chat** — A single binary serves both the API/WebSocket gateway and a premium Next.js-based web chat interface out of the box.
-- 🛡️ **Enterprise-Grade Security** — JWT ES256 authentication, SSRF protection, and PGID-isolated process management with orphan cleanup.
+- 🛡️ **Enterprise-Grade Security** — JWT ES256 authentication, SSRF protection, and **Windows File-Based Injection** to bypass cmd.exe escaping traps.
 - 📊 **End-to-End Observability** — Native Prometheus metrics, OpenTelemetry tracing, and structured JSON logging for full auditability.
-- 🛠️ **Self-contained CLI** — `gateway`, `service`, `slack`, `update`, `dev`, `onboard`, `doctor`, `security`, `status` in a single binary
+- 🛠️ **Self-contained CLI** — `gateway`, `service`, `slack`, `update`, `config`, `dev`, `onboard`, `doctor`, `security`, `status` in a single binary
 - 🌍 **Multi-language SDKs** — Go, TypeScript, Python, Java clients ready to use
 
 ## ⚡ Quick Start
@@ -64,7 +65,7 @@ cd hotplex
 make quickstart
 ```
 
-> **Tip (Claude Code):** After cloning, use `/setup-env` for interactive `.env` configuration (Slack/Feishu tokens, access policies, STT, worker settings, etc.).
+> **Tip (Claude Code):** After cloning, use `/hotplex-setup` for interactive environment setup and `.env` configuration.
 
 **Docker (Experimental):**
 
@@ -191,6 +192,8 @@ func main() {
 | Key                         | Default                      | Description                                    |
 | :-------------------------- | :--------------------------- | :--------------------------------------------- |
 | `agent_config.enabled`      | `true`                       | Enable agent personality/context injection     |
+| `tts.enabled`               | `false`                      | Enable Edge-TTS voice reply pipeline           |
+| `brain.enabled`             | `false`                      | Enable Brain LLM orchestration (requires key)  |
 | `webchat.enabled`           | `true`                       | Serve embedded webchat SPA from gateway        |
 | `worker.auto_retry.enabled` | `true`                       | Intelligent LLM retry with exponential backoff |
 | `gateway.addr`              | `localhost:8888`             | WebSocket gateway address                      |

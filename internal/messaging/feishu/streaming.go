@@ -380,6 +380,13 @@ func (c *StreamingCardController) MsgID() string {
 	return c.msgID
 }
 
+// Content returns the full accumulated text content of the streaming card.
+func (c *StreamingCardController) Content() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.buf.String()
+}
+
 func (c *StreamingCardController) Close(ctx context.Context) error {
 	if !c.transition(PhaseCompleted) {
 		return nil
