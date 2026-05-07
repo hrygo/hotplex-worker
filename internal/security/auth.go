@@ -44,6 +44,7 @@ var ErrUnauthorized = errors.New("security: unauthorized")
 // Returns the user ID, bot ID (from JWT BotID claim), and any error.
 // botID may be empty when no JWT Bearer token is present.
 func (a *Authenticator) AuthenticateRequest(r *http.Request) (string, string, error) {
+	a.mu.RLock()
 	header := a.cfg.APIKeyHeader
 	if header == "" {
 		header = "X-API-Key"
@@ -55,11 +56,11 @@ func (a *Authenticator) AuthenticateRequest(r *http.Request) (string, string, er
 		key = r.URL.Query().Get(apiKeyQueryParam)
 	}
 	if key == "" {
+		a.mu.RUnlock()
 		return "", "", ErrUnauthorized
 	}
 
 	// Constant-time comparison to prevent timing attacks.
-	a.mu.RLock()
 	defer a.mu.RUnlock()
 
 	if len(a.validKey) == 0 {

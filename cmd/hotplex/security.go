@@ -3,8 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"net"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -167,16 +167,8 @@ func checkSSRFConfig(_ context.Context, cfgPath string) cli.Diagnostic {
 // isLocalAddr returns true for localhost/127.0.0.1/::1 or empty address.
 func isLocalAddr(addr string) bool {
 	host := addr
-	if h, _, err := splitHostPort(addr); err == nil {
+	if h, _, err := net.SplitHostPort(addr); err == nil {
 		host = h
 	}
 	return host == "" || host == "localhost" || host == "127.0.0.1" || host == "::1"
-}
-
-func splitHostPort(addr string) (string, string, error) {
-	i := strings.LastIndex(addr, ":")
-	if i < 0 {
-		return addr, "", fmt.Errorf("no port")
-	}
-	return addr[:i], addr[i+1:], nil
 }

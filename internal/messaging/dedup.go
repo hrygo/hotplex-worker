@@ -15,6 +15,7 @@ type Dedup struct {
 	maxEntries int
 	ttl        time.Duration
 	done       chan struct{}
+	closeOnce  sync.Once
 }
 
 // NewDedup creates a new bounded dedup map.
@@ -99,9 +100,11 @@ func (d *Dedup) Len() int {
 
 // Close stops the cleanup goroutine started by StartCleanup.
 func (d *Dedup) Close() {
-	if d.done != nil {
-		close(d.done)
-	}
+	d.closeOnce.Do(func() {
+		if d.done != nil {
+			close(d.done)
+		}
+	})
 }
 
 func (d *Dedup) cleanupLoop() {

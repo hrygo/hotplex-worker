@@ -194,7 +194,7 @@ func TestManager_Close(t *testing.T) {
 		require.NoError(t, err)
 	})
 
-	t.Run("多文件关闭收集错误", func(t *testing.T) {
+	t.Run("幂等关闭 nil-out 已关闭 FD", func(t *testing.T) {
 		// 使用临时文件，关闭后再次关闭会返回错误
 		tmp1, err := os.CreateTemp("", "proc-close-*.tmp")
 		require.NoError(t, err)
@@ -216,11 +216,10 @@ func TestManager_Close(t *testing.T) {
 		require.NoError(t, f1.Close())
 		require.NoError(t, f2.Close())
 
-		// 第二次关闭返回错误
+		// 第二次关闭幂等 — os.ErrClosed 被忽略
 		m := &Manager{stdin: f1, stdout: f2}
 		err = m.Close()
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "proc: close")
+		require.NoError(t, err)
 	})
 }
 

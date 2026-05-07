@@ -1,7 +1,7 @@
 {
   "version": 2,
-  "last_updated": "2026-05-08T01:13:00+08:00",
-  "total_cycles": 25,
+  "last_updated": "2026-05-08T01:54:00+08:00",
+  "total_cycles": 26,
   "modules": {
     "internal/gateway": {
       "analysis_count": 2,
@@ -107,20 +107,22 @@
       "stats": {"files": 7, "lines": 2743}
     },
     "internal/security": {
-      "analysis_count": 1,
-      "aspects_covered": ["solid", "dry"],
-      "aspects_pending": ["coupling", "error-handling", "concurrency", "resource-mgmt", "performance", "scalability", "security", "observability", "testability", "code-quality"],
-      "issues_created": [208],
-      "findings_total": 3,
+      "analysis_count": 2,
+      "aspects_covered": ["solid", "dry", "coupling", "error-handling"],
+      "aspects_pending": ["concurrency", "resource-mgmt", "performance", "scalability", "security", "observability", "testability", "code-quality"],
+      "issues_created": [208, 290],
+      "findings_total": 5,
       "findings_dropped": [
         {"finding": "command.go has 3 concerns (whitelist, dangerous chars, bash policy)", "reason": "Low ROI — all command-security related, cohesive within the file"},
         {"finding": "ValidateAPIKey placement in jwt.go instead of auth.go", "reason": "Low ROI — just file organization, no functional impact"},
         {"finding": "AllowedTools/AllowedModels hardcoded maps", "reason": "Low ROI — intentional for security, new entries require code review"},
         {"finding": "sensitiveEnvPrefixes redundant entries", "reason": "Low ROI — defense-in-depth, extra entries add safety margin"},
         {"finding": "Platform-specific ConfigureFromConfig duplication", "reason": "Low confidence — build tags require separate files, Windows differs intentionally"},
-        {"finding": "Two parallel worker env construction paths", "reason": "Low ROI — different use cases, both needed"}
+        {"finding": "Two parallel worker env construction paths", "reason": "Low ROI — different use cases, both needed"},
+        {"finding": "Authenticator DIP violation on concrete config.SecurityConfig", "reason": "Medium confidence, Low ROI — common Go pattern, config struct is stable"},
+        {"finding": "mustGenerateJTI silent degradation on crypto/rand failure", "reason": "Medium confidence, Low ROI — extremely rare edge case"}
       ],
-      "last_analyzed": "2026-05-06T11:22:00+08:00",
+      "last_analyzed": "2026-05-08T01:54:00+08:00",
       "stats": {"files": 19, "lines": 4812}
     },
     "internal/agentconfig": {
@@ -272,7 +274,7 @@
       "stats": {"files": 36, "lines": 3697}
     }
   },
-  "issues": [198, 199, 202, 204, 205, 206, 207, 208, 210, 212, 213, 214, 215, 216, 217, 218, 219],
+  "issues": [198, 199, 202, 204, 205, 206, 207, 208, 210, 212, 213, 214, 215, 216, 217, 218, 219, 290],
   "audited_issues": [
     {"number": 198, "verdict": "valid", "action": "confirmed", "audited_at": "2026-05-08T00:35:00+08:00"},
     {"number": 199, "verdict": "valid", "action": "confirmed", "audited_at": "2026-05-08T00:35:00+08:00"},
@@ -319,6 +321,7 @@
     {"cycle": 22, "mode": "audit", "issues_audited": [224, 226, 227, 228, 229], "closed": 0, "updated": 0, "confirmed": 5, "time": "2026-05-08T00:42:00+08:00"},
     {"cycle": 23, "mode": "audit", "issues_audited": [231, 237, 239, 240, 241], "closed": 0, "updated": 1, "confirmed": 4, "time": "2026-05-08T00:53:00+08:00"},
     {"cycle": 24, "mode": "audit", "issues_audited": [242, 243, 244, 245, 246], "closed": 0, "updated": 0, "confirmed": 5, "time": "2026-05-08T01:03:00+08:00"},
-    {"cycle": 25, "module": "internal/config", "aspects": ["coupling", "error-handling"], "issues": [], "time": "2026-05-08T01:13:00+08:00"}
+    {"cycle": 25, "module": "internal/config", "aspects": ["coupling", "error-handling"], "issues": [], "time": "2026-05-08T01:13:00+08:00"},
+    {"cycle": 26, "module": "internal/security", "aspects": ["coupling", "error-handling"], "issues": [290], "time": "2026-05-08T01:54:00+08:00"}
   ]
 }
