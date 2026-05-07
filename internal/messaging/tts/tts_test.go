@@ -247,7 +247,7 @@ func TestNewKokoroSynthesizer_Defaults(t *testing.T) {
 	require.NotNil(t, k)
 	assert.Equal(t, "af_heart", k.voice)
 	assert.Equal(t, 30*time.Minute, k.idleTimeout)
-	assert.False(t, k.isLoaded)
+	assert.Nil(t, k.session, "session should be nil before load")
 	assert.False(t, k.closed)
 }
 
@@ -266,20 +266,6 @@ func TestNewKokoroSynthesizerWithOptions_NegativeTimeout(t *testing.T) {
 	assert.Equal(t, 30*time.Minute, k.idleTimeout, "negative timeout should fall back to 30m default")
 }
 
-func TestKokoroSynthesizer_LazyLoads(t *testing.T) {
-	t.Parallel()
-
-	k := NewKokoroSynthesizer("model.onnx", "af_heart", slog.Default())
-	assert.False(t, k.isLoaded, "model should not be loaded before first Synthesize")
-
-	// Synthesize triggers lazy load (stub returns error, but model should be loaded)
-	_, _ = k.Synthesize(context.Background(), "hello")
-
-	k.mu.Lock()
-	assert.True(t, k.isLoaded, "model should be loaded after Synthesize")
-	k.mu.Unlock()
-}
-
 func TestKokoroSynthesizer_EmptyText(t *testing.T) {
 	t.Parallel()
 
@@ -293,74 +279,24 @@ func TestKokoroSynthesizer_RejectsAfterClose(t *testing.T) {
 	t.Parallel()
 
 	k := NewKokoroSynthesizer("model.onnx", "", slog.Default())
-	// Load it first
-	_, _ = k.Synthesize(context.Background(), "hello")
-
 	err := k.Close(context.Background())
 	require.NoError(t, err)
 
 	k.mu.Lock()
 	assert.True(t, k.closed)
-	assert.False(t, k.isLoaded, "model should be unloaded after Close")
+	assert.Nil(t, k.session, "session should be nil after Close")
 	k.mu.Unlock()
 
-	// Synthesize after Close should return ErrSynthesizerClosed
 	_, err = k.Synthesize(context.Background(), "hello again")
 	assert.ErrorIs(t, err, ErrSynthesizerClosed)
 }
 
-func TestKokoroSynthesizer_IdleUnload(t *testing.T) {
+func TestKokoroSynthesizer_LoadFailsWithoutModel(t *testing.T) {
 	t.Parallel()
 
-	k := NewKokoroSynthesizerWithOptions("model.onnx", "", 100*time.Millisecond, slog.Default())
-
-	// Trigger lazy load
-	_, _ = k.Synthesize(context.Background(), "hello")
-
-	k.mu.Lock()
-	assert.True(t, k.isLoaded)
-	k.mu.Unlock()
-
-	// Wait for idle timer to fire
-	time.Sleep(300 * time.Millisecond)
-
-	k.mu.Lock()
-	loaded := k.isLoaded
-	k.mu.Unlock()
-	assert.False(t, loaded, "model should be unloaded after idle timeout")
-}
-
-func TestKokoroSynthesizer_IdleTimerResets(t *testing.T) {
-	t.Parallel()
-
-	k := NewKokoroSynthesizerWithOptions("model.onnx", "", 200*time.Millisecond, slog.Default())
-
-	// First call
-	_, _ = k.Synthesize(context.Background(), "hello")
-
-	k.mu.Lock()
-	assert.True(t, k.isLoaded)
-	k.mu.Unlock()
-
-	// After 100ms, call again (should reset timer)
-	time.Sleep(100 * time.Millisecond)
-	_, _ = k.Synthesize(context.Background(), "hello again")
-
-	// After another 100ms (total 200ms from start, but only 100ms from last use)
-	time.Sleep(100 * time.Millisecond)
-
-	k.mu.Lock()
-	loaded := k.isLoaded
-	k.mu.Unlock()
-	assert.True(t, loaded, "model should still be loaded because timer was reset")
-
-	// Wait for the full idle period from last use
-	time.Sleep(200 * time.Millisecond)
-
-	k.mu.Lock()
-	loaded = k.isLoaded
-	k.mu.Unlock()
-	assert.False(t, loaded, "model should be unloaded after full idle timeout")
+	k := NewKokoroSynthesizer("nonexistent_model.onnx", "", slog.Default())
+	_, err := k.Synthesize(context.Background(), "hello")
+	assert.Error(t, err, "should fail when model file does not exist")
 }
 
 // --- Factory Tests ---
