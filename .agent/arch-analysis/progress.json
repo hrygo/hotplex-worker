@@ -1,7 +1,7 @@
 {
   "version": 2,
   "last_updated": "2026-05-08T01:55:00+08:00",
-  "total_cycles": 31,
+  "total_cycles": 32,
   "modules": {
     "internal/gateway": {
       "analysis_count": 2,
@@ -219,18 +219,20 @@
       "stats": {"files": 4, "lines": 621}
     },
     "internal/service": {
-      "analysis_count": 1,
-      "aspects_covered": ["solid", "dry"],
-      "aspects_pending": ["coupling", "error-handling", "concurrency", "resource-mgmt", "performance", "scalability", "security", "observability", "testability", "code-quality"],
+      "analysis_count": 2,
+      "aspects_covered": ["solid", "dry", "coupling", "error-handling"],
+      "aspects_pending": ["concurrency", "resource-mgmt", "performance", "scalability", "security", "observability", "testability", "code-quality"],
       "issues_created": [],
       "findings_total": 0,
       "findings_dropped": [
         {"finding": "Windows SCM connectSCM + OpenService boilerplate in 4 methods", "reason": "Low ROI — error handling differs per method, Windows SCM is stable, extracting adds complexity"},
         {"finding": "Darwin/Windows identical Restart implementation", "reason": "Low ROI — 7 lines each, very stable code, base struct extraction is over-engineering"},
         {"finding": "LogDir vs logDirForHome near-duplication", "reason": "Low ROI — 3-line functions serving different purposes, minimal impact"},
-        {"finding": "Darwin Start already-loaded handling", "reason": "Low ROI — platform-specific behavior, correct as-is"}
+        {"finding": "Darwin Start already-loaded handling", "reason": "Low ROI — platform-specific behavior, correct as-is"},
+        {"finding": "LogDir silent error ignore on os.UserHomeDir (service.go:85)", "reason": "Low confidence + Low ROI — UserHomeDir practically never fails, unlikely edge case"},
+        {"finding": "Coupling: zero internal dependencies, clean Manager interface abstraction", "reason": "No issue — positive finding, exemplary platform-abstraction module"}
       ],
-      "last_analyzed": "2026-05-06T12:10:00+08:00",
+      "last_analyzed": "2026-05-08T02:45:00+08:00",
       "stats": {"files": 10, "lines": 1092}
     },
     "internal/updater": {
@@ -344,6 +346,7 @@
     {"cycle": 28, "module": "internal/admin", "aspects": ["coupling", "error-handling"], "issues": [292], "time": "2026-05-08T02:00:00+08:00"},
     {"cycle": 29, "module": "internal/eventstore", "aspects": ["coupling", "error-handling"], "issues": [293], "time": "2026-05-08T02:18:00+08:00"},
     {"cycle": 30, "module": "internal/cli", "aspects": ["coupling", "error-handling"], "issues": [], "time": "2026-05-08T02:25:00+08:00"},
-    {"cycle": 31, "module": "internal/skills", "aspects": ["coupling", "error-handling"], "issues": [], "time": "2026-05-08T02:34:00+08:00"}
+    {"cycle": 31, "module": "internal/skills", "aspects": ["coupling", "error-handling"], "issues": [], "time": "2026-05-08T02:34:00+08:00"},
+    {"cycle": 32, "module": "internal/service", "aspects": ["coupling", "error-handling"], "issues": [], "time": "2026-05-08T02:45:00+08:00"}
   ]
 }

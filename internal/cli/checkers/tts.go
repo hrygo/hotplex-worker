@@ -2,6 +2,7 @@ package checkers
 
 import (
 	"context"
+	"os"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -135,12 +136,16 @@ func findOnnxRuntimeLib() string {
 	case "darwin":
 		candidates = []string{"/usr/local/lib/libonnxruntime.dylib", "/opt/homebrew/lib/libonnxruntime.dylib"}
 	case "linux":
-		candidates = []string{"/usr/lib/x86_64-linux-gnu/libonnxruntime.so", "/usr/local/lib/libonnxruntime.so"}
+		candidates = []string{
+			"/usr/lib/x86_64-linux-gnu/libonnxruntime.so",
+			"/usr/lib/aarch64-linux-gnu/libonnxruntime.so",
+			"/usr/local/lib/libonnxruntime.so",
+		}
 	case "windows":
 		candidates = []string{`C:\Program Files\onnxruntime\lib\onnxruntime.dll`}
 	}
 	for _, p := range candidates {
-		if _, err := exec.LookPath(p); err == nil {
+		if _, err := os.Stat(p); err == nil {
 			return p
 		}
 	}
