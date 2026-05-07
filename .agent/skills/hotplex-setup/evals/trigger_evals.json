@@ -32,11 +32,6 @@
       "reason": "Requirements inquiry"
     },
     {
-      "query": "Verify the environment is set up correctly",
-      "should_trigger": true,
-      "reason": "Environment check"
-    },
-    {
       "query": "Port 8888 is already in use",
       "should_trigger": true,
       "reason": "Port conflict troubleshooting"
@@ -50,6 +45,31 @@
       "query": "Setup the .env configuration file",
       "should_trigger": true,
       "reason": "Configuration setup"
+    },
+    {
+      "query": "HotPlex doctor 报了一些错误，帮我看看怎么修复",
+      "should_trigger": true,
+      "reason": "Chinese: doctor errors need fixing"
+    },
+    {
+      "query": "我第一次用 HotPlex，飞书对接怎么配置？",
+      "should_trigger": true,
+      "reason": "Chinese: first-time Feishu setup"
+    },
+    {
+      "query": "hotplex onboard 向导怎么用？",
+      "should_trigger": true,
+      "reason": "Chinese: onboard wizard usage"
+    },
+    {
+      "query": "TTS 语音回复不工作，doctor 说 ffmpeg 未找到",
+      "should_trigger": true,
+      "reason": "Chinese: TTS/ffmpeg issue"
+    },
+    {
+      "query": "帮我把 HotPlex 的 Agent 人格配置一下",
+      "should_trigger": true,
+      "reason": "Chinese: Agent personality configuration"
     },
     {
       "query": "Setup a meeting for tomorrow",
@@ -82,19 +102,19 @@
       "reason": "Docker setup, not HotPlex-specific"
     },
     {
-      "query": "Configure the VPN connection",
+      "query": "配置一下 VPN 连接",
       "should_trigger": false,
-      "reason": "Network configuration, not HotPlex"
+      "reason": "Chinese: VPN config, not HotPlex"
     },
     {
-      "query": "Setup the test environment",
+      "query": "帮我搭建一个 Next.js 项目",
       "should_trigger": false,
-      "reason": "Generic test setup, not HotPlex installation"
+      "reason": "Chinese: Next.js project setup, not HotPlex"
     },
     {
-      "query": "I need to set up my development machine",
+      "query": "Python 环境怎么配置？",
       "should_trigger": false,
-      "reason": "Generic dev setup, not HotPlex-specific"
+      "reason": "Chinese: generic Python setup, no HotPlex context"
     },
     {
       "query": "Configure Slack bot for another project",
