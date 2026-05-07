@@ -524,9 +524,10 @@ func Default() *Config {
 					LocalIdleTTL: time.Hour,
 				},
 				TTSConfig: TTSConfig{
+					Enabled:     true,
 					TTSProvider: "edge",
 					Voice:       "zh-CN-XiaoxiaoNeural",
-					MaxChars:    2000,
+					MaxChars:    150,
 				},
 			},
 			Slack: SlackConfig{
@@ -537,6 +538,12 @@ func Default() *Config {
 					Provider:     "local",
 					LocalCmd:     "python3 " + filepath.Join(HotplexHome(), "scripts", "stt_server.py"),
 					LocalIdleTTL: time.Hour,
+				},
+				TTSConfig: TTSConfig{
+					Enabled:     true,
+					TTSProvider: "edge",
+					Voice:       "zh-CN-XiaoxiaoNeural",
+					MaxChars:    150,
 				},
 			},
 		},
@@ -628,6 +635,10 @@ func Load(filePath string, opts LoadOptions) (*Config, error) {
 	_ = v.BindEnv("messaging.feishu.tts_provider")
 	_ = v.BindEnv("messaging.feishu.tts_voice")
 	_ = v.BindEnv("messaging.feishu.tts_max_chars")
+	_ = v.BindEnv("messaging.slack.tts_enabled")
+	_ = v.BindEnv("messaging.slack.tts_provider")
+	_ = v.BindEnv("messaging.slack.tts_voice")
+	_ = v.BindEnv("messaging.slack.tts_max_chars")
 
 	if err := v.Unmarshal(cfg); err != nil {
 		return nil, fmt.Errorf("config: environment override: %w", err)

@@ -203,6 +203,11 @@ messaging:
     stt_provider: "local"
     stt_local_cmd: "python3 ~/.hotplex/scripts/stt_server.py"
     stt_local_idle_ttl: 1h
+    # TTS (Text-to-Speech) — voice replies for voice-triggered turns
+    tts_enabled: true
+    tts_provider: "edge"
+    tts_voice: "zh-CN-XiaoxiaoNeural"
+    tts_max_chars: 150
 
   feishu:
     enabled: false
@@ -215,7 +220,7 @@ messaging:
     stt_local_cmd: "python3 ~/.hotplex/scripts/stt_server.py"
     stt_local_idle_ttl: 1h
     # TTS (Text-to-Speech) — voice replies for voice-triggered turns
-    # tts_enabled: false
-    # tts_provider: "edge"
-    # tts_voice: "zh-CN-XiaoxiaoNeural"
-    # tts_max_chars: 2000
+    tts_enabled: true
+    tts_provider: "edge"
+    tts_voice: "zh-CN-XiaoxiaoNeural"
+    tts_max_chars: 150

@@ -27,7 +27,7 @@ type TTSPipeline struct {
 
 func NewTTSPipeline(synthesizer tts.Synthesizer, client *slack.Client, maxChars int, log *slog.Logger) *TTSPipeline {
 	if maxChars <= 0 {
-		maxChars = 2000
+		maxChars = 150
 	}
 	return &TTSPipeline{
 		synthesizer: synthesizer,
