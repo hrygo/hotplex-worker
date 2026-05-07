@@ -604,9 +604,16 @@ func TestJTIBlacklist(t *testing.T) {
 		require.NotPanics(t, func() {
 			b.Stop()
 		})
+	})
 
-		// Double stop should not panic (channel already closed)
-		// Note: this will panic, but that's expected behavior
+	t.Run("double Stop does not panic", func(t *testing.T) {
+		t.Parallel()
+		b := newJTIBlacklist()
+
+		require.NotPanics(t, func() {
+			b.Stop()
+			b.Stop()
+		})
 	})
 
 	t.Run("concurrent access", func(t *testing.T) {

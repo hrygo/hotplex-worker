@@ -706,7 +706,9 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		c.adapter.Interactions.CancelAll(env.SessionID)
 		if streamCtrl != nil && streamCtrl.IsCreated() {
 			closeCtx, closeCancel := context.WithTimeout(context.Background(), 5*time.Second)
-			_ = streamCtrl.Close(closeCtx)
+			if err := streamCtrl.Close(closeCtx); err != nil {
+				c.adapter.Log.Warn("feishu: failed to close streaming card on error", "err", err)
+			}
 			closeCancel()
 		}
 		// Extract error text and send as simple message

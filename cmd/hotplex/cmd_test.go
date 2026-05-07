@@ -81,3 +81,23 @@ func TestLoadEnvFile(t *testing.T) {
 		_ = os.Unsetenv("TEST_VAR_4")
 	})
 }
+
+func TestLoadEnvFile_ProtectedVars(t *testing.T) {
+	tmpDir := t.TempDir()
+	originalHome := os.Getenv("HOME")
+	t.Cleanup(func() { _ = os.Setenv("HOME", originalHome) })
+
+	envPath := tmpDir + "/.env"
+	content := "HOME=/evil\nCLAUDECODE=/evil\nTEST_UNPROTECTED=yes\n"
+	err := os.WriteFile(envPath, []byte(content), 0o644)
+	require.NoError(t, err)
+
+	loadEnvFile(tmpDir)
+
+	// Protected vars must NOT be overwritten.
+	require.Equal(t, originalHome, os.Getenv("HOME"), "HOME should not be overwritten by .env")
+	require.NotEqual(t, "/evil", os.Getenv("CLAUDECODE"), "CLAUDECODE should not be overwritten by .env")
+	// Non-protected vars should be loaded normally.
+	require.Equal(t, "yes", os.Getenv("TEST_UNPROTECTED"))
+	t.Cleanup(func() { _ = os.Unsetenv("TEST_UNPROTECTED") })
+}

@@ -257,7 +257,9 @@ func (m *Manager) Wait() (int, error) {
 
 	m.waitOnce.Do(func() { m.waitErr = m.cmd.Wait() })
 	m.captureExitCodeLocked()
-	_ = m.closeLocked()
+	if closeErr := m.closeLocked(); closeErr != nil {
+		m.log.Warn("proc: pipe close after wait", "err", closeErr)
+	}
 	return m.exitCode, m.waitErr
 }
 

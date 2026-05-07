@@ -1,7 +1,7 @@
 {
   "version": 2,
-  "last_updated": "2026-05-08T01:54:00+08:00",
-  "total_cycles": 26,
+  "last_updated": "2026-05-08T01:55:00+08:00",
+  "total_cycles": 27,
   "modules": {
     "internal/gateway": {
       "analysis_count": 2,
@@ -126,17 +126,19 @@
       "stats": {"files": 19, "lines": 4812}
     },
     "internal/agentconfig": {
-      "analysis_count": 1,
-      "aspects_covered": ["solid", "dry"],
-      "aspects_pending": ["coupling", "error-handling", "concurrency", "resource-mgmt", "performance", "scalability", "security", "observability", "testability", "code-quality"],
+      "analysis_count": 2,
+      "aspects_covered": ["solid", "dry", "coupling", "error-handling"],
+      "aspects_pending": ["concurrency", "resource-mgmt", "performance", "scalability", "security", "observability", "testability", "code-quality"],
       "issues_created": [],
       "findings_total": 0,
       "findings_dropped": [
         {"finding": "BuildSystemPrompt repetitive XML wrapping (5 similar blocks)", "reason": "Low ROI — 88-line function, explicit is better than abstract for security-sensitive prompt assembly"},
         {"finding": "configFiles list vs Load hardcoded 5 file names", "reason": "Low ROI — adding config files is rare, current approach is auditable"},
-        {"finding": "B/C channel assembly symmetry", "reason": "Low ROI — symmetry is inherent to the domain"}
+        {"finding": "B/C channel assembly symmetry", "reason": "Low ROI — symmetry is inherent to the domain"},
+        {"finding": "reservedTags list duplicates BuildSystemPrompt tag names", "reason": "Low ROI — 10 entries, adding tags is rare and reviewed, DRY violation was already evaluated in Phase 1"},
+        {"finding": "readFile wraps error with name but not full path", "reason": "Low ROI — caller knows dir, name is always a known config file"}
       ],
-      "last_analyzed": "2026-05-06T11:24:00+08:00",
+      "last_analyzed": "2026-05-08T01:55:00+08:00",
       "stats": {"files": 3, "lines": 651}
     },
     "internal/admin": {
@@ -322,6 +324,7 @@
     {"cycle": 23, "mode": "audit", "issues_audited": [231, 237, 239, 240, 241], "closed": 0, "updated": 1, "confirmed": 4, "time": "2026-05-08T00:53:00+08:00"},
     {"cycle": 24, "mode": "audit", "issues_audited": [242, 243, 244, 245, 246], "closed": 0, "updated": 0, "confirmed": 5, "time": "2026-05-08T01:03:00+08:00"},
     {"cycle": 25, "module": "internal/config", "aspects": ["coupling", "error-handling"], "issues": [], "time": "2026-05-08T01:13:00+08:00"},
-    {"cycle": 26, "module": "internal/security", "aspects": ["coupling", "error-handling"], "issues": [290], "time": "2026-05-08T01:54:00+08:00"}
+    {"cycle": 26, "module": "internal/security", "aspects": ["coupling", "error-handling"], "issues": [290], "time": "2026-05-08T01:54:00+08:00"},
+    {"cycle": 27, "module": "internal/agentconfig", "aspects": ["coupling", "error-handling"], "issues": [], "time": "2026-05-08T01:55:00+08:00"}
   ]
 }
