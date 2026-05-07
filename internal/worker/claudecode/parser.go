@@ -14,7 +14,6 @@ const (
 	EventStream       EventType = "stream"
 	EventAssistant    EventType = "assistant"
 	EventToolProgress EventType = "tool_progress"
-	EventToolResult   EventType = "tool_result" // tool completed (from user type messages)
 	EventResult       EventType = "result"
 	EventControl      EventType = "control"
 	EventSystem       EventType = "system"
@@ -121,9 +120,7 @@ func (p *Parser) ParseLine(line string) ([]*WorkerEvent, error) {
 	case "session_state_changed":
 		return p.parseSessionState(&msg)
 	case "user":
-		// Claude Code echoes tool results as user type messages.
-		// Emit as signal event for activity feedback (no payload needed).
-		return []*WorkerEvent{{Type: EventToolResult}}, nil
+		return p.parseUser(&msg)
 	default:
 		// Ignore unknown types (files_persisted, hook_*, task_*, rate_limit, etc.)
 		p.log.Debug("parser: ignoring unknown message type", "type", msg.Type)
@@ -231,6 +228,77 @@ func (p *Parser) parseAssistant(msg *SDKMessage) ([]*WorkerEvent, error) {
 	}
 
 	return events, nil
+}
+
+// parseUser handles user type messages from Claude Code SDK.
+// User messages carry tool_result content blocks with tool execution output.
+func (p *Parser) parseUser(msg *SDKMessage) ([]*WorkerEvent, error) {
+	if len(msg.Message) == 0 {
+		return nil, nil
+	}
+
+	var userMsg AssistantMessage // same shape: {role, content: []ContentBlock}
+	if err := json.Unmarshal(msg.Message, &userMsg); err != nil {
+		return nil, fmt.Errorf("parser: unmarshal user: %w", err)
+	}
+
+	var blocks []ContentBlock
+	if err := json.Unmarshal(userMsg.Content, &blocks); err != nil {
+		return nil, fmt.Errorf("parser: unmarshal user content blocks: %w", err)
+	}
+
+	var events []*WorkerEvent
+	for _, block := range blocks {
+		if block.Type != "tool_result" || block.ToolUseID == "" {
+			continue
+		}
+		events = append(events, &WorkerEvent{
+			Type: EventToolProgress,
+			Payload: &ToolResultPayload{
+				ToolUseID: block.ToolUseID,
+				Output:    extractToolResultContent(block.Content),
+				Error:     extractToolResultError(block),
+			},
+			RawMessage: msg,
+		})
+	}
+	return events, nil
+}
+
+// extractToolResultContent extracts output from a tool_result content block.
+// Content can be a string, an array of content blocks, or omitted.
+func extractToolResultContent(content json.RawMessage) any {
+	if len(content) == 0 {
+		return nil
+	}
+	var s string
+	if json.Unmarshal(content, &s) == nil {
+		return s
+	}
+	var blocks []ContentBlock
+	if json.Unmarshal(content, &blocks) == nil {
+		var parts []string
+		for _, b := range blocks {
+			if b.Type == "text" && b.Text != "" {
+				parts = append(parts, b.Text)
+			}
+		}
+		if len(parts) > 0 {
+			return strings.Join(parts, "\n")
+		}
+	}
+	return string(content)
+}
+
+// extractToolResultError returns an error message if the tool_result block indicates failure.
+func extractToolResultError(block ContentBlock) string {
+	if !block.IsError {
+		return ""
+	}
+	if s, ok := extractToolResultContent(block.Content).(string); ok {
+		return s
+	}
+	return "tool error"
 }
 
 // parseToolProgress handles tool_progress messages.

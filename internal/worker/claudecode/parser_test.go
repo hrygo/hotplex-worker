@@ -329,3 +329,91 @@ func TestParser_ParseLine_InvalidJSON(t *testing.T) {
 	require.Error(t, err)
 	require.Nil(t, events)
 }
+
+func TestParser_ParseLine_UserToolResult(t *testing.T) {
+	log := newTestLogger()
+	parser := NewParser(log)
+
+	t.Run("single tool_result block", func(t *testing.T) {
+		line := `{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_abc123","content":"file content here"}]}}`
+
+		events, err := parser.ParseLine(line)
+		require.NoError(t, err)
+		require.Len(t, events, 1)
+
+		require.Equal(t, EventToolProgress, events[0].Type)
+		payload, ok := events[0].Payload.(*ToolResultPayload)
+		require.True(t, ok)
+		require.Equal(t, "toolu_abc123", payload.ToolUseID)
+		require.Equal(t, "file content here", payload.Output)
+		require.Empty(t, payload.Error)
+	})
+
+	t.Run("multiple tool_result blocks", func(t *testing.T) {
+		line := `{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_111","content":"output 1"},{"type":"tool_result","tool_use_id":"toolu_222","content":"output 2"}]}}`
+
+		events, err := parser.ParseLine(line)
+		require.NoError(t, err)
+		require.Len(t, events, 2)
+
+		p1 := events[0].Payload.(*ToolResultPayload)
+		require.Equal(t, "toolu_111", p1.ToolUseID)
+		require.Equal(t, "output 1", p1.Output)
+
+		p2 := events[1].Payload.(*ToolResultPayload)
+		require.Equal(t, "toolu_222", p2.ToolUseID)
+		require.Equal(t, "output 2", p2.Output)
+	})
+
+	t.Run("tool_result with content array", func(t *testing.T) {
+		line := `{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_arr","content":[{"type":"text","text":"line 1"},{"type":"text","text":"line 2"}]}]}}`
+
+		events, err := parser.ParseLine(line)
+		require.NoError(t, err)
+		require.Len(t, events, 1)
+
+		payload := events[0].Payload.(*ToolResultPayload)
+		require.Equal(t, "toolu_arr", payload.ToolUseID)
+		require.Equal(t, "line 1\nline 2", payload.Output)
+	})
+
+	t.Run("tool_result with null content", func(t *testing.T) {
+		line := `{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_null"}]}}`
+
+		events, err := parser.ParseLine(line)
+		require.NoError(t, err)
+		require.Len(t, events, 1)
+
+		payload := events[0].Payload.(*ToolResultPayload)
+		require.Equal(t, "toolu_null", payload.ToolUseID)
+		require.Nil(t, payload.Output)
+	})
+
+	t.Run("user message with no message body", func(t *testing.T) {
+		line := `{"type":"user"}`
+
+		events, err := parser.ParseLine(line)
+		require.NoError(t, err)
+		require.Nil(t, events)
+	})
+
+	t.Run("user message with plain text only", func(t *testing.T) {
+		line := `{"type":"user","message":{"role":"user","content":[{"type":"text","text":"hello"}]}}`
+
+		events, err := parser.ParseLine(line)
+		require.NoError(t, err)
+		require.Nil(t, events)
+	})
+
+	t.Run("tool_result with is_error", func(t *testing.T) {
+		line := `{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_err","is_error":true,"content":"permission denied"}]}}`
+
+		events, err := parser.ParseLine(line)
+		require.NoError(t, err)
+		require.Len(t, events, 1)
+
+		payload := events[0].Payload.(*ToolResultPayload)
+		require.Equal(t, "toolu_err", payload.ToolUseID)
+		require.Equal(t, "permission denied", payload.Error)
+	})
+}

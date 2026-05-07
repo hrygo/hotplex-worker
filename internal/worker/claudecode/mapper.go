@@ -98,15 +98,6 @@ func (m *Mapper) Map(evt *WorkerEvent) ([]*events.Envelope, error) {
 			return nil, fmt.Errorf("mapper: session_state payload is not json.RawMessage: %T", evt.Payload)
 		}
 		return m.mapRawStringPayload(raw, m.mapSessionState)
-	case EventToolResult:
-		// Signal-only: tool completed. Emit lightweight tool_result for activity feedback.
-		return []*events.Envelope{events.NewEnvelope(
-			aep.NewID(),
-			m.sessionID,
-			m.seqGen(),
-			events.ToolResult,
-			events.ToolResultData{},
-		)}, nil
 	default:
 		return nil, fmt.Errorf("mapper: unknown event type: %v", evt.Type)
 	}
