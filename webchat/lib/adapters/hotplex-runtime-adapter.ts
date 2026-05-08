@@ -13,7 +13,6 @@ import { WorkerStdioCommand } from '@/lib/ai-sdk-transport/client/constants';
 import { wsUrl, workerType, apiKey, workDir, allowedTools } from '@/lib/config';
 import { useMetrics } from '@/lib/hooks/useMetrics';
 import { getSessionHistory, type ConversationRecord } from '@/lib/api/sessions';
-import { saveMessages, loadMessages, type CacheableMessage } from '@/lib/cache/message-cache';
 import { conversationTurnsToMessages } from '@/lib/utils/turn-replay';
 import type {
   Envelope,
@@ -107,45 +106,6 @@ function convertToThreadMessage(message: HotPlexMessage): ThreadMessageLike {
 // ============================================================================
 // History Conversion Helpers
 // ============================================================================
-
-// Convert runtime HotPlexMessage to CacheableMessage for LocalStorage
-function toCacheable(msg: HotPlexMessage): CacheableMessage {
-  return {
-    id: msg.id,
-    role: msg.role,
-    parts: (msg.parts ?? []).filter((p): p is TextPart | ReasoningPart | ToolSummaryPart =>
-      p.type === 'text' || p.type === 'reasoning' || p.type === 'tool-summary'
-    ).map(p => ({
-      type: p.type,
-      text: 'text' in p ? p.text : undefined,
-      toolNames: 'toolNames' in p ? p.toolNames : undefined,
-      count: 'count' in p ? p.count : undefined,
-    })),
-    createdAt: msg.createdAt instanceof Date && !isNaN(msg.createdAt.getTime())
-      ? msg.createdAt.toISOString()
-      : new Date().toISOString(),
-    status: msg.status,
-  };
-}
-
-// Convert CacheableMessage from LocalStorage back to HotPlexMessage
-function fromCacheable(msg: CacheableMessage): HotPlexMessage {
-  return {
-    id: msg.id,
-    role: msg.role as 'user' | 'assistant',
-    parts: (msg.parts || []).map(p => {
-      if (p.type === 'tool-summary') {
-        return { type: 'tool-summary' as const, toolNames: (p as any).toolNames || [], count: (p as any).count || 0 };
-      }
-      if (p.type === 'reasoning') {
-        return { type: 'reasoning' as const, text: p.text || '' };
-      }
-      return { type: 'text' as const, text: p.text || '' };
-    }),
-    createdAt: new Date(msg.createdAt),
-    status: msg.status,
-  };
-}
 
 // Convert ConversationRecord[] from API to HotPlexMessage[]
 function historyToMessages(records: ConversationRecord[]): HotPlexMessage[] {
@@ -253,26 +213,13 @@ export function useHotPlexRuntime({
     onMetricsChange?.(sessionMetrics);
   }, [sessionMetrics, onMetricsChange]);
 
-  // Persist messages to LocalStorage on change
-  useEffect(() => {
-    if (sessionId && messages.length > 0) {
-      saveMessages(sessionId, messages.filter(m => m.status !== 'streaming').map(toCacheable));
-    }
-  }, [sessionId, messages]);
-
   // Load history on session switch
   useEffect(() => {
     if (!sessionId) return;
     sessionIdRef.current = sessionId;
     setHistoryHasMore(true);
 
-    // L2: Load from LocalStorage first for instant restore
-    const cached = loadMessages(sessionId);
-    if (cached && cached.length > 0) {
-      setMessages(cached.map(fromCacheable));
-    }
-
-    // Then fetch authoritative history from server
+    // Fetch authoritative history from server
     getSessionHistory(sessionId, { limit: 50 })
       .then(res => {
         if (res.records.length > 0) {
@@ -301,12 +248,7 @@ export function useHotPlexRuntime({
               const sig = `${m.role}:${extractText(m.parts)}`;
               return !serverSigs.has(sig);
             });
-            const merged = [...serverMessages, ...liveOnly];
-            // Save merged state to cache after state update
-            setTimeout(() => {
-              saveMessages(sessionId, merged.filter(m => m.status !== 'streaming').map(toCacheable));
-            }, 0);
-            return merged;
+            return [...serverMessages, ...liveOnly];
           });
           // Update minSeq cache for cursor-based pagination
           if (serverMessages.length > 0) {
