@@ -172,8 +172,6 @@ func synthesizeEdge(ctx context.Context, text, voice string) ([]byte, error) {
 		}
 		return r.audio, nil
 	case <-ctx.Done():
-		// Force-close connection to unblock the reader goroutine.
-		_ = conn.Close()
 		return nil, fmt.Errorf("tts edge: %w", ctx.Err())
 	}
 }
