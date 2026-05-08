@@ -62,21 +62,21 @@ du -sh ~/.cache/modelscope/hub/models/iic/SenseVoiceSmall
 
 ## STT 脚本部署
 
-### 脚本位置
+STT Python 脚本已内嵌在 HotPlex 二进制中（go:embed），Gateway 启动时自动部署到 `~/.hotplex/scripts/`。**无需手动复制。**
+
+### 脚本位置（自动部署）
+
 ```bash
-~/.hotplex/scripts/stt_once.py   # 临时模式（按请求启动）
-~/.hotplex/scripts/stt_server.py  # 持久化模式（常驻子进程）
-~/.hotplex/scripts/fix_onnx_model.py  # ONNX 模型修补脚本
+~/.hotplex/scripts/stt_once.py          # 临时模式（按请求启动）
+~/.hotplex/scripts/stt_server.py         # 持久化模式（常驻子进程）
+~/.hotplex/scripts/fix_onnx_model.py     # ONNX 模型修补脚本
 ```
 
-### 部署脚本
-```bash
-# 检查脚本
-ls -lh ~/.hotplex/scripts/stt_*.py
+### 验证
 
-# 如不存在，从项目复制
-cp scripts/stt_once.py scripts/stt_server.py scripts/fix_onnx_model.py ~/.hotplex/scripts/
-chmod +x ~/.hotplex/scripts/stt_*.py
+```bash
+ls -lh ~/.hotplex/scripts/stt_*.py
+# 如不存在，重启 Gateway 即可自动部署
 ```
 
 ## STT 配置参数
@@ -157,8 +157,8 @@ python3 -c "import funasr_onnx, modelscope"
 # 2. 检查模型
 test -d ~/.cache/modelscope/hub/models/iic/SenseVoiceSmall
 
-# 3. 检查脚本
-ls -lh ~/.hotplex/scripts/stt_once.py
+# 3. 检查脚本（Gateway 启动时自动部署，如缺失则重启 Gateway）
+ls -lh ~/.hotplex/scripts/stt_*.py
 ```
 
 ### Q: STT 占用内存过高？

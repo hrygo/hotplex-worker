@@ -92,7 +92,6 @@ func TestTTSEnvironmentChecker_MossProvider(t *testing.T) {
 
 	c := ttsEnvironmentChecker{}
 	d := c.Check(context.Background())
-	// Should require ffmpeg + python3 + moss model dir
 	require.Contains(t, []cli.Status{cli.StatusPass, cli.StatusFail}, d.Status)
 }
 
@@ -105,6 +104,44 @@ func TestTTSEnvironmentChecker_MossOnlyProvider(t *testing.T) {
 	c := ttsEnvironmentChecker{}
 	d := c.Check(context.Background())
 	require.Contains(t, []cli.Status{cli.StatusPass, cli.StatusFail}, d.Status)
+}
+
+func TestTTSEnvironmentChecker_MossModelDirWithEntryScript(t *testing.T) {
+	// Create a model dir with app_onnx.py present.
+	modelDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(modelDir, "app_onnx.py"), []byte("# mock"), 0o644))
+
+	dir := t.TempDir()
+	path := writeTTSConfig(t, dir, ttsConfigOpts{
+		feishuEnabled: true, feishuTTS: true, feishuProvider: "edge+moss",
+		mossModelDir: modelDir,
+	})
+	defer resetConfigPath()
+	SetConfigPath(path)
+
+	c := ttsEnvironmentChecker{}
+	d := c.Check(context.Background())
+	// Should not fail on moss entry script (dir + app_onnx.py exist).
+	require.NotContains(t, d.Message, "moss entry script")
+}
+
+func TestTTSEnvironmentChecker_MossModelDirMissingEntryScript(t *testing.T) {
+	// Create a model dir without app_onnx.py.
+	modelDir := t.TempDir()
+
+	dir := t.TempDir()
+	path := writeTTSConfig(t, dir, ttsConfigOpts{
+		feishuEnabled: true, feishuTTS: true, feishuProvider: "edge+moss",
+		mossModelDir: modelDir,
+	})
+	defer resetConfigPath()
+	SetConfigPath(path)
+
+	c := ttsEnvironmentChecker{}
+	d := c.Check(context.Background())
+	require.Equal(t, cli.StatusFail, d.Status)
+	require.Contains(t, d.Message, "moss entry script")
+	require.Contains(t, d.FixHint, "MOSS-TTS-Nano Python scripts")
 }
 
 // --- ttsRequirements Unit Tests ---
@@ -136,6 +173,7 @@ func TestTTSRequirements(t *testing.T) {
 			got := ttsRequirements()
 			require.Equal(t, tt.wantFFmpeg, got.FFmpeg, "FFmpeg mismatch")
 			require.Equal(t, tt.wantPython3, got.Python3, "Python3 mismatch")
+			require.Equal(t, tt.wantMossModelDir, got.MossModelDir != "", "MossModelDir mismatch")
 		})
 	}
 }
@@ -148,6 +186,17 @@ func TestMossProvider(t *testing.T) {
 	require.False(t, mossProvider(""))
 }
 
+// --- ttsInstallHint Tests ---
+
+func TestTTSInstallHint(t *testing.T) {
+	t.Parallel()
+	require.Contains(t, ttsInstallHint("moss model dir (/some/path)"), "mkdir -p")
+	require.Contains(t, ttsInstallHint("moss entry script (/some/path/app_onnx.py)"), "MOSS-TTS-Nano Python scripts")
+	require.Contains(t, ttsInstallHint("moss python packages (ModuleNotFoundError)"), "pip3 install")
+	require.Contains(t, ttsInstallHint("ffmpeg"), "install ffmpeg")
+	require.Contains(t, ttsInstallHint("python3"), "install python3")
+}
+
 // --- Helpers ---
 
 type ttsConfigOpts struct {
@@ -157,6 +206,7 @@ type ttsConfigOpts struct {
 	feishuEnabled  bool
 	feishuTTS      bool
 	feishuProvider string
+	mossModelDir   string
 }
 
 func writeTTSConfig(t *testing.T, dir string, opts ttsConfigOpts) string {
@@ -170,6 +220,9 @@ func writeTTSConfig(t *testing.T, dir string, opts ttsConfigOpts) string {
 	if opts.slackTTS && opts.slackProvider != "" {
 		yaml += "\n    tts_provider: " + opts.slackProvider
 	}
+	if opts.mossModelDir != "" {
+		yaml += "\n    tts_moss_model_dir: " + opts.mossModelDir
+	}
 	yaml += "\n"
 
 	// Feishu section
@@ -177,6 +230,9 @@ func writeTTSConfig(t *testing.T, dir string, opts ttsConfigOpts) string {
 	yaml += "\n    tts_enabled: " + strconv.FormatBool(opts.feishuTTS)
 	if opts.feishuTTS && opts.feishuProvider != "" {
 		yaml += "\n    tts_provider: " + opts.feishuProvider
+	}
+	if opts.mossModelDir != "" {
+		yaml += "\n    tts_moss_model_dir: " + opts.mossModelDir
 	}
 	yaml += "\n"
 

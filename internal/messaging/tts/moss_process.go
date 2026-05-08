@@ -23,7 +23,7 @@ const (
 	mossDefaultPort       = 18083
 	mossDefaultVoice      = "Xiaoyu"
 	mossDefaultIdleTTL    = 30 * time.Minute
-	mossDefaultCpuThreads = 2
+	mossDefaultCpuThreads = 0
 	mossReadyTimeout      = 60 * time.Second
 	mossReadyInterval     = 500 * time.Millisecond
 	mossSynthTimeout      = 60 * time.Second
@@ -102,7 +102,8 @@ func (p *MossProcess) Synthesize(ctx context.Context, text, voice string) ([]byt
 	form := url.Values{}
 	form.Set("text", text)
 	form.Set("voice", voice)
-	form.Set("max_new_frames", "375")
+	form.Set("max_new_frames", "150")
+	form.Set("enable_wetext", "false")
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		p.baseURL+"/api/generate", strings.NewReader(form.Encode()))

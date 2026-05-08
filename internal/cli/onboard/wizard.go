@@ -926,8 +926,20 @@ func stepTTSCheck(configPath string, reader *bufio.Reader) StepResult {
 		for _, w := range warns {
 			fmt.Fprintf(os.Stderr, "  %s %s\n", output.StatusSymbol("warn"), w)
 		}
-		fmt.Fprintln(os.Stderr, "  TTS defaults to Edge TTS (no local deps).")
-		fmt.Fprintln(os.Stderr, "  For MOSS-TTS-Nano, install ffmpeg and python3, then download the model.")
+
+		// Offer auto-install for MOSS Python packages if missing.
+		if hasMissingPythonPkgs(warns) {
+			if promptYesNo(reader, "Install MOSS TTS Python dependencies (numpy, onnxruntime, etc.)?") {
+				if err := installTTSDeps(); err != nil {
+					warns = append(warns, "install failed: "+err.Error())
+				} else {
+					return stepTTSCheck(configPath, reader)
+				}
+			}
+		}
+
+		fmt.Fprintln(os.Stderr, "  Note: torch/torchaudio (~2GB) and MOSS model files require manual installation.")
+		fmt.Fprintln(os.Stderr, "  Edge TTS works without any local model (default).")
 	}
 
 	return StepResult{
@@ -935,6 +947,26 @@ func stepTTSCheck(configPath string, reader *bufio.Reader) StepResult {
 		Status: "warn",
 		Detail: "TTS deps incomplete:\n  " + strings.Join(warns, "\n  "),
 	}
+}
+
+func installTTSDeps() error {
+	cmd := exec.Command("python3", "-m", "pip", "install", "--quiet",
+		"numpy", "sentencepiece", "onnxruntime", "fastapi", "uvicorn",
+		"python-multipart", "soundfile", "huggingface_hub")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("%s: %w", strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
+// hasMissingPythonPkgs checks if any TTS warning indicates missing MOSS Python packages.
+func hasMissingPythonPkgs(warns []string) bool {
+	for _, w := range warns {
+		if strings.Contains(w, "moss python packages") {
+			return true
+		}
+	}
+	return false
 }
 
 // ─── Step 7: Verify ─────────────────────────────────────────────────────────

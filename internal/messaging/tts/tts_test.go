@@ -84,22 +84,22 @@ func TestEstimateAudioDuration(t *testing.T) {
 	}
 }
 
-func TestMP3ToOpus_InvalidInput(t *testing.T) {
+func TestToOpus_InvalidInput(t *testing.T) {
 	t.Parallel()
 
 	// Garbage input should produce an error from ffmpeg
-	_, err := MP3ToOpus(context.Background(), []byte("not-mp3"))
+	_, err := ToOpus(context.Background(), []byte("not-mp3"))
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "ffmpeg")
 }
 
-func TestMP3ToOpus_CancelledContext(t *testing.T) {
+func TestToOpus_CancelledContext(t *testing.T) {
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, err := MP3ToOpus(ctx, []byte("data"))
+	_, err := ToOpus(ctx, []byte("data"))
 	assert.Error(t, err)
 }
 

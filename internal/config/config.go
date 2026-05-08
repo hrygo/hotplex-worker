@@ -213,7 +213,7 @@ type TTSConfig struct {
 	// MossIdleTimeout controls how long the MOSS sidecar stays resident after its
 	// last use before being automatically shut down. Default 30m.
 	MossIdleTimeout time.Duration `mapstructure:"tts_moss_idle_timeout"`
-	// MossCpuThreads controls ONNX Runtime intra-op threads for the MOSS sidecar (default 2).
+	// MossCpuThreads controls ONNX Runtime intra-op threads for the MOSS sidecar (0 = auto-detect = physical cores).
 	MossCpuThreads int `mapstructure:"tts_moss_cpu_threads"`
 }
 
@@ -532,10 +532,15 @@ func Default() *Config {
 					LocalIdleTTL: time.Hour,
 				},
 				TTSConfig: TTSConfig{
-					Enabled:     true,
-					TTSProvider: "edge",
-					Voice:       "zh-CN-XiaoxiaoNeural",
-					MaxChars:    150,
+					Enabled:         true,
+					TTSProvider:     "edge+moss",
+					Voice:           "zh-CN-XiaoxiaoNeural",
+					MaxChars:        150,
+					MossModelDir:    filepath.Join(HotplexHome(), "models", "moss-tts-nano"),
+					MossVoice:       "Xiaoyu",
+					MossPort:        18083,
+					MossIdleTimeout: 30 * time.Minute,
+					MossCpuThreads:  0,
 				},
 			},
 			Slack: SlackConfig{
@@ -548,10 +553,15 @@ func Default() *Config {
 					LocalIdleTTL: time.Hour,
 				},
 				TTSConfig: TTSConfig{
-					Enabled:     true,
-					TTSProvider: "edge",
-					Voice:       "zh-CN-XiaoxiaoNeural",
-					MaxChars:    150,
+					Enabled:         true,
+					TTSProvider:     "edge+moss",
+					Voice:           "zh-CN-XiaoxiaoNeural",
+					MaxChars:        150,
+					MossModelDir:    filepath.Join(HotplexHome(), "models", "moss-tts-nano"),
+					MossVoice:       "Xiaoyu",
+					MossPort:        18083,
+					MossIdleTimeout: 30 * time.Minute,
+					MossCpuThreads:  0,
 				},
 			},
 		},
