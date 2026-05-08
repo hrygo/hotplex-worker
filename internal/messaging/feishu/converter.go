@@ -190,10 +190,10 @@ func convertSticker(rawContent, messageID string) (string, bool, []*MediaInfo) {
 // interactiveCard models the Feishu card JSON received in an interactive message.
 // Supports both schema 1.0 (elements at root) and schema 2.0 (elements under body).
 type interactiveCard struct {
-	Schema  string               `json:"schema"`
-	Header  *interactiveHeader   `json:"header"`
-	Elements []interactiveElement `json:"elements"`   // schema 1.0
-	Body    *interactiveBody     `json:"body"`        // schema 2.0
+	Schema   string               `json:"schema"`
+	Header   *interactiveHeader   `json:"header"`
+	Elements []interactiveElement `json:"elements"` // schema 1.0
+	Body     *interactiveBody     `json:"body"`     // schema 2.0
 }
 
 type interactiveBody struct {
