@@ -19,7 +19,7 @@ BrowserHotPlexClient (WebSocket/AEP)
   ↓
 useHotPlexRuntime (hotplex-runtime-adapter.ts)
   → ExternalStoreAdapter<HotPlexMessage>
-  → Messages stored in React useState, persisted to localStorage (debounced 1s)
+  → Messages stored in React useState (server-authoritative history via REST API)
   ↓
 Thread (thread.tsx)
   → AssistantMessage / UserMessage via MessagePrimitive.Parts
