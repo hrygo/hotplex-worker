@@ -1,7 +1,7 @@
 {
   "version": 2,
-  "last_updated": "2026-05-08T07:44:00+08:00",
-  "total_cycles": 62,
+  "last_updated": "2026-05-08T08:27:00+08:00",
+  "total_cycles": 67,
   "modules": {
     "internal/gateway": {
       "analysis_count": 4,
@@ -286,7 +286,6 @@
         "observability",
         "testability",
         "code-quality"
-      ],
       ],
       "findings_total": 14,
       "findings_dropped": [
@@ -950,18 +949,18 @@
       }
     },
     "internal/skills": {
-      "analysis_count": 3,
+      "analysis_count": 4,
       "aspects_covered": [
         "solid",
         "dry",
         "coupling",
         "error-handling",
         "concurrency",
-        "resource-mgmt"
+        "resource-mgmt",
+        "performance",
+        "scalability"
       ],
       "aspects_pending": [
-        "performance",
-        "scalability",
         "security",
         "observability",
         "testability",
@@ -1025,27 +1024,51 @@
         {
           "finding": "No resource management concerns (resource-mgmt)",
           "reason": "Zero network/DB/long-lived file handles, all file I/O synchronous"
+        },
+        {
+          "finding": "Locator.List() RLock→RLock→Lock pattern performance",
+          "reason": "No issue — O(1) cache lookup on fast path, filesystem scan only on cache miss (once per 5min TTL)"
+        },
+        {
+          "finding": "scanDirs 4-6 os.ReadDir + individual os.ReadFile per skill",
+          "reason": "No issue — I/O bound, n bounded by skill count (typically <50), called once per TTL"
+        },
+        {
+          "finding": "dedup O(n) with map allocation per scan",
+          "reason": "No issue — n typically <50 skills, microseconds, infrequent (once per TTL)"
+        },
+        {
+          "finding": "CollapseSpaces single-pass rune iteration with Builder.Grow",
+          "reason": "Positive finding — optimal single-allocation string processing pattern"
+        },
+        {
+          "finding": "maxCacheEntries=100 bounded cache scalability",
+          "reason": "No issue — bounded by design, evictOldest O(100) under write lock, microseconds"
+        },
+        {
+          "finding": "RLock for cache reads scales with concurrent callers",
+          "reason": "Positive finding — multiple readers proceed in parallel, only cache miss acquires write lock"
         }
       ],
-      "last_analyzed": "2026-05-08T05:35:00+08:00",
+      "last_analyzed": "2026-05-08T07:54:00+08:00",
       "stats": {
         "files": 4,
         "lines": 621
       }
     },
     "internal/service": {
-      "analysis_count": 3,
+      "analysis_count": 4,
       "aspects_covered": [
         "solid",
         "dry",
         "coupling",
         "error-handling",
         "concurrency",
-        "resource-mgmt"
+        "resource-mgmt",
+        "performance",
+        "scalability"
       ],
       "aspects_pending": [
-        "performance",
-        "scalability",
         "security",
         "observability",
         "testability",
@@ -1089,27 +1112,47 @@
         {
           "finding": "exec.Command lifecycle tied to method scope (resource-mgmt)",
           "reason": "Clean pattern — CombinedOutput/Run blocks, process exits with method return"
+        },
+        {
+          "finding": "exec.Command process spawning overhead per operation",
+          "reason": "No issue — CLI tool, single invocation, process spawn is the only I/O mechanism for system service management"
+        },
+        {
+          "finding": "DarwinManager plistPath os.UserHomeDir per call",
+          "reason": "No issue — called once per CLI invocation, <1μs, not on any hot path"
+        },
+        {
+          "finding": "systemctl helper creates new exec.Command per call",
+          "reason": "No issue — one systemctl call per operation, cannot be batched, inherently sequential"
+        },
+        {
+          "finding": "Manager implementations are stateless structs",
+          "reason": "No scalability concern — no shared state, no concurrent access, pure platform abstraction"
+        },
+        {
+          "finding": "No hot paths or performance-sensitive code paths",
+          "reason": "Entire module is synchronous CLI tool — exec.Command + file I/O, bounded by OS response time"
         }
       ],
-      "last_analyzed": "2026-05-08T05:25:00+08:00",
+      "last_analyzed": "2026-05-08T08:04:00+08:00",
       "stats": {
         "files": 10,
         "lines": 1092
       }
     },
     "internal/updater": {
-      "analysis_count": 3,
+      "analysis_count": 4,
       "aspects_covered": [
         "solid",
         "dry",
         "coupling",
         "error-handling",
         "concurrency",
-        "resource-mgmt"
+        "resource-mgmt",
+        "performance",
+        "scalability"
       ],
       "aspects_pending": [
-        "performance",
-        "scalability",
         "security",
         "observability",
         "testability",
@@ -1157,27 +1200,47 @@
         {
           "finding": "Download temp file lifecycle (resource-mgmt)",
           "reason": "Clean — create→write→close→return path, caller cleanup documented, Replace removes temp implicitly"
+        },
+        {
+          "finding": "Check() GitHub API call + JSON decode performance",
+          "reason": "No issue — single API call, LimitReader 1MB cap, network-bound (~100-500ms)"
+        },
+        {
+          "finding": "Download() creates fresh http.Client instead of using u.Client",
+          "reason": "Intentional — downloads need 3min timeout vs 30s for API calls, not a performance concern"
+        },
+        {
+          "finding": "VerifyChecksum sha256 file hash performance",
+          "reason": "No issue — io.Copy from file to sha256 hasher, streaming, O(file_size) but bounded by 200MB limit"
+        },
+        {
+          "finding": "Replace() atomic rename + rollback pattern",
+          "reason": "No issue — 2-3 os.Rename calls, <1ms total, best-effort backup cleanup"
+        },
+        {
+          "finding": "findChecksum O(n) line-by-line parse of checksums.txt",
+          "reason": "No issue — checksums.txt typically <20 lines, LimitReader 64KB, microseconds"
         }
       ],
-      "last_analyzed": "2026-05-08T05:45:00+08:00",
+      "last_analyzed": "2026-05-08T08:14:00+08:00",
       "stats": {
         "files": 2,
         "lines": 671
       }
     },
     "pkg/events": {
-      "analysis_count": 3,
+      "analysis_count": 4,
       "aspects_covered": [
-        "solid",
-        "dry",
-        "coupling",
-        "error-handling",
         "concurrency",
-        "resource-mgmt"
+        "coupling",
+        "dry",
+        "error-handling",
+        "performance",
+        "resource-mgmt",
+        "scalability",
+        "solid"
       ],
       "aspects_pending": [
-        "performance",
-        "scalability",
         "security",
         "observability",
         "testability",
@@ -1223,27 +1286,43 @@
         {
           "finding": "pkg/events is pure data types library",
           "reason": "No concurrency primitives, no goroutines, no shared mutable state, no resources to manage — all functions are pure"
+        },
+        {
+          "finding": "Clone via JSON round-trip allocation",
+          "reason": "Low ROI — called only at session init, not on hot path; optimization would add complexity for negligible gain"
+        },
+        {
+          "finding": "SessionState IsValidTransition map lookup",
+          "reason": "Low ROI — 5-state machine, map lookup is O(1), no scalability concern"
+        },
+        {
+          "finding": "Envelope struct size ~200 bytes",
+          "reason": "Low ROI — passed by pointer in all hot paths, no copy overhead"
+        },
+        {
+          "finding": "No sync.Pool for Envelope reuse",
+          "reason": "Low ROI — Envelope lifetime spans full request, pooling would complicate ownership without benefit"
         }
       ],
-      "last_analyzed": "2026-05-08T03:25:00+08:00",
+      "last_analyzed": "2026-05-08T08:26:00+08:00",
       "stats": {
         "files": 4,
         "lines": 1648
       }
     },
     "pkg/aep": {
-      "analysis_count": 3,
+      "analysis_count": 4,
       "aspects_covered": [
-        "solid",
-        "dry",
-        "coupling",
-        "error-handling",
         "concurrency",
-        "resource-mgmt"
+        "coupling",
+        "dry",
+        "error-handling",
+        "performance",
+        "resource-mgmt",
+        "scalability",
+        "solid"
       ],
       "aspects_pending": [
-        "performance",
-        "scalability",
         "security",
         "observability",
         "testability",
@@ -1277,9 +1356,25 @@
         {
           "finding": "Encode/Decode operate on caller-provided io.Writer/io.Reader (resource-mgmt)",
           "reason": "Clean — caller owns resources, no file handles or network connections created"
+        },
+        {
+          "finding": "json.Marshal in Encode/EncodeJSON",
+          "reason": "Low ROI — encoding is inherently allocation-heavy, caller controls frequency; sync.Pool for bytes.Buffer adds complexity for marginal gain"
+        },
+        {
+          "finding": "escapeJSTerminators string replacement",
+          "reason": "Low ROI — operates on already-marshaled JSON, typically <10KB payloads; regex replacement is linear and correct"
+        },
+        {
+          "finding": "Validate walks full struct with reflect-like field checks",
+          "reason": "Low ROI — validation called once per inbound message, not in tight loops; cost dominated by JSON parsing anyway"
+        },
+        {
+          "finding": "No buffered writer in Encode",
+          "reason": "Low ROI — caller provides io.Writer; if caller needs buffering they wrap with bufio.Writer themselves"
         }
       ],
-      "last_analyzed": "2026-05-08T05:55:00+08:00",
+      "last_analyzed": "2026-05-08T08:27:00+08:00",
       "stats": {
         "files": 2,
         "lines": 688
@@ -1519,78 +1614,6 @@
   ],
   "recent_activity": [
     {
-      "cycle": 30,
-      "module": "internal/cli",
-      "aspects": [
-        "coupling",
-        "error-handling"
-      ],
-      "issues": [],
-      "time": "2026-05-08T02:25:00+08:00"
-    },
-    {
-      "cycle": 31,
-      "module": "internal/skills",
-      "aspects": [
-        "coupling",
-        "error-handling"
-      ],
-      "issues": [],
-      "time": "2026-05-08T02:34:00+08:00"
-    },
-    {
-      "cycle": 32,
-      "module": "internal/service",
-      "aspects": [
-        "coupling",
-        "error-handling"
-      ],
-      "issues": [],
-      "time": "2026-05-08T02:45:00+08:00"
-    },
-    {
-      "cycle": 33,
-      "module": "cmd/hotplex",
-      "aspects": [
-        "coupling",
-        "error-handling"
-      ],
-      "issues": [
-        297
-      ],
-      "time": "2026-05-08T02:55:00+08:00"
-    },
-    {
-      "cycle": 34,
-      "module": "internal/updater",
-      "aspects": [
-        "coupling",
-        "error-handling"
-      ],
-      "issues": [],
-      "time": "2026-05-08T03:05:00+08:00"
-    },
-    {
-      "cycle": 35,
-      "module": "pkg/aep",
-      "aspects": [
-        "coupling",
-        "error-handling"
-      ],
-      "issues": [],
-      "time": "2026-05-08T03:15:00+08:00"
-    },
-    {
-      "cycle": 36,
-      "module": "pkg/events",
-      "aspects": [
-        "coupling",
-        "error-handling"
-      ],
-      "issues": [],
-      "time": "2026-05-08T03:25:00+08:00"
-    },
-    {
       "cycle": 37,
       "module": "internal/gateway",
       "aspects": [
@@ -1750,6 +1773,64 @@
       "issues_created": [],
       "dropped": 6,
       "timestamp": "2026-05-08T07:44:00+08:00"
+    },
+    {
+      "cycle": 63,
+      "module": "internal/skills",
+      "aspects": [
+        "performance",
+        "scalability"
+      ],
+      "findings": 0,
+      "issues_created": [],
+      "dropped": 5,
+      "timestamp": "2026-05-08T07:54:00+08:00"
+    },
+    {
+      "cycle": 64,
+      "module": "internal/service",
+      "aspects": [
+        "performance",
+        "scalability"
+      ],
+      "findings": 0,
+      "issues_created": [],
+      "dropped": 5,
+      "timestamp": "2026-05-08T08:04:00+08:00"
+    },
+    {
+      "cycle": 65,
+      "module": "internal/updater",
+      "aspects": [
+        "performance",
+        "scalability"
+      ],
+      "findings": 0,
+      "issues_created": [],
+      "dropped": 5,
+      "timestamp": "2026-05-08T08:14:00+08:00"
+    },
+    {
+      "cycle": 66,
+      "module": "pkg/events",
+      "aspects": [
+        "performance",
+        "scalability"
+      ],
+      "findings": 0,
+      "issues_created": 0,
+      "timestamp": "2026-05-08T08:26:00+08:00"
+    },
+    {
+      "cycle": 67,
+      "module": "pkg/aep",
+      "aspects": [
+        "performance",
+        "scalability"
+      ],
+      "findings": 0,
+      "issues_created": 0,
+      "timestamp": "2026-05-08T08:27:00+08:00"
     }
   ]
 }
