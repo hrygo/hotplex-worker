@@ -71,9 +71,9 @@ func TestEstimateAudioDuration(t *testing.T) {
 		{"zero bytes", 0, 1},
 		{"negative bytes", -1, 1},
 		{"small bytes", 500, 1},
-		{"1 second", 2000, 1},
-		{"5 seconds", 10000, 5},
-		{"60 seconds", 120000, 60},
+		{"1 second", 6000, 1},
+		{"5 seconds", 30000, 5},
+		{"60 seconds", 360000, 60},
 	}
 
 	for _, tt := range tests {
