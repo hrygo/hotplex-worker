@@ -1055,7 +1055,7 @@ audio message (opus bytes)
                 ┌───────────────────┐
                 │  stt_server.py    │ ← Persistent subprocess
                 │  (SenseVoice-Small│   Model loaded once in memory
-                │   ONNX FP32)      │   Auto-patch ONNX on first load
+                │   ONNX INT8)      │   Auto-patch ONNX on first load
                 └───────────────────┘
 ```
 
@@ -1078,9 +1078,9 @@ audio message (opus bytes)
 
 #### STT 引擎: SenseVoice-Small
 
-- **模型**: `iic/SenseVoiceSmall` (~900MB ONNX)
+- **模型**: `iic/SenseVoiceSmall` (~400MB ONNX INT8)
 - **推理引擎**: `funasr-onnx` (ONNX Runtime)
-- **精度**: FP32 non-quantized (~0.35s/file, CER ~2%)
+- **精度**: INT8 quantized (~0.35s/file, CER ~2%)
 - **语言**: 中文、英文、日语、韩语、粤语（自动检测）
 - **特殊标记**: 输出包含 `<|zh|><|HAPPY|><|Speech|>` 等标记，由 `stt_server.py` 正则剥离
 - **ONNX 补丁**: ModelScope 预导出模型的 `Less` 节点存在 float/int64 类型不匹配，`fix_onnx_model.py` 在首次加载时自动修复（插入 Cast 节点）

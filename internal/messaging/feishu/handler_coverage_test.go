@@ -266,9 +266,6 @@ func TestHandleMessage_HelpCommand(t *testing.T) {
 		Event: &larkim.P2MessageReceiveV1Data{Sender: sender, Message: msg},
 	})
 	require.NoError(t, err)
-
-	// Wait for chatQueue to process.
-	time.Sleep(100 * time.Millisecond)
 }
 
 func TestHandleMessage_ImageNoBridge(t *testing.T) {
@@ -295,8 +292,6 @@ func TestHandleMessage_ImageNoBridge(t *testing.T) {
 		Event: &larkim.P2MessageReceiveV1Data{Sender: sender, Message: msg},
 	})
 	require.NoError(t, err)
-
-	time.Sleep(100 * time.Millisecond)
 }
 
 func TestHandleMessage_PostWithThread(t *testing.T) {
@@ -325,8 +320,6 @@ func TestHandleMessage_PostWithThread(t *testing.T) {
 		Event: &larkim.P2MessageReceiveV1Data{Sender: sender, Message: msg},
 	})
 	require.NoError(t, err)
-
-	time.Sleep(100 * time.Millisecond)
 }
 
 func TestHandleMessage_InteractiveSchema1(t *testing.T) {
@@ -353,8 +346,6 @@ func TestHandleMessage_InteractiveSchema1(t *testing.T) {
 		Event: &larkim.P2MessageReceiveV1Data{Sender: sender, Message: msg},
 	})
 	require.NoError(t, err)
-
-	time.Sleep(100 * time.Millisecond)
 }
 
 func TestHandleMessage_InteractiveSchema2(t *testing.T) {
@@ -382,8 +373,6 @@ func TestHandleMessage_InteractiveSchema2(t *testing.T) {
 		Event: &larkim.P2MessageReceiveV1Data{Sender: sender, Message: msg},
 	})
 	require.NoError(t, err)
-
-	time.Sleep(100 * time.Millisecond)
 }
 
 func TestHandleMessage_InteractiveEmptyCard(t *testing.T) {
@@ -434,6 +423,4 @@ func TestHandleMessage_NilSenderUserID(t *testing.T) {
 		Event: &larkim.P2MessageReceiveV1Data{Sender: sender, Message: msg},
 	})
 	require.NoError(t, err)
-
-	time.Sleep(100 * time.Millisecond)
 }

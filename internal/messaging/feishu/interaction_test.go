@@ -53,7 +53,7 @@ func TestBuildInteractionCard(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := buildInteractionCard(tt.body, tt.footer)
+			got := buildInteractionCard(tt.body, tt.footer, cardHeader{Title: "Test"})
 
 			// Verify it's valid JSON
 			var card map[string]any
@@ -194,7 +194,7 @@ func TestInteractionManager_Empty(t *testing.T) {
 func TestBuildInteractionCard_EscapeHTML(t *testing.T) {
 	t.Parallel()
 	// HTML special chars must NOT be escaped in JSON output
-	got := buildInteractionCard("<test> & \"quotes\"", "")
+	got := buildInteractionCard("<test> & \"quotes\"", "", cardHeader{Title: "EscTest"})
 	var card map[string]any
 	require.NoError(t, json.Unmarshal([]byte(got), &card))
 	body := card["body"].(map[string]any)

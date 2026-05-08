@@ -282,3 +282,150 @@ func TestNewConfiguredSynthesizer_DefaultVoice(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "zh-CN-XiaoxiaoNeural", edge.voice)
 }
+
+// --- SharedSynthesizer Tests ---
+
+func TestSharedSynthesizer_ImplementsInterface(t *testing.T) {
+	t.Parallel()
+	var _ Synthesizer = (*SharedSynthesizer)(nil)
+}
+
+func TestSharedSynthesizer_InitialState(t *testing.T) {
+	t.Parallel()
+	s := NewSharedSynthesizer(&mockSynthesizer{})
+	assert.Equal(t, int32(1), s.Refs())
+}
+
+func TestSharedSynthesizer_AcquireIncrementsRefs(t *testing.T) {
+	t.Parallel()
+	s := NewSharedSynthesizer(&mockSynthesizer{})
+	acquired := s.Acquire()
+	assert.Equal(t, int32(2), s.Refs())
+	assert.Equal(t, int32(2), acquired.Refs())
+}
+
+func TestSharedSynthesizer_CloseDecrementsRefs(t *testing.T) {
+	t.Parallel()
+	s := NewSharedSynthesizer(&mockSynthesizer{})
+	_ = s.Acquire()
+	err := s.Close(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, int32(1), s.Refs())
+}
+
+func TestSharedSynthesizer_CloseOnLastRef(t *testing.T) {
+	t.Parallel()
+	closed := &mockCloserSynthesizer{}
+	s := NewSharedSynthesizer(closed)
+	err := s.Close(context.Background())
+	require.NoError(t, err)
+	assert.True(t, closed.closeCalled)
+}
+
+func TestSharedSynthesizer_CloseOnLastRef_CollectsError(t *testing.T) {
+	t.Parallel()
+	expectedErr := errors.New("close failed")
+	closed := &mockCloserSynthesizer{closeErr: expectedErr}
+	s := NewSharedSynthesizer(closed)
+	err := s.Close(context.Background())
+	assert.ErrorIs(t, err, expectedErr)
+}
+
+func TestSharedSynthesizer_CloseAboveZeroNoDelegateCall(t *testing.T) {
+	t.Parallel()
+	closed := &mockCloserSynthesizer{}
+	s := NewSharedSynthesizer(closed)
+	_ = s.Acquire()
+	err := s.Close(context.Background())
+	require.NoError(t, err)
+	assert.False(t, closed.closeCalled, "Closer should not be called when refs > 0")
+}
+
+func TestSharedSynthesizer_WrapsNonCloser(t *testing.T) {
+	t.Parallel()
+	s := NewSharedSynthesizer(&mockSynthesizer{})
+	err := s.Close(context.Background())
+	require.NoError(t, err)
+}
+
+func TestSharedSynthesizer_TryAcquire_Success(t *testing.T) {
+	t.Parallel()
+	s := NewSharedSynthesizer(&mockSynthesizer{})
+	acquired := s.TryAcquire()
+	require.NotNil(t, acquired)
+	assert.Equal(t, int32(2), s.Refs())
+}
+
+func TestSharedSynthesizer_TryAcquire_FailsOnZero(t *testing.T) {
+	t.Parallel()
+	s := NewSharedSynthesizer(&mockSynthesizer{})
+	_ = s.Close(context.Background()) // refs -> 0
+	acquired := s.TryAcquire()
+	assert.Nil(t, acquired)
+}
+
+func TestSharedSynthesizer_DelegatesSynthesize(t *testing.T) {
+	t.Parallel()
+	inner := &mockSynthesizer{
+		synthesizeFn: func(_ context.Context, text string) ([]byte, error) {
+			return []byte("audio:" + text), nil
+		},
+	}
+	s := NewSharedSynthesizer(inner)
+	data, err := s.Synthesize(context.Background(), "hello")
+	require.NoError(t, err)
+	assert.Equal(t, []byte("audio:hello"), data)
+}
+
+// --- isMP3 / ToMP3 Passthrough Tests ---
+
+func TestIsMP3(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		data []byte
+		want bool
+	}{
+		{"ID3v2 header", []byte{0x49, 0x44, 0x33, 0x00, 0x00}, true},
+		{"MPEG sync 0xFF 0xFB", []byte{0xFF, 0xFB, 0x90, 0x00}, true},
+		{"MPEG sync 0xFF 0xF3", []byte{0xFF, 0xF3, 0x90, 0x00}, true},
+		{"MPEG sync 0xFF 0xF2", []byte{0xFF, 0xF2, 0x90, 0x00}, true},
+		{"WAV header RIFF", []byte{0x52, 0x49, 0x46, 0x46}, false},
+		{"OGG header", []byte{0x4F, 0x67, 0x67, 0x53}, false},
+		{"empty", []byte{}, false},
+		{"too short", []byte{0xFF}, false},
+		{"all zeros", []byte{0x00, 0x00, 0x00, 0x00}, false},
+		{"0xFF 0xFF false positive", []byte{0xFF, 0xFF, 0x00, 0x00}, false},
+		{"0xFF without sync bits", []byte{0xFF, 0x00, 0x00, 0x00}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.want, isMP3(tt.data))
+		})
+	}
+}
+
+func TestToMP3_Passthrough_ID3Header(t *testing.T) {
+	t.Parallel()
+	mp3Data := []byte{0x49, 0x44, 0x33, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
+	result, err := ToMP3(context.Background(), mp3Data)
+	require.NoError(t, err)
+	assert.Equal(t, mp3Data, result)
+}
+
+func TestToMP3_Passthrough_MPEGSync(t *testing.T) {
+	t.Parallel()
+	mp3Data := []byte{0xFF, 0xFB, 0x90, 0x00, 0x00, 0x00, 0x00, 0x00}
+	result, err := ToMP3(context.Background(), mp3Data)
+	require.NoError(t, err)
+	assert.Equal(t, mp3Data, result)
+}
+
+func TestToMP3_TranscodesNonMP3(t *testing.T) {
+	t.Parallel()
+	// WAV-like input (starts with "RIFF") should go through ffmpeg and fail on garbage data.
+	_, err := ToMP3(context.Background(), []byte{0x52, 0x49, 0x46, 0x46, 0x00, 0x00})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "ffmpeg")
+}
