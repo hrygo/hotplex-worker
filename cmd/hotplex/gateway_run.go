@@ -276,7 +276,7 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 		}
 	}
 
-	serverErr := make(chan error, 1)
+	serverErr := make(chan error, 2)
 	go func() {
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Error("gateway: server failed to start", "err", err)
@@ -284,23 +284,28 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 		}
 	}()
 
-	// Admin server: always runs on a dedicated port for network isolation.
-	adminServer := &http.Server{
-		Addr:         cfg.Admin.Addr,
-		Handler:      adminHandler,
-		ReadTimeout:  cfg.Gateway.IdleTimeout,
-		WriteTimeout: cfg.Gateway.WriteTimeout,
-	}
-	go func() {
-		log.Info("admin: listening", "addr", adminServer.Addr)
-		if err := adminServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Error("admin: server failed to start", "err", err)
-			serverErr <- err
+	// Admin server: dedicated port for network isolation (always-on when enabled).
+	var adminServer *http.Server
+	var adminAddr string
+	if cfg.Admin.Enabled {
+		adminServer = &http.Server{
+			Addr:         cfg.Admin.Addr,
+			Handler:      adminHandler,
+			ReadTimeout:  cfg.Gateway.IdleTimeout,
+			WriteTimeout: cfg.Gateway.WriteTimeout,
 		}
-	}()
+		adminAddr = adminServer.Addr
+		log.Info("admin: starting", "addr", adminAddr)
+		go func() {
+			if err := adminServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				log.Error("admin: server failed to start", "err", err)
+				serverErr <- err
+			}
+		}()
+	}
 	printStartupBanner(os.Stdout, newBuildInfo(), RuntimeStatus{
 		GatewayAddr:     cfg.Gateway.Addr,
-		AdminAddr:       adminServer.Addr,
+		AdminAddr:       adminAddr,
 		WebChatAddr:     cfg.WebChat.Addr,
 		WebChatEmbedded: cfg.WebChat.Enabled,
 		DBPath:          cfg.DB.Path,
@@ -462,7 +467,9 @@ func shutdownGateway(
 	skillsLocator.Close()
 
 	if deps.ConfigWatcher != nil {
-		_ = deps.ConfigWatcher.Close()
+		if err := deps.ConfigWatcher.Close(); err != nil {
+			log.Warn("config: watcher close", "err", err)
+		}
 	}
 
 	for _, adapter := range msgAdapters {
@@ -491,21 +498,24 @@ func shutdownGateway(
 		log.Warn("gateway: session manager close", "err", err)
 	}
 
-	// Shut down both HTTP servers in parallel to share the 30s budget.
+	// Shut down HTTP servers in parallel to share the 30s budget.
 	var serverWG sync.WaitGroup
-	serverWG.Add(2)
+	serverWG.Add(1)
 	go func() {
 		defer serverWG.Done()
 		if err := server.Shutdown(shutdownCtx); err != nil {
 			log.Warn("gateway: http server shutdown", "err", err)
 		}
 	}()
-	go func() {
-		defer serverWG.Done()
-		if err := adminServer.Shutdown(shutdownCtx); err != nil {
-			log.Warn("admin: http server shutdown", "err", err)
-		}
-	}()
+	if adminServer != nil {
+		serverWG.Add(1)
+		go func() {
+			defer serverWG.Done()
+			if err := adminServer.Shutdown(shutdownCtx); err != nil {
+				log.Warn("admin: http server shutdown", "err", err)
+			}
+		}()
+	}
 	serverWG.Wait()
 
 	log.Info("gateway: stopped")
