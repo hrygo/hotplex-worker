@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -125,4 +127,63 @@ func NewConfiguredSynthesizer(cfg SynthesizerConfig, log *slog.Logger) Synthesiz
 	edge := NewEdgeSynthesizer(cfg.EdgeVoice, log)
 	moss := NewMossSynthesizer(cfg.MossModelDir, cfg.MossVoice, cfg.MossPort, cfg.MossCpuThreads, cfg.MossIdleTimeout, log)
 	return NewFallbackSynthesizer(edge, moss, log)
+}
+
+// Shared TTS Support
+// ---------------------------------------------------------------------------
+
+// SharedSynthesizer wraps a Synthesizer to support reference-counted shared
+// ownership. Multiple messaging adapters can share a single TTS process
+// (e.g. MOSS sidecar) when their configurations are identical.
+type SharedSynthesizer struct {
+	Synthesizer
+	closer Closer
+	mu     sync.Mutex
+	refs   atomic.Int32
+}
+
+func NewSharedSynthesizer(s Synthesizer) *SharedSynthesizer {
+	w := &SharedSynthesizer{
+		Synthesizer: s,
+	}
+	w.refs.Store(1)
+	if c, ok := s.(Closer); ok {
+		w.closer = c
+	}
+	return w
+}
+
+func (w *SharedSynthesizer) Refs() int32 { return w.refs.Load() }
+
+func (w *SharedSynthesizer) Acquire() *SharedSynthesizer {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.refs.Add(1)
+	return w
+}
+
+// TryAcquire increments refs only if > 0. Returns nil if already closed.
+func (w *SharedSynthesizer) TryAcquire() *SharedSynthesizer {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.refs.Load() <= 0 {
+		return nil
+	}
+	w.refs.Add(1)
+	return w
+}
+
+func (w *SharedSynthesizer) Close(ctx context.Context) error {
+	w.mu.Lock()
+	if w.refs.Add(-1) > 0 {
+		w.mu.Unlock()
+		return nil
+	}
+	closer := w.closer
+	w.mu.Unlock()
+
+	if closer != nil {
+		return closer.Close(ctx)
+	}
+	return nil
 }

@@ -272,7 +272,7 @@ Worker 进程启动时的工作目录遵循以下优先级覆盖逻辑：
 | `allow_group_from` | []string | `[]` | — | 仅群组白名单 |
 | `stt_provider` | string | `feishu+local` | — | 语音转文字引擎。`feishu` = 飞书 speech_to_text API（需开通权限），`local` = 本地命令行引擎（SenseVoice-Small ONNX），`feishu+local` = 云端优先本地降级（推荐），空 = 禁用 STT |
 | `stt_local_cmd` | string | `python3 scripts/stt_server.py` | — | 本地 STT 命令。含 `{file}` → 每次请求 fork 新进程（冷启动约 3-5s）；不含 `{file}` → 常驻子进程 + stdin/stdout JSON 协议（零冷启动，适合高频使用，模型约占 900MB 内存）。详细安装说明见 [STT 安装手册](../docs/STT-Setup.md) |
-| `stt_local_idle_ttl` | duration | `1h` | — | 常驻模式空闲超时。STT 子进程在此时间内无转写请求则自动关闭，节省内存。0 = 永不关闭。仅常驻模式生效 |
+| `stt_local_idle_ttl` | duration | `15m` | — | 常驻模式空闲超时。STT 子进程在此时间内无转写请求则自动关闭，节省内存。0 = 永不关闭。仅常驻模式生效 |
 
 > **完整的 STT 安装配置说明**见 [STT-Setup.md](../docs/STT-Setup.md) —— 涵盖 Python 依赖安装、模型下载、Ephemeral/Persistent 模式配置、Docker 部署和故障排查。
 
