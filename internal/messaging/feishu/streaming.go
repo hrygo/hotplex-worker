@@ -443,26 +443,30 @@ func (c *StreamingCardController) Close(ctx context.Context) error {
 	}
 	c.lastFlushed = content
 	cardID := c.cardID
+	streamingActive := c.streamingActive
+	cardKitOK := c.cardKitOK
 	c.mu.Unlock()
 
 	summary := truncateForSummary(content)
-	if c.streamingActive {
+	if streamingActive {
 		if cardID != "" {
 			if err := c.disableStreaming(ctx); err != nil {
 				c.log.Warn("feishu: disable streaming failed", "err", err)
 			} else {
 				c.log.Info("feishu: streaming stopped",
 					"card_id", cardID,
-					"cardkit_mode", c.cardKitOK,
+					"cardkit_mode", cardKitOK,
 					"summary_len", len(summary))
 			}
 		} else {
-			c.log.Warn("feishu: cannot disable streaming — cardID is empty (id_convert failed), card may stay in generating state")
+			c.log.Warn("feishu: cannot disable streaming \xe2\x80\x94 cardID is empty (id_convert failed), card may stay in generating state")
 		}
+		c.mu.Lock()
 		c.streamingActive = false
+		c.mu.Unlock()
 	}
 
-	c.updateHeader(ctx, cardHeader{
+	c.updateHeader(ctx, cardID, cardHeader{
 		Title:    c.agentName,
 		Subtitle: summary,
 		Template: headerBlue,
@@ -481,28 +485,28 @@ func (c *StreamingCardController) Abort(ctx context.Context) error {
 	c.mu.Lock()
 	cardID := c.cardID
 	msgID := c.msgID
+	streamingActive := c.streamingActive
 	c.mu.Unlock()
 
-	if c.streamingActive && cardID != "" {
+	if streamingActive && cardID != "" {
 		_ = c.disableStreaming(ctx)
-		c.streamingActive = false
 	}
 
 	if msgID != "" {
 		c.sendAbortMessage(ctx, msgID)
 	}
 
-	c.updateHeader(ctx, cardHeader{
+	c.updateHeader(ctx, cardID, cardHeader{
 		Title:    c.agentName,
-		Subtitle: "已取消",
+		Subtitle: "\xe5\xb7\xb2\xe5\x8f\x96\xe6\xb6\x88",
 		Template: headerGrey,
 	}, "")
 
 	return nil
 }
 
-func (c *StreamingCardController) updateHeader(ctx context.Context, header cardHeader, body string) {
-	if c.cardID == "" {
+func (c *StreamingCardController) updateHeader(ctx context.Context, cardID string, header cardHeader, body string) {
+	if cardID == "" {
 		return
 	}
 
@@ -525,7 +529,7 @@ func (c *StreamingCardController) updateHeader(ctx context.Context, header cardH
 		Build()
 
 	req := larkcardkit.NewUpdateCardReqBuilder().
-		CardId(c.cardID).
+		CardId(cardID).
 		Body(reqBody).
 		Build()
 
@@ -659,6 +663,7 @@ func (c *StreamingCardController) disableStreaming(ctx context.Context) error {
 	// which persists even after disableStreaming unless we override it.
 	c.mu.Lock()
 	summary := truncateForSummary(c.lastFlushed)
+	cardID := c.cardID
 	c.mu.Unlock()
 
 	settingsJSON, _ := json.Marshal(map[string]any{
@@ -676,7 +681,7 @@ func (c *StreamingCardController) disableStreaming(ctx context.Context) error {
 		Build()
 
 	req := larkcardkit.NewSettingsCardReqBuilder().
-		CardId(c.cardID).
+		CardId(cardID).
 		Body(body).
 		Build()
 
@@ -687,7 +692,7 @@ func (c *StreamingCardController) disableStreaming(ctx context.Context) error {
 	if !resp.Success() {
 		return fmt.Errorf("cardkit settings disable streaming failed: code=%d msg=%s", resp.Code, resp.Msg)
 	}
-	c.log.Debug("feishu: streaming disabled", "card_id", c.cardID)
+	c.log.Debug("feishu: streaming disabled", "card_id", cardID)
 
 	return nil
 }
