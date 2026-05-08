@@ -50,7 +50,7 @@ func (p *TTSPipeline) Process(ctx context.Context, fullText, channelID, threadTS
 	summary, err := p.summarize(ctx, fullText)
 	if err != nil {
 		p.log.Warn("tts: summary failed, using truncated text", "err", err)
-		summary = tts.TruncateText(fullText, p.maxChars)
+		summary = tts.SanitizeForSpeech(tts.TruncateText(fullText, p.maxChars))
 	}
 	if summary == "" {
 		return

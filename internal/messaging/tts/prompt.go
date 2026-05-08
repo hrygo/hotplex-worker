@@ -31,15 +31,6 @@ const TTSSystemPrompt = "你是一位面向开发者的语音播报编辑。任�
 // Format string: fmt.Sprintf(TTSUserPromptTemplate, truncatedText)
 const TTSUserPromptTemplate = "将以下 AI 回复改写为口语播报稿：\n\n%s"
 
-// SummaryChatOpts controls LLM generation for TTS summaries.
-// MaxTokens=256 covers 150 Chinese characters (~225 tokens) with margin.
-// Temperature=0.3 ensures consistent, focused summaries.
-var SummaryChatOpts = brain.ChatOptions{
-	MaxTokens:    256,
-	Temperature:  llm.FloatPtr(0.3),
-	SystemPrompt: "", // populated dynamically by BuildTTSChatOpts
-}
-
 // BuildTTSChatOpts returns ChatOptions with the system prompt configured for the given maxChars.
 func BuildTTSChatOpts(maxChars int) brain.ChatOptions {
 	return brain.ChatOptions{
@@ -61,8 +52,9 @@ var reMDLink = regexp.MustCompile(`\[([^\]]*)\]\([^)]*\)`)
 // reMDImage matches Markdown image syntax ![alt](url).
 var reMDImage = regexp.MustCompile(`!\[([^\]]*)\]\([^)]*\)`)
 
-// reBarePath matches bare file paths containing / or \ with common extensions.
-var reBarePath = regexp.MustCompile(`[\w./\-\\]+\.(go|ts|js|py|rs|java|yaml|yml|json|toml|md|sql|mod|sum|proto)`)
+// reBarePath matches bare file paths: must contain a / or \ separator before the extension.
+// Avoids false positives on natural text like "see json below".
+var reBarePath = regexp.MustCompile(`[\w.\-]+[/\\][\w./\-\\]+\.(go|ts|js|py|rs|java|yaml|yml|json|toml|md|sql|mod|sum|proto)`)
 
 // reLargeDigits matches sequences of 4+ consecutive digits (likely large numbers).
 var reLargeDigits = regexp.MustCompile(`\b(\d{4,})\b`)

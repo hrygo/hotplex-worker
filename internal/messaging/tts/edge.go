@@ -25,7 +25,6 @@ const (
 	edgeSecMSGECVersion  = "1-" + edgeChromiumVersion
 	edgeAudioFormat      = "audio-24khz-48kbitrate-mono-mp3"
 	edgeHandshakeTimeout = 30 * time.Second
-	edgeStreamTimeout    = 20 * time.Second
 	edgeDefaultVoice     = "zh-CN-XiaoxiaoNeural"
 
 	// Windows epoch offset: seconds between 1601-01-01 and 1970-01-01.
@@ -35,13 +34,13 @@ const (
 // generateSecMSGec generates the Sec-MS-GEC token required by Microsoft Edge TTS.
 // Algorithm: floor timestamp to 5-min boundary → convert to Windows 100ns ticks → SHA-256(ticks + token).
 func generateSecMSGec() string {
-	ticks := float64(time.Now().UTC().Unix())
+	now := time.Now().UTC().Unix()
 	// Floor to nearest 300-second (5-minute) boundary.
-	ticks -= float64(int64(ticks) % 300)
-	// Convert to 100-nanosecond intervals since Windows epoch.
-	winTicks := (ticks + winEpochSeconds) * 1e7
+	floored := now - (now % 300)
+	// Convert to 100-nanosecond intervals since Windows epoch (1601-01-01).
+	winTicks := (floored + winEpochSeconds) * 10_000_000
 
-	strToHash := fmt.Sprintf("%d%s", int(winTicks/1e9)*1e9, edgeTrustedToken)
+	strToHash := fmt.Sprintf("%d%s", winTicks, edgeTrustedToken)
 	hash := sha256.Sum256([]byte(strToHash))
 	return strings.ToUpper(hex.EncodeToString(hash[:]))
 }
@@ -68,6 +67,13 @@ func synthesizeEdge(ctx context.Context, text, voice string) ([]byte, error) {
 	if voice == "" {
 		voice = edgeDefaultVoice
 	}
+	// Sanitize voice: strip any characters that could break SSML attribute quoting.
+	voice = strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || r == '-' {
+			return r
+		}
+		return -1
+	}, voice)
 
 	// Build WebSocket URL with authentication tokens.
 	wsURL := fmt.Sprintf("%s&Sec-MS-GEC=%s&Sec-MS-GEC-Version=%s&ConnectionId=%s",
@@ -98,10 +104,14 @@ func synthesizeEdge(ctx context.Context, text, voice string) ([]byte, error) {
 			msgType, data, readErr := conn.ReadMessage()
 			if readErr != nil {
 				// Normal close or error — return whatever audio we have.
+				r := result{err: readErr}
 				if audio != nil {
-					done <- result{audio: audio}
-				} else {
-					done <- result{err: readErr}
+					r = result{audio: audio}
+				}
+				select {
+				case done <- r:
+				default:
+					// Caller already returned (context cancelled).
 				}
 				return
 			}
@@ -110,7 +120,10 @@ func synthesizeEdge(ctx context.Context, text, voice string) ([]byte, error) {
 			case websocket.TextMessage:
 				// Check for turn.end signal.
 				if bytes.Contains(data, []byte("Path:turn.end")) {
-					done <- result{audio: audio}
+					select {
+					case done <- result{audio: audio}:
+					default:
+					}
 					return
 				}
 			case websocket.BinaryMessage:
@@ -140,7 +153,7 @@ func synthesizeEdge(ctx context.Context, text, voice string) ([]byte, error) {
 	// Send SSML message.
 	reqID := edgeConnectionID()
 	ssml := fmt.Sprintf(
-		"<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'>"+
+		"<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='zh-CN'>"+
 			"<voice name='%s'><prosody pitch='+0Hz' rate='+0%%' volume='+0%%'>%s</prosody></voice></speak>",
 		voice, sanitizeSSMLText(text),
 	)
@@ -160,6 +173,8 @@ func synthesizeEdge(ctx context.Context, text, voice string) ([]byte, error) {
 		}
 		return r.audio, nil
 	case <-ctx.Done():
+		// Force-close connection to unblock the reader goroutine.
+		_ = conn.Close()
 		return nil, fmt.Errorf("tts edge: %w", ctx.Err())
 	}
 }
