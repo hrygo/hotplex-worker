@@ -49,6 +49,7 @@ type Adapter struct {
 	transcriber        Transcriber
 	turnSummaryEnabled bool
 	ttsPipeline        *TTSPipeline
+	botName            string
 
 	mu          sync.RWMutex
 	chatQueue   *ChatQueue
@@ -112,7 +113,7 @@ func (a *Adapter) Start(ctx context.Context) error {
 		lark.WithLogger(SlogLogger{Logger: a.Log}),
 	)
 
-	if err := a.fetchBotOpenID(ctx); err != nil {
+	if err := a.fetchBotInfo(ctx); err != nil {
 		return fmt.Errorf("feishu: failed to resolve bot identity: %w", err)
 	}
 
@@ -202,8 +203,7 @@ func (a *Adapter) runWebSocket(ctx context.Context) {
 	}
 }
 
-func (a *Adapter) fetchBotOpenID(ctx context.Context) error {
-	// Add a bounded timeout to prevent startup hanging on the bot info API.
+func (a *Adapter) fetchBotInfo(ctx context.Context) error {
 	botCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
@@ -212,17 +212,18 @@ func (a *Adapter) fetchBotOpenID(ctx context.Context) error {
 		return fmt.Errorf("bot info API: %w", err)
 	}
 
+	body := resp.RawBody
+	if len(body) == 0 {
+		return fmt.Errorf("bot info API: empty response body")
+	}
+
 	var result struct {
 		Code int    `json:"code"`
 		Msg  string `json:"msg"`
 		Bot  struct {
-			OpenID string `json:"open_id"`
+			OpenID  string `json:"open_id"`
+			AppName string `json:"app_name"`
 		} `json:"bot"`
-	}
-
-	body := resp.RawBody
-	if len(body) == 0 {
-		return fmt.Errorf("bot info API: empty response body")
 	}
 
 	if err := json.Unmarshal(body, &result); err != nil {
@@ -235,8 +236,22 @@ func (a *Adapter) fetchBotOpenID(ctx context.Context) error {
 		return fmt.Errorf("bot open_id is empty")
 	}
 	a.botOpenID = result.Bot.OpenID
-	a.Log.Info("feishu: bot identity resolved", "open_id", a.botOpenID)
+	if result.Bot.AppName != "" {
+		a.botName = result.Bot.AppName
+	} else {
+		a.botName = "HotPlex"
+	}
+	a.Log.Info("feishu: bot identity resolved", "open_id", a.botOpenID, "name", a.botName)
 	return nil
+}
+
+// resolveBotName returns the bot display name (set during Start by fetchBotInfo).
+// Falls back to "HotPlex" if the name was not resolved.
+func (a *Adapter) resolveBotName() string {
+	if a.botName == "" {
+		return "HotPlex"
+	}
+	return a.botName
 }
 
 // processMediaAttachments downloads media files and runs STT on audio,
@@ -470,7 +485,8 @@ func (a *Adapter) handleTextMessage(ctx context.Context, platformMsgID, channelI
 
 	// Prepare streaming controller (card is lazily created on first content).
 	if a.larkClient != nil && a.rateLimiter != nil {
-		ctrl := NewStreamingCardController(a.larkClient, a.rateLimiter, a.Log)
+		turnNum, model, branch, workDir := conn.turnHeaderMeta()
+		ctrl := NewStreamingCardController(a.larkClient, a.rateLimiter, a.Log, a.resolveBotName(), turnNum+1, model, branch, workDir)
 		conn.EnableStreaming(ctrl)
 	}
 
@@ -546,6 +562,9 @@ type FeishuConn struct {
 	toolEmoji         string    // current timeline emoji, for dedup
 	startedAt         time.Time // when the user sent the current message
 	workDir           string    // current workDir identity for session key derivation
+	turnCount         int       // cached from last Done event, 0 = first turn
+	lastModel         string    // cached from last TurnSummaryData
+	lastBranch        string    // cached from last TurnSummaryData
 	lastSummarySentMs atomic.Int64
 	voiceTriggered    atomic.Bool
 }
@@ -564,6 +583,27 @@ func (c *FeishuConn) SetWorkDir(dir string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.workDir = dir
+}
+
+func (c *FeishuConn) cacheTurnMeta(d messaging.TurnSummaryData) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if d.TurnCount > 0 {
+		c.turnCount = d.TurnCount
+	}
+	if d.ModelName != "" {
+		c.lastModel = d.ModelName
+	}
+	if d.GitBranch != "" {
+		c.lastBranch = d.GitBranch
+	}
+}
+
+// turnHeaderMeta returns cached turn metadata for card header construction.
+func (c *FeishuConn) turnHeaderMeta() (turnNum int, model, branch, workDir string) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.turnCount, c.lastModel, c.lastBranch, c.workDir
 }
 
 func (c *FeishuConn) EnableStreaming(ctrl *StreamingCardController) {
@@ -660,6 +700,7 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		c.adapter.Interactions.CancelAll(env.SessionID)
 
 		d := messaging.ExtractTurnSummary(env)
+		c.cacheTurnMeta(d)
 		c.adapter.Log.Info("turn summary",
 			"turn_count", d.TurnCount,
 			"duration_ms", d.TurnDurationMs,
@@ -679,6 +720,7 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 
 		var closeErr error
 		if streamCtrl != nil && streamCtrl.IsCreated() {
+			streamCtrl.SetCloseMeta(d)
 			closeCtx, closeCancel := context.WithTimeout(context.Background(), 5*time.Second)
 			closeErr = streamCtrl.Close(closeCtx)
 			closeCancel()
@@ -883,7 +925,7 @@ func (c *FeishuConn) writeContent(ctx context.Context, env *events.Envelope, tex
 		c.adapter.Log.Info("feishu: streaming card rotated",
 			"old_msg_id", oldMsgID)
 
-		newCtrl := NewStreamingCardController(c.adapter.larkClient, c.adapter.rateLimiter, c.adapter.Log)
+		newCtrl := NewStreamingCardController(c.adapter.larkClient, c.adapter.rateLimiter, c.adapter.Log, c.adapter.resolveBotName(), 0, c.lastModel, c.lastBranch, c.workDir)
 		c.mu.Lock()
 		c.streamCtrl = newCtrl
 		if oldMsgID != "" {
@@ -926,7 +968,11 @@ func (c *FeishuConn) writeContent(ctx context.Context, env *events.Envelope, tex
 }
 
 func (c *FeishuConn) sendTurnSummaryCard(d messaging.TurnSummaryData) {
-	cardJSON := buildTurnSummaryCard(d)
+	cardJSON := buildTurnSummaryCard(d, cardHeader{
+		Title:    c.adapter.resolveBotName(),
+		Template: headerBlue,
+		Tags:     turnTags(d.TurnCount, d.ModelName, d.GitBranch, c.WorkDir()),
+	})
 	if cardJSON == "" {
 		return
 	}
@@ -1057,6 +1103,12 @@ func (a *Adapter) handleTextControlCommand(ctx context.Context, chatID, userID, 
 		if ctrl != nil {
 			_ = ctrl.Abort(ctx)
 		}
+		// Clear cached turn metadata so the next turn starts fresh.
+		conn.mu.Lock()
+		conn.turnCount = 0
+		conn.lastModel = ""
+		conn.lastBranch = ""
+		conn.mu.Unlock()
 	}
 
 	// Completion feedback for non-CD actions (CD feedback was sent before execution).
@@ -1109,7 +1161,7 @@ func (a *Adapter) sendTextMessage(ctx context.Context, chatID, text string) erro
 		return fmt.Errorf("feishu: lark client not initialized")
 	}
 
-	cardJSON := buildCardContent(text)
+	cardJSON := buildCardContent(text, cardHeader{Title: a.resolveBotName()})
 	preview := cardJSON
 	if len(preview) > 200 {
 		preview = preview[:200] + "..."
@@ -1141,7 +1193,7 @@ func (a *Adapter) sendTextMessage(ctx context.Context, chatID, text string) erro
 
 //nolint:unparam // replyInThread reserved for future thread reply support
 func (a *Adapter) replyMessage(ctx context.Context, messageID, content string, replyInThread bool) error {
-	cardJSON := buildCardContent(content)
+	cardJSON := buildCardContent(content, cardHeader{Title: a.resolveBotName()})
 	preview := cardJSON
 	if len(preview) > 200 {
 		preview = preview[:200] + "..."
@@ -1310,16 +1362,11 @@ type textContent struct {
 }
 
 // buildCardContent builds a Feishu interactive card JSON using CardKit v2 format.
-func buildCardContent(text string) string {
-	return encodeCard(map[string]any{
-		"schema": "2.0",
-		"config": map[string]any{"wide_screen_mode": true},
-		"body": map[string]any{
-			"elements": []map[string]any{
-				{"tag": "markdown", "content": text},
-			},
-		},
-	})
+func buildCardContent(text string, header cardHeader) string {
+	return buildCard(header,
+		map[string]any{"wide_screen_mode": true},
+		[]map[string]any{{"tag": "markdown", "content": text}},
+	)
 }
 
 // encodeCard serializes a CardKit v2 card to JSON with HTML escaping disabled.
@@ -1333,23 +1380,25 @@ func encodeCard(card map[string]any) string {
 
 // buildTurnSummaryCard builds a CardKit v2 card with column_set rows matching
 // Slack's TableBlock layout: two columns per row (label | value).
-func buildTurnSummaryCard(d messaging.TurnSummaryData) string {
+func buildTurnSummaryCard(d messaging.TurnSummaryData, header cardHeader) string {
 	fields := d.Fields()
 	if len(fields) == 0 {
 		return ""
 	}
 
-	elements := make([]map[string]any, len(fields))
-	for i, f := range fields {
-		elements[i] = tableRow(f.Label, f.Value)
+	// Skip fields already shown in header tags (Turn, Model, Dir, Branch).
+	skipLabels := map[string]bool{"🔄 Turn": true, "🤖 Model": true, "📂 Dir": true, "🌿 Branch": true}
+	var elements []map[string]any
+	for _, f := range fields {
+		if !skipLabels[f.Label] {
+			elements = append(elements, tableRow(f.Label, f.Value))
+		}
+	}
+	if len(elements) == 0 {
+		return ""
 	}
 
-	card := map[string]any{
-		"schema": "2.0",
-		"config": map[string]any{"wide_screen_mode": true},
-		"body":   map[string]any{"elements": elements},
-	}
-	return encodeCard(card)
+	return buildCard(header, map[string]any{"wide_screen_mode": true}, elements)
 }
 
 // tableRow creates a CardKit v2 column_set element with two weighted columns.

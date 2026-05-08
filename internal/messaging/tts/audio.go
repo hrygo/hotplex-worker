@@ -42,7 +42,11 @@ func ToOpus(ctx context.Context, audioData []byte) ([]byte, error) {
 
 // ToMP3 converts audio bytes (WAV or any format) to MP3 format (24kHz mono)
 // suitable for Slack audio messages. Requires ffmpeg at runtime.
+// If input is already MP3 (detected by ID3 or MPEG sync header), returns unchanged.
 func ToMP3(ctx context.Context, audioData []byte) ([]byte, error) {
+	if isMP3(audioData) {
+		return audioData, nil
+	}
 	cmd := exec.CommandContext(ctx, "ffmpeg",
 		"-i", "pipe:0",
 		"-ar", "24000",
@@ -71,6 +75,22 @@ func ToMP3(ctx context.Context, audioData []byte) ([]byte, error) {
 		return nil, fmt.Errorf("ffmpeg audio→mp3: empty output")
 	}
 	return out, nil
+}
+
+// isMP3 detects MP3 audio by checking for ID3v2 header or MPEG audio sync word.
+func isMP3(data []byte) bool {
+	if len(data) < 3 {
+		return false
+	}
+	// ID3v2 header: "ID3"
+	if data[0] == 0x49 && data[1] == 0x44 && data[2] == 0x33 {
+		return true
+	}
+	// MPEG audio sync word: 0xFF followed by 0xE0 mask (bits 7-5 set).
+	if data[0] == 0xFF && len(data) >= 2 && (data[1]&0xE0) == 0xE0 && data[1] != 0xFF {
+		return true
+	}
+	return false
 }
 
 // EstimateAudioDuration estimates audio duration in seconds from audio bytes.

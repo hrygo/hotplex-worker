@@ -68,7 +68,7 @@ func TestStreamingCardController_transition_ValidTransitions(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			c := NewStreamingCardController(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+			c := NewStreamingCardController(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), "TestBot", 0, "", "", "")
 			c.phase.Store(int32(tt.from))
 			got := c.transition(tt.to)
 			require.Equal(t, tt.want, got)
@@ -78,7 +78,7 @@ func TestStreamingCardController_transition_ValidTransitions(t *testing.T) {
 
 func TestStreamingCardController_IsCreated(t *testing.T) {
 	t.Parallel()
-	c := NewStreamingCardController(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	c := NewStreamingCardController(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), "TestBot", 0, "", "", "")
 
 	c.phase.Store(int32(PhaseIdle))
 	require.False(t, c.IsCreated())
@@ -95,7 +95,7 @@ func TestStreamingCardController_IsCreated(t *testing.T) {
 
 func TestStreamingCardController_ConcurrentTransitions(t *testing.T) {
 	t.Parallel()
-	c := NewStreamingCardController(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	c := NewStreamingCardController(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), "TestBot", 0, "", "", "")
 
 	c.phase.Store(int32(PhaseIdle))
 	done := make(chan bool, 10)
@@ -286,7 +286,7 @@ func TestIsCardTableLimitError(t *testing.T) {
 func TestStreamingCardController_Expired(t *testing.T) {
 	t.Parallel()
 
-	c := NewStreamingCardController(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	c := NewStreamingCardController(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), "TestBot", 0, "", "", "")
 
 	// streamStartTime is set to time.Now() by NewStreamingCardController.
 	// So it should not be expired immediately.
@@ -296,7 +296,7 @@ func TestStreamingCardController_Expired(t *testing.T) {
 func TestStreamingCardController_MsgID(t *testing.T) {
 	t.Parallel()
 
-	c := NewStreamingCardController(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	c := NewStreamingCardController(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), "TestBot", 0, "", "", "")
 
 	// Initially empty.
 	require.Equal(t, "", c.MsgID())
@@ -308,7 +308,7 @@ func TestStreamingCardController_MsgID(t *testing.T) {
 func TestStreamingCardController_PhaseCreationFailed(t *testing.T) {
 	t.Parallel()
 
-	c := NewStreamingCardController(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	c := NewStreamingCardController(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), "TestBot", 0, "", "", "")
 
 	// idle → creation_failed is a valid transition (via Terminated).
 	require.True(t, c.transition(PhaseCreating))
@@ -322,7 +322,7 @@ func TestStreamingCardController_PhaseCreationFailed(t *testing.T) {
 func TestStreamingCardController_Abort(t *testing.T) {
 	t.Parallel()
 
-	c := NewStreamingCardController(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	c := NewStreamingCardController(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), "TestBot", 0, "", "", "")
 
 	// idle → creating → streaming
 	require.True(t, c.transition(PhaseCreating))
@@ -339,7 +339,7 @@ func TestStreamingCardController_Abort(t *testing.T) {
 func TestStreamingCardController_Abort_IdleNotAllowed(t *testing.T) {
 	t.Parallel()
 
-	c := NewStreamingCardController(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	c := NewStreamingCardController(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), "TestBot", 0, "", "", "")
 
 	// Cannot abort from idle.
 	require.False(t, c.transition(PhaseAborted))
@@ -348,7 +348,7 @@ func TestStreamingCardController_Abort_IdleNotAllowed(t *testing.T) {
 func TestStreamingCardController_Close_Idempotent(t *testing.T) {
 	t.Parallel()
 
-	c := NewStreamingCardController(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	c := NewStreamingCardController(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), "TestBot", 0, "", "", "")
 
 	// idle → creating → completed.
 	require.True(t, c.transition(PhaseCreating))
@@ -362,7 +362,7 @@ func TestStreamingCardController_Close_Idempotent(t *testing.T) {
 func TestStreamingCardController_Close_FromCreating(t *testing.T) {
 	t.Parallel()
 
-	c := NewStreamingCardController(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	c := NewStreamingCardController(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), "TestBot", 0, "", "", "")
 
 	// idle → creating
 	require.True(t, c.transition(PhaseCreating))
@@ -375,7 +375,7 @@ func TestStreamingCardController_Close_FromCreating(t *testing.T) {
 func TestStreamingCardController_IntegrityCheck(t *testing.T) {
 	t.Parallel()
 
-	c := NewStreamingCardController(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	c := NewStreamingCardController(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), "TestBot", 0, "", "", "")
 
 	// Simulate: no bytes written = integrity OK (no stream data).
 	require.True(t, c.transition(PhaseCreating))
