@@ -348,6 +348,22 @@ func TestSharedSynthesizer_WrapsNonCloser(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestSharedSynthesizer_TryAcquire_Success(t *testing.T) {
+	t.Parallel()
+	s := NewSharedSynthesizer(&mockSynthesizer{})
+	acquired := s.TryAcquire()
+	require.NotNil(t, acquired)
+	assert.Equal(t, int32(2), s.Refs())
+}
+
+func TestSharedSynthesizer_TryAcquire_FailsOnZero(t *testing.T) {
+	t.Parallel()
+	s := NewSharedSynthesizer(&mockSynthesizer{})
+	_ = s.Close(context.Background()) // refs -> 0
+	acquired := s.TryAcquire()
+	assert.Nil(t, acquired)
+}
+
 func TestSharedSynthesizer_DelegatesSynthesize(t *testing.T) {
 	t.Parallel()
 	inner := &mockSynthesizer{

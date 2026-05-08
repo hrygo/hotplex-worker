@@ -320,9 +320,9 @@ func buildTTSSynthesizer(ttsCfg config.TTSConfig, log *slog.Logger) tts.Synthesi
 	defer ttsCacheMu.Unlock()
 
 	if existing, ok := ttsCache[cacheKey]; ok {
-		if existing.Refs() > 0 {
+		if acquired := existing.TryAcquire(); acquired != nil {
 			log.Debug("tts: reusing shared synthesizer", "key", cacheKey)
-			return existing.Acquire()
+			return acquired
 		}
 		delete(ttsCache, cacheKey)
 	}

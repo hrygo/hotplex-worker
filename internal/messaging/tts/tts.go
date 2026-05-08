@@ -162,6 +162,17 @@ func (w *SharedSynthesizer) Acquire() *SharedSynthesizer {
 	return w
 }
 
+// TryAcquire increments refs only if > 0. Returns nil if already closed.
+func (w *SharedSynthesizer) TryAcquire() *SharedSynthesizer {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.refs.Load() <= 0 {
+		return nil
+	}
+	w.refs.Add(1)
+	return w
+}
+
 func (w *SharedSynthesizer) Close(ctx context.Context) error {
 	w.mu.Lock()
 	if w.refs.Add(-1) > 0 {
