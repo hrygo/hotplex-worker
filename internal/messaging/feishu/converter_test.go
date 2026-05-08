@@ -741,9 +741,9 @@ func TestConvertInteractive(t *testing.T) {
 					{"tag":"img","img_key":"img_v3_abc"}
 				]
 			}`,
-			msgID:    "msg_interactive_1",
-			wantOK:   true,
-			contains: []string{"## 会议纪要", "2026-05-08", "讨论了项目进度", "**结论**: 按时交付", "[图片]"},
+			msgID:     "msg_interactive_1",
+			wantOK:    true,
+			contains:  []string{"## 会议纪要", "2026-05-08", "讨论了项目进度", "**结论**: 按时交付", "[图片]"},
 			wantMedia: 1,
 			wantType:  "image",
 			wantKey:   "img_v3_abc",
@@ -759,9 +759,9 @@ func TestConvertInteractive(t *testing.T) {
 					]}
 				]
 			}`,
-			msgID:    "msg_interactive_2",
-			wantOK:   true,
-			contains: []string{"主内容", "备注1", "备注2"},
+			msgID:     "msg_interactive_2",
+			wantOK:    true,
+			contains:  []string{"主内容", "备注1", "备注2"},
 			wantMedia: 0,
 		},
 		{
@@ -769,9 +769,9 @@ func TestConvertInteractive(t *testing.T) {
 			rawContent: `{
 				"header": {"title":{"tag":"plain_text","content":"仅标题"}}
 			}`,
-			msgID:    "msg_interactive_3",
-			wantOK:   true,
-			contains: []string{"## 仅标题"},
+			msgID:     "msg_interactive_3",
+			wantOK:    true,
+			contains:  []string{"## 仅标题"},
 			wantMedia: 0,
 		},
 		{
@@ -781,9 +781,9 @@ func TestConvertInteractive(t *testing.T) {
 					{"tag":"img","img_key":"img_only"}
 				]
 			}`,
-			msgID:    "msg_interactive_4",
-			wantOK:   true,
-			contains: []string{"[图片]"},
+			msgID:     "msg_interactive_4",
+			wantOK:    true,
+			contains:  []string{"[图片]"},
 			wantMedia: 1,
 			wantType:  "image",
 			wantKey:   "img_only",
@@ -797,36 +797,36 @@ func TestConvertInteractive(t *testing.T) {
 					{"tag":"div","text":{"tag":"plain_text","content":"after action"}}
 				]
 			}`,
-			msgID:    "msg_interactive_5",
-			wantOK:   true,
-			contains: []string{"before action", "after action"},
+			msgID:      "msg_interactive_5",
+			wantOK:     true,
+			contains:   []string{"before action", "after action"},
 			notContain: []string{"click me"},
-			wantMedia: 0,
+			wantMedia:  0,
 		},
 		{
-			name: "empty card falls back to placeholder",
+			name:       "empty card falls back to placeholder",
 			rawContent: `{"elements":[]}`,
-			msgID:    "msg_interactive_6",
-			wantOK:   true,
-			contains: []string{"[交互式卡片]"},
-			wantMedia: 0,
+			msgID:      "msg_interactive_6",
+			wantOK:     true,
+			contains:   []string{"[交互式卡片]"},
+			wantMedia:  0,
 		},
 		{
-			name: "invalid json falls back to placeholder",
+			name:       "invalid json falls back to placeholder",
 			rawContent: `{broken`,
-			msgID:    "msg_interactive_7",
-			wantOK:   true,
-			contains: []string{"[交互式卡片]"},
-			wantMedia: 0,
+			msgID:      "msg_interactive_7",
+			wantOK:     true,
+			contains:   []string{"[交互式卡片]"},
+			wantMedia:  0,
 		},
 		{
 			name: "card with img but no img_key",
 			rawContent: `{
 				"elements": [{"tag":"img"}]
 			}`,
-			msgID:    "msg_interactive_8",
-			wantOK:   true,
-			contains: []string{"[交互式卡片]"},
+			msgID:     "msg_interactive_8",
+			wantOK:    true,
+			contains:  []string{"[交互式卡片]"},
 			wantMedia: 0,
 		},
 		{
@@ -839,9 +839,9 @@ func TestConvertInteractive(t *testing.T) {
 					]}
 				]
 			}`,
-			msgID:    "msg_interactive_9",
-			wantOK:   true,
-			contains: []string{"col1", "col2"},
+			msgID:     "msg_interactive_9",
+			wantOK:    true,
+			contains:  []string{"col1", "col2"},
 			wantMedia: 0,
 		},
 		{
@@ -850,11 +850,11 @@ func TestConvertInteractive(t *testing.T) {
 				"header": {"title":{"tag":"plain_text","content":""},"subtitle":"sub"},
 				"elements": [{"tag":"div","text":{"tag":"plain_text","content":"body"}}]
 			}`,
-			msgID:    "msg_interactive_10",
-			wantOK:   true,
-			contains: []string{"sub", "body"},
+			msgID:      "msg_interactive_10",
+			wantOK:     true,
+			contains:   []string{"sub", "body"},
 			notContain: []string{"##"},
-			wantMedia: 0,
+			wantMedia:  0,
 		},
 		{
 			name: "schema 2.0 with body.elements",
@@ -869,9 +869,9 @@ func TestConvertInteractive(t *testing.T) {
 					]
 				}
 			}`,
-			msgID:    "msg_interactive_11",
-			wantOK:   true,
-			contains: []string{"## Schema 2.0 Card", "**bold text**", "[图片]", "plain div"},
+			msgID:     "msg_interactive_11",
+			wantOK:    true,
+			contains:  []string{"## Schema 2.0 Card", "**bold text**", "[图片]", "plain div"},
 			wantMedia: 1,
 			wantType:  "image",
 			wantKey:   "img_s2",
@@ -885,11 +885,11 @@ func TestConvertInteractive(t *testing.T) {
 					"elements": [{"tag":"div","text":{"tag":"plain_text","content":"new schema"}}]
 				}
 			}`,
-			msgID:    "msg_interactive_12",
-			wantOK:   true,
-			contains: []string{"new schema"},
+			msgID:      "msg_interactive_12",
+			wantOK:     true,
+			contains:   []string{"new schema"},
 			notContain: []string{"old schema"},
-			wantMedia: 0,
+			wantMedia:  0,
 		},
 		{
 			name: "schema 2.0 with column_set in body",
@@ -904,9 +904,9 @@ func TestConvertInteractive(t *testing.T) {
 					]
 				}
 			}`,
-			msgID:    "msg_interactive_13",
-			wantOK:   true,
-			contains: []string{"col A", "col B"},
+			msgID:     "msg_interactive_13",
+			wantOK:    true,
+			contains:  []string{"col A", "col B"},
 			wantMedia: 0,
 		},
 	}
