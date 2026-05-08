@@ -231,72 +231,22 @@ func TestFallbackSynthesizer_CloseCollectsErrors(t *testing.T) {
 	assert.Contains(t, err.Error(), "secondary close")
 }
 
-// --- KokoroSynthesizer Tests ---
+// --- MossSynthesizer Tests ---
 
-func TestKokoroSynthesizer_ImplementsInterfaces(t *testing.T) {
+func TestMossSynthesizer_ImplementsInterfaces(t *testing.T) {
 	t.Parallel()
 
-	var _ Synthesizer = (*KokoroSynthesizer)(nil)
-	var _ Closer = (*KokoroSynthesizer)(nil)
+	var _ Synthesizer = (*MossSynthesizer)(nil)
+	var _ Closer = (*MossSynthesizer)(nil)
 }
 
-func TestNewKokoroSynthesizer_Defaults(t *testing.T) {
+func TestMossSynthesizer_EmptyText(t *testing.T) {
 	t.Parallel()
 
-	k := NewKokoroSynthesizer("model.onnx", "", slog.Default())
-	require.NotNil(t, k)
-	assert.Equal(t, "af_heart", k.voice)
-	assert.Equal(t, 30*time.Minute, k.idleTimeout)
-	assert.Nil(t, k.session, "session should be nil before load")
-	assert.False(t, k.closed)
-}
-
-func TestNewKokoroSynthesizerWithOptions_CustomTimeout(t *testing.T) {
-	t.Parallel()
-
-	k := NewKokoroSynthesizerWithOptions("model.onnx", "custom_voice", 5*time.Minute, slog.Default())
-	assert.Equal(t, "custom_voice", k.voice)
-	assert.Equal(t, 5*time.Minute, k.idleTimeout)
-}
-
-func TestNewKokoroSynthesizerWithOptions_NegativeTimeout(t *testing.T) {
-	t.Parallel()
-
-	k := NewKokoroSynthesizerWithOptions("model.onnx", "", -1, slog.Default())
-	assert.Equal(t, 30*time.Minute, k.idleTimeout, "negative timeout should fall back to 30m default")
-}
-
-func TestKokoroSynthesizer_EmptyText(t *testing.T) {
-	t.Parallel()
-
-	k := NewKokoroSynthesizer("model.onnx", "", slog.Default())
-	_, err := k.Synthesize(context.Background(), "")
+	m := NewMossSynthesizer("/tmp/moss", "", 0, 0, 0, slog.Default())
+	_, err := m.Synthesize(context.Background(), "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "empty text")
-}
-
-func TestKokoroSynthesizer_RejectsAfterClose(t *testing.T) {
-	t.Parallel()
-
-	k := NewKokoroSynthesizer("model.onnx", "", slog.Default())
-	err := k.Close(context.Background())
-	require.NoError(t, err)
-
-	k.mu.Lock()
-	assert.True(t, k.closed)
-	assert.Nil(t, k.session, "session should be nil after Close")
-	k.mu.Unlock()
-
-	_, err = k.Synthesize(context.Background(), "hello again")
-	assert.ErrorIs(t, err, ErrSynthesizerClosed)
-}
-
-func TestKokoroSynthesizer_LoadFailsWithoutModel(t *testing.T) {
-	t.Parallel()
-
-	k := NewKokoroSynthesizer("nonexistent_model.onnx", "", slog.Default())
-	_, err := k.Synthesize(context.Background(), "hello")
-	assert.Error(t, err, "should fail when model file does not exist")
 }
 
 // --- Factory Tests ---
@@ -305,10 +255,12 @@ func TestNewConfiguredSynthesizer(t *testing.T) {
 	t.Parallel()
 
 	cfg := SynthesizerConfig{
-		EdgeVoice:         "zh-CN-YunxiNeural",
-		KokoroModelPath:   "/tmp/model.onnx",
-		KokoroVoice:       "af_heart",
-		KokoroIdleTimeout: 5 * time.Minute,
+		EdgeVoice:       "zh-CN-YunxiNeural",
+		MossModelDir:    "/tmp/moss",
+		MossVoice:       "Xiaoyu",
+		MossPort:        18083,
+		MossCpuThreads:  2,
+		MossIdleTimeout: 5 * time.Minute,
 	}
 	synth := NewConfiguredSynthesizer(cfg, slog.Default())
 	require.NotNil(t, synth)

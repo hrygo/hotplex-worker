@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"os/exec"
-	"runtime"
 	"strings"
 
 	"github.com/hrygo/hotplex/internal/cli"
@@ -38,28 +37,26 @@ func (c ttsEnvironmentChecker) Check(ctx context.Context) cli.Diagnostic {
 		}
 	}
 
-	if deps.OnnxRuntime {
-		if p, err := exec.LookPath("onnxruntime"); err == nil {
-			msgs = append(msgs, "onnxruntime: "+p)
-		} else if found := findOnnxRuntimeLib(); found != "" {
-			msgs = append(msgs, "onnxruntime: "+found)
+	if deps.Python3 {
+		if p, err := exec.LookPath("python3"); err == nil {
+			msgs = append(msgs, "python3: "+p)
 		} else {
-			fails = append(fails, "onnxruntime")
+			fails = append(fails, "python3")
 		}
 	}
 
-	if deps.EspeakNG {
-		if p, err := exec.LookPath("espeak-ng"); err == nil {
-			msgs = append(msgs, "espeak-ng: "+p)
+	if deps.MossModelDir != "" {
+		if info, err := os.Stat(deps.MossModelDir); err == nil && info.IsDir() {
+			msgs = append(msgs, "moss model dir: "+deps.MossModelDir)
 		} else {
-			fails = append(fails, "espeak-ng")
+			fails = append(fails, "moss model dir ("+deps.MossModelDir+")")
 		}
 	}
 
 	if len(fails) > 0 {
 		hints := make([]string, len(fails))
 		for i, pkg := range fails {
-			hints[i] = installHint(ttsPkgName(pkg))
+			hints[i] = installHint(pkg)
 		}
 		return cli.Diagnostic{
 			Name:     c.Name(),
@@ -80,13 +77,13 @@ func (c ttsEnvironmentChecker) Check(ctx context.Context) cli.Diagnostic {
 
 // ttsDeps describes which external tools the TTS pipeline requires.
 type ttsDeps struct {
-	FFmpeg      bool
-	OnnxRuntime bool
-	EspeakNG    bool
+	FFmpeg       bool
+	Python3      bool
+	MossModelDir string
 }
 
 func (d ttsDeps) any() bool {
-	return d.FFmpeg || d.OnnxRuntime || d.EspeakNG
+	return d.FFmpeg || d.Python3 || d.MossModelDir != ""
 }
 
 // ttsRequirements determines which TTS dependencies are needed based on config.
@@ -108,48 +105,24 @@ func ttsRequirements() ttsDeps {
 		deps.FFmpeg = true
 	}
 
-	// Kokoro ONNX fallback requires onnxruntime + espeak-ng.
-	slackKokoro := cfg.Messaging.Slack.Enabled && cfg.Messaging.Slack.TTSConfig.Enabled && kokoroProvider(cfg.Messaging.Slack.TTSProvider)
-	feishuKokoro := cfg.Messaging.Feishu.Enabled && cfg.Messaging.Feishu.TTSConfig.Enabled && kokoroProvider(cfg.Messaging.Feishu.TTSProvider)
-	if slackKokoro || feishuKokoro {
-		deps.OnnxRuntime = true
-		deps.EspeakNG = true
+	// MOSS-TTS-Nano sidecar requires python3 + model dir.
+	slackMoss := cfg.Messaging.Slack.Enabled && cfg.Messaging.Slack.TTSConfig.Enabled && mossProvider(cfg.Messaging.Slack.TTSProvider)
+	feishuMoss := cfg.Messaging.Feishu.Enabled && cfg.Messaging.Feishu.TTSConfig.Enabled && mossProvider(cfg.Messaging.Feishu.TTSProvider)
+	if slackMoss || feishuMoss {
+		deps.Python3 = true
+		deps.FFmpeg = true
+		dir := cfg.Messaging.Feishu.MossModelDir
+		if slackMoss && cfg.Messaging.Slack.MossModelDir != "" {
+			dir = cfg.Messaging.Slack.MossModelDir
+		}
+		deps.MossModelDir = dir
 	}
 
 	return deps
 }
 
-func kokoroProvider(provider string) bool {
-	return provider == "kokoro" || provider == "edge+kokoro"
-}
-
-func ttsPkgName(pkg string) string {
-	if runtime.GOOS == "linux" && pkg == "onnxruntime" {
-		return "libonnxruntime-dev"
-	}
-	return pkg
-}
-
-func findOnnxRuntimeLib() string {
-	candidates := []string{}
-	switch runtime.GOOS {
-	case "darwin":
-		candidates = []string{"/usr/local/lib/libonnxruntime.dylib", "/opt/homebrew/lib/libonnxruntime.dylib"}
-	case "linux":
-		candidates = []string{
-			"/usr/lib/x86_64-linux-gnu/libonnxruntime.so",
-			"/usr/lib/aarch64-linux-gnu/libonnxruntime.so",
-			"/usr/local/lib/libonnxruntime.so",
-		}
-	case "windows":
-		candidates = []string{`C:\Program Files\onnxruntime\lib\onnxruntime.dll`}
-	}
-	for _, p := range candidates {
-		if _, err := os.Stat(p); err == nil {
-			return p
-		}
-	}
-	return ""
+func mossProvider(provider string) bool {
+	return provider == "moss" || provider == "edge+moss"
 }
 
 func joinStrings(ss []string) string {

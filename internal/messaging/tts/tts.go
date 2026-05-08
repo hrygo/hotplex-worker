@@ -109,18 +109,20 @@ func (s *EdgeSynthesizer) Synthesize(ctx context.Context, text string) ([]byte, 
 
 // SynthesizerConfig holds parameters for building a Synthesizer.
 type SynthesizerConfig struct {
-	EdgeVoice         string
-	KokoroModelPath   string
-	KokoroVoice       string
-	KokoroIdleTimeout time.Duration
+	EdgeVoice       string
+	MossModelDir    string
+	MossVoice       string
+	MossPort        int
+	MossCpuThreads  int
+	MossIdleTimeout time.Duration
 }
 
-// NewConfiguredSynthesizer creates an Edge-TTS + Kokoro Fallback setup from config.
+// NewConfiguredSynthesizer creates an Edge-TTS + MOSS Fallback setup from config.
 func NewConfiguredSynthesizer(cfg SynthesizerConfig, log *slog.Logger) Synthesizer {
 	if cfg.EdgeVoice == "" {
 		cfg.EdgeVoice = "zh-CN-XiaoxiaoNeural"
 	}
 	edge := NewEdgeSynthesizer(cfg.EdgeVoice, log)
-	kokoro := NewKokoroSynthesizerWithOptions(cfg.KokoroModelPath, cfg.KokoroVoice, cfg.KokoroIdleTimeout, log)
-	return NewFallbackSynthesizer(edge, kokoro, log)
+	moss := NewMossSynthesizer(cfg.MossModelDir, cfg.MossVoice, cfg.MossPort, cfg.MossCpuThreads, cfg.MossIdleTimeout, log)
+	return NewFallbackSynthesizer(edge, moss, log)
 }

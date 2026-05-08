@@ -208,6 +208,12 @@ messaging:
     tts_provider: "edge"
     tts_voice: "zh-CN-XiaoxiaoNeural"
     tts_max_chars: 150
+    # MOSS-TTS-Nano local CPU fallback (uncomment for edge+moss provider)
+    # tts_moss_model_dir: "~/.hotplex/models/moss-tts-nano"
+    # tts_moss_voice: "Xiaoyu"
+    # tts_moss_port: 18083
+    # tts_moss_idle_timeout: 30m
+    # tts_moss_cpu_threads: 2
 
   feishu:
     enabled: false
@@ -224,3 +230,15 @@ messaging:
     tts_provider: "edge"
     tts_voice: "zh-CN-XiaoxiaoNeural"
     tts_max_chars: 150
+    # MOSS-TTS-Nano local CPU fallback (uncomment for edge+moss provider)
+    # tts_moss_model_dir: "~/.hotplex/models/moss-tts-nano"
+    # tts_moss_voice: "Xiaoyu"
+    # tts_moss_port: 18083
+    # tts_moss_idle_timeout: 30m
+    # tts_moss_cpu_threads: 2
+    # MOSS-TTS-Nano local CPU fallback (uncomment for edge+moss provider)
+    # tts_moss_model_dir: "~/.hotplex/models/moss-tts-nano"
+    # tts_moss_voice: "Xiaoyu"
+    # tts_moss_port: 18083
+    # tts_moss_idle_timeout: 30m
+    # tts_moss_cpu_threads: 2
