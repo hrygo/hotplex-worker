@@ -42,8 +42,12 @@ func (c *FeishuConn) sendPermissionRequest(ctx context.Context, env *events.Enve
 	// Instruction text with request ID for reference
 	footer := fmt.Sprintf("---\n📋 请求ID: `%s`\n💬 回复 **允许/同意/ok** 或 **拒绝/取消/no** 来响应此请求", data.ID)
 
-	cardJSON := buildInteractionCard(header, footer)
-
+	cardJSON := buildInteractionCard(header, footer, cardHeader{
+		Title:    "工具执行授权",
+		Subtitle: data.ToolName,
+		Template: "orange",
+		Tags:     []cardTag{{Text: "pending", Color: "orange"}},
+	})
 	chatID := c.chatID
 	c.adapter.Log.Debug("feishu: sending permission request card", "chat", chatID, "request_id", data.ID)
 
@@ -95,7 +99,10 @@ func (c *FeishuConn) sendQuestionRequest(ctx context.Context, env *events.Envelo
 
 	footer := "---\n💬 回复选项文本或自定义答案来响应此问题"
 
-	cardJSON := buildInteractionCard(sb.String(), footer)
+	cardJSON := buildInteractionCard(sb.String(), footer, cardHeader{
+		Title:    "用户输入请求",
+		Template: "yellow",
+	})
 
 	chatID := c.chatID
 	if err := c.adapter.sendCardMessage(ctx, chatID, cardJSON); err != nil {
@@ -131,7 +138,11 @@ func (c *FeishuConn) sendElicitationRequest(ctx context.Context, env *events.Env
 	}
 	footer.WriteString("💬 回复 **accept** 或 **decline** 来响应此请求")
 
-	cardJSON := buildInteractionCard(header, footer.String())
+	cardJSON := buildInteractionCard(header, footer.String(), cardHeader{
+		Title:    "MCP Server 请求",
+		Subtitle: data.MCPServerName,
+		Template: "violet",
+	})
 
 	chatID := c.chatID
 	if err := c.adapter.sendCardMessage(ctx, chatID, cardJSON); err != nil {
@@ -325,7 +336,7 @@ func (a *Adapter) sendCardMessage(ctx context.Context, chatID, cardJSON string) 
 }
 
 // buildInteractionCard builds a CardKit v2 card for interaction requests.
-func buildInteractionCard(body, footer string) string {
+func buildInteractionCard(body, footer string, header cardHeader) string {
 	elements := []map[string]any{
 		{"tag": "markdown", "content": body},
 	}
@@ -334,13 +345,7 @@ func buildInteractionCard(body, footer string) string {
 		elements = append(elements, map[string]any{"tag": "markdown", "content": footer})
 	}
 
-	card := map[string]any{
-		"schema": "2.0",
-		"config": map[string]any{"wide_screen_mode": true},
-		"body":   map[string]any{"elements": elements},
-	}
-
-	return encodeCard(card)
+	return buildCard(header, map[string]any{"wide_screen_mode": true}, elements)
 }
 
 // isPermissionAllow checks if the normalized text is a permission-allow keyword.

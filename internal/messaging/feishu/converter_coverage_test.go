@@ -151,7 +151,7 @@ func TestBuildMediaPrompt_NoUserText(t *testing.T) {
 
 func TestBuildInteractionCard_NoFooter(t *testing.T) {
 	t.Parallel()
-	result := buildInteractionCard("body text", "")
+	result := buildInteractionCard("body text", "", cardHeader{Title: "Test"})
 	require.Contains(t, result, "body text")
 
 	var parsed map[string]any

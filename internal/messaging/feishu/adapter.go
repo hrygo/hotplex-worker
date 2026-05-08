@@ -49,6 +49,8 @@ type Adapter struct {
 	transcriber        Transcriber
 	turnSummaryEnabled bool
 	ttsPipeline        *TTSPipeline
+	botName            string
+	botNameOnce        sync.Once
 
 	mu          sync.RWMutex
 	chatQueue   *ChatQueue
@@ -237,6 +239,46 @@ func (a *Adapter) fetchBotOpenID(ctx context.Context) error {
 	a.botOpenID = result.Bot.OpenID
 	a.Log.Info("feishu: bot identity resolved", "open_id", a.botOpenID)
 	return nil
+}
+
+// resolveBotName lazily loads the bot display name via /open-apis/bot/v3/info.
+// Uses sync.Once for a single API call. Falls back to "HotPlex".
+func (a *Adapter) resolveBotName(ctx context.Context) string {
+	a.botNameOnce.Do(func() {
+		if a.larkClient == nil {
+			a.botName = "HotPlex"
+			return
+		}
+		botCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+
+		resp, err := a.larkClient.Get(botCtx, "/open-apis/bot/v3/info", nil, "tenant_access_token")
+		if err != nil {
+			a.botName = "HotPlex"
+			a.Log.Debug("feishu: bot name fallback (API error)", "err", err)
+			return
+		}
+		var result struct {
+			Code int    `json:"code"`
+			Msg  string `json:"msg"`
+			Bot  struct {
+				AppName string `json:"app_name"`
+			} `json:"bot"`
+		}
+		if err := json.Unmarshal(resp.RawBody, &result); err != nil || result.Code != 0 || result.Bot.AppName == "" {
+			a.botName = "HotPlex"
+			if result.Code != 0 {
+				a.Log.Debug("feishu: bot name fallback (API error)", "code", result.Code, "msg", result.Msg)
+			}
+			return
+		}
+		a.botName = result.Bot.AppName
+		a.Log.Info("feishu: bot name resolved", "name", a.botName)
+	})
+	if a.botName == "" {
+		return "HotPlex"
+	}
+	return a.botName
 }
 
 // processMediaAttachments downloads media files and runs STT on audio,
@@ -470,7 +512,7 @@ func (a *Adapter) handleTextMessage(ctx context.Context, platformMsgID, channelI
 
 	// Prepare streaming controller (card is lazily created on first content).
 	if a.larkClient != nil && a.rateLimiter != nil {
-		ctrl := NewStreamingCardController(a.larkClient, a.rateLimiter, a.Log)
+		ctrl := NewStreamingCardController(a.larkClient, a.rateLimiter, a.Log, a.resolveBotName(ctx))
 		conn.EnableStreaming(ctrl)
 	}
 
@@ -883,7 +925,7 @@ func (c *FeishuConn) writeContent(ctx context.Context, env *events.Envelope, tex
 		c.adapter.Log.Info("feishu: streaming card rotated",
 			"old_msg_id", oldMsgID)
 
-		newCtrl := NewStreamingCardController(c.adapter.larkClient, c.adapter.rateLimiter, c.adapter.Log)
+		newCtrl := NewStreamingCardController(c.adapter.larkClient, c.adapter.rateLimiter, c.adapter.Log, c.adapter.resolveBotName(ctx))
 		c.mu.Lock()
 		c.streamCtrl = newCtrl
 		if oldMsgID != "" {
@@ -926,7 +968,7 @@ func (c *FeishuConn) writeContent(ctx context.Context, env *events.Envelope, tex
 }
 
 func (c *FeishuConn) sendTurnSummaryCard(d messaging.TurnSummaryData) {
-	cardJSON := buildTurnSummaryCard(d)
+	cardJSON := buildTurnSummaryCard(d, cardHeader{Title: "Turn 摘要", Template: "blue"})
 	if cardJSON == "" {
 		return
 	}
@@ -1109,7 +1151,7 @@ func (a *Adapter) sendTextMessage(ctx context.Context, chatID, text string) erro
 		return fmt.Errorf("feishu: lark client not initialized")
 	}
 
-	cardJSON := buildCardContent(text)
+	cardJSON := buildCardContent(text, cardHeader{Title: a.resolveBotName(ctx)})
 	preview := cardJSON
 	if len(preview) > 200 {
 		preview = preview[:200] + "..."
@@ -1141,7 +1183,7 @@ func (a *Adapter) sendTextMessage(ctx context.Context, chatID, text string) erro
 
 //nolint:unparam // replyInThread reserved for future thread reply support
 func (a *Adapter) replyMessage(ctx context.Context, messageID, content string, replyInThread bool) error {
-	cardJSON := buildCardContent(content)
+	cardJSON := buildCardContent(content, cardHeader{Title: a.resolveBotName(ctx)})
 	preview := cardJSON
 	if len(preview) > 200 {
 		preview = preview[:200] + "..."
@@ -1310,16 +1352,11 @@ type textContent struct {
 }
 
 // buildCardContent builds a Feishu interactive card JSON using CardKit v2 format.
-func buildCardContent(text string) string {
-	return encodeCard(map[string]any{
-		"schema": "2.0",
-		"config": map[string]any{"wide_screen_mode": true},
-		"body": map[string]any{
-			"elements": []map[string]any{
-				{"tag": "markdown", "content": text},
-			},
-		},
-	})
+func buildCardContent(text string, header cardHeader) string {
+	return buildCard(header,
+		map[string]any{"wide_screen_mode": true},
+		[]map[string]any{{"tag": "markdown", "content": text}},
+	)
 }
 
 // encodeCard serializes a CardKit v2 card to JSON with HTML escaping disabled.
@@ -1333,7 +1370,7 @@ func encodeCard(card map[string]any) string {
 
 // buildTurnSummaryCard builds a CardKit v2 card with column_set rows matching
 // Slack's TableBlock layout: two columns per row (label | value).
-func buildTurnSummaryCard(d messaging.TurnSummaryData) string {
+func buildTurnSummaryCard(d messaging.TurnSummaryData, header cardHeader) string {
 	fields := d.Fields()
 	if len(fields) == 0 {
 		return ""
@@ -1344,12 +1381,7 @@ func buildTurnSummaryCard(d messaging.TurnSummaryData) string {
 		elements[i] = tableRow(f.Label, f.Value)
 	}
 
-	card := map[string]any{
-		"schema": "2.0",
-		"config": map[string]any{"wide_screen_mode": true},
-		"body":   map[string]any{"elements": elements},
-	}
-	return encodeCard(card)
+	return buildCard(header, map[string]any{"wide_screen_mode": true}, elements)
 }
 
 // tableRow creates a CardKit v2 column_set element with two weighted columns.

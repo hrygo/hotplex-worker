@@ -71,7 +71,7 @@ func TestFeishuConn_Close_ClearsFields(t *testing.T) {
 
 	conn := a.GetOrCreateConn("chat123", "")
 	conn.mu.Lock()
-	conn.streamCtrl = NewStreamingCardController(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	conn.streamCtrl = NewStreamingCardController(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), "TestBot")
 	conn.typingRid = "typing_abc"
 	conn.toolRid = "tool_def"
 	conn.platformMsgID = "msg_xyz"
