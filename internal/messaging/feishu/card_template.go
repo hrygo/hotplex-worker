@@ -133,8 +133,8 @@ func shortenDir(dir string) string {
 	return filepath.Base(dir)
 }
 
-// turnTags builds text_tag_list from turn metadata (max 3 tags).
-// Order: [#N] neutral, [model] turquoise, [branch] indigo, [dir] green.
+// turnTags builds text_tag_list from turn metadata.
+// Order: [#N] neutral, [model] turquoise, [dir] green, [branch] indigo.
 func turnTags(turnNum int, model, branch, workDir string) []cardTag {
 	var tags []cardTag
 	if turnNum > 0 {
@@ -143,11 +143,14 @@ func turnTags(turnNum int, model, branch, workDir string) []cardTag {
 	if model != "" {
 		tags = append(tags, cardTag{Text: shortenModel(model), Color: "turquoise"})
 	}
-	if branch != "" {
-		tags = append(tags, cardTag{Text: branch, Color: "indigo"})
-	}
 	if dir := shortenDir(workDir); dir != "" {
 		tags = append(tags, cardTag{Text: dir, Color: "green"})
+	}
+	if branch != "" {
+		if len(branch) > 24 {
+			branch = branch[:24]
+		}
+		tags = append(tags, cardTag{Text: branch, Color: "indigo"})
 	}
 	return tags
 }

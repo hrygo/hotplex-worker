@@ -442,7 +442,7 @@ func newTestAdapter(t *testing.T) *Adapter {
 }
 
 func newTestStreamingCtrl() *StreamingCardController {
-	return NewStreamingCardController(nil, nil, discardLogger, "TestBot", 0, "")
+	return NewStreamingCardController(nil, nil, discardLogger, "TestBot", 0, "", "", "")
 }
 
 func newTestConn(adapter *Adapter, replyToMsgID string) *FeishuConn {
