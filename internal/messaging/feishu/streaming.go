@@ -144,9 +144,9 @@ func (c *StreamingCardController) SetCloseMeta(d messaging.TurnSummaryData) {
 // closeTags builds text_tag_list from closeMeta (full Turn/Model/Branch).
 func (c *StreamingCardController) closeTags() []cardTag {
 	if d := c.closeMeta.Load(); d != nil {
-		return turnTags(d.TurnCount, d.ModelName, d.GitBranch)
+		return turnTags(d.TurnCount, d.ModelName, d.GitBranch, c.workDir)
 	}
-	return turnTags(c.turnNum, "", "")
+	return turnTags(c.turnNum, "", "", c.workDir)
 }
 
 func (c *StreamingCardController) getPhase() CardPhase {
@@ -517,7 +517,7 @@ func (c *StreamingCardController) Abort(ctx context.Context) error {
 	c.updateHeader(ctx, cardID, cardHeader{
 		Title:    c.agentName,
 		Template: headerGrey,
-		Tags:     turnTags(c.turnNum, "", ""),
+		Tags:     turnTags(c.turnNum, "", "", c.workDir),
 	}, "")
 
 	return nil
@@ -582,7 +582,7 @@ func (c *StreamingCardController) idConvert(ctx context.Context, messageID strin
 
 func (c *StreamingCardController) sendCardMessage(ctx context.Context, chatID, content string) (string, error) {
 	contentJSON := buildStreamingCard(
-		cardHeader{Title: c.agentName, Template: headerWathet, Tags: turnTags(c.turnNum, "", "")},
+		cardHeader{Title: c.agentName, Template: headerWathet, Tags: turnTags(c.turnNum, "", "", c.workDir)},
 		truncateForSummary(content),
 		content,
 	)
@@ -766,7 +766,7 @@ func (c *StreamingCardController) flushCardKitWithRetry(ctx context.Context, con
 }
 
 func (c *StreamingCardController) flushIMPatch(ctx context.Context, content string) error {
-	return c.doFlushIMPatch(ctx, cardHeader{Title: c.agentName, Template: headerWathet, Tags: turnTags(c.turnNum, "", "")}, map[string]any{}, content, false)
+	return c.doFlushIMPatch(ctx, cardHeader{Title: c.agentName, Template: headerWathet, Tags: turnTags(c.turnNum, "", "", c.workDir)}, map[string]any{}, content, false)
 }
 
 // flushIMPatchWithConfig sends a final IM Patch with streaming_mode disabled and summary set.

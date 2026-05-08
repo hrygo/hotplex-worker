@@ -971,7 +971,7 @@ func (c *FeishuConn) sendTurnSummaryCard(d messaging.TurnSummaryData) {
 	cardJSON := buildTurnSummaryCard(d, cardHeader{
 		Title:    c.adapter.resolveBotName(),
 		Template: headerBlue,
-		Tags:     turnTags(d.TurnCount, d.ModelName, d.GitBranch),
+		Tags:     turnTags(d.TurnCount, d.ModelName, d.GitBranch, c.WorkDir()),
 	})
 	if cardJSON == "" {
 		return
@@ -1103,6 +1103,12 @@ func (a *Adapter) handleTextControlCommand(ctx context.Context, chatID, userID, 
 		if ctrl != nil {
 			_ = ctrl.Abort(ctx)
 		}
+		// Clear cached turn metadata so the next turn starts fresh.
+		conn.mu.Lock()
+		conn.turnCount = 0
+		conn.lastModel = ""
+		conn.lastBranch = ""
+		conn.mu.Unlock()
 	}
 
 	// Completion feedback for non-CD actions (CD feedback was sent before execution).

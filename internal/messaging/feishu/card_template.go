@@ -2,6 +2,7 @@ package feishu
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 )
 
@@ -123,9 +124,18 @@ func shortenModel(name string) string {
 	return name
 }
 
+// shortenDir extracts the last path segment for tag display.
+// "/home/user/project" -> "project"; "" -> "".
+func shortenDir(dir string) string {
+	if dir == "" {
+		return ""
+	}
+	return filepath.Base(dir)
+}
+
 // turnTags builds text_tag_list from turn metadata (max 3 tags).
-// Order: [#N] neutral, [model] turquoise, [branch] indigo.
-func turnTags(turnNum int, model, branch string) []cardTag {
+// Order: [#N] neutral, [model] turquoise, [branch] indigo, [dir] green.
+func turnTags(turnNum int, model, branch, workDir string) []cardTag {
 	var tags []cardTag
 	if turnNum > 0 {
 		tags = append(tags, cardTag{Text: fmt.Sprintf("#%d", turnNum)})
@@ -135,6 +145,9 @@ func turnTags(turnNum int, model, branch string) []cardTag {
 	}
 	if branch != "" {
 		tags = append(tags, cardTag{Text: branch, Color: "indigo"})
+	}
+	if dir := shortenDir(workDir); dir != "" {
+		tags = append(tags, cardTag{Text: dir, Color: "green"})
 	}
 	return tags
 }
