@@ -14,7 +14,7 @@ import (
 func setupRoutes(
 	mux *http.ServeMux,
 	deps *GatewayDeps,
-) {
+) *http.ServeMux {
 	log := deps.Log
 	cfg := deps.Config
 	hub := deps.Hub
@@ -58,13 +58,6 @@ func setupRoutes(
 	mux.HandleFunc("OPTIONS /api/sessions/{id}/history", withCORS(func(w http.ResponseWriter, r *http.Request) {}))
 	mux.HandleFunc("OPTIONS /api/sessions/{id}/events", withCORS(func(w http.ResponseWriter, r *http.Request) {}))
 
-	mux.HandleFunc("GET /admin/health/ready", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
-	})
-
-	mux.Handle("GET /admin/metrics", promhttp.Handler())
-
 	mux.Handle("GET /ws", hub.HandleHTTP(auth, handler, bridge))
 
 	sessionAdapter := &sessionManagerAdapter{sm: sm}
@@ -102,8 +95,16 @@ func setupRoutes(
 
 	adminMux := adminAPI.Mux()
 
+	adminMux.HandleFunc("GET /admin/health/ready", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	})
+
+	adminMux.Handle("GET /admin/metrics", promhttp.Handler())
+
 	adminMux.HandleFunc("GET /admin/stats", adminAPI.HandleStats)
 	adminMux.HandleFunc("GET /admin/health/workers", adminAPI.HandleWorkerHealth)
+	adminMux.HandleFunc("GET /admin/health", adminAPI.HandleHealth)
 	adminMux.HandleFunc("GET /admin/logs", adminAPI.HandleLogs)
 	adminMux.HandleFunc("POST /admin/config/validate", adminAPI.HandleConfigValidate)
 	adminMux.HandleFunc("POST /admin/config/rollback", adminAPI.HandleConfigRollback)
@@ -115,10 +116,7 @@ func setupRoutes(
 	adminMux.HandleFunc("POST /admin/sessions/{id}/terminate", adminAPI.TerminateSession)
 	adminMux.HandleFunc("GET /admin/sessions/{id}/stats", adminAPI.HandleSessionStats)
 
-	mux.HandleFunc("GET /admin/health", adminAPI.HandleHealth)
-
-	mux.Handle("/admin/", adminAPI.Middleware(adminMux))
-
 	// Webchat SPA is NOT registered on the mux directly.
 	// Instead, the caller wraps the mux with a fallback handler below.
+	return adminMux
 }

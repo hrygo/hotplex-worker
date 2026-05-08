@@ -247,7 +247,7 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 	}
 
 	msgAdapters, adapterStatuses := startMessagingAdapters(ctx, deps)
-	setupRoutes(mux, deps)
+	adminMux := setupRoutes(mux, deps)
 
 	// Webchat SPA fallback
 	var rootHandler http.Handler = mux
@@ -284,10 +284,19 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 		}
 	}()
 
+	// Admin server: always runs on a dedicated port for network isolation.
 	adminAddr := cfg.Admin.Addr
-	if !cfg.Admin.Enabled {
-		adminAddr = ""
+	adminServer := &http.Server{
+		Addr:    adminAddr,
+		Handler: adminMux,
 	}
+	go func() {
+		log.Info("admin: listening", "addr", adminAddr)
+		if err := adminServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Error("admin: server failed to start", "err", err)
+			serverErr <- err
+		}
+	}()
 	printStartupBanner(os.Stdout, newBuildInfo(), RuntimeStatus{
 		GatewayAddr:     cfg.Gateway.Addr,
 		AdminAddr:       adminAddr,
@@ -320,7 +329,7 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 	}
 
 	cancel()
-	shutdownGateway(ctx, log, deps, msgAdapters, server, jwtValidator, skillsLocator, pidTracker, cleanupWG)
+	shutdownGateway(ctx, log, deps, msgAdapters, server, adminServer, jwtValidator, skillsLocator, pidTracker, cleanupWG)
 	return nil
 }
 
@@ -431,6 +440,7 @@ func shutdownGateway(
 	deps *GatewayDeps,
 	msgAdapters []messaging.PlatformAdapterInterface,
 	server *http.Server,
+	adminServer *http.Server,
 	jwtValidator *security.JWTValidator,
 	skillsLocator *skills.Locator,
 	pidTracker *proc.Tracker,
@@ -482,6 +492,12 @@ func shutdownGateway(
 
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		log.Warn("gateway: http server shutdown", "err", err)
+	}
+
+	if adminServer != nil {
+		if err := adminServer.Shutdown(shutdownCtx); err != nil {
+			log.Warn("admin: http server shutdown", "err", err)
+		}
 	}
 
 	log.Info("gateway: stopped")
