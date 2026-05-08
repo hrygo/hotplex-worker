@@ -7,6 +7,8 @@
  * assistant turns → assistant messages with text + tool summary.
  */
 
+import type { TextPart, ToolSummaryPart } from '@/lib/types/message-parts';
+
 // -- Types --
 
 /** Matches the backend ConversationRecord JSON shape from GET /api/sessions/{id}/history */
@@ -29,18 +31,6 @@ export interface ConversationTurn {
   cost_usd: number;
   metadata: Record<string, unknown> | null;
   created_at: string;
-}
-
-// Reuse types from the runtime adapter
-interface TextPart {
-  type: 'text';
-  text: string;
-}
-
-interface ToolSummaryPart {
-  type: 'tool-summary';
-  toolNames: string[];
-  count: number;
 }
 
 type HistoryMessagePart = TextPart | ToolSummaryPart;
