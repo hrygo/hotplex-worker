@@ -485,8 +485,8 @@ func (a *Adapter) handleTextMessage(ctx context.Context, platformMsgID, channelI
 
 	// Prepare streaming controller (card is lazily created on first content).
 	if a.larkClient != nil && a.rateLimiter != nil {
-		turnNum, workDir := conn.turnHeaderMeta()
-		ctrl := NewStreamingCardController(a.larkClient, a.rateLimiter, a.Log, a.resolveBotName(), turnNum+1, workDir)
+		turnNum, model, branch, workDir := conn.turnHeaderMeta()
+		ctrl := NewStreamingCardController(a.larkClient, a.rateLimiter, a.Log, a.resolveBotName(), turnNum+1, model, branch, workDir)
 		conn.EnableStreaming(ctrl)
 	}
 
@@ -599,11 +599,11 @@ func (c *FeishuConn) cacheTurnMeta(d messaging.TurnSummaryData) {
 	}
 }
 
-// turnHeaderMeta returns cached turn count and workDir for card header construction.
-func (c *FeishuConn) turnHeaderMeta() (turnNum int, workDir string) {
+// turnHeaderMeta returns cached turn metadata for card header construction.
+func (c *FeishuConn) turnHeaderMeta() (turnNum int, model, branch, workDir string) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.turnCount, c.workDir
+	return c.turnCount, c.lastModel, c.lastBranch, c.workDir
 }
 
 func (c *FeishuConn) EnableStreaming(ctrl *StreamingCardController) {
@@ -925,7 +925,7 @@ func (c *FeishuConn) writeContent(ctx context.Context, env *events.Envelope, tex
 		c.adapter.Log.Info("feishu: streaming card rotated",
 			"old_msg_id", oldMsgID)
 
-		newCtrl := NewStreamingCardController(c.adapter.larkClient, c.adapter.rateLimiter, c.adapter.Log, c.adapter.resolveBotName(), 0, c.workDir)
+			newCtrl := NewStreamingCardController(c.adapter.larkClient, c.adapter.rateLimiter, c.adapter.Log, c.adapter.resolveBotName(), 0, c.lastModel, c.lastBranch, c.workDir)
 		c.mu.Lock()
 		c.streamCtrl = newCtrl
 		if oldMsgID != "" {
