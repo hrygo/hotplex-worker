@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -26,6 +27,9 @@ import (
 var (
 	sttCache   = make(map[string]*stt.SharedTranscriber)
 	sttCacheMu sync.Mutex
+
+	ttsCache   = make(map[string]*tts.SharedSynthesizer)
+	ttsCacheMu sync.Mutex
 )
 
 func closeSTTCache(ctx context.Context, log *slog.Logger) {
@@ -36,6 +40,17 @@ func closeSTTCache(ctx context.Context, log *slog.Logger) {
 			log.Warn("stt: cache close", "key", key, "err", err)
 		}
 		delete(sttCache, key)
+	}
+}
+
+func closeTTSCache(ctx context.Context, log *slog.Logger) {
+	ttsCacheMu.Lock()
+	defer ttsCacheMu.Unlock()
+	for key, s := range ttsCache {
+		if err := s.Close(ctx); err != nil {
+			log.Warn("tts: cache close", "key", key, "err", err)
+		}
+		delete(ttsCache, key)
 	}
 }
 
@@ -263,21 +278,8 @@ func buildSlackTTSPipeline(cfg *config.Config, log *slog.Logger) *slack.TTSPipel
 		return nil
 	}
 
-	var synth tts.Synthesizer
-	switch ttsCfg.TTSProvider {
-	case "edge":
-		synth = tts.NewEdgeSynthesizer(ttsCfg.Voice, log)
-	case "edge+moss":
-		synth = tts.NewConfiguredSynthesizer(tts.SynthesizerConfig{
-			EdgeVoice:       ttsCfg.Voice,
-			MossModelDir:    ttsCfg.MossModelDir,
-			MossVoice:       ttsCfg.MossVoice,
-			MossPort:        ttsCfg.MossPort,
-			MossCpuThreads:  ttsCfg.MossCpuThreads,
-			MossIdleTimeout: ttsCfg.MossIdleTimeout,
-		}, log)
-	default:
-		log.Warn("slack: unknown tts_provider, TTS disabled", "provider", ttsCfg.TTSProvider)
+	synth := buildTTSSynthesizer(ttsCfg, log)
+	if synth == nil {
 		return nil
 	}
 
@@ -291,8 +293,42 @@ func buildFeishuTTSPipeline(cfg *config.Config, log *slog.Logger) *feishu.TTSPip
 		return nil
 	}
 
+	synth := buildTTSSynthesizer(ttsCfg, log)
+	if synth == nil {
+		return nil
+	}
+
+	client := lark.NewClient(cfg.Messaging.Feishu.AppID, cfg.Messaging.Feishu.AppSecret)
+	return feishu.NewTTSPipeline(synth, client, ttsCfg.MaxChars, log)
+}
+
+// ttsCacheKey derives a deterministic cache key from TTS configuration.
+// Synthesizers with identical config share the same underlying process.
+func ttsCacheKey(provider string, cfg config.TTSConfig) string {
+	return fmt.Sprintf("%s|%s|%s|%d|%d|%d",
+		provider, cfg.Voice, cfg.MossModelDir, cfg.MossPort, cfg.MossCpuThreads, int(cfg.MossIdleTimeout))
+}
+
+// buildTTSSynthesizer creates or reuses a shared TTS synthesizer from config.
+// When both Slack and Feishu use the same TTS config, they share the same
+// MOSS sidecar process, avoiding port conflicts.
+func buildTTSSynthesizer(ttsCfg config.TTSConfig, log *slog.Logger) tts.Synthesizer {
+	provider := ttsCfg.TTSProvider
+	cacheKey := ttsCacheKey(provider, ttsCfg)
+
+	ttsCacheMu.Lock()
+	defer ttsCacheMu.Unlock()
+
+	if existing, ok := ttsCache[cacheKey]; ok {
+		if existing.Refs() > 0 {
+			log.Debug("tts: reusing shared synthesizer", "key", cacheKey)
+			return existing.Acquire()
+		}
+		delete(ttsCache, cacheKey)
+	}
+
 	var synth tts.Synthesizer
-	switch ttsCfg.TTSProvider {
+	switch provider {
 	case "edge":
 		synth = tts.NewEdgeSynthesizer(ttsCfg.Voice, log)
 	case "edge+moss":
@@ -305,10 +341,11 @@ func buildFeishuTTSPipeline(cfg *config.Config, log *slog.Logger) *feishu.TTSPip
 			MossIdleTimeout: ttsCfg.MossIdleTimeout,
 		}, log)
 	default:
-		log.Warn("feishu: unknown tts_provider, TTS disabled", "provider", ttsCfg.TTSProvider)
+		log.Warn("tts: unknown provider, TTS disabled", "provider", provider)
 		return nil
 	}
 
-	client := lark.NewClient(cfg.Messaging.Feishu.AppID, cfg.Messaging.Feishu.AppSecret)
-	return feishu.NewTTSPipeline(synth, client, ttsCfg.MaxChars, log)
+	shared := tts.NewSharedSynthesizer(synth)
+	ttsCache[cacheKey] = shared
+	return shared
 }

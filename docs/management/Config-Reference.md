@@ -350,15 +350,15 @@ messaging:
 |----------|-------------|---------------|---------|
 | `""` | Disabled — audio messages not transcribed | N/A | N/A |
 | `"feishu"` | Cloud API — Feishu `speech_to_text` endpoint | No | ~500ms + network |
-| `"local"` | Local engine — SenseVoice-Small via funasr-onnx | Yes | ~350ms (ONNX FP32) |
+| `"local"` | Local engine — SenseVoice-Small via funasr-onnx | Yes | ~350ms (ONNX INT8) |
 | `"feishu+local"` | Fallback — cloud primary, local fallback on failure | Yes | ~350-500ms |
 
 ### STT Engine Details
 
-- **Model**: SenseVoice-Small (`iic/SenseVoiceSmall`), ~900MB
-- **Backend**: `funasr-onnx` ONNX FP32 (non-quantized)
+- **Model**: SenseVoice-Small (`iic/SenseVoiceSmall`), ~400MB (INT8 quantized)
+- **Backend**: `funasr-onnx` ONNX INT8 (quantized)
 - **Languages**: Chinese (zh), English (en), Japanese (ja), Korean (ko), Cantonese (yue)
-- **Performance**: ~0.35s inference per file (ONNX FP32), CER ~2% (Chinese)
+- **Performance**: ~0.35s inference per file (ONNX INT8), CER ~2% (Chinese)
 - **Model cache**: `~/.cache/modelscope/hub/models/iic/SenseVoiceSmall/`
 - **Auto-patch**: ONNX model `Less` node type mismatch is automatically patched on first load by `scripts/fix_onnx_model.py`
 

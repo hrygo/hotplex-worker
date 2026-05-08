@@ -109,7 +109,7 @@ def create_funasr_backend(model_name: str):
             except Exception as e:
                 print(f"[stt] ONNX patch warning: {type(e).__name__}: {e}", file=sys.stderr)
 
-            model = SenseVoiceSmall(model_name, quantize=False)
+            model = SenseVoiceSmall(model_name, quantize=True)
     except TypeError as e:
         # funasr-onnx raises TypeError when ONNX export is needed but funasr
         # is not installed (it uses `raise "string"` instead of raise Exception).
