@@ -14,7 +14,7 @@ import (
 func setupRoutes(
 	mux *http.ServeMux,
 	deps *GatewayDeps,
-) *http.ServeMux {
+) http.Handler {
 	log := deps.Log
 	cfg := deps.Config
 	hub := deps.Hub
@@ -118,5 +118,5 @@ func setupRoutes(
 
 	// Webchat SPA is NOT registered on the mux directly.
 	// Instead, the caller wraps the mux with a fallback handler below.
-	return adminMux
+	return adminAPI.Middleware(adminMux)
 }
