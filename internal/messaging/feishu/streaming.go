@@ -445,6 +445,7 @@ func (c *StreamingCardController) Close(ctx context.Context) error {
 	cardID := c.cardID
 	c.mu.Unlock()
 
+	summary := truncateForSummary(content)
 	if c.streamingActive {
 		if cardID != "" {
 			if err := c.disableStreaming(ctx); err != nil {
@@ -453,7 +454,7 @@ func (c *StreamingCardController) Close(ctx context.Context) error {
 				c.log.Info("feishu: streaming stopped",
 					"card_id", cardID,
 					"cardkit_mode", c.cardKitOK,
-					"summary_len", len(truncateForSummary(c.lastFlushed)))
+					"summary_len", len(summary))
 			}
 		} else {
 			c.log.Warn("feishu: cannot disable streaming — cardID is empty (id_convert failed), card may stay in generating state")
@@ -463,8 +464,8 @@ func (c *StreamingCardController) Close(ctx context.Context) error {
 
 	c.updateHeader(ctx, cardHeader{
 		Title:    c.agentName,
-		Subtitle: truncateForSummary(content),
-		Template: "blue",
+		Subtitle: summary,
+		Template: headerBlue,
 	}, content)
 
 	return nil
@@ -494,7 +495,7 @@ func (c *StreamingCardController) Abort(ctx context.Context) error {
 	c.updateHeader(ctx, cardHeader{
 		Title:    c.agentName,
 		Subtitle: "已取消",
-		Template: "grey",
+		Template: headerGrey,
 	}, "")
 
 	return nil
@@ -559,7 +560,7 @@ func (c *StreamingCardController) idConvert(ctx context.Context, messageID strin
 
 func (c *StreamingCardController) sendCardMessage(ctx context.Context, chatID, content string) (string, error) {
 	contentJSON := buildStreamingCard(
-		cardHeader{Title: c.agentName, Subtitle: "生成中...", Template: "wathet"},
+		cardHeader{Title: c.agentName, Subtitle: "生成中...", Template: headerWathet},
 		truncateForSummary(content),
 		content,
 	)
@@ -742,11 +743,24 @@ func (c *StreamingCardController) flushCardKitWithRetry(ctx context.Context, con
 }
 
 func (c *StreamingCardController) flushIMPatch(ctx context.Context, content string) error {
-	contentJSON := buildCard(
-		cardHeader{Title: c.agentName, Template: "wathet"},
-		map[string]any{},
-		[]map[string]any{{"tag": "markdown", "content": content}},
+	return c.doFlushIMPatch(ctx, cardHeader{Title: c.agentName, Template: headerWathet}, map[string]any{}, content, false)
+}
+
+// flushIMPatchWithConfig sends a final IM Patch with streaming_mode disabled and summary set.
+// Used in Close() when CardKit is degraded but we need to ensure the card renders correctly.
+func (c *StreamingCardController) flushIMPatchWithConfig(ctx context.Context, content string) error {
+	return c.doFlushIMPatch(ctx,
+		cardHeader{Title: c.agentName, Template: headerBlue},
+		map[string]any{
+			"streaming_mode": false,
+			"summary":        map[string]any{"content": truncateForSummary(content)},
+		},
+		content, true,
 	)
+}
+
+func (c *StreamingCardController) doFlushIMPatch(ctx context.Context, header cardHeader, config map[string]any, content string, final bool) error {
+	contentJSON := buildCard(header, config, []map[string]any{{"tag": "markdown", "content": content}})
 
 	body := larkim.NewPatchMessageReqBodyBuilder().
 		Content(contentJSON).
@@ -764,41 +778,12 @@ func (c *StreamingCardController) flushIMPatch(ctx context.Context, content stri
 	if !resp.Success() {
 		return fmt.Errorf("im message patch failed: code=%d msg=%s", resp.Code, resp.Msg)
 	}
-	c.log.Debug("feishu: IM patch flushed", "msg_id", c.msgID, "content_len", len(content))
-	return nil
-}
-
-// flushIMPatchWithConfig sends a final IM Patch with streaming_mode disabled and summary set.
-// Used in Close() when CardKit is degraded but we need to ensure the card renders correctly.
-func (c *StreamingCardController) flushIMPatchWithConfig(ctx context.Context, content string) error {
-	summary := truncateForSummary(content)
-	contentJSON := buildCard(
-		cardHeader{Title: c.agentName, Template: "blue"},
-		map[string]any{
-			"streaming_mode": false,
-			"summary":        map[string]any{"content": summary},
-		},
-		[]map[string]any{{"tag": "markdown", "content": content}},
-	)
-
-	body := larkim.NewPatchMessageReqBodyBuilder().
-		Content(contentJSON).
-		Build()
-
-	req := larkim.NewPatchMessageReqBuilder().
-		MessageId(c.msgID).
-		Body(body).
-		Build()
-
-	resp, err := c.client.Im.V1.Message.Patch(ctx, req)
-	if err != nil {
-		return fmt.Errorf("im message patch with config: %w", err)
+	if final {
+		c.log.Info("feishu: IM patch with final config flushed (cardkit degraded)",
+			"msg_id", c.msgID, "content_len", len(content))
+	} else {
+		c.log.Debug("feishu: IM patch flushed", "msg_id", c.msgID, "content_len", len(content))
 	}
-	if !resp.Success() {
-		return fmt.Errorf("im message patch with config failed: code=%d msg=%s", resp.Code, resp.Msg)
-	}
-	c.log.Info("feishu: IM patch with final config flushed (cardkit degraded)",
-		"msg_id", c.msgID, "content_len", len(content), "summary", summary)
 	return nil
 }
 

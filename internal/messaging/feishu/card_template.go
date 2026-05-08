@@ -1,5 +1,15 @@
 package feishu
 
+// Card header template color constants (Feishu CardKit v2).
+const (
+	headerBlue   = "blue"
+	headerWathet = "wathet"
+	headerGrey   = "grey"
+	headerOrange = "orange"
+	headerYellow = "yellow"
+	headerViolet = "violet"
+)
+
 // cardHeader defines a Card JSON 2.0 header component.
 type cardHeader struct {
 	Title    string    // Required.
