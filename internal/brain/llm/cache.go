@@ -115,7 +115,12 @@ func (c *CachedClient) makeOptsKey(prompt string, opts ChatOptions) string {
 	if opts.Temperature != nil {
 		tempStr = strconv.FormatFloat(*opts.Temperature, 'f', -1, 64)
 	}
-	return fmt.Sprintf("chatopt:%d:%s:%s", opts.MaxTokens, tempStr, hex.EncodeToString(h[:]))
+	sysHash := ""
+	if opts.SystemPrompt != "" {
+		sh := sha256.Sum256([]byte(opts.SystemPrompt))
+		sysHash = ":" + hex.EncodeToString(sh[:])
+	}
+	return fmt.Sprintf("chatopt:%d:%s%s:%s", opts.MaxTokens, tempStr, sysHash, hex.EncodeToString(h[:]))
 }
 
 func (c *CachedClient) ClearCache() {

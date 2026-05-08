@@ -87,9 +87,9 @@ func (p *TTSPipeline) summarize(ctx context.Context, fullText string) (string, e
 	if b == nil {
 		return "", fmt.Errorf("brain not initialized")
 	}
-	capped := tts.TruncateText(fullText, tts.SummaryInputCap)
-	prompt := fmt.Sprintf(tts.TTSSummaryPrompt, p.maxChars, capped)
-	result, err := b.ChatWithOptions(ctx, prompt, tts.SummaryChatOpts)
+	prompt := tts.BuildTTSPrompt(fullText)
+	opts := tts.BuildTTSChatOpts(p.maxChars)
+	result, err := b.ChatWithOptions(ctx, prompt, opts)
 	if err != nil {
 		return "", fmt.Errorf("brain chat: %w", err)
 	}

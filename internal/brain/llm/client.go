@@ -14,6 +14,7 @@ import (
 type ChatOptions struct {
 	MaxTokens   int      // 0 = provider default (Anthropic: 4096, OpenAI: API default)
 	Temperature *float64 // nil = provider default; use FloatPtr(0) for deterministic output
+	SystemPrompt string  // optional system message; empty = no system message
 }
 
 // FloatPtr returns a pointer to the given float64 value.
@@ -85,6 +86,19 @@ func (c *OpenAIClient) HealthCheck(ctx context.Context) HealthStatus {
 	return healthCheckFromChat(ctx, c.Chat, "openai", c.model)
 }
 
+// buildMessages constructs the message list with an optional system prompt.
+func buildMessages(systemPrompt, userPrompt string) []openai.ChatCompletionMessage {
+	if systemPrompt != "" {
+		return []openai.ChatCompletionMessage{
+			{Role: openai.ChatMessageRoleSystem, Content: systemPrompt},
+			{Role: openai.ChatMessageRoleUser, Content: userPrompt},
+		}
+	}
+	return []openai.ChatCompletionMessage{
+		{Role: openai.ChatMessageRoleUser, Content: userPrompt},
+	}
+}
+
 // Chat generates a simple plain text completion.
 func (c *OpenAIClient) Chat(ctx context.Context, prompt string) (string, error) {
 	resp, err := c.client.CreateChatCompletion(
@@ -112,11 +126,10 @@ func (c *OpenAIClient) Chat(ctx context.Context, prompt string) (string, error) 
 }
 
 func (c *OpenAIClient) ChatWithOptions(ctx context.Context, prompt string, opts ChatOptions) (string, error) {
+	msgs := buildMessages(opts.SystemPrompt, prompt)
 	req := openai.ChatCompletionRequest{
-		Model: c.model,
-		Messages: []openai.ChatCompletionMessage{
-			{Role: openai.ChatMessageRoleUser, Content: prompt},
-		},
+		Model:    c.model,
+		Messages: msgs,
 	}
 	if opts.MaxTokens > 0 {
 		req.MaxTokens = opts.MaxTokens
