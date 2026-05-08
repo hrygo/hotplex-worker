@@ -247,7 +247,7 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 	}
 
 	msgAdapters, adapterStatuses := startMessagingAdapters(ctx, deps)
-	adminMux := setupRoutes(mux, deps)
+	adminHandler := setupRoutes(mux, deps)
 
 	// Webchat SPA fallback
 	var rootHandler http.Handler = mux
@@ -285,13 +285,14 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 	}()
 
 	// Admin server: always runs on a dedicated port for network isolation.
-	adminAddr := cfg.Admin.Addr
 	adminServer := &http.Server{
-		Addr:    adminAddr,
-		Handler: adminMux,
+		Addr:         cfg.Admin.Addr,
+		Handler:      adminHandler,
+		ReadTimeout:  cfg.Gateway.IdleTimeout,
+		WriteTimeout: cfg.Gateway.WriteTimeout,
 	}
 	go func() {
-		log.Info("admin: listening", "addr", adminAddr)
+		log.Info("admin: listening", "addr", adminServer.Addr)
 		if err := adminServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Error("admin: server failed to start", "err", err)
 			serverErr <- err
@@ -299,7 +300,7 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 	}()
 	printStartupBanner(os.Stdout, newBuildInfo(), RuntimeStatus{
 		GatewayAddr:     cfg.Gateway.Addr,
-		AdminAddr:       adminAddr,
+		AdminAddr:       adminServer.Addr,
 		WebChatAddr:     cfg.WebChat.Addr,
 		WebChatEmbedded: cfg.WebChat.Enabled,
 		DBPath:          cfg.DB.Path,
@@ -490,15 +491,22 @@ func shutdownGateway(
 		log.Warn("gateway: session manager close", "err", err)
 	}
 
-	if err := server.Shutdown(shutdownCtx); err != nil {
-		log.Warn("gateway: http server shutdown", "err", err)
-	}
-
-	if adminServer != nil {
+	// Shut down both HTTP servers in parallel to share the 30s budget.
+	var serverWG sync.WaitGroup
+	serverWG.Add(2)
+	go func() {
+		defer serverWG.Done()
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			log.Warn("gateway: http server shutdown", "err", err)
+		}
+	}()
+	go func() {
+		defer serverWG.Done()
 		if err := adminServer.Shutdown(shutdownCtx); err != nil {
 			log.Warn("admin: http server shutdown", "err", err)
 		}
-	}
+	}()
+	serverWG.Wait()
 
 	log.Info("gateway: stopped")
 }
