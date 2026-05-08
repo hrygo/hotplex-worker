@@ -15,7 +15,7 @@ mvn clean compile
 mvn exec:java -Dexec.mainClass="dev.hotplex.example.QuickStart"
 
 # 或者直接运行打包好的 JAR
-java -jar target/hotplex-client-${version}-SNAPSHOT.jar
+java -jar target/hotplex-client-1.7.2-SNAPSHOT.jar
 ```
 
 ## 主要功能
@@ -53,7 +53,7 @@ java -jar target/hotplex-client-${version}-SNAPSHOT.jar
 ```xml
 <properties>
     <java.version>17</java.version>
-    <jjwt.version>0.12.5</jjwt.version>
+    <jjwt.version>0.12.6</jjwt.version>
 </properties>
 
 <dependencies>
@@ -73,7 +73,7 @@ java -jar target/hotplex-client-${version}-SNAPSHOT.jar
     <dependency>
         <groupId>io.jsonwebtoken</groupId>
         <artifactId>jjwt-api</artifactId>
-        <version>0.12.5</version>
+        <version>0.12.6</version>
     </dependency>
 
     <!-- BouncyCastle for ECDSA -->
@@ -92,7 +92,7 @@ java -jar target/hotplex-client-${version}-SNAPSHOT.jar
     <dependency>
         <groupId>ch.qos.logback</groupId>
         <artifactId>logback-classic</artifactId>
-        <version>1.5.3</version>
+        <version>1.5.4</version>
     </dependency>
 </dependencies>
 ```
@@ -202,7 +202,7 @@ $ mvn clean package -DskipTests
 ## 兼容性
 
 - ✅ Java 17+
-- ✅ Spring Boot 3.2.4
+- ✅ Spring Boot 3.2.5
 - ✅ WebSocket RFC 6455
 - ✅ AEP v1 Protocol
 - ✅ ES256 JWT (与 Go 服务器兼容)

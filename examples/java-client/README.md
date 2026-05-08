@@ -28,20 +28,20 @@
 <dependency>
     <groupId>dev.hotplex</groupId>
     <artifactId>hotplex-client</artifactId>
-    <version>1.1.0</version>
+    <version>1.7.2</version>
 </dependency>
 ```
 
 ### Gradle (Groovy)
 
 ```groovy
-implementation 'dev.hotplex:hotplex-client:1.1.0'
+implementation 'dev.hotplex:hotplex-client:1.7.2'
 ```
 
 ### Gradle (Kotlin)
 
 ```kotlin
-implementation("dev.hotplex:hotplex-client:1.1.0")
+implementation("dev.hotplex:hotplex-client:1.7.2")
 ```
 
 ---
@@ -341,31 +341,15 @@ client2.sendInput(InputData.builder()
 ```java
 import java.util.concurrent.CompletableFuture;
 
-public CompletableFuture<Void> sendInputAsync(String content) {
-    CompletableFuture<Void> future = new CompletableFuture<>();
-
-    client.onDone(data -> {
-        if (data.isSuccess()) {
-            future.complete(null);
-        } else {
-            future.completeExceptionally(new RuntimeException("Task failed"));
-        }
-    });
-
-    client.onError(data -> {
-        future.completeExceptionally(new RuntimeException(data.getMessage()));
-    });
-
-    client.sendInput(InputData.builder()
-        .content(content)
-        .build());
-
-    return future;
+public CompletableFuture<DoneData> sendInputAsync(String content) {
+    return client.sendInputAsync(content);
 }
 
 // Usage
 sendInputAsync("Write hello world")
-    .thenRun(() -> System.out.println("Task completed!"))
+    .thenAccept(data -> {
+        System.out.println("Task completed! Success: " + data.isSuccess());
+    })
     .exceptionally(err -> {
         System.err.println("Task failed: " + err.getMessage());
         return null;
@@ -540,6 +524,19 @@ dev.hotplex.exception      # Exception hierarchy
 ---
 
 ## Development
+
+### Makefile Commands
+
+A `Makefile` is provided for convenience:
+
+```bash
+make help        # Show help
+make build       # Compile the project
+make test        # Run tests
+make run         # Run QuickStart example
+make interactive # Run Interactive example
+make install     # Install to local Maven repo
+```
 
 ### Build
 

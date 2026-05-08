@@ -107,6 +107,7 @@ export const ProtocolConstants = {
   PongWaitMs: 60000,            // 60 seconds (from hub.go: pongWait)
   WriteWaitMs: 10000,           // 10 seconds (from hub.go: writeWait)
   InitTimeoutMs: 30000,         // 30 seconds (from conn.go: 30 * time.Second)
+  HandshakeTimeoutMs: 30000,    // 30 seconds
   MaxMessageSize: 32 * 1024,    // 32KB (from hub.go: maxMessageSize)
   MaxMissedPongs: 3,             // (from heartbeat.go:29)
   ReconnectBaseDelayMs: 1000,   // 1 second base for exponential backoff

@@ -30,44 +30,37 @@ func main() {
     c, err := client.New(ctx,
         client.URL("ws://localhost:8888"),
         client.WorkerType("claude_code"),
-        client.AuthToken(os.Getenv("HOTPLEX_TOKEN")),
+        client.APIKey(os.Getenv("HOTPLEX_API_KEY")),
     )
     if err != nil {
         log.Fatal(err)
     }
     defer c.Close()
 
+    // 1. Connect
     ack, err := c.Connect(ctx)
     if err != nil {
         log.Fatal(err)
     }
-    fmt.Printf("Session: %s | State: %s\n", ack.SessionID, ack.State)
+    fmt.Printf("Connected | Session: %s\n", ack.SessionID)
 
+    // 2. Listen for streaming deltas in background
     go func() {
         for evt := range c.Events() {
-            switch evt.Type {
-            case client.EventMessageDelta:
-                if d, ok := evt.Data.(map[string]any); ok {
-                    fmt.Print(d["content"])
+            if evt.Type == client.EventMessageDelta {
+                if d, ok := evt.AsMessageDeltaData(); ok {
+                    fmt.Print(d.Content)
                 }
-            case client.EventDone:
-                if done, ok := evt.AsDoneData(); ok {
-                    fmt.Printf("\n--- done (success: %v) ---\n", done.Success)
-                }
-                os.Exit(0)
-            case client.EventError:
-                if errData, ok := evt.AsErrorData(); ok {
-                    fmt.Fprintf(os.Stderr, "error %s: %s\n", errData.Code, errData.Message)
-                }
-                os.Exit(1)
             }
         }
     }()
 
-    if err := c.SendInput(ctx, "What is 2+2?"); err != nil {
+    // 3. Send input and wait for completion (async task)
+    done, err := c.SendInputAsync(ctx, "What is 2+2?")
+    if err != nil {
         log.Fatal(err)
     }
-    select {}
+    fmt.Printf("\n--- done (success: %v) ---\n", done.Success)
 }
 ```
 
@@ -102,7 +95,12 @@ ack, err := c.Resume(ctx, "sess_xxx")       // returns *InitAckData
 ### Sending
 
 ```go
+// Fire and forget
 c.SendInput(ctx, "your message", metadata)               // user input + opt. metadata
+
+// Send and wait for completion
+done, err := c.SendInputAsync(ctx, "your message")       // returns *DoneData
+
 c.SendPermissionResponse(ctx, "id", true, "approved")    // approve tool
 c.SendQuestionResponse(ctx, "id", answers)               // answer question
 c.SendElicitationResponse(ctx, "id", "accept", content)  // respond to elicit
@@ -114,7 +112,13 @@ c.SendGC(ctx, "user_idle")                               // archive session, ter
 ### Events
 
 ```go
-for evt := range c.Events() {
+// Subscribe to all subsequent events
+events := c.Events() 
+
+// Unsubscribe to stop receiving and free resources
+defer c.Unsubscribe(events)
+
+for evt := range events {
     // evt.Type    — event type string (see constants below)
     // evt.Seq     — monotonic sequence number
     // evt.Session — session ID

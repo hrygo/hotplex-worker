@@ -1,334 +1,247 @@
-#!/usr/bin/env python3
-"""
-HotPlex 高级示例
-
-演示完整功能：
-1. 完整错误处理和重连
-2. 会话恢复
-3. 权限请求处理
-4. 工具调用
-5. 完整状态机管理
-6. 心跳监控
-7. 结构化日志
-8. 优雅关闭
-
-运行方式：
-    cd examples/python-client
-    pip install -r requirements.txt
-    python examples/advanced.py
-"""
-
 import asyncio
 import logging
+import os
 import sys
-from typing import Any
+from datetime import datetime
+from typing import Any, Dict
 
-# 添加父目录到 path 以导入 hotplex_client
-sys.path.insert(0, "..")
+from rich.console import Console
+from rich.live import Live
+from rich.markdown import Markdown
+from rich.panel import Panel
+from rich.table import Table
+from rich.status import Status
+from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from hotplex_client import (
     HotPlexClient,
+    WorkerType,
+    SessionState,
+)
+from hotplex_client.types import (
     MessageDeltaData,
     MessageStartData,
     MessageEndData,
     ToolCallData,
     PermissionRequestData,
-    StateData,
     DoneData,
+    StateData,
+    ReasoningData,
     ErrorData,
-    ControlData,
-    SessionState,
-    WorkerType,
 )
 
-# 配置日志
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s"
-)
-logger = logging.getLogger(__name__)
+# Configure logging for internal client debugging if needed
+logging.basicConfig(level=logging.WARNING)
+console = Console()
 
+class HotPlexAdvancedDemo:
+    """
+    A comprehensive demonstration of HotPlex Gateway capabilities.
+    """
 
-class HotPlexWorkerSession:
-    """封装完整会话管理逻辑"""
-
-    def __init__(self, url: str, session_id: str | None = None):
+    def __init__(self, url: str):
         self.url = url
-        self.session_id = session_id
-        self.client: HotPlexClient | None = None
-        self._done_event = asyncio.Event()
-        self._current_message_id: str | None = None
-        self._message_count = 0
+        self.full_content = ""
+        self.reasoning_content = ""
+        self._live: Live | None = None
+        self._status: Status | None = None
 
-    async def run(self, user_input: str, timeout: float = 300.0) -> bool:
-        """
-        执行完整会话
+    def _get_display_panel(self):
+        # Create a layout with reasoning (if any) and main content
+        parts = []
+        if self.reasoning_content:
+            parts.append(Panel(
+                self.reasoning_content, 
+                title="[bold yellow]Thinking[/bold yellow]", 
+                border_style="yellow",
+                dim=True
+            ))
+        
+        parts.append(Panel(
+            Markdown(self.full_content or "Waiting for response..."),
+            title="[bold blue]Assistant[/bold blue]",
+            border_style="blue",
+            padding=(1, 2)
+        ))
+        
+        return Panel(
+            asyncio.gather(*[asyncio.sleep(0)]) and "\n".join([str(p) for p in parts]) if False else parts[0] if len(parts) == 1 else "\n".join([str(p) for p in parts]), # This is a placeholder for actual rich layout logic
+            title="[bold]HotPlex Live Session[/bold]"
+        )
 
-        Args:
-            user_input: 用户输入
-            timeout: 超时时间（秒）
+    def _update_live(self):
+        if self._live:
+            # We use a Group to show multiple panels
+            from rich.console import Group
+            parts = []
+            if self.reasoning_content:
+                parts.append(Panel(
+                    self.reasoning_content, 
+                    title="[bold yellow]Thinking[/bold yellow]", 
+                    border_style="yellow",
+                    dim=True
+                ))
+            parts.append(Panel(
+                Markdown(self.full_content or "..."),
+                title="[bold blue]Assistant[/bold blue]",
+                border_style="blue",
+                padding=(1, 2)
+            ))
+            self._live.update(Group(*parts))
 
-        Returns:
-            是否成功完成
-        """
-        try:
-            # 创建客户端（支持会话恢复）
-            self.client = HotPlexClient(
-                url=self.url,
-                worker_type=WorkerType.CLAUDE_CODE,
-                session_id=self.session_id,
-            )
+    async def run_session(self, prompt: str, session_id: str | None = None, config: Dict[str, Any] | None = None):
+        console.print(f"\n[bold green]>>> Prompt:[/bold green] {prompt}")
+        
+        self.full_content = ""
+        self.reasoning_content = ""
+        
+        # Initialize client with optional config (e.g. specialized model or environment vars)
+        # Config can include things like: {"anthropic_api_key": "...", "model": "claude-3-opus-20240229"}
+        async with HotPlexClient(
+            url=self.url,
+            worker_type=WorkerType.CLAUDE_CODE,
+            session_id=session_id,
+            config=config
+        ) as client:
+            
+            curr_sid = client.session_id
+            console.print(f"[dim]Connected | Session: {curr_sid} | Worker: {WorkerType.CLAUDE_CODE}[/dim]")
 
-            async with self.client:
-                self.session_id = self.client.session_id
-                logger.info(f"会话已连接: {self.session_id}")
+            with Live(refresh_per_second=10) as live:
+                self._live = live
+                self._update_live()
 
-                # 注册所有事件处理器
-                self._setup_handlers()
+                # --- 1. Content Handling ---
+                @client.on("message.start")
+                async def on_start(data: MessageStartData):
+                    logger.info(f"Message started: {data.id} (role: {data.role})")
 
-                # 发送输入
-                logger.info(f"发送输入: {user_input[:50]}...")
-                await self.client.send_input(user_input)
+                @client.on("message.delta")
+                async def on_delta(data: MessageDeltaData):
+                    self.full_content += data.content
+                    self._update_live()
 
-                # 等待完成（带超时）
+                @client.on("reasoning")
+                async def on_reasoning(data: ReasoningData):
+                    self.reasoning_content += data.content
+                    self._update_live()
+
+                # --- 2. Tool & Permission Orchestration ---
+                @client.on("tool_call")
+                async def on_tool_call(data: ToolCallData):
+                    # In advanced apps, you might have a Tool Registry here
+                    console.print(f"\n[bold yellow]🔧 Tool Call:[/bold yellow] [cyan]{data.name}[/cyan]")
+                    console.print(f"  [dim]Input: {data.input}[/dim]")
+                    
+                    # Simulated Tool Execution
+                    status_text = f"Executing {data.name}..."
+                    with console.status(status_text):
+                        await asyncio.sleep(1.5) # Simulate work
+                        
+                        # Mocking different tool results
+                        if data.name == "get_weather":
+                            result = {"temp": 22, "condition": "Sunny", "location": data.input.get("location")}
+                        elif data.name == "run_command":
+                            result = {"stdout": "Successfully ran command", "exit_code": 0}
+                        else:
+                            result = {"status": "success", "message": "Tool executed by local handler"}
+                    
+                    await client.send_tool_result(data.id, result)
+                    console.print(f"  [bold green]✓ Result returned to Gateway[/bold green]")
+
+                @client.on("permission_request")
+                async def on_permission(data: PermissionRequestData):
+                    console.print(Panel(
+                        f"[bold red]Security Check[/bold red]\n"
+                        f"The AI wants to use: [cyan]{data.tool_name}[/cyan]\n"
+                        f"Description: {data.description or 'No description provided'}\n"
+                        f"Args: {data.args or 'None'}",
+                        title="Permission Required",
+                        border_style="red"
+                    ))
+                    
+                    # Real-world app would wait for user keypress
+                    # For demo, we auto-approve after a slight delay
+                    console.print("  [italic yellow]Analyzing request safety...[/italic yellow]")
+                    await asyncio.sleep(2)
+                    
+                    await client.send_permission_response(data.id, allowed=True, reason="User approved via advanced handler")
+                    console.print("  [bold green]✓ Permission Granted[/bold green]")
+
+                # --- 3. Lifecycle & Error Management ---
+                @client.on("state")
+                async def on_state(data: StateData):
+                    # Log state transitions for observability
+                    logger.info(f"State transition: {data.state} | {data.message or ''}")
+
+                @client.on("error")
+                async def on_error(data: ErrorData):
+                    console.print(Panel(
+                        f"[bold]Code:[/bold] {data.code}\n"
+                        f"[bold]Message:[/bold] {data.message}\n"
+                        f"[dim]Details: {data.details}[/dim]",
+                        title="[red]Gateway Error[/red]",
+                        border_style="red"
+                    ))
+
+                # --- 4. Execution ---
                 try:
-                    await asyncio.wait_for(
-                        self._done_event.wait(),
-                        timeout=timeout
-                    )
-                    return True
+                    await client.send_input(prompt)
+                    
+                    # wait_for_done returns the DoneData which contains final stats
+                    done_info = await client.wait_for_done(timeout=300)
+                    
+                    self._update_live() # Final update
+                    self._show_summary(done_info)
+                    return curr_sid
                 except asyncio.TimeoutError:
-                    logger.error(f"会话超时（{timeout}秒）")
-                    return False
+                    console.print("[bold red]Timeout reached waiting for response[/bold red]")
+                    return curr_sid
 
-        except Exception as e:
-            logger.exception(f"会话失败: {e}")
-            return False
+    def _show_summary(self, data: DoneData):
+        table = Table(title="Session Summary", box=None, padding=(0, 2))
+        table.add_column("Metric", style="dim")
+        table.add_column("Value", style="bold")
 
-    def _setup_handlers(self):
-        """注册所有事件处理器"""
-
-        @self.client.on_message_start
-        async def on_message_start(data: MessageStartData):
-            """消息开始（流式）"""
-            self._current_message_id = data.id
-            self._message_count += 1
-            logger.debug(f"消息 #{self._message_count} 开始: {data.id}")
-
-        @self.client.on_message_delta
-        async def on_delta(data: MessageDeltaData):
-            """消息增量（流式内容）"""
-            print(data.content, end="", flush=True)
-
-        @self.client.on_message_end
-        async def on_message_end(data: MessageEndData):
-            """消息结束（流式）"""
-            print()  # 换行
-            logger.debug(f"消息结束: {data.message_id}")
-            self._current_message_id = None
-
-        @self.client.on_tool_call
-        async def on_tool_call(data: ToolCallData):
-            """工具调用"""
-            logger.info(f"工具调用: {data.name} (id: {data.id})")
-            logger.debug(f"  输入: {data.input}")
-
-            # 示例：模拟工具执行
-            # 在实际应用中，这里应该执行真实的工具逻辑
-            result = await self._execute_tool(data.name, data.input)
-
-            # 发送工具结果
-            await self.client.send_tool_result(
-                tool_call_id=data.id,
-                output=result,
-            )
-            logger.info(f"工具结果已发送: {data.id}")
-
-        @self.client.on_permission_request
-        async def on_permission(data: PermissionRequestData):
-            """权限请求"""
-            logger.warning(f"权限请求: {data.tool_name}")
-            logger.info(f"  描述: {data.description}")
-            logger.info(f"  参数: {data.args}")
-
-            # 示例：自动批准所有权限请求
-            # 在生产环境中应该询问用户
-            allowed = await self._ask_permission(data)
-
-            await self.client.send_permission_response(
-                permission_id=data.id,
-                allowed=allowed,
-                reason="用户批准" if allowed else "用户拒绝",
-            )
-            logger.info(f"权限响应已发送: {allowed}")
-
-        @self.client.on_state_change
-        async def on_state(data: StateData):
-            """状态变化"""
-            logger.info(f"状态变化: {data.state}")
-            if data.message:
-                logger.info(f"  消息: {data.message}")
-
-            # 检查是否为终止状态
-            if data.state in (SessionState.TERMINATED, SessionState.DELETED):
-                logger.warning("会话已终止")
-
-        @self.client.on_done
-        async def on_done(data: DoneData):
-            """任务完成"""
-            print(f"\n\n{'✓' if data.success else '✗'} 完成！")
-            if data.stats:
-                self._print_stats(data.stats)
-            if data.dropped:
-                logger.warning("部分消息因背压被丢弃")
-
-            self._done_event.set()
-
-        @self.client.on_error
-        async def on_error(data: ErrorData):
-            """错误处理"""
-            logger.error(f"错误 [{data.code}]: {data.message}")
-            if data.event_id:
-                logger.error(f"  事件 ID: {data.event_id}")
-            if data.details:
-                logger.error(f"  详情: {data.details}")
-
-            # 某些错误可能触发 done
-            if data.code in ("SESSION_TERMINATED", "SESSION_EXPIRED"):
-                self._done_event.set()
-
-        @self.client.on_control
-        async def on_control(data: ControlData):
-            """服务器控制指令"""
-            logger.warning(f"控制指令: {data.action}")
-            logger.warning(f"  原因: {data.reason}")
-
-            if data.recoverable is not None:
-                logger.info(f"  可恢复: {data.recoverable}")
-
-            # 处理不同的控制动作
-            if data.action == "reconnect":
-                logger.info("服务器要求重连")
-                # transport 层会自动处理重连
-            elif data.action == "terminate":
-                logger.warning("服务器要求终止会话")
-                self._done_event.set()
-
-    async def _execute_tool(self, name: str, input: dict[str, Any]) -> Any:
-        """
-        执行工具（示例实现）
-
-        在实际应用中，这里应该：
-        1. 根据 tool name 调用对应的工具函数
-        2. 处理工具执行错误
-        3. 返回符合工具 schema 的结果
-        """
-        # 模拟工具执行延迟
-        await asyncio.sleep(0.1)
-
-        # 示例：返回模拟结果
-        return {
-            "status": "simulated",
-            "tool": name,
-            "input": input,
-        }
-
-    async def _ask_permission(self, data: PermissionRequestData) -> bool:
-        """
-        询问用户权限（示例：自动批准）
-
-        在生产环境中应该：
-        1. 显示权限请求详情给用户
-        2. 等待用户确认/拒绝
-        3. 返回用户决定
-        """
-        # 示例：自动批准
-        logger.info(f"自动批准权限请求: {data.tool_name}")
-        return True
-
-    def _print_stats(self, stats: dict[str, Any]):
-        """打印执行统计"""
-        print("\n执行统计:")
-        print(f"  耗时: {stats.get('duration_ms', 0)}ms")
-        print(f"  消息数: {self._message_count}")
-
-        if "total_tokens" in stats:
-            print(f"  Tokens: {stats['total_tokens']}")
-            if "input_tokens" in stats:
-                print(f"    输入: {stats['input_tokens']}")
-            if "output_tokens" in stats:
-                print(f"    输出: {stats['output_tokens']}")
-
-        if "cost_usd" in stats:
-            print(f"  成本: ${stats['cost_usd']:.4f}")
-
-        if "model" in stats:
-            print(f"  模型: {stats['model']}")
-
-
-async def demo_basic_conversation():
-    """示例 1: 基本对话"""
-    print("=" * 60)
-    print("示例 1: 基本对话")
-    print("=" * 60)
-
-    session = HotPlexWorkerSession(url="ws://localhost:8888")
-
-    success = await session.run(
-        user_input="Create a Python function to calculate fibonacci numbers",
-        timeout=120.0,
-    )
-
-    if success:
-        print(f"\n✓ 会话完成")
-        print(f"  Session ID: {session.session_id}")
-        return session.session_id
-    else:
-        print("\n✗ 会话失败")
-        return None
-
-
-async def demo_session_resume(session_id: str):
-    """示例 2: 恢复会话"""
-    print("\n" + "=" * 60)
-    print("示例 2: 恢复会话")
-    print("=" * 60)
-
-    session = HotPlexWorkerSession(
-        url="ws://localhost:8888",
-        session_id=session_id,  # 恢复之前的会话
-    )
-
-    success = await session.run(
-        user_input="Now add error handling to that function",
-        timeout=120.0,
-    )
-
-    if success:
-        print(f"\n✓ 会话已恢复并完成")
-    else:
-        print("\n✗ 会话恢复失败")
-
+        stats = data.stats
+        if stats:
+            table.add_row("Outcome", "[green]Success[/green]" if data.success else "[red]Failure[/red]")
+            if stats.duration_ms:
+                table.add_row("Latency", f"{stats.duration_ms} ms")
+            if stats.total_tokens:
+                table.add_row("Token Usage", f"{stats.total_tokens} (Prompt: {stats.input_tokens}, Comp: {stats.output_tokens})")
+            if stats.cost_usd:
+                table.add_row("Estimated Cost", f"${stats.cost_usd:.5f}")
+            if stats.model:
+                table.add_row("Worker Model", stats.model)
+        
+        console.print(table)
 
 async def main():
-    """主入口"""
+    url = os.getenv("HOTPLEX_URL", "ws://localhost:8888")
+    demo = HotPlexAdvancedDemo(url)
+    
     try:
-        # 示例 1: 基本对话
-        session_id = await demo_basic_conversation()
-
-        if session_id:
-            # 示例 2: 恢复会话（可选）
-            await demo_session_resume(session_id)
-
-        print("\n" + "=" * 60)
-        print("所有示例完成！")
-        print("=" * 60)
-
-    except KeyboardInterrupt:
-        logger.warning("\n用户中断")
+        # Example 1: Multi-turn conversation with memory (Session Resume)
+        sid = await demo.run_session(
+            "What's the weather in Tokyo? (Please use a tool if possible)",
+            config={"temperature": 0.7}
+        )
+        
+        if sid:
+            console.print("\n[bold cyan]─── CONTINUING SESSION ───[/bold cyan]")
+            await asyncio.sleep(2)
+            await demo.run_session(
+                "Convert that temperature to Fahrenheit.",
+                session_id=sid
+            )
+            
     except Exception as e:
-        logger.exception(f"示例失败: {e}")
-
+        console.print(f"[bold red]System Error:[/bold red] {e}")
+        sys.exit(1)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        console.print("\n[red]Session aborted by user.[/red]")

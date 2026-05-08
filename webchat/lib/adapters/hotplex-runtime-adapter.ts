@@ -200,9 +200,6 @@ export function useHotPlexRuntime({
   ];
   const suggestions: readonly ThreadSuggestion[] = configSuggestions ?? defaultSuggestions;
 
-  // Pending reasoning content accumulated before messageStart
-  const pendingReasoningRef = useRef<string>('');
-
   // Stable ref for skills callback — avoids adding to useEffect deps
   const onSkillsChangeRef = useRef(onSkillsChange);
   onSkillsChangeRef.current = onSkillsChange;
@@ -364,30 +361,26 @@ export function useHotPlexRuntime({
     // Handle reasoning/thinking content (appends to last reasoning part or creates one)
     const handleReasoning = (data: ReasoningData, _env: Envelope) => {
       if (!data) return;
-      // Accumulate content in ref (content may arrive before messageStart)
-      pendingReasoningRef.current += data.content || '';
 
       setMessages((prev) => {
         const filtered = prev.filter(m => m.id !== 'ghost-assistant');
         const lastMessage = filtered[filtered.length - 1];
         if (lastMessage?.role === 'assistant' && lastMessage.status === 'streaming') {
           const parts = [...lastMessage.parts];
-          // Append to last reasoning part, or add new one
           const lastPart = parts[parts.length - 1];
           if (lastPart?.type === 'reasoning') {
             parts[parts.length - 1] = { type: 'reasoning', text: lastPart.text + data.content };
           } else {
-            parts.push({ type: 'reasoning', text: pendingReasoningRef.current });
+            parts.push({ type: 'reasoning', text: data.content || '' });
           }
           return [...filtered.slice(0, -1), { ...lastMessage, parts }];
         }
-        // No streaming message yet — create one with reasoning
         return [
           ...filtered,
           {
             id: `assistant-${Date.now()}`,
             role: 'assistant' as const,
-            parts: [{ type: 'reasoning', text: pendingReasoningRef.current }],
+            parts: [{ type: 'reasoning', text: data.content || '' }],
             createdAt: new Date(),
             status: 'streaming' as const,
           },
@@ -434,17 +427,31 @@ export function useHotPlexRuntime({
       setIsRunning(false);
     };
 
+    const TODO_TOOLS = new Set(['todo', 'todowrite', 'todo_write', 'task_list', 'checklist']);
+
     const handleToolCall = (data: ToolCallData, env: Envelope) => {
       if (!data) return;
       setMessages((prev) => {
         const lastMessage = prev[prev.length - 1];
         if (lastMessage?.role === 'assistant') {
-          const parts = [...lastMessage.parts, {
+          const newPart = {
             type: 'tool-call' as const,
             toolName: data.name,
             args: data.input,
             toolCallId: data.id,
-          }];
+          };
+          // Replace previous todo tool-call instead of stacking duplicates
+          if (TODO_TOOLS.has(data.name?.toLowerCase())) {
+            const lastTodoIdx = lastMessage.parts.findLastIndex(
+              (p) => p.type === 'tool-call' && TODO_TOOLS.has((p as any).toolName?.toLowerCase())
+            );
+            if (lastTodoIdx !== -1) {
+              const parts = [...lastMessage.parts];
+              parts[lastTodoIdx] = newPart;
+              return [...prev.slice(0, -1), { ...lastMessage, parts }];
+            }
+          }
+          const parts = [...lastMessage.parts, newPart];
           return [...prev.slice(0, -1), { ...lastMessage, parts }];
         }
         return prev;
@@ -491,7 +498,6 @@ export function useHotPlexRuntime({
         return prev;
       });
 
-      pendingReasoningRef.current = '';
       setIsRunning(false);
 
       // Fetch skills after the first turn completes (worker conversation is now active)
@@ -739,7 +745,6 @@ export function useHotPlexRuntime({
       client.off('permissionRequest', handlePermissionRequest);
       client.off('questionRequest', handleQuestionRequest);
       client.off('elicitationRequest', handleElicitationRequest);
-      pendingReasoningRef.current = '';
       interactionMapRef.current.clear();
       client.disconnect();
       clientRef.current = null;

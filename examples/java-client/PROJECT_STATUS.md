@@ -10,18 +10,19 @@
 ## 📦 交付物
 
 ### 编译产物
-- ✅ `target/hotplex-client-${version}-SNAPSHOT.jar` (28MB)
+- ✅ `target/hotplex-client-1.7.2-SNAPSHOT.jar` (28MB)
 - ✅ 包含所有依赖的 fat JAR
 - ✅ 可直接运行
 
 ### 源代码
 - ✅ **25 个** Java 源文件
 - ✅ **1,100+** 行生产代码
-- ✅ **2 个** 示例程序
+- ✅ **3 个** 示例程序 (QuickStart, Interactive, Async)
 - ✅ **24 个** 协议数据类
 
 ### 文档
 - ✅ `README.md` - 完整 API 文档 (576 行)
+- ✅ `Makefile` - 便捷构建工具
 - ✅ `IMPLEMENTATION_SUMMARY.md` - 实现细节
 - ✅ `CODE_REVIEW_FIXES.md` - 代码审查记录
 - ✅ `COMPLETION_SUMMARY.md` - 完成总结
@@ -198,11 +199,13 @@ mvn clean install
 
 ## 📝 版本历史
 
-### v1.1.0-SNAPSHOT (2026-04-03)
-- ✅ 完整实现 AEP v1 协议
-- ✅ 修复所有已知问题
-- ✅ 完整文档和示例
-- ✅ 代码审查通过
+### v1.7.2 (2026-05-08)
+- ✅ 升级 Spring Boot 3.2.5
+- ✅ 升级 JJWT 0.12.6
+- ✅ 优化 HotPlexClient (AutoCloseable, ObjectMapper 重用)
+- ✅ 引入 Makefile 构建系统
+- ✅ 修复 InteractiveExample 句柄泄漏
+- ✅ 增强 sendInputAsync 返回 DoneData
 
 ---
 
@@ -232,7 +235,7 @@ mvn clean install
 ---
 
 **状态**: ✅ 生产就绪
-**更新时间**: 2026-04-03
+**更新时间**: 2026-05-08
 **维护者**: HotPlex Team
 
 ---

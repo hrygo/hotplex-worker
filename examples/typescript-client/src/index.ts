@@ -11,6 +11,9 @@ export type { HotPlexClientEvents } from './client.js';
 // Constants and types
 export * from './constants.js';
 export * from './types.js';
+export * from './errors.js';
+export { calculateBackoff } from './backoff.js';
+export type { BackoffConfig } from './backoff.js';
 
 // Envelope utilities
 export {
