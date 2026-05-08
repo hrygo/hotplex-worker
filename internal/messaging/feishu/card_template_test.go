@@ -59,6 +59,10 @@ func TestCardHeaderToMap(t *testing.T) {
 				"title":    map[string]any{"tag": "plain_text", "content": "Bot"},
 				"subtitle": map[string]any{"tag": "plain_text", "content": "sub"},
 				"template": "wathet",
+				"text_tag_list": []map[string]any{
+					{"tag": "text_tag", "text": map[string]any{"tag": "plain_text", "content": "v1"}, "color": "blue"},
+					{"tag": "text_tag", "text": map[string]any{"tag": "plain_text", "content": "v2"}},
+				},
 			},
 		},
 		{
