@@ -600,10 +600,26 @@ func (c *FeishuConn) cacheTurnMeta(d messaging.TurnSummaryData) {
 }
 
 // turnHeaderMeta returns cached turn metadata for card header construction.
+// When branch is unknown, resolves it from the workDir via git and caches it.
 func (c *FeishuConn) turnHeaderMeta() (turnNum int, model, branch, workDir string) {
 	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.turnCount, c.lastModel, c.lastBranch, c.workDir
+	tn, m, br, wd := c.turnCount, c.lastModel, c.lastBranch, c.workDir
+	c.mu.RUnlock()
+
+	// Lazy-resolve branch from workDir on first turn or after /new reset.
+	if br == "" && wd != "" {
+		if resolved := messaging.GitBranchOf(wd); resolved != "" {
+			c.mu.Lock()
+			// Double-check: another goroutine may have set it via cacheTurnMeta.
+			if c.lastBranch == "" {
+				c.lastBranch = resolved
+			}
+			br = c.lastBranch
+			c.mu.Unlock()
+		}
+	}
+
+	return tn, m, br, wd
 }
 
 func (c *FeishuConn) EnableStreaming(ctrl *StreamingCardController) {
@@ -726,7 +742,14 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 			closeCancel()
 		}
 
-		if c.adapter.ttsPipeline != nil && c.voiceTriggered.Load() {
+		ttsOK := c.adapter.ttsPipeline != nil
+		voiceOK := c.voiceTriggered.Load()
+		c.adapter.Log.Debug("feishu: tts check",
+			"tts_pipeline", ttsOK,
+			"voice_triggered", voiceOK,
+			"full_text_len", len(fullText),
+		)
+		if ttsOK && voiceOK {
 			if fullText != "" {
 				c.mu.RLock()
 				chatID := c.chatID

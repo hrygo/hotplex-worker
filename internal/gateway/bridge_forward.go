@@ -5,15 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"os/exec"
 	"runtime/debug"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
 	"github.com/hrygo/hotplex/internal/eventstore"
+	"github.com/hrygo/hotplex/internal/messaging"
 	"github.com/hrygo/hotplex/internal/metrics"
 	"github.com/hrygo/hotplex/internal/worker"
 	"github.com/hrygo/hotplex/pkg/events"
@@ -504,70 +503,8 @@ func (b *Bridge) injectSessionStats(env *events.Envelope, acc *sessionAccumulato
 	}
 }
 
-// gitAvailable is checked once via sync.Once. If git is not on PATH,
-// branch detection is skipped entirely for all sessions.
-var (
-	gitAvailable bool
-	gitOnce      sync.Once
-	gitBranchMu  sync.RWMutex
-	gitBranchMap = map[string]gitBranchEntry{} // dir → cached branch
-)
-
-const gitBranchTTL = 30 * time.Minute
-
-type gitBranchEntry struct {
-	branch string
-	expiry time.Time
-}
-
-func checkGitAvailable() bool {
-	gitOnce.Do(func() {
-		_, err := exec.LookPath("git")
-		gitAvailable = err == nil
-	})
-	return gitAvailable
-}
-
-// gitBranchOf returns the current git branch name for the given directory, or empty string.
-// Best-effort: 2s timeout, skips if git is not installed, errors silently ignored.
-// Results are cached per directory with a 30-minute TTL.
-func gitBranchOf(dir string) string {
-	if !checkGitAvailable() {
-		return ""
-	}
-
-	now := time.Now()
-	gitBranchMu.RLock()
-	if e, ok := gitBranchMap[dir]; ok && now.Before(e.expiry) {
-		branch := e.branch
-		gitBranchMu.RUnlock()
-		return branch
-	}
-	gitBranchMu.RUnlock()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", "rev-parse", "--abbrev-ref", "HEAD")
-	cmd.Dir = dir
-	out, err := cmd.Output()
-	branch := ""
-	if err == nil {
-		branch = strings.TrimSpace(string(out))
-		if branch == "HEAD" {
-			// Detached HEAD: show short commit hash instead.
-			shortCmd := exec.CommandContext(ctx, "git", "rev-parse", "--short", "HEAD")
-			shortCmd.Dir = dir
-			if shortOut, shortErr := shortCmd.Output(); shortErr == nil {
-				branch = strings.TrimSpace(string(shortOut))
-			}
-		}
-	}
-
-	gitBranchMu.Lock()
-	gitBranchMap[dir] = gitBranchEntry{branch: branch, expiry: now.Add(gitBranchTTL)}
-	gitBranchMu.Unlock()
-	return branch
-}
+// gitBranchOf delegates to messaging.GitBranchOf for branch resolution.
+func gitBranchOf(dir string) string { return messaging.GitBranchOf(dir) }
 
 // fetchContextUsage queries the worker for precise context usage via control channel.
 // Errors are silently ignored; the caller falls back to aggregated Done stats.
