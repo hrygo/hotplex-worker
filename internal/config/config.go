@@ -129,12 +129,12 @@ func (c *Config) RequireSecrets() error {
 	var missing []string
 	if len(c.Security.JWTSecret) == 0 {
 		if os.Getenv("HOTPLEX_JWT_SECRET") != "" {
-			missing = append(missing, "security.jwt_secret (set but invalid: must be 32-byte raw or base64-encoded)")
+			missing = append(missing, "security.jwt_secret (set but invalid: must decode to >= 32 bytes)")
 		} else {
 			missing = append(missing, "security.jwt_secret")
 		}
 	} else if len(c.Security.JWTSecret) < 32 {
-		missing = append(missing, "security.jwt_secret (must decode to exactly 32 bytes for ES256)")
+		missing = append(missing, "security.jwt_secret (must decode to >= 32 bytes for ES256)")
 	}
 	if len(missing) > 0 {
 		return fmt.Errorf("config: missing required secrets: %s (set via config file or HOTPLEX_JWT_SECRET env var)", strings.Join(missing, ", "))
@@ -998,16 +998,17 @@ func ReadFile(name string) ([]byte, error) {
 
 // decodeJWTSecret decodes a base64-encoded JWT secret.
 // It supports both standard base64 and URL-safe base64 (with or without padding).
-// This matches the client token generator's key loading behavior.
+// Accepts >= 32 bytes: deriveECDSAP256Key truncates via copy to [32]byte,
+// and RequireSecrets validates len >= 32. Canonical length is 32 bytes.
 func decodeJWTSecret(secret string) []byte {
-	if decoded, err := base64.StdEncoding.DecodeString(secret); err == nil && len(decoded) == 32 {
+	if decoded, err := base64.StdEncoding.DecodeString(secret); err == nil && len(decoded) >= 32 {
 		return decoded
 	}
-	if decoded, err := base64.URLEncoding.DecodeString(secret); err == nil && len(decoded) == 32 {
+	if decoded, err := base64.URLEncoding.DecodeString(secret); err == nil && len(decoded) >= 32 {
 		return decoded
 	}
 	raw := []byte(secret)
-	if len(raw) == 32 {
+	if len(raw) >= 32 {
 		return raw
 	}
 	return nil

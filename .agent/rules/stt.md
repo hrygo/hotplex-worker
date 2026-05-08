@@ -31,13 +31,16 @@ whisper-cli -m <model_path> -f audio.mp3 -t 4 --no-timestamps      # 纯文本
 
 ## SenseVoice
 
-原生中/英/日/韩/粤语，输出含情感/语音事件标签，无时间轴。
+原生中/英/日/韩/粤语，输出含情感/语音事件标签，无时间轴。使用 INT8 量化降低内存占用（~400MB vs FP32 ~900MB）。
 
 ```python
-model = AutoModel(model='iic/SenseVoiceSmall', device='cpu', disable_update=True)
-result = model.generate(input='audio.mp3', language='auto')
+from funasr_onnx import SenseVoiceSmall
+model = SenseVoiceSmall('iic/SenseVoiceSmall', quantize=True)
+result = model('audio.mp3')
 # <|zh|><|HAPPY|><|Speech|><|woitn|>转录文本
 ```
+
+> **注意**：`funasr-onnx` 仅依赖 `onnxruntime`（CPU）。如果环境中存在 `torch`、`nvidia-*`、`cuda-*` 等 GPU 包，它们不会被 STT 使用但会浪费内存和磁盘空间。
 
 ## stt_server.py 协议
 
