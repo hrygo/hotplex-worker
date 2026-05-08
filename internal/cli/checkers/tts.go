@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/hrygo/hotplex/internal/cli"
@@ -40,6 +41,15 @@ func (c ttsEnvironmentChecker) Check(ctx context.Context) cli.Diagnostic {
 	if deps.Python3 {
 		if p, err := exec.LookPath("python3"); err == nil {
 			msgs = append(msgs, "python3: "+p)
+
+			// MOSS Python package validation (only when python3 is available).
+			if deps.MossModelDir != "" {
+				if ok, detail := checkMossPythonPackages(ctx, p); ok {
+					msgs = append(msgs, "moss python deps")
+				} else {
+					fails = append(fails, "moss python packages ("+detail+")")
+				}
+			}
 		} else {
 			fails = append(fails, "python3")
 		}
@@ -48,6 +58,12 @@ func (c ttsEnvironmentChecker) Check(ctx context.Context) cli.Diagnostic {
 	if deps.MossModelDir != "" {
 		if info, err := os.Stat(deps.MossModelDir); err == nil && info.IsDir() {
 			msgs = append(msgs, "moss model dir: "+deps.MossModelDir)
+
+			// Validate entry script exists inside model directory.
+			appPath := filepath.Join(deps.MossModelDir, "app_onnx.py")
+			if _, err := os.Stat(appPath); err != nil {
+				fails = append(fails, "moss entry script ("+appPath+")")
+			}
 		} else {
 			fails = append(fails, "moss model dir ("+deps.MossModelDir+")")
 		}
@@ -56,7 +72,7 @@ func (c ttsEnvironmentChecker) Check(ctx context.Context) cli.Diagnostic {
 	if len(fails) > 0 {
 		hints := make([]string, len(fails))
 		for i, pkg := range fails {
-			hints[i] = installHint(pkg)
+			hints[i] = ttsInstallHint(pkg)
 		}
 		return cli.Diagnostic{
 			Name:     c.Name(),
@@ -98,7 +114,7 @@ func ttsRequirements() ttsDeps {
 
 	var deps ttsDeps
 
-	// Edge TTS → MP3 → ffmpeg → Opus (used by both Slack and Feishu).
+	// Edge TTS → MP3 → ffmpeg → platform format (Feishu: Opus, Slack: MP3).
 	slackEdge := cfg.Messaging.Slack.Enabled && cfg.Messaging.Slack.TTSConfig.Enabled
 	feishuEdge := cfg.Messaging.Feishu.Enabled && cfg.Messaging.Feishu.TTSConfig.Enabled
 	if slackEdge || feishuEdge {
@@ -123,6 +139,33 @@ func ttsRequirements() ttsDeps {
 
 func mossProvider(provider string) bool {
 	return provider == "moss" || provider == "edge+moss"
+}
+
+// checkMossPythonPackages verifies MOSS-TTS-Nano Python dependencies are importable.
+func checkMossPythonPackages(ctx context.Context, pyPath string) (bool, string) {
+	cmd := exec.CommandContext(ctx, pyPath, "-c",
+		"import numpy; import sentencepiece; import onnxruntime; import fastapi; import uvicorn; print('ok')")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return false, strings.TrimSpace(string(out))
+	}
+	return true, ""
+}
+
+// ttsInstallHint returns a platform-specific install hint for a TTS dependency.
+// For MOSS-specific items (model dir, entry script, python packages), it returns
+// actionable guidance instead of the generic "brew install" pattern.
+func ttsInstallHint(pkg string) string {
+	switch {
+	case strings.HasPrefix(pkg, "moss model dir"):
+		return "mkdir -p ~/.hotplex/models/moss-tts-nano && download MOSS scripts + model (see docs)"
+	case strings.HasPrefix(pkg, "moss entry script"):
+		return "download MOSS-TTS-Nano Python scripts into the model dir (see references/tts.md step 2)"
+	case strings.HasPrefix(pkg, "moss python packages"):
+		return "pip3 install numpy sentencepiece onnxruntime fastapi uvicorn python-multipart soundfile huggingface_hub"
+	default:
+		return installHint(pkg)
+	}
 }
 
 func joinStrings(ss []string) string {

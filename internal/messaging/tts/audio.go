@@ -7,10 +7,10 @@ import (
 	"os/exec"
 )
 
-// MP3ToOpus converts audio bytes (MP3 or WAV) to Ogg/Opus format (16kHz mono)
-// suitable for Feishu/Slack audio messages. Requires ffmpeg at runtime.
+// ToOpus converts audio bytes (MP3 or WAV) to Ogg/Opus format (24kHz mono)
+// suitable for Feishu audio messages. Requires ffmpeg at runtime.
 // ffmpeg auto-detects input format from stream header.
-func MP3ToOpus(ctx context.Context, audioData []byte) ([]byte, error) {
+func ToOpus(ctx context.Context, audioData []byte) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, "ffmpeg",
 		"-i", "pipe:0",
 		"-ar", "24000",
@@ -36,6 +36,39 @@ func MP3ToOpus(ctx context.Context, audioData []byte) ([]byte, error) {
 	}
 	if len(out) == 0 {
 		return nil, fmt.Errorf("ffmpeg audio→opus: empty output")
+	}
+	return out, nil
+}
+
+// ToMP3 converts audio bytes (WAV or any format) to MP3 format (24kHz mono)
+// suitable for Slack audio messages. Requires ffmpeg at runtime.
+func ToMP3(ctx context.Context, audioData []byte) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, "ffmpeg",
+		"-i", "pipe:0",
+		"-ar", "24000",
+		"-ac", "1",
+		"-acodec", "libmp3lame",
+		"-b:a", "48k",
+		"-f", "mp3",
+		"-hide_banner",
+		"-loglevel", "error",
+		"pipe:1",
+	)
+	cmd.Stdin = bytes.NewReader(audioData)
+
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	out, err := cmd.Output()
+	if err != nil {
+		hint := stderr.String()
+		if hint == "" {
+			hint = err.Error()
+		}
+		return nil, fmt.Errorf("ffmpeg audio→mp3: %s", hint)
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("ffmpeg audio→mp3: empty output")
 	}
 	return out, nil
 }

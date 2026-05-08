@@ -207,16 +207,15 @@ messaging:
     tts_enabled: true
     # Provider: edge (Edge TTS, free), moss (MOSS-TTS-Nano local CPU),
     #   edge+moss (Edge primary + MOSS fallback)
-    tts_provider: "edge"
+    tts_provider: "edge+moss"
     tts_voice: "zh-CN-XiaoxiaoNeural"
     tts_max_chars: 150
-    # MOSS-TTS-Nano sidecar settings (uncomment for moss or edge+moss provider)
-    # Requires: python3, model files in tts_moss_model_dir
-    # tts_moss_model_dir: "~/.hotplex/models/moss-tts-nano"
-    # tts_moss_voice: "Xiaoyu"
-    # tts_moss_port: 18083
-    # tts_moss_idle_timeout: 30m
-    # tts_moss_cpu_threads: 2
+    # MOSS-TTS-Nano sidecar settings
+    tts_moss_model_dir: "~/.hotplex/models/moss-tts-nano"
+    tts_moss_voice: "Xiaoyu"
+    tts_moss_port: 18083
+    tts_moss_idle_timeout: 30m
+    tts_moss_cpu_threads: 0
 
   feishu:
     enabled: false
@@ -232,13 +231,12 @@ messaging:
     tts_enabled: true
     # Provider: edge (Edge TTS, free), moss (MOSS-TTS-Nano local CPU),
     #   edge+moss (Edge primary + MOSS fallback)
-    tts_provider: "edge"
+    tts_provider: "edge+moss"
     tts_voice: "zh-CN-XiaoxiaoNeural"
     tts_max_chars: 150
-    # MOSS-TTS-Nano sidecar settings (uncomment for moss or edge+moss provider)
-    # Requires: python3, model files in tts_moss_model_dir
-    # tts_moss_model_dir: "~/.hotplex/models/moss-tts-nano"
-    # tts_moss_voice: "Xiaoyu"
-    # tts_moss_port: 18083
-    # tts_moss_idle_timeout: 30m
-    # tts_moss_cpu_threads: 2
+    # MOSS-TTS-Nano sidecar settings
+    tts_moss_model_dir: "~/.hotplex/models/moss-tts-nano"
+    tts_moss_voice: "Xiaoyu"
+    tts_moss_port: 18083
+    tts_moss_idle_timeout: 30m
+    tts_moss_cpu_threads: 0
