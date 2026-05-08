@@ -217,37 +217,11 @@ type TTSConfig struct {
 	MossCpuThreads int `mapstructure:"tts_moss_cpu_threads"`
 }
 
-// SlackConfig holds Slack Socket Mode adapter settings.
-type SlackConfig struct {
-	Enabled             bool     `mapstructure:"enabled"`
-	BotToken            string   `mapstructure:"bot_token"`
-	AppToken            string   `mapstructure:"app_token"`
-	SocketMode          bool     `mapstructure:"socket_mode"`
-	WorkerType          string   `mapstructure:"worker_type"`
-	WorkDir             string   `mapstructure:"work_dir"`
-	AssistantAPIEnabled *bool    `mapstructure:"assistant_api_enabled"`
-	DMPolicy            string   `mapstructure:"dm_policy"`
-	GroupPolicy         string   `mapstructure:"group_policy"`
-	RequireMention      bool     `mapstructure:"require_mention"`
-	AllowFrom           []string `mapstructure:"allow_from"`
-	AllowDMFrom         []string `mapstructure:"allow_dm_from"`
-	AllowGroupFrom      []string `mapstructure:"allow_group_from"`
-
-	ReconnectBaseDelay time.Duration `mapstructure:"reconnect_base_delay"`
-	ReconnectMaxDelay  time.Duration `mapstructure:"reconnect_max_delay"`
-
-	STTConfig `mapstructure:",squash"`
-	TTSConfig `mapstructure:",squash"`
-}
-
-// FeishuConfig holds Feishu WebSocket adapter settings.
-type FeishuConfig struct {
-	Enabled    bool   `mapstructure:"enabled"`
-	AppID      string `mapstructure:"app_id"`
-	AppSecret  string `mapstructure:"app_secret"`
-	WorkerType string `mapstructure:"worker_type"`
-	WorkDir    string `mapstructure:"work_dir"`
-
+// MessagingPlatformConfig holds settings shared by all messaging adapters (Slack, Feishu, etc.).
+type MessagingPlatformConfig struct {
+	Enabled        bool     `mapstructure:"enabled"`
+	WorkerType     string   `mapstructure:"worker_type"`
+	WorkDir        string   `mapstructure:"work_dir"`
 	DMPolicy       string   `mapstructure:"dm_policy"`
 	GroupPolicy    string   `mapstructure:"group_policy"`
 	RequireMention bool     `mapstructure:"require_mention"`
@@ -257,6 +231,26 @@ type FeishuConfig struct {
 
 	STTConfig `mapstructure:",squash"`
 	TTSConfig `mapstructure:",squash"`
+}
+
+// SlackConfig holds Slack Socket Mode adapter settings.
+type SlackConfig struct {
+	MessagingPlatformConfig `mapstructure:",squash"`
+
+	BotToken            string        `mapstructure:"bot_token"`
+	AppToken            string        `mapstructure:"app_token"`
+	SocketMode          bool          `mapstructure:"socket_mode"`
+	AssistantAPIEnabled *bool         `mapstructure:"assistant_api_enabled"`
+	ReconnectBaseDelay  time.Duration `mapstructure:"reconnect_base_delay"`
+	ReconnectMaxDelay   time.Duration `mapstructure:"reconnect_max_delay"`
+}
+
+// FeishuConfig holds Feishu WebSocket adapter settings.
+type FeishuConfig struct {
+	MessagingPlatformConfig `mapstructure:",squash"`
+
+	AppID     string `mapstructure:"app_id"`
+	AppSecret string `mapstructure:"app_secret"`
 }
 
 type AdminConfig struct {
@@ -523,46 +517,10 @@ func Default() *Config {
 		Messaging: MessagingConfig{
 			TurnSummaryEnabled: true,
 			Feishu: FeishuConfig{
-				RequireMention: true,
-				DMPolicy:       "allowlist",
-				GroupPolicy:    "allowlist",
-				STTConfig: STTConfig{
-					Provider:     "local",
-					LocalCmd:     "python3 " + filepath.Join(HotplexHome(), "scripts", "stt_server.py"),
-					LocalIdleTTL: time.Hour,
-				},
-				TTSConfig: TTSConfig{
-					Enabled:         true,
-					TTSProvider:     "edge+moss",
-					Voice:           "zh-CN-XiaoxiaoNeural",
-					MaxChars:        150,
-					MossModelDir:    filepath.Join(HotplexHome(), "models", "moss-tts-nano"),
-					MossVoice:       "Xiaoyu",
-					MossPort:        18083,
-					MossIdleTimeout: 30 * time.Minute,
-					MossCpuThreads:  0,
-				},
+				MessagingPlatformConfig: defaultMessagingPlatformConfig(),
 			},
 			Slack: SlackConfig{
-				RequireMention: true,
-				DMPolicy:       "allowlist",
-				GroupPolicy:    "allowlist",
-				STTConfig: STTConfig{
-					Provider:     "local",
-					LocalCmd:     "python3 " + filepath.Join(HotplexHome(), "scripts", "stt_server.py"),
-					LocalIdleTTL: time.Hour,
-				},
-				TTSConfig: TTSConfig{
-					Enabled:         true,
-					TTSProvider:     "edge+moss",
-					Voice:           "zh-CN-XiaoxiaoNeural",
-					MaxChars:        150,
-					MossModelDir:    filepath.Join(HotplexHome(), "models", "moss-tts-nano"),
-					MossVoice:       "Xiaoyu",
-					MossPort:        18083,
-					MossIdleTimeout: 30 * time.Minute,
-					MossCpuThreads:  0,
-				},
+				MessagingPlatformConfig: defaultMessagingPlatformConfig(),
 			},
 		},
 		AgentConfig: AgentConfig{
@@ -571,6 +529,30 @@ func Default() *Config {
 		},
 		Skills: SkillsConfig{
 			CacheTTL: 5 * time.Minute,
+		},
+	}
+}
+
+func defaultMessagingPlatformConfig() MessagingPlatformConfig {
+	return MessagingPlatformConfig{
+		RequireMention: true,
+		DMPolicy:       "allowlist",
+		GroupPolicy:    "allowlist",
+		STTConfig: STTConfig{
+			Provider:     "local",
+			LocalCmd:     "python3 " + filepath.Join(HotplexHome(), "scripts", "stt_server.py"),
+			LocalIdleTTL: time.Hour,
+		},
+		TTSConfig: TTSConfig{
+			Enabled:         true,
+			TTSProvider:     "edge+moss",
+			Voice:           "zh-CN-XiaoxiaoNeural",
+			MaxChars:        150,
+			MossModelDir:    filepath.Join(HotplexHome(), "models", "moss-tts-nano"),
+			MossVoice:       "Xiaoyu",
+			MossPort:        18083,
+			MossIdleTimeout: 30 * time.Minute,
+			MossCpuThreads:  0,
 		},
 	}
 }
@@ -896,75 +878,72 @@ func aggregateNumberedEnv(existing []string, prefix string) []string {
 // This is needed because Viper's AutomaticEnv cannot map nested keys
 // unless the viper instance has seen them from a config file or SetDefault.
 func applyMessagingEnv(cfg *Config) {
-	// Slack-specific env vars
-	slackStringMapping := []struct{ env, field string }{
-		{"HOTPLEX_MESSAGING_SLACK_BOT_TOKEN", "BotToken"},
-		{"HOTPLEX_MESSAGING_SLACK_APP_TOKEN", "AppToken"},
-		{"HOTPLEX_MESSAGING_SLACK_WORKER_TYPE", "WorkerType"},
-		{"HOTPLEX_MESSAGING_SLACK_WORK_DIR", "WorkDir"},
-		{"HOTPLEX_MESSAGING_SLACK_DM_POLICY", "DMPolicy"},
-		{"HOTPLEX_MESSAGING_SLACK_GROUP_POLICY", "GroupPolicy"},
-	}
-	for _, m := range slackStringMapping {
-		if v := os.Getenv(m.env); v != "" {
-			setField(&cfg.Messaging.Slack, m.field, v)
-		}
-	}
+	// Slack
+	applyPlatformEnv(&cfg.Messaging.Slack,
+		[]envMapping{
+			{"HOTPLEX_MESSAGING_SLACK_BOT_TOKEN", "BotToken"},
+			{"HOTPLEX_MESSAGING_SLACK_APP_TOKEN", "AppToken"},
+			{"HOTPLEX_MESSAGING_SLACK_WORKER_TYPE", "WorkerType"},
+			{"HOTPLEX_MESSAGING_SLACK_WORK_DIR", "WorkDir"},
+			{"HOTPLEX_MESSAGING_SLACK_DM_POLICY", "DMPolicy"},
+			{"HOTPLEX_MESSAGING_SLACK_GROUP_POLICY", "GroupPolicy"},
+		},
+		[]envMapping{
+			{"HOTPLEX_MESSAGING_SLACK_ENABLED", "Enabled"},
+			{"HOTPLEX_MESSAGING_SLACK_REQUIRE_MENTION", "RequireMention"},
+		},
+		[]envMapping{
+			{"HOTPLEX_MESSAGING_SLACK_ALLOW_FROM", "AllowFrom"},
+			{"HOTPLEX_MESSAGING_SLACK_ALLOW_DM_FROM", "AllowDMFrom"},
+			{"HOTPLEX_MESSAGING_SLACK_ALLOW_GROUP_FROM", "AllowGroupFrom"},
+		},
+	)
 
-	// Feishu-specific env vars
-	feishuStringMapping := []struct{ env, field string }{
-		{"HOTPLEX_MESSAGING_FEISHU_APP_ID", "AppID"},
-		{"HOTPLEX_MESSAGING_FEISHU_APP_SECRET", "AppSecret"},
-		{"HOTPLEX_MESSAGING_FEISHU_WORKER_TYPE", "WorkerType"},
-		{"HOTPLEX_MESSAGING_FEISHU_WORK_DIR", "WorkDir"},
-		{"HOTPLEX_MESSAGING_FEISHU_DM_POLICY", "DMPolicy"},
-		{"HOTPLEX_MESSAGING_FEISHU_GROUP_POLICY", "GroupPolicy"},
-	}
-	for _, m := range feishuStringMapping {
-		if v := os.Getenv(m.env); v != "" {
-			setField(&cfg.Messaging.Feishu, m.field, v)
-		}
-	}
-
-	// Bool env vars (shared pattern for both platforms)
-	if v := os.Getenv("HOTPLEX_MESSAGING_SLACK_ENABLED"); v != "" {
-		cfg.Messaging.Slack.Enabled = strings.EqualFold(v, "true")
-	}
-	if v := os.Getenv("HOTPLEX_MESSAGING_SLACK_REQUIRE_MENTION"); v != "" {
-		cfg.Messaging.Slack.RequireMention = strings.EqualFold(v, "true")
-	}
-	if v := os.Getenv("HOTPLEX_MESSAGING_FEISHU_ENABLED"); v != "" {
-		cfg.Messaging.Feishu.Enabled = strings.EqualFold(v, "true")
-	}
-	if v := os.Getenv("HOTPLEX_MESSAGING_FEISHU_REQUIRE_MENTION"); v != "" {
-		cfg.Messaging.Feishu.RequireMention = strings.EqualFold(v, "true")
-	}
+	// Feishu
+	applyPlatformEnv(&cfg.Messaging.Feishu,
+		[]envMapping{
+			{"HOTPLEX_MESSAGING_FEISHU_APP_ID", "AppID"},
+			{"HOTPLEX_MESSAGING_FEISHU_APP_SECRET", "AppSecret"},
+			{"HOTPLEX_MESSAGING_FEISHU_WORKER_TYPE", "WorkerType"},
+			{"HOTPLEX_MESSAGING_FEISHU_WORK_DIR", "WorkDir"},
+			{"HOTPLEX_MESSAGING_FEISHU_DM_POLICY", "DMPolicy"},
+			{"HOTPLEX_MESSAGING_FEISHU_GROUP_POLICY", "GroupPolicy"},
+		},
+		[]envMapping{
+			{"HOTPLEX_MESSAGING_FEISHU_ENABLED", "Enabled"},
+			{"HOTPLEX_MESSAGING_FEISHU_REQUIRE_MENTION", "RequireMention"},
+		},
+		[]envMapping{
+			{"HOTPLEX_MESSAGING_FEISHU_ALLOW_FROM", "AllowFrom"},
+			{"HOTPLEX_MESSAGING_FEISHU_ALLOW_DM_FROM", "AllowDMFrom"},
+			{"HOTPLEX_MESSAGING_FEISHU_ALLOW_GROUP_FROM", "AllowGroupFrom"},
+		},
+	)
 
 	// Global messaging env vars.
 	if v := os.Getenv("HOTPLEX_MESSAGING_TURN_SUMMARY_ENABLED"); v != "" {
 		cfg.Messaging.TurnSummaryEnabled = strings.EqualFold(v, "true")
 	}
+}
 
-	// Slice env vars (comma-separated)
-	slackSliceMapping := []struct{ env, field string }{
-		{"HOTPLEX_MESSAGING_SLACK_ALLOW_FROM", "AllowFrom"},
-		{"HOTPLEX_MESSAGING_SLACK_ALLOW_DM_FROM", "AllowDMFrom"},
-		{"HOTPLEX_MESSAGING_SLACK_ALLOW_GROUP_FROM", "AllowGroupFrom"},
-	}
-	for _, m := range slackSliceMapping {
+// envMapping maps an environment variable to a struct field name.
+type envMapping struct{ env, field string }
+
+// applyPlatformEnv applies string, bool, and slice env-var mappings to a target struct.
+func applyPlatformEnv(target any, strs, bools, slices []envMapping) {
+	for _, m := range strs {
 		if v := os.Getenv(m.env); v != "" {
-			setSliceField(&cfg.Messaging.Slack, m.field, v)
+			setField(target, m.field, v)
 		}
 	}
-
-	feishuSliceMapping := []struct{ env, field string }{
-		{"HOTPLEX_MESSAGING_FEISHU_ALLOW_FROM", "AllowFrom"},
-		{"HOTPLEX_MESSAGING_FEISHU_ALLOW_DM_FROM", "AllowDMFrom"},
-		{"HOTPLEX_MESSAGING_FEISHU_ALLOW_GROUP_FROM", "AllowGroupFrom"},
-	}
-	for _, m := range feishuSliceMapping {
+	for _, m := range bools {
 		if v := os.Getenv(m.env); v != "" {
-			setSliceField(&cfg.Messaging.Feishu, m.field, v)
+			setBoolField(target, m.field, strings.EqualFold(v, "true"))
+		}
+	}
+	for _, m := range slices {
+		if v := os.Getenv(m.env); v != "" {
+			setSliceField(target, m.field, v)
 		}
 	}
 }
@@ -973,6 +952,12 @@ func applyMessagingEnv(cfg *Config) {
 func setField(target any, field, value string) {
 	v := reflect.ValueOf(target).Elem()
 	v.FieldByName(field).SetString(value)
+}
+
+// setBoolField sets a bool field on a struct by name using reflection.
+func setBoolField(target any, field string, value bool) {
+	v := reflect.ValueOf(target).Elem()
+	v.FieldByName(field).SetBool(value)
 }
 
 // setSliceField sets a []string field on a struct by name using reflection.
