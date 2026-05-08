@@ -133,7 +133,10 @@ type PersistentSTT struct {
 	log      *slog.Logger
 	pidKey   string // Unique identifier for PID file tracking
 
-	mu      sync.Mutex
+	mu       sync.Mutex  // protects lifecycle (start/stop/kill)
+	ioMu     sync.Mutex  // serializes stdin/stdout I/O protocol
+	inFlight atomic.Bool // true while Transcribe is active
+
 	cmd     *exec.Cmd
 	stdin   io.WriteCloser
 	stdoutR *os.File
@@ -168,15 +171,22 @@ func NewPersistentSTT(cmdTemplate, pidKey string, idleTTL time.Duration, log *sl
 func (s *PersistentSTT) RequiresDisk() bool { return true }
 
 func (s *PersistentSTT) Transcribe(ctx context.Context, audioData []byte) (string, error) {
+	// Phase 1: Ensure subprocess is running (short critical section).
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	// Lazy start: launch subprocess if not running.
 	if !s.started || !s.isAlive() {
 		if err := s.start(ctx); err != nil {
+			s.mu.Unlock()
 			return "", fmt.Errorf("persistent stt: %w", err)
 		}
 	}
+	s.mu.Unlock()
+
+	// Phase 2: I/O with serialization and interruptibility.
+	s.inFlight.Store(true)
+	defer s.inFlight.Store(false)
+
+	s.ioMu.Lock()
+	defer s.ioMu.Unlock()
 
 	// Write audio to temp file.
 	tmpPath, err := writeTempAudioFile(audioData)
@@ -188,21 +198,22 @@ func (s *PersistentSTT) Transcribe(ctx context.Context, audioData []byte) (strin
 	// Send JSON request via stdin.
 	req, _ := json.Marshal(map[string]string{"audio_path": tmpPath})
 	if _, err := s.stdin.Write(append(req, '\n')); err != nil {
-		s.kill()
+		s.handleIOError()
 		return "", fmt.Errorf("persistent stt: write stdin: %w", err)
 	}
 
-	// Read JSON response from stdout.
-	if !s.scanner.Scan() {
-		s.kill()
-		return "", fmt.Errorf("persistent stt: subprocess exited unexpectedly")
+	// Read JSON response from stdout (interruptible via ctx).
+	line, err := s.readLine(ctx)
+	if err != nil {
+		s.handleIOError()
+		return "", fmt.Errorf("persistent stt: %w", err)
 	}
 
 	var resp struct {
 		Text  string `json:"text"`
 		Error string `json:"error"`
 	}
-	if err := json.Unmarshal([]byte(s.scanner.Text()), &resp); err != nil {
+	if err := json.Unmarshal([]byte(line), &resp); err != nil {
 		return "", fmt.Errorf("persistent stt: parse response: %w", err)
 	}
 	if resp.Error != "" {
@@ -212,6 +223,58 @@ func (s *PersistentSTT) Transcribe(ctx context.Context, audioData []byte) (strin
 	s.lastUsed.Store(time.Now().UnixNano())
 	s.log.Debug("persistent stt: transcribed", "text", resp.Text, "text_len", len(resp.Text))
 	return resp.Text, nil
+}
+
+// readTimeout is the default timeout for reading a response from the STT
+// subprocess when the caller's context has no deadline.
+const readTimeout = 30 * time.Second
+
+// readLine reads one line from the subprocess stdout, interruptible via ctx.
+// The caller must hold ioMu.
+func (s *PersistentSTT) readLine(ctx context.Context) (string, error) {
+	// Ensure there's always a deadline.
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, readTimeout)
+		defer cancel()
+	}
+
+	type result struct {
+		line string
+		ok   bool
+	}
+	ch := make(chan result, 1)
+	go func() {
+		ok := s.scanner.Scan()
+		var line string
+		if ok {
+			line = s.scanner.Text()
+		}
+		ch <- result{line, ok}
+	}()
+
+	select {
+	case r := <-ch:
+		if !r.ok {
+			return "", fmt.Errorf("subprocess exited unexpectedly")
+		}
+		return r.line, nil
+	case <-ctx.Done():
+		// Kill subprocess to unblock the reader goroutine.
+		s.mu.Lock()
+		s.kill()
+		s.mu.Unlock()
+		<-ch // Wait for scanner to return after kill.
+		return "", ctx.Err()
+	}
+}
+
+// handleIOError kills the subprocess after an I/O failure.
+// Called with ioMu held, NOT mu held.
+func (s *PersistentSTT) handleIOError() {
+	s.mu.Lock()
+	s.kill()
+	s.mu.Unlock()
 }
 
 // Close shuts down the subprocess with layered termination.
@@ -278,25 +341,33 @@ func (s *PersistentSTT) start(_ context.Context) error {
 	if s.idleTTL > 0 {
 		idleCtx, cancel := context.WithCancel(context.Background())
 		s.cancel = cancel
-		s.done = make(chan struct{})
-		go s.idleMonitor(idleCtx)
+		done := make(chan struct{})
+		s.done = done
+		go s.idleMonitor(idleCtx, done)
 	}
 
 	s.log.Info("persistent stt: started", "pid", cmd.Process.Pid, "idle_ttl", s.idleTTL)
 	return nil
 }
 
-// terminate sends graceful termination, waits 5s, then force kills. Cleans up all resources.
+// terminate cancels the idle monitor and shuts down the subprocess.
+// Called with mu held.
 func (s *PersistentSTT) terminate(ctx context.Context) {
-	if !s.started {
-		return
-	}
-
-	// Stop idle monitor.
 	if s.cancel != nil {
 		s.cancel()
-		<-s.done
+		// Do NOT wait for <-s.done here — idleMonitor might be blocked
+		// on mu held by our caller, causing deadlock. It exits on its own
+		// after seeing ctx.Done().
 		s.cancel = nil
+	}
+	s.shutdownProcess(ctx)
+}
+
+// shutdownProcess terminates the subprocess and cleans up resources.
+// Called with mu held. Does NOT stop the idle monitor.
+func (s *PersistentSTT) shutdownProcess(ctx context.Context) {
+	if !s.started {
+		return
 	}
 
 	// Close stdin to signal subprocess.
@@ -334,12 +405,11 @@ func (s *PersistentSTT) terminate(ctx context.Context) {
 }
 
 // kill force-kills immediately and cleans up.
+// Called with mu held. Does NOT wait for idle monitor.
 func (s *PersistentSTT) kill() {
 	if s.cancel != nil {
 		s.cancel()
-		if s.done != nil {
-			<-s.done
-		}
+		// Do NOT wait for <-s.done — idleMonitor might be blocked on mu.
 		s.cancel = nil
 	}
 	s.closeJob()
@@ -374,13 +444,14 @@ func (s *PersistentSTT) isAlive() bool {
 }
 
 // idleMonitor auto-shuts down the subprocess after idle TTL.
-func (s *PersistentSTT) idleMonitor(ctx context.Context) {
+// done chan is captured by parameter to avoid racing with start() reassignment.
+func (s *PersistentSTT) idleMonitor(ctx context.Context, done chan struct{}) {
 	defer func() {
 		if r := recover(); r != nil {
 			s.log.Error("stt: panic in idleMonitor", "panic", r, "stack", string(debug.Stack()))
 		}
 	}()
-	defer close(s.done)
+	defer close(done)
 
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
@@ -390,14 +461,15 @@ func (s *PersistentSTT) idleMonitor(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			if s.inFlight.Load() {
+				continue // Active request in progress, skip.
+			}
 			last := time.Unix(0, s.lastUsed.Load())
 			if time.Since(last) > s.idleTTL {
 				s.mu.Lock()
 				s.log.Info("persistent stt: idle timeout, shutting down", "idle_ttl", s.idleTTL)
-				// Use context.Background() — idle shutdown should not be
-				// cancelled by the monitor's own cancellation.
 				termCtx, termCancel := context.WithTimeout(context.Background(), 10*time.Second)
-				s.terminate(termCtx)
+				s.shutdownProcess(termCtx)
 				termCancel()
 				s.mu.Unlock()
 				return
