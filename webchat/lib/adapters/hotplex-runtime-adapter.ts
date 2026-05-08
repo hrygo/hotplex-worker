@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ExternalStoreAdapter, ThreadMessageLike, AppendMessage } from '@assistant-ui/react';
 import { BrowserHotPlexClient } from '@/lib/ai-sdk-transport';
-import type { InitConfig, ContextUsageData } from '@/lib/ai-sdk-transport/client/types';
+import type { InitConfig, ContextUsageData, PermissionRequestData, QuestionRequestData, ElicitationRequestData } from '@/lib/ai-sdk-transport/client/types';
 import { WorkerStdioCommand } from '@/lib/ai-sdk-transport/client/constants';
 import { wsUrl, workerType, apiKey, workDir, allowedTools } from '@/lib/config';
 import { useMetrics } from '@/lib/hooks/useMetrics';
@@ -26,6 +26,10 @@ import type {
   ToolCallData,
   ToolResultData,
 } from '@/lib/ai-sdk-transport';
+import type { TextPart, ReasoningPart, ToolCallPart, ToolSummaryPart, ContextUsagePart, TurnSummaryPart, MessagePart } from '@/lib/types/message-parts';
+
+// Re-export for consumers
+export type { TextPart, ReasoningPart, ToolCallPart, ToolSummaryPart, ContextUsagePart, TurnSummaryPart, MessagePart };
 
 // ThreadSuggestion shape — matches @assistant-ui/core ThreadSuggestion
 type ThreadSuggestion = { title: string; label: string; prompt: string };
@@ -46,44 +50,6 @@ export interface UseHotPlexRuntimeConfig {
   /** Custom welcome suggestions shown when thread is empty. */
   suggestions?: readonly ThreadSuggestion[];
 }
-
-// Single part of a message
-interface TextPart {
-  type: 'text';
-  text: string;
-}
-
-interface ReasoningPart {
-  type: 'reasoning';
-  text: string;
-}
-
-interface ToolCallPart {
-  type: 'tool-call';
-  toolName: string;
-  args: any;
-  toolCallId: string;
-  result?: any;
-  isError?: boolean;
-}
-
-interface ToolSummaryPart {
-  type: 'tool-summary';
-  toolNames: string[];
-  count: number;
-}
-
-interface ContextUsagePart {
-  type: 'context-usage';
-  data: ContextUsageData;
-}
-
-interface TurnSummaryPart {
-  type: 'turn-summary';
-  data: import('@/lib/ai-sdk-transport/client/types').TurnSessionStats;
-}
-
-type MessagePart = TextPart | ReasoningPart | ToolCallPart | ToolSummaryPart | ContextUsagePart | TurnSummaryPart;
 
 // Internal message format for our store
 interface HotPlexMessage {
@@ -272,6 +238,9 @@ export function useHotPlexRuntime({
 
   // Track whether skills have been fetched (only after first turn completes)
   const skillsFetchedRef = useRef(false);
+
+  // Track pending interaction requests for response routing
+  const interactionMapRef = useRef<Map<string, { type: 'permission' | 'question' | 'elicitation' }>>(new Map());
 
   // Cache min seq for cursor-based pagination (avoid O(n) scan on each load)
   const minSeqRef = useRef<number>(0);
@@ -708,19 +677,84 @@ export function useHotPlexRuntime({
       const names = data?.skills?.names ?? [];
       onSkillsChangeRef.current?.(names);
 
-      // Inject context usage as a special part type for card rendering
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `context-${Date.now()}`,
-          role: 'assistant' as const,
-          parts: [{ type: 'context-usage' as const, data }],
-          createdAt: new Date(),
-          status: 'complete' as const,
-        },
-      ]);
+      // Inject into last assistant message's parts (same pattern as turn-summary in handleDone)
+      setMessages((prev) => {
+        const lastMessage = prev[prev.length - 1];
+        if (lastMessage?.role === 'assistant') {
+          return [
+            ...prev.slice(0, -1),
+            { ...lastMessage, parts: [...lastMessage.parts, { type: 'context-usage' as const, data }] },
+          ];
+        }
+        return prev;
+      });
     };
     client.on('contextUsage', handleContextUsage);
+
+    // Interaction event handlers — inject as tool-call parts for PermissionCard rendering
+    const handlePermissionRequest = (data: PermissionRequestData, _env: Envelope) => {
+      if (!data) return;
+      interactionMapRef.current.set(data.id, { type: 'permission' });
+      setMessages((prev) => {
+        const lastMessage = prev[prev.length - 1];
+        if (lastMessage?.role === 'assistant') {
+          return [...prev.slice(0, -1), {
+            ...lastMessage,
+            parts: [...lastMessage.parts, {
+              type: 'tool-call' as const,
+              toolName: 'ask_permission',
+              args: { description: data.description, tool_name: data.tool_name, args: data.args },
+              toolCallId: data.id,
+            }],
+          }];
+        }
+        return prev;
+      });
+    };
+    client.on('permissionRequest', handlePermissionRequest);
+
+    const handleQuestionRequest = (data: QuestionRequestData, _env: Envelope) => {
+      if (!data) return;
+      interactionMapRef.current.set(data.id, { type: 'question' });
+      setMessages((prev) => {
+        const lastMessage = prev[prev.length - 1];
+        if (lastMessage?.role === 'assistant') {
+          const questionText = data.questions?.map(q => q.question).join('\n') || '';
+          return [...prev.slice(0, -1), {
+            ...lastMessage,
+            parts: [...lastMessage.parts, {
+              type: 'tool-call' as const,
+              toolName: 'question_request',
+              args: { description: questionText, questions: data.questions },
+              toolCallId: data.id,
+            }],
+          }];
+        }
+        return prev;
+      });
+    };
+    client.on('questionRequest', handleQuestionRequest);
+
+    const handleElicitationRequest = (data: ElicitationRequestData, _env: Envelope) => {
+      if (!data) return;
+      interactionMapRef.current.set(data.id, { type: 'elicitation' });
+      setMessages((prev) => {
+        const lastMessage = prev[prev.length - 1];
+        if (lastMessage?.role === 'assistant') {
+          return [...prev.slice(0, -1), {
+            ...lastMessage,
+            parts: [...lastMessage.parts, {
+              type: 'tool-call' as const,
+              toolName: 'elicitation',
+              args: { message: data.message, mcp_server_name: data.mcp_server_name, url: data.url },
+              toolCallId: data.id,
+            }],
+          }];
+        }
+        return prev;
+      });
+    };
+    client.on('elicitationRequest', handleElicitationRequest);
 
     client.connect(sessionId).catch((err) => {
       console.error('HotPlexRuntimeAdapter: connection failed', err);
@@ -738,7 +772,11 @@ export function useHotPlexRuntime({
       client.off('toolCall', handleToolCall);
       client.off('toolResult', handleToolResult);
       client.off('contextUsage', handleContextUsage);
+      client.off('permissionRequest', handlePermissionRequest);
+      client.off('questionRequest', handleQuestionRequest);
+      client.off('elicitationRequest', handleElicitationRequest);
       pendingReasoningRef.current = '';
+      interactionMapRef.current.clear();
       client.disconnect();
       clientRef.current = null;
     };
@@ -861,8 +899,8 @@ export function useHotPlexRuntime({
       client.sendInput(textContent);
     } catch (err) {
       console.error('HotPlexRuntimeAdapter: sendInput failed', err);
-      // Remove the user message we just added since it wasn't sent
-      setMessages((prev) => prev.slice(0, -1));
+      // Remove BOTH user message and ghost message since send failed
+      setMessages((prev) => prev.slice(0, -2));
       throw new Error('Failed to send message. Please check your connection.');
     }
   }, []);
@@ -914,6 +952,27 @@ export function useHotPlexRuntime({
     }
   }, []);
 
+  // Interaction response callback — routes to the correct send method
+  const handleInteractionRespond = useCallback((toolCallId: string, allowed: boolean) => {
+    const client = clientRef.current;
+    if (!client) return;
+    const entry = interactionMapRef.current.get(toolCallId);
+    if (!entry) return;
+    interactionMapRef.current.delete(toolCallId);
+
+    switch (entry.type) {
+      case 'permission':
+        client.sendPermissionResponse(toolCallId, allowed);
+        break;
+      case 'question':
+        client.sendQuestionResponse(toolCallId, { 'default': allowed ? 'yes' : 'no' });
+        break;
+      case 'elicitation':
+        client.sendElicitationResponse(toolCallId, allowed ? 'accept' : 'decline');
+        break;
+    }
+  }, []);
+
   // Deduped messages for assistant-ui — the ExternalStoreAdapter interface has no
   // threadMessages field; it processes raw `messages` via convertMessage. Dedup here
   // to prevent MessageRepository "same id already exists" errors. Also filter out
@@ -951,7 +1010,8 @@ export function useHotPlexRuntime({
     metrics: sessionMetrics,
     hasMore: historyHasMore,
     onLoadHistory: handleLoadHistory,
-  }), [sessionMetrics, historyHasMore, handleLoadHistory]);
+    onInteractionRespond: handleInteractionRespond,
+  }), [sessionMetrics, historyHasMore, handleLoadHistory, handleInteractionRespond]);
 
   // Return ExternalStoreAdapter — memoized to prevent unnecessary setAdapter calls
   return useMemo(() => ({
