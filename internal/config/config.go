@@ -800,7 +800,9 @@ func (c *Config) normalizePaths() {
 		&c.Worker.PIDDir,
 		&c.AgentConfig.ConfigDir,
 		&c.Messaging.Slack.WorkDir,
+		&c.Messaging.Slack.MossModelDir,
 		&c.Messaging.Feishu.WorkDir,
+		&c.Messaging.Feishu.MossModelDir,
 	} {
 		if *pf != "" {
 			absPath, err := ExpandAndAbs(*pf)
