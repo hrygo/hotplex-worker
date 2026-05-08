@@ -6,11 +6,9 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"strings"
 
 	"golang.org/x/sync/semaphore"
 
-	"github.com/hrygo/hotplex/internal/brain"
 	"github.com/hrygo/hotplex/internal/messaging/tts"
 
 	lark "github.com/larksuite/oapi-sdk-go/v3"
@@ -55,6 +53,7 @@ func (p *TTSPipeline) Process(ctx context.Context, fullText, chatID, replyToMsgI
 		p.log.Warn("tts: summary failed, using truncated text", "err", err)
 		summary = tts.SanitizeForSpeech(tts.TruncateText(fullText, p.maxChars))
 	}
+
 	if summary == "" {
 		return
 	}
@@ -83,18 +82,7 @@ func (p *TTSPipeline) Process(ctx context.Context, fullText, chatID, replyToMsgI
 }
 
 func (p *TTSPipeline) summarize(ctx context.Context, fullText string) (string, error) {
-	b := brain.Global()
-	if b == nil {
-		return "", fmt.Errorf("brain not initialized")
-	}
-	prompt := tts.BuildTTSPrompt(fullText)
-	opts := tts.BuildTTSChatOpts(p.maxChars)
-	result, err := b.ChatWithOptions(ctx, prompt, opts)
-	if err != nil {
-		return "", fmt.Errorf("brain chat: %w", err)
-	}
-	result = tts.SanitizeForSpeech(strings.TrimSpace(result))
-	return result, nil
+	return tts.SummarizeForTTS(ctx, fullText, p.maxChars)
 }
 
 func (p *TTSPipeline) sendAudio(ctx context.Context, chatID, replyToMsgID string, opusData []byte) error {

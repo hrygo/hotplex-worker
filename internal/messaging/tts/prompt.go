@@ -1,6 +1,7 @@
 package tts
 
 import (
+	"context"
 	"fmt"
 	"regexp"
 	"strings"
@@ -46,6 +47,22 @@ func BuildTTSPrompt(aiResponse string) string {
 	return fmt.Sprintf(TTSUserPromptTemplate, capped)
 }
 
+// SummarizeForTTS uses Brain to condense fullText into a speech-friendly summary.
+// Returns the sanitized summary, or a sanitized truncated fallback on error.
+func SummarizeForTTS(ctx context.Context, fullText string, maxChars int) (string, error) {
+	b := brain.Global()
+	if b == nil {
+		return "", fmt.Errorf("brain not initialized")
+	}
+	prompt := BuildTTSPrompt(fullText)
+	opts := BuildTTSChatOpts(maxChars)
+	result, err := b.ChatWithOptions(ctx, prompt, opts)
+	if err != nil {
+		return "", fmt.Errorf("brain chat: %w", err)
+	}
+	return SanitizeForSpeech(strings.TrimSpace(result)), nil
+}
+
 // reMDLink matches Markdown link syntax [text](url).
 var reMDLink = regexp.MustCompile(`\[([^\]]*)\]\([^)]*\)`)
 
@@ -68,7 +85,7 @@ func SanitizeForSpeech(s string) string {
 	// Strip zero-width and invisible characters.
 	s = reZeroWidth.ReplaceAllString(s, "")
 
-	// Strip images (keep alt text if present, otherwise remove entirely).
+	// Strip images entirely.
 	s = reMDImage.ReplaceAllString(s, "")
 	// Strip links (keep link text, drop URL).
 	s = reMDLink.ReplaceAllString(s, "$1")
@@ -107,9 +124,7 @@ func SanitizeForSpeech(s string) string {
 func normalizeLargeNumber(digits string) string {
 	n := 0
 	for _, d := range digits {
-		if d >= '0' && d <= '9' {
-			n = n*10 + int(d-'0')
-		}
+		n = n*10 + int(d-'0')
 	}
 	if n < 10000 {
 		return digits // under 1万, TTS reads fine

@@ -84,7 +84,7 @@ type EdgeSynthesizer struct {
 
 func NewEdgeSynthesizer(voice string, log *slog.Logger) *EdgeSynthesizer {
 	if voice == "" {
-		voice = "zh-CN-XiaoxiaoNeural"
+		voice = edgeDefaultVoice
 	}
 	return &EdgeSynthesizer{
 		voice: voice,

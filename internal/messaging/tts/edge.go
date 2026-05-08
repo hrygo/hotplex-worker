@@ -64,10 +64,6 @@ func edgeConnectionID() string {
 
 // synthesizeEdge connects to Microsoft Edge TTS via WebSocket and returns MP3 audio bytes.
 func synthesizeEdge(ctx context.Context, text, voice string) ([]byte, error) {
-	if voice == "" {
-		voice = edgeDefaultVoice
-	}
-	// Sanitize voice: strip any characters that could break SSML attribute quoting.
 	voice = strings.Map(func(r rune) rune {
 		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || r == '-' {
 			return r

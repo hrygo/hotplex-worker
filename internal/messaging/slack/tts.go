@@ -5,11 +5,9 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strings"
 
 	"golang.org/x/sync/semaphore"
 
-	"github.com/hrygo/hotplex/internal/brain"
 	"github.com/hrygo/hotplex/internal/messaging/tts"
 
 	slack "github.com/slack-go/slack"
@@ -72,18 +70,7 @@ func (p *TTSPipeline) Process(ctx context.Context, fullText, channelID, threadTS
 }
 
 func (p *TTSPipeline) summarize(ctx context.Context, fullText string) (string, error) {
-	b := brain.Global()
-	if b == nil {
-		return "", fmt.Errorf("brain not initialized")
-	}
-	prompt := tts.BuildTTSPrompt(fullText)
-	opts := tts.BuildTTSChatOpts(p.maxChars)
-	result, err := b.ChatWithOptions(ctx, prompt, opts)
-	if err != nil {
-		return "", fmt.Errorf("brain chat: %w", err)
-	}
-	result = tts.SanitizeForSpeech(strings.TrimSpace(result))
-	return result, nil
+	return tts.SummarizeForTTS(ctx, fullText, p.maxChars)
 }
 
 func (p *TTSPipeline) uploadAndSend(ctx context.Context, channelID, threadTS string, mp3Data []byte) error {
