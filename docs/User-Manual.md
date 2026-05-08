@@ -184,6 +184,48 @@ http://localhost:8888/
 
 ---
 
+## 语音功能
+
+HotPlex 支持语音输入（STT）和语音回复（TTS），在飞书和 Slack 中均可使用。
+
+### 语音输入（STT）
+
+发送语音消息后，HotPlex 会自动将语音转录为文本，然后交给 AI 处理。STT 默认使用本地 SenseVoice 模型。
+
+### 语音回复（TTS）
+
+当你通过语音触发对话时，AI 会自动生成语音摘要回复。TTS 默认启用，使用免费的 Edge TTS。
+
+**支持的 TTS 提供商：**
+
+| 提供商 | 配置值 | 说明 |
+|:-------|:-------|:-----|
+| Edge TTS | `edge` | 免费，微软云端，无需本地资源 |
+| MOSS-TTS-Nano | `moss` | 本地 CPU 推理，需要下载模型 |
+| Edge + MOSS 混合 | `edge+moss` | Edge 优先，MOSS 作为本地回退 |
+
+**基本配置**（在 `config.yaml` 的 `messaging.slack` 或 `messaging.feishu` 下）：
+
+```yaml
+tts_enabled: true           # 启用语音回复（默认开启）
+tts_provider: "edge"        # 选择 TTS 提供商
+tts_voice: "zh-CN-XiaoxiaoNeural"  # 语音角色
+tts_max_chars: 150          # 语音摘要最大字符数
+```
+
+**使用 MOSS-TTS-Nano 本地推理：**
+
+```yaml
+tts_provider: "edge+moss"   # Edge 优先，MOSS 回退
+tts_moss_model_dir: "~/.hotplex/models/moss-tts-nano"
+tts_moss_voice: "Xiaoyu"
+tts_moss_port: 18083
+```
+
+MOSS-TTS-Nano 需要 `python3` 和 `ffmpeg`。运行 `hotplex doctor` 可检查依赖是否就绪。
+
+---
+
 ## 配置
 
 配置文件位于 `~/.hotplex/config.yaml`，修改后大部分设置会自动热重载，无需重启。

@@ -205,9 +205,17 @@ messaging:
     stt_local_idle_ttl: 1h
     # TTS (Text-to-Speech) — voice replies for voice-triggered turns
     tts_enabled: true
-    tts_provider: "edge"
+    # Provider: edge (Edge TTS, free), moss (MOSS-TTS-Nano local CPU),
+    #   edge+moss (Edge primary + MOSS fallback)
+    tts_provider: "edge+moss"
     tts_voice: "zh-CN-XiaoxiaoNeural"
     tts_max_chars: 150
+    # MOSS-TTS-Nano sidecar settings
+    tts_moss_model_dir: "~/.hotplex/models/moss-tts-nano"
+    tts_moss_voice: "Xiaoyu"
+    tts_moss_port: 18083
+    tts_moss_idle_timeout: 30m
+    tts_moss_cpu_threads: 0
 
   feishu:
     enabled: false
@@ -221,6 +229,14 @@ messaging:
     stt_local_idle_ttl: 1h
     # TTS (Text-to-Speech) — voice replies for voice-triggered turns
     tts_enabled: true
-    tts_provider: "edge"
+    # Provider: edge (Edge TTS, free), moss (MOSS-TTS-Nano local CPU),
+    #   edge+moss (Edge primary + MOSS fallback)
+    tts_provider: "edge+moss"
     tts_voice: "zh-CN-XiaoxiaoNeural"
     tts_max_chars: 150
+    # MOSS-TTS-Nano sidecar settings
+    tts_moss_model_dir: "~/.hotplex/models/moss-tts-nano"
+    tts_moss_voice: "Xiaoyu"
+    tts_moss_port: 18083
+    tts_moss_idle_timeout: 30m
+    tts_moss_cpu_threads: 0

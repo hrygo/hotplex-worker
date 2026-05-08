@@ -12,9 +12,9 @@ import (
 // ChatOptions controls LLM generation parameters.
 // Zero-value fields use the provider's default.
 type ChatOptions struct {
-	MaxTokens   int      // 0 = provider default (Anthropic: 4096, OpenAI: API default)
-	Temperature *float64 // nil = provider default; use FloatPtr(0) for deterministic output
-	SystemPrompt string  // optional system message; empty = no system message
+	MaxTokens    int      // 0 = provider default (Anthropic: 4096, OpenAI: API default)
+	Temperature  *float64 // nil = provider default; use FloatPtr(0) for deterministic output
+	SystemPrompt string   // optional system message; empty = no system message
 }
 
 // FloatPtr returns a pointer to the given float64 value.

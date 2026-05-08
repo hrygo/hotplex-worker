@@ -1,5 +1,40 @@
 # Changelog
 
+## [Unreleased]
+
+## [1.7.2] - 2026-05-08
+
+### Summary
+
+v1.7.2 是一次 patch 版本更新，聚焦于 **TTS 管线可靠性与安全加固**。Edge TTS 原生实现替代了失效的第三方依赖，MOSS-TTS-Nano sidecar 替代 Kokoro-82M 提供本地 CPU 合成。安全方面修复了 SEC-008 session 劫持防护、跨 5 模块的 panic/data race/FD leak 问题。Worker 修复了 SDK tool_result 解析缺失，Slack 修复了流式表格重复渲染。
+
+### Added
+
+- **Messaging/TTS**: MOSS-TTS-Nano (Fudan/OpenMOSS) sidecar — Python FastAPI HTTP IPC with lazy start, idle timer, PGID isolation. Replaces Kokoro-82M ONNX (net -826 LOC). (#283)
+- **Messaging/Feishu**: Card Header specification (v2.0) — header types, streaming state transitions, unified card builder design.
+
+### Changed
+
+- **Messaging/TTS**: Native Edge TTS implementation replaces broken `lib-x/edgetts` dependency — implements Microsoft's WS + token auth protocol directly. (#294, #295)
+- **Messaging/TTS**: TTS summary prompt split into system/user levels; speech pipeline enhanced with Markdown sanitization and large number normalization.
+- **Messaging/TTS**: Stream rotation TTL increased from 6min to 500s for Feishu and Slack adapters.
+- **CLI/Onboard**: Wizard TTS dependency check validates MOSS-TTS-Nano requirements (python3 + model dir). (#283)
+
+### Fixed
+
+- **Security**: SEC-008 session hijack prevention — user ownership verification on WS reconnect; panic/data race/FD leak fixes across 5 modules (auth, JWT, dedup, proc, Slack event loop). (#288, #291)
+- **Gateway**: Inbound event persistence now functional — Bridge wired into Handler for all message paths. (#288)
+- **Gateway**: `ShouldRetry` data race — config patterns now snapshotted under mutex. (#288)
+- **Session**: Store errors logged instead of silently swallowed; max-turns kill force-sets TERMINATED to prevent orphans. (#288)
+- **Worker**: SDK `tool_result` payload parsing — tool results previously discarded producing empty events. (#287)
+- **Messaging/Slack**: Streaming table duplication — simplified stop flow eliminates `block_mismatch` errors.
+- **Messaging/TTS**: MOSS sidecar race conditions — PID cleanup on terminate, context propagation, mutex-protected activeWg. (#302)
+
+### Security
+
+- SEC-008: User ownership check on WebSocket session reconnect prevents session hijack when key collision occurs. (#288)
+- Protected env vars (`HOME`, `CLAUDECODE`, `GATEWAY_TOKEN`) filtered from `.env` loading. (#291)
+
 ## [1.7.1] - 2026-05-08
 
 ### Summary
