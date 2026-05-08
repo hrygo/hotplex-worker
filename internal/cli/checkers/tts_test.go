@@ -82,23 +82,23 @@ func TestTTSEnvironmentChecker_SlackEdgeTTSEnabled(t *testing.T) {
 	}
 }
 
-// --- Kokoro Provider Tests ---
+// --- MOSS Provider Tests ---
 
-func TestTTSEnvironmentChecker_KokoroProvider(t *testing.T) {
+func TestTTSEnvironmentChecker_MossProvider(t *testing.T) {
 	dir := t.TempDir()
-	path := writeTTSConfig(t, dir, ttsConfigOpts{feishuEnabled: true, feishuTTS: true, feishuProvider: "edge+kokoro"})
+	path := writeTTSConfig(t, dir, ttsConfigOpts{feishuEnabled: true, feishuTTS: true, feishuProvider: "edge+moss"})
 	defer resetConfigPath()
 	SetConfigPath(path)
 
 	c := ttsEnvironmentChecker{}
 	d := c.Check(context.Background())
-	// Should require ffmpeg + onnxruntime + espeak-ng
+	// Should require ffmpeg + python3 + moss model dir
 	require.Contains(t, []cli.Status{cli.StatusPass, cli.StatusFail}, d.Status)
 }
 
-func TestTTSEnvironmentChecker_KokoroOnlyProvider(t *testing.T) {
+func TestTTSEnvironmentChecker_MossOnlyProvider(t *testing.T) {
 	dir := t.TempDir()
-	path := writeTTSConfig(t, dir, ttsConfigOpts{feishuEnabled: true, feishuTTS: true, feishuProvider: "kokoro"})
+	path := writeTTSConfig(t, dir, ttsConfigOpts{feishuEnabled: true, feishuTTS: true, feishuProvider: "moss"})
 	defer resetConfigPath()
 	SetConfigPath(path)
 
@@ -111,19 +111,19 @@ func TestTTSEnvironmentChecker_KokoroOnlyProvider(t *testing.T) {
 
 func TestTTSRequirements(t *testing.T) {
 	tests := []struct {
-		name            string
-		opts            ttsConfigOpts
-		wantFFmpeg      bool
-		wantOnnxRuntime bool
-		wantEspeakNG    bool
+		name             string
+		opts             ttsConfigOpts
+		wantFFmpeg       bool
+		wantPython3      bool
+		wantMossModelDir bool
 	}{
 		{"both_disabled", ttsConfigOpts{}, false, false, false},
 		{"slack_edge", ttsConfigOpts{slackEnabled: true, slackTTS: true, slackProvider: "edge"}, true, false, false},
 		{"feishu_edge", ttsConfigOpts{feishuEnabled: true, feishuTTS: true, feishuProvider: "edge"}, true, false, false},
-		{"feishu_edge_kokoro", ttsConfigOpts{feishuEnabled: true, feishuTTS: true, feishuProvider: "edge+kokoro"}, true, true, true},
-		{"feishu_kokoro_only", ttsConfigOpts{feishuEnabled: true, feishuTTS: true, feishuProvider: "kokoro"}, true, true, true},
+		{"feishu_edge_moss", ttsConfigOpts{feishuEnabled: true, feishuTTS: true, feishuProvider: "edge+moss"}, true, true, true},
+		{"feishu_moss_only", ttsConfigOpts{feishuEnabled: true, feishuTTS: true, feishuProvider: "moss"}, true, true, true},
 		{"both_edge", ttsConfigOpts{slackEnabled: true, slackTTS: true, slackProvider: "edge", feishuEnabled: true, feishuTTS: true, feishuProvider: "edge"}, true, false, false},
-		{"both_kokoro", ttsConfigOpts{slackEnabled: true, slackTTS: true, slackProvider: "edge+kokoro", feishuEnabled: true, feishuTTS: true, feishuProvider: "edge+kokoro"}, true, true, true},
+		{"both_moss", ttsConfigOpts{slackEnabled: true, slackTTS: true, slackProvider: "edge+moss", feishuEnabled: true, feishuTTS: true, feishuProvider: "edge+moss"}, true, true, true},
 	}
 
 	for _, tt := range tests {
@@ -135,18 +135,17 @@ func TestTTSRequirements(t *testing.T) {
 
 			got := ttsRequirements()
 			require.Equal(t, tt.wantFFmpeg, got.FFmpeg, "FFmpeg mismatch")
-			require.Equal(t, tt.wantOnnxRuntime, got.OnnxRuntime, "OnnxRuntime mismatch")
-			require.Equal(t, tt.wantEspeakNG, got.EspeakNG, "EspeakNG mismatch")
+			require.Equal(t, tt.wantPython3, got.Python3, "Python3 mismatch")
 		})
 	}
 }
 
-func TestKokoroProvider(t *testing.T) {
+func TestMossProvider(t *testing.T) {
 	t.Parallel()
-	require.True(t, kokoroProvider("kokoro"))
-	require.True(t, kokoroProvider("edge+kokoro"))
-	require.False(t, kokoroProvider("edge"))
-	require.False(t, kokoroProvider(""))
+	require.True(t, mossProvider("moss"))
+	require.True(t, mossProvider("edge+moss"))
+	require.False(t, mossProvider("edge"))
+	require.False(t, mossProvider(""))
 }
 
 // --- Helpers ---
