@@ -12,7 +12,6 @@ require (
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/hrygo/hotplex/client v0.0.0
 	github.com/larksuite/oapi-sdk-go/v3 v3.5.3
-	github.com/lib-x/edgetts v0.4.0
 	github.com/mattn/go-isatty v0.0.21
 	github.com/mattn/go-sqlite3 v1.14.44
 	github.com/pressly/goose/v3 v3.27.1
@@ -48,7 +47,6 @@ require (
 	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/tidwall/sjson v1.2.5 // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
-	golang.org/x/net v0.53.0 // indirect
 	modernc.org/libc v1.72.1 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
