@@ -755,7 +755,9 @@ func loadRecursive(filePath string, opts LoadOptions, visited []string) (*Config
 	if secret := sp.Get("HOTPLEX_JWT_SECRET"); secret != "" {
 		cfg.Security.JWTSecret = decodeJWTSecret(secret)
 		if cfg.Security.JWTSecret == nil {
-			slog.Warn("config: HOTPLEX_JWT_SECRET set but invalid format (must be 32-byte raw or base64-encoded 32 bytes)", "length", len(secret))
+			if _, loaded := warnedEnvEntries.LoadOrStore("jwt_secret_invalid", true); !loaded {
+				slog.Warn("config: HOTPLEX_JWT_SECRET set but invalid format (must be 32-byte raw or base64-encoded 32 bytes)", "length", len(secret))
+			}
 		}
 	}
 
@@ -817,7 +819,9 @@ func (c *Config) normalizePaths() {
 		if *pf != "" {
 			absPath, err := ExpandAndAbs(*pf)
 			if err != nil {
-				slog.Warn("config: normalize path", "path", *pf, "err", err)
+				if _, loaded := warnedEnvEntries.LoadOrStore("path:"+*pf, true); !loaded {
+					slog.Warn("config: normalize path", "path", *pf, "err", err)
+				}
 				continue
 			}
 			*pf = absPath
