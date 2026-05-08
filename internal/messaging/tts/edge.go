@@ -70,6 +70,9 @@ func synthesizeEdge(ctx context.Context, text, voice string) ([]byte, error) {
 		}
 		return -1
 	}, voice)
+	if voice == "" {
+		voice = edgeDefaultVoice
+	}
 
 	// Build WebSocket URL with authentication tokens.
 	wsURL := fmt.Sprintf("%s&Sec-MS-GEC=%s&Sec-MS-GEC-Version=%s&ConnectionId=%s",
