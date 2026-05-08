@@ -77,7 +77,7 @@ func TestBuildCardContent(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := buildCardContent(tt.text)
+			got := buildCardContent(tt.text, cardHeader{Title: "TestBot"})
 
 			var card map[string]any
 			require.NoError(t, json.Unmarshal([]byte(got), &card))
@@ -93,7 +93,7 @@ func TestBuildCardContent(t *testing.T) {
 
 func TestBuildCardContent_EscapeHTML(t *testing.T) {
 	t.Parallel()
-	got := buildCardContent("<test> & \"quotes\"")
+	got := buildCardContent("<test> & \"quotes\"", cardHeader{Title: "TestBot"})
 	var card map[string]any
 	require.NoError(t, json.Unmarshal([]byte(got), &card))
 	body := card["body"].(map[string]any)
@@ -444,7 +444,7 @@ func newTestAdapter(t *testing.T) *Adapter {
 }
 
 func newTestStreamingCtrl() *StreamingCardController {
-	return NewStreamingCardController(nil, nil, discardLogger)
+	return NewStreamingCardController(nil, nil, discardLogger, "TestBot")
 }
 
 func newTestConn(adapter *Adapter, replyToMsgID string) *FeishuConn {

@@ -95,6 +95,7 @@ type StreamingCardController struct {
 	limiter      *FeishuRateLimiter
 	client       *lark.Client
 	log          *slog.Logger
+	agentName    string
 
 	flushDone    chan struct{}
 	flushStop    sync.Once
@@ -114,13 +115,14 @@ const (
 	flushSize     = 30                     // rune count threshold for immediate flush trigger
 )
 
-func NewStreamingCardController(client *lark.Client, limiter *FeishuRateLimiter, log *slog.Logger) *StreamingCardController {
+func NewStreamingCardController(client *lark.Client, limiter *FeishuRateLimiter, log *slog.Logger, agentName string) *StreamingCardController {
 	var p atomic.Int32
 	p.Store(int32(PhaseIdle))
 	return &StreamingCardController{
 		limiter:         limiter,
 		client:          client,
 		log:             log,
+		agentName:       agentName,
 		cardKitOK:       true,
 		elementID:       streamingElementID,
 		flushDone:       make(chan struct{}),
@@ -459,6 +461,12 @@ func (c *StreamingCardController) Close(ctx context.Context) error {
 		c.streamingActive = false
 	}
 
+	c.updateHeader(ctx, cardHeader{
+		Title:    c.agentName,
+		Subtitle: truncateForSummary(content),
+		Template: "blue",
+	}, content)
+
 	return nil
 }
 
@@ -483,7 +491,47 @@ func (c *StreamingCardController) Abort(ctx context.Context) error {
 		c.sendAbortMessage(ctx, msgID)
 	}
 
+	c.updateHeader(ctx, cardHeader{
+		Title:    c.agentName,
+		Subtitle: "已取消",
+		Template: "grey",
+	}, "")
+
 	return nil
+}
+
+func (c *StreamingCardController) updateHeader(ctx context.Context, header cardHeader, body string) {
+	if c.cardID == "" {
+		return
+	}
+
+	cardJSON := buildCard(header,
+		map[string]any{
+			"streaming_mode": false,
+			"summary":        map[string]any{"content": truncateForSummary(body)},
+		},
+		[]map[string]any{
+			{"tag": "markdown", "element_id": streamingElementID, "content": body},
+		},
+	)
+
+	reqBody := larkcardkit.NewUpdateCardReqBodyBuilder().
+		Card(&larkcardkit.Card{
+			Type: stringPtr("card_json"),
+			Data: stringPtr(cardJSON),
+		}).
+		Sequence(int(c.sequence.Add(1))).
+		Build()
+
+	req := larkcardkit.NewUpdateCardReqBuilder().
+		CardId(c.cardID).
+		Body(reqBody).
+		Build()
+
+	resp, err := c.client.Cardkit.V1.Card.Update(ctx, req)
+	if err != nil || !resp.Success() {
+		c.log.Warn("feishu: header update failed (non-fatal)", "err", err)
+	}
 }
 
 func (c *StreamingCardController) idConvert(ctx context.Context, messageID string) (string, error) {
@@ -510,25 +558,11 @@ func (c *StreamingCardController) idConvert(ctx context.Context, messageID strin
 }
 
 func (c *StreamingCardController) sendCardMessage(ctx context.Context, chatID, content string) (string, error) {
-	cardContent := map[string]any{
-		"schema": "2.0",
-		"config": map[string]any{
-			"streaming_mode": true,
-			"summary": map[string]any{
-				"content": truncateForSummary(content),
-			},
-		},
-		"body": map[string]any{
-			"elements": []any{
-				map[string]any{
-					"tag":        "markdown",
-					"element_id": streamingElementID,
-					"content":    content,
-				},
-			},
-		},
-	}
-	contentJSON := encodeCard(cardContent)
+	contentJSON := buildStreamingCard(
+		cardHeader{Title: c.agentName, Subtitle: "生成中...", Template: "wathet"},
+		truncateForSummary(content),
+		content,
+	)
 
 	// Group chat: reply to user's message. DM: send directly.
 	c.mu.Lock()
@@ -708,19 +742,11 @@ func (c *StreamingCardController) flushCardKitWithRetry(ctx context.Context, con
 }
 
 func (c *StreamingCardController) flushIMPatch(ctx context.Context, content string) error {
-	cardContent := map[string]any{
-		"schema": "2.0",
-		"config": map[string]any{},
-		"body": map[string]any{
-			"elements": []any{
-				map[string]any{
-					"tag":     "markdown",
-					"content": content,
-				},
-			},
-		},
-	}
-	contentJSON := encodeCard(cardContent)
+	contentJSON := buildCard(
+		cardHeader{Title: c.agentName, Template: "wathet"},
+		map[string]any{},
+		[]map[string]any{{"tag": "markdown", "content": content}},
+	)
 
 	body := larkim.NewPatchMessageReqBodyBuilder().
 		Content(contentJSON).
@@ -746,24 +772,14 @@ func (c *StreamingCardController) flushIMPatch(ctx context.Context, content stri
 // Used in Close() when CardKit is degraded but we need to ensure the card renders correctly.
 func (c *StreamingCardController) flushIMPatchWithConfig(ctx context.Context, content string) error {
 	summary := truncateForSummary(content)
-	cardContent := map[string]any{
-		"schema": "2.0",
-		"config": map[string]any{
+	contentJSON := buildCard(
+		cardHeader{Title: c.agentName, Template: "blue"},
+		map[string]any{
 			"streaming_mode": false,
-			"summary": map[string]any{
-				"content": summary,
-			},
+			"summary":        map[string]any{"content": summary},
 		},
-		"body": map[string]any{
-			"elements": []any{
-				map[string]any{
-					"tag":     "markdown",
-					"content": content,
-				},
-			},
-		},
-	}
-	contentJSON := encodeCard(cardContent)
+		[]map[string]any{{"tag": "markdown", "content": content}},
+	)
 
 	body := larkim.NewPatchMessageReqBodyBuilder().
 		Content(contentJSON).
