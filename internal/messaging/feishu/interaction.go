@@ -45,7 +45,7 @@ func (c *FeishuConn) sendPermissionRequest(ctx context.Context, env *events.Enve
 	cardJSON := buildInteractionCard(header, footer, cardHeader{
 		Title:    "工具执行授权",
 		Subtitle: data.ToolName,
-		Template: "orange",
+		Template: headerOrange,
 		Tags:     []cardTag{{Text: "pending", Color: "orange"}},
 	})
 	chatID := c.chatID
@@ -101,7 +101,7 @@ func (c *FeishuConn) sendQuestionRequest(ctx context.Context, env *events.Envelo
 
 	cardJSON := buildInteractionCard(sb.String(), footer, cardHeader{
 		Title:    "用户输入请求",
-		Template: "yellow",
+		Template: headerYellow,
 	})
 
 	chatID := c.chatID
@@ -141,7 +141,7 @@ func (c *FeishuConn) sendElicitationRequest(ctx context.Context, env *events.Env
 	cardJSON := buildInteractionCard(header, footer.String(), cardHeader{
 		Title:    "MCP Server 请求",
 		Subtitle: data.MCPServerName,
-		Template: "violet",
+		Template: headerViolet,
 	})
 
 	chatID := c.chatID

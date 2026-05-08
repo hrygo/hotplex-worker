@@ -201,7 +201,7 @@ func TestPtrStr(t *testing.T) {
 	}{
 		{"nil pointer", nil, ""},
 		{"empty string", new(string), ""},
-		{"non-empty", strPtr("hello"), "hello"},
+		{"non-empty", stringPtr("hello"), "hello"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -210,8 +210,6 @@ func TestPtrStr(t *testing.T) {
 		})
 	}
 }
-
-func strPtr(s string) *string { return &s }
 
 func TestFeishuConn_CycleReaction_NoOp(t *testing.T) {
 	t.Parallel()
@@ -328,7 +326,7 @@ func TestIsBotMentioned(t *testing.T) {
 	}{
 		{
 			name:      "empty botOpenID",
-			mentions:  []*larkim.MentionEvent{{Id: &larkim.UserId{OpenId: strPtr("ou_bot")}}},
+			mentions:  []*larkim.MentionEvent{{Id: &larkim.UserId{OpenId: stringPtr("ou_bot")}}},
 			botOpenID: "",
 			want:      false,
 		},
@@ -340,13 +338,13 @@ func TestIsBotMentioned(t *testing.T) {
 		},
 		{
 			name:      "bot mentioned",
-			mentions:  []*larkim.MentionEvent{{Id: &larkim.UserId{OpenId: strPtr("ou_bot")}}},
+			mentions:  []*larkim.MentionEvent{{Id: &larkim.UserId{OpenId: stringPtr("ou_bot")}}},
 			botOpenID: "ou_bot",
 			want:      true,
 		},
 		{
 			name:      "other user mentioned",
-			mentions:  []*larkim.MentionEvent{{Id: &larkim.UserId{OpenId: strPtr("ou_other")}}},
+			mentions:  []*larkim.MentionEvent{{Id: &larkim.UserId{OpenId: stringPtr("ou_other")}}},
 			botOpenID: "ou_bot",
 			want:      false,
 		},

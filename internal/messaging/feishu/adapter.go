@@ -50,7 +50,6 @@ type Adapter struct {
 	turnSummaryEnabled bool
 	ttsPipeline        *TTSPipeline
 	botName            string
-	botNameOnce        sync.Once
 
 	mu          sync.RWMutex
 	chatQueue   *ChatQueue
@@ -114,7 +113,7 @@ func (a *Adapter) Start(ctx context.Context) error {
 		lark.WithLogger(SlogLogger{Logger: a.Log}),
 	)
 
-	if err := a.fetchBotOpenID(ctx); err != nil {
+	if err := a.fetchBotInfo(ctx); err != nil {
 		return fmt.Errorf("feishu: failed to resolve bot identity: %w", err)
 	}
 
@@ -204,8 +203,7 @@ func (a *Adapter) runWebSocket(ctx context.Context) {
 	}
 }
 
-func (a *Adapter) fetchBotOpenID(ctx context.Context) error {
-	// Add a bounded timeout to prevent startup hanging on the bot info API.
+func (a *Adapter) fetchBotInfo(ctx context.Context) error {
 	botCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
@@ -214,17 +212,18 @@ func (a *Adapter) fetchBotOpenID(ctx context.Context) error {
 		return fmt.Errorf("bot info API: %w", err)
 	}
 
+	body := resp.RawBody
+	if len(body) == 0 {
+		return fmt.Errorf("bot info API: empty response body")
+	}
+
 	var result struct {
 		Code int    `json:"code"`
 		Msg  string `json:"msg"`
 		Bot  struct {
-			OpenID string `json:"open_id"`
+			OpenID  string `json:"open_id"`
+			AppName string `json:"app_name"`
 		} `json:"bot"`
-	}
-
-	body := resp.RawBody
-	if len(body) == 0 {
-		return fmt.Errorf("bot info API: empty response body")
 	}
 
 	if err := json.Unmarshal(body, &result); err != nil {
@@ -237,44 +236,18 @@ func (a *Adapter) fetchBotOpenID(ctx context.Context) error {
 		return fmt.Errorf("bot open_id is empty")
 	}
 	a.botOpenID = result.Bot.OpenID
-	a.Log.Info("feishu: bot identity resolved", "open_id", a.botOpenID)
+	if result.Bot.AppName != "" {
+		a.botName = result.Bot.AppName
+	} else {
+		a.botName = "HotPlex"
+	}
+	a.Log.Info("feishu: bot identity resolved", "open_id", a.botOpenID, "name", a.botName)
 	return nil
 }
 
-// resolveBotName lazily loads the bot display name via /open-apis/bot/v3/info.
-// Uses sync.Once for a single API call. Falls back to "HotPlex".
-func (a *Adapter) resolveBotName(ctx context.Context) string {
-	a.botNameOnce.Do(func() {
-		if a.larkClient == nil {
-			a.botName = "HotPlex"
-			return
-		}
-		botCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-
-		resp, err := a.larkClient.Get(botCtx, "/open-apis/bot/v3/info", nil, "tenant_access_token")
-		if err != nil {
-			a.botName = "HotPlex"
-			a.Log.Debug("feishu: bot name fallback (API error)", "err", err)
-			return
-		}
-		var result struct {
-			Code int    `json:"code"`
-			Msg  string `json:"msg"`
-			Bot  struct {
-				AppName string `json:"app_name"`
-			} `json:"bot"`
-		}
-		if err := json.Unmarshal(resp.RawBody, &result); err != nil || result.Code != 0 || result.Bot.AppName == "" {
-			a.botName = "HotPlex"
-			if result.Code != 0 {
-				a.Log.Debug("feishu: bot name fallback (API error)", "code", result.Code, "msg", result.Msg)
-			}
-			return
-		}
-		a.botName = result.Bot.AppName
-		a.Log.Info("feishu: bot name resolved", "name", a.botName)
-	})
+// resolveBotName returns the bot display name (set during Start by fetchBotInfo).
+// Falls back to "HotPlex" if the name was not resolved.
+func (a *Adapter) resolveBotName() string {
 	if a.botName == "" {
 		return "HotPlex"
 	}
@@ -512,7 +485,7 @@ func (a *Adapter) handleTextMessage(ctx context.Context, platformMsgID, channelI
 
 	// Prepare streaming controller (card is lazily created on first content).
 	if a.larkClient != nil && a.rateLimiter != nil {
-		ctrl := NewStreamingCardController(a.larkClient, a.rateLimiter, a.Log, a.resolveBotName(ctx))
+		ctrl := NewStreamingCardController(a.larkClient, a.rateLimiter, a.Log, a.resolveBotName())
 		conn.EnableStreaming(ctrl)
 	}
 
@@ -925,7 +898,7 @@ func (c *FeishuConn) writeContent(ctx context.Context, env *events.Envelope, tex
 		c.adapter.Log.Info("feishu: streaming card rotated",
 			"old_msg_id", oldMsgID)
 
-		newCtrl := NewStreamingCardController(c.adapter.larkClient, c.adapter.rateLimiter, c.adapter.Log, c.adapter.resolveBotName(ctx))
+		newCtrl := NewStreamingCardController(c.adapter.larkClient, c.adapter.rateLimiter, c.adapter.Log, c.adapter.resolveBotName())
 		c.mu.Lock()
 		c.streamCtrl = newCtrl
 		if oldMsgID != "" {
@@ -968,7 +941,7 @@ func (c *FeishuConn) writeContent(ctx context.Context, env *events.Envelope, tex
 }
 
 func (c *FeishuConn) sendTurnSummaryCard(d messaging.TurnSummaryData) {
-	cardJSON := buildTurnSummaryCard(d, cardHeader{Title: "Turn 摘要", Template: "blue"})
+	cardJSON := buildTurnSummaryCard(d, cardHeader{Title: "Turn 摘要", Template: headerBlue})
 	if cardJSON == "" {
 		return
 	}
@@ -1151,7 +1124,7 @@ func (a *Adapter) sendTextMessage(ctx context.Context, chatID, text string) erro
 		return fmt.Errorf("feishu: lark client not initialized")
 	}
 
-	cardJSON := buildCardContent(text, cardHeader{Title: a.resolveBotName(ctx)})
+	cardJSON := buildCardContent(text, cardHeader{Title: a.resolveBotName()})
 	preview := cardJSON
 	if len(preview) > 200 {
 		preview = preview[:200] + "..."
@@ -1183,7 +1156,7 @@ func (a *Adapter) sendTextMessage(ctx context.Context, chatID, text string) erro
 
 //nolint:unparam // replyInThread reserved for future thread reply support
 func (a *Adapter) replyMessage(ctx context.Context, messageID, content string, replyInThread bool) error {
-	cardJSON := buildCardContent(content, cardHeader{Title: a.resolveBotName(ctx)})
+	cardJSON := buildCardContent(content, cardHeader{Title: a.resolveBotName()})
 	preview := cardJSON
 	if len(preview) > 200 {
 		preview = preview[:200] + "..."
