@@ -139,7 +139,7 @@ function historyToMessages(records: ConversationRecord[]): HotPlexMessage[] {
       if (p.type === 'text') {
         return { type: 'text' as const, text: p.text || '' };
       }
-      // reasoning not persisted in history (streaming content, restored from cache)
+      // reasoning not persisted in server history (streaming-only content, lost on reload)
       return null;
     }).filter((p): p is TextPart | ToolSummaryPart => p !== null),
     createdAt: m.createdAt,
@@ -173,13 +173,24 @@ export function useHotPlexRuntime({
   const [messages, setMessages] = useState<HotPlexMessage[]>([]);
   const [isRunning, setIsRunning] = useState(false);
   const [historyHasMore, setHistoryHasMore] = useState(true);
+
+  // One-time cleanup of orphaned localStorage keys from removed message cache
+  useEffect(() => {
+    try {
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key?.startsWith('hotplex_msgs_')) keysToRemove.push(key);
+      }
+      keysToRemove.forEach(k => localStorage.removeItem(k));
+    } catch { /* ignore */ }
+  }, []);
   const clientRef = useRef<BrowserHotPlexClient | null>(null);
   const historyLoadingRef = useRef(false);
   const sessionIdRef = useRef(sessionId);
   sessionIdRef.current = sessionId;
 
-  // Welcome suggestions — shown when thread is empty (stable reference)
-  // Welcome suggestions — shown when thread is empty (use prop or default)
+  // Welcome suggestions — shown when thread is empty (use prop or default list)
   const defaultSuggestions: readonly ThreadSuggestion[] = [
     { title: '帮我写一个 React 组件', label: '代码', prompt: '帮我写一个 React 组件' },
     { title: '解释这段代码的逻辑', label: '学习', prompt: '解释这段代码的逻辑' },
@@ -219,8 +230,10 @@ export function useHotPlexRuntime({
     sessionIdRef.current = sessionId;
     setHistoryHasMore(true);
 
+    const controller = new AbortController();
+
     // Fetch authoritative history from server
-    getSessionHistory(sessionId, { limit: 50 })
+    getSessionHistory(sessionId, { limit: 50, signal: controller.signal })
       .then(res => {
         if (res.records.length > 0) {
           const serverMessages = historyToMessages(res.records);
@@ -262,8 +275,17 @@ export function useHotPlexRuntime({
         setHistoryHasMore(res.has_more);
       })
       .catch(err => {
+        if (err instanceof DOMException && err.name === 'AbortError') return;
         console.warn('HotPlexRuntimeAdapter: failed to load history', err);
+        setMessages(prev => [...prev, {
+          id: `history-error-${Date.now()}`,
+          role: 'assistant' as const,
+          parts: [{ type: 'text' as const, text: 'Failed to load conversation history. You can continue chatting, but previous messages may not be visible.' }],
+          createdAt: new Date(),
+          status: 'complete' as const,
+        }]);
       });
+    return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 

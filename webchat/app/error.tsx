@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect } from 'react';
 import { BrandIcon } from '@/components/icons';
 
 export default function Error({
@@ -9,6 +10,14 @@ export default function Error({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  useEffect(() => {
+    console.error('[WebChat ErrorBoundary]', {
+      message: error.message,
+      digest: error.digest,
+      stack: error.stack,
+    });
+  }, [error]);
+
   return (
     <div className="flex flex-col items-center justify-center h-screen bg-[var(--bg-base)]">
       <div className="w-16 h-16 rounded-2xl bg-[var(--bg-elevated)] flex items-center justify-center mb-6 border border-[var(--border-subtle)]">
