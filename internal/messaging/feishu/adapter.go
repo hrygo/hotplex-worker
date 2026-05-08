@@ -485,7 +485,8 @@ func (a *Adapter) handleTextMessage(ctx context.Context, platformMsgID, channelI
 
 	// Prepare streaming controller (card is lazily created on first content).
 	if a.larkClient != nil && a.rateLimiter != nil {
-		ctrl := NewStreamingCardController(a.larkClient, a.rateLimiter, a.Log, a.resolveBotName())
+		turnNum, workDir := conn.turnHeaderMeta()
+		ctrl := NewStreamingCardController(a.larkClient, a.rateLimiter, a.Log, a.resolveBotName(), turnNum+1, workDir)
 		conn.EnableStreaming(ctrl)
 	}
 
@@ -561,6 +562,9 @@ type FeishuConn struct {
 	toolEmoji         string    // current timeline emoji, for dedup
 	startedAt         time.Time // when the user sent the current message
 	workDir           string    // current workDir identity for session key derivation
+	turnCount         int       // cached from last Done event, 0 = first turn
+	lastModel         string    // cached from last TurnSummaryData
+	lastBranch        string    // cached from last TurnSummaryData
 	lastSummarySentMs atomic.Int64
 	voiceTriggered    atomic.Bool
 }
@@ -579,6 +583,27 @@ func (c *FeishuConn) SetWorkDir(dir string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.workDir = dir
+}
+
+func (c *FeishuConn) cacheTurnMeta(d messaging.TurnSummaryData) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if d.TurnCount > 0 {
+		c.turnCount = d.TurnCount
+	}
+	if d.ModelName != "" {
+		c.lastModel = d.ModelName
+	}
+	if d.GitBranch != "" {
+		c.lastBranch = d.GitBranch
+	}
+}
+
+// turnHeaderMeta returns cached turn count and workDir for card header construction.
+func (c *FeishuConn) turnHeaderMeta() (turnNum int, workDir string) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.turnCount, c.workDir
 }
 
 func (c *FeishuConn) EnableStreaming(ctrl *StreamingCardController) {
@@ -675,6 +700,7 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		c.adapter.Interactions.CancelAll(env.SessionID)
 
 		d := messaging.ExtractTurnSummary(env)
+		c.cacheTurnMeta(d)
 		c.adapter.Log.Info("turn summary",
 			"turn_count", d.TurnCount,
 			"duration_ms", d.TurnDurationMs,
@@ -694,6 +720,7 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 
 		var closeErr error
 		if streamCtrl != nil && streamCtrl.IsCreated() {
+			streamCtrl.SetCloseMeta(d)
 			closeCtx, closeCancel := context.WithTimeout(context.Background(), 5*time.Second)
 			closeErr = streamCtrl.Close(closeCtx)
 			closeCancel()
@@ -898,7 +925,7 @@ func (c *FeishuConn) writeContent(ctx context.Context, env *events.Envelope, tex
 		c.adapter.Log.Info("feishu: streaming card rotated",
 			"old_msg_id", oldMsgID)
 
-		newCtrl := NewStreamingCardController(c.adapter.larkClient, c.adapter.rateLimiter, c.adapter.Log, c.adapter.resolveBotName())
+		newCtrl := NewStreamingCardController(c.adapter.larkClient, c.adapter.rateLimiter, c.adapter.Log, c.adapter.resolveBotName(), 0, c.workDir)
 		c.mu.Lock()
 		c.streamCtrl = newCtrl
 		if oldMsgID != "" {
@@ -941,7 +968,11 @@ func (c *FeishuConn) writeContent(ctx context.Context, env *events.Envelope, tex
 }
 
 func (c *FeishuConn) sendTurnSummaryCard(d messaging.TurnSummaryData) {
-	cardJSON := buildTurnSummaryCard(d, cardHeader{Title: "Turn 摘要", Template: headerBlue})
+	cardJSON := buildTurnSummaryCard(d, cardHeader{
+		Title:    c.adapter.resolveBotName(),
+		Template: headerBlue,
+		Tags:     turnTags(d.TurnCount, d.ModelName, d.GitBranch),
+	})
 	if cardJSON == "" {
 		return
 	}
@@ -1349,9 +1380,16 @@ func buildTurnSummaryCard(d messaging.TurnSummaryData, header cardHeader) string
 		return ""
 	}
 
-	elements := make([]map[string]any, len(fields))
-	for i, f := range fields {
-		elements[i] = tableRow(f.Label, f.Value)
+	// Skip fields already shown in header tags (Turn, Model, Dir, Branch).
+	skipLabels := map[string]bool{"🔄 Turn": true, "🤖 Model": true, "📂 Dir": true, "🌿 Branch": true}
+	var elements []map[string]any
+	for _, f := range fields {
+		if !skipLabels[f.Label] {
+			elements = append(elements, tableRow(f.Label, f.Value))
+		}
+	}
+	if len(elements) == 0 {
+		return ""
 	}
 
 	return buildCard(header, map[string]any{"wide_screen_mode": true}, elements)

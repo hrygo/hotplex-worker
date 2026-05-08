@@ -1,5 +1,10 @@
 package feishu
 
+import (
+	"fmt"
+	"strings"
+)
+
 // Card header template color constants (Feishu CardKit v2).
 const (
 	headerBlue   = "blue"
@@ -101,3 +106,35 @@ func buildStreamingCard(header cardHeader, summary, content string) string {
 
 // stringPtr returns a pointer to s. Used for SDK builder patterns.
 func stringPtr(s string) *string { return &s }
+
+// shortenModel produces a compact model name for tag display.
+// "claude-sonnet-4-20250514" -> "claude-4"; "gpt-4o" -> "gpt-4o".
+func shortenModel(name string) string {
+	if i := strings.Index(name, "-20"); i > 0 {
+		name = name[:i]
+	}
+	if i := strings.Index(name, "-preview"); i > 0 {
+		name = name[:i]
+	}
+	// Strip provider prefix: "anthropic/claude-4" -> "claude-4"
+	if i := strings.LastIndex(name, "/"); i >= 0 {
+		name = name[i+1:]
+	}
+	return name
+}
+
+// turnTags builds text_tag_list from turn metadata (max 3 tags).
+// Order: [#N] neutral, [model] turquoise, [branch] indigo.
+func turnTags(turnNum int, model, branch string) []cardTag {
+	var tags []cardTag
+	if turnNum > 0 {
+		tags = append(tags, cardTag{Text: fmt.Sprintf("#%d", turnNum)})
+	}
+	if model != "" {
+		tags = append(tags, cardTag{Text: shortenModel(model), Color: "turquoise"})
+	}
+	if branch != "" {
+		tags = append(tags, cardTag{Text: branch, Color: "indigo"})
+	}
+	return tags
+}

@@ -96,6 +96,9 @@ type StreamingCardController struct {
 	client       *lark.Client
 	log          *slog.Logger
 	agentName    string
+	turnNum      int
+	workDir      string
+	closeMeta    atomic.Pointer[messaging.TurnSummaryData]
 
 	flushDone    chan struct{}
 	flushStop    sync.Once
@@ -115,7 +118,7 @@ const (
 	flushSize     = 30                     // rune count threshold for immediate flush trigger
 )
 
-func NewStreamingCardController(client *lark.Client, limiter *FeishuRateLimiter, log *slog.Logger, agentName string) *StreamingCardController {
+func NewStreamingCardController(client *lark.Client, limiter *FeishuRateLimiter, log *slog.Logger, agentName string, turnNum int, workDir string) *StreamingCardController {
 	var p atomic.Int32
 	p.Store(int32(PhaseIdle))
 	return &StreamingCardController{
@@ -123,12 +126,27 @@ func NewStreamingCardController(client *lark.Client, limiter *FeishuRateLimiter,
 		client:          client,
 		log:             log,
 		agentName:       agentName,
+		turnNum:         turnNum,
+		workDir:         workDir,
 		cardKitOK:       true,
 		elementID:       streamingElementID,
 		flushDone:       make(chan struct{}),
 		flushTrigger:    make(chan struct{}, 1),
 		streamStartTime: time.Now(),
 	}
+}
+
+// SetCloseMeta injects turn summary data before Close() for header enrichment.
+func (c *StreamingCardController) SetCloseMeta(d messaging.TurnSummaryData) {
+	c.closeMeta.Store(&d)
+}
+
+// closeTags builds text_tag_list from closeMeta (full Turn/Model/Branch).
+func (c *StreamingCardController) closeTags() []cardTag {
+	if d := c.closeMeta.Load(); d != nil {
+		return turnTags(d.TurnCount, d.ModelName, d.GitBranch)
+	}
+	return turnTags(c.turnNum, "", "")
 }
 
 func (c *StreamingCardController) getPhase() CardPhase {
@@ -468,8 +486,8 @@ func (c *StreamingCardController) Close(ctx context.Context) error {
 
 	c.updateHeader(ctx, cardID, cardHeader{
 		Title:    c.agentName,
-		Subtitle: summary,
 		Template: headerBlue,
+		Tags:     c.closeTags(),
 	}, content)
 
 	return nil
@@ -498,8 +516,8 @@ func (c *StreamingCardController) Abort(ctx context.Context) error {
 
 	c.updateHeader(ctx, cardID, cardHeader{
 		Title:    c.agentName,
-		Subtitle: "\xe5\xb7\xb2\xe5\x8f\x96\xe6\xb6\x88",
 		Template: headerGrey,
+		Tags:     turnTags(c.turnNum, "", ""),
 	}, "")
 
 	return nil
@@ -564,7 +582,7 @@ func (c *StreamingCardController) idConvert(ctx context.Context, messageID strin
 
 func (c *StreamingCardController) sendCardMessage(ctx context.Context, chatID, content string) (string, error) {
 	contentJSON := buildStreamingCard(
-		cardHeader{Title: c.agentName, Subtitle: "生成中...", Template: headerWathet},
+		cardHeader{Title: c.agentName, Template: headerWathet, Tags: turnTags(c.turnNum, "", "")},
 		truncateForSummary(content),
 		content,
 	)
@@ -748,14 +766,14 @@ func (c *StreamingCardController) flushCardKitWithRetry(ctx context.Context, con
 }
 
 func (c *StreamingCardController) flushIMPatch(ctx context.Context, content string) error {
-	return c.doFlushIMPatch(ctx, cardHeader{Title: c.agentName, Template: headerWathet}, map[string]any{}, content, false)
+	return c.doFlushIMPatch(ctx, cardHeader{Title: c.agentName, Template: headerWathet, Tags: turnTags(c.turnNum, "", "")}, map[string]any{}, content, false)
 }
 
 // flushIMPatchWithConfig sends a final IM Patch with streaming_mode disabled and summary set.
 // Used in Close() when CardKit is degraded but we need to ensure the card renders correctly.
 func (c *StreamingCardController) flushIMPatchWithConfig(ctx context.Context, content string) error {
 	return c.doFlushIMPatch(ctx,
-		cardHeader{Title: c.agentName, Template: headerBlue},
+		cardHeader{Title: c.agentName, Template: headerBlue, Tags: c.closeTags()},
 		map[string]any{
 			"streaming_mode": false,
 			"summary":        map[string]any{"content": truncateForSummary(content)},
