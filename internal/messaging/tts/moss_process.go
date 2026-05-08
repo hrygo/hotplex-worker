@@ -47,10 +47,11 @@ type MossProcess struct {
 	baseURL string
 	client  *http.Client
 
-	lastUsed atomic.Int64
-	cancel   context.CancelFunc
-	done     chan struct{}
-	activeWg sync.WaitGroup
+	lastUsed    atomic.Int64
+	activeCount atomic.Int32 // tracks in-flight Synthesize calls for idleMonitor
+	cancel      context.CancelFunc
+	done        chan struct{}
+	activeWg    sync.WaitGroup
 }
 
 func NewMossProcess(modelDir string, port, cpuThreads int, idleTTL time.Duration, log *slog.Logger) *MossProcess {
@@ -92,8 +93,12 @@ func (p *MossProcess) Synthesize(ctx context.Context, text, voice string) ([]byt
 		return nil, fmt.Errorf("tts moss: %w", err)
 	}
 	p.activeWg.Add(1)
+	p.activeCount.Add(1)
 	p.mu.Unlock()
-	defer p.activeWg.Done()
+	defer func() {
+		p.activeCount.Add(-1)
+		p.activeWg.Done()
+	}()
 
 	if voice == "" {
 		voice = mossDefaultVoice
@@ -221,8 +226,9 @@ func (p *MossProcess) start(ctx context.Context) error {
 	if p.idleTTL > 0 {
 		idleCtx, cancel := context.WithCancel(context.Background())
 		p.cancel = cancel
-		p.done = make(chan struct{})
-		go p.idleMonitor(idleCtx)
+		done := make(chan struct{})
+		p.done = done
+		go p.idleMonitor(idleCtx, done)
 	}
 
 	p.log.Info("tts: moss sidecar ready", "pid", cmd.Process.Pid, "port", p.port)
@@ -256,16 +262,23 @@ func (p *MossProcess) waitForReady(ctx context.Context) error {
 	return fmt.Errorf("moss sidecar warmup timed out after %v", mossReadyTimeout)
 }
 
+// terminate cancels the idle monitor and shuts down the subprocess.
+// Caller must hold p.mu.
 func (p *MossProcess) terminate() {
-	if !p.started {
-		return
-	}
-
-	// Stop idle monitor.
 	if p.cancel != nil {
 		p.cancel()
-		<-p.done
+		// Do NOT wait for <-p.done — idleMonitor might be blocked
+		// on mu held by our caller, causing deadlock. It exits on its own.
 		p.cancel = nil
+	}
+	p.shutdownProcess()
+}
+
+// shutdownProcess terminates the sidecar subprocess and cleans up resources.
+// Caller must hold p.mu. Does NOT stop the idle monitor.
+func (p *MossProcess) shutdownProcess() {
+	if !p.started {
+		return
 	}
 
 	if p.pgid > 0 {
@@ -315,8 +328,15 @@ func (p *MossProcess) maybeRestart(err error) {
 	}
 }
 
-func (p *MossProcess) idleMonitor(ctx context.Context) {
-	defer close(p.done)
+// idleMonitor auto-shuts down the sidecar after idle TTL.
+// done chan is captured by parameter to avoid racing with start() reassignment.
+func (p *MossProcess) idleMonitor(ctx context.Context, done chan struct{}) {
+	defer func() {
+		if r := recover(); r != nil {
+			p.log.Error("tts moss: panic in idleMonitor", "panic", r)
+		}
+	}()
+	defer close(done)
 
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
@@ -328,6 +348,10 @@ func (p *MossProcess) idleMonitor(ctx context.Context) {
 		case <-ticker.C:
 		}
 
+		if p.activeCount.Load() > 0 {
+			continue // Active request in progress, skip.
+		}
+
 		last := time.Unix(0, p.lastUsed.Load())
 		if time.Since(last) < p.idleTTL {
 			continue
@@ -336,7 +360,7 @@ func (p *MossProcess) idleMonitor(ctx context.Context) {
 		p.mu.Lock()
 		if p.started && p.isAlive() {
 			p.log.Info("tts moss: idle timeout, shutting down sidecar", "idle_ttl", p.idleTTL)
-			p.terminate()
+			p.shutdownProcess()
 		}
 		p.mu.Unlock()
 		return

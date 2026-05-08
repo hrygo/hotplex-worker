@@ -77,8 +77,9 @@ def patch_onnx_file(model_path: str) -> bool:
 def patch_model_dir(model_dir: str) -> list[str]:
     """Patch all ONNX models in directory. Returns list of patched filenames.
 
-    Uses a .patched marker file per ONNX file to skip already-patched models,
-    avoiding the cost of loading and scanning the full model on every startup.
+    Uses a .patched marker file per ONNX file to skip already-patched models.
+    Invalidates the marker if the model file was updated after the marker was
+    created (e.g., modelscope re-downloaded the model), causing a re-patch.
     """
     patched = []
     for name in ("model_quant.onnx", "model.onnx"):
@@ -87,7 +88,16 @@ def patch_model_dir(model_dir: str) -> list[str]:
             continue
         marker = path + _MARKER_SUFFIX
         if os.path.exists(marker):
-            continue
+            # Invalidate stale marker: if model file is newer, re-patch.
+            try:
+                model_mtime = os.path.getmtime(path)
+                marker_mtime = os.path.getmtime(marker)
+                if model_mtime > marker_mtime:
+                    os.remove(marker)
+                else:
+                    continue
+            except OSError:
+                continue
         if patch_onnx_file(path):
             patched.append(name)
             Path(marker).touch()
@@ -106,13 +116,20 @@ def main() -> None:
             continue
         marker = str(path) + _MARKER_SUFFIX
         if os.path.exists(marker):
-            print(f"{name}: already patched (marker found)")
-            continue
+            # Same stale-marker check as patch_model_dir.
+            try:
+                if os.path.getmtime(str(path)) <= os.path.getmtime(marker):
+                    print(f"{name}: already patched (marker valid)")
+                    continue
+                print(f"{name}: marker stale (model updated), re-patching")
+                os.remove(marker)
+            except OSError:
+                continue
         if patch_onnx_file(str(path)):
             Path(marker).touch()
             print(f"Patched {name}")
         else:
-            print(f"{name}: already correct")
+            print(f"{name}: already correct (no Less type mismatch found)")
 
 
 if __name__ == "__main__":

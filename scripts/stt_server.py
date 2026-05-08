@@ -71,17 +71,21 @@ def _setup_pdeathsig():
 
 @contextmanager
 def _suppress_stdout():
-    """Context manager that redirects stdout to /dev/null and restores on exit."""
-    devnull = os.open(os.devnull, os.O_WRONLY)
-    saved = os.dup(1)
-    os.dup2(devnull, 1)
-    os.close(devnull)
+    """Context manager that suppresses stdout output during model loading.
+
+    Uses Python-level redirection only — no os.dup2 — because third-party
+    libraries (modelscope, funasr-onnx) manipulate the fd table during
+    initialization and can corrupt fd-level restores, leaving fd 1 pointing
+    at /dev/null permanently (breaking the stdin/stdout JSON protocol with
+    the Go parent process).
+    """
+    saved = sys.stdout
+    sys.stdout = open(os.devnull, "w")
     try:
         yield
     finally:
-        sys.stdout.flush()
-        os.dup2(saved, 1)
-        os.close(saved)
+        sys.stdout.close()
+        sys.stdout = saved
 
 
 def create_funasr_backend(model_name: str):
@@ -97,6 +101,7 @@ def create_funasr_backend(model_name: str):
     try:
         with _suppress_stdout():
             # Auto-patch ONNX model if needed.
+            model_dir = None
             try:
                 from modelscope.hub.snapshot_download import snapshot_download  # type: ignore
                 from fix_onnx_model import patch_model_dir  # type: ignore
@@ -109,7 +114,20 @@ def create_funasr_backend(model_name: str):
             except Exception as e:
                 print(f"[stt] ONNX patch warning: {type(e).__name__}: {e}", file=sys.stderr)
 
-            model = SenseVoiceSmall(model_name, quantize=True)
+            try:
+                model = SenseVoiceSmall(model_name, quantize=True)
+            except Exception as load_err:
+                # SenseVoiceSmall constructor may re-download the model via
+                # modelscope, overwriting our patch. Retry: re-patch and reload.
+                print(f"[stt] model load failed, retrying after re-patch: {load_err}", file=sys.stderr)
+                if model_dir is not None:
+                    try:
+                        from fix_onnx_model import patch_model_dir as re_patch  # type: ignore
+                        for name in re_patch(model_dir):
+                            print(f"[stt] re-patched ONNX: {name}", file=sys.stderr)
+                    except Exception:
+                        pass
+                model = SenseVoiceSmall(model_name, quantize=True)
     except TypeError as e:
         # funasr-onnx raises TypeError when ONNX export is needed but funasr
         # is not installed (it uses `raise "string"` instead of raise Exception).
