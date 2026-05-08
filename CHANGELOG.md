@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [1.8.1] - 2026-05-09
+
+### Summary
+
+v1.8.1 是一次 patch 版本更新，聚焦于 **配置层 DRY 重构**。提取 `MessagingPlatformConfig` 共享结构体，将 Slack/Feishu 适配器的 9 个重复字段（STT/TTS/权限/策略等）统一声明一次，新增平台适配器接近零成本。同时更新多语言 SDK 示例版本到 1.8.0。
+
+### Changed
+
+- **Configuration**: Extract `MessagingPlatformConfig` embedded struct to deduplicate 9 shared fields (Enabled, WorkerType, WorkDir, DMPolicy, GroupPolicy, RequireMention, AllowFrom, STT/TTS config) between SlackConfig and FeishuConfig. (#316)
+- **Configuration**: Refactor `applyMessagingEnv` to data-driven `applyPlatformEnv` helper with reflection-based bool field mapping.
+
 ## [1.8.0] - 2026-05-09
 
 ### Summary
