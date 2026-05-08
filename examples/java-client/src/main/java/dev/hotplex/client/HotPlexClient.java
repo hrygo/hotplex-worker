@@ -33,7 +33,7 @@ import java.util.function.Consumer;
  * - Reconnection with exponential backoff
  * - Async connect using CompletableFuture
  */
-public class HotPlexClient extends TextWebSocketHandler {
+public class HotPlexClient extends TextWebSocketHandler implements AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(HotPlexClient.class);
 
@@ -209,9 +209,20 @@ public class HotPlexClient extends TextWebSocketHandler {
     }
 
     /**
-     * Disconnect from the gateway.
+     * Disconnect from the gateway. Alias for close().
      */
     public void disconnect() {
+        close();
+    }
+
+    /**
+     * Close the client and release resources.
+     */
+    @Override
+    public void close() {
+        if (closed) {
+            return;
+        }
         closed = true;
         shouldReconnect = false;
 
@@ -552,7 +563,7 @@ public class HotPlexClient extends TextWebSocketHandler {
      * @param content the input content
      * @return CompletableFuture that completes when done is received
      */
-    public CompletableFuture<Void> sendInputAsync(String content) {
+    public CompletableFuture<DoneData> sendInputAsync(String content) {
         return sendInputAsync(content, ProtocolConstants.INPUT_TIMEOUT_MS);
     }
 
@@ -563,8 +574,8 @@ public class HotPlexClient extends TextWebSocketHandler {
      * @param timeoutMs timeout in milliseconds
      * @return CompletableFuture that completes when done is received
      */
-    public CompletableFuture<Void> sendInputAsync(String content, long timeoutMs) {
-        CompletableFuture<Void> future = new CompletableFuture<>();
+    public CompletableFuture<DoneData> sendInputAsync(String content, long timeoutMs) {
+        CompletableFuture<DoneData> future = new CompletableFuture<>();
 
         // Create listeners array for reference in lambdas
         @SuppressWarnings("unchecked")
@@ -576,7 +587,7 @@ public class HotPlexClient extends TextWebSocketHandler {
         doneConsumerRef[0] = doneData -> {
             off("done", doneConsumerRef[0]);
             off("error", errorConsumerRef[0]);
-            future.complete(null);
+            future.complete(doneData);
         };
 
         // Add error listener with self-cleanup
@@ -848,7 +859,8 @@ public class HotPlexClient extends TextWebSocketHandler {
         
         // Add auth if token generator is available
         if (tokenGenerator != null) {
-            String token = tokenGenerator.generateToken("user", List.of("worker:use"), 3600000);
+            // Default TTL: 1 hour (3600 seconds)
+            String token = tokenGenerator.generateToken("user", List.of("worker:use"), 3600);
             InitData.InitAuth auth = new InitData.InitAuth();
             auth.setToken(token);
             initData.setAuth(auth);

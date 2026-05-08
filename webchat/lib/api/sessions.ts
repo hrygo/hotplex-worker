@@ -60,10 +60,10 @@ export interface GetHistoryResponse {
   has_more: boolean;
 }
 
-export async function listSessions(limit = 20, offset = 0): Promise<ListSessionsResponse> {
+export async function listSessions(limit = 20, offset = 0, signal?: AbortSignal): Promise<ListSessionsResponse> {
   const res = await fetch(
     `${BASE}/api/sessions?${AUTH}&limit=${limit}&offset=${offset}`,
-    { headers: { 'Content-Type': 'application/json' } }
+    { headers: { 'Content-Type': 'application/json' }, signal }
   );
   if (!res.ok) throw new Error(`listSessions failed: ${res.status}`);
   return res.json();
@@ -75,13 +75,13 @@ export interface CreateSessionOptions {
   workDir?: string;
 }
 
-export async function createSession(opts: CreateSessionOptions): Promise<{ session_id: string }> {
+export async function createSession(opts: CreateSessionOptions, signal?: AbortSignal): Promise<{ session_id: string }> {
   const workerType = opts.workerType ?? 'claude_code';
   let url = `${BASE}/api/sessions?${AUTH}&worker_type=${encodeURIComponent(workerType)}&title=${encodeURIComponent(opts.title)}`;
   if (opts.workDir) {
     url += `&work_dir=${encodeURIComponent(opts.workDir)}`;
   }
-  const res = await fetch(url, { method: 'POST' });
+  const res = await fetch(url, { method: 'POST', signal });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
     throw new Error(body || `createSession failed: ${res.status}`);
@@ -89,17 +89,17 @@ export async function createSession(opts: CreateSessionOptions): Promise<{ sessi
   return res.json();
 }
 
-export async function deleteSession(id: string): Promise<void> {
+export async function deleteSession(id: string, signal?: AbortSignal): Promise<void> {
   const res = await fetch(
     `${BASE}/api/sessions/${id}?${AUTH}`,
-    { method: 'DELETE' }
+    { method: 'DELETE', signal }
   );
   if (!res.ok) throw new Error(`deleteSession failed: ${res.status}`);
 }
 
 export async function getSessionHistory(
   sessionId: string,
-  options?: { beforeSeq?: number; limit?: number }
+  options?: { beforeSeq?: number; limit?: number; signal?: AbortSignal }
 ): Promise<GetHistoryResponse> {
   if (!sessionId?.trim()) {
     throw new Error('getSessionHistory: empty session ID');
@@ -109,7 +109,7 @@ export async function getSessionHistory(
   if (options?.beforeSeq) {
     url += `&before_seq=${options.beforeSeq}`;
   }
-  const res = await fetch(url, { headers: { 'Content-Type': 'application/json' } });
+  const res = await fetch(url, { headers: { 'Content-Type': 'application/json' }, signal: options?.signal });
   if (!res.ok) throw new Error(`getSessionHistory failed: ${res.status}`);
   return res.json();
 }

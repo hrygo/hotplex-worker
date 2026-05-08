@@ -133,20 +133,26 @@ await client.connect(): Promise<InitAckData>
 }
 ```
 
-#### sendInput()
+#### sendInputAsync()
 
-Send user input to worker.
+Send user input and wait for the task to complete (or fail).
 
 ```typescript
-await client.sendInput(content: string, metadata?: Record<string, any>): Promise<void>
+await client.sendInputAsync(content: string, metadata?: Record<string, any>): Promise<void>
 ```
 
 **Example**:
 ```typescript
-await client.sendInput("Write a hello world in Go", {
-  language: "go",
-  test: true,
-});
+try {
+  await client.sendInputAsync("Write a hello world in Go");
+  console.log("Task finished successfully");
+} catch (err) {
+  if (err instanceof TimeoutError) {
+    console.error("Task timed out");
+  } else {
+    console.error("Task failed:", err.message);
+  }
+}
 ```
 
 #### sendToolResult()
@@ -154,19 +160,12 @@ await client.sendInput("Write a hello world in Go", {
 Send tool execution result.
 
 ```typescript
-await client.sendToolResult(result: {
-  toolCallId: string;
-  output: string;
-  error?: string;
-}): Promise<void>
+await client.sendToolResult(id: string, output: unknown, error?: string): Promise<void>
 ```
 
 **Example**:
 ```typescript
-await client.sendToolResult({
-  toolCallId: "call_123",
-  output: JSON.stringify({ files: ["main.go"] }),
-});
+await client.sendToolResult("call_123", JSON.stringify({ files: ["main.go"] }));
 ```
 
 #### sendPermissionResponse()
@@ -174,20 +173,12 @@ await client.sendToolResult({
 Send permission approval/denial.
 
 ```typescript
-await client.sendPermissionResponse(response: {
-  permissionId: string;
-  allowed: boolean;
-  reason?: string;
-}): Promise<void>
+await client.sendPermissionResponse(permissionId: string, allowed: boolean, reason?: string): Promise<void>
 ```
 
 **Example**:
 ```typescript
-await client.sendPermissionResponse({
-  permissionId: "perm_456",
-  allowed: true,
-  reason: "User approved",
-});
+await client.sendPermissionResponse("perm_456", true, "User approved");
 ```
 
 #### close()
@@ -195,7 +186,7 @@ await client.sendPermissionResponse({
 Close connection and cleanup resources.
 
 ```typescript
-await client.close(): Promise<void>
+client.close();
 ```
 
 ### Events
@@ -204,213 +195,27 @@ All events use EventEmitter3.
 
 #### Message Events
 
-##### `message.start`
-
-Emitted when a new message stream starts.
-
-```typescript
-client.on("message.start", (data: MessageStartData) => {
-  console.log("Message started:", data.id);
-});
-```
-
-**MessageStartData**:
-```typescript
-{
-  id: string;
-  role: "assistant";
-}
-```
-
-##### `message_delta`
-
-Streaming content chunks (most common event).
-
-```typescript
-client.on("message_delta", (data: MessageDeltaData) => {
-  process.stdout.write(data.content);
-});
-```
-
-**MessageDeltaData**:
-```typescript
-{
-  content: string;
-}
-```
-
-##### `message.end`
-
-Emitted when message stream ends.
-
-```typescript
-client.on("message.end", (data: MessageEndData) => {
-  console.log("Message ended:", data.id);
-});
-```
-
-#### Tool Events
-
-##### `tool_call`
-
-Worker requests tool execution.
-
-```typescript
-client.on("tool_call", async (data: ToolCallData) => {
-  console.log(`Tool call: ${data.name}`);
-
-  // Execute tool
-  const result = await executeTool(data.name, data.input);
-
-  // Send result back
-  await client.sendToolResult({
-    toolCallId: data.id,
-    output: result,
-  });
-});
-```
-
-**ToolCallData**:
-```typescript
-{
-  id: string;
-  name: string;
-  input: Record<string, any>;
-}
-```
-
-#### Permission Events
-
-##### `permission_request`
-
-Worker requests user permission.
-
-```typescript
-client.on("permission_request", async (data: PermissionRequestData) => {
-  const allowed = await askUser(data.tool_name, data.description);
-
-  await client.sendPermissionResponse({
-    permissionId: data.id,
-    allowed,
-    reason: allowed ? "User approved" : "User denied",
-  });
-});
-```
-
-**PermissionRequestData**:
-```typescript
-{
-  id: string;
-  tool_name: string;
-  description?: string;
-}
-```
+| Event | Data Type | Description |
+|-------|-----------|-------------|
+| `message.start` | `MessageStartData` | Emitted when a new message stream starts |
+| `message.delta` | `MessageDeltaData` | Streaming content chunks (most common) |
+| `message.end` | `MessageEndData` | Emitted when message stream ends |
 
 #### Lifecycle Events
 
-##### `state`
-
-Session state changed.
-
-```typescript
-client.on("state", (data: StateData) => {
-  console.log("State:", data.state);
-
-  if (data.state === "idle") {
-    console.log("Worker idle, ready for input");
-  }
-});
-```
-
-**StateData**:
-```typescript
-{
-  state: "created" | "running" | "idle" | "terminated";
-}
-```
-
-##### `done`
-
-Task completed.
-
-```typescript
-client.on("done", (data: DoneData) => {
-  console.log("Done! Success:", data.success);
-
-  if (data.stats) {
-    console.log("Duration:", data.stats.duration_ms, "ms");
-    console.log("Tokens:", data.stats.total_tokens);
-    console.log("Cost: $", data.stats.cost_usd);
-  }
-});
-```
-
-**DoneData**:
-```typescript
-{
-  success: boolean;
-  stats?: {
-    duration_ms: number;
-    total_tokens: number;
-    cost_usd: number;
-  };
-}
-```
-
-##### `error`
-
-Error occurred.
-
-```typescript
-client.on("error", (data: ErrorData) => {
-  console.error(`Error [${data.code}]: ${data.message}`);
-
-  if (data.code === "SESSION_TERMINATED") {
-    client.close();
-  }
-});
-```
-
-**ErrorData**:
-```typescript
-{
-  code: string;
-  message: string;
-  details?: Record<string, any>;
-}
-```
+| Event | Data Type | Description |
+|-------|-----------|-------------|
+| `state` | `StateData` | Session state changed (`running`, `idle`, etc.) |
+| `done` | `DoneData` | Task completed with success status and stats |
+| `error` | `ErrorData` | Protocol-level error occurred |
 
 #### Connection Events
 
-##### `connected`
-
-WebSocket connected (before init).
-
-```typescript
-client.on("connected", () => {
-  console.log("WebSocket connected");
-});
-```
-
-##### `disconnected`
-
-WebSocket disconnected.
-
-```typescript
-client.on("disconnected", () => {
-  console.log("WebSocket disconnected");
-});
-```
-
-##### `reconnecting`
-
-Attempting to reconnect.
-
-```typescript
-client.on("reconnecting", (data: { attempt: number; maxAttempts: number }) => {
-  console.log(`Reconnecting ${data.attempt}/${data.maxAttempts}...`);
-});
-```
+| Event | Data Type | Description |
+|-------|-----------|-------------|
+| `connected` | `InitAckData` | WebSocket connected and session initialized |
+| `disconnected` | `string` | WebSocket disconnected with reason |
+| `reconnecting` | `number` | Attempting to reconnect (current attempt) |
 
 ---
 
@@ -421,172 +226,51 @@ client.on("reconnecting", (data: { attempt: number; maxAttempts: number }) => {
 Resume an existing session within its retention period.
 
 ```typescript
-// First session
-const client1 = new HotPlexClient({
-  url: "ws://localhost:8888",
-  workerType: WorkerType.CLAUDE_CODE,
-  authToken: "your-key",
-});
-
-await client1.connect();
-const sessionId = client1.sessionId;
-await client1.sendInput("Start a long task...");
-
-// Later: resume session
-const client2 = new HotPlexClient({
-  url: "ws://localhost:8888",
-  workerType: WorkerType.CLAUDE_CODE,
-  authToken: "your-key",
-  sessionId, // Resume
-});
-
-await client2.connect();
-await client2.sendInput("Continue the task...");
-```
-
-### Custom Reconnection Strategy
-
-```typescript
 const client = new HotPlexClient({
   url: "ws://localhost:8888",
-  workerType: WorkerType.CLAUDE_CODE,
-  reconnect: true,
-  reconnectMaxAttempts: 10, // Try 10 times
+  workerType: WorkerType.ClaudeCode,
 });
 
-client.on("reconnecting", ({ attempt, maxAttempts }) => {
-  console.log(`Reconnect attempt ${attempt}/${maxAttempts}`);
-
-  if (attempt >= maxAttempts) {
-    console.error("Max reconnection attempts reached");
-    client.close();
-  }
-});
+// Connect to existing session
+await client.resume("sess_existing_uuid");
 ```
 
 ### Streaming Message Collection
 
-Collect streaming deltas into full message:
+Collect streaming deltas into a full message:
 
 ```typescript
 let fullMessage = "";
-let messageId = "";
 
-client.on("message.start", (data) => {
-  messageId = data.id;
-  fullMessage = "";
-});
-
-client.on("message_delta", (data) => {
+client.on("message.delta", (data) => {
   fullMessage += data.content;
-  process.stdout.write(data.content); // Still print in real-time
 });
 
-client.on("message.end", (data) => {
-  console.log("\n--- Full Message ---");
-  console.log(fullMessage);
-  console.log("--------------------");
+client.on("message.end", () => {
+  console.log("Full Message:", fullMessage);
 });
 ```
 
-### Tool Implementation Pattern
+### Tool Implementation
+
+Handle tool calls from the worker:
 
 ```typescript
-import { exec } from "child_process";
-import util from "util";
-
-const execAsync = util.promisify(exec);
-
 client.on("tool_call", async (data) => {
-  try {
-    let output: string;
-
-    switch (data.name) {
-      case "bash":
-        const { stdout } = await execAsync(data.input.command, {
-          cwd: data.input.cwd || process.cwd(),
-          timeout: data.input.timeout || 30000,
-        });
-        output = stdout;
-        break;
-
-      case "read_file":
-        const content = await fs.readFile(data.input.path, "utf-8");
-        output = content;
-        break;
-
-      default:
-        throw new Error(`Unknown tool: ${data.name}`);
-    }
-
-    await client.sendToolResult({
-      toolCallId: data.id,
-      output,
-    });
-  } catch (err) {
-    await client.sendToolResult({
-      toolCallId: data.id,
-      output: "",
-      error: err.message,
-    });
-  }
+  console.log(`Tool call: ${data.name}`);
+  const result = await myToolRunner(data.name, data.input);
+  
+  await client.sendToolResult(data.id, result);
 });
-```
-
-### Graceful Shutdown
-
-```typescript
-const shutdown = async () => {
-  console.log("\nShutting down...");
-
-  try {
-    await client.close();
-    console.log("Client closed");
-    process.exit(0);
-  } catch (err) {
-    console.error("Error during shutdown:", err);
-    process.exit(1);
-  }
-};
-
-process.on("SIGINT", shutdown);
-process.on("SIGTERM", shutdown);
 ```
 
 ---
 
 ## Error Handling
 
-### Error Events vs Exceptions
+### Custom Error Classes
 
-The client emits `error` events for protocol-level errors, but throws exceptions for operational errors.
-
-```typescript
-// Protocol error (async, non-fatal)
-client.on("error", (data) => {
-  console.error("Protocol error:", data.code);
-});
-
-// Operational error (sync, fatal if uncaught)
-try {
-  await client.connect();
-} catch (err) {
-  console.error("Connection failed:", err);
-}
-```
-
-### Common Error Codes
-
-| Code | Meaning | Action |
-|------|---------|--------|
-| `SESSION_NOT_FOUND` | Session doesn't exist | Create new session |
-| `SESSION_TERMINATED` | Session terminated | Create new session |
-| `SESSION_EXPIRED` | Session past retention | Create new session |
-| `UNAUTHORIZED` | Invalid auth token | Check token |
-| `INVALID_INPUT` | Malformed input | Check message format |
-| `WORKER_TIMEOUT` | Worker took too long | Increase timeout or optimize worker |
-
-### Exception Types
+The client provides several error classes for different failure modes:
 
 ```typescript
 import {
@@ -594,17 +278,29 @@ import {
   ConnectionError,
   SessionError,
   TimeoutError,
+  ProtocolError,
 } from "@hotplex/client";
 
 try {
   await client.connect();
 } catch (err) {
   if (err instanceof ConnectionError) {
-    console.error("Connection failed:", err.message);
+    console.error("Network issue:", err.message);
   } else if (err instanceof SessionError) {
-    console.error("Session error:", err.message);
+    console.error("Gateway rejected session:", err.code);
   }
 }
+```
+
+### Error Events vs Exceptions
+
+- **Exceptions**: Thrown by `connect()`, `resume()`, and `sendInputAsync()`. These are usually terminal or require immediate action.
+- **`error` events**: Emitted for asynchronous protocol errors that don't necessarily break the connection.
+
+```typescript
+client.on("error", (data) => {
+  console.error(`Protocol error [${data.code}]: ${data.message}`);
+});
 ```
 
 ---

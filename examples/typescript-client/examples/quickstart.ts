@@ -57,11 +57,14 @@ async function main() {
     console.log(`Connected! Session: ${ack.session_id}\n`);
     console.log('Sending task to Claude Code...\n');
 
-    // Send a simple task
-    client.sendInput('Write a hello world program in Go that prints "Hello, World!" to stdout.');
+    // Send a simple task and wait for it to complete
+    await client.sendInputAsync('Write a hello world program in Go that prints "Hello, World!" to stdout.');
+
+    console.log('\nAll done!');
 
   } catch (err) {
-    console.error('Failed to connect:', err);
+    console.error('Task failed:', err instanceof Error ? err.message : err);
+    client.disconnect();
     process.exit(1);
   }
 }

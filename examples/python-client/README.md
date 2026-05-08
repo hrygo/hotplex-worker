@@ -18,21 +18,26 @@ pip install -r requirements.txt
 
 ### 运行示例
 
-#### 快速上手（5 分钟）
+#### 快速上手 (MVP)
 
 ```bash
 python examples/quickstart.py
 ```
 
-演示最基本的连接、发送输入和接收流式响应。
+**MVP (Minimum Viable Product)** 示例：仅使用标准库和核心客户端，无额外 UI 依赖。展示最核心的连接、发送输入和流式接收逻辑。
 
-#### 完整功能示例
+#### 完整功能示例 (Advanced)
 
 ```bash
 python examples/advanced.py
 ```
 
-演示会话恢复、工具调用、权限请求、错误处理等完整功能。
+**Advanced** 示例：使用 `rich` 库提供生产级的终端 UI。涵盖了：
+- **思考过程 (Reasoning)**：展示 AI 的推理链。
+- **工具调用 (Tools)**：模拟本地工具执行与结果返回。
+- **安全授权 (Permissions)**：处理敏感操作的授权请求。
+- **会话恢复 (Resume)**：跨实例保持对话上下文。
+- **统计信息**：展示 Token 消耗、成本计算及执行耗时。
 
 ## 架构设计
 
@@ -102,46 +107,34 @@ await client.send_input(
 )
 ```
 
-#### 事件处理（装饰器风格）
+#### 事件处理（支持装饰器和 EventEmitter 风格）
 
 ```python
-@client.on_message_delta
+# 方式 1: 装饰器风格 (推荐)
+@client.on("message.delta")
 async def handle_delta(data: MessageDeltaData):
     """流式响应（实时打印）"""
-    print(data.content, end="")
+    print(data.content, end="", flush=True)
 
-@client.on_done
-async def handle_done(data: DoneData):
-    """任务完成"""
-    print(f"Done! Success: {data.success}")
+# 方式 2: 显式注册
+client.on_done(handle_done_callback)
 
-@client.on_error
-async def handle_error(data: ErrorData):
-    """错误处理"""
-    print(f"Error [{data.code}]: {data.message}")
+# 方式 3: 这里的 client.wait_for_done() 是同步风格的异步等待
+await client.send_input("Hello!")
+result = await client.wait_for_done(timeout=60)
+print(f"Done! {result.success}")
+```
 
-@client.on_state_change
-async def handle_state(data: StateData):
-    """状态变化"""
-    print(f"State: {data.state}")
+#### 完整示例代码
 
-@client.on_tool_call
-async def handle_tool_call(data: ToolCallData):
-    """工具调用"""
-    result = execute_tool(data.name, data.input)
-    await client.send_tool_result(
-        tool_call_id=data.id,
-        output=result,
-    )
+```python
+async with HotPlexClient(url="ws://localhost:8888") as client:
+    @client.on("message.delta")
+    async def on_delta(data: MessageDeltaData):
+        print(data.content, end="", flush=True)
 
-@client.on_permission_request
-async def handle_permission(data: PermissionRequestData):
-    """权限请求"""
-    allowed = ask_user(data.tool_name)
-    await client.send_permission_response(
-        permission_id=data.id,
-        allowed=allowed,
-    )
+    await client.send_input("Write a poem about AI")
+    await client.wait_for_done()
 ```
 
 ### 支持的事件类型

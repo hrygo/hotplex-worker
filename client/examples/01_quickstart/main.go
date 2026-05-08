@@ -52,40 +52,32 @@ func main() {
 	}
 	fmt.Printf("Connected  session=%s  state=%s\n", ack.SessionID, ack.State)
 
-	done := make(chan struct{})
+	fmt.Printf("\n🚀 HotPlex Gateway - Quick Start\n")
+	fmt.Printf("--------------------------------\n")
+	fmt.Printf("Connected  session=%s  state=%s\n\n", ack.SessionID, ack.State)
+
+	// Background listener for deltas only.
 	go func() {
-		defer close(done)
 		for evt := range c.Events() {
-			switch evt.Type {
-			case client.EventMessageDelta:
+			if evt.Type == client.EventMessageDelta {
 				if d, ok := evt.AsMessageDeltaData(); ok {
 					fmt.Print(d.Content)
 				}
-			case client.EventDone:
-				if d, ok := evt.AsDoneData(); ok {
-					fmt.Printf("\nDone (success=%v).\n", d.Success)
-				}
-				return
-			case client.EventError:
-				if d, ok := evt.AsErrorData(); ok {
-					fmt.Fprintf(os.Stderr, "\nError: %s — %s\n", d.Code, d.Message)
-				}
-				return
 			}
 		}
 	}()
 
 	fmt.Printf("> %s\n", task)
-	if err := c.SendInput(ctx, task); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: send input: %v\n", err)
+	doneData, err := c.SendInputAsync(ctx, task)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "\n\n❌ Error: %v\n", err)
 		return
 	}
 
-	select {
-	case <-done:
-	case <-ctx.Done():
-		if ctx.Err() == context.DeadlineExceeded {
-			fmt.Fprintln(os.Stderr, "Timeout.")
-		}
+	fmt.Printf("\n\n✅ Task completed: success=%v\n", doneData.Success)
+	if doneData.Stats != nil {
+		fmt.Printf("   Duration: %vms\n", doneData.Stats["duration_ms"])
+		fmt.Printf("   Tokens:   %v\n", doneData.Stats["total_tokens"])
+		fmt.Printf("   Cost:     $%v\n", doneData.Stats["cost_usd"])
 	}
 }
