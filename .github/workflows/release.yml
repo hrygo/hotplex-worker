@@ -31,20 +31,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v6
+      - uses: ./.github/actions/setup-go-webchat
         with:
-          node-version: '22'
-
-      - run: corepack enable pnpm
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: '22'
-          cache: 'pnpm'
-          cache-dependency-path: webchat/pnpm-lock.yaml
-
-      - name: Build webchat
-        run: make webchat-embed
+          download-modules: 'false'
 
       - uses: actions/upload-artifact@v7
         with:
