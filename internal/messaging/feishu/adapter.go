@@ -742,7 +742,14 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 			closeCancel()
 		}
 
-		if c.adapter.ttsPipeline != nil && c.voiceTriggered.Load() {
+		ttsOK := c.adapter.ttsPipeline != nil
+		voiceOK := c.voiceTriggered.Load()
+		c.adapter.Log.Debug("feishu: tts check",
+			"tts_pipeline", ttsOK,
+			"voice_triggered", voiceOK,
+			"full_text_len", len(fullText),
+		)
+		if ttsOK && voiceOK {
 			if fullText != "" {
 				c.mu.RLock()
 				chatID := c.chatID
