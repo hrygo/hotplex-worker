@@ -128,23 +128,31 @@ start_gateway() {
     local bg_pid=$!
     echo $bg_pid > "$GATEWAY_PID"
 
-    # Wait for gateway to initialize (up to 10s), then display banner.
-    for ((i=0; i<20; i++)); do
+    # Wait for banner to appear in log (up to 30s).
+    # Gateway writes slog to stderr + banner to stdout; both go to $GATEWAY_LOG.
+    # Non-slog lines (banner or fmt warnings) signal readiness.
+    for ((i=0; i<60; i++)); do
         if ! kill -0 "$bg_pid" 2>/dev/null; then
             err "Gateway failed to start"
             tail -20 "$GATEWAY_LOG"
             rm -f "$GATEWAY_PID"
             exit 1
         fi
-        if grep -qvE '^(time=|\{"time":)' "$GATEWAY_LOG" 2>/dev/null; then
+        if grep -qvE '^(time=|\{"time":|[0-9]{4}/[0-9]{2}/[0-9]{2} )' "$GATEWAY_LOG" 2>/dev/null; then
             sleep 0.5  # give banner a moment to flush fully
             break
         fi
         sleep 0.5
     done
 
+    # Extract banner (retry on slow startup — session repair, orphan cleanup).
     if kill -0 "$bg_pid" 2>/dev/null; then
-        grep -vE '^(time=|\{"time":)' "$GATEWAY_LOG" | sed '/^$/d' || true
+        for ((j=0; j<6; j++)); do
+            local banner
+            banner=$(grep -vE '^(time=|\{"time":|[0-9]{4}/[0-9]{2}/[0-9]{2} )' "$GATEWAY_LOG" | sed '/^$/d')
+            [[ -n "$banner" ]] && { echo "$banner"; return 0; }
+            sleep 0.5
+        done
     fi
 }
 
