@@ -198,19 +198,23 @@ func (c STTConfig) IsPersistent() bool {
 type TTSConfig struct {
 	// Enabled controls whether voice replies are sent for voice-triggered turns.
 	Enabled bool `mapstructure:"tts_enabled"`
-	// Provider: "edge" (Microsoft Edge TTS, free), "edge+kokoro" (Edge primary + Kokoro CPU fallback), "" (disabled).
+	// Provider: "edge" (Microsoft Edge TTS, free), "edge+moss" (Edge primary + MOSS-TTS-Nano CPU fallback), "" (disabled).
 	TTSProvider string `mapstructure:"tts_provider"`
 	// Voice name for Edge TTS (e.g. "zh-CN-XiaoxiaoNeural", "zh-CN-YunxiNeural").
 	Voice string `mapstructure:"tts_voice"`
 	// MaxChars limits the LLM summary length before TTS synthesis.
 	MaxChars int `mapstructure:"tts_max_chars"`
-	// KokoroModelPath is the path to the Kokoro ONNX model file (used when provider is "edge+kokoro").
-	KokoroModelPath string `mapstructure:"tts_kokoro_model_path"`
-	// KokoroVoice is the Kokoro voice preset name (default "af_heart").
-	KokoroVoice string `mapstructure:"tts_kokoro_voice"`
-	// KokoroIdleTimeout controls how long the Kokoro model stays resident in memory
-	// after its last use before being automatically unloaded. Default 30m.
-	KokoroIdleTimeout time.Duration `mapstructure:"tts_kokoro_idle_timeout"`
+	// MossModelDir is the directory containing MOSS-TTS-Nano ONNX model assets (used when provider is "edge+moss").
+	MossModelDir string `mapstructure:"tts_moss_model_dir"`
+	// MossVoice is the MOSS built-in voice preset name (default "Xiaoyu").
+	MossVoice string `mapstructure:"tts_moss_voice"`
+	// MossPort is the localhost port for the MOSS sidecar HTTP server (default 18083).
+	MossPort int `mapstructure:"tts_moss_port"`
+	// MossIdleTimeout controls how long the MOSS sidecar stays resident after its
+	// last use before being automatically shut down. Default 30m.
+	MossIdleTimeout time.Duration `mapstructure:"tts_moss_idle_timeout"`
+	// MossCpuThreads controls ONNX Runtime intra-op threads for the MOSS sidecar (default 2).
+	MossCpuThreads int `mapstructure:"tts_moss_cpu_threads"`
 }
 
 // SlackConfig holds Slack Socket Mode adapter settings.
@@ -639,10 +643,20 @@ func Load(filePath string, opts LoadOptions) (*Config, error) {
 	_ = v.BindEnv("messaging.feishu.tts_provider")
 	_ = v.BindEnv("messaging.feishu.tts_voice")
 	_ = v.BindEnv("messaging.feishu.tts_max_chars")
+	_ = v.BindEnv("messaging.feishu.tts_moss_model_dir")
+	_ = v.BindEnv("messaging.feishu.tts_moss_voice")
+	_ = v.BindEnv("messaging.feishu.tts_moss_port")
+	_ = v.BindEnv("messaging.feishu.tts_moss_idle_timeout")
+	_ = v.BindEnv("messaging.feishu.tts_moss_cpu_threads")
 	_ = v.BindEnv("messaging.slack.tts_enabled")
 	_ = v.BindEnv("messaging.slack.tts_provider")
 	_ = v.BindEnv("messaging.slack.tts_voice")
 	_ = v.BindEnv("messaging.slack.tts_max_chars")
+	_ = v.BindEnv("messaging.slack.tts_moss_model_dir")
+	_ = v.BindEnv("messaging.slack.tts_moss_voice")
+	_ = v.BindEnv("messaging.slack.tts_moss_port")
+	_ = v.BindEnv("messaging.slack.tts_moss_idle_timeout")
+	_ = v.BindEnv("messaging.slack.tts_moss_cpu_threads")
 
 	if err := v.Unmarshal(cfg); err != nil {
 		return nil, fmt.Errorf("config: environment override: %w", err)
@@ -770,8 +784,8 @@ func (c *Config) normalizePaths() {
 		&c.Worker.OpenCodeServer.Command,
 		&c.Messaging.Slack.LocalCmd,
 		&c.Messaging.Feishu.LocalCmd,
-		&c.Messaging.Feishu.KokoroModelPath,
-		&c.Messaging.Slack.KokoroModelPath,
+		&c.Messaging.Feishu.MossModelDir,
+		&c.Messaging.Slack.MossModelDir,
 	} {
 		if *ef != "" {
 			*ef = ExpandEnv(*ef)
