@@ -118,10 +118,10 @@ public class InteractiveExample {
     }
 
     private static void sendAndWait(HotPlexClient client, String input) {
-        CountDownLatch doneLatch = new CountDownLatch(1);
+        try {
+            // Send as input and wait for response using the async helper
+            DoneData data = client.sendInputAsync(input).get(5, TimeUnit.MINUTES);
 
-        // Register done handler
-        client.on("done", (DoneData data) -> {
             System.out.println("\n\n✅ Task completed!");
             if (data != null && data.getStats() != null) {
                 Object duration = data.getStats().get("duration_ms");
@@ -138,28 +138,11 @@ public class InteractiveExample {
                     System.out.printf("   Cost: $%.4f%n", ((Number) cost).doubleValue());
                 }
             }
-            doneLatch.countDown();
-        });
-
-        // Register error handler
-        client.on("error", (ErrorData data) -> {
-            System.err.println("\n\n❌ Error: " + data.getCode() + " - " + data.getMessage());
-            doneLatch.countDown();
-        });
-
-        try {
-            // Send input
-            client.sendInput(input);
-
-            // Wait for completion (up to 5 minutes)
-            if (!doneLatch.await(5, TimeUnit.MINUTES)) {
-                System.out.println("\n\n⏱️  Timeout waiting for response");
-            }
         } catch (InterruptedException e) {
             System.err.println("\nInterrupted");
             Thread.currentThread().interrupt();
         } catch (Exception e) {
-            System.err.println("\nFailed to send input: " + e.getMessage());
+            System.err.println("\n\n❌ Error: " + e.getMessage());
         }
     }
 

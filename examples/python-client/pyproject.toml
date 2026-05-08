@@ -5,6 +5,7 @@ description = "Python client example for HotPlex Gateway (AEP v1)"
 requires-python = ">=3.10"
 dependencies = [
     "websockets>=12.0",
+    "rich>=13.0",
 ]
 
 [project.optional-dependencies]
