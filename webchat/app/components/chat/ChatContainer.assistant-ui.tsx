@@ -37,14 +37,17 @@ function ChatInterface({
   type AdapterExtras = {
     hasMore?: boolean;
     onLoadHistory?: () => Promise<{ hasMore: boolean }>;
+    onInteractionRespond?: (toolCallId: string, allowed: boolean) => void;
   };
   const extras = adapter.extras as AdapterExtras | undefined;
   const hasMore = extras?.hasMore ?? false;
   const onLoadHistory = extras?.onLoadHistory;
+  const onInteractionRespond = extras?.onInteractionRespond;
+  const suggestions = adapter.suggestions as readonly { title: string; label: string; prompt: string }[] | undefined;
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
-      <Thread skills={skills} hasMore={hasMore} onLoadHistory={onLoadHistory} />
+      <Thread skills={skills} hasMore={hasMore} onLoadHistory={onLoadHistory} onInteractionRespond={onInteractionRespond} suggestions={suggestions} />
     </AssistantRuntimeProvider>
   );
 }

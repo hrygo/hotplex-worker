@@ -105,6 +105,7 @@ __pycache__
 # --- Agent & Session State ---
 .agent/scheduled_tasks.lock
 .agent/source-study-progress.json
+.agent/arch-analysis/progress.json
 
 # --- Miscellaneous ---
 /.worktrees/
