@@ -20,9 +20,9 @@ const (
 	flushSize         = 20 // rune count threshold for immediate flush
 	maxAppendRetries  = 3
 	retryDelay        = 50 * time.Millisecond
-	maxAppendSize     = 3000             // Slack limit ~4000, safety margin
-	StreamTTL         = 10 * time.Minute // server-side streaming limit (undocumented, aligned with Feishu)
-	StreamRotationTTL = 6 * time.Minute  // proactive rotation before server limit (aligned with Feishu)
+	maxAppendSize     = 3000              // Slack limit ~4000, safety margin
+	StreamTTL         = 10 * time.Minute  // server-side streaming limit (undocumented, aligned with Feishu)
+	StreamRotationTTL = 500 * time.Second // proactive rotation before server limit (aligned with Feishu)
 )
 
 func isStreamStateError(err error) bool {
@@ -378,24 +378,13 @@ func (w *NativeStreamingWriter) Close() error {
 	cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Build table blocks before stopping stream so we can pass them atomically.
-	// Passing blocks during stop avoids the block_mismatch error from chat.update
-	// (rich_text blocks created by markdown_text cannot be replaced via chat.update).
-	var stopOpts []slack.MsgOption
-	if integrityOK && !streamExpired {
-		stopOpts = w.buildTableStopOpts()
-	}
-
-	var stopErr error
-	if len(stopOpts) > 0 {
-		_, _, stopErr = w.client.StopStreamContext(cleanupCtx, w.channelID, w.messageTS, stopOpts...)
-		if stopErr != nil {
-			w.log.Debug("slack: stop stream with table blocks failed, retrying plain", "err", stopErr)
-			_, _, stopErr = w.client.StopStreamContext(cleanupCtx, w.channelID, w.messageTS)
-		}
-	} else {
-		_, _, stopErr = w.client.StopStreamContext(cleanupCtx, w.channelID, w.messageTS)
-	}
+	// Plain stop — the old code passed MsgOptionBlocks + MsgOptionText(content)
+	// to StopStreamContext, which caused content duplication: MsgOptionText appended
+	// the full text on top of existing markdown_text, same rendering pipeline,
+	// identical appearance x2. MsgOptionBlocks may also conflict with markdown_text
+	// (markdown_text_conflict) or fail via chat.update (block_mismatch on rich_text
+	// blocks created by streaming). Plain stop avoids all of these issues.
+	_, _, stopErr := w.client.StopStreamContext(cleanupCtx, w.channelID, w.messageTS)
 	if stopErr != nil {
 		w.log.Warn("slack: stop stream failed", "channel", w.channelID, "err", stopErr)
 	}
@@ -440,40 +429,6 @@ func (w *NativeStreamingWriter) Content() string {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return w.fullContent.String()
-}
-
-// buildTableStopOpts constructs MsgOption slice with table Block Kit for chat.stopStream.
-// Returns nil if no tables found or blocks cannot be built.
-// Blocks are passed atomically during stream stop to avoid block_mismatch
-// (rich_text blocks from markdown_text cannot be replaced via chat.update).
-func (w *NativeStreamingWriter) buildTableStopOpts() []slack.MsgOption {
-	w.mu.Lock()
-	content := w.fullContent.String()
-	w.mu.Unlock()
-
-	if content == "" {
-		return nil
-	}
-
-	segments, tables := ExtractTables(content)
-	if len(tables) == 0 {
-		return nil
-	}
-
-	blocks := BuildTableBlocks(content, segments, tables)
-	if len(blocks) == 0 {
-		return nil
-	}
-
-	if len(blocks) > 50 {
-		w.log.Debug("slack: too many blocks for table upgrade, skipping")
-		return nil
-	}
-
-	return []slack.MsgOption{
-		slack.MsgOptionBlocks(blocks...),
-		slack.MsgOptionText(content, false),
-	}
 }
 
 // Compile-time check

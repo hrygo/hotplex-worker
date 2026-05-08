@@ -42,7 +42,7 @@ func TestTTSEnvironmentChecker_ConfigLoadFails(t *testing.T) {
 
 func TestTTSEnvironmentChecker_TTSDisabled(t *testing.T) {
 	dir := t.TempDir()
-	path := writeTTSConfig(t, dir, false, false)
+	path := writeTTSConfig(t, dir, ttsConfigOpts{})
 	defer resetConfigPath()
 	SetConfigPath(path)
 
@@ -52,10 +52,9 @@ func TestTTSEnvironmentChecker_TTSDisabled(t *testing.T) {
 	require.Contains(t, d.Message, "not configured")
 }
 
-func TestTTSEnvironmentChecker_FeishuTTSEnabled(t *testing.T) {
+func TestTTSEnvironmentChecker_FeishuEdgeTTSEnabled(t *testing.T) {
 	dir := t.TempDir()
-	// Feishu enabled + TTS enabled → needs ffmpeg.
-	path := writeTTSConfig(t, dir, false, true)
+	path := writeTTSConfig(t, dir, ttsConfigOpts{feishuEnabled: true, feishuTTS: true, feishuProvider: "edge"})
 	defer resetConfigPath()
 	SetConfigPath(path)
 
@@ -68,10 +67,9 @@ func TestTTSEnvironmentChecker_FeishuTTSEnabled(t *testing.T) {
 	}
 }
 
-func TestTTSEnvironmentChecker_SlackTTSEnabled(t *testing.T) {
+func TestTTSEnvironmentChecker_SlackEdgeTTSEnabled(t *testing.T) {
 	dir := t.TempDir()
-	// Slack TTS also uses Edge TTS → MP3 → ffmpeg Opus.
-	path := writeTTSConfig(t, dir, true, false)
+	path := writeTTSConfig(t, dir, ttsConfigOpts{slackEnabled: true, slackTTS: true, slackProvider: "edge"})
 	defer resetConfigPath()
 	SetConfigPath(path)
 
@@ -83,47 +81,158 @@ func TestTTSEnvironmentChecker_SlackTTSEnabled(t *testing.T) {
 		require.NotEmpty(t, d.FixHint)
 	}
 }
+
+// --- MOSS Provider Tests ---
+
+func TestTTSEnvironmentChecker_MossProvider(t *testing.T) {
+	dir := t.TempDir()
+	path := writeTTSConfig(t, dir, ttsConfigOpts{feishuEnabled: true, feishuTTS: true, feishuProvider: "edge+moss"})
+	defer resetConfigPath()
+	SetConfigPath(path)
+
+	c := ttsEnvironmentChecker{}
+	d := c.Check(context.Background())
+	require.Contains(t, []cli.Status{cli.StatusPass, cli.StatusFail}, d.Status)
+}
+
+func TestTTSEnvironmentChecker_MossOnlyProvider(t *testing.T) {
+	dir := t.TempDir()
+	path := writeTTSConfig(t, dir, ttsConfigOpts{feishuEnabled: true, feishuTTS: true, feishuProvider: "moss"})
+	defer resetConfigPath()
+	SetConfigPath(path)
+
+	c := ttsEnvironmentChecker{}
+	d := c.Check(context.Background())
+	require.Contains(t, []cli.Status{cli.StatusPass, cli.StatusFail}, d.Status)
+}
+
+func TestTTSEnvironmentChecker_MossModelDirWithEntryScript(t *testing.T) {
+	// Create a model dir with app_onnx.py present.
+	modelDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(modelDir, "app_onnx.py"), []byte("# mock"), 0o644))
+
+	dir := t.TempDir()
+	path := writeTTSConfig(t, dir, ttsConfigOpts{
+		feishuEnabled: true, feishuTTS: true, feishuProvider: "edge+moss",
+		mossModelDir: modelDir,
+	})
+	defer resetConfigPath()
+	SetConfigPath(path)
+
+	c := ttsEnvironmentChecker{}
+	d := c.Check(context.Background())
+	// Should not fail on moss entry script (dir + app_onnx.py exist).
+	require.NotContains(t, d.Message, "moss entry script")
+}
+
+func TestTTSEnvironmentChecker_MossModelDirMissingEntryScript(t *testing.T) {
+	// Create a model dir without app_onnx.py.
+	modelDir := t.TempDir()
+
+	dir := t.TempDir()
+	path := writeTTSConfig(t, dir, ttsConfigOpts{
+		feishuEnabled: true, feishuTTS: true, feishuProvider: "edge+moss",
+		mossModelDir: modelDir,
+	})
+	defer resetConfigPath()
+	SetConfigPath(path)
+
+	c := ttsEnvironmentChecker{}
+	d := c.Check(context.Background())
+	require.Equal(t, cli.StatusFail, d.Status)
+	require.Contains(t, d.Message, "moss entry script")
+	require.Contains(t, d.FixHint, "MOSS-TTS-Nano Python scripts")
+}
+
+// --- ttsRequirements Unit Tests ---
 
 func TestTTSRequirements(t *testing.T) {
 	tests := []struct {
-		name        string
-		slackTTS    bool
-		feishuTTS   bool
-		needsFFmpeg bool
+		name             string
+		opts             ttsConfigOpts
+		wantFFmpeg       bool
+		wantPython3      bool
+		wantMossModelDir bool
 	}{
-		{"both_disabled", false, false, false},
-		{"slack_only", true, false, true},
-		{"feishu_only", false, true, true},
-		{"both_enabled", true, true, true},
+		{"both_disabled", ttsConfigOpts{}, false, false, false},
+		{"slack_edge", ttsConfigOpts{slackEnabled: true, slackTTS: true, slackProvider: "edge"}, true, false, false},
+		{"feishu_edge", ttsConfigOpts{feishuEnabled: true, feishuTTS: true, feishuProvider: "edge"}, true, false, false},
+		{"feishu_edge_moss", ttsConfigOpts{feishuEnabled: true, feishuTTS: true, feishuProvider: "edge+moss"}, true, true, true},
+		{"feishu_moss_only", ttsConfigOpts{feishuEnabled: true, feishuTTS: true, feishuProvider: "moss"}, true, true, true},
+		{"both_edge", ttsConfigOpts{slackEnabled: true, slackTTS: true, slackProvider: "edge", feishuEnabled: true, feishuTTS: true, feishuProvider: "edge"}, true, false, false},
+		{"both_moss", ttsConfigOpts{slackEnabled: true, slackTTS: true, slackProvider: "edge+moss", feishuEnabled: true, feishuTTS: true, feishuProvider: "edge+moss"}, true, true, true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := t.TempDir()
-			path := writeTTSConfig(t, dir, tt.slackTTS, tt.feishuTTS)
+			path := writeTTSConfig(t, dir, tt.opts)
 			defer resetConfigPath()
 			SetConfigPath(path)
 
 			got := ttsRequirements()
-			require.Equal(t, tt.needsFFmpeg, got)
+			require.Equal(t, tt.wantFFmpeg, got.FFmpeg, "FFmpeg mismatch")
+			require.Equal(t, tt.wantPython3, got.Python3, "Python3 mismatch")
+			require.Equal(t, tt.wantMossModelDir, got.MossModelDir != "", "MossModelDir mismatch")
 		})
 	}
 }
 
-// writeTTSConfig creates a minimal config YAML with TTS settings.
-// Slack TTS is enabled when slackTTS=true, Feishu when feishuTTS=true.
-func writeTTSConfig(t *testing.T, dir string, slackTTS, feishuTTS bool) string {
+func TestMossProvider(t *testing.T) {
+	t.Parallel()
+	require.True(t, mossProvider("moss"))
+	require.True(t, mossProvider("edge+moss"))
+	require.False(t, mossProvider("edge"))
+	require.False(t, mossProvider(""))
+}
+
+// --- ttsInstallHint Tests ---
+
+func TestTTSInstallHint(t *testing.T) {
+	t.Parallel()
+	require.Contains(t, ttsInstallHint("moss model dir (/some/path)"), "mkdir -p")
+	require.Contains(t, ttsInstallHint("moss entry script (/some/path/app_onnx.py)"), "MOSS-TTS-Nano Python scripts")
+	require.Contains(t, ttsInstallHint("moss python packages (ModuleNotFoundError)"), "pip3 install")
+	require.Contains(t, ttsInstallHint("ffmpeg"), "install ffmpeg")
+	require.Contains(t, ttsInstallHint("python3"), "install python3")
+}
+
+// --- Helpers ---
+
+type ttsConfigOpts struct {
+	slackEnabled   bool
+	slackTTS       bool
+	slackProvider  string
+	feishuEnabled  bool
+	feishuTTS      bool
+	feishuProvider string
+	mossModelDir   string
+}
+
+func writeTTSConfig(t *testing.T, dir string, opts ttsConfigOpts) string {
 	t.Helper()
+
 	yaml := "gateway:\n  addr: \":8888\"\nmessaging:\n"
-	yaml += "  slack:\n    enabled: " + strconv.FormatBool(slackTTS || feishuTTS)
-	yaml += "\n    tts_enabled: " + strconv.FormatBool(slackTTS)
-	if slackTTS {
-		yaml += "\n    tts_provider: edge"
+
+	// Slack section
+	yaml += "  slack:\n    enabled: " + strconv.FormatBool(opts.slackEnabled)
+	yaml += "\n    tts_enabled: " + strconv.FormatBool(opts.slackTTS)
+	if opts.slackTTS && opts.slackProvider != "" {
+		yaml += "\n    tts_provider: " + opts.slackProvider
 	}
-	yaml += "\n  feishu:\n    enabled: true"
-	yaml += "\n    tts_enabled: " + strconv.FormatBool(feishuTTS)
-	if feishuTTS {
-		yaml += "\n    tts_provider: edge"
+	if opts.mossModelDir != "" {
+		yaml += "\n    tts_moss_model_dir: " + opts.mossModelDir
+	}
+	yaml += "\n"
+
+	// Feishu section
+	yaml += "  feishu:\n    enabled: " + strconv.FormatBool(opts.feishuEnabled)
+	yaml += "\n    tts_enabled: " + strconv.FormatBool(opts.feishuTTS)
+	if opts.feishuTTS && opts.feishuProvider != "" {
+		yaml += "\n    tts_provider: " + opts.feishuProvider
+	}
+	if opts.mossModelDir != "" {
+		yaml += "\n    tts_moss_model_dir: " + opts.mossModelDir
 	}
 	yaml += "\n"
 

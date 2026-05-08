@@ -14,8 +14,8 @@ import (
 )
 
 // TTSPipeline processes AI responses into voice messages for Slack:
-// full text → LLM summary → Edge TTS → MP3 → Slack file upload.
-// Slack natively supports MP3 inline playback, so no Opus conversion needed.
+// full text → LLM summary → synthesizer → FFmpeg MP3 → Slack file upload.
+// Slack natively supports MP3 inline playback.
 type TTSPipeline struct {
 	synthesizer tts.Synthesizer
 	client      *slack.Client
@@ -54,10 +54,16 @@ func (p *TTSPipeline) Process(ctx context.Context, fullText, channelID, threadTS
 		return
 	}
 
-	// Edge TTS outputs MP3 directly — Slack supports MP3 inline playback.
-	mp3Data, err := p.synthesizer.Synthesize(ctx, summary)
+	// Synthesizer may output MP3 (Edge) or WAV (MOSS) — normalize to MP3 for Slack.
+	rawAudio, err := p.synthesizer.Synthesize(ctx, summary)
 	if err != nil {
 		p.log.Warn("tts: synthesis failed", "err", err)
+		return
+	}
+
+	mp3Data, err := tts.ToMP3(ctx, rawAudio)
+	if err != nil {
+		p.log.Warn("tts: audio→mp3 conversion failed", "err", err)
 		return
 	}
 

@@ -105,9 +105,9 @@ type StreamingCardController struct {
 const streamingElementID = "streaming_content"
 
 // StreamTTL is the maximum duration a streaming card can remain active.
-// Feishu server auto-closes streaming after 10 minutes; we rotate at 6 minutes
+// Feishu server auto-closes streaming after 10 minutes; we rotate at ~8 minutes
 // to proactively create a new card and avoid hitting the server limit.
-const StreamTTL = 6 * time.Minute
+const StreamTTL = 500 * time.Second
 
 const (
 	flushInterval = 150 * time.Millisecond // CardKit allows 100ms; 150ms gives margin

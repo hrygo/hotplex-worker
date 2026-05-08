@@ -7,10 +7,10 @@ import (
 	"os/exec"
 )
 
-// MP3ToOpus converts MP3 audio bytes to Ogg/Opus format (24kHz mono)
+// ToOpus converts audio bytes (MP3 or WAV) to Ogg/Opus format (24kHz mono)
 // suitable for Feishu audio messages. Requires ffmpeg at runtime.
-// Matches Edge TTS native output quality (24kHz).
-func MP3ToOpus(ctx context.Context, mp3Data []byte) ([]byte, error) {
+// ffmpeg auto-detects input format from stream header.
+func ToOpus(ctx context.Context, audioData []byte) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, "ffmpeg",
 		"-i", "pipe:0",
 		"-ar", "24000",
@@ -21,7 +21,7 @@ func MP3ToOpus(ctx context.Context, mp3Data []byte) ([]byte, error) {
 		"-loglevel", "error",
 		"pipe:1",
 	)
-	cmd.Stdin = bytes.NewReader(mp3Data)
+	cmd.Stdin = bytes.NewReader(audioData)
 
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -32,10 +32,43 @@ func MP3ToOpus(ctx context.Context, mp3Data []byte) ([]byte, error) {
 		if hint == "" {
 			hint = err.Error()
 		}
-		return nil, fmt.Errorf("ffmpeg mp3→opus: %s", hint)
+		return nil, fmt.Errorf("ffmpeg audio→opus: %s", hint)
 	}
 	if len(out) == 0 {
-		return nil, fmt.Errorf("ffmpeg mp3→opus: empty output")
+		return nil, fmt.Errorf("ffmpeg audio→opus: empty output")
+	}
+	return out, nil
+}
+
+// ToMP3 converts audio bytes (WAV or any format) to MP3 format (24kHz mono)
+// suitable for Slack audio messages. Requires ffmpeg at runtime.
+func ToMP3(ctx context.Context, audioData []byte) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, "ffmpeg",
+		"-i", "pipe:0",
+		"-ar", "24000",
+		"-ac", "1",
+		"-acodec", "libmp3lame",
+		"-b:a", "48k",
+		"-f", "mp3",
+		"-hide_banner",
+		"-loglevel", "error",
+		"pipe:1",
+	)
+	cmd.Stdin = bytes.NewReader(audioData)
+
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	out, err := cmd.Output()
+	if err != nil {
+		hint := stderr.String()
+		if hint == "" {
+			hint = err.Error()
+		}
+		return nil, fmt.Errorf("ffmpeg audio→mp3: %s", hint)
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("ffmpeg audio→mp3: empty output")
 	}
 	return out, nil
 }

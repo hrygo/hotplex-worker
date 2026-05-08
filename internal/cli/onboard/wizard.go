@@ -109,7 +109,7 @@ func isPlatformEnabled(yamlContent, platform string) bool {
 }
 
 func hasEnvValue(content, key string) bool {
-	for _, line := range strings.Split(content, "\n") {
+	for line := range strings.SplitSeq(content, "\n") {
 		line = strings.TrimSpace(line)
 		prefix := key + "="
 		if strings.HasPrefix(line, prefix) && len(line) > len(prefix) {
@@ -240,7 +240,7 @@ func Run(ctx context.Context, opts WizardOptions) (*WizardResult, error) {
 	}
 
 	// Step 7: Run selected configurable steps with progress
-	totalSteps := len(steps) + 3 // +3 mandatory: config_gen, write_config, agent_config+verify
+	totalSteps := len(steps) + 5 // +5 mandatory: config_gen, write_config, agent_config, stt_check, tts_check, verify
 	current := 1
 	for _, step := range steps {
 		if !step.selected {
@@ -279,14 +279,16 @@ func Run(ctx context.Context, opts WizardOptions) (*WizardResult, error) {
 
 	result.add(stepSTTCheck(opts.ConfigPath, wctx.reader))
 
+	displayStepProgress(current, totalSteps, "TTS Dependencies")
+	result.add(stepTTSCheck(opts.ConfigPath, wctx.reader))
+	current++
+
 	displayStepProgress(current, totalSteps, "Verify")
 	result.add(stepVerify(opts.ConfigPath))
 
 	result.Action = "reconfigure"
 	return result, nil
 }
-
-func toPtr[T any](v T) *T { return &v }
 
 func (r *WizardResult) add(s StepResult) { r.Steps = append(r.Steps, s) }
 
@@ -494,12 +496,12 @@ func (wctx *wizardContext) buildTemplateOpts() ConfigTemplateOptions {
 		SlackEnabled:         wctx.slackCfg.enabled,
 		SlackDMPolicy:        wctx.slackCfg.dmPolicy,
 		SlackGroupPolicy:     wctx.slackCfg.groupPolicy,
-		SlackRequireMention:  toPtr(wctx.slackCfg.requireMention),
+		SlackRequireMention:  &wctx.slackCfg.requireMention,
 		SlackAllowFrom:       wctx.slackCfg.allowFrom,
 		FeishuEnabled:        wctx.feishuCfg.enabled,
 		FeishuDMPolicy:       wctx.feishuCfg.dmPolicy,
 		FeishuGroupPolicy:    wctx.feishuCfg.groupPolicy,
-		FeishuRequireMention: toPtr(wctx.feishuCfg.requireMention),
+		FeishuRequireMention: &wctx.feishuCfg.requireMention,
 		FeishuAllowFrom:      wctx.feishuCfg.allowFrom,
 	}
 	if wctx.slackCfg.kept || wctx.feishuCfg.kept {
@@ -546,7 +548,7 @@ func readExistingEnvValue(envPath, key string) string {
 	if err != nil {
 		return ""
 	}
-	for _, line := range strings.Split(string(data), "\n") {
+	for line := range strings.SplitSeq(string(data), "\n") {
 		line = strings.TrimSpace(line)
 		prefix := key + "="
 		if strings.HasPrefix(line, prefix) && len(line) > len(prefix) {
@@ -568,7 +570,7 @@ func readExistingConfigValue(configPath, field string) string {
 	parentKey := parts[0] + ":"
 	childKey := parts[1] + ":"
 	inParent := false
-	for _, line := range strings.Split(string(data), "\n") {
+	for line := range strings.SplitSeq(string(data), "\n") {
 		trimmed := strings.TrimSpace(line)
 		if !inParent {
 			if trimmed == parentKey {
@@ -829,7 +831,7 @@ func readExistingEnvCredentials(envPath string, keys []string) map[string]string
 	creds := make(map[string]string, len(keys))
 	content := string(data)
 	for _, key := range keys {
-		for _, line := range strings.Split(content, "\n") {
+		for line := range strings.SplitSeq(content, "\n") {
 			line = strings.TrimSpace(line)
 			if strings.HasPrefix(line, key+"=") && len(line) > len(key)+1 {
 				creds[key] = line[len(key)+1:]
@@ -900,6 +902,73 @@ func installSTTDeps() error {
 	return nil
 }
 
+func stepTTSCheck(configPath string, reader *bufio.Reader) StepResult {
+	checkers.SetConfigPath(configPath)
+	ttsCheckers := cli.DefaultRegistry.ByCategory("tts")
+
+	var warns []string
+	for _, c := range ttsCheckers {
+		d := c.Check(context.Background())
+		if d.Status == cli.StatusFail {
+			warns = append(warns, d.Message)
+			if d.FixHint != "" {
+				warns = append(warns, "  → "+d.FixHint)
+			}
+		}
+	}
+
+	if len(warns) == 0 {
+		return StepResult{Name: "tts_check", Status: "pass", Detail: "TTS environment ready"}
+	}
+
+	if reader != nil {
+		fmt.Fprint(os.Stderr, output.SectionHeader("TTS Dependencies"))
+		for _, w := range warns {
+			fmt.Fprintf(os.Stderr, "  %s %s\n", output.StatusSymbol("warn"), w)
+		}
+
+		// Offer auto-install for MOSS Python packages if missing.
+		if hasMissingPythonPkgs(warns) {
+			if promptYesNo(reader, "Install MOSS TTS Python dependencies (numpy, onnxruntime, etc.)?") {
+				if err := installTTSDeps(); err != nil {
+					warns = append(warns, "install failed: "+err.Error())
+				} else {
+					return stepTTSCheck(configPath, reader)
+				}
+			}
+		}
+
+		fmt.Fprintln(os.Stderr, "  Note: torch/torchaudio (~2GB) and MOSS model files require manual installation.")
+		fmt.Fprintln(os.Stderr, "  Edge TTS works without any local model (default).")
+	}
+
+	return StepResult{
+		Name:   "tts_check",
+		Status: "warn",
+		Detail: "TTS deps incomplete:\n  " + strings.Join(warns, "\n  "),
+	}
+}
+
+func installTTSDeps() error {
+	cmd := exec.Command("python3", "-m", "pip", "install", "--quiet",
+		"numpy", "sentencepiece", "onnxruntime", "fastapi", "uvicorn",
+		"python-multipart", "soundfile", "huggingface_hub")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("%s: %w", strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
+// hasMissingPythonPkgs checks if any TTS warning indicates missing MOSS Python packages.
+func hasMissingPythonPkgs(warns []string) bool {
+	for _, w := range warns {
+		if strings.Contains(w, "moss python packages") {
+			return true
+		}
+	}
+	return false
+}
+
 // ─── Step 7: Verify ─────────────────────────────────────────────────────────
 
 func stepVerify(configPath string) StepResult {
@@ -957,7 +1026,7 @@ func loadEnvFile(dir string) {
 	}
 
 	var loaded int
-	for _, line := range strings.Split(string(data), "\n") {
+	for line := range strings.SplitSeq(string(data), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue

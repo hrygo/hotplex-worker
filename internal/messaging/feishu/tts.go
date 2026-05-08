@@ -16,7 +16,7 @@ import (
 )
 
 // TTSPipeline processes AI responses into voice messages:
-// full text → LLM summary → Edge TTS → MP3 → FFmpeg Opus → Feishu audio message.
+// full text → LLM summary → synthesizer → FFmpeg Opus → Feishu audio message.
 type TTSPipeline struct {
 	synthesizer tts.Synthesizer
 	client      *lark.Client
@@ -58,17 +58,17 @@ func (p *TTSPipeline) Process(ctx context.Context, fullText, chatID, replyToMsgI
 		return
 	}
 
-	// 2. Edge TTS → MP3
-	mp3Data, err := p.synthesizer.Synthesize(ctx, summary)
+	// 2. Synthesize (Edge→MP3 or MOSS→WAV)
+	rawAudio, err := p.synthesizer.Synthesize(ctx, summary)
 	if err != nil {
 		p.log.Warn("tts: synthesis failed", "err", err)
 		return
 	}
 
-	// 3. FFmpeg MP3 → Opus
-	opusData, err := tts.MP3ToOpus(ctx, mp3Data)
+	// 3. FFmpeg → Opus
+	opusData, err := tts.ToOpus(ctx, rawAudio)
 	if err != nil {
-		p.log.Warn("tts: mp3→opus conversion failed", "err", err)
+		p.log.Warn("tts: audio→opus conversion failed", "err", err)
 		return
 	}
 
