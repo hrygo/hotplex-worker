@@ -33,6 +33,7 @@ export const ToolName = {
   AskPermission: "ask_permission",
   Confirm: "confirm",
   Elicitation: "elicitation",
+  QuestionRequest: "question_request",
   // AI Tools
   SearchWeb: "search_web",
   GenerateImage: "generate_image",
@@ -70,7 +71,7 @@ const AI_TOOLS: ReadonlySet<string> = new Set([
 ]);
 
 const PERMISSION_TOOLS: ReadonlySet<string> = new Set([
-  ToolName.AskPermission, ToolName.Confirm, ToolName.Elicitation,
+  ToolName.AskPermission, ToolName.Confirm, ToolName.Elicitation, ToolName.QuestionRequest,
 ]);
 
 export function getToolCategory(name: string): ToolCategory {

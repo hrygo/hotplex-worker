@@ -135,7 +135,7 @@ function MessageActions({ message, isUser }: { message: any, isUser?: boolean })
   );
 }
 
-const AssistantMessage = memo(function AssistantMessage({ message }: { message: any }) {
+const AssistantMessage = memo(function AssistantMessage({ message, onInteractionRespond }: { message: any; onInteractionRespond?: (toolCallId: string, allowed: boolean) => void }) {
   const [expandedTools, setExpandedTools] = useState<Record<string, boolean>>({});
 
   return (
@@ -197,7 +197,7 @@ const AssistantMessage = memo(function AssistantMessage({ message }: { message: 
                         case "list": return <ListTool toolName={p.toolName} path={extractFilePath(args)} items={p.result} status={status} onToggle={!isLastPart ? toggle : undefined} />;
                         case "todo": return <TodoTool todo={args.todo} todos={args.todos} status={status === "running" ? "running" : "complete"} onToggle={!isLastPart ? toggle : undefined} />;
                         case "ai": return <AgentTool description={args.description} prompt={args.prompt} subagent_type={args.subagent_type} run_in_background={args.run_in_background} status={status === "running" ? "running" : "complete"} onToggle={!isLastPart ? toggle : undefined} />;
-                        case "permission": return <PermissionCard toolName={p.toolName} args={args} status={status === "error" ? "complete" : status as "running" | "complete"} onToggle={!isLastPart ? toggle : undefined} />;
+                        case "permission": return <PermissionCard toolName={p.toolName} args={args} status={status === "error" ? "complete" : status as "running" | "complete"} onRespond={p.toolCallId && onInteractionRespond ? (allowed: boolean) => onInteractionRespond(p.toolCallId, allowed) : undefined} onToggle={!isLastPart ? toggle : undefined} />;
                         default: {
                           const content = p.result || args;
                           const summary = typeof content === 'string' ? content : JSON.stringify(content, null, 2);
@@ -254,6 +254,7 @@ const AssistantMessage = memo(function AssistantMessage({ message }: { message: 
 }, (prev, next) => {
   if (prev.message.id !== next.message.id) return false;
   if ((next.message as any)?.status?.type === 'running') return false;
+  if (prev.onInteractionRespond !== next.onInteractionRespond) return false;
   return prev.message.content === next.message.content;
 });
 
@@ -332,7 +333,13 @@ const UserMessage = memo(function UserMessage({ message }: { message: any }) {
   );
 }, (prev, next) => prev.message.id === next.message.id);
 
-function WelcomeScreen() {
+interface Suggestion {
+  title: string;
+  label: string;
+  prompt: string;
+}
+
+function WelcomeScreen({ suggestions, onSuggestionClick }: { suggestions?: readonly Suggestion[]; onSuggestionClick?: (prompt: string) => void }) {
   return (
     <div className="flex flex-col items-center justify-center py-24 text-center">
       <div className="relative mb-10 flex items-center justify-center">
@@ -353,6 +360,20 @@ function WelcomeScreen() {
       <p className="text-xl text-[var(--text-muted)] font-medium max-w-lg mx-auto leading-relaxed">
         Next-generation autonomous workspace.
       </p>
+      {suggestions && suggestions.length > 0 && (
+        <div className="flex flex-wrap justify-center gap-3 mt-8 max-w-2xl">
+          {suggestions.map((s) => (
+            <button
+              key={s.title}
+              onClick={() => onSuggestionClick?.(s.prompt)}
+              className="group px-4 py-2.5 rounded-[var(--radius-md)] bg-[var(--bg-elevated)] border border-[var(--border-subtle)] hover:border-[var(--accent-gold)]/30 hover:bg-[var(--bg-hover)] transition-all active:scale-[0.97] text-left"
+            >
+              <span className="text-[9px] font-display font-bold text-[var(--accent-gold)] uppercase tracking-wider">{s.label}</span>
+              <p className="text-[12px] text-[var(--text-secondary)] mt-0.5 leading-snug">{s.title}</p>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -361,9 +382,11 @@ interface ThreadProps {
   skills?: string[];
   hasMore?: boolean;
   onLoadHistory?: () => Promise<{ hasMore: boolean }>;
+  onInteractionRespond?: (toolCallId: string, allowed: boolean) => void;
+  suggestions?: readonly { title: string; label: string; prompt: string }[];
 }
 
-export function Thread({ skills, hasMore, onLoadHistory }: ThreadProps) {
+export function Thread({ skills, hasMore, onLoadHistory, onInteractionRespond, suggestions }: ThreadProps) {
   const [localText, setLocalText] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(false);
@@ -407,11 +430,16 @@ export function Thread({ skills, hasMore, onLoadHistory }: ThreadProps) {
     }
   }, [onLoadHistory, loadingHistory]);
 
+  const handleSuggestionClick = useCallback((prompt: string) => {
+    setLocalText(prompt);
+    aui.composer().setText(prompt);
+  }, [aui]);
+
   return (
     <ThreadPrimitive.Root className="flex flex-col h-full relative overflow-hidden bg-[var(--bg-base)]">
       <ThreadPrimitive.Viewport className="thread-viewport relative px-4 py-8">
         <div className="max-w-4xl mx-auto w-full">
-          <ThreadPrimitive.Empty><WelcomeScreen /></ThreadPrimitive.Empty>
+          <ThreadPrimitive.Empty><WelcomeScreen suggestions={suggestions} onSuggestionClick={handleSuggestionClick} /></ThreadPrimitive.Empty>
           {historyHasMore && (
             <div className="flex justify-center py-4 mb-4">
               <button
@@ -432,7 +460,7 @@ export function Thread({ skills, hasMore, onLoadHistory }: ThreadProps) {
           )}
           <ThreadPrimitive.Messages>
             {({ message }) =>
-              message.role === "user" ? <UserMessage message={message} /> : <AssistantMessage message={message} />
+              message.role === "user" ? <UserMessage message={message} /> : <AssistantMessage message={message} onInteractionRespond={onInteractionRespond} />
             }
           </ThreadPrimitive.Messages>
           <ThreadPrimitive.ScrollToBottom className="scroll-bottom-btn">
