@@ -461,6 +461,7 @@ func shutdownGateway(
 	}
 
 	closeSTTCache(shutdownCtx, log)
+	closeTTSCache(shutdownCtx, log)
 
 	// Terminate all workers BEFORE bridge.Shutdown() so forwardEvents
 	// goroutines (blocked on worker stdout) can exit.

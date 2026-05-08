@@ -202,7 +202,7 @@ messaging:
     # STT (Speech-to-Text)
     stt_provider: "local"
     stt_local_cmd: "python3 ~/.hotplex/scripts/stt_server.py"
-    stt_local_idle_ttl: 1h
+    stt_local_idle_ttl: 15m
     # TTS (Text-to-Speech) — voice replies for voice-triggered turns
     tts_enabled: true
     # Provider: edge (Edge TTS, free), moss (MOSS-TTS-Nano local CPU),
@@ -226,7 +226,7 @@ messaging:
     # STT (Speech-to-Text)
     stt_provider: "local"
     stt_local_cmd: "python3 ~/.hotplex/scripts/stt_server.py"
-    stt_local_idle_ttl: 1h
+    stt_local_idle_ttl: 15m
     # TTS (Text-to-Speech) — voice replies for voice-triggered turns
     tts_enabled: true
     # Provider: edge (Edge TTS, free), moss (MOSS-TTS-Nano local CPU),

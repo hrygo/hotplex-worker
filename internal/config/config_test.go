@@ -584,18 +584,25 @@ func TestDecodeJWTSecret(t *testing.T) {
 	validSecretB64 := base64.StdEncoding.EncodeToString(validSecret32)
 	validSecretURLB64 := base64.URLEncoding.EncodeToString(validSecret32)
 
+	// 48-byte secret (e.g. openssl rand -base64 48)
+	validSecret48 := make([]byte, 48)
+	for i := range validSecret48 {
+		validSecret48[i] = byte(i)
+	}
+	validSecret48B64 := base64.StdEncoding.EncodeToString(validSecret48)
+
 	tests := []struct {
 		name     string
 		input    string
 		expected []byte
 	}{
 		{
-			name:     "standard base64",
+			name:     "standard base64 32 bytes",
 			input:    validSecretB64,
 			expected: validSecret32,
 		},
 		{
-			name:     "URL-safe base64",
+			name:     "URL-safe base64 32 bytes",
 			input:    validSecretURLB64,
 			expected: validSecret32,
 		},
@@ -603,6 +610,16 @@ func TestDecodeJWTSecret(t *testing.T) {
 			name:     "raw 32-byte string",
 			input:    string(validSecret32),
 			expected: validSecret32,
+		},
+		{
+			name:     "base64 48 bytes accepted",
+			input:    validSecret48B64,
+			expected: validSecret48,
+		},
+		{
+			name:     "raw 48-byte string accepted",
+			input:    string(validSecret48),
+			expected: validSecret48,
 		},
 		{
 			name:     "other string (not 32 bytes)",
