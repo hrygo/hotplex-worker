@@ -56,8 +56,8 @@ type Client struct {
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 
-	sendCh   chan []byte
-	eventsCh chan Event
+	sendCh    chan []byte
+	listeners []chan Event
 
 	logger *slog.Logger
 }
@@ -131,7 +131,6 @@ func New(ctx context.Context, opts ...Option) (*Client, error) {
 	c := &Client{
 		pingInterval: DefaultPingInterval,
 		sendCh:       make(chan []byte, SendChannelCap),
-		eventsCh:     make(chan Event, SendChannelCap),
 		logger:       slog.Default(),
 	}
 	for _, opt := range opts {
@@ -312,8 +311,27 @@ func (c *Client) doConnect(ctx context.Context, sessionID string, isResume bool)
 }
 
 // Events returns a receive-only channel of inbound events.
+// Each call to Events() returns a new channel that receives all subsequent events.
+// To stop receiving events and free resources, call Unsubscribe(ch).
 func (c *Client) Events() <-chan Event {
-	return c.eventsCh
+	ch := make(chan Event, SendChannelCap)
+	c.mu.Lock()
+	c.listeners = append(c.listeners, ch)
+	c.mu.Unlock()
+	return ch
+}
+
+// Unsubscribe stops delivering events to the given channel and closes it.
+func (c *Client) Unsubscribe(ch <-chan Event) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for i, l := range c.listeners {
+		if l == ch {
+			c.listeners = append(c.listeners[:i], c.listeners[i+1:]...)
+			close(l)
+			return
+		}
+	}
 }
 
 // SessionID returns the current session ID.
@@ -337,6 +355,60 @@ func (c *Client) SendInput(ctx context.Context, content string, metadata ...map[
 		data["metadata"] = metadata[0]
 	}
 	return c.send(ctx, events.Input, data, PriorityData)
+}
+
+// SendInputAsync sends input and blocks until the resulting task is complete or context is canceled.
+func (c *Client) SendInputAsync(ctx context.Context, content string, metadata ...map[string]any) (*DoneData, error) {
+	eventsCh := c.Events()
+	defer c.Unsubscribe(eventsCh)
+
+	// Create a temporary channel to wait for the specific completion of this input.
+	// Since the gateway is sequential per-session, the next 'done' or 'error' event
+	// will correspond to this input.
+	doneCh := make(chan struct {
+		data *DoneData
+		err  error
+	}, 1)
+
+	// Subscribe to events.
+	// Note: In a production client, we'd want a more robust way to match
+	// done events to inputs (e.g. via parent IDs), but AEP v1 is currently
+	// sequential within a session.
+	go func() {
+		for evt := range eventsCh {
+			switch evt.Type {
+			case EventDone:
+				if d, ok := evt.AsDoneData(); ok {
+					doneCh <- struct {
+						data *DoneData
+						err  error
+					}{data: &d}
+					return
+				}
+			case EventError:
+				if d, ok := evt.AsErrorData(); ok {
+					doneCh <- struct {
+						data *DoneData
+						err  error
+					}{err: fmt.Errorf("gateway error: %s: %s", d.Code, d.Message)}
+					return
+				}
+			}
+		}
+	}()
+
+	if err := c.SendInput(ctx, content, metadata...); err != nil {
+		return nil, err
+	}
+
+	select {
+	case result := <-doneCh:
+		return result.data, result.err
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-c.ctx.Done():
+		return nil, ErrNotConnected
+	}
 }
 
 // SendPermissionResponse approves or denies a tool permission.
@@ -414,7 +486,13 @@ func (c *Client) Close() error {
 	// Safe because c.closed=true prevents new writes to sendCh.
 	close(c.sendCh)
 	c.wg.Wait()
-	close(c.eventsCh)
+
+	c.mu.Lock()
+	for _, ch := range c.listeners {
+		close(ch)
+	}
+	c.listeners = nil
+	c.mu.Unlock()
 	return nil
 }
 
@@ -543,20 +621,27 @@ func (c *Client) pingPump() {
 }
 
 func (c *Client) deliver(evt Event) {
-	// Critical events (done/error/state) must never be dropped — block until
-	// delivered or the client is shutting down.
-	if evt.Type == EventDone || evt.Type == EventError || evt.Type == EventState {
-		select {
-		case c.eventsCh <- evt:
-		case <-c.ctx.Done():
+	c.mu.Lock()
+	listeners := make([]chan Event, len(c.listeners))
+	copy(listeners, c.listeners)
+	c.mu.Unlock()
+
+	for _, ch := range listeners {
+		// Critical events (done/error/state) must never be dropped — block until
+		// delivered or the client is shutting down.
+		if evt.Type == EventDone || evt.Type == EventError || evt.Type == EventState {
+			select {
+			case ch <- evt:
+			case <-c.ctx.Done():
+			}
+			continue
 		}
-		return
-	}
-	// Non-critical events (delta, raw, etc.) are silently dropped under backpressure.
-	select {
-	case c.eventsCh <- evt:
-	default:
-		c.logger.Debug("events channel full, dropping event", "type", evt.Type)
+		// Non-critical events (delta, raw, etc.) are silently dropped under backpressure.
+		select {
+		case ch <- evt:
+		default:
+			// log skip if needed
+		}
 	}
 }
 

@@ -201,14 +201,8 @@ func (p *Parser) parseAssistant(msg *SDKMessage) ([]*WorkerEvent, error) {
 				RawMessage: msg,
 			})
 		case "thinking":
-			events = append(events, &WorkerEvent{
-				Type: EventAssistant,
-				Payload: &StreamPayload{
-					Type:    "thinking",
-					Content: block.Thinking,
-				},
-				RawMessage: msg,
-			})
+			// Skip — thinking content was already streamed as EventStream deltas.
+			// Re-emitting the full block would duplicate reasoning content on the client.
 		case "tool_use":
 			var input map[string]any
 			if err := json.Unmarshal(block.Input, &input); err != nil {

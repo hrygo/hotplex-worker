@@ -47,53 +47,52 @@ public class QuickStart {
         // Create JWT token generator
         JwtTokenGenerator tokenGenerator = new JwtTokenGenerator(signingKey, "hotplex");
 
-        // Create client using builder
-        HotPlexClient client = HotPlexClient.builder()
-            .url(gatewayUrl)
-            .workerType("claude-code")
-            .tokenGenerator(tokenGenerator)
-            .build();
+        // Create client using builder and use try-with-resources
+        try (HotPlexClient client = HotPlexClient.builder()
+                .url(gatewayUrl)
+                .workerType("claude-code")
+                .tokenGenerator(tokenGenerator)
+                .build()) {
 
-        // Latch for keeping main thread alive until done
-        CountDownLatch doneLatch = new CountDownLatch(1);
+            // Latch for keeping main thread alive until done
+            CountDownLatch doneLatch = new CountDownLatch(1);
 
-        // Set up event listeners
-        client.on("messageDelta", (MessageDeltaData data) -> {
-            // Streaming output
-            if (data != null && data.getContent() != null) {
-                System.out.print(data.getContent());
-            }
-        });
+            // Set up event listeners
+            client.on("messageDelta", (MessageDeltaData data) -> {
+                // Streaming output
+                if (data != null && data.getContent() != null) {
+                    System.out.print(data.getContent());
+                }
+            });
 
-        client.on("done", (DoneData data) -> {
-            System.out.println("\n\n✅ Task completed!");
-            
-            if (data != null && data.getStats() != null) {
-                Object duration = data.getStats().get("duration_ms");
-                Object totalTokens = data.getStats().get("total_tokens");
-                Object cost = data.getStats().get("cost_usd");
-                
-                System.out.println("   Duration: " + (duration != null ? duration + "ms" : "N/A"));
-                System.out.println("   Tokens: " + (totalTokens != null ? totalTokens : "N/A"));
-                System.out.println("   Cost: $" + (cost != null ? String.format("%.4f", ((Number) cost).doubleValue()) : "N/A"));
-            }
-            
-            doneLatch.countDown();
-        });
+            client.on("done", (DoneData data) -> {
+                System.out.println("\n\n✅ Task completed!");
 
-        client.on("error", (ErrorData data) -> {
-            if (data != null) {
-                System.err.println("\n❌ Error: " + data.getCode() + " - " + data.getMessage());
-            }
-            doneLatch.countDown();
-            System.exit(1);
-        });
+                if (data != null && data.getStats() != null) {
+                    Object duration = data.getStats().get("duration_ms");
+                    Object totalTokens = data.getStats().get("total_tokens");
+                    Object cost = data.getStats().get("cost_usd");
 
-        client.on("disconnected", (String reason) -> {
-            System.out.println("Disconnected: " + reason);
-        });
+                    System.out.println("   Duration: " + (duration != null ? duration + "ms" : "N/A"));
+                    System.out.println("   Tokens: " + (totalTokens != null ? totalTokens : "N/A"));
+                    System.out.println("   Cost: $" + (cost != null ? String.format("%.4f", ((Number) cost).doubleValue()) : "N/A"));
+                }
 
-        try {
+                doneLatch.countDown();
+            });
+
+            client.on("error", (ErrorData data) -> {
+                if (data != null) {
+                    System.err.println("\n❌ Error: " + data.getCode() + " - " + data.getMessage());
+                }
+                doneLatch.countDown();
+                System.exit(1);
+            });
+
+            client.on("disconnected", (String reason) -> {
+                System.out.println("Disconnected: " + reason);
+            });
+
             // Connect to gateway (creates new session)
             System.out.println("Connecting to gateway at: " + gatewayUrl);
             InitAckData ack = client.connect().get();
@@ -112,9 +111,7 @@ public class QuickStart {
         } catch (Exception e) {
             System.err.println("Failed to connect: " + e.getMessage());
             System.exit(1);
-        } finally {
-            client.disconnect();
-            System.out.println("Disconnected.");
         }
+        System.out.println("Disconnected.");
     }
 }

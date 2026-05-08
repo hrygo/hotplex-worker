@@ -6,7 +6,8 @@ Provides user-friendly API for session management and event handling.
 
 import asyncio
 import logging
-from typing import Any, Callable, Coroutine
+from collections import defaultdict
+from typing import Any, Callable, Coroutine, TypeVar, Generic
 
 from hotplex_client.exceptions import HotPlexError, SessionError, TransportError
 from hotplex_client.protocol import (
@@ -41,13 +42,16 @@ from hotplex_client.types import (
 
 logger = logging.getLogger(__name__)
 
-# Type aliases for callbacks
-Callback = Callable[[Any], Coroutine[None, None, None]]
+T = TypeVar("T")
+Callback = Callable[[T], Coroutine[None, None, None]]
 
 
 class HotPlexClient:
     """
     High-level client for HotPlex Gateway.
+
+    Provides an asynchronous interface for interacting with HotPlex AI workers
+    using the AEP v1 protocol.
 
     Example:
         ```python
@@ -55,12 +59,13 @@ class HotPlexClient:
             url="ws://localhost:8888",
             worker_type=WorkerType.CLAUDE_CODE,
         ) as client:
-            @client.on_message_delta
+            @client.on("message.delta")
             async def handle_delta(data: MessageDeltaData):
-                print(data.content, end="")
+                print(data.content, end="", flush=True)
 
             await client.send_input("Hello, Claude!")
-            await asyncio.sleep(60)  # Wait for response
+            result = await client.wait_for_done()
+            print(f"\nTask completed: {result.success}")
         ```
     """
 
@@ -76,11 +81,11 @@ class HotPlexClient:
         Initialize HotPlex client.
 
         Args:
-            url: WebSocket gateway URL
-            worker_type: Worker type to use
-            auth_token: Optional authentication token
-            config: Optional worker configuration
-            session_id: Optional session ID (for resume)
+            url: WebSocket gateway URL.
+            worker_type: Worker type to use (e.g., 'claude_code').
+            auth_token: Optional authentication token.
+            config: Optional worker configuration overrides.
+            session_id: Optional session ID to resume an existing session.
         """
         self._url = url
         self._worker_type = worker_type
@@ -89,9 +94,9 @@ class HotPlexClient:
         self._session_id = session_id
 
         self._transport = WebSocketTransport()
-        self._callbacks: dict[str, Callback] = {}
+        self._callbacks: dict[str, list[Callback[Any]]] = defaultdict(list)
         self._event_loop_task: asyncio.Task[None] | None = None
-        self._done_event = asyncio.Event()
+        self._done_future: asyncio.Future[DoneData] | None = None
 
     @property
     def session_id(self) -> str:
@@ -100,7 +105,7 @@ class HotPlexClient:
 
     @property
     def is_connected(self) -> bool:
-        """Check if client is connected."""
+        """Check if client is connected to the gateway."""
         return self._transport.is_connected
 
     async def connect(self) -> str:
@@ -108,11 +113,11 @@ class HotPlexClient:
         Establish connection and complete init handshake.
 
         Returns:
-            Session ID
+            The established Session ID.
 
         Raises:
-            TransportError: If connection fails
-            AuthError: If authentication fails
+            TransportError: If connection fails.
+            UnauthorizedError: If authentication fails.
         """
         session_id = await self._transport.connect(
             url=self._url,
@@ -122,8 +127,9 @@ class HotPlexClient:
             config=self._config,
         )
 
-        # Start event loop
-        self._event_loop_task = asyncio.create_task(self._event_loop())
+        # Start event loop if not already running
+        if not self._event_loop_task or self._event_loop_task.done():
+            self._event_loop_task = asyncio.create_task(self._event_loop())
 
         return session_id
 
@@ -133,18 +139,21 @@ class HotPlexClient:
         metadata: dict[str, Any] | None = None,
     ) -> None:
         """
-        Send user input to worker.
+        Send user input to the worker.
 
         Args:
-            content: User input text
-            metadata: Optional metadata
+            content: User input text.
+            metadata: Optional metadata to attach to the input.
 
         Raises:
-            SessionError: If session is not active
-            TransportError: If send fails
+            SessionError: If the client is not connected.
+            TransportError: If sending the message fails.
         """
         if not self.is_connected:
             raise SessionError("Not connected")
+
+        # Reset done future when new input is sent
+        self._done_future = asyncio.get_running_loop().create_future()
 
         env = create_input_envelope(
             session_id=self.session_id,
@@ -153,6 +162,27 @@ class HotPlexClient:
         )
         await self._transport.send(env)
 
+    async def wait_for_done(self, timeout: float | None = None) -> DoneData:
+        """
+        Wait for the current task to complete (receive 'done' event).
+
+        Args:
+            timeout: Optional timeout in seconds.
+
+        Returns:
+            The 'done' event data.
+
+        Raises:
+            asyncio.TimeoutError: If the timeout is reached.
+            SessionError: If no task is in progress or client is disconnected.
+        """
+        if self._done_future is None:
+            raise SessionError("No task in progress")
+
+        if timeout is not None:
+            return await asyncio.wait_for(self._done_future, timeout)
+        return await self._done_future
+
     async def send_permission_response(
         self,
         permission_id: str,
@@ -160,12 +190,12 @@ class HotPlexClient:
         reason: str | None = None,
     ) -> None:
         """
-        Send permission response.
+        Send a response to a permission request.
 
         Args:
-            permission_id: Permission request ID
-            allowed: Whether permission is granted
-            reason: Optional reason for denial
+            permission_id: The ID from the permission_request event.
+            allowed: True to grant, False to deny.
+            reason: Optional reason, especially when denying.
         """
         if not self.is_connected:
             raise SessionError("Not connected")
@@ -185,12 +215,12 @@ class HotPlexClient:
         error: str | None = None,
     ) -> None:
         """
-        Send tool execution result.
+        Send the result of a tool execution back to the worker.
 
         Args:
-            tool_call_id: Tool call ID
-            output: Tool execution result
-            error: Optional error message
+            tool_call_id: The ID from the tool_call event.
+            output: The result data (will be JSON serialized).
+            error: Optional error message if tool execution failed.
         """
         if not self.is_connected:
             raise SessionError("Not connected")
@@ -204,7 +234,7 @@ class HotPlexClient:
         await self._transport.send(env)
 
     async def terminate(self) -> None:
-        """Terminate session."""
+        """Request the gateway to terminate the current session."""
         if not self.is_connected:
             return
 
@@ -215,7 +245,7 @@ class HotPlexClient:
         await self._transport.send(env)
 
     async def close(self) -> None:
-        """Close connection."""
+        """Gracefully close the connection and stop the event loop."""
         if self._event_loop_task:
             self._event_loop_task.cancel()
             try:
@@ -229,57 +259,67 @@ class HotPlexClient:
     # Event Callback Registration
     # ========================================================================
 
-    def on_message_start(self, callback: Callable[[MessageStartData], Coroutine[None, None, None]]):
+    def on(self, event_type: str) -> Callable[[Callback[Any]], Callback[Any]]:
+        """
+        Decorator to register an event callback.
+
+        Example:
+            @client.on("message.delta")
+            async def handle_delta(data: MessageDeltaData):
+                print(data.content)
+        """
+
+        def decorator(callback: Callback[Any]) -> Callback[Any]:
+            self._callbacks[event_type].append(callback)
+            return callback
+
+        return decorator
+
+    def on_message_start(self, callback: Callback[MessageStartData]) -> None:
         """Register callback for message.start events."""
-        self._callbacks["message.start"] = callback
+        self._callbacks["message.start"].append(callback)
 
-    def on_message_delta(self, callback: Callable[[MessageDeltaData], Coroutine[None, None, None]]):
+    def on_message_delta(self, callback: Callback[MessageDeltaData]) -> None:
         """Register callback for message.delta events."""
-        self._callbacks["message.delta"] = callback
+        self._callbacks["message.delta"].append(callback)
 
-    def on_message_end(self, callback: Callable[[MessageEndData], Coroutine[None, None, None]]):
+    def on_message_end(self, callback: Callback[MessageEndData]) -> None:
         """Register callback for message.end events."""
-        self._callbacks["message.end"] = callback
+        self._callbacks["message.end"].append(callback)
 
-    def on_message(self, callback: Callable[[MessageData], Coroutine[None, None, None]]):
-        """Register callback for message events (non-streaming)."""
-        self._callbacks["message"] = callback
+    def on_message(self, callback: Callback[MessageData]) -> None:
+        """Register callback for complete message events."""
+        self._callbacks["message"].append(callback)
 
-    def on_tool_call(self, callback: Callable[[ToolCallData], Coroutine[None, None, None]]):
+    def on_tool_call(self, callback: Callback[ToolCallData]) -> None:
         """Register callback for tool_call events."""
-        self._callbacks["tool_call"] = callback
+        self._callbacks["tool_call"].append(callback)
 
-    def on_permission_request(self, callback: Callable[[PermissionRequestData], Coroutine[None, None, None]]):
+    def on_permission_request(self, callback: Callback[PermissionRequestData]) -> None:
         """Register callback for permission_request events."""
-        self._callbacks["permission_request"] = callback
+        self._callbacks["permission_request"].append(callback)
 
-    def on_state_change(self, callback: Callable[[StateData], Coroutine[None, None, None]]):
-        """Register callback for state events."""
-        self._callbacks["state"] = callback
+    def on_state_change(self, callback: Callback[StateData]) -> None:
+        """Register callback for session state changes."""
+        self._callbacks["state"].append(callback)
 
-    def on_done(self, callback: Callable[[DoneData], Coroutine[None, None, None]]):
-        """Register callback for done events."""
-        self._callbacks["done"] = callback
+    def on_done(self, callback: Callback[DoneData]) -> None:
+        """Register callback for task completion."""
+        self._callbacks["done"].append(callback)
 
-    def on_error(self, callback: Callable[[ErrorData], Coroutine[None, None, None]]):
+    def on_error(self, callback: Callback[ErrorData]) -> None:
         """Register callback for error events."""
-        self._callbacks["error"] = callback
-
-    def on_control(self, callback: Callable[[ControlData], Coroutine[None, None, None]]):
-        """Register callback for control events."""
-        self._callbacks["control"] = callback
+        self._callbacks["error"].append(callback)
 
     # ========================================================================
     # Context Manager
     # ========================================================================
 
     async def __aenter__(self) -> "HotPlexClient":
-        """Auto-connect on context entry."""
         await self.connect()
         return self
 
     async def __aexit__(self, *args: Any) -> None:
-        """Auto-cleanup on context exit."""
         await self.close()
 
     # ========================================================================
@@ -296,19 +336,24 @@ class HotPlexClient:
             pass
         except Exception as e:
             logger.error(f"Event loop error: {e}")
+            if self._done_future and not self._done_future.done():
+                self._done_future.set_exception(TransportError(f"Connection lost during task: {e}"))
 
     async def _dispatch_event(self, env: Envelope[Any]) -> None:
-        """Dispatch event to registered callback."""
+        """Dispatch event to registered callbacks."""
         event_type = env.event.type
-        callback = self._callbacks.get(event_type)
+        data = env.event.data
 
-        if not callback:
-            logger.debug(f"No callback registered for {event_type}")
+        # Internal handling for done event
+        if event_type == "done" and self._done_future and not self._done_future.done():
+            self._done_future.set_result(data)
+
+        callbacks = self._callbacks.get(event_type, [])
+        if not callbacks:
             return
 
-        try:
-            # Cast event data to appropriate type
-            data = env.event.data
-            await callback(data)
-        except Exception as e:
-            logger.error(f"Callback error for {event_type}: {e}")
+        for callback in callbacks:
+            try:
+                await callback(data)
+            except Exception as e:
+                logger.error(f"Callback error for {event_type}: {e}")

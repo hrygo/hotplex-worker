@@ -38,7 +38,16 @@ import {
   deserializeEnvelope,
   newSessionId,
   isInitAck,
+  createEnvelope,
+  newEventId,
 } from './envelope.js';
+import {
+  ConnectionError,
+  SessionError,
+  TimeoutError,
+  ProtocolError,
+} from './errors.js';
+import { calculateBackoff } from './backoff.js';
 
 // ============================================================================
 // Event Types
@@ -165,69 +174,142 @@ export class HotPlexClient extends EventEmitter<HotPlexClientEvents> {
   }
 
   private async _doConnect(sessionId: string): Promise<InitAckData> {
+    this._clearReconnectTimer();
+    
     return new Promise((resolve, reject) => {
+      let resolved = false;
+      
+      const timeoutTimer = setTimeout(() => {
+        if (resolved) return;
+        resolved = true;
+        cleanup();
+        reject(new TimeoutError('Connection timeout after ' + ProtocolConstants.HandshakeTimeoutMs + 'ms'));
+      }, ProtocolConstants.HandshakeTimeoutMs || 30000);
+
+      const cleanup = (): void => {
+        clearTimeout(timeoutTimer);
+        if (this.ws) {
+          this.ws.off('open', onOpen);
+          this.ws.off('message', onMessage);
+          this.ws.off('error', onError);
+          this.ws.off('close', onClose);
+        }
+      };
+
+      const onOpen = (): void => {
+        if (!this.ws) return;
+        try {
+          const initEnv = createInitEnvelope(
+            sessionId,
+            this.config.workerType,
+            undefined,
+            this.config.authToken
+          );
+          this.ws.send(serializeEnvelope(initEnv));
+        } catch (err) {
+          onError(err as Error);
+        }
+      };
+      
+      const onMessage = (data: string | Buffer | ArrayBuffer | Buffer[]): void => {
+        let line: string;
+        
+        if (Buffer.isBuffer(data)) {
+          line = data.toString('utf-8').trim();
+        } else if (typeof data === 'string') {
+          line = data.trim();
+        } else if (data instanceof ArrayBuffer) {
+          line = Buffer.from(data).toString('utf-8').trim();
+        } else if (Array.isArray(data)) {
+          line = Buffer.concat(data).toString('utf-8').trim();
+        } else {
+          return;
+        }
+        
+        if (!line) return;
+        
+        try {
+          const env = deserializeEnvelope(line);
+          if (isInitAck(env)) {
+            resolved = true;
+            cleanup();
+            this._handleInitAck(env, resolve, reject);
+          } else {
+            this._handleMessage(env, () => {}, () => {});
+          }
+        } catch (err) {
+          this.emit('error', { code: ErrorCode.InvalidMessage, message: String(err) } as ErrorData, {} as Envelope);
+        }
+      };
+      
+      const onError = (err: Error): void => {
+        if (resolved) return;
+        resolved = true;
+        cleanup();
+        this._handleError(err);
+        reject(new ConnectionError(err.message));
+      };
+      
+      const onClose = (code: number, reason: Buffer): void => {
+        if (resolved) return;
+        resolved = true;
+        cleanup();
+        this._handleClose(code, reason.toString());
+        reject(new ConnectionError(`Connection closed: ${reason.toString()} (${code})`));
+      };
+
       try {
         const headers: Record<string, string> = {};
         if (this.config.apiKey) {
           headers['X-API-Key'] = this.config.apiKey;
         }
+        
+        if (this.ws) {
+          this.ws.removeAllListeners();
+          this.ws.close();
+        }
+
         this.ws = new WebSocket(this.config.url, { headers });
-        
-        const initEnv = createInitEnvelope(
-          sessionId,
-          this.config.workerType,
-          undefined,
-          this.config.authToken
-        );
-        
-        const onOpen = (): void => {
-          if (!this.ws) return;
-          this.ws.send(serializeEnvelope(initEnv));
-        };
-        
-        const onMessage = (data: string | Buffer | ArrayBuffer | Buffer[]): void => {
-          let line: string;
-          
-          if (Buffer.isBuffer(data)) {
-            line = data.toString('utf-8').trim();
-          } else if (typeof data === 'string') {
-            line = data.trim();
-          } else if (data instanceof ArrayBuffer) {
-            line = Buffer.from(data).toString('utf-8').trim();
-          } else if (Array.isArray(data)) {
-            line = Buffer.concat(data).toString('utf-8').trim();
-          } else {
-            return;
-          }
-          
-          if (!line) return;
-          
-          try {
-            const env = deserializeEnvelope(line);
-            this._handleMessage(env, resolve, reject);
-          } catch (err) {
-            this.emit('error', { code: ErrorCode.InvalidMessage, message: String(err) } as ErrorData, {} as Envelope);
-          }
-        };
-        
-        const onError = (err: Error): void => {
-          this._handleError(err);
-          reject(err);
-        };
-        
-        const onClose = (code: number, reason: Buffer): void => {
-          this._handleClose(code, reason.toString());
-        };
-        
         this.ws.on('open', onOpen);
         this.ws.on('message', onMessage);
         this.ws.on('error', onError);
         this.ws.on('close', onClose);
         
       } catch (err) {
+        resolved = true;
+        clearTimeout(timeoutTimer);
         reject(err);
       }
     });
+  }
+
+  private _handleInitAck(env: Envelope, resolve: (ack: InitAckData) => void, reject: (err: Error) => void): void {
+    const { event, session_id } = env;
+    const ackData = event.data as unknown as InitAckData;
+    
+    if (ackData.code && ackData.code !== 'OK' as any) {
+      reject(new SessionError(ackData.error || 'Session initialization failed', ackData.code));
+      return;
+    }
+
+    this._sessionId = session_id;
+    this._connected = true;
+    this._reconnecting = false;
+    this.reconnectAttempt = 0;
+    
+    if (ackData.state) {
+      this._state = ackData.state;
+    }
+    
+    this._startHeartbeat();
+    
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    
+    this.emit('connected', ackData);
+    resolve(ackData);
   }
 
   private _handleMessage(env: Envelope, resolve: (ack: InitAckData) => void, _reject: (err: Error) => void): void {
@@ -368,46 +450,6 @@ export class HotPlexClient extends EventEmitter<HotPlexClientEvents> {
   // Sending Messages
   // ============================================================================
 
-  private _send(env: Envelope<unknown>): void {
-    if (!this._sessionId || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      throw new Error('Not connected to gateway');
-    }
-    this.ws.send(serializeEnvelope(env));
-  }
-
-  sendInput(content: string): void {
-    const env = createInputEnvelope(this._sessionId!, content);
-    this._send(env);
-  }
-
-  async sendInputAsync(content: string): Promise<void> {
-    if (this.pendingInput) {
-      throw new Error('Input already pending');
-    }
-    
-    return new Promise((resolve, reject) => {
-      this.pendingInput = { content, resolve, reject };
-      this.sendInput(content);
-      
-      setTimeout(() => {
-        if (this.pendingInput) {
-          this.pendingInput.reject(new Error('Input timeout'));
-          this.pendingInput = null;
-        }
-      }, 300000);
-    });
-  }
-
-  sendPermissionResponse(permissionId: string, allowed: boolean, reason?: string): void {
-    const env = createPermissionResponseEnvelope(this._sessionId!, permissionId, allowed, reason);
-    this._send(env);
-  }
-
-  sendControl(action: 'terminate' | 'delete'): void {
-    const env = createControlEnvelope(this._sessionId!, action);
-    this._send(env);
-  }
-
   disconnect(): void {
     this.closed = true;
     this.shouldReconnect = false;
@@ -427,6 +469,109 @@ export class HotPlexClient extends EventEmitter<HotPlexClientEvents> {
     
     this._connected = false;
     this.emit('disconnected', 'Client initiated disconnect');
+  }
+
+  close(): void {
+    this.disconnect();
+  }
+
+  // ============================================================================
+  // Sending Messages
+  // ============================================================================
+
+  private _send(env: Envelope<unknown>): void {
+    if (!this._sessionId || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      throw new Error('Not connected to gateway');
+    }
+    this.ws.send(serializeEnvelope(env));
+  }
+
+  sendInput(content: string, metadata?: Record<string, unknown>): void {
+    const env = createInputEnvelope(this._sessionId!, content, metadata);
+    this._send(env);
+  }
+
+  async sendInputAsync(content: string, metadata?: Record<string, unknown>): Promise<void> {
+    if (this.pendingInput) {
+      throw new Error('Input already pending');
+    }
+    
+    return new Promise((resolve, reject) => {
+      const onDone = (data: DoneData) => {
+        cleanup();
+        if (data.success) {
+          resolve();
+        } else {
+          reject(new ProtocolError('Task failed', 'TASK_FAILED'));
+        }
+      };
+
+      const onError = (data: ErrorData) => {
+        cleanup();
+        reject(new SessionError(data.message, data.code));
+      };
+
+      const onDisconnected = (reason: string) => {
+        cleanup();
+        reject(new ConnectionError(`Disconnected while waiting for input: ${reason}`));
+      };
+
+      const cleanup = () => {
+        this.off('done', onDone);
+        this.off('error', onError);
+        this.off('disconnected', onDisconnected);
+        this.pendingInput = null;
+      };
+
+      this.once('done', onDone);
+      this.once('error', onError);
+      this.once('disconnected', onDisconnected);
+
+      try {
+        this.pendingInput = { content, resolve, reject };
+        this.sendInput(content, metadata);
+      } catch (err) {
+        cleanup();
+        reject(err);
+      }
+      
+      // Safety timeout: 10 minutes
+      setTimeout(() => {
+        if (this.pendingInput) {
+          cleanup();
+          reject(new TimeoutError('Input timeout after 10 minutes'));
+        }
+      }, 600000);
+    });
+  }
+
+  sendToolResult(id: string, output: unknown, error?: string): void {
+    const env = createEnvelope(
+      newEventId(),
+      this._sessionId!,
+      0,
+      EventKind.ToolResult,
+      { id, output, error } as ToolResultData
+    );
+    this._send(env);
+  }
+
+  sendPermissionResponse(permissionId: string, allowed: boolean, reason?: string): void {
+    const env = createPermissionResponseEnvelope(this._sessionId!, permissionId, allowed, reason);
+    this._send(env);
+  }
+
+  sendControl(action: ControlAction): void {
+    const env = createControlEnvelope(this._sessionId!, action as any);
+    this._send(env);
+  }
+
+  terminate(): void {
+    this.sendControl(ControlAction.Terminate);
+  }
+
+  delete(): void {
+    this.sendControl(ControlAction.Delete);
   }
 
   // ============================================================================
@@ -479,13 +624,11 @@ export class HotPlexClient extends EventEmitter<HotPlexClientEvents> {
       return;
     }
     
-    this._reconnecting = true;
-    this.reconnectAttempt++;
-    
-    const delay = Math.min(
-      this.reconnectConfig.baseDelayMs * Math.pow(2, this.reconnectAttempt - 1),
-      this.reconnectConfig.maxDelayMs
-    );
+    const delay = calculateBackoff(this.reconnectAttempt, {
+      baseDelayMs: this.reconnectConfig.baseDelayMs,
+      maxDelayMs: this.reconnectConfig.maxDelayMs,
+      jitter: 0.1,
+    });
     
     this.emit('reconnecting', this.reconnectAttempt);
     
@@ -494,8 +637,11 @@ export class HotPlexClient extends EventEmitter<HotPlexClientEvents> {
       
       try {
         await this._doConnect(this._sessionId);
-      } catch {
-        this._handleClose(4001, 'Reconnect failed');
+      } catch (err) {
+        // Reconnection failed, _handleClose will be called by WebSocket on 'close' or 'error'
+        // or we already handled it in _doConnect's reject.
+        // If we want to try again, we should call _scheduleReconnect.
+        this._scheduleReconnect();
       }
     }, delay);
   }

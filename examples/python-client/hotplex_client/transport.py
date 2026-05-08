@@ -6,7 +6,7 @@ Manages WebSocket connection lifecycle, message queuing, and basic error handlin
 
 import asyncio
 import logging
-from typing import Any, AsyncIterator
+from typing import Any, AsyncIterator, Dict, Optional
 
 import websockets
 from websockets.client import WebSocketClientProtocol
@@ -18,6 +18,7 @@ from hotplex_client.exceptions import (
 )
 from hotplex_client.protocol import (
     create_init_envelope,
+    create_ping_envelope,
     decode_envelope,
     encode_envelope,
     is_init_ack,
@@ -36,18 +37,29 @@ class WebSocketTransport:
     """
     WebSocket transport for AEP v1 protocol.
 
-    Responsibilities:
-    - WebSocket connection lifecycle
-    - NDJSON message framing
-    - Message queue for async receive
-    - Basic error handling
+    Handles connection management, NDJSON framing, and background message receiving.
     """
 
-    def __init__(self, max_queue_size: int = 1000) -> None:
-        self._ws: WebSocketClientProtocol | None = None
+    def __init__(
+        self,
+        max_queue_size: int = 1000,
+        ping_interval: float = 54.0,
+        ping_timeout: float = 10.0,
+    ) -> None:
+        """
+        Initialize WebSocket transport.
+
+        Args:
+            max_queue_size: Maximum number of messages to buffer.
+            ping_interval: Interval between pings in seconds.
+            ping_timeout: Time to wait for pong before closing connection.
+        """
+        self._ws: Optional[WebSocketClientProtocol] = None
         self._session_id: str = ""
         self._message_queue: asyncio.Queue[Envelope[Any]] = asyncio.Queue(maxsize=max_queue_size)
-        self._receive_task: asyncio.Task[None] | None = None
+        self._receive_task: Optional[asyncio.Task[None]] = None
+        self._ping_interval = ping_interval
+        self._ping_timeout = ping_timeout
 
     @property
     def session_id(self) -> str:
@@ -63,35 +75,36 @@ class WebSocketTransport:
         self,
         url: str,
         worker_type: WorkerType,
-        session_id: str | None = None,
-        auth_token: str | None = None,
-        config: dict[str, Any] | None = None,
+        session_id: Optional[str] = None,
+        auth_token: Optional[str] = None,
+        config: Optional[Dict[str, Any]] = None,
+        **ws_options: Any,
     ) -> str:
         """
         Establish WebSocket connection and perform init handshake.
 
         Args:
-            url: WebSocket URL (ws:// or wss://)
-            worker_type: Type of worker to use
-            session_id: Optional session ID (for resume)
-            auth_token: Optional authentication token
-            config: Optional worker configuration
+            url: WebSocket URL (ws:// or wss://).
+            worker_type: Type of worker to use.
+            session_id: Optional session ID to resume.
+            auth_token: Optional authentication token.
+            config: Optional worker configuration.
+            **ws_options: Additional options for websockets.connect().
 
         Returns:
-            Session ID from init_ack
-
-        Raises:
-            TransportError: If connection fails
-            UnauthorizedError: If authentication fails
+            The established Session ID.
         """
         try:
             # Establish WebSocket connection
-            self._ws = await websockets.connect(
-                url,
-                ping_interval=54,  # 54 seconds (match Go pingPeriod)
-                ping_timeout=60,  # 60 seconds (match Go pongWait)
-                max_size=32 * 1024 * 1024,  # 32MB
-            )
+            # Default options match Go gateway expectations
+            connect_options = {
+                "ping_interval": self._ping_interval,
+                "ping_timeout": self._ping_timeout,
+                "max_size": 32 * 1024 * 1024,  # 32MB
+            }
+            connect_options.update(ws_options)
+
+            self._ws = await websockets.connect(url, **connect_options)
 
             # Send init handshake
             init_env = create_init_envelope(
@@ -104,7 +117,6 @@ class WebSocketTransport:
 
             # Wait for init_ack
             response = await self._ws.recv()
-            # Handle both str and bytes messages
             if isinstance(response, bytes):
                 response = response.decode("utf-8")
             ack_env = decode_envelope(response)
@@ -134,16 +146,7 @@ class WebSocketTransport:
             raise TransportError(f"Connection failed: {e}") from e
 
     async def send(self, envelope: Envelope[Any]) -> None:
-        """
-        Send envelope over WebSocket.
-
-        Args:
-            envelope: Envelope to send
-
-        Raises:
-            ConnectionLostError: If connection is closed
-            TransportError: If send fails
-        """
+        """Send envelope over WebSocket."""
         if not self.is_connected:
             raise ConnectionLostError("WebSocket not connected")
 
@@ -156,16 +159,8 @@ class WebSocketTransport:
             raise TransportError(f"Send failed: {e}") from e
 
     async def receive(self) -> Envelope[Any]:
-        """
-        Receive envelope from queue (non-blocking receive from WebSocket).
-
-        Returns:
-            Next envelope from server
-
-        Raises:
-            ConnectionLostError: If connection is closed
-        """
-        if not self.is_connected:
+        """Receive envelope from queue."""
+        if not self.is_connected and self._message_queue.empty():
             raise ConnectionLostError("WebSocket not connected")
 
         try:
@@ -182,10 +177,16 @@ class WebSocketTransport:
         try:
             async for message in self._ws:
                 try:
-                    # Handle both str and bytes messages
                     if isinstance(message, bytes):
                         message = message.decode("utf-8")
                     env = decode_envelope(message)
+
+                    # Handle application-level ping/pong if needed
+                    if env.event.type == "ping":
+                        # Auto-pong is handled by websockets library for WS-level pings,
+                        # but AEP might have its own. For now, we just queue it.
+                        pass
+
                     await self._message_queue.put(env)
                 except Exception as e:
                     logger.error(f"Failed to decode message: {e}")
@@ -193,6 +194,9 @@ class WebSocketTransport:
             logger.warning(f"WebSocket closed: {e}")
         except Exception as e:
             logger.error(f"Receive loop error: {e}")
+        finally:
+            # Signal end of stream by putting None or raising
+            pass
 
     async def _cleanup(self) -> None:
         """Clean up resources."""
@@ -212,9 +216,7 @@ class WebSocketTransport:
             self._ws = None
 
     async def __aenter__(self) -> "WebSocketTransport":
-        """Support async with context manager."""
         return self
 
     async def __aexit__(self, *args: Any) -> None:
-        """Automatically cleanup on context exit."""
         await self.close()

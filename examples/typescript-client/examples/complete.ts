@@ -283,7 +283,7 @@ async function main() {
     // Option 2: Terminate session on server
     if (sessionId) {
       console.log('Terminating session on server...');
-      client.sendControl('terminate');
+      client.terminate();
     }
     
     setTimeout(() => {
@@ -315,10 +315,11 @@ async function main() {
       'Create a simple HTTP server in Go that handles GET /health returning 200 OK with JSON body {"status":"ok"}. Include proper error handling and a main function that starts the server on port 8080.';
 
     console.log('\n📤 Sending task...\n');
-    client.sendInput(task);
+    await client.sendInputAsync(task);
 
   } catch (err) {
-    console.error('\n❌ Failed to connect:', err);
+    console.error('\n❌ Task failed:', err instanceof Error ? err.message : err);
+    client.disconnect();
     process.exit(1);
   }
 }
