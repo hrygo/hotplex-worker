@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- **Messaging/TTS**: Replaced Kokoro-82M ONNX synthesizer with **MOSS-TTS-Nano** sidecar architecture. TTS provider values updated: `edge` (Edge TTS), `moss` (MOSS local CPU), `edge+moss` (Edge + MOSS fallback). Kokoro-specific config fields removed. (#283)
+- **Config**: `configs/env.example` and `configs/config.yaml` — all Kokoro references replaced with MOSS-TTS-Nano fields (`tts_moss_model_dir`, `tts_moss_voice`, `tts_moss_port`, `tts_moss_idle_timeout`, `tts_moss_cpu_threads`). Duplicate MOSS annotations in feishu section removed. (#283)
+- **Docs**: Added TTS configuration chapter to `docs/Reference-Manual.md` (§4.6) and `docs/User-Manual.md` (语音功能 section), covering providers, pipeline, env vars, and health check.
+- **CLI/Onboard**: Wizard now runs TTS dependency check (`stepTTSCheck`) alongside existing STT check, informing users about Edge TTS defaults and MOSS-TTS-Nano requirements.
+
 ## [1.7.1] - 2026-05-08
 
 ### Summary
