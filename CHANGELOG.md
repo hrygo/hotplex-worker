@@ -2,6 +2,39 @@
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-05-09
+
+### Summary
+
+v1.8.0 是一次 minor 版本更新，聚焦于 **飞书卡片体验升级** 和 **Gateway 安全加固**。飞书适配器新增 CardKit v2 彩色标题栏（生成中/完成/取消/权限/提问/MCP 六色状态）、交互卡片消息解析、以及 enriched card headers（turn/model/branch/workdir 元数据标签）。Gateway Admin API 迁移到独立端口（9999）并加固中间件链。WebChat 移除 localStorage 缓存层，全面依赖服务端 SQLite 持久化。多语言 SDK 客户端统一重构。
+
+### Added
+
+- **Messaging/Feishu**: CardKit v2 header for all card types — color-coded title bars (wathet=generating, blue=done, grey=cancelled, orange=permission, yellow=question, violet=MCP) via unified card builder with streaming state machine. (#311)
+- **Messaging/Feishu**: Interactive card message type support — parse `msg_type=interactive` with schema 1.0/2.0, extract text/div/markdown/note/column_set elements and embedded images.
+- **Messaging/Feishu**: Enriched card headers with turn/model/branch/workdir metadata tags — progressive tag display during streaming, preserved across card lifecycle.
+- **SDK**: Multi-language client SDK refactoring — Go client async API (`SendInputAsync`), Python transport reconnect, TypeScript backoff/errors modules, Java API updates. Fix reasoning content duplication in Worker parser.
+
+### Changed
+
+- **Messaging/Feishu**: Deduplicate bot API calls — merged `fetchBotOpenID` + `resolveBotName` into single `fetchBotInfo` (one API call instead of two).
+- **WebChat**: Remove localStorage message cache — server SQLite is the authoritative persistence layer, eliminating cache-sync bugs (~150 LOC removed).
+- **Gateway**: Admin API runs on dedicated address (default `localhost:9999`) with its own HTTP server instead of sharing gateway port. (#289)
+- **Messaging/TTS**: `SharedSynthesizer` ref-counted sharing across Feishu/Slack adapters to avoid MOSS port conflict.
+- **STT**: Enable INT8 quantization in stt_server.py (~400MB vs ~900MB), reduce idle TTL from 1h to 15m.
+
+### Fixed
+
+- **Gateway**: Admin server hardening — apply middleware chain (CORS, panic recovery, rate-limit, IP-whitelist, token auth), add ReadTimeout/WriteTimeout, parallel gateway+admin shutdown. (#289)
+- **Gateway**: `serverErr` channel buffer increased 1→2 to prevent silent drop of concurrent goroutine failures; restore `cfg.Admin.Enabled` guard.
+- **WebChat**: Ghost message orphan on `sendInput` failure — remove both user+ghost messages instead of only ghost. (#303)
+- **WebChat**: Context-usage data silently discarded — inject into last assistant message parts instead of creating standalone message. (#303)
+- **WebChat**: Missing permission/question/elicitation interaction handlers and response routing. (#303)
+- **Messaging/Feishu**: Data races in streaming card `Close`/`Abort` — capture mutable state under mutex before use outside critical section.
+- **Config**: JWT secret validation relaxed from `==32` to `>=32` bytes to fix doctor false-negative for valid non-32-byte secrets.
+- **Config**: Warning log deduplication — JWT secret and normalize path warnings now emit once per process via `sync.Map`.
+- **Dev**: Banner detection filters Go default log format (`log.Printf`) in addition to slog patterns.
+
 ## [1.7.2] - 2026-05-08
 
 ### Summary
