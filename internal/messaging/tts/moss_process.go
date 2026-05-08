@@ -82,16 +82,22 @@ func NewMossProcess(modelDir string, port, cpuThreads int, idleTTL time.Duration
 
 // Synthesize sends text to the MOSS sidecar and returns WAV audio bytes.
 func (p *MossProcess) Synthesize(ctx context.Context, text, voice string) ([]byte, error) {
-	if err := p.ensureRunning(ctx); err != nil {
+	p.mu.Lock()
+	if p.closed {
+		p.mu.Unlock()
+		return nil, ErrSynthesizerClosed
+	}
+	if err := p.ensureRunningLocked(ctx); err != nil {
+		p.mu.Unlock()
 		return nil, fmt.Errorf("tts moss: %w", err)
 	}
+	p.activeWg.Add(1)
+	p.mu.Unlock()
+	defer p.activeWg.Done()
 
 	if voice == "" {
 		voice = mossDefaultVoice
 	}
-
-	p.activeWg.Add(1)
-	defer p.activeWg.Done()
 
 	form := url.Values{}
 	form.Set("text", text)
@@ -160,10 +166,8 @@ func (p *MossProcess) Close(ctx context.Context) error {
 }
 
 // ensureRunning lazily starts the sidecar on first call or restarts on crash.
-func (p *MossProcess) ensureRunning(ctx context.Context) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
+// Caller must hold p.mu.
+func (p *MossProcess) ensureRunningLocked(ctx context.Context) error {
 	if p.closed {
 		return ErrSynthesizerClosed
 	}
@@ -173,7 +177,7 @@ func (p *MossProcess) ensureRunning(ctx context.Context) error {
 	return p.start(ctx)
 }
 
-func (p *MossProcess) start(_ context.Context) error {
+func (p *MossProcess) start(ctx context.Context) error {
 	appPath := p.modelDir + "/app_onnx.py"
 	args := []string{
 		appPath,
@@ -207,7 +211,7 @@ func (p *MossProcess) start(_ context.Context) error {
 	}
 
 	// Wait for health check.
-	if err := p.waitForReady(); err != nil {
+	if err := p.waitForReady(ctx); err != nil {
 		p.terminate()
 		return fmt.Errorf("moss sidecar warmup: %w", err)
 	}
@@ -224,12 +228,17 @@ func (p *MossProcess) start(_ context.Context) error {
 	return nil
 }
 
-func (p *MossProcess) waitForReady() error {
+func (p *MossProcess) waitForReady(ctx context.Context) error {
 	client := &http.Client{Timeout: 2 * time.Second}
 	deadline := time.Now().Add(mossReadyTimeout)
 	checkURL := p.baseURL + "/api/warmup-status"
 
 	for time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
 		resp, err := client.Get(checkURL)
 		if err == nil {
 			_ = resp.Body.Close()
@@ -265,17 +274,23 @@ func (p *MossProcess) terminate() {
 
 	// Wait up to 5s for graceful exit.
 	if p.cmd != nil && p.cmd.Process != nil {
-		done := make(chan struct{})
+		waitDone := make(chan struct{})
 		go func() {
 			_ = p.cmd.Wait()
-			close(done)
+			close(waitDone)
 		}()
 		select {
-		case <-done:
+		case <-waitDone:
 		case <-time.After(5 * time.Second):
 			_ = proc.ForceKill(p.pgid)
 			p.log.Warn("tts moss: force killed after timeout", "pgid", p.pgid)
+			<-waitDone // ensure cmd.Wait goroutine completes
 		}
+	}
+
+	// Clean up PID file.
+	if tracker := proc.GlobalTracker(); tracker != nil {
+		_ = tracker.Remove(p.pidKey)
 	}
 
 	p.started = false
