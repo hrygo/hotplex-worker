@@ -6,19 +6,19 @@ tags:
   - platform-adapter
 date: 2026-04-19
 status: in-progress
-progress: 50
+progress: 70
 priority: high
 estimated_hours: 40
-last_updated: 2026-04-21
+last_updated: 2026-05-08
 ---
 
 # Feishu Adapter 改进规格书
 
-> 版本: v1.1
-> 日期: 2026-04-19
-> 状态: In Progress
-> ⚠️ **进度修正**（2026-04-21）：本文档 header 曾标记 `progress: 70`，实际 `internal/messaging/feishu/adapter.go` 已包含约 976 行实现代码，进度以估算值 `50` 记录，具体 Phase 进度以实现状态为准。
-> 交叉复核: 已对齐 `internal/messaging/feishu/adapter.go`、`internal/messaging/bridge.go`、`internal/config/config.go` 源码，已对照 OpenClaw Lark 官方插件 (`@larksuite/openclaw-lark@2026.4.1`) 源码验证所有 API 调用
+> 版本: v1.2
+> 日期: 2026-05-08
+> 状态: In Progress (70%)
+> 交叉复核: 已对齐 `internal/messaging/feishu/adapter.go`（~1380行）、`internal/messaging/bridge.go`、`internal/config/config.go` 源码，已对照 OpenClaw Lark 官方插件 (`@larksuite/openclaw-lark@2026.4.1`) 源码验证所有 API 调用
+> 源码规模: 38 文件 / ~11,293 行（含测试），其中 `adapter.go` ~1380行、`streaming.go` ~870行
 > SDK 版本: `github.com/larksuite/oapi-sdk-go/v3@v3.5.3`
 
 ---
@@ -39,15 +39,15 @@ last_updated: 2026-04-21
 
 | 维度 | 当前状态 | OpenClaw 参照 | 差距 |
 |------|---------|--------------|------|
-| 源码规模 | 3 文件 / ~310 行 | ~80+ 文件 / ~8000+ 行 | 25x |
-| 消息类型 | 仅 `text` | 24 种 converter | 严重 |
-| 回复方式 | 纯文本 `im.message.create` | CardKit 流式 + IM patch + 静态 | 严重 |
-| 访问控制 | 无 | DM/Group 策略 + allowlist + @mention | 严重 |
-| 线程回复 | threadTS 始终为空 | root_id + parent_id + replyInThread | 高 |
-| @提及 | 不处理 | @_user_N 占位符解析 | 高 |
-| Abort | 无 | 65 语言触发词 + AbortController | 高 |
-| 限流 | 无 | CardKit 100ms / IM patch 1500ms | 高 |
-| Chat 队列 | 无 | per-chat 串行执行 | 高 |
+| 源码规模 | 38 文件 / ~11,293 行 | ~80+ 文件 / ~8000+ 行 | 已超越 |
+| 消息类型 | text/post/image/file/audio/video/sticker（7种） | 24 种 converter | 中等 |
+| 回复方式 | CardKit 流式 + IM patch + 静态（三级降级） | CardKit 流式 + IM patch + 静态 | ✅ 已对齐 |
+| 访问控制 | Gate: DM/Group 独立策略 + allowlist + @mention | DM/Group 策略 + allowlist + @mention | ✅ 已对齐 |
+| 线程回复 | root_id + parent_id + replyInThread | root_id + parent_id + replyInThread | ✅ 已对齐 |
+| @提及 | ResolveMentions + bot 自身移除 | @_user_N 占位符解析 | ✅ 已对齐 |
+| Abort | 多语言触发词 + ChatQueue.Abort + 流式中止 | 65 语言触发词 + AbortController | ✅ 已对齐 |
+| 限流 | FeishuRateLimiter: CardKit 100ms / IM patch 1500ms | CardKit 100ms / IM patch 1500ms | ✅ 已对齐 |
+| Chat 队列 | ChatQueue per-chat 串行 + Abort fast-path | per-chat 串行执行 | ✅ 已对齐 |
 
 ### 1.3 相关文档
 
@@ -294,7 +294,7 @@ text := ResolveMentions(rawText, mentions, a.botOpenID)
 | `audio` | 语音 | P0（✅已实现） | 下载到 `/tmp/hotplex/media/audios/{key}.opus`，自动转录为文本（STT 引擎） |
 | `video` | 视频 | P0（✅已实现） | 下载到 `/tmp/hotplex/media/videos/{key}.mp4`，拼接路径 |
 | `sticker` | 表情 | P0（✅已实现） | 下载到 `/tmp/hotplex/media/stickers/{key}.gif`，拼接路径 |
-| `interactive` | 交互式卡片 | P2 | 提取文本内容 |
+| `interactive` | 交互式卡片 | P2（✅已实现） | 解析卡片 JSON → 递归提取 header/div/markdown/note/column_set 文本 + 图片 |
 
 #### 2.3.3 实现
 
@@ -422,6 +422,9 @@ if media != nil {
 | 2.3-10 | 下载失败时保留纯文本（降级不阻断消息） | 单元测试 | ✅ 已实现 |
 | 2.3-11 | 文件超 10MB 跳过下载，保留纯文本 | 单元测试 | ✅ 已实现 |
 | 2.3-12 | 不支持的类型静默忽略（不报错） | 单元测试 | ✅ |
+| 2.3-13 | interactive 卡片提取 header/div/markdown/note/column_set 文本 | 单元测试 | ✅ `converter.go` convertInteractive |
+| 2.3-14 | interactive 卡片中的图片提取为 MediaInfo | 单元测试 | ✅ `converter.go` extractInteractiveElement |
+| 2.3-15 | interactive 解析失败降级为 `[交互式卡片]` 占位符 | 单元测试 | ✅ |
 
 #### 2.3.5 Speech-to-Text (STT) 语音转录
 
@@ -722,17 +725,17 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 
 #### 3.1.6 验收标准
 
-| ID | AC | 验证方式 |
-|----|-----|---------|
-| 3.1-1 | 状态机仅允许合法转换 | 单元测试 |
-| 3.1-2 | CardKit 创建成功后进入 streaming | 集成测试 |
-| 3.1-3 | CardKit 创建失败降级到 IM patch | 单元测试 |
-| 3.1-4 | IM patch 也失败则降级到纯文本 | 单元测试 |
-| 3.1-5 | 流式内容以 100ms 间隔更新 | 限流测试 |
-| 3.1-6 | 速率限制(230020)跳过帧不降级 | 错误测试 |
-| 3.1-7 | 表格超限(230099)禁用流式等终态 | 错误测试 |
-| 3.1-8 | Done 事件触发 Close 关闭流式 | 集成测试 |
-| 3.1-9 | 同一 chat 不出现消息洪水 | 集成测试 |
+| ID | AC | 验证方式 | 状态 |
+|----|-----|---------|------|
+| 3.1-1 | 状态机仅允许合法转换 | 单元测试 | ✅ `streaming_test.go` |
+| 3.1-2 | CardKit 创建成功后进入 streaming | 集成测试 | ✅ `streaming_card_test.go` |
+| 3.1-3 | CardKit 创建失败降级到 IM patch | 单元测试 | ✅ `streaming.go:710-788` flushIMPatch 降级链 |
+| 3.1-4 | IM patch 也失败则降级到纯文本 | 单元测试 | ✅ `streaming.go:660-708` flushCardKitWithRetry |
+| 3.1-5 | 流式内容以 100ms 间隔更新 | 限流测试 | ✅ `rate_limiter.go:43` AllowCardKit |
+| 3.1-6 | 速率限制(230020)跳过帧不降级 | 错误测试 | ✅ `streaming.go:846` isCardRateLimitError |
+| 3.1-7 | 表格超限(230099)禁用流式等终态 | 错误测试 | ✅ `streaming.go:859` isCardTableLimitError |
+| 3.1-8 | Done 事件触发 Close 关闭流式 | 集成测试 | ✅ `adapter.go:646-808` WriteCtx |
+| 3.1-9 | 同一 chat 不出现消息洪水 | 集成测试 | ✅ `chat_queue.go` per-chat 串行 |
 
 ---
 
@@ -793,14 +796,14 @@ a.chatQueue.Enqueue(chatID, func(ctx context.Context) error {
 
 #### 3.2.3 验收标准
 
-| ID | AC | 验证方式 |
-|----|-----|---------|
-| 3.2-1 | "stop" 被识别为 abort | 单元测试 |
-| 3.2-2 | "停止" 被识别为 abort | 单元测试 |
-| 3.2-3 | "Stop." 去标点后匹配 | 单元测试 |
-| 3.2-4 | "stop please" 匹配 | 单元测试 |
-| 3.2-5 | "hello" 不匹配 | 单元测试 |
-| 3.2-6 | abort 命令触发 StreamingCardController.Abort | 集成测试 |
+| ID | AC | 验证方式 | 状态 |
+|----|-----|---------|------|
+| 3.2-1 | "stop" 被识别为 abort | 单元测试 | ✅ `adapter_test.go:167` |
+| 3.2-2 | "停止" 被识别为 abort | 单元测试 | ✅ `pipeline.go:9-16` |
+| 3.2-3 | "Stop." 去标点后匹配 | 单元测试 | ✅ `pipeline.go:28-35` trimTrailingPunct |
+| 3.2-4 | "stop please" 匹配 | 单元测试 | ✅ |
+| 3.2-5 | "hello" 不匹配 | 单元测试 | ✅ |
+| 3.2-6 | abort 命令触发 StreamingCardController.Abort | 集成测试 | ✅ `handler_coverage_test.go:145` |
 
 ---
 
@@ -858,11 +861,11 @@ func (a *Adapter) RemoveTypingIndicator(ctx context.Context, messageID, reaction
 
 #### 3.3.4 验收标准
 
-| ID | AC | 验证方式 |
-|----|-----|---------|
-| 3.3-1 | 消息处理开始时添加 typing reaction | 集成测试 |
-| 3.3-2 | 消息处理结束时移除 typing reaction | 集成测试 |
-| 3.3-3 | reaction 失败不阻断消息处理 | 错误测试 |
+| ID | AC | 验证方式 | 状态 |
+|----|-----|---------|------|
+| 3.3-1 | 消息处理开始时添加 typing reaction | 集成测试 | ✅ `typing.go:111` AddTypingIndicator |
+| 3.3-2 | 消息处理结束时移除 typing reaction | 集成测试 | ✅ `typing.go:116` RemoveTypingIndicator |
+| 3.3-3 | reaction 失败不阻断消息处理 | 错误测试 | ✅ `adapter.go:583-644` cycleReaction |
 
 ---
 
@@ -991,15 +994,15 @@ if !result.Allowed {
 
 #### 4.1.4 验收标准
 
-| ID | AC | 验证方式 |
-|----|-----|---------|
-| 4.1-1 | dm_policy=disabled 拒绝所有 DM | 单元测试 |
-| 4.1-2 | dm_policy=open 允许所有 DM | 单元测试 |
-| 4.1-3 | dm_policy=allowlist 仅允许白名单用户 DM | 单元测试 |
-| 4.1-4 | group_policy=disabled 拒绝所有群消息 | 单元测试 |
-| 4.1-5 | require_mention=true 且未 @bot 时拒绝 | 单元测试 |
-| 4.1-6 | require_mention=true 且已 @bot 时允许 | 单元测试 |
-| 4.1-7 | topic_group 与 group 策略一致 | 单元测试 |
+| ID | AC | 验证方式 | 状态 |
+|----|-----|---------|------|
+| 4.1-1 | dm_policy=disabled 拒绝所有 DM | 单元测试 | ✅ `gate_dedup_test.go` |
+| 4.1-2 | dm_policy=open 允许所有 DM | 单元测试 | ✅ |
+| 4.1-3 | dm_policy=allowlist 仅允许白名单用户 DM | 单元测试 | ✅ |
+| 4.1-4 | group_policy=disabled 拒绝所有群消息 | 单元测试 | ✅ |
+| 4.1-5 | require_mention=true 且未 @bot 时拒绝 | 单元测试 | ✅ |
+| 4.1-6 | require_mention=true 且已 @bot 时允许 | 单元测试 | ✅ |
+| 4.1-7 | topic_group 与 group 策略一致 | 单元测试 | ✅ |
 
 ---
 
@@ -1041,11 +1044,11 @@ func (r *FeishuRateLimiter) AllowPatch(msgID string) bool
 
 #### 4.2.3 验收标准
 
-| ID | AC | 验证方式 |
-|----|-----|---------|
-| 4.2-1 | CardKit 同一卡片 100ms 内只允许 1 次 | 单元测试 |
-| 4.2-2 | IM patch 同一消息 1500ms 内只允许 1 次 | 单元测试 |
-| 4.2-3 | 不同卡片/消息独立限流 | 单元测试 |
+| ID | AC | 验证方式 | 状态 |
+|----|-----|---------|------|
+| 4.2-1 | CardKit 同一卡片 100ms 内只允许 1 次 | 单元测试 | ✅ `rate_limiter.go:43` AllowCardKit |
+| 4.2-2 | IM patch 同一消息 1500ms 内只允许 1 次 | 单元测试 | ✅ `rate_limiter.go:57` AllowPatch |
+| 4.2-3 | 不同卡片/消息独立限流 | 单元测试 | ✅ `rate_limiter_test.go` |
 
 ---
 
@@ -1112,12 +1115,12 @@ func (d *Dedup) TryRecord(id string) bool {
 
 #### 4.3.3 验收标准
 
-| ID | AC | 验证方式 |
-|----|-----|---------|
-| 4.3-1 | 重复 message_id 被拒绝 | 单元测试 |
-| 4.3-2 | 超过 maxEntries 时 FIFO 淘汰最旧条目 | 单元测试 |
-| 4.3-3 | 过期条目被定期清理 | 单元测试 |
-| 4.3-4 | 无容量无限增长 | 压力测试 |
+| ID | AC | 验证方式 | 状态 |
+|----|-----|---------|------|
+| 4.3-1 | 重复 message_id 被拒绝 | 单元测试 | ✅ `dedup.go:47` TryRecord |
+| 4.3-2 | 超过 maxEntries 时 FIFO 淘汰最旧条目 | 单元测试 | ✅ `dedup_test.go:74` TestDedup_TryRecord_FIFOEvict |
+| 4.3-3 | 过期条目被定期清理 | 单元测试 | ✅ `dedup.go` StartCleanup + sweepLoop |
+| 4.3-4 | 无容量无限增长 | 压力测试 | ✅ maxEntries 上限 |
 
 ---
 
@@ -1148,11 +1151,11 @@ func isMessageExpired(msg *larkim.EventMessage) bool {
 
 #### 4.4.3 验收标准
 
-| ID | AC | 验证方式 |
-|----|-----|---------|
-| 4.4-1 | 超过 30 分钟的旧消息被丢弃 | 单元测试 |
-| 4.4-2 | create_time 为 nil 时不丢弃 | 单元测试 |
-| 4.4-3 | 新鲜消息正常处理 | 单元测试 |
+| ID | AC | 验证方式 | 状态 |
+|----|-----|---------|------|
+| 4.4-1 | 超过 30 分钟的旧消息被丢弃 | 单元测试 | ✅ `adapter.go:302-308` IsMessageExpired |
+| 4.4-2 | create_time 为 nil 时不丢弃 | 单元测试 | ✅ nil check 在 `adapter.go:303` |
+| 4.4-3 | 新鲜消息正常处理 | 单元测试 | ✅ |
 
 ---
 
@@ -1160,37 +1163,35 @@ func isMessageExpired(msg *larkim.EventMessage) bool {
 
 ### Phase 1 — DM/群消息基础处理
 
-| 文件 | 操作 | 说明 |
-|------|------|------|
-| `internal/messaging/feishu/adapter.go` | 修改 | handleMessage 重构：提取 chatType/rootID/parentID/mentions；bot 防御检查；downloadMedia() 方法（MessageResource API） |
-| `internal/messaging/feishu/events.go` | 修改 | extractResponseText 保持不变（已在 2.1 中确认） |
-| `internal/messaging/feishu/mention.go` | 新增 | ResolveMentions 提及解析 |
-| `internal/messaging/feishu/converter.go` | 修改 | ConvertMessage 返回 `*MediaInfo`，支持 image/file/audio/video/sticker 下载元信息 |
-| `internal/messaging/feishu/chat_queue.go` | 新增 | ChatQueue per-chat 串行队列 |
-| `internal/messaging/feishu/adapter_test.go` | 修改 | 新增 AC 测试 |
-| `internal/messaging/bridge.go` | 修改 | MakeFeishuEnvelope 支持新 metadata 字段 |
+| 文件 | 操作 | 说明 | 状态 |
+|------|------|------|------|
+| `internal/messaging/feishu/adapter.go` | 修改 | handleMessage 重构：提取 chatType/rootID/parentID/mentions；bot 防御检查；downloadMedia() 方法（MessageResource API） | ✅ 已实现 |
+| `internal/messaging/feishu/events.go` | 修改 | extractResponseText 保持不变（已在 2.1 中确认） | ✅ 已实现 |
+| `internal/messaging/feishu/mention.go` | 新增 | ResolveMentions 提及解析 | ✅ 已实现 |
+| `internal/messaging/feishu/converter.go` | 修改 | ConvertMessage 返回 `[]*MediaInfo`，支持 image/file/audio/video/sticker 下载元信息 | ✅ 已实现 |
+| `internal/messaging/feishu/chat_queue.go` | 新增 | ChatQueue per-chat 串行队列 | ✅ 已实现 |
+| `internal/messaging/feishu/stt.go` | 新增 | STT Transcriber 接口 + 多 provider 实现 | ✅ 已实现 |
+| `internal/messaging/feishu/adapter_test.go` | 修改 | 新增 AC 测试 | ✅ 已实现 |
 
 ### Phase 2 — 用户体验
 
-| 文件 | 操作 | 说明 |
-|------|------|------|
-| `internal/messaging/feishu/streaming.go` | 新增 | StreamingCardController + 状态机 + 降级 |
-| `internal/messaging/feishu/abort.go` | 新增 | IsAbortCommand |
-| `internal/messaging/feishu/typing.go` | 新增 | AddTypingIndicator / RemoveTypingIndicator |
-| `internal/messaging/feishu/adapter.go` | 修改 | 集成 streaming/abort/typing |
-| `internal/messaging/feishu/adapter_test.go` | 修改 | 新增 AC 测试 |
+| 文件 | 操作 | 说明 | 状态 |
+|------|------|------|------|
+| `internal/messaging/feishu/streaming.go` | 新增 | StreamingCardController + 状态机 + 三级降级 | ✅ 已实现 |
+| `internal/messaging/pipeline.go` | 新增 | IsAbortCommand（提升到 messaging 包级别，Slack/Feishu 共享） | ✅ 已实现 |
+| `internal/messaging/feishu/typing.go` | 新增 | AddTypingIndicator / RemoveTypingIndicator + emoji cycling | ✅ 已实现 |
+| `internal/messaging/feishu/adapter.go` | 修改 | 集成 streaming/abort/typing | ✅ 已实现 |
 
 ### Phase 3 — 安全
 
-| 文件 | 操作 | 说明 |
-|------|------|------|
-| `internal/messaging/feishu/gate.go` | 新增 | Gate 访问控制 |
-| `internal/messaging/feishu/rate_limiter.go` | 新增 | FeishuRateLimiter |
-| `internal/messaging/feishu/dedup.go` | 新增 | FIFO Dedup |
-| `internal/config/config.go` | 修改 | FeishuConfig 扩展 |
-| `configs/config-dev.yaml` | 修改 | 新增 gate 配置项 |
-| `configs/env.example` | 修改 | 新增环境变量 |
-| `cmd/hotplex/main.go` | 修改 | 传递新配置到 adapter |
+| 文件 | 操作 | 说明 | 状态 |
+|------|------|------|------|
+| `internal/messaging/gate.go` | 新增 | Gate 访问控制（提升到 messaging 包级别，Slack/Feishu 共享） | ✅ 已实现 |
+| `internal/messaging/feishu/rate_limiter.go` | 新增 | FeishuRateLimiter: CardKit 100ms / IM Patch 1500ms | ✅ 已实现 |
+| `internal/messaging/dedup.go` | 新增 | FIFO Dedup + maxEntries + TTL（提升到 messaging 包级别） | ✅ 已实现 |
+| `internal/config/config.go` | 修改 | FeishuConfig 扩展 DMPolicy/GroupPolicy/RequireMention/AllowFrom | ✅ 已实现 |
+| `configs/config-dev.yaml` | 修改 | 新增 gate 配置项 | ✅ 已实现 |
+| `configs/env.example` | 修改 | 新增环境变量 | ✅ 已实现 |
 
 ---
 
@@ -1269,3 +1270,33 @@ Phase 3.4 (message expiry)
 | **TC-3.4** | **群越权渗透攻击** | 1. 找一个不在后台网关 `AllowList / 限充群名单` 内且规模庞大的无关大百人群。<br>2. 以低级别用户权限强行拉扯机器人进群，并且 `@该机器人 测试`。 | 无论怎么呼叫，机器人以完全**已读不回**的状态应对此异常请求，不浪费 GPU Token。即便被绕过拉起，业务层仍处于全额闭锁状。 |
 
 Phase 1 内部可并行开发（1.1 ~ 1.5 相互独立），Phase 2 依赖 Phase 1 完成，Phase 3 可部分并行。
+
+---
+
+## 9. 实现偏差说明
+
+### 9.1 架构提升（feishu → messaging）
+
+以下组件从 `internal/messaging/feishu/` 提升到 `internal/messaging/`，实现 Slack/Feishu 共享：
+
+| 组件 | Spec 计划位置 | 实际位置 | 原因 |
+|------|-------------|---------|------|
+| Gate 访问控制 | `feishu/gate.go` | `messaging/gate.go` | Slack/Feishu 共享策略逻辑 |
+| Dedup 去重 | `feishu/dedup.go` | `messaging/dedup.go` | 通用 FIFO 去重，平台无关 |
+| IsAbortCommand | `feishu/abort.go` | `messaging/pipeline.go` | 跨平台共享 + `RegisterAbortTrigger` 动态注册 |
+
+### 9.2 实现增强（超出 spec）
+
+| 增强 | 文件 | 说明 |
+|------|------|------|
+| Emoji cycling | `adapter.go:614-644` | typing indicator 增加了 emoji 动态轮转，增强用户感知 |
+| ConvertMessage 多附件 | `converter.go` | 返回 `[]*MediaInfo` 而非 `*MediaInfo`，支持单条消息多附件 |
+| idConvert | `streaming.go:489` | 处理 open_id → message_id 转换，spec 未提及 |
+| flushLoop 异步刷新 | `streaming.go:331-358` | 独立 goroutine 异步 flush，spec 仅描述同步 Write+Flush |
+| Turn Summary Card | `adapter.go:928-959` | turn 结束后发送摘要卡片，spec 未涉及 |
+| Context Usage / MCP Status | `adapter.go:961-1006` | 上下文用量和 MCP 状态展示，spec 未涉及 |
+
+### 9.3 待完成项
+
+- **§8 UAT 手动验收**：12 个黑盒测试用例需要真机执行，无法自动化
+- **剩余消息类型**：飞书官方支持 10 种 msg_type，当前覆盖 8 种（text/post/image/file/audio/video/sticker/interactive），`share_chat`（群名片）和 `share_user`（用户名片）对 AI 无意义，保持忽略

@@ -37,6 +37,8 @@ func ConvertMessage(msgType, rawContent string, mentions []*larkim.MentionEvent,
 		return convertVideo(rawContent, messageID)
 	case "sticker":
 		return convertSticker(rawContent, messageID)
+	case "interactive":
+		return convertInteractive(rawContent, messageID)
 	default:
 		return "", false, nil
 	}
@@ -181,6 +183,121 @@ func convertSticker(rawContent, messageID string) (string, bool, []*MediaInfo) {
 		return "[表情]", true, nil
 	}
 	return "[用户发送了一个表情]", true, []*MediaInfo{{Type: "sticker", Key: s.FileKey, MessageID: messageID}}
+}
+
+// ─── Interactive card ──────────────────────────────────────────────────────────
+
+// interactiveCard models the Feishu card JSON received in an interactive message.
+// Supports both schema 1.0 (elements at root) and schema 2.0 (elements under body).
+type interactiveCard struct {
+	Schema   string               `json:"schema"`
+	Header   *interactiveHeader   `json:"header"`
+	Elements []interactiveElement `json:"elements"` // schema 1.0
+	Body     *interactiveBody     `json:"body"`     // schema 2.0
+}
+
+type interactiveBody struct {
+	Elements []interactiveElement `json:"elements"`
+}
+
+type interactiveHeader struct {
+	Title    *interactiveText `json:"title"`
+	Subtitle string           `json:"subtitle"`
+}
+
+type interactiveText struct {
+	Tag     string `json:"tag"`
+	Content string `json:"content"`
+}
+
+type interactiveElement struct {
+	Tag      string               `json:"tag"`
+	Text     *interactiveText     `json:"text"`
+	Content  string               `json:"content"`  // markdown content
+	ImgKey   string               `json:"img_key"`  // img element
+	Elements []interactiveElement `json:"elements"` // note/column_set elements
+}
+
+// convertInteractive extracts text content and images from a Feishu interactive card message.
+func convertInteractive(rawContent, messageID string) (string, bool, []*MediaInfo) {
+	var card interactiveCard
+	if err := json.Unmarshal([]byte(rawContent), &card); err != nil {
+		return "[交互式卡片]", true, nil
+	}
+
+	var sb strings.Builder
+	var mediaList []*MediaInfo
+
+	if card.Header != nil {
+		if card.Header.Title != nil && card.Header.Title.Content != "" {
+			sb.WriteString("## ")
+			sb.WriteString(card.Header.Title.Content)
+			sb.WriteString("\n\n")
+		}
+		if card.Header.Subtitle != "" {
+			sb.WriteString(card.Header.Subtitle)
+			sb.WriteString("\n\n")
+		}
+	}
+
+	// Schema 2.0 uses body.elements; schema 1.0 uses root-level elements.
+	elements := card.Elements
+	if card.Body != nil && len(card.Body.Elements) > 0 {
+		elements = card.Body.Elements
+	}
+
+	for _, elem := range elements {
+		text, medias := extractInteractiveElement(elem, messageID)
+		if text != "" {
+			sb.WriteString(text)
+			sb.WriteString("\n")
+		}
+		mediaList = append(mediaList, medias...)
+	}
+
+	result := strings.TrimSpace(sb.String())
+	if result == "" && len(mediaList) == 0 {
+		return "[交互式卡片]", true, nil
+	}
+
+	return result, true, mediaList
+}
+
+// extractInteractiveElement recursively extracts text and images from a card element.
+func extractInteractiveElement(elem interactiveElement, messageID string) (string, []*MediaInfo) {
+	var text string
+	var mediaList []*MediaInfo
+
+	switch elem.Tag {
+	case "div":
+		if elem.Text != nil && elem.Text.Content != "" {
+			text = elem.Text.Content
+		}
+	case "markdown":
+		text = elem.Content
+	case "img":
+		if elem.ImgKey != "" {
+			text = "[图片]"
+			mediaList = append(mediaList, &MediaInfo{
+				Type:      "image",
+				Key:       elem.ImgKey,
+				MessageID: messageID,
+			})
+		}
+	case "note", "column_set":
+		var sb strings.Builder
+		for _, child := range elem.Elements {
+			childText, childMedias := extractInteractiveElement(child, messageID)
+			if childText != "" {
+				sb.WriteString(childText)
+				sb.WriteString("\n")
+			}
+			mediaList = append(mediaList, childMedias...)
+		}
+		text = strings.TrimSpace(sb.String())
+	}
+
+	return text, mediaList
 }
 
 // BuildMediaPrompt constructs a worker-friendly prompt with media file paths and transcriptions.
