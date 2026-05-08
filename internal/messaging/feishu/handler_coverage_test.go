@@ -130,7 +130,7 @@ func TestHandleMessage_UnsupportedType(t *testing.T) {
 		Build()
 	msg := larkim.NewEventMessageBuilder().
 		MessageId("msg_unsup").
-		MessageType("interactive").
+		MessageType("share_chat").
 		Content(`{}`).
 		ChatId("ch1").
 		ChatType("group").
@@ -327,6 +327,89 @@ func TestHandleMessage_PostWithThread(t *testing.T) {
 	require.NoError(t, err)
 
 	time.Sleep(100 * time.Millisecond)
+}
+
+func TestHandleMessage_InteractiveSchema1(t *testing.T) {
+	t.Parallel()
+	a := newTestAdapter(t)
+	a.chatQueue = NewChatQueue(discardLogger)
+	t.Cleanup(func() { a.chatQueue.Close() })
+
+	sender := larkim.NewEventSenderBuilder().
+		SenderId(larkim.NewUserIdBuilder().OpenId("user1").Build()).
+		SenderType("user").
+		Build()
+	msg := larkim.NewEventMessageBuilder().
+		MessageId("msg_inter_v1").
+		MessageType("interactive").
+		Content(`{"header":{"title":{"tag":"plain_text","content":"会议纪要"},"subtitle":"2026-05-08"},"elements":[{"tag":"div","text":{"tag":"plain_text","content":"讨论了进度"}},{"tag":"markdown","content":"**结论**: 按时交付"}]}`).
+		ChatId("ch_inter").
+		ChatType("p2p").
+		Build()
+
+	// Schema 1.0 interactive card → ConvertMessage extracts text.
+	// No bridge → handleTextMessage returns nil.
+	err := a.handleMessage(context.Background(), &larkim.P2MessageReceiveV1{
+		Event: &larkim.P2MessageReceiveV1Data{Sender: sender, Message: msg},
+	})
+	require.NoError(t, err)
+
+	time.Sleep(100 * time.Millisecond)
+}
+
+func TestHandleMessage_InteractiveSchema2(t *testing.T) {
+	t.Parallel()
+	a := newTestAdapter(t)
+	a.chatQueue = NewChatQueue(discardLogger)
+	t.Cleanup(func() { a.chatQueue.Close() })
+
+	sender := larkim.NewEventSenderBuilder().
+		SenderId(larkim.NewUserIdBuilder().OpenId("user1").Build()).
+		SenderType("user").
+		Build()
+	msg := larkim.NewEventMessageBuilder().
+		MessageId("msg_inter_v2").
+		MessageType("interactive").
+		Content(`{"schema":"2.0","header":{"title":{"tag":"plain_text","content":"通知"}},"body":{"elements":[{"tag":"markdown","content":"系统升级完成"},{"tag":"img","img_key":"img_v3_notify"}]}}`).
+		ChatId("ch_inter2").
+		ChatType("group").
+		RootId("root_inter").
+		Build()
+
+	// Schema 2.0 interactive card with image and thread.
+	// No bridge → handleTextMessage returns nil.
+	err := a.handleMessage(context.Background(), &larkim.P2MessageReceiveV1{
+		Event: &larkim.P2MessageReceiveV1Data{Sender: sender, Message: msg},
+	})
+	require.NoError(t, err)
+
+	time.Sleep(100 * time.Millisecond)
+}
+
+func TestHandleMessage_InteractiveEmptyCard(t *testing.T) {
+	t.Parallel()
+	a := newTestAdapter(t)
+	a.chatQueue = NewChatQueue(discardLogger)
+	t.Cleanup(func() { a.chatQueue.Close() })
+
+	sender := larkim.NewEventSenderBuilder().
+		SenderId(larkim.NewUserIdBuilder().OpenId("user1").Build()).
+		SenderType("user").
+		Build()
+	msg := larkim.NewEventMessageBuilder().
+		MessageId("msg_inter_empty").
+		MessageType("interactive").
+		Content(`{"elements":[]}`).
+		ChatId("ch_inter_empty").
+		ChatType("p2p").
+		Build()
+
+	// Empty interactive card falls back to "[交互式卡片]".
+	// ConvertMessage returns ok=true, non-empty text → proceeds to chatQueue.
+	err := a.handleMessage(context.Background(), &larkim.P2MessageReceiveV1{
+		Event: &larkim.P2MessageReceiveV1Data{Sender: sender, Message: msg},
+	})
+	require.NoError(t, err)
 }
 
 func TestHandleMessage_NilSenderUserID(t *testing.T) {

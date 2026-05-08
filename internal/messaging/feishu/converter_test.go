@@ -715,3 +715,233 @@ func TestConvertMessage_Post(t *testing.T) {
 	require.Contains(t, text, "Hello world")
 	require.Nil(t, media)
 }
+
+// ─── Interactive card tests ───────────────────────────────────────────────────
+
+func TestConvertInteractive(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name       string
+		rawContent string
+		msgID      string
+		wantOK     bool
+		contains   []string
+		notContain []string
+		wantMedia  int
+		wantType   string
+		wantKey    string
+	}{
+		{
+			name: "full card with header and elements",
+			rawContent: `{
+				"header": {"title":{"tag":"plain_text","content":"会议纪要"},"subtitle":"2026-05-08"},
+				"elements": [
+					{"tag":"div","text":{"tag":"plain_text","content":"讨论了项目进度"}},
+					{"tag":"markdown","content":"**结论**: 按时交付"},
+					{"tag":"img","img_key":"img_v3_abc"}
+				]
+			}`,
+			msgID:     "msg_interactive_1",
+			wantOK:    true,
+			contains:  []string{"## 会议纪要", "2026-05-08", "讨论了项目进度", "**结论**: 按时交付", "[图片]"},
+			wantMedia: 1,
+			wantType:  "image",
+			wantKey:   "img_v3_abc",
+		},
+		{
+			name: "card with note containing nested elements",
+			rawContent: `{
+				"elements": [
+					{"tag":"div","text":{"tag":"plain_text","content":"主内容"}},
+					{"tag":"note","elements":[
+						{"tag":"div","text":{"tag":"plain_text","content":"备注1"}},
+						{"tag":"div","text":{"tag":"plain_text","content":"备注2"}}
+					]}
+				]
+			}`,
+			msgID:     "msg_interactive_2",
+			wantOK:    true,
+			contains:  []string{"主内容", "备注1", "备注2"},
+			wantMedia: 0,
+		},
+		{
+			name: "card with header only, no elements",
+			rawContent: `{
+				"header": {"title":{"tag":"plain_text","content":"仅标题"}}
+			}`,
+			msgID:     "msg_interactive_3",
+			wantOK:    true,
+			contains:  []string{"## 仅标题"},
+			wantMedia: 0,
+		},
+		{
+			name: "card with image only",
+			rawContent: `{
+				"elements": [
+					{"tag":"img","img_key":"img_only"}
+				]
+			}`,
+			msgID:     "msg_interactive_4",
+			wantOK:    true,
+			contains:  []string{"[图片]"},
+			wantMedia: 1,
+			wantType:  "image",
+			wantKey:   "img_only",
+		},
+		{
+			name: "card with action elements skipped",
+			rawContent: `{
+				"elements": [
+					{"tag":"div","text":{"tag":"plain_text","content":"before action"}},
+					{"tag":"action","actions":[{"tag":"button","text":{"tag":"plain_text","content":"click me"}}]},
+					{"tag":"div","text":{"tag":"plain_text","content":"after action"}}
+				]
+			}`,
+			msgID:      "msg_interactive_5",
+			wantOK:     true,
+			contains:   []string{"before action", "after action"},
+			notContain: []string{"click me"},
+			wantMedia:  0,
+		},
+		{
+			name:       "empty card falls back to placeholder",
+			rawContent: `{"elements":[]}`,
+			msgID:      "msg_interactive_6",
+			wantOK:     true,
+			contains:   []string{"[交互式卡片]"},
+			wantMedia:  0,
+		},
+		{
+			name:       "invalid json falls back to placeholder",
+			rawContent: `{broken`,
+			msgID:      "msg_interactive_7",
+			wantOK:     true,
+			contains:   []string{"[交互式卡片]"},
+			wantMedia:  0,
+		},
+		{
+			name: "card with img but no img_key",
+			rawContent: `{
+				"elements": [{"tag":"img"}]
+			}`,
+			msgID:     "msg_interactive_8",
+			wantOK:    true,
+			contains:  []string{"[交互式卡片]"},
+			wantMedia: 0,
+		},
+		{
+			name: "card with column_set containing nested elements",
+			rawContent: `{
+				"elements": [
+					{"tag":"column_set","elements":[
+						{"tag":"div","text":{"tag":"plain_text","content":"col1"}},
+						{"tag":"div","text":{"tag":"plain_text","content":"col2"}}
+					]}
+				]
+			}`,
+			msgID:     "msg_interactive_9",
+			wantOK:    true,
+			contains:  []string{"col1", "col2"},
+			wantMedia: 0,
+		},
+		{
+			name: "header with empty title content",
+			rawContent: `{
+				"header": {"title":{"tag":"plain_text","content":""},"subtitle":"sub"},
+				"elements": [{"tag":"div","text":{"tag":"plain_text","content":"body"}}]
+			}`,
+			msgID:      "msg_interactive_10",
+			wantOK:     true,
+			contains:   []string{"sub", "body"},
+			notContain: []string{"##"},
+			wantMedia:  0,
+		},
+		{
+			name: "schema 2.0 with body.elements",
+			rawContent: `{
+				"schema": "2.0",
+				"header": {"title":{"tag":"plain_text","content":"Schema 2.0 Card"}},
+				"body": {
+					"elements": [
+						{"tag":"markdown","content":"**bold text**"},
+						{"tag":"img","img_key":"img_s2"},
+						{"tag":"div","text":{"tag":"plain_text","content":"plain div"}}
+					]
+				}
+			}`,
+			msgID:     "msg_interactive_11",
+			wantOK:    true,
+			contains:  []string{"## Schema 2.0 Card", "**bold text**", "[图片]", "plain div"},
+			wantMedia: 1,
+			wantType:  "image",
+			wantKey:   "img_s2",
+		},
+		{
+			name: "schema 2.0 body.elements takes precedence over root elements",
+			rawContent: `{
+				"schema": "2.0",
+				"elements": [{"tag":"div","text":{"tag":"plain_text","content":"old schema"}}],
+				"body": {
+					"elements": [{"tag":"div","text":{"tag":"plain_text","content":"new schema"}}]
+				}
+			}`,
+			msgID:      "msg_interactive_12",
+			wantOK:     true,
+			contains:   []string{"new schema"},
+			notContain: []string{"old schema"},
+			wantMedia:  0,
+		},
+		{
+			name: "schema 2.0 with column_set in body",
+			rawContent: `{
+				"schema": "2.0",
+				"body": {
+					"elements": [
+						{"tag":"column_set","elements":[
+							{"tag":"div","text":{"tag":"plain_text","content":"col A"}},
+							{"tag":"div","text":{"tag":"plain_text","content":"col B"}}
+						]}
+					]
+				}
+			}`,
+			msgID:     "msg_interactive_13",
+			wantOK:    true,
+			contains:  []string{"col A", "col B"},
+			wantMedia: 0,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			text, ok, media := ConvertMessage("interactive", tt.rawContent, nil, "", tt.msgID)
+			require.Equal(t, tt.wantOK, ok)
+			for _, sub := range tt.contains {
+				require.Contains(t, text, sub)
+			}
+			for _, sub := range tt.notContain {
+				require.NotContains(t, text, sub)
+			}
+			require.Len(t, media, tt.wantMedia)
+			if tt.wantMedia > 0 {
+				require.Equal(t, tt.wantType, media[0].Type)
+				require.Equal(t, tt.wantKey, media[0].Key)
+				require.Equal(t, tt.msgID, media[0].MessageID)
+			}
+		})
+	}
+}
+
+func TestConvertMessage_Interactive(t *testing.T) {
+	t.Parallel()
+	raw := `{
+		"header": {"title":{"tag":"plain_text","content":"Card Title"}},
+		"elements": [
+			{"tag":"markdown","content":"Hello from card"}
+		]
+	}`
+	text, ok, media := ConvertMessage("interactive", raw, nil, "", "msg_card")
+	require.True(t, ok)
+	require.Contains(t, text, "## Card Title")
+	require.Contains(t, text, "Hello from card")
+	require.Nil(t, media)
+}
