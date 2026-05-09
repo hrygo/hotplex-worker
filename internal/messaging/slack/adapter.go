@@ -761,8 +761,8 @@ func (c *SlackConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		}
 		_ = c.adapter.statusMgr.Notify(ctx, c.channelID, c.threadTS, StatusToolResult, truncateWithSuffix(shortenPaths(text), statusTextLimit))
 	default:
-		if status, text := aepEventToStatus(env); text != "" {
-			_ = c.adapter.statusMgr.Notify(ctx, c.channelID, c.threadTS, status, text)
+		if env.Event.Type == events.MessageDelta {
+			_ = c.adapter.statusMgr.Notify(ctx, c.channelID, c.threadTS, StatusAnswering, "Composing response...")
 		}
 	}
 
