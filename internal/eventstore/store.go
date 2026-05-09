@@ -395,7 +395,7 @@ func (s *SQLiteStore) QueryTurnStats(ctx context.Context, sessionID string) (*Tu
 		if err := rows.Scan(new(string), &ts.Seq, &role, &success, &ts.Source,
 			&toolsJSON, &toolCount, &ts.TokensIn, &ts.TokensOut,
 			&ts.DurationMs, &ts.CostUSD, &ts.Model, &ts.CreatedAt); err != nil {
-			continue
+			return nil, fmt.Errorf("eventstore: scan turn stat: %w", err)
 		}
 		ts.Success = success.Valid && success.Int64 == 1
 		stats.TotalTurns++
