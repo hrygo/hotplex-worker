@@ -96,12 +96,6 @@ func NewParser(log *slog.Logger) *Parser {
 	}
 }
 
-// Parse parses an already-unmarshaled SDKMessage into WorkerEvents.
-// Use this when the caller has already unmarshaled the JSON to avoid redundant parsing.
-func (p *Parser) Parse(msg *SDKMessage) ([]*WorkerEvent, error) {
-	return p.routeByType(msg)
-}
-
 // Returns multiple events for compound messages (e.g., assistant with text + tool_use).
 func (p *Parser) ParseLine(line string) ([]*WorkerEvent, error) {
 	var msg SDKMessage

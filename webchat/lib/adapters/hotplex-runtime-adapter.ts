@@ -900,10 +900,11 @@ export function useHotPlexRuntime({
   }, []);
 
   const [isStopping, setIsStopping] = useState(false);
+  const stoppingRef = useRef(false);
 
-  // Handler for cancellation — brief stopping state for UI feedback
   const handleCancel = useCallback(async () => {
-    if (isStopping) return;
+    if (stoppingRef.current) return;
+    stoppingRef.current = true;
     setIsStopping(true);
     const client = clientRef.current;
     if (client?.connected) {
@@ -912,8 +913,9 @@ export function useHotPlexRuntime({
     setTimeout(() => {
       setIsRunning(false);
       setIsStopping(false);
+      stoppingRef.current = false;
     }, 600);
-  }, [isStopping]);
+  }, []);
 
   // Handler for loading earlier messages (cursor-based pagination)
   const handleLoadHistory = useCallback(async (): Promise<{ hasMore: boolean }> => {

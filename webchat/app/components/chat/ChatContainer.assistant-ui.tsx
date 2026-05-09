@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   AssistantRuntimeProvider,
   useExternalStoreRuntime,
@@ -33,28 +33,7 @@ function ChatInterface({
     onSkillsChange: setSkills,
   });
 
-  // Diagnostic: detect duplicate IDs in adapter messages before passing to runtime (#331)
-  const diagAdapter = useMemo(() => {
-    const msgs = adapter.messages as readonly { id: string; role: string }[] | undefined;
-    if (msgs && msgs.length > 0) {
-      const ids = new Map<string, number>();
-      for (const m of msgs) {
-        const count = (ids.get(m.id) ?? 0) + 1;
-        ids.set(m.id, count);
-        if (count > 1) {
-          console.error('[#331 DIAG] DUPLICATE ID in adapter.messages:', {
-            id: m.id,
-            role: m.role,
-            totalCount: count,
-            allIds: msgs.map((m, i) => `${i}:${m.id}(${m.role})`),
-          });
-        }
-      }
-    }
-    return adapter;
-  }, [adapter]);
-
-  const runtime = useExternalStoreRuntime(diagAdapter);
+  const runtime = useExternalStoreRuntime(adapter);
 
   type AdapterExtras = {
     hasMore?: boolean;

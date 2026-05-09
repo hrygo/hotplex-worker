@@ -251,7 +251,9 @@ func (h *Handler) handlePing(ctx context.Context, env *events.Envelope) error {
 		events.Pong,
 		map[string]any{"state": state},
 	)
-	h.log.Debug("gateway: ping received, sending pong", "session_id", env.SessionID, "state", state)
+	if h.log.Enabled(ctx, slog.LevelDebug) {
+		h.log.Debug("gateway: ping received, sending pong", "session_id", env.SessionID, "state", state)
+	}
 	err = h.hub.SendToSession(ctx, reply)
 	if err != nil {
 		h.log.Warn("gateway: pong send failed", "session_id", env.SessionID, "err", err)
