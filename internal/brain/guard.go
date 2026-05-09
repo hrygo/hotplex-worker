@@ -98,26 +98,24 @@ const (
 	ThreatLevelCritical ThreatLevel = "critical"
 )
 
-// GuardAction constants for GuardResult.Action.
+// GuardAction determines how the caller should handle the result.
+type GuardAction string
+
 const (
-	GuardActionAllow    = "allow"
-	GuardActionBlock    = "block"
-	GuardActionSanitize = "sanitize"
+	GuardActionAllow    GuardAction = "allow"
+	GuardActionBlock    GuardAction = "block"
+	GuardActionSanitize GuardAction = "sanitize"
 )
 
 // GuardResult represents the result of a guard check.
-// Action determines the next step:
-//   - "allow": Pass through unchanged
-//   - "block": Reject the input/output entirely
-//   - "sanitize": Pass through with sensitive data redacted (see SanitizedInput)
 type GuardResult struct {
 	Safe           bool        `json:"safe"`                      // true if no threat detected or successfully sanitized
 	ThreatLevel    ThreatLevel `json:"threat_level"`              // Severity classification
 	ThreatType     string      `json:"threat_type,omitempty"`     // e.g., "prompt_injection", "sensitive_data_detected"
 	Reason         string      `json:"reason,omitempty"`          // Human-readable explanation
 	MatchedPattern string      `json:"matched_pattern,omitempty"` // The regex that matched (for debugging)
-	Action         string      `json:"action,omitempty"`          // "allow", "block", or "sanitize"
-	SanitizedInput string      `json:"sanitized_input,omitempty"` // Redacted version when Action == "sanitize"
+	Action         GuardAction `json:"action,omitempty"`          // allow, block, or sanitize
+	SanitizedInput string      `json:"sanitized_input,omitempty"` // Redacted version when Action == GuardActionSanitize
 }
 
 // SafetyGuard provides security guardrails for Brain operations.
@@ -178,7 +176,6 @@ func NewSafetyGuard(brain Brain, config GuardConfig, logger *slog.Logger) (*Safe
 	// Initialize sensitive patterns for output filtering
 	guard.initSensitivePatterns()
 
-	// Background cleanup: clear stale rate limiters every 10 minutes.
 	go guard.runCleanup(ctx, 10*time.Minute)
 
 	return guard, nil
@@ -199,7 +196,7 @@ func (g *SafetyGuard) runCleanup(ctx context.Context, interval time.Duration) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			g.ClearExpiredLimiters(interval)
+			g.clearExpiredLimiters(interval)
 		}
 	}
 }
@@ -322,33 +319,19 @@ func (g *SafetyGuard) CheckInputWithUser(ctx context.Context, input, userID stri
 }
 
 // getOrCreateLimiter returns the rate limiter for a user, creating one if needed.
-// Uses RLock fast path for existing users, double-check locking for new users.
 func (g *SafetyGuard) getOrCreateLimiter(userID string) *rate.Limiter {
-	g.mu.RLock()
-	limiter, exists := g.userLimiters[userID]
-	g.mu.RUnlock()
-	if exists {
-		g.mu.Lock()
-		g.userLastSeen[userID] = time.Now()
-		g.mu.Unlock()
-		return limiter
-	}
-
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	// Double-check after acquiring write lock.
-	if limiter, exists = g.userLimiters[userID]; exists {
-		g.userLastSeen[userID] = time.Now()
-		return limiter
+	limiter, exists := g.userLimiters[userID]
+	if !exists {
+		limiter = rate.NewLimiter(rate.Limit(g.rateLimitRPS), g.rateLimitBurst)
+		g.userLimiters[userID] = limiter
 	}
-	limiter = rate.NewLimiter(rate.Limit(g.rateLimitRPS), g.rateLimitBurst)
-	g.userLimiters[userID] = limiter
 	g.userLastSeen[userID] = time.Now()
 	return limiter
 }
 
-// ClearExpiredLimiters removes rate limiters for users not seen within ttl.
-func (g *SafetyGuard) ClearExpiredLimiters(ttl time.Duration) {
+func (g *SafetyGuard) clearExpiredLimiters(ttl time.Duration) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	now := time.Now()
