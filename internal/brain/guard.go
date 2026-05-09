@@ -342,25 +342,25 @@ func (g *SafetyGuard) getOrCreateLimiter(userID string) *rate.Limiter {
 		g.userLimiters[userID] = limiter
 	}
 	g.userLastSeen[userID] = time.Now()
-		g.evictStaleLimiters()
-		g.mu.Unlock()
-		return limiter
-	}
+	g.evictStaleLimiters()
+	g.mu.Unlock()
+	return limiter
+}
 
-	// evictStaleLimiters removes rate limiters not seen within limiterTTL.
-	// Must be called with g.mu held for writing.
-	func (g *SafetyGuard) evictStaleLimiters() {
-		if len(g.userLimiters) < 100 {
-			return
-		}
-		now := time.Now()
-		for uid, lastSeen := range g.userLastSeen {
-			if now.Sub(lastSeen) > g.limiterTTL {
-				delete(g.userLimiters, uid)
-				delete(g.userLastSeen, uid)
-			}
+// evictStaleLimiters removes rate limiters not seen within limiterTTL.
+// Must be called with g.mu held for writing.
+func (g *SafetyGuard) evictStaleLimiters() {
+	if len(g.userLimiters) < 100 {
+		return
+	}
+	now := time.Now()
+	for uid, lastSeen := range g.userLastSeen {
+		if now.Sub(lastSeen) > g.limiterTTL {
+			delete(g.userLimiters, uid)
+			delete(g.userLastSeen, uid)
 		}
 	}
+}
 
 // deepInputAnalysis uses Brain for deeper threat analysis.
 func (g *SafetyGuard) deepInputAnalysis(ctx context.Context, input string) *GuardResult {
