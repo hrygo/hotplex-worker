@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -53,9 +54,14 @@ func newStatusCmd() *cobra.Command {
 			info.Source = string(inst.Source)
 			info.Running = true
 
-			addr := gatewayAddrFromConfig(configPath)
-			client := &http.Client{Timeout: 3 * time.Second}
-			resp, err := client.Get("http://" + addr + "/health")
+			healthURL := gatewayHealthURL(configPath)
+			client := &http.Client{
+				Timeout: 3 * time.Second,
+				Transport: &http.Transport{
+					TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // self-signed certs OK for health check
+				},
+			}
+			resp, err := client.Get(healthURL)
 			if err != nil {
 				info.Health = "unreachable: " + err.Error()
 			} else {
@@ -74,7 +80,7 @@ func newStatusCmd() *cobra.Command {
 				case sourceService:
 					fmt.Fprintf(os.Stderr, "gateway: running as service (%s, PID %d)\n", inst.Level, inst.PID)
 				}
-				fmt.Fprintf(os.Stderr, "  health: http://%s/health → %s\n", addr, info.Health)
+				fmt.Fprintf(os.Stderr, "  health: %s → %s\n", healthURL, info.Health)
 			}
 			return nil
 		},
@@ -84,19 +90,23 @@ func newStatusCmd() *cobra.Command {
 	return cmd
 }
 
-func gatewayAddrFromConfig(configPath string) string {
+func gatewayHealthURL(configPath string) string {
 	absPath, err := config.ExpandAndAbs(configPath)
 	if err != nil {
-		return "localhost:8888"
+		return "http://localhost:8888/health"
 	}
 	loadEnvFile(filepath.Dir(absPath))
 	cfg, err := config.Load(absPath, config.LoadOptions{})
 	if err != nil {
-		return "localhost:8888"
+		return "http://localhost:8888/health"
+	}
+	scheme := "http"
+	if cfg.Security.TLSEnabled {
+		scheme = "https"
 	}
 	addr := cfg.Gateway.Addr
 	if addr != "" && addr[0] == ':' {
-		return "localhost" + addr
+		addr = "localhost" + addr
 	}
-	return addr
+	return scheme + "://" + addr + "/health"
 }
