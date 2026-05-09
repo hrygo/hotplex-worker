@@ -57,13 +57,25 @@ func (a *AdminAPI) HandleStats(w http.ResponseWriter, r *http.Request) {
 func (a *AdminAPI) HandleHealth(w http.ResponseWriter, r *http.Request) {
 	cfg := a.cfg.Get()
 	dbHealthy := true
+	var dbErr string
 	if _, err := a.sm.List(r.Context(), "", "", 1, 0); err != nil {
 		dbHealthy = false
+		dbErr = err.Error()
+		a.log.Warn("admin: health check DB probe failed", "err", err)
 	}
 
 	status := "healthy"
 	if !dbHealthy {
 		status = "degraded"
+	}
+
+	dbCheck := map[string]any{
+		"status": map[bool]string{true: "healthy", false: "unhealthy"}[dbHealthy],
+		"type":   "sqlite",
+		"path":   cfg.DB.Path,
+	}
+	if dbErr != "" {
+		dbCheck["error"] = dbErr
 	}
 
 	respondJSON(w, map[string]any{
@@ -73,11 +85,7 @@ func (a *AdminAPI) HandleHealth(w http.ResponseWriter, r *http.Request) {
 				"status":         "healthy",
 				"uptime_seconds": int(time.Since(startTime).Seconds()),
 			},
-			"database": map[string]any{
-				"status": map[bool]string{true: "healthy", false: "unhealthy"}[dbHealthy],
-				"type":   "sqlite",
-				"path":   cfg.DB.Path,
-			},
+			"database": dbCheck,
 			"workers": map[string]any{
 				"status": "healthy",
 			},
