@@ -290,6 +290,12 @@ func (c *Client) doConnect(ctx context.Context, sessionID string, isResume bool)
 
 	ack := parseInitAck(&ackEnv)
 
+	// If the gateway rejected init with an error, propagate it to the caller.
+	if ack.Code != "" || ack.Error != "" {
+		_ = conn.Close()
+		return nil, fmt.Errorf("client: init rejected: %s: %s", ack.Code, ack.Error)
+	}
+
 	c.mu.Lock()
 	c.conn = conn
 	c.sessionID = ack.SessionID
