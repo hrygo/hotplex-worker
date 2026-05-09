@@ -25,6 +25,24 @@ func TestDefault(t *testing.T) {
 	require.False(t, cfg.Security.TLSEnabled)
 	require.True(t, cfg.Admin.Enabled)
 	require.Equal(t, "localhost:9999", cfg.Admin.Addr)
+
+	// Messaging-level shared defaults
+	require.Equal(t, "claude_code", cfg.Messaging.WorkerType)
+	require.Equal(t, "local", cfg.Messaging.Provider)
+	require.Equal(t, "edge+moss", cfg.Messaging.TTSProvider)
+	require.True(t, cfg.Messaging.TTSEnabled)
+	require.Equal(t, "zh-CN-XiaoxiaoNeural", cfg.Messaging.Voice)
+	require.Equal(t, 150, cfg.Messaging.MaxChars)
+
+	// Per-platform defaults (DMPolicy/GroupPolicy are platform-level, not messaging-level)
+	require.True(t, cfg.Messaging.Slack.RequireMention)
+	require.Equal(t, "allowlist", cfg.Messaging.Slack.DMPolicy)
+	require.Equal(t, "allowlist", cfg.Messaging.Slack.GroupPolicy)
+	require.True(t, cfg.Messaging.Feishu.RequireMention)
+	require.Equal(t, "allowlist", cfg.Messaging.Feishu.DMPolicy)
+	require.Equal(t, "allowlist", cfg.Messaging.Feishu.GroupPolicy)
+	require.False(t, cfg.Messaging.Slack.Enabled)
+	require.False(t, cfg.Messaging.Feishu.Enabled)
 }
 
 func TestConfig_Validate(t *testing.T) {
@@ -800,9 +818,10 @@ func TestApplyMessagingEnv(t *testing.T) {
 	require.Equal(t, "", cfg.Messaging.Feishu.WorkDir)
 	require.Equal(t, "", cfg.Messaging.Slack.WorkerType)
 	require.Equal(t, "", cfg.Messaging.Slack.WorkDir)
-	require.Equal(t, "allowlist", cfg.Messaging.Slack.DMPolicy)    // Default is "allowlist"
-	require.Equal(t, "allowlist", cfg.Messaging.Slack.GroupPolicy) // Default is "allowlist"
-	require.True(t, cfg.Messaging.Slack.RequireMention)            // Default is true
+	// DMPolicy/GroupPolicy are platform-level defaults from defaultMessagingPlatformConfig().
+	require.Equal(t, "allowlist", cfg.Messaging.Slack.DMPolicy)
+	require.Equal(t, "allowlist", cfg.Messaging.Slack.GroupPolicy)
+	require.True(t, cfg.Messaging.Slack.RequireMention) // Default is true
 	require.Nil(t, cfg.Messaging.Slack.AllowFrom)
 	require.Nil(t, cfg.Messaging.Slack.AllowDMFrom)
 	require.Nil(t, cfg.Messaging.Slack.AllowGroupFrom)
@@ -935,4 +954,147 @@ db:
 func TestMustLoad_WithEnvVars(t *testing.T) {
 	t.Parallel()
 	t.Skip("Only worker.environment supports ${VAR} expansion; general YAML field expansion not yet implemented")
+}
+
+func TestPropagateMessagingDefaults(t *testing.T) {
+	t.Parallel()
+
+	t.Run("propagates messaging defaults to platforms", func(t *testing.T) {
+		t.Parallel()
+		cfg := Default()
+		// Clear platform fields to simulate no per-platform config.
+		cfg.Messaging.Slack.MessagingPlatformConfig = MessagingPlatformConfig{}
+		cfg.Messaging.Feishu.MessagingPlatformConfig = MessagingPlatformConfig{}
+
+		propagateMessagingDefaults(cfg)
+
+		// Platform inherits messaging-level shared defaults.
+		s, f := cfg.Messaging.Slack, cfg.Messaging.Feishu
+		for _, p := range []MessagingPlatformConfig{s.MessagingPlatformConfig, f.MessagingPlatformConfig} {
+			require.Equal(t, "claude_code", p.WorkerType)
+			require.Equal(t, "local", p.Provider)
+			require.Equal(t, "edge+moss", p.TTSProvider)
+			require.True(t, p.TTSEnabled)
+			require.Equal(t, "zh-CN-XiaoxiaoNeural", p.Voice)
+			require.Equal(t, 150, p.MaxChars)
+		}
+	})
+
+	t.Run("platform values override messaging defaults", func(t *testing.T) {
+		t.Parallel()
+		cfg := Default()
+		// Set platform-level values.
+		cfg.Messaging.Slack.MessagingPlatformConfig = MessagingPlatformConfig{
+			WorkerType: "opencode",
+			DMPolicy:   "open",
+			STTConfig:  STTConfig{Provider: "feishu"},
+			TTSConfig:  TTSConfig{TTSProvider: "edge", Voice: "en-US-JennyNeural"},
+		}
+
+		propagateMessagingDefaults(cfg)
+
+		// Platform values preserved.
+		require.Equal(t, "opencode", cfg.Messaging.Slack.WorkerType)
+		require.Equal(t, "open", cfg.Messaging.Slack.DMPolicy)
+		require.Equal(t, "feishu", cfg.Messaging.Slack.Provider)
+		require.Equal(t, "edge", cfg.Messaging.Slack.TTSProvider)
+		require.Equal(t, "en-US-JennyNeural", cfg.Messaging.Slack.Voice)
+		// GroupPolicy not set in override; no longer propagated from messaging level.
+		require.Equal(t, "", cfg.Messaging.Slack.GroupPolicy)
+		require.Equal(t, 150, cfg.Messaging.Slack.MaxChars)
+	})
+
+	t.Run("idempotent", func(t *testing.T) {
+		t.Parallel()
+		cfg := Default()
+		cfg.Messaging.Slack.MessagingPlatformConfig = MessagingPlatformConfig{}
+		propagateMessagingDefaults(cfg)
+		// Run again — values must not change.
+		snap := cfg.Messaging.Slack.MessagingPlatformConfig
+		propagateMessagingDefaults(cfg)
+		require.Equal(t, snap, cfg.Messaging.Slack.MessagingPlatformConfig)
+	})
+
+	t.Run("does not override bools when messaging enabled is true", func(t *testing.T) {
+		t.Parallel()
+		cfg := Default()
+		cfg.Messaging.TTSEnabled = true
+		cfg.Messaging.Slack.MessagingPlatformConfig = MessagingPlatformConfig{}
+		propagateMessagingDefaults(cfg)
+		require.True(t, cfg.Messaging.Slack.TTSEnabled)
+	})
+
+	t.Run("does not set bools when messaging enabled is false", func(t *testing.T) {
+		t.Parallel()
+		cfg := Default()
+		cfg.Messaging.TTSEnabled = false
+		cfg.Messaging.Slack.MessagingPlatformConfig = MessagingPlatformConfig{}
+		propagateMessagingDefaults(cfg)
+		require.False(t, cfg.Messaging.Slack.TTSEnabled)
+	})
+}
+
+func TestMessagingLevelEnvVars(t *testing.T) {
+	// Not parallel — modifies global env vars.
+	envVars := []string{
+		"HOTPLEX_MESSAGING_WORKER_TYPE",
+		"HOTPLEX_MESSAGING_STT_PROVIDER",
+		"HOTPLEX_MESSAGING_STT_LOCAL_CMD",
+		"HOTPLEX_MESSAGING_STT_LOCAL_IDLE_TTL",
+		"HOTPLEX_MESSAGING_TTS_ENABLED",
+		"HOTPLEX_MESSAGING_TTS_PROVIDER",
+		"HOTPLEX_MESSAGING_TTS_VOICE",
+		"HOTPLEX_MESSAGING_TTS_MAX_CHARS",
+		"HOTPLEX_MESSAGING_TTS_MOSS_MODEL_DIR",
+		"HOTPLEX_MESSAGING_TTS_MOSS_VOICE",
+		"HOTPLEX_MESSAGING_TTS_MOSS_PORT",
+		"HOTPLEX_MESSAGING_TTS_MOSS_IDLE_TIMEOUT",
+		"HOTPLEX_MESSAGING_TTS_MOSS_CPU_THREADS",
+	}
+	saved := make(map[string]string)
+	for _, k := range envVars {
+		if v, ok := os.LookupEnv(k); ok {
+			saved[k] = v
+		}
+	}
+	defer func() {
+		for _, k := range envVars {
+			if v, ok := saved[k]; ok {
+				os.Setenv(k, v)
+			} else {
+				os.Unsetenv(k)
+			}
+		}
+	}()
+
+	os.Setenv("HOTPLEX_MESSAGING_WORKER_TYPE", "opencode")
+	os.Setenv("HOTPLEX_MESSAGING_STT_PROVIDER", "feishu")
+	os.Setenv("HOTPLEX_MESSAGING_STT_LOCAL_CMD", "/usr/bin/stt")
+	os.Setenv("HOTPLEX_MESSAGING_STT_LOCAL_IDLE_TTL", "30m")
+	os.Setenv("HOTPLEX_MESSAGING_TTS_ENABLED", "false")
+	os.Setenv("HOTPLEX_MESSAGING_TTS_PROVIDER", "edge")
+	os.Setenv("HOTPLEX_MESSAGING_TTS_VOICE", "en-US-JennyNeural")
+	os.Setenv("HOTPLEX_MESSAGING_TTS_MAX_CHARS", "200")
+	os.Setenv("HOTPLEX_MESSAGING_TTS_MOSS_MODEL_DIR", "/opt/moss")
+	os.Setenv("HOTPLEX_MESSAGING_TTS_MOSS_VOICE", "Test")
+	os.Setenv("HOTPLEX_MESSAGING_TTS_MOSS_PORT", "19000")
+	os.Setenv("HOTPLEX_MESSAGING_TTS_MOSS_IDLE_TIMEOUT", "15m")
+	os.Setenv("HOTPLEX_MESSAGING_TTS_MOSS_CPU_THREADS", "4")
+
+	cfg := Default()
+	applyMessagingEnv(cfg)
+
+	require.Equal(t, "opencode", cfg.Messaging.WorkerType)
+	require.Equal(t, "feishu", cfg.Messaging.Provider)
+	require.Equal(t, "/usr/bin/stt", cfg.Messaging.LocalCmd)
+	require.Equal(t, 30*time.Minute, cfg.Messaging.LocalIdleTTL)
+	require.False(t, cfg.Messaging.TTSEnabled)
+	require.Equal(t, "edge", cfg.Messaging.TTSProvider)
+	require.Equal(t, "en-US-JennyNeural", cfg.Messaging.Voice)
+	require.Equal(t, 200, cfg.Messaging.MaxChars)
+	require.Equal(t, "/opt/moss", cfg.Messaging.MossModelDir)
+	require.Equal(t, "Test", cfg.Messaging.MossVoice)
+	require.Equal(t, 19000, cfg.Messaging.MossPort)
+	require.Equal(t, 15*time.Minute, cfg.Messaging.MossIdleTimeout)
+	require.Equal(t, 4, cfg.Messaging.MossCpuThreads)
 }

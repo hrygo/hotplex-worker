@@ -76,7 +76,7 @@ func TestStepConfigGen_SlackEnabled(t *testing.T) {
 	content := string(data)
 	require.Contains(t, content, "messaging:")
 	require.Contains(t, content, "enabled: true")
-	require.Contains(t, content, "dm_policy: \"open\"")
+	require.Contains(t, content, "dm_policy: open")
 	require.Contains(t, content, "U123")
 	require.Contains(t, content, "U456")
 }
@@ -404,7 +404,7 @@ func TestRun_NonInteractive_WithSlack(t *testing.T) {
 	require.NoError(t, configErr)
 	configContent := string(configData)
 	require.Contains(t, configContent, "enabled: true")
-	require.Contains(t, configContent, "dm_policy: \"open\"")
+	require.Contains(t, configContent, "dm_policy: open")
 	require.Contains(t, configContent, "U123")
 	require.Contains(t, configContent, "U456")
 
@@ -444,7 +444,7 @@ func TestBuildConfigYAML_SlackEnabled(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Contains(t, got, "enabled: true")
-	require.Contains(t, got, "dm_policy: \"open\"")
+	require.Contains(t, got, "dm_policy: open")
 	require.Contains(t, got, "feishu:")
 	require.Contains(t, got, "slack:")
 }

@@ -212,7 +212,7 @@ func main() {
 <dependency>
     <groupId>dev.hotplex</groupId>
     <artifactId>hotplex-client</artifactId>
-    <version>1.1.0-SNAPSHOT</version>
+    <version>1.8.0</version>
 </dependency>
 ```
 
