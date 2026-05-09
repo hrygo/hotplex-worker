@@ -485,14 +485,20 @@ func (a *Adapter) handleTextMessage(ctx context.Context, platformMsgID, channelI
 
 	// Prepare streaming controller (card is lazily created on first content).
 	if a.larkClient != nil && a.rateLimiter != nil {
-		turnNum, model, branch, workDir := conn.turnHeaderMeta()
-		ctrl := NewStreamingCardController(a.larkClient, a.rateLimiter, a.Log, a.resolveBotName(), turnNum+1, model, branch, workDir)
-		conn.EnableStreaming(ctrl)
+		// Check if streaming is already active — if so, skip placeholder to avoid
+		// creating multiple concurrent streaming cards for the same conn.
+		if ctrl := conn.GetStreamCtrl(); ctrl != nil && ctrl.IsCreated() {
+			a.Log.Debug("feishu: skipping placeholder, streaming already active")
+		} else {
+			turnNum, model, branch, workDir := conn.turnHeaderMeta()
+			ctrl := NewStreamingCardController(a.larkClient, a.rateLimiter, a.Log, a.resolveBotName(), turnNum+1, model, branch, workDir)
+			conn.EnableStreaming(ctrl)
 
-		// Send placeholder card immediately — same streaming card structure as real messages.
-		// This eliminates the "black hole" effect where users see nothing while the worker processes.
-		if err := ctrl.SendPlaceholder(ctx, channelID, chatType, replyToMsgID); err != nil {
-			a.Log.Warn("feishu: placeholder card failed (non-fatal)", "err", err)
+			// Send placeholder card immediately — same streaming card structure as real messages.
+			// This eliminates the "black hole" effect where users see nothing while the worker processes.
+			if err := ctrl.SendPlaceholder(ctx, channelID, chatType, replyToMsgID); err != nil {
+				a.Log.Warn("feishu: placeholder card failed (non-fatal)", "err", err)
+			}
 		}
 	}
 
@@ -632,6 +638,13 @@ func (c *FeishuConn) EnableStreaming(ctrl *StreamingCardController) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.streamCtrl = ctrl
+}
+
+// GetStreamCtrl returns the current streaming controller (exported for use by handleTextMessage).
+func (c *FeishuConn) GetStreamCtrl() *StreamingCardController {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.streamCtrl
 }
 
 func (c *FeishuConn) getStreamCtrl() *StreamingCardController {
