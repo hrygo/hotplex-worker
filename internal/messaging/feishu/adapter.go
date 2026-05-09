@@ -653,6 +653,18 @@ func (c *FeishuConn) getStreamCtrl() *StreamingCardController {
 	return c.streamCtrl
 }
 
+// resetStreamCtrl replaces a closed streaming controller with a fresh one
+// so subsequent events can create a new card via lazy-init.
+func (c *FeishuConn) resetStreamCtrl() {
+	newCtrl := NewStreamingCardController(
+		c.adapter.larkClient, c.adapter.rateLimiter, c.adapter.Log,
+		c.adapter.resolveBotName(), c.turnCount+1, c.lastModel, c.lastBranch, c.workDir,
+	)
+	c.mu.Lock()
+	c.streamCtrl = newCtrl
+	c.mu.Unlock()
+}
+
 func (c *FeishuConn) handleToolReaction(ctx context.Context) {
 	c.mu.RLock()
 	elapsed := time.Since(c.startedAt)
@@ -838,6 +850,7 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		streamCtrl := c.clearActiveIndicators(ctx)
 		if streamCtrl != nil && streamCtrl.IsCreated() {
 			_ = streamCtrl.Close(ctx)
+			c.resetStreamCtrl()
 		}
 		rid := c.setProcessingReaction(ctx)
 		pErr := c.sendPermissionRequest(ctx, env)
@@ -847,6 +860,7 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		streamCtrl := c.clearActiveIndicators(ctx)
 		if streamCtrl != nil && streamCtrl.IsCreated() {
 			_ = streamCtrl.Close(ctx)
+			c.resetStreamCtrl()
 		}
 		rid := c.setProcessingReaction(ctx)
 		qErr := c.sendQuestionRequest(ctx, env)
@@ -856,6 +870,7 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		streamCtrl := c.clearActiveIndicators(ctx)
 		if streamCtrl != nil && streamCtrl.IsCreated() {
 			_ = streamCtrl.Close(ctx)
+			c.resetStreamCtrl()
 		}
 		rid := c.setProcessingReaction(ctx)
 		eErr := c.sendElicitationRequest(ctx, env)

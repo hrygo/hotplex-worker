@@ -57,6 +57,7 @@ const (
 type threadState struct {
 	lastText string
 	lastTime time.Time
+	lastTool string
 }
 
 // StatusManager manages AI status notifications with dedup + rate limiting + thread safety.
@@ -148,6 +149,28 @@ func (m *StatusManager) Clear(ctx context.Context, channelID, threadTS string) {
 	defer m.mu.Unlock()
 	m.clearEmojiLocked(ctx, channelID, threadTS)
 	delete(m.threadState, channelID+":"+threadTS)
+}
+
+// SetLastTool records the tool name for the given thread so the next ToolResult can use it.
+func (m *StatusManager) SetLastTool(channelID, threadTS, name string) {
+	key := channelID + ":" + threadTS
+	m.mu.Lock()
+	if m.threadState[key] == nil {
+		m.threadState[key] = &threadState{}
+	}
+	m.threadState[key].lastTool = name
+	m.mu.Unlock()
+}
+
+// LastTool returns the most recently recorded tool name for the given thread.
+func (m *StatusManager) LastTool(channelID, threadTS string) string {
+	key := channelID + ":" + threadTS
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if ts := m.threadState[key]; ts != nil {
+		return ts.lastTool
+	}
+	return ""
 }
 
 // evictStaleStates removes threadState entries older than threadStateTTL.

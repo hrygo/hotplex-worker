@@ -740,15 +740,29 @@ func (c *SlackConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 	}
 
 	// Status update: map AEP event to status indicator
-	if status, text := aepEventToStatus(env); text != "" {
-		_ = c.adapter.statusMgr.Notify(ctx, c.channelID, c.threadTS, status, text)
-	}
-	// Log unregistered tool names for status formatter evolution
-	if env.Event.Type == events.ToolCall {
-		if name, _ := extractCallNameInput(env); name != "" {
-			if text := toolfmt.FormatCall(name, nil); text == name {
-				c.adapter.statusMgr.LogOnceUnregistered(name)
-			}
+	switch env.Event.Type {
+	case events.ToolCall:
+		name, input := extractCallNameInput(env)
+		text := toolfmt.FormatCall(name, input)
+		if text == "" {
+			text = name
+		}
+		_ = c.adapter.statusMgr.Notify(ctx, c.channelID, c.threadTS, StatusToolUse, truncateWithSuffix(text, statusTextLimit))
+		c.adapter.statusMgr.SetLastTool(c.channelID, c.threadTS, name)
+		if text == name {
+			c.adapter.statusMgr.LogOnceUnregistered(name)
+		}
+	case events.ToolResult:
+		toolName := c.adapter.statusMgr.LastTool(c.channelID, c.threadTS)
+		output, errMsg := extractResultFields(env)
+		text := toolfmt.FormatResult(toolName, output, errMsg)
+		if text == "" {
+			text = "Tool completed"
+		}
+		_ = c.adapter.statusMgr.Notify(ctx, c.channelID, c.threadTS, StatusToolResult, truncateWithSuffix(shortenPaths(text), statusTextLimit))
+	default:
+		if status, text := aepEventToStatus(env); text != "" {
+			_ = c.adapter.statusMgr.Notify(ctx, c.channelID, c.threadTS, status, text)
 		}
 	}
 
