@@ -182,4 +182,3 @@ func ClaimsFrom(ctx context.Context) (Claims, bool) {
 	c, ok := ctx.Value(claimsKey).(Claims)
 	return c, ok
 }
-
