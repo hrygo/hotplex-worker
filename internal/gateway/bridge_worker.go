@@ -235,6 +235,9 @@ func (b *Bridge) cleanupCrashedWorker(sessionID string, crashedWorker worker.Wor
 	if err := b.sm.Transition(context.Background(), sessionID, events.StateTerminated); err != nil {
 		b.log.Debug("bridge: transition to terminated after worker exit", "session_id", sessionID, "err", err)
 	}
+	b.accumMu.Lock()
+	delete(b.accum, sessionID)
+	b.accumMu.Unlock()
 }
 
 // injectAgentConfig loads agent config files and injects the unified system
