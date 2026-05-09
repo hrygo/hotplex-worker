@@ -253,18 +253,14 @@ func (w *NativeStreamingWriter) flushBuffer() {
 		w.mu.Unlock()
 		return
 	}
-	content := w.buf.String()
-	w.buf.Reset()
-	w.mu.Unlock()
-
-	// Rate limit check
+	// Check rate limit before extracting content to avoid extract-requeue reordering.
 	if w.rateLimiter != nil && !w.rateLimiter.Allow(w.channelID) {
-		// Re-buffer if rate limited
-		w.mu.Lock()
-		w.buf.WriteString(content)
 		w.mu.Unlock()
 		return
 	}
+	content := w.buf.String()
+	w.buf.Reset()
+	w.mu.Unlock()
 
 	// Chunk if too large
 	if utf8.RuneCountInString(content) > maxAppendSize {
