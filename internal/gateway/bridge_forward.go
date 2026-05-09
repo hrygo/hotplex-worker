@@ -34,7 +34,7 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 	// Cache session info for event capture (avoids per-turn DB lookup).
 	var sessPlatform, sessOwner string
 	if b.collector != nil && b.sm != nil {
-		if si, err := b.sm.Get(sessionID); err == nil {
+		if si, err := b.sm.Get(context.Background(), sessionID); err == nil {
 			sessPlatform = si.Platform
 			sessOwner = si.OwnerID
 		}
@@ -334,7 +334,7 @@ func (b *Bridge) handleWorkerExit(w worker.Worker, p workerExitParams) {
 	}
 
 	if b.sm != nil {
-		si, smErr := b.sm.Get(p.sessionID)
+		si, smErr := b.sm.Get(context.Background(), p.sessionID)
 		if smErr == nil && si.State == events.StateTerminated {
 			b.log.Debug("bridge: session already terminated, skipping error for handler-killed worker", "session_id", p.sessionID, "worker_type", workerType)
 			if !fallbackAttempted {

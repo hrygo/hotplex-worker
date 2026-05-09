@@ -559,14 +559,14 @@ func TestGuardResult_Fields(t *testing.T) {
 		ThreatType:     "prompt_injection",
 		Reason:         "matched dangerous pattern",
 		MatchedPattern: `(?i)jailbreak`,
-		Action:         "block",
+		Action:         GuardActionBlock,
 		SanitizedInput: "",
 	}
 
 	assert.False(t, result.Safe)
 	assert.Equal(t, ThreatLevelHigh, result.ThreatLevel)
 	assert.Equal(t, "prompt_injection", result.ThreatType)
-	assert.Equal(t, "block", result.Action)
+	assert.Equal(t, GuardActionBlock, result.Action)
 	assert.Equal(t, "matched dangerous pattern", result.Reason)
 	assert.Equal(t, `(?i)jailbreak`, result.MatchedPattern)
 	assert.Equal(t, "", result.SanitizedInput)

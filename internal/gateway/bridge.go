@@ -29,7 +29,7 @@ type resetGenerationer interface {
 // bridgeSM is the narrow subset of SessionManager that Bridge needs.
 type bridgeSM interface {
 	// SessionReader
-	Get(id string) (*session.SessionInfo, error)
+	Get(ctx context.Context, id string) (*session.SessionInfo, error)
 	GetWorker(id string) worker.Worker
 	// SessionWorkerManager
 	AttachWorker(id string, w worker.Worker) error
@@ -180,7 +180,7 @@ func (b *Bridge) resumeWithOpts(ctx context.Context, id, workDir string, opts fo
 		return fmt.Errorf("bridge: rejecting resume during shutdown")
 	}
 
-	si, err := b.sm.Get(id)
+	si, err := b.sm.Get(ctx, id)
 	if err != nil {
 		return err
 	}
@@ -310,7 +310,7 @@ var _ = events.Clone // compile-time check that Clone is accessible
 //     If Resume fails (files gone/corrupted), fall back to Start (--session-id)
 func (b *Bridge) StartPlatformSession(ctx context.Context, sessionID, ownerID, workerType, workDir, platform string, platformKey map[string]string, botID string) error {
 	b.log.Debug("bridge: StartPlatformSession called", "session_id", sessionID, "owner_id", ownerID, "worker_type", workerType, "work_dir", workDir, "platform", platform, "platform_key", platformKey, "bot_id", botID)
-	si, err := b.sm.Get(sessionID)
+	si, err := b.sm.Get(ctx, sessionID)
 	if err == nil {
 		if w := b.sm.GetWorker(sessionID); w != nil {
 			// Only reuse if session is still active. TERMINATED sessions with a stale
@@ -414,7 +414,7 @@ type SwitchWorkDirResult struct {
 // If the target directory has an existing session, it is resumed to preserve
 // conversation history. Otherwise a fresh session is created.
 func (b *Bridge) SwitchWorkDir(ctx context.Context, oldSessionID, newWorkDir string) (*SwitchWorkDirResult, error) {
-	si, err := b.sm.Get(oldSessionID)
+	si, err := b.sm.Get(ctx, oldSessionID)
 	if err != nil {
 		return nil, fmt.Errorf("switch-workdir: get session: %w", err)
 	}
@@ -457,7 +457,7 @@ func (b *Bridge) SwitchWorkDir(ctx context.Context, oldSessionID, newWorkDir str
 
 	// Try to resume existing target session first (preserve conversation history).
 	resumed := false
-	targetSI, err := b.sm.Get(newID)
+	targetSI, err := b.sm.Get(ctx, newID)
 	if err == nil && targetSI.State != events.StateDeleted {
 		if b.sm.GetWorker(newID) != nil {
 			b.log.Warn("switch-workdir: target session already has active worker", "session_id", newID)

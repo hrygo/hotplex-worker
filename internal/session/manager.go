@@ -16,6 +16,7 @@ import (
 	"github.com/hrygo/hotplex/internal/config"
 	"github.com/hrygo/hotplex/internal/metrics"
 	"github.com/hrygo/hotplex/internal/worker"
+	"github.com/hrygo/hotplex/internal/worker/base"
 	"github.com/hrygo/hotplex/pkg/events"
 )
 
@@ -162,7 +163,7 @@ func (m *Manager) CreateWithBot(ctx context.Context, id, userID, botID string, w
 
 // Get returns a snapshot of a session by ID. Returns ErrSessionNotFound if not found.
 // The returned *SessionInfo is a copy safe to read without holding locks.
-func (m *Manager) Get(id string) (*SessionInfo, error) {
+func (m *Manager) Get(ctx context.Context, id string) (*SessionInfo, error) {
 	m.mu.RLock()
 	ms, ok := m.sessions[id]
 	m.mu.RUnlock()
@@ -174,12 +175,20 @@ func (m *Manager) Get(id string) (*SessionInfo, error) {
 	}
 
 	// Fall back to Store.
-	info, err := m.store.Get(context.Background(), id)
+	info, err := m.store.Get(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 
 	m.mu.Lock()
+	// Double-check: another goroutine may have populated this while we loaded from store.
+	if existing, ok := m.sessions[id]; ok {
+		m.mu.Unlock()
+		existing.mu.RLock()
+		cached := existing.info
+		existing.mu.RUnlock()
+		return &cached, nil
+	}
 	m.sessions[id] = &managedSession{info: *info, log: m.log.With("worker_type", info.WorkerType, "channel", info.Platform)}
 	m.mu.Unlock()
 
@@ -228,9 +237,6 @@ func (m *Manager) UpdateWorkDir(ctx context.Context, id, workDir string) error {
 
 // ─── State transitions ───────────────────────────────────────────────────────
 
-// Default graceful shutdown timeout for worker termination.
-const gracefulShutdownTimeout = 5 * time.Second
-
 // transitionState performs the common state-transition work: validation,
 // in-memory update, persistence, and notifications.
 // Caller must hold ms.mu for write; this method temporarily releases ms.mu
@@ -275,7 +281,7 @@ func (m *Manager) transitionState(ctx context.Context, ms *managedSession, from,
 		// Safe: ms.mu is held by the caller, and worker.Terminate() does not
 		// acquire any session manager locks (it uses syscall.Kill only).
 		if ms.worker != nil {
-			terminateCtx, cancel := context.WithTimeout(ctx, gracefulShutdownTimeout)
+			terminateCtx, cancel := context.WithTimeout(ctx, base.GracefulShutdownTimeout)
 			defer cancel()
 			if err := ms.worker.Terminate(terminateCtx); err != nil {
 				m.log.Warn("session: worker terminate failed", "session_id", ms.info.ID, "err", err)
@@ -304,12 +310,7 @@ func (m *Manager) transitionState(ctx context.Context, ms *managedSession, from,
 		metrics.SessionsDeleted.Inc()
 	}
 
-	if m.StateNotifier != nil {
-		m.safeGo(func() { m.StateNotifier(ctx, ms.info.ID, to, "") })
-	}
-	if (to == events.StateTerminated || to == events.StateDeleted) && m.OnTerminate != nil {
-		m.safeGo(func() { m.OnTerminate(ms.info.ID) })
-	}
+	m.notifyStateChange(ctx, ms.info.ID, to, "")
 
 	return nil
 }
@@ -328,7 +329,7 @@ func (m *Manager) TransitionWithReason(ctx context.Context, id string, to events
 	if m == nil {
 		return ErrSessionNotFound
 	}
-	ms := m.getManagedSession(id)
+	ms := m.getManagedSession(ctx, id)
 	if ms == nil {
 		return ErrSessionNotFound
 	}
@@ -353,20 +354,16 @@ func (m *Manager) TransitionWithInput(ctx context.Context, id string, to events.
 	if m == nil {
 		return ErrSessionNotFound
 	}
-	ms := m.getManagedSession(id)
+	ms := m.getManagedSession(ctx, id)
 	if ms == nil {
 		return ErrSessionNotFound
 	}
 
 	ms.mu.Lock()
-	defer ms.mu.Unlock()
 
 	from := ms.info.State
-
-	// Anti-pollution: enforce max turns limit.
-	// TurnCount is incremented after transition validation to avoid
-	// burning turns on invalid transitions.
 	if !events.IsValidTransition(from, to) {
+		ms.mu.Unlock()
 		return fmt.Errorf("%w: %s → %s", ErrInvalidTransition, from, to)
 	}
 
@@ -376,29 +373,36 @@ func (m *Manager) TransitionWithInput(ctx context.Context, id string, to events.
 		if maxTurns > 0 && ms.TurnCount > maxTurns {
 			m.log.Warn("session: max turns exceeded, initiating anti-pollution restart",
 				"session_id", id, "turn_count", ms.TurnCount, "max_turns", maxTurns)
-			if err := ms.worker.Kill(); err != nil {
-				m.log.Warn("session: worker kill failed during max-turns cleanup",
-					"session_id", id, "err", err)
-			}
+			// transitionState handles worker termination when target is TERMINATED.
+			var workerToKill worker.Worker
 			if events.IsValidTransition(from, events.StateTerminated) {
 				if err := m.transitionState(ctx, ms, from, events.StateTerminated, "max_turns"); err != nil {
 					m.log.Error("session: max-turns state transition failed, force-terminating in-memory state",
 						"session_id", id, "err", err)
 					ms.info.State = events.StateTerminated
+					workerToKill = ms.worker
 				}
 			} else {
-				// Transition not valid from current state — force-set in-memory state to prevent orphan.
-				// Safe because the worker is already killed above. The DB may retain the old state,
-				// but GC will reconcile the inconsistency on the next scan.
 				m.log.Warn("session: max-turns transition invalid, force-terminating in-memory state",
 					"session_id", id, "from_state", from)
 				ms.info.State = events.StateTerminated
+				workerToKill = ms.worker
+			}
+			ms.mu.Unlock()
+			// Kill worker outside lock only if transitionState did not handle it.
+			if workerToKill != nil {
+				if err := workerToKill.Kill(); err != nil {
+					m.log.Warn("session: worker kill failed during max-turns cleanup",
+						"session_id", id, "err", err)
+				}
 			}
 			return ErrMaxTurnsReached
 		}
 	}
 
-	return m.transitionState(ctx, ms, from, to, "client_input")
+	err := m.transitionState(ctx, ms, from, to, "client_input")
+	ms.mu.Unlock()
+	return err
 }
 
 // AttachWorker attempts to allocate concurrency quota and pair the worker runtime to the session.
@@ -456,7 +460,7 @@ func (m *Manager) GetWorker(id string) worker.Worker {
 	if m == nil {
 		return nil
 	}
-	ms := m.getManagedSession(id)
+	ms := m.getManagedSession(context.Background(), id)
 	if ms == nil {
 		return nil
 	}
@@ -490,7 +494,7 @@ func (m *Manager) detachWorkerUnchecked(id string, expected worker.Worker) bool 
 	if m == nil {
 		return false
 	}
-	ms := m.getManagedSession(id)
+	ms := m.getManagedSession(context.Background(), id)
 	if ms == nil {
 		return false
 	}
@@ -557,12 +561,7 @@ func (m *Manager) Delete(ctx context.Context, id string) error {
 	}
 	m.mu.Unlock()
 
-	if m.StateNotifier != nil {
-		m.safeGo(func() { m.StateNotifier(ctx, id, events.StateDeleted, "session deleted") })
-	}
-	if m.OnTerminate != nil {
-		m.safeGo(func() { m.OnTerminate(id) })
-	}
+	m.notifyStateChange(ctx, id, events.StateDeleted, "session deleted")
 
 	m.log.Info("session: deleted", "session_id", id)
 	return nil
@@ -573,17 +572,24 @@ func (m *Manager) Delete(ctx context.Context, id string) error {
 func (m *Manager) DeletePhysical(ctx context.Context, id string) error {
 	m.mu.Lock()
 	ms, ok := m.sessions[id]
+	var workerToKill worker.Worker
+	var workerType string
 	if ok {
 		ms.mu.Lock()
 		if ms.worker != nil {
-			_ = ms.worker.Kill()
-			metrics.WorkersRunning.WithLabelValues(string(ms.info.WorkerType)).Dec()
+			workerToKill = ms.worker
+			workerType = string(ms.info.WorkerType)
+			metrics.WorkersRunning.WithLabelValues(workerType).Dec()
 			m.releaseWorkerQuota(ms)
 		}
 		ms.mu.Unlock()
 		delete(m.sessions, id)
 	}
 	m.mu.Unlock()
+
+	if workerToKill != nil {
+		_ = workerToKill.Kill()
+	}
 
 	return m.store.DeletePhysical(ctx, id)
 }
@@ -592,7 +598,7 @@ func (m *Manager) DeletePhysical(ctx context.Context, id string) error {
 // Returns nil if the user is the owner, or ErrOwnershipMismatch otherwise.
 // Admin bypass: if adminUserID is non-empty, it bypasses ownership check.
 func (m *Manager) ValidateOwnership(ctx context.Context, sessionID, userID, adminUserID string) error {
-	si, err := m.Get(sessionID)
+	si, err := m.Get(ctx, sessionID)
 	if err != nil {
 		return err
 	}
@@ -622,7 +628,7 @@ func (m *Manager) ClearContext(ctx context.Context, sessionID string) error {
 	if m == nil {
 		return ErrSessionNotFound
 	}
-	ms := m.getManagedSession(sessionID)
+	ms := m.getManagedSession(ctx, sessionID)
 	if ms == nil {
 		return ErrSessionNotFound
 	}
@@ -646,7 +652,7 @@ func (m *Manager) UpdateWorkerSessionID(ctx context.Context, id, workerSessionID
 	if m == nil {
 		return ErrSessionNotFound
 	}
-	ms := m.getManagedSession(id)
+	ms := m.getManagedSession(ctx, id)
 	if ms == nil {
 		return ErrSessionNotFound
 	}
@@ -676,7 +682,7 @@ type DebugSessionSnapshot struct {
 
 // DebugSnapshot safely captures debug fields from a managed session under the read lock.
 func (m *Manager) DebugSnapshot(id string) (DebugSessionSnapshot, bool) {
-	ms := m.getManagedSession(id)
+	ms := m.getManagedSession(context.Background(), id)
 	if ms == nil {
 		return DebugSessionSnapshot{}, false
 	}
@@ -695,7 +701,7 @@ func (m *Manager) DebugSnapshot(id string) (DebugSessionSnapshot, bool) {
 // Lock acquires the per-session mutex for exclusive access.
 // The caller MUST call Unlock when done.
 func (m *Manager) Lock(id string) (release func(), err error) {
-	ms := m.getManagedSession(id)
+	ms := m.getManagedSession(context.Background(), id)
 	if ms == nil {
 		return nil, ErrSessionNotFound
 	}
@@ -811,7 +817,7 @@ func (m *Manager) TerminateAllWorkers() {
 	for _, w := range workers {
 		w := w
 		eg.Go(func() error {
-			terminateCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			terminateCtx, cancel := context.WithTimeout(ctx, base.GracefulShutdownTimeout)
 			defer cancel()
 			return w.Terminate(terminateCtx)
 		})
@@ -979,7 +985,17 @@ func (m *Manager) safeGo(fn func()) {
 	}()
 }
 
-func (m *Manager) getManagedSession(id string) *managedSession {
+// notifyStateChange sends state change and termination callbacks.
+func (m *Manager) notifyStateChange(ctx context.Context, sessionID string, state events.SessionState, message string) {
+	if m.StateNotifier != nil {
+		m.safeGo(func() { m.StateNotifier(ctx, sessionID, state, message) })
+	}
+	if (state == events.StateTerminated || state == events.StateDeleted) && m.OnTerminate != nil {
+		m.safeGo(func() { m.OnTerminate(sessionID) })
+	}
+}
+
+func (m *Manager) getManagedSession(_ context.Context, id string) *managedSession {
 	m.mu.RLock()
 	ms, ok := m.sessions[id]
 	m.mu.RUnlock()

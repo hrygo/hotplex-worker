@@ -192,7 +192,7 @@ func TestManager_Get(t *testing.T) {
 
 	store.On("Get", ctx, "sess_existing").Return(expected, nil)
 
-	info, err := m.Get("sess_existing")
+	info, err := m.Get(context.Background(), "sess_existing")
 	require.NoError(t, err)
 	require.Equal(t, "sess_existing", info.ID)
 	require.Equal(t, events.StateRunning, info.State)
@@ -202,7 +202,7 @@ func TestManager_Get(t *testing.T) {
 	store.On("Get", ctx, "sess_existing").Return(expected, nil).Maybe()
 
 	// In-memory hit
-	info2, err := m.Get("sess_existing")
+	info2, err := m.Get(context.Background(), "sess_existing")
 	require.NoError(t, err)
 	require.Equal(t, "sess_existing", info2.ID)
 }
@@ -222,7 +222,7 @@ func TestManager_Get_NotFound(t *testing.T) {
 	require.NoError(t, err)
 	defer m.Close()
 
-	_, err = m.Get("sess_missing")
+	_, err = m.Get(context.Background(), "sess_missing")
 	require.True(t, errors.Is(err, ErrSessionNotFound))
 }
 
@@ -258,7 +258,7 @@ func TestManager_Transition(t *testing.T) {
 	err = m.Transition(ctx, "sess_trans", events.StateRunning)
 	require.NoError(t, err)
 
-	info, _ := m.Get("sess_trans")
+	info, _ := m.Get(context.Background(), "sess_trans")
 	require.Equal(t, events.StateRunning, info.State)
 }
 
@@ -1750,7 +1750,7 @@ func TestManager_ClearContext_Success(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify Context is now empty in memory
-	info, _ := m.Get("sess_clear")
+	info, _ := m.Get(context.Background(), "sess_clear")
 	require.NotNil(t, info)
 	require.Empty(t, info.Context)
 }
@@ -1862,7 +1862,7 @@ func TestManager_RepairRunningSessions_Success(t *testing.T) {
 
 	// All sessions should now be TERMINATED.
 	for _, id := range []string{"sess_r1", "sess_r2", "sess_r3"} {
-		info, _ := m.Get(id)
+		info, _ := m.Get(context.Background(), id)
 		require.Equal(t, events.StateTerminated, info.State)
 	}
 }
@@ -2142,7 +2142,7 @@ func TestManager_UpdateWorkerSessionID(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify in-memory state
-	info, _ := m.Get("sess_wsid")
+	info, _ := m.Get(context.Background(), "sess_wsid")
 	require.Equal(t, "ocs_internal_123", info.WorkerSessionID)
 }
 

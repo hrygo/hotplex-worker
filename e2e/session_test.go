@@ -86,7 +86,7 @@ func TestE2E_SessionDelete(t *testing.T) {
 
 			// Delete is async — poll until the session is removed.
 			require.Eventually(t, func() bool {
-				_, err := tg.sm.Get(sessionID)
+				_, err := tg.sm.Get(context.Background(), sessionID)
 				return err != nil
 			}, 2*time.Second, 50*time.Millisecond, "session should be deleted")
 
@@ -134,7 +134,7 @@ func TestE2E_SessionGC(t *testing.T) {
 			require.NoError(t, err)
 
 			require.Eventually(t, func() bool {
-				si, err := tg.sm.Get(ack.SessionID)
+				si, err := tg.sm.Get(context.Background(), ack.SessionID)
 				if err != nil {
 					return false
 				}

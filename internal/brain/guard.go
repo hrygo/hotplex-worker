@@ -98,19 +98,24 @@ const (
 	ThreatLevelCritical ThreatLevel = "critical"
 )
 
+// GuardAction determines how the caller should handle the result.
+type GuardAction string
+
+const (
+	GuardActionAllow    GuardAction = "allow"
+	GuardActionBlock    GuardAction = "block"
+	GuardActionSanitize GuardAction = "sanitize"
+)
+
 // GuardResult represents the result of a guard check.
-// Action determines the next step:
-//   - "allow": Pass through unchanged
-//   - "block": Reject the input/output entirely
-//   - "sanitize": Pass through with sensitive data redacted (see SanitizedInput)
 type GuardResult struct {
 	Safe           bool        `json:"safe"`                      // true if no threat detected or successfully sanitized
 	ThreatLevel    ThreatLevel `json:"threat_level"`              // Severity classification
 	ThreatType     string      `json:"threat_type,omitempty"`     // e.g., "prompt_injection", "sensitive_data_detected"
 	Reason         string      `json:"reason,omitempty"`          // Human-readable explanation
 	MatchedPattern string      `json:"matched_pattern,omitempty"` // The regex that matched (for debugging)
-	Action         string      `json:"action,omitempty"`          // "allow", "block", or "sanitize"
-	SanitizedInput string      `json:"sanitized_input,omitempty"` // Redacted version when Action == "sanitize"
+	Action         GuardAction `json:"action,omitempty"`          // allow, block, or sanitize
+	SanitizedInput string      `json:"sanitized_input,omitempty"` // Redacted version when Action == GuardActionSanitize
 }
 
 // SafetyGuard provides security guardrails for Brain operations.
@@ -131,8 +136,12 @@ type SafetyGuard struct {
 
 	// Per-user rate limiting for CheckInput calls
 	userLimiters   map[string]*rate.Limiter // userID -> limiter
+	userLastSeen   map[string]time.Time     // userID -> last access time
 	rateLimitRPS   float64                  // Configured RPS (0 = disabled)
 	rateLimitBurst int                      // Configured burst
+
+	// Background cleanup for unbounded maps
+	cleanupStop context.CancelFunc
 
 	// Metrics for monitoring (lock-free via atomic)
 	totalChecks      atomic.Int64 // Total number of CheckInput calls
@@ -146,24 +155,50 @@ type SafetyGuard struct {
 
 // NewSafetyGuard creates a new SafetyGuard instance.
 func NewSafetyGuard(brain Brain, config GuardConfig, logger *slog.Logger) (*SafetyGuard, error) {
+	ctx, cancel := context.WithCancel(context.Background())
 	guard := &SafetyGuard{
 		brain:          brain,
 		config:         config,
 		logger:         logger,
 		userLimiters:   make(map[string]*rate.Limiter),
+		userLastSeen:   make(map[string]time.Time),
 		rateLimitRPS:   config.RateLimitRPS,
 		rateLimitBurst: config.RateLimitBurst,
+		cleanupStop:    cancel,
 	}
 
 	// Compile ban patterns - fail fast on error
 	if err := guard.compileBanPatterns(); err != nil {
+		cancel()
 		return nil, fmt.Errorf("failed to compile ban patterns: %w", err)
 	}
 
 	// Initialize sensitive patterns for output filtering
 	guard.initSensitivePatterns()
 
+	go guard.runCleanup(ctx, 10*time.Minute)
+
 	return guard, nil
+}
+
+// Close stops background cleanup goroutines.
+func (g *SafetyGuard) Close() {
+	if g.cleanupStop != nil {
+		g.cleanupStop()
+	}
+}
+
+func (g *SafetyGuard) runCleanup(ctx context.Context, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			g.clearExpiredLimiters(interval)
+		}
+	}
 }
 
 // compileBanPatterns compiles regex patterns for input filtering.
@@ -224,7 +259,7 @@ func (g *SafetyGuard) CheckInputWithUser(ctx context.Context, input, userID stri
 		return &GuardResult{
 			Safe:        true,
 			ThreatLevel: ThreatLevelNone,
-			Action:      "allow",
+			Action:      GuardActionAllow,
 		}
 	}
 
@@ -239,7 +274,7 @@ func (g *SafetyGuard) CheckInputWithUser(ctx context.Context, input, userID stri
 				ThreatLevel: ThreatLevelLow,
 				ThreatType:  "rate_limited",
 				Reason:      "Too many requests, please slow down",
-				Action:      "block",
+				Action:      GuardActionBlock,
 			}
 		}
 	}
@@ -251,7 +286,7 @@ func (g *SafetyGuard) CheckInputWithUser(ctx context.Context, input, userID stri
 			ThreatLevel: ThreatLevelLow,
 			ThreatType:  "input_too_long",
 			Reason:      fmt.Sprintf("Input exceeds maximum length of %d characters", g.config.MaxInputLength),
-			Action:      "block",
+			Action:      GuardActionBlock,
 		}
 	}
 
@@ -266,7 +301,7 @@ func (g *SafetyGuard) CheckInputWithUser(ctx context.Context, input, userID stri
 				ThreatType:     "prompt_injection",
 				Reason:         "Input matches potentially dangerous pattern",
 				MatchedPattern: pattern.String(),
-				Action:         "block",
+				Action:         GuardActionBlock,
 			}
 		}
 	}
@@ -279,7 +314,7 @@ func (g *SafetyGuard) CheckInputWithUser(ctx context.Context, input, userID stri
 	return &GuardResult{
 		Safe:        true,
 		ThreatLevel: ThreatLevelNone,
-		Action:      "allow",
+		Action:      GuardActionAllow,
 	}
 }
 
@@ -287,13 +322,30 @@ func (g *SafetyGuard) CheckInputWithUser(ctx context.Context, input, userID stri
 func (g *SafetyGuard) getOrCreateLimiter(userID string) *rate.Limiter {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-
 	limiter, exists := g.userLimiters[userID]
 	if !exists {
 		limiter = rate.NewLimiter(rate.Limit(g.rateLimitRPS), g.rateLimitBurst)
 		g.userLimiters[userID] = limiter
 	}
+	g.userLastSeen[userID] = time.Now()
 	return limiter
+}
+
+func (g *SafetyGuard) clearExpiredLimiters(ttl time.Duration) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	now := time.Now()
+	expired := 0
+	for userID, lastSeen := range g.userLastSeen {
+		if now.Sub(lastSeen) > ttl {
+			delete(g.userLimiters, userID)
+			delete(g.userLastSeen, userID)
+			expired++
+		}
+	}
+	if expired > 0 {
+		g.logger.Debug("Cleared expired rate limiters", "expired", expired, "remaining", len(g.userLimiters))
+	}
 }
 
 // deepInputAnalysis uses Brain for deeper threat analysis.
@@ -332,7 +384,7 @@ Return JSON:
 		return &GuardResult{
 			Safe:        true,
 			ThreatLevel: ThreatLevelLow,
-			Action:      "allow",
+			Action:      GuardActionAllow,
 		}
 	}
 
@@ -344,14 +396,14 @@ Return JSON:
 			ThreatLevel: analysis.ThreatLevel,
 			ThreatType:  analysis.ThreatType,
 			Reason:      analysis.Reason,
-			Action:      "block",
+			Action:      GuardActionBlock,
 		}
 	}
 
 	return &GuardResult{
 		Safe:        true,
 		ThreatLevel: analysis.ThreatLevel,
-		Action:      "allow",
+		Action:      GuardActionAllow,
 	}
 }
 
@@ -373,7 +425,7 @@ func (g *SafetyGuard) CheckOutput(output string) *GuardResult {
 		return &GuardResult{
 			Safe:        true,
 			ThreatLevel: ThreatLevelNone,
-			Action:      "allow",
+			Action:      GuardActionAllow,
 		}
 	}
 
@@ -396,7 +448,7 @@ func (g *SafetyGuard) CheckOutput(output string) *GuardResult {
 			ThreatLevel:    ThreatLevelMedium,
 			ThreatType:     "sensitive_data_detected",
 			Reason:         "Sensitive data detected and redacted",
-			Action:         "sanitize",
+			Action:         GuardActionSanitize,
 			SanitizedInput: sanitized,
 		}
 	}
@@ -404,14 +456,14 @@ func (g *SafetyGuard) CheckOutput(output string) *GuardResult {
 	return &GuardResult{
 		Safe:        true,
 		ThreatLevel: ThreatLevelNone,
-		Action:      "allow",
+		Action:      GuardActionAllow,
 	}
 }
 
 // SanitizeOutput applies sanitization to output string.
 func (g *SafetyGuard) SanitizeOutput(output string) string {
 	result := g.CheckOutput(output)
-	if result.Action == "sanitize" && result.SanitizedInput != "" {
+	if result.Action == GuardActionSanitize && result.SanitizedInput != "" {
 		return result.SanitizedInput
 	}
 	return output
@@ -759,7 +811,7 @@ func InitGuard(config GuardConfig, logger *slog.Logger) error {
 // CheckInputSafe is a convenience function for input checking.
 func CheckInputSafe(ctx context.Context, input string) *GuardResult {
 	if globalGuard == nil {
-		return &GuardResult{Safe: true, ThreatLevel: ThreatLevelNone, Action: "allow"}
+		return &GuardResult{Safe: true, ThreatLevel: ThreatLevelNone, Action: GuardActionAllow}
 	}
 	return globalGuard.CheckInput(ctx, input)
 }
@@ -767,7 +819,7 @@ func CheckInputSafe(ctx context.Context, input string) *GuardResult {
 // CheckOutputSafe is a convenience function for output checking.
 func CheckOutputSafe(output string) *GuardResult {
 	if globalGuard == nil {
-		return &GuardResult{Safe: true, ThreatLevel: ThreatLevelNone, Action: "allow"}
+		return &GuardResult{Safe: true, ThreatLevel: ThreatLevelNone, Action: GuardActionAllow}
 	}
 	return globalGuard.CheckOutput(output)
 }

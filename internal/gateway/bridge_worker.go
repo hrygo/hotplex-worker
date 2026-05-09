@@ -142,7 +142,7 @@ func (b *Bridge) attemptResumeFallback(p fallbackParams) bool {
 	// Step 2: Resume retry also failed or retryDepth exhausted — start fresh worker.
 	b.log.Info("bridge: starting fresh worker after failed resume", "session_id", p.sessionID, "worker_type", p.workerType)
 
-	si, err := b.sm.Get(p.sessionID)
+	si, err := b.sm.Get(context.Background(), p.sessionID)
 	if err != nil {
 		b.log.Error("bridge: session not found for fresh start fallback", "session_id", p.sessionID, "err", err)
 		return false
