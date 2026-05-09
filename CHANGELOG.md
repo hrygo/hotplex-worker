@@ -21,6 +21,7 @@ v1.8.1 是一次 patch 版本更新，聚焦于 **配置层 DRY 重构** 和 **S
 - **TTS**: Resolve `MossProcess` `idleMonitor` deadlock and add active request check to prevent premature subprocess shutdown.
 - **STT**: Fix ONNX model patch staleness — `fix_onnx_model.py` now patches the model in-place with SHA-256 verification, and `stt_server.py` validates patch before loading.
 - **Messaging/Feishu**: Fix card header branch logic on first turn — branch name was incorrectly resolved when git context was not yet available.
+- **Configuration**: Quote `STT_LOCAL_CMD` in `env.example` — unquoted values with spaces trigger `VAR=value command` shell semantics when `dev.sh` sources `.env`, causing the STT server to start eagerly on every `make dev`/`dev-stop`/`status` invocation.
 
 ### Added
 
