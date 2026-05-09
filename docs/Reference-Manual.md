@@ -213,6 +213,12 @@ admin:
   burst: 20
 
 messaging:
+  # Shared defaults (inherited by all platforms, overridable per-platform)
+  worker_type: "claude_code"
+  stt_provider: "local"
+  tts_enabled: true
+  tts_provider: "edge+moss"
+
   feishu:
     enabled: true
     dm_policy: "allowlist"
@@ -280,9 +286,13 @@ All non-sensitive fields have production defaults. Binary runs with zero config.
 | `admin.requests_per_sec` | `10` | |
 | `agent_config.enabled` | `true` | Enable agent personality/context injection |
 | `agent_config.config_dir` | `~/.hotplex/agent-configs/` | Config files directory |
-| `messaging.*.dm_policy` | `allowlist` | `open`, `allowlist`, `disabled` |
-| `messaging.*.group_policy` | `allowlist` | `open`, `allowlist`, `disabled` |
-| `messaging.*.require_mention` | `true` | |
+| `messaging.worker_type` | `claude_code` | Shared default for all platforms |
+| `messaging.stt_provider` | `local` | Shared default for all platforms |
+| `messaging.tts_enabled` | `true` | Shared default for all platforms |
+| `messaging.tts_provider` | `edge+moss` | Shared default for all platforms |
+| `messaging.*.dm_policy` | `allowlist` | Platform-level: `open`, `allowlist`, `disabled` |
+| `messaging.*.group_policy` | `allowlist` | Platform-level: `open`, `allowlist`, `disabled` |
+| `messaging.*.require_mention` | `true` | Platform-level |
 
 ### 4.4 Config Inheritance
 
@@ -327,26 +337,30 @@ HotPlex provides voice reply functionality for messaging platforms (Slack, Feish
 
 #### Configuration
 
-TTS is configured per-platform under `messaging.<platform>`:
+TTS settings are configured as **messaging-level shared defaults** (inherited by all platforms) with optional per-platform overrides:
 
 ```yaml
 messaging:
+  # Shared defaults (inherited by all platforms)
+  tts_enabled: true              # Enable voice replies (default: true)
+  tts_provider: "edge+moss"      # Provider: edge | moss | edge+moss
+  tts_voice: "zh-CN-XiaoxiaoNeural"  # Edge voice name
+  tts_max_chars: 150             # Max summary text length (~37s audio)
+
+  # MOSS-TTS-Nano sidecar (for moss or edge+moss provider)
+  tts_moss_model_dir: "~/.hotplex/models/moss-tts-nano"
+  tts_moss_voice: "Xiaoyu"
+  tts_moss_port: 18083
+  tts_moss_idle_timeout: 30m
+  tts_moss_cpu_threads: 0
+
   slack:
     enabled: true
-    tts_enabled: true              # Enable voice replies (default: true)
-    tts_provider: "edge"           # Provider: edge | moss | edge+moss
-    tts_voice: "zh-CN-XiaoxiaoNeural"  # Edge voice name
-    tts_max_chars: 150             # Max summary text length (~37s audio)
-
-    # MOSS-TTS-Nano sidecar (for moss or edge+moss provider)
-    # tts_moss_model_dir: "~/.hotplex/models/moss-tts-nano"
-    # tts_moss_voice: "Xiaoyu"
-    # tts_moss_port: 18083
-    # tts_moss_idle_timeout: 30m
-    # tts_moss_cpu_threads: 2
+    # Per-platform override (optional):
+    # tts_provider: "edge"
 ```
 
-Same structure applies for `messaging.feishu`.
+Priority: platform-level > messaging-level > Default().
 
 #### Pipeline
 
@@ -362,21 +376,28 @@ Voice input → STT (transcription) → AI response → TTS summary → Opus aud
 
 #### Environment Variables
 
-All TTS settings can be overridden via environment variables:
+Messaging-level shared defaults (inherited by all platforms):
+
+```bash
+HOTPLEX_MESSAGING_TTS_ENABLED=true
+HOTPLEX_MESSAGING_TTS_PROVIDER=edge+moss
+HOTPLEX_MESSAGING_TTS_VOICE=zh-CN-XiaoxiaoNeural
+HOTPLEX_MESSAGING_TTS_MAX_CHARS=150
+HOTPLEX_MESSAGING_TTS_MOSS_MODEL_DIR=~/.hotplex/models/moss-tts-nano
+HOTPLEX_MESSAGING_TTS_MOSS_VOICE=Xiaoyu
+HOTPLEX_MESSAGING_TTS_MOSS_PORT=18083
+HOTPLEX_MESSAGING_TTS_MOSS_IDLE_TIMEOUT=30m
+HOTPLEX_MESSAGING_TTS_MOSS_CPU_THREADS=2
+```
+
+Per-platform overrides (replace `SLACK` with `FEISHU` for Feishu):
 
 ```bash
 HOTPLEX_MESSAGING_SLACK_TTS_ENABLED=true
 HOTPLEX_MESSAGING_SLACK_TTS_PROVIDER=edge
 HOTPLEX_MESSAGING_SLACK_TTS_VOICE=zh-CN-XiaoxiaoNeural
 HOTPLEX_MESSAGING_SLACK_TTS_MAX_CHARS=150
-HOTPLEX_MESSAGING_SLACK_TTS_MOSS_MODEL_DIR=~/.hotplex/models/moss-tts-nano
-HOTPLEX_MESSAGING_SLACK_TTS_MOSS_VOICE=Xiaoyu
-HOTPLEX_MESSAGING_SLACK_TTS_MOSS_PORT=18083
-HOTPLEX_MESSAGING_SLACK_TTS_MOSS_IDLE_TIMEOUT=30m
-HOTPLEX_MESSAGING_SLACK_TTS_MOSS_CPU_THREADS=2
 ```
-
-Replace `SLACK` with `FEISHU` for Feishu-specific overrides.
 
 #### Health Check
 

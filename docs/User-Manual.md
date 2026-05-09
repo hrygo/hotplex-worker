@@ -204,22 +204,30 @@ HotPlex 支持语音输入（STT）和语音回复（TTS），在飞书和 Slack
 | MOSS-TTS-Nano | `moss` | 本地 CPU 推理，需要下载模型 |
 | Edge + MOSS 混合 | `edge+moss` | Edge 优先，MOSS 作为本地回退 |
 
-**基本配置**（在 `config.yaml` 的 `messaging.slack` 或 `messaging.feishu` 下）：
+**基本配置**（在 `config.yaml` 的 `messaging` 下设置共享默认值，所有平台继承）：
 
 ```yaml
-tts_enabled: true           # 启用语音回复（默认开启）
-tts_provider: "edge"        # 选择 TTS 提供商
-tts_voice: "zh-CN-XiaoxiaoNeural"  # 语音角色
-tts_max_chars: 150          # 语音摘要最大字符数
+messaging:
+  # 共享默认值（所有平台继承）
+  tts_enabled: true           # 启用语音回复（默认开启）
+  tts_provider: "edge"        # 选择 TTS 提供商
+  tts_voice: "zh-CN-XiaoxiaoNeural"  # 语音角色
+  tts_max_chars: 150          # 语音摘要最大字符数
+
+  slack:
+    enabled: true
+    # 如需覆盖共享默认值，在此处设置：
+    # tts_provider: "moss"
 ```
 
 **使用 MOSS-TTS-Nano 本地推理：**
 
 ```yaml
-tts_provider: "edge+moss"   # Edge 优先，MOSS 回退
-tts_moss_model_dir: "~/.hotplex/models/moss-tts-nano"
-tts_moss_voice: "Xiaoyu"
-tts_moss_port: 18083
+messaging:
+  tts_provider: "edge+moss"   # Edge 优先，MOSS 回退
+  tts_moss_model_dir: "~/.hotplex/models/moss-tts-nano"
+  tts_moss_voice: "Xiaoyu"
+  tts_moss_port: 18083
 ```
 
 MOSS-TTS-Nano 需要 `python3` 和 `ffmpeg`。运行 `hotplex doctor` 可检查依赖是否就绪。
