@@ -1058,9 +1058,11 @@ func TestHub_HandleHTTP_Success(t *testing.T) {
 	}, 2*time.Second, 10*time.Millisecond, "hub should have registered the connection")
 }
 
-// TestHub_HandleHTTP_Unauthorized verifies that a request without an API key
-// returns 401 Unauthorized.
-func TestHub_HandleHTTP_Unauthorized(t *testing.T) {
+// TestHub_HandleHTTP_DeferredAuth verifies that a request without an API key
+// at HTTP level succeeds the WebSocket upgrade (for browser clients that cannot
+// send custom headers), but auth is deferred to the init envelope. The connection
+// should fail at init handshake if no valid token is provided.
+func TestHub_HandleHTTP_DeferredAuth(t *testing.T) {
 	cfg := config.Default()
 	cfg.Security.APIKeys = []string{"secret-key"} // require this key
 	cfg.Security.AllowedOrigins = []string{"*"}
@@ -1075,10 +1077,10 @@ func TestHub_HandleHTTP_Unauthorized(t *testing.T) {
 	defer server.Close()
 
 	u := "ws" + server.URL[4:]
-	// No API key header.
+	// No API key header — upgrade should succeed (auth deferred to init envelope).
 	_, resp, err := websocket.DefaultDialer.Dial(u, nil)
-	require.Error(t, err, "dial should fail without API key")
-	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+	require.NoError(t, err, "WebSocket upgrade should succeed without API key (auth deferred)")
+	require.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
 }
 
 // TestHub_HandleHTTP_WithSessionID verifies that a request with an explicit
