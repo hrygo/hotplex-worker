@@ -6,12 +6,25 @@
 
 ### Summary
 
-v1.8.1 是一次 patch 版本更新，聚焦于 **配置层 DRY 重构**。提取 `MessagingPlatformConfig` 共享结构体，将 Slack/Feishu 适配器的 9 个重复字段（STT/TTS/权限/策略等）统一声明一次，新增平台适配器接近零成本。同时更新多语言 SDK 示例版本到 1.8.0。
+v1.8.1 是一次 patch 版本更新，聚焦于 **配置层 DRY 重构** 和 **STT/TTS 稳定性修复**。提取 `MessagingPlatformConfig` 共享结构体并引入消息层共享默认值（`FillFrom` 传播模式），将 Slack/Feishu 的 STT/TTS/WorkerType 配置统一声明一次。同时修复 STT 持久进程死锁、MOSS TTS idle monitor 死锁、ONNX 模型补丁过期、以及飞书卡片首次 turn 标题分支问题。新增 git 分支检测工具和 doctor TTS 诊断。
 
 ### Changed
 
-- **Configuration**: Extract `MessagingPlatformConfig` embedded struct to deduplicate 9 shared fields (Enabled, WorkerType, WorkDir, DMPolicy, GroupPolicy, RequireMention, AllowFrom, STT/TTS config) between SlackConfig and FeishuConfig. (#316)
-- **Configuration**: Refactor `applyMessagingEnv` to data-driven `applyPlatformEnv` helper with reflection-based bool field mapping.
+- **Configuration**: Extract `MessagingPlatformConfig` embedded struct to deduplicate 9 shared fields between SlackConfig and FeishuConfig. (#316)
+- **Configuration**: Introduce messaging-level shared defaults (WorkerType, STT, TTS) with `FillFrom()` zero-value propagation. Three-level priority: platform > messaging > Default().
+- **Configuration**: Rename `TTSConfig.Enabled` → `TTSEnabled` to resolve Go struct embedding field shadowing.
+- **Configuration**: Demote `dm_policy`/`group_policy` to platform-level only — no longer propagated from messaging level.
+
+### Fixed
+
+- **STT**: Resolve `PersistentSTT` deadlocks in `Transcribe`, `idleMonitor`, and `Close` — mutex contention caused goroutine hang on concurrent transcription requests.
+- **TTS**: Resolve `MossProcess` `idleMonitor` deadlock and add active request check to prevent premature subprocess shutdown.
+- **STT**: Fix ONNX model patch staleness — `fix_onnx_model.py` now patches the model in-place with SHA-256 verification, and `stt_server.py` validates patch before loading.
+- **Messaging/Feishu**: Fix card header branch logic on first turn — branch name was incorrectly resolved when git context was not yet available.
+
+### Added
+
+- **Messaging**: Git branch detection utility for enriched card headers.
 
 ## [1.8.0] - 2026-05-09
 
