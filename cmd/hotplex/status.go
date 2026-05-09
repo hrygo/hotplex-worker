@@ -90,15 +90,17 @@ func newStatusCmd() *cobra.Command {
 	return cmd
 }
 
+const defaultHealthURL = "http://localhost:8888/health"
+
 func gatewayHealthURL(configPath string) string {
 	absPath, err := config.ExpandAndAbs(configPath)
 	if err != nil {
-		return "http://localhost:8888/health"
+		return defaultHealthURL
 	}
 	loadEnvFile(filepath.Dir(absPath))
 	cfg, err := config.Load(absPath, config.LoadOptions{})
 	if err != nil {
-		return "http://localhost:8888/health"
+		return defaultHealthURL
 	}
 	scheme := "http"
 	if cfg.Security.TLSEnabled {

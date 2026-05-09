@@ -131,6 +131,7 @@ type SafetyGuard struct {
 
 	// Per-user rate limiting for CheckInput calls
 	userLimiters   map[string]*rate.Limiter // userID -> limiter
+	userLastSeen   map[string]time.Time     // userID -> last access time
 	rateLimitRPS   float64                  // Configured RPS (0 = disabled)
 	rateLimitBurst int                      // Configured burst
 
@@ -155,6 +156,7 @@ func NewSafetyGuard(brain Brain, config GuardConfig, logger *slog.Logger) (*Safe
 		config:         config,
 		logger:         logger,
 		userLimiters:   make(map[string]*rate.Limiter),
+		userLastSeen:   make(map[string]time.Time),
 		rateLimitRPS:   config.RateLimitRPS,
 		rateLimitBurst: config.RateLimitBurst,
 		cleanupStop:    cancel,
@@ -319,6 +321,9 @@ func (g *SafetyGuard) getOrCreateLimiter(userID string) *rate.Limiter {
 	limiter, exists := g.userLimiters[userID]
 	g.mu.RUnlock()
 	if exists {
+		g.mu.Lock()
+		g.userLastSeen[userID] = time.Now()
+		g.mu.Unlock()
 		return limiter
 	}
 
@@ -326,10 +331,12 @@ func (g *SafetyGuard) getOrCreateLimiter(userID string) *rate.Limiter {
 	defer g.mu.Unlock()
 	// Double-check after acquiring write lock.
 	if limiter, exists = g.userLimiters[userID]; exists {
+		g.userLastSeen[userID] = time.Now()
 		return limiter
 	}
 	limiter = rate.NewLimiter(rate.Limit(g.rateLimitRPS), g.rateLimitBurst)
 	g.userLimiters[userID] = limiter
+	g.userLastSeen[userID] = time.Now()
 	return limiter
 }
 
@@ -337,13 +344,18 @@ func (g *SafetyGuard) getOrCreateLimiter(userID string) *rate.Limiter {
 func (g *SafetyGuard) ClearExpiredLimiters(ttl time.Duration) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	// rate.Limiter has no last-used timestamp, so clear all when called.
-	// Next request for each user will recreate their limiter.
-	if len(g.userLimiters) == 0 {
-		return
+	now := time.Now()
+	expired := 0
+	for userID, lastSeen := range g.userLastSeen {
+		if now.Sub(lastSeen) > ttl {
+			delete(g.userLimiters, userID)
+			delete(g.userLastSeen, userID)
+			expired++
+		}
 	}
-	g.logger.Debug("Clearing expired rate limiters", "count", len(g.userLimiters))
-	clear(g.userLimiters)
+	if expired > 0 {
+		g.logger.Debug("Cleared expired rate limiters", "expired", expired, "remaining", len(g.userLimiters))
+	}
 }
 
 // deepInputAnalysis uses Brain for deeper threat analysis.

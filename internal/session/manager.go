@@ -362,14 +362,10 @@ func (m *Manager) TransitionWithInput(ctx context.Context, id string, to events.
 	}
 
 	ms.mu.Lock()
-	defer ms.mu.Unlock()
 
 	from := ms.info.State
-
-	// Anti-pollution: enforce max turns limit.
-	// TurnCount is incremented after transition validation to avoid
-	// burning turns on invalid transitions.
 	if !events.IsValidTransition(from, to) {
+		ms.mu.Unlock()
 		return fmt.Errorf("%w: %s → %s", ErrInvalidTransition, from, to)
 	}
 
@@ -379,30 +375,36 @@ func (m *Manager) TransitionWithInput(ctx context.Context, id string, to events.
 		if maxTurns > 0 && ms.TurnCount > maxTurns {
 			m.log.Warn("session: max turns exceeded, initiating anti-pollution restart",
 				"session_id", id, "turn_count", ms.TurnCount, "max_turns", maxTurns)
-			// Transition state first, then kill worker outside lock.
+			// transitionState handles worker termination when target is TERMINATED.
+			var workerToKill worker.Worker
 			if events.IsValidTransition(from, events.StateTerminated) {
 				if err := m.transitionState(ctx, ms, from, events.StateTerminated, "max_turns"); err != nil {
 					m.log.Error("session: max-turns state transition failed, force-terminating in-memory state",
 						"session_id", id, "err", err)
 					ms.info.State = events.StateTerminated
+					workerToKill = ms.worker
 				}
 			} else {
 				m.log.Warn("session: max-turns transition invalid, force-terminating in-memory state",
 					"session_id", id, "from_state", from)
 				ms.info.State = events.StateTerminated
+				workerToKill = ms.worker
 			}
-			w := ms.worker
 			ms.mu.Unlock()
-			// Kill worker outside lock — process termination can block on I/O.
-			if err := w.Kill(); err != nil {
-				m.log.Warn("session: worker kill failed during max-turns cleanup",
-					"session_id", id, "err", err)
+			// Kill worker outside lock only if transitionState did not handle it.
+			if workerToKill != nil {
+				if err := workerToKill.Kill(); err != nil {
+					m.log.Warn("session: worker kill failed during max-turns cleanup",
+						"session_id", id, "err", err)
+				}
 			}
 			return ErrMaxTurnsReached
 		}
 	}
 
-	return m.transitionState(ctx, ms, from, to, "client_input")
+	err := m.transitionState(ctx, ms, from, to, "client_input")
+	ms.mu.Unlock()
+	return err
 }
 
 // AttachWorker attempts to allocate concurrency quota and pair the worker runtime to the session.
