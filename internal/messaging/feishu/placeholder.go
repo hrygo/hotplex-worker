@@ -12,7 +12,6 @@ var placeholderIntros = []string{
 	"用 /cd <目录> 或 $切换目录 切换工作路径",
 	// Worker 命令
 	"/compact 或 $压缩 可压缩对话历史",
-	"/rewind 或 $回退 可撤销上一轮对话",
 	"/commit 或 $提交 快速创建 Git 提交",
 	"/model <名称> 或 $切换模型 切换 AI 模型",
 	"输入 /context 或 $上下文 查看上下文窗口用量",
