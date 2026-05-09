@@ -192,51 +192,38 @@ messaging:
   # Send turn summary after each completed turn (default: true).
   turn_summary_enabled: true
 
+  # ── Shared defaults (inherited by all platforms, overridable per-platform) ──
+  worker_type: "claude_code"
+
+  # STT (Speech-to-Text)
+  stt_provider: "local"
+  stt_local_cmd: "python3 ~/.hotplex/scripts/stt_server.py"
+  stt_local_idle_ttl: 15m
+
+  # TTS (Text-to-Speech) — voice replies for voice-triggered turns
+  tts_enabled: true
+  # Provider: edge (Edge TTS, free), moss (MOSS-TTS-Nano local CPU),
+  #   edge+moss (Edge primary + MOSS fallback)
+  tts_provider: "edge+moss"
+  tts_voice: "zh-CN-XiaoxiaoNeural"
+  tts_max_chars: 150
+  # MOSS-TTS-Nano sidecar settings
+  tts_moss_model_dir: "~/.hotplex/models/moss-tts-nano"
+  tts_moss_voice: "Xiaoyu"
+  tts_moss_port: 18083
+  tts_moss_idle_timeout: 30m
+  tts_moss_cpu_threads: 0
+
+  # ── Platform-specific configs ──────────────────────────────────────────────
   slack:
     enabled: false
     socket_mode: true
-    worker_type: "claude_code"
-    dm_policy: "allowlist"
-    group_policy: "allowlist"
     require_mention: true
-    # STT (Speech-to-Text)
-    stt_provider: "local"
-    stt_local_cmd: "python3 ~/.hotplex/scripts/stt_server.py"
-    stt_local_idle_ttl: 15m
-    # TTS (Text-to-Speech) — voice replies for voice-triggered turns
-    tts_enabled: true
-    # Provider: edge (Edge TTS, free), moss (MOSS-TTS-Nano local CPU),
-    #   edge+moss (Edge primary + MOSS fallback)
-    tts_provider: "edge+moss"
-    tts_voice: "zh-CN-XiaoxiaoNeural"
-    tts_max_chars: 150
-    # MOSS-TTS-Nano sidecar settings
-    tts_moss_model_dir: "~/.hotplex/models/moss-tts-nano"
-    tts_moss_voice: "Xiaoyu"
-    tts_moss_port: 18083
-    tts_moss_idle_timeout: 30m
-    tts_moss_cpu_threads: 0
+    # Override shared defaults here if needed, e.g.:
+    # tts_provider: "edge"
 
   feishu:
     enabled: false
-    worker_type: "claude_code"
-    dm_policy: "allowlist"
-    group_policy: "allowlist"
     require_mention: true
-    # STT (Speech-to-Text)
-    stt_provider: "local"
-    stt_local_cmd: "python3 ~/.hotplex/scripts/stt_server.py"
-    stt_local_idle_ttl: 15m
-    # TTS (Text-to-Speech) — voice replies for voice-triggered turns
-    tts_enabled: true
-    # Provider: edge (Edge TTS, free), moss (MOSS-TTS-Nano local CPU),
-    #   edge+moss (Edge primary + MOSS fallback)
-    tts_provider: "edge+moss"
-    tts_voice: "zh-CN-XiaoxiaoNeural"
-    tts_max_chars: 150
-    # MOSS-TTS-Nano sidecar settings
-    tts_moss_model_dir: "~/.hotplex/models/moss-tts-nano"
-    tts_moss_voice: "Xiaoyu"
-    tts_moss_port: 18083
-    tts_moss_idle_timeout: 30m
-    tts_moss_cpu_threads: 0
+    # Override shared defaults here if needed, e.g.:
+    # tts_provider: "edge"

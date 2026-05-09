@@ -274,7 +274,7 @@ func expandCommand(cmd string) string {
 
 func buildSlackTTSPipeline(cfg *config.Config, log *slog.Logger) *slack.TTSPipeline {
 	ttsCfg := cfg.Messaging.Slack.TTSConfig
-	if !ttsCfg.Enabled {
+	if !ttsCfg.TTSEnabled {
 		return nil
 	}
 
@@ -289,7 +289,7 @@ func buildSlackTTSPipeline(cfg *config.Config, log *slog.Logger) *slack.TTSPipel
 
 func buildFeishuTTSPipeline(cfg *config.Config, log *slog.Logger) *feishu.TTSPipeline {
 	ttsCfg := cfg.Messaging.Feishu.TTSConfig
-	if !ttsCfg.Enabled {
+	if !ttsCfg.TTSEnabled {
 		return nil
 	}
 
