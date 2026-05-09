@@ -62,6 +62,18 @@ func removeGatewayState() {
 	_ = os.Remove(gatewayPIDPath())
 }
 
+func ensureNotRunning() error {
+	inst, err := findRunningGateway()
+	if err != nil {
+		return nil
+	}
+	if inst.PID == os.Getpid() {
+		return nil
+	}
+	return fmt.Errorf("gateway already running (PID %d, via %s); use 'hotplex gateway stop' first",
+		inst.PID, inst.Source)
+}
+
 type discoverySource string
 
 const (

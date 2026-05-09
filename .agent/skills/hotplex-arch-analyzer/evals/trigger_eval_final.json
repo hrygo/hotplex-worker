@@ -1,0 +1,82 @@
+[
+  {
+    "query": "分析一下 HotPlex 仓库的所有 issues",
+    "should_trigger": true
+  },
+  {
+    "query": "给这些 issues 打上标签",
+    "should_trigger": true
+  },
+  {
+    "query": "帮我管理一下 GitHub issues",
+    "should_trigger": true
+  },
+  {
+    "query": "检测重复的 issues",
+    "should_trigger": true
+  },
+  {
+    "query": "清理一下超过 60 天没更新的 issues",
+    "should_trigger": true
+  },
+  {
+    "query": "生成 issue 分析报告",
+    "should_trigger": true
+  },
+  {
+    "query": "批量给所有 [feat] 开头的 issues 打标签",
+    "should_trigger": true
+  },
+  {
+    "query": "哪些 issues 是 P0 优先级？",
+    "should_trigger": true
+  },
+  {
+    "query": "自动标注 issue 的类型和规模",
+    "should_trigger": true
+  },
+  {
+    "query": "stale issues 怎么处理？",
+    "should_trigger": false
+  },
+  {
+    "query": "写一个 Python 脚本读取 GitHub issues",
+    "should_trigger": false
+  },
+  {
+    "query": "查看某个 issue 的详细信息",
+    "should_trigger": false
+  },
+  {
+    "query": "创建一个新的 GitHub issue",
+    "should_trigger": false
+  },
+  {
+    "query": "如何配置 GitHub Actions",
+    "should_trigger": false
+  },
+  {
+    "query": "修复这个 bug：issue 列表显示错误",
+    "should_trigger": false
+  },
+  {
+    "query": "分析代码质量问题",
+    "should_trigger": false
+  },
+  {
+    "query": "整理一下项目文档",
+    "should_trigger": false
+  },
+  {
+    "query": "帮我 review 这个 PR",
+    "should_trigger": false
+  },
+  {
+    "query": "统计 issue 数量",
+    "should_trigger": true
+  },
+  {
+    "query": "如何使用 GitHub CLI 创建 issue",
+    "should_trigger": false
+  }
+]

@@ -1,145 +1,116 @@
 package feishu
 
 import (
-	"fmt"
-	"sort"
 	"strings"
-	"unicode/utf8"
+	"unicode"
 
+	"github.com/hrygo/hotplex/internal/messaging/toolfmt"
 	"github.com/hrygo/hotplex/pkg/events"
 )
 
-const toolStatusMaxRunes = 30
+// toolActivityMaxCols is the maximum visual column width per tool activity line.
+// CJK/emoji glyphs occupy 2 columns; ASCII occupies 1. Lines exceeding this are
+// truncated with "…" to prevent card layout wrapping.
+const toolActivityMaxCols = 50
 
 // toolEntry tracks a single tool call for the activity strip.
 type toolEntry struct {
-	id   string // matches ToolCallData.ID for result correlation
-	text string // formatted short status, e.g. "📖 Reading(adapter.go)"
-	done bool   // set true when tool_result arrives
+	id     string // matches ToolCallData.ID for result correlation
+	name   string // tool name for result formatting
+	text   string // formatted status from toolfmt.FormatCall
+	done   bool   // set true when tool_result arrives
+	result string // formatted result summary from toolfmt.FormatResult
 }
 
-// toolFmt defines how a tool name maps to a human-readable status.
-type toolFmt struct {
-	emoji string // e.g. "📖"
-	verb  string // e.g. "Reading"; empty means use just emoji + value
-	key   string // input field to extract, e.g. "file_path"
-}
-
-var toolFmtMap = map[string]toolFmt{
-	"Read":         {"📖", "Reading", "file_path"},
-	"Edit":         {"✏️", "Editing", "file_path"},
-	"Write":        {"📝", "Writing", "file_path"},
-	"NotebookEdit": {"📓", "Editing", "notebook_path"},
-	"Bash":         {"⏳", "", "command"},
-	"Grep":         {"🔍", "", "pattern"},
-	"Glob":         {"📂", "", "pattern"},
-	"WebSearch":    {"🌐", "Searching", "query"},
-	"WebFetch":     {"🌐", "Fetching", "url"},
-	"Agent":        {"🤖", "", "prompt"},
-	"TodoWrite":    {"📋", "", "todos"},
-	"LSP":          {"🔎", "", "text"},
-}
-
-// formatToolCall produces a short status string for a tool_call event.
-func formatToolCall(name string, input map[string]any) string {
-	if f, ok := toolFmtMap[name]; ok {
-		val := extractInputField(input, f.key)
-		val = truncateRunes(shortenPath(val), toolStatusMaxRunes)
-		if f.verb != "" {
-			if val != "" {
-				return f.emoji + " " + f.verb + " " + val
-			}
-			return f.emoji + " " + f.verb
-		}
-		if val != "" {
-			return f.emoji + " " + val
-		}
-		return f.emoji + " " + name
-	}
-	return formatFallbackTool(name, input)
-}
-
-func formatFallbackTool(name string, input map[string]any) string {
-	keys := sortedKeys(input)
-	if len(keys) == 0 {
-		return name
-	}
-	val := fmt.Sprintf("%v", input[keys[0]])
-	val = truncateRunes(shortenPath(val), toolStatusMaxRunes/2)
-	return truncateRunes(name+"("+val+")", toolStatusMaxRunes)
-}
-
-func extractInputField(input map[string]any, key string) string {
-	if input == nil {
-		return ""
-	}
-	v, ok := input[key]
-	if !ok {
-		return ""
-	}
-	return fmt.Sprintf("%v", v)
-}
-
-func shortenPath(s string) string {
-	parts := strings.Split(s, "/")
-	if len(parts) <= 1 {
-		return s
-	}
-	return parts[len(parts)-1]
-}
-
-func truncateRunes(s string, max int) string {
-	if utf8.RuneCountInString(s) <= max {
-		return s
-	}
-	runes := []rune(s)
-	if max > 1 {
-		return string(runes[:max-1]) + "…"
-	}
-	return string(runes[:max])
-}
-
-func sortedKeys(m map[string]any) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-// renderToolActivity renders up to 2 tool entries as a single-line markdown string.
-// Returns empty string if no entries.
-// Format: "✅ Reading(main.go) · 🔧 make test"
+// renderToolActivity renders up to 2 tool entries as newline-separated markdown.
+// Done entries with result info append " · <result>" after the call text.
+// Each line is truncated to toolActivityMaxCols visual columns.
 func renderToolActivity(entries []toolEntry) string {
 	if len(entries) == 0 {
 		return ""
 	}
 	parts := make([]string, 0, len(entries))
 	for _, e := range entries {
-		prefix := "🔧 "
-		if e.done {
-			prefix = "✅ "
+		line := e.text
+		if e.done && e.result != "" {
+			line += " · " + e.result
 		}
-		parts = append(parts, prefix+e.text)
+		parts = append(parts, truncateVisual(line, toolActivityMaxCols))
 	}
-	return strings.Join(parts, " · ")
+	return strings.Join(parts, "\n")
 }
 
-// extractToolCallStatus extracts a formatted status from a ToolCall envelope.
-func extractToolCallStatus(env *events.Envelope) (id, text string) {
+// extractToolCallData extracts (id, name, input) from a ToolCall envelope.
+func extractToolCallData(env *events.Envelope) (id, name string, input map[string]any) {
 	data, ok := events.DecodeAs[events.ToolCallData](env.Event.Data)
 	if !ok {
-		return "", ""
+		return "", "", nil
 	}
-	return data.ID, formatToolCall(data.Name, data.Input)
+	return data.ID, data.Name, data.Input
 }
 
-// extractToolResultID extracts the tool call ID from a ToolResult envelope.
-func extractToolResultID(env *events.Envelope) string {
+// extractToolResultData extracts (id, output, errMsg) from a ToolResult envelope.
+func extractToolResultData(env *events.Envelope) (id string, output any, errMsg string) {
 	data, ok := events.DecodeAs[events.ToolResultData](env.Event.Data)
 	if !ok {
+		return "", nil, ""
+	}
+	return data.ID, data.Output, data.Error
+}
+
+// formatToolCall formats a tool call using the shared toolfmt package.
+func formatToolCall(name string, input map[string]any) string {
+	return toolfmt.FormatCall(name, input)
+}
+
+// formatToolResult formats a tool result using the shared toolfmt package.
+func formatToolResult(name string, output any, errMsg string) string {
+	return toolfmt.FormatResult(name, output, errMsg)
+}
+
+// runeWidth returns the visual column width of a single rune.
+// CJK ideographs, most emoji, and full-width forms occupy 2 columns.
+func runeWidth(r rune) int {
+	// Fast path: Latin-1 (covers ASCII + Western European) is always single-width.
+	if r < 256 {
+		return 1
+	}
+	// Range checks first (cheap integer compare), table lookups last.
+	switch {
+	case r >= 0x1F300 && r <= 0x1FAFF: // emoji
+		return 2
+	case r >= 0xFF01 && r <= 0xFF60: // fullwidth forms
+		return 2
+	case r >= 0x2000 && r <= 0x206F: // general punctuation
+		return 2
+	case unicode.Is(unicode.Han, r):
+		return 2
+	case unicode.Is(unicode.Hangul, r):
+		return 2
+	case unicode.Is(unicode.Hiragana, r):
+		return 2
+	case unicode.Is(unicode.Katakana, r):
+		return 2
+	default:
+		return 1
+	}
+}
+
+// truncateVisual truncates s to maxCols visual columns, appending "…" if truncated.
+func truncateVisual(s string, maxCols int) string {
+	if maxCols <= 0 {
 		return ""
 	}
-	return data.ID
+	// Fast path: if byte length fits, visual width <= byte length (each rune ≥ 1 byte ≥ 1 col).
+	if len(s) <= maxCols {
+		return s
+	}
+	cols := 0
+	for i, r := range s {
+		cols += runeWidth(r)
+		if cols > maxCols {
+			return s[:i] + "…"
+		}
+	}
+	return s
 }

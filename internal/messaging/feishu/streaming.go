@@ -106,9 +106,11 @@ type StreamingCardController struct {
 	branch       string
 	workDir      string
 	closeMeta    atomic.Pointer[messaging.TurnSummaryData]
+	placeholder  string // active placeholder text, cleared on first real content flush
 
 	flushDone    chan struct{}
 	flushStop    sync.Once
+	flushStart   sync.Once
 	flushWg      sync.WaitGroup
 	flushTrigger chan struct{} // buffered 1: coalesces rapid signals
 }
@@ -153,21 +155,22 @@ func (c *StreamingCardController) SetCloseMeta(d messaging.TurnSummaryData) {
 const maxToolEntries = 2
 
 // WriteToolCall appends a tool activity entry. Oldest entry scrolls out when capacity is exceeded.
-func (c *StreamingCardController) WriteToolCall(id, text string) {
+func (c *StreamingCardController) WriteToolCall(id, name string, input map[string]any) {
 	if c.getPhase() >= PhaseCompleted {
 		return
 	}
+	text := formatToolCall(name, input)
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.toolEntries = append(c.toolEntries, toolEntry{id: id, text: text})
+	c.toolEntries = append(c.toolEntries, toolEntry{id: id, name: name, text: text})
 	if len(c.toolEntries) > maxToolEntries {
 		c.toolEntries = c.toolEntries[len(c.toolEntries)-maxToolEntries:]
 	}
 	c.toolDirty = true
 }
 
-// WriteToolResult marks the matching tool entry as done by ID.
-func (c *StreamingCardController) WriteToolResult(id string) {
+// WriteToolResult marks the matching tool entry as done by ID and sets the result summary.
+func (c *StreamingCardController) WriteToolResult(id string, output any, errMsg string) {
 	if c.getPhase() >= PhaseCompleted {
 		return
 	}
@@ -176,6 +179,7 @@ func (c *StreamingCardController) WriteToolResult(id string) {
 	for i := range c.toolEntries {
 		if c.toolEntries[i].id == id {
 			c.toolEntries[i].done = true
+			c.toolEntries[i].result = formatToolResult(c.toolEntries[i].name, output, errMsg)
 			c.toolDirty = true
 			return
 		}
@@ -190,6 +194,15 @@ func (c *StreamingCardController) MarkAllToolsDone() {
 		c.toolEntries[i].done = true
 	}
 	c.toolDirty = true
+}
+
+// ClearToolEntries removes all tool activity entries. Used during card rotation
+// to prevent stale tool activity from appearing on the old card.
+func (c *StreamingCardController) ClearToolEntries() {
+	c.mu.Lock()
+	c.toolEntries = nil
+	c.toolDirty = false
+	c.mu.Unlock()
 }
 
 // closeTags builds text_tag_list from closeMeta (full Turn/Model/Branch).
@@ -308,11 +321,12 @@ func (c *StreamingCardController) SendPlaceholder(ctx context.Context, chatID, c
 		return fmt.Errorf("feishu: cannot transition from %s to creating", c.getPhase())
 	}
 
-	placeholder := "⏳ 正在思考..."
+	placeholder := buildPlaceholderText()
 	c.mu.Lock()
 	c.chatType = chatType
 	c.replyToMsgID = replyToMsgID
 	c.lastFlushed = placeholder
+	c.placeholder = placeholder
 	c.mu.Unlock()
 
 	// Step 1: Send card message with placeholder content.
@@ -383,6 +397,7 @@ func (c *StreamingCardController) sendCardMessageRaw(ctx context.Context, chatID
 
 func (c *StreamingCardController) Write(text string) error {
 	text = messaging.SanitizeText(text)
+	c.startFlushLoop()
 
 	c.mu.Lock()
 	if c.streamStartTime.IsZero() {
@@ -418,7 +433,13 @@ func (c *StreamingCardController) Flush(ctx context.Context) error {
 
 	c.mu.Lock()
 	content := c.buf.String()
+	placeholder := c.placeholder
 	c.mu.Unlock()
+
+	// Don't flush empty buffer while placeholder is showing.
+	if content == "" && placeholder != "" {
+		return nil
+	}
 
 	if content == c.lastFlushed {
 		return nil
@@ -480,6 +501,7 @@ func (c *StreamingCardController) Flush(ctx context.Context) error {
 		}
 		c.mu.Lock()
 		c.lastFlushed = content
+		c.placeholder = ""
 		c.bufRunes = 0
 		c.mu.Unlock()
 	}
@@ -525,8 +547,10 @@ func (c *StreamingCardController) flushToolActivity(ctx context.Context) {
 // startFlushLoop launches the background flush goroutine.
 // Called once after successful transition to PhaseStreaming.
 func (c *StreamingCardController) startFlushLoop() {
-	c.flushWg.Add(1)
-	go c.flushLoop()
+	c.flushStart.Do(func() {
+		c.flushWg.Add(1)
+		go c.flushLoop()
+	})
 }
 
 func (c *StreamingCardController) flushLoop() {
@@ -635,6 +659,9 @@ func (c *StreamingCardController) Close(ctx context.Context) error {
 	}
 
 	c.mu.Lock()
+	if finalFlushOK {
+		c.lastFlushed = content
+	}
 	integrityFailed := !finalFlushOK || len(c.lastFlushed) < len(content)*9/10
 	if integrityFailed && c.bytesWritten > 0 {
 		c.log.Warn("feishu: streaming integrity check failed",
@@ -710,22 +737,12 @@ func (c *StreamingCardController) Abort(ctx context.Context) error {
 	return nil
 }
 
-// buildFinalElements builds the elements list for the final card (Close/Abort),
-// including both streaming content and tool activity strip.
+// buildFinalElements builds the elements list for the final card (Close/Abort).
+// Tool activity is transient and excluded from the final card.
 func (c *StreamingCardController) buildFinalElements(body string) []map[string]any {
-	elements := []map[string]any{
+	return []map[string]any{
 		{"tag": "markdown", "element_id": streamingElementID, "content": body},
 	}
-	c.mu.Lock()
-	entries := make([]toolEntry, len(c.toolEntries))
-	copy(entries, c.toolEntries)
-	c.mu.Unlock()
-	if toolContent := renderToolActivity(entries); toolContent != "" {
-		elements = append(elements, map[string]any{
-			"tag": "markdown", "element_id": toolActivityElementID, "content": toolContent,
-		})
-	}
-	return elements
 }
 
 func (c *StreamingCardController) updateHeader(ctx context.Context, cardID string, header cardHeader, body string) {
