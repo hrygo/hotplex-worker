@@ -321,7 +321,7 @@ func (c *StreamingCardController) SendPlaceholder(ctx context.Context, chatID, c
 		return fmt.Errorf("feishu: cannot transition from %s to creating", c.getPhase())
 	}
 
-	placeholder := "👌 收到指令。\n💡 " + randomPlaceholderIntro()
+	placeholder := buildPlaceholderText()
 	c.mu.Lock()
 	c.chatType = chatType
 	c.replyToMsgID = replyToMsgID
