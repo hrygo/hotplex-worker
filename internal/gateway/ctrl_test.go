@@ -778,7 +778,7 @@ func TestHandleInput_ControlCommandGC(t *testing.T) {
 	err := handler.Handle(context.Background(), env)
 	require.NoError(t, err)
 
-	si, _ := mgr.Get(sid)
+	si, _ := mgr.Get(context.Background(), sid)
 	require.Equal(t, events.StateTerminated, si.State)
 }
 
@@ -794,7 +794,7 @@ func TestHandleInput_SlashGC(t *testing.T) {
 	err := handler.Handle(context.Background(), env)
 	require.NoError(t, err)
 
-	si, _ := mgr.Get(sid)
+	si, _ := mgr.Get(context.Background(), sid)
 	require.Equal(t, events.StateTerminated, si.State)
 }
 

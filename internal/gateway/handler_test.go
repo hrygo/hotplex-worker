@@ -55,7 +55,7 @@ func (m *mockHandlerSM) DetachWorker(id string) {
 	m.Called(id)
 }
 
-func (m *mockHandlerSM) Get(id string) (*session.SessionInfo, error) {
+func (m *mockHandlerSM) Get(_ context.Context, id string) (*session.SessionInfo, error) {
 	args := m.Called(id)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -112,7 +112,7 @@ type testableHandler struct {
 		TransitionWithReason(ctx context.Context, id string, to events.SessionState, termReason string) error
 		GetWorker(id string) worker.Worker
 		DetachWorker(id string)
-		Get(id string) (*session.SessionInfo, error)
+		Get(ctx context.Context, id string) (*session.SessionInfo, error)
 	}
 	hub interface {
 		NextSeq(sessionID string) int64
@@ -137,7 +137,7 @@ func (h *testableHandler) handleReset(ctx context.Context, sessionID, ownerID st
 		return errors.New("UNAUTHORIZED")
 	}
 	// 1b. State precondition: reset only valid for active states.
-	si, err := h.sm.Get(sessionID)
+	si, err := h.sm.Get(context.Background(), sessionID)
 	if err != nil {
 		return errors.New("SESSION_NOT_FOUND")
 	}
@@ -172,7 +172,7 @@ func (h *testableHandler) handleGC(ctx context.Context, sessionID, ownerID strin
 		return errors.New("UNAUTHORIZED")
 	}
 	// 2. Get current state for idempotency check.
-	si, err := h.sm.Get(sessionID)
+	si, err := h.sm.Get(context.Background(), sessionID)
 	if err != nil {
 		return errors.New("SESSION_NOT_FOUND")
 	}
@@ -186,7 +186,7 @@ func (h *testableHandler) handleGC(ctx context.Context, sessionID, ownerID strin
 		h.sm.DetachWorker(sessionID)
 	}
 	// 4. Re-read after worker cleanup to avoid stale-snapshot race.
-	if fresh, err := h.sm.Get(sessionID); err == nil && fresh.State == events.StateTerminated {
+	if fresh, err := h.sm.Get(context.Background(), sessionID); err == nil && fresh.State == events.StateTerminated {
 		return nil
 	}
 	// 5. Transition to TERMINATED
@@ -853,7 +853,7 @@ type mockInputSM struct {
 	mock.Mock
 }
 
-func (m *mockInputSM) Get(id string) (*session.SessionInfo, error) {
+func (m *mockInputSM) Get(_ context.Context, id string) (*session.SessionInfo, error) {
 	args := m.Called(id)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)

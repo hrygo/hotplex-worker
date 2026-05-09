@@ -42,7 +42,7 @@ func (m *mockSessionManager) List(ctx context.Context, userID, platform string, 
 	}
 	return []any{}, nil
 }
-func (m *mockSessionManager) Get(id string) (any, error) {
+func (m *mockSessionManager) Get(_ context.Context, id string) (any, error) {
 	if m.getFn != nil {
 		return m.getFn(id)
 	}

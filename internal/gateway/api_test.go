@@ -51,7 +51,7 @@ func (m *mockAPISM) Transition(ctx context.Context, id string, to events.Session
 	return m.Called(ctx, id, to).Error(0)
 }
 
-func (m *mockAPISM) Get(id string) (*session.SessionInfo, error) {
+func (m *mockAPISM) Get(_ context.Context, id string) (*session.SessionInfo, error) {
 	args := m.Called(id)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)

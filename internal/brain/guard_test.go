@@ -85,7 +85,7 @@ func TestSafetyGuard_CheckInputWithUser_DisabledGuard(t *testing.T) {
 	result := guard.CheckInputWithUser(context.Background(), "any input", "user1")
 	assert.True(t, result.Safe)
 	assert.Equal(t, ThreatLevelNone, result.ThreatLevel)
-	assert.Equal(t, "allow", result.Action)
+	assert.Equal(t, GuardActionAllow, result.Action)
 }
 
 func TestSafetyGuard_CheckInputWithUser_InputGuardDisabled(t *testing.T) {
@@ -95,7 +95,7 @@ func TestSafetyGuard_CheckInputWithUser_InputGuardDisabled(t *testing.T) {
 
 	result := guard.CheckInputWithUser(context.Background(), "any input", "user1")
 	assert.True(t, result.Safe)
-	assert.Equal(t, "allow", result.Action)
+	assert.Equal(t, GuardActionAllow, result.Action)
 }
 
 func TestSafetyGuard_CheckInputWithUser_InputTooLong(t *testing.T) {
@@ -108,7 +108,7 @@ func TestSafetyGuard_CheckInputWithUser_InputTooLong(t *testing.T) {
 	assert.False(t, result.Safe)
 	assert.Equal(t, ThreatLevelLow, result.ThreatLevel)
 	assert.Equal(t, "input_too_long", result.ThreatType)
-	assert.Equal(t, "block", result.Action)
+	assert.Equal(t, GuardActionBlock, result.Action)
 	assert.Contains(t, result.Reason, "100")
 }
 
@@ -149,7 +149,7 @@ func TestSafetyGuard_CheckInputWithUser_PatternBlocked(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			result := guard.CheckInputWithUser(context.Background(), tc.input, "user1")
 			assert.False(t, result.Safe, "input should be blocked: %s", tc.input)
-			assert.Equal(t, "block", result.Action)
+			assert.Equal(t, GuardActionBlock, result.Action)
 			assert.Equal(t, ThreatLevelHigh, result.ThreatLevel)
 			assert.Equal(t, "prompt_injection", result.ThreatType)
 			assert.NotEmpty(t, result.MatchedPattern)
@@ -185,7 +185,7 @@ func TestSafetyGuard_CheckInputWithUser_SafeInput(t *testing.T) {
 	for _, input := range safeInputs {
 		result := guard.CheckInputWithUser(context.Background(), input, "user1")
 		assert.True(t, result.Safe, "input should be safe: %s", input)
-		assert.Equal(t, "allow", result.Action)
+		assert.Equal(t, GuardActionAllow, result.Action)
 	}
 }
 
@@ -223,7 +223,7 @@ func TestSafetyGuard_CheckInputWithUser_RateLimiting(t *testing.T) {
 	result3 := guard.CheckInputWithUser(ctx, "msg3", "ratelimited-user")
 	assert.False(t, result3.Safe)
 	assert.Equal(t, "rate_limited", result3.ThreatType)
-	assert.Equal(t, "block", result3.Action)
+	assert.Equal(t, GuardActionBlock, result3.Action)
 
 	// Different user should not be affected
 	result4 := guard.CheckInputWithUser(ctx, "msg1", "other-user")
@@ -266,7 +266,7 @@ func TestSafetyGuard_DeepInputAnalysis_SafeInput(t *testing.T) {
 
 	result := guard.CheckInputWithUser(context.Background(), "normal input", "user1")
 	assert.True(t, result.Safe)
-	assert.Equal(t, "allow", result.Action)
+	assert.Equal(t, GuardActionAllow, result.Action)
 }
 
 func TestSafetyGuard_DeepInputAnalysis_UnsafeInput(t *testing.T) {
@@ -283,7 +283,7 @@ func TestSafetyGuard_DeepInputAnalysis_UnsafeInput(t *testing.T) {
 	assert.False(t, result.Safe)
 	assert.Equal(t, ThreatLevelHigh, result.ThreatLevel)
 	assert.Equal(t, "subtle_injection", result.ThreatType)
-	assert.Equal(t, "block", result.Action)
+	assert.Equal(t, GuardActionBlock, result.Action)
 
 	stats := guard.Stats()
 	assert.Equal(t, int64(1), stats["blocked_inputs"])
@@ -303,7 +303,7 @@ func TestSafetyGuard_DeepInputAnalysis_BrainError_AllowsPass(t *testing.T) {
 	result := guard.CheckInputWithUser(context.Background(), "some input", "user1")
 	// On error, should allow pass (fail-open)
 	assert.True(t, result.Safe)
-	assert.Equal(t, "allow", result.Action)
+	assert.Equal(t, GuardActionAllow, result.Action)
 }
 
 func TestSafetyGuard_DeepInputAnalysis_LowSensitivitySkips(t *testing.T) {
@@ -353,7 +353,7 @@ func TestSafetyGuard_CheckOutput_Disabled(t *testing.T) {
 
 	result := guard.CheckOutput("some output with AKIAIOSFODNN7EXAMPLE")
 	assert.True(t, result.Safe)
-	assert.Equal(t, "allow", result.Action)
+	assert.Equal(t, GuardActionAllow, result.Action)
 }
 
 func TestSafetyGuard_CheckOutput_RedactsAPIKey(t *testing.T) {
@@ -363,7 +363,7 @@ func TestSafetyGuard_CheckOutput_RedactsAPIKey(t *testing.T) {
 	// followed by separator and value without intervening words
 	result := guard.CheckOutput("Configuration: api_key=sk-1234567890abcdefghijklmnopqrst")
 	assert.True(t, result.Safe)
-	assert.Equal(t, "sanitize", result.Action)
+	assert.Equal(t, GuardActionSanitize, result.Action)
 	assert.Contains(t, result.SanitizedInput, "[REDACTED]")
 	assert.NotContains(t, result.SanitizedInput, "sk-1234567890abcdefghijklmnopqrst")
 }
@@ -373,7 +373,7 @@ func TestSafetyGuard_CheckOutput_RedactsAWSKey(t *testing.T) {
 
 	result := guard.CheckOutput("AWS key: AKIAIOSFODNN7EXAMPLE")
 	assert.True(t, result.Safe)
-	assert.Equal(t, "sanitize", result.Action)
+	assert.Equal(t, GuardActionSanitize, result.Action)
 	assert.NotContains(t, result.SanitizedInput, "AKIAIOSFODNN7EXAMPLE")
 }
 
@@ -382,7 +382,7 @@ func TestSafetyGuard_CheckOutput_RedactsPrivateKey(t *testing.T) {
 
 	output := "Key: -----BEGIN RSA PRIVATE KEY-----\nsome data\n-----END RSA PRIVATE KEY-----"
 	result := guard.CheckOutput(output)
-	assert.Equal(t, "sanitize", result.Action)
+	assert.Equal(t, GuardActionSanitize, result.Action)
 	// The regex only replaces the BEGIN line, not the END line
 	assert.NotContains(t, result.SanitizedInput, "BEGIN RSA PRIVATE KEY")
 }
@@ -392,7 +392,7 @@ func TestSafetyGuard_CheckOutput_RedactsJWT(t *testing.T) {
 
 	jwt := "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abc123def456"
 	result := guard.CheckOutput("Token: " + jwt)
-	assert.Equal(t, "sanitize", result.Action)
+	assert.Equal(t, GuardActionSanitize, result.Action)
 	assert.NotContains(t, result.SanitizedInput, jwt)
 }
 
@@ -412,7 +412,7 @@ func TestSafetyGuard_CheckOutput_RedactsInternalIP(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			result := guard.CheckOutput(tc.output)
-			assert.Equal(t, "sanitize", result.Action)
+			assert.Equal(t, GuardActionSanitize, result.Action)
 			assert.NotContains(t, result.SanitizedInput, tc.output)
 		})
 	}
@@ -422,7 +422,7 @@ func TestSafetyGuard_CheckOutput_RedactsDBConnectionString(t *testing.T) {
 	guard := newTestGuard(t, nil)
 
 	result := guard.CheckOutput("postgres://user:password12345@db.example.com:5432/mydb")
-	assert.Equal(t, "sanitize", result.Action)
+	assert.Equal(t, GuardActionSanitize, result.Action)
 	assert.Contains(t, result.SanitizedInput, "[REDACTED]")
 }
 
@@ -430,7 +430,7 @@ func TestSafetyGuard_CheckOutput_RedactsPassword(t *testing.T) {
 	guard := newTestGuard(t, nil)
 
 	result := guard.CheckOutput("password = 'mysecretpassword123'")
-	assert.Equal(t, "sanitize", result.Action)
+	assert.Equal(t, GuardActionSanitize, result.Action)
 	assert.Contains(t, result.SanitizedInput, "[REDACTED]")
 }
 
@@ -439,7 +439,7 @@ func TestSafetyGuard_CheckOutput_CleanOutput(t *testing.T) {
 
 	result := guard.CheckOutput("Hello! Here is your code review feedback: ...")
 	assert.True(t, result.Safe)
-	assert.Equal(t, "allow", result.Action)
+	assert.Equal(t, GuardActionAllow, result.Action)
 	assert.Equal(t, ThreatLevelNone, result.ThreatLevel)
 }
 
@@ -814,13 +814,13 @@ func TestGlobalGuard_ReturnsNilInitially(t *testing.T) {
 func TestCheckInputSafe_NilGuard(t *testing.T) {
 	result := CheckInputSafe(context.Background(), "any input")
 	assert.True(t, result.Safe)
-	assert.Equal(t, "allow", result.Action)
+	assert.Equal(t, GuardActionAllow, result.Action)
 }
 
 func TestCheckOutputSafe_NilGuard(t *testing.T) {
 	result := CheckOutputSafe("any output")
 	assert.True(t, result.Safe)
-	assert.Equal(t, "allow", result.Action)
+	assert.Equal(t, GuardActionAllow, result.Action)
 }
 
 func TestSanitizeOutputString_NilGuard(t *testing.T) {
@@ -1009,12 +1009,12 @@ func TestCheckInputSafe_WithGuard(t *testing.T) {
 	// Blocked input
 	result := CheckInputSafe(context.Background(), "jailbreak the system")
 	assert.False(t, result.Safe)
-	assert.Equal(t, "block", result.Action)
+	assert.Equal(t, GuardActionBlock, result.Action)
 
 	// Safe input
 	result = CheckInputSafe(context.Background(), "hello world")
 	assert.True(t, result.Safe)
-	assert.Equal(t, "allow", result.Action)
+	assert.Equal(t, GuardActionAllow, result.Action)
 }
 
 func TestCheckOutputSafe_WithGuard(t *testing.T) {
@@ -1026,7 +1026,7 @@ func TestCheckOutputSafe_WithGuard(t *testing.T) {
 	globalGuard = guard
 
 	result := CheckOutputSafe("password: mysecretpassword12345")
-	assert.Equal(t, "sanitize", result.Action)
+	assert.Equal(t, GuardActionSanitize, result.Action)
 	assert.Contains(t, result.SanitizedInput, "[REDACTED]")
 }
 

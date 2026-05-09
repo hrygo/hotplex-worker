@@ -33,8 +33,8 @@ func (a *sessionManagerAdapter) List(ctx context.Context, userID, platform strin
 	return result, nil
 }
 
-func (a *sessionManagerAdapter) Get(id string) (any, error) {
-	return a.sm.Get(id)
+func (a *sessionManagerAdapter) Get(ctx context.Context, id string) (any, error) {
+	return a.sm.Get(ctx, id)
 }
 
 func (a *sessionManagerAdapter) Delete(ctx context.Context, id string) error {

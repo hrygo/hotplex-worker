@@ -188,7 +188,7 @@ func (h *Handler) handleInput(ctx context.Context, env *events.Envelope) error {
 	// --- End command detection ---
 
 	// Check SESSION_BUSY: session must be active.
-	si, err := h.sm.Get(env.SessionID)
+	si, err := h.sm.Get(ctx, env.SessionID)
 	if err != nil {
 		h.log.Warn("gateway: handleInput session not found", "session_id", env.SessionID, "err", err)
 		return h.sendErrorf(ctx, env, events.ErrCodeSessionNotFound, "session not found")
@@ -238,7 +238,7 @@ func (h *Handler) handleInput(ctx context.Context, env *events.Envelope) error {
 
 func (h *Handler) handlePing(ctx context.Context, env *events.Envelope) error {
 	// Include current session state in pong (per AEP spec §11.4).
-	si, err := h.sm.Get(env.SessionID)
+	si, err := h.sm.Get(ctx, env.SessionID)
 	state := "unknown"
 	if err == nil {
 		state = string(si.State)
@@ -401,8 +401,8 @@ func classifyWorkerError(err error) events.ErrorCode {
 
 // validateOwner checks ownership and returns the session in one call.
 // This avoids the double-fetch that calling ValidateOwnership then Get separately incurs.
-func (h *Handler) validateOwner(_ context.Context, env *events.Envelope) (*session.SessionInfo, error) {
-	si, err := h.sm.Get(env.SessionID)
+func (h *Handler) validateOwner(ctx context.Context, env *events.Envelope) (*session.SessionInfo, error) {
+	si, err := h.sm.Get(ctx, env.SessionID)
 	if err != nil {
 		return nil, err
 	}
@@ -487,7 +487,7 @@ func (h *Handler) handleGC(ctx context.Context, env *events.Envelope) error {
 
 	// Re-read after worker cleanup to avoid stale-snapshot race with concurrent
 	// cleanupCrashedWorker transitions.
-	if fresh, err := h.sm.Get(env.SessionID); err == nil && fresh.State == events.StateTerminated {
+	if fresh, err := h.sm.Get(ctx, env.SessionID); err == nil && fresh.State == events.StateTerminated {
 		h.log.Info("gateway: gc idempotent (concurrently terminated)", "session_id", env.SessionID)
 		return nil
 	} else if err != nil {
@@ -517,7 +517,7 @@ func (h *Handler) handleCD(ctx context.Context, env *events.Envelope) error {
 
 	// /cd with no arg: return current workDir.
 	if path == "" {
-		si, err := h.sm.Get(env.SessionID)
+		si, err := h.sm.Get(ctx, env.SessionID)
 		if err != nil {
 			return h.sendErrorf(ctx, env, events.ErrCodeSessionNotFound, "session not found")
 		}
@@ -745,7 +745,7 @@ func (h *Handler) handleSkillsList(ctx context.Context, env *events.Envelope, fi
 		return h.sendErrorf(ctx, env, events.ErrCodeNotSupported, "skills listing not available")
 	}
 
-	si, err := h.sm.Get(env.SessionID)
+	si, err := h.sm.Get(ctx, env.SessionID)
 	if err != nil {
 		return h.sendErrorf(ctx, env, events.ErrCodeSessionNotFound, "session not found")
 	}
@@ -790,7 +790,7 @@ func (h *Handler) handleSkillsList(ctx context.Context, env *events.Envelope, fi
 
 // SessionReader provides read-only session access.
 type SessionReader interface {
-	Get(id string) (*session.SessionInfo, error)
+	Get(ctx context.Context, id string) (*session.SessionInfo, error)
 	GetWorker(id string) worker.Worker
 }
 

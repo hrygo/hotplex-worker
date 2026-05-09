@@ -82,7 +82,7 @@ func (a *AdminAPI) GetSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.PathValue("id")
-	si, err := a.sm.Get(id)
+	si, err := a.sm.Get(r.Context(), id)
 	if err != nil {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
