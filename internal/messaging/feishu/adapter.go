@@ -948,7 +948,7 @@ func (c *FeishuConn) writeContent(ctx context.Context, env *events.Envelope, tex
 		c.adapter.Log.Info("feishu: streaming card rotated",
 			"old_msg_id", oldMsgID)
 
-		newCtrl := NewStreamingCardController(c.adapter.larkClient, c.adapter.rateLimiter, c.adapter.Log, c.adapter.resolveBotName(), 0, c.lastModel, c.lastBranch, c.workDir)
+		newCtrl := NewStreamingCardController(c.adapter.larkClient, c.adapter.rateLimiter, c.adapter.Log, c.adapter.resolveBotName(), c.turnCount+1, c.lastModel, c.lastBranch, c.workDir)
 		c.mu.Lock()
 		c.streamCtrl = newCtrl
 		if oldMsgID != "" {
