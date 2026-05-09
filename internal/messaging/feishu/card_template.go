@@ -81,23 +81,30 @@ func buildCard(header cardHeader, config map[string]any, elements []map[string]a
 	return encodeCard(card)
 }
 
+// toolActivityElementID is the element_id for the tool activity strip.
+const toolActivityElementID = "tool_activity"
+
 // buildStreamingCard constructs a streaming card with streaming_mode, element_id, summary, and optional header.
 func buildStreamingCard(header cardHeader, summary, content string) string {
+	elements := []any{
+		map[string]any{
+			"tag":        "markdown",
+			"element_id": streamingElementID,
+			"content":    content,
+		},
+		map[string]any{
+			"tag":        "markdown",
+			"element_id": toolActivityElementID,
+			"content":    "",
+		},
+	}
 	card := map[string]any{
 		"schema": "2.0",
 		"config": map[string]any{
 			"streaming_mode": true,
 			"summary":        map[string]any{"content": summary},
 		},
-		"body": map[string]any{
-			"elements": []any{
-				map[string]any{
-					"tag":        "markdown",
-					"element_id": streamingElementID,
-					"content":    content,
-				},
-			},
-		},
+		"body": map[string]any{"elements": elements},
 	}
 	if hm := header.toMap(); hm != nil {
 		card["header"] = hm

@@ -18,6 +18,7 @@ import {
   type SessionInfo,
 } from '@/lib/api/sessions';
 import { workerType as defaultWorkerType, workDir as configWorkDir } from '@/lib/config';
+import { logger } from '@/lib/logger';
 
 export interface UseSessionsOptions {
   /** Called when the active session changes (user selects or creates). */
@@ -194,7 +195,7 @@ export function useSessions({
     try {
       await deleteSession(id);
     } catch (e) {
-      console.error('Failed to delete session', e);
+      logger.error('Sessions', 'Failed to delete session', { error: String(e) });
       // Revert optimistic remove on failure
       refreshSessions();
     }

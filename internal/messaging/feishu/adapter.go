@@ -628,6 +628,19 @@ func (c *FeishuConn) EnableStreaming(ctrl *StreamingCardController) {
 	c.streamCtrl = ctrl
 }
 
+func (c *FeishuConn) getStreamCtrl() *StreamingCardController {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.streamCtrl
+}
+
+func (c *FeishuConn) handleToolReaction(ctx context.Context) {
+	c.mu.RLock()
+	elapsed := time.Since(c.startedAt)
+	c.mu.RUnlock()
+	c.cycleReaction(ctx, timelineEmoji(elapsed))
+}
+
 func (c *FeishuConn) SetTypingReactionID(rid string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -786,11 +799,21 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 			}
 		}
 		return nil
-	case events.ToolCall, events.ToolResult:
-		c.mu.RLock()
-		elapsed := time.Since(c.startedAt)
-		c.mu.RUnlock()
-		c.cycleReaction(ctx, timelineEmoji(elapsed))
+	case events.ToolCall:
+		c.handleToolReaction(ctx)
+		if ctrl := c.getStreamCtrl(); ctrl != nil {
+			if id, text := extractToolCallStatus(env); id != "" {
+				ctrl.WriteToolCall(id, text)
+			}
+		}
+		return nil
+	case events.ToolResult:
+		c.handleToolReaction(ctx)
+		if ctrl := c.getStreamCtrl(); ctrl != nil {
+			if id := extractToolResultID(env); id != "" {
+				ctrl.WriteToolResult(id)
+			}
+		}
 		return nil
 	case events.PermissionRequest:
 		streamCtrl := c.clearActiveIndicators(ctx)

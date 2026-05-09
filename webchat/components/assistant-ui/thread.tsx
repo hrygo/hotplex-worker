@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useRef, useState, memo } from "react";
+import { version } from "../../package.json";
 import {
   ThreadPrimitive,
   ComposerPrimitive,
@@ -22,6 +23,23 @@ import { TurnSummaryCard } from "./TurnSummaryCard";
 import { ListTool } from "./tools/ListTool";
 import { TodoTool } from "./tools/TodoTool";
 import { AgentTool } from "./tools/AgentTool";
+import type { ContextUsageData, TurnSessionStats } from "@/lib/ai-sdk-transport/client/types";
+import type { ConnectionState } from "@/lib/config";
+
+// assistant-ui ThreadMessage doesn't expose status/metadata in public types.
+// Centralize the extension access here to avoid scattered as-any casts.
+interface ThreadMessageExtension {
+  status?: { type: string };
+  metadata?: {
+    contextUsage?: ContextUsageData;
+    turnSummary?: TurnSessionStats;
+  };
+  content: unknown[];
+}
+
+function getExt(msg: unknown): ThreadMessageExtension {
+  return msg as ThreadMessageExtension;
+}
 
 /* ============================================================
    Animation & Extraction Logic (Legacy Sync)
@@ -137,6 +155,7 @@ function MessageActions({ message, isUser }: { message: any, isUser?: boolean })
 
 const AssistantMessage = memo(function AssistantMessage({ message, onInteractionRespond }: { message: any; onInteractionRespond?: (toolCallId: string, allowed: boolean) => void }) {
   const [expandedTools, setExpandedTools] = useState<Record<string, boolean>>({});
+  const ext = getExt(message);
 
   return (
     <motion.div className="group msg-assistant flex items-start gap-4 mb-8" variants={messageVariants} initial="hidden" animate="visible">
@@ -153,13 +172,13 @@ const AssistantMessage = memo(function AssistantMessage({ message, onInteraction
             {({ part }) => {
               const p = part as Record<string, any>;
               if (!p || !p.type) return null;
-              const isStreaming = (message as any)?.status?.type === "running";
+              const isStreaming = ext.status?.type === "running";
 
               if (p.type === "reasoning") return <ReasoningBlock text={p.text || p.reasoning || ""} />;
               if (p.type === "text") return <div className={`prose-hotplex ${isStreaming ? "streaming-cursor" : ""}`}><MarkdownText text={p.text} /></div>;
               
               if (p.type === "tool-call") {
-                const parts = (message.content as any[]) || [];
+                const parts = ext.content || [];
                 const partIndex = parts.indexOf(p);
                 const isLastPart = partIndex === parts.length - 1;
                 const isComplete = p.status?.type === "complete" || p.status?.type === "error";
@@ -240,11 +259,11 @@ const AssistantMessage = memo(function AssistantMessage({ message, onInteraction
               return null;
             }}
           </MessagePrimitive.Parts>
-          {(message as any)?.metadata?.contextUsage && (
-            <ContextUsageCard data={(message as any).metadata.contextUsage} />
+          {ext.metadata?.contextUsage && (
+            <ContextUsageCard data={ext.metadata.contextUsage} />
           )}
-          {(message as any)?.metadata?.turnSummary && (
-            <TurnSummaryCard data={(message as any).metadata.turnSummary} />
+          {ext.metadata?.turnSummary && (
+            <TurnSummaryCard data={ext.metadata.turnSummary} />
           )}
         </div>
         <MessageActions message={message} />
@@ -253,7 +272,7 @@ const AssistantMessage = memo(function AssistantMessage({ message, onInteraction
   );
 }, (prev, next) => {
   if (prev.message.id !== next.message.id) return false;
-  if ((next.message as any)?.status?.type === 'running') return false;
+  if (getExt(next.message).status?.type === 'running') return false;
   if (prev.onInteractionRespond !== next.onInteractionRespond) return false;
   return prev.message.content === next.message.content;
 });
@@ -381,12 +400,25 @@ function WelcomeScreen({ suggestions, onSuggestionClick }: { suggestions?: reado
 interface ThreadProps {
   skills?: string[];
   hasMore?: boolean;
+  connectionState?: ConnectionState;
   onLoadHistory?: () => Promise<{ hasMore: boolean }>;
   onInteractionRespond?: (toolCallId: string, allowed: boolean) => void;
   suggestions?: readonly { title: string; label: string; prompt: string }[];
 }
 
-export function Thread({ skills, hasMore, onLoadHistory, onInteractionRespond, suggestions }: ThreadProps) {
+const connLabel: Record<ConnectionState, string> = {
+  connected: 'Connected',
+  connecting: 'Connecting...',
+  disconnected: 'Disconnected',
+};
+
+const connDot: Record<ConnectionState, string> = {
+  connected: 'bg-emerald-400',
+  connecting: 'bg-amber-400 animate-pulse',
+  disconnected: 'bg-red-400',
+};
+
+export function Thread({ skills, hasMore, connectionState: conn, onLoadHistory, onInteractionRespond, suggestions }: ThreadProps) {
   const [localText, setLocalText] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(false);
@@ -536,8 +568,14 @@ export function Thread({ skills, hasMore, onLoadHistory, onInteractionRespond, s
                 <kbd className="px-1.5 py-0.5 rounded bg-[var(--bg-elevated)] border border-[var(--border-subtle)] text-[9px]">Shift</kbd> + <kbd className="px-1.5 py-0.5 rounded bg-[var(--bg-elevated)] border border-[var(--border-subtle)] text-[9px]">Enter</kbd> new line
               </span>
             </div>
-            <span className="text-[10px] text-[var(--text-faint)] font-mono uppercase tracking-widest">
-              v1.1.0-stable
+            <span className="text-[10px] text-[var(--text-faint)] font-mono uppercase tracking-widest flex items-center gap-1.5">
+              {conn && (
+                <>
+                  <span className={`w-1.5 h-1.5 rounded-full ${connDot[conn]}`} title={connLabel[conn]} />
+                  <span className="sr-only">{connLabel[conn]}</span>
+                </>
+              )}
+              v{version}-stable
             </span>
           </div>
         </div>
