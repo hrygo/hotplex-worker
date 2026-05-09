@@ -177,7 +177,7 @@ func TestHandleInput_ControlCommand_GC(t *testing.T) {
 	require.NoError(t, err)
 
 	// Session should transition to TERMINATED.
-	si, err := mgr.Get(sid)
+	si, err := mgr.Get(context.Background(), sid)
 	require.NoError(t, err)
 	require.Equal(t, events.StateTerminated, si.State)
 }
@@ -205,7 +205,7 @@ func TestHandleInput_ControlCommand_Reset(t *testing.T) {
 	require.NoError(t, err)
 
 	// Session should remain RUNNING after reset.
-	si, err := mgr.Get(sid)
+	si, err := mgr.Get(context.Background(), sid)
 	require.NoError(t, err)
 	require.Equal(t, events.StateRunning, si.State)
 }
@@ -258,7 +258,7 @@ func TestHandleInput_ControlCommand_NaturalLanguageGC(t *testing.T) {
 	err = handler.handleInput(context.Background(), env)
 	require.NoError(t, err)
 
-	si, err := mgr.Get(sid)
+	si, err := mgr.Get(context.Background(), sid)
 	require.NoError(t, err)
 	require.Equal(t, events.StateTerminated, si.State)
 }

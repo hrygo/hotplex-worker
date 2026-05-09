@@ -98,6 +98,13 @@ const (
 	ThreatLevelCritical ThreatLevel = "critical"
 )
 
+// GuardAction constants for GuardResult.Action.
+const (
+	GuardActionAllow    = "allow"
+	GuardActionBlock    = "block"
+	GuardActionSanitize = "sanitize"
+)
+
 // GuardResult represents the result of a guard check.
 // Action determines the next step:
 //   - "allow": Pass through unchanged
@@ -255,7 +262,7 @@ func (g *SafetyGuard) CheckInputWithUser(ctx context.Context, input, userID stri
 		return &GuardResult{
 			Safe:        true,
 			ThreatLevel: ThreatLevelNone,
-			Action:      "allow",
+			Action:      GuardActionAllow,
 		}
 	}
 
@@ -270,7 +277,7 @@ func (g *SafetyGuard) CheckInputWithUser(ctx context.Context, input, userID stri
 				ThreatLevel: ThreatLevelLow,
 				ThreatType:  "rate_limited",
 				Reason:      "Too many requests, please slow down",
-				Action:      "block",
+				Action:      GuardActionBlock,
 			}
 		}
 	}
@@ -282,7 +289,7 @@ func (g *SafetyGuard) CheckInputWithUser(ctx context.Context, input, userID stri
 			ThreatLevel: ThreatLevelLow,
 			ThreatType:  "input_too_long",
 			Reason:      fmt.Sprintf("Input exceeds maximum length of %d characters", g.config.MaxInputLength),
-			Action:      "block",
+			Action:      GuardActionBlock,
 		}
 	}
 
@@ -297,7 +304,7 @@ func (g *SafetyGuard) CheckInputWithUser(ctx context.Context, input, userID stri
 				ThreatType:     "prompt_injection",
 				Reason:         "Input matches potentially dangerous pattern",
 				MatchedPattern: pattern.String(),
-				Action:         "block",
+				Action:         GuardActionBlock,
 			}
 		}
 	}
@@ -310,7 +317,7 @@ func (g *SafetyGuard) CheckInputWithUser(ctx context.Context, input, userID stri
 	return &GuardResult{
 		Safe:        true,
 		ThreatLevel: ThreatLevelNone,
-		Action:      "allow",
+		Action:      GuardActionAllow,
 	}
 }
 
@@ -394,7 +401,7 @@ Return JSON:
 		return &GuardResult{
 			Safe:        true,
 			ThreatLevel: ThreatLevelLow,
-			Action:      "allow",
+			Action:      GuardActionAllow,
 		}
 	}
 
@@ -406,14 +413,14 @@ Return JSON:
 			ThreatLevel: analysis.ThreatLevel,
 			ThreatType:  analysis.ThreatType,
 			Reason:      analysis.Reason,
-			Action:      "block",
+			Action:      GuardActionBlock,
 		}
 	}
 
 	return &GuardResult{
 		Safe:        true,
 		ThreatLevel: analysis.ThreatLevel,
-		Action:      "allow",
+		Action:      GuardActionAllow,
 	}
 }
 
@@ -435,7 +442,7 @@ func (g *SafetyGuard) CheckOutput(output string) *GuardResult {
 		return &GuardResult{
 			Safe:        true,
 			ThreatLevel: ThreatLevelNone,
-			Action:      "allow",
+			Action:      GuardActionAllow,
 		}
 	}
 
@@ -458,7 +465,7 @@ func (g *SafetyGuard) CheckOutput(output string) *GuardResult {
 			ThreatLevel:    ThreatLevelMedium,
 			ThreatType:     "sensitive_data_detected",
 			Reason:         "Sensitive data detected and redacted",
-			Action:         "sanitize",
+			Action:         GuardActionSanitize,
 			SanitizedInput: sanitized,
 		}
 	}
@@ -466,14 +473,14 @@ func (g *SafetyGuard) CheckOutput(output string) *GuardResult {
 	return &GuardResult{
 		Safe:        true,
 		ThreatLevel: ThreatLevelNone,
-		Action:      "allow",
+		Action:      GuardActionAllow,
 	}
 }
 
 // SanitizeOutput applies sanitization to output string.
 func (g *SafetyGuard) SanitizeOutput(output string) string {
 	result := g.CheckOutput(output)
-	if result.Action == "sanitize" && result.SanitizedInput != "" {
+	if result.Action == GuardActionSanitize && result.SanitizedInput != "" {
 		return result.SanitizedInput
 	}
 	return output
@@ -821,7 +828,7 @@ func InitGuard(config GuardConfig, logger *slog.Logger) error {
 // CheckInputSafe is a convenience function for input checking.
 func CheckInputSafe(ctx context.Context, input string) *GuardResult {
 	if globalGuard == nil {
-		return &GuardResult{Safe: true, ThreatLevel: ThreatLevelNone, Action: "allow"}
+		return &GuardResult{Safe: true, ThreatLevel: ThreatLevelNone, Action: GuardActionAllow}
 	}
 	return globalGuard.CheckInput(ctx, input)
 }
@@ -829,7 +836,7 @@ func CheckInputSafe(ctx context.Context, input string) *GuardResult {
 // CheckOutputSafe is a convenience function for output checking.
 func CheckOutputSafe(output string) *GuardResult {
 	if globalGuard == nil {
-		return &GuardResult{Safe: true, ThreatLevel: ThreatLevelNone, Action: "allow"}
+		return &GuardResult{Safe: true, ThreatLevel: ThreatLevelNone, Action: GuardActionAllow}
 	}
 	return globalGuard.CheckOutput(output)
 }

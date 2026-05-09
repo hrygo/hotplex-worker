@@ -16,6 +16,7 @@ import (
 	"github.com/hrygo/hotplex/internal/config"
 	"github.com/hrygo/hotplex/internal/metrics"
 	"github.com/hrygo/hotplex/internal/worker"
+	"github.com/hrygo/hotplex/internal/worker/base"
 	"github.com/hrygo/hotplex/pkg/events"
 )
 
@@ -162,7 +163,7 @@ func (m *Manager) CreateWithBot(ctx context.Context, id, userID, botID string, w
 
 // Get returns a snapshot of a session by ID. Returns ErrSessionNotFound if not found.
 // The returned *SessionInfo is a copy safe to read without holding locks.
-func (m *Manager) Get(id string) (*SessionInfo, error) {
+func (m *Manager) Get(ctx context.Context, id string) (*SessionInfo, error) {
 	m.mu.RLock()
 	ms, ok := m.sessions[id]
 	m.mu.RUnlock()
@@ -174,7 +175,7 @@ func (m *Manager) Get(id string) (*SessionInfo, error) {
 	}
 
 	// Fall back to Store.
-	info, err := m.store.Get(context.Background(), id)
+	info, err := m.store.Get(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -236,9 +237,6 @@ func (m *Manager) UpdateWorkDir(ctx context.Context, id, workDir string) error {
 
 // ─── State transitions ───────────────────────────────────────────────────────
 
-// Default graceful shutdown timeout for worker termination.
-const gracefulShutdownTimeout = 5 * time.Second
-
 // transitionState performs the common state-transition work: validation,
 // in-memory update, persistence, and notifications.
 // Caller must hold ms.mu for write; this method temporarily releases ms.mu
@@ -283,7 +281,7 @@ func (m *Manager) transitionState(ctx context.Context, ms *managedSession, from,
 		// Safe: ms.mu is held by the caller, and worker.Terminate() does not
 		// acquire any session manager locks (it uses syscall.Kill only).
 		if ms.worker != nil {
-			terminateCtx, cancel := context.WithTimeout(ctx, gracefulShutdownTimeout)
+			terminateCtx, cancel := context.WithTimeout(ctx, base.GracefulShutdownTimeout)
 			defer cancel()
 			if err := ms.worker.Terminate(terminateCtx); err != nil {
 				m.log.Warn("session: worker terminate failed", "session_id", ms.info.ID, "err", err)
@@ -331,7 +329,7 @@ func (m *Manager) TransitionWithReason(ctx context.Context, id string, to events
 	if m == nil {
 		return ErrSessionNotFound
 	}
-	ms := m.getManagedSession(id)
+	ms := m.getManagedSession(ctx, id)
 	if ms == nil {
 		return ErrSessionNotFound
 	}
@@ -356,7 +354,7 @@ func (m *Manager) TransitionWithInput(ctx context.Context, id string, to events.
 	if m == nil {
 		return ErrSessionNotFound
 	}
-	ms := m.getManagedSession(id)
+	ms := m.getManagedSession(ctx, id)
 	if ms == nil {
 		return ErrSessionNotFound
 	}
@@ -462,7 +460,7 @@ func (m *Manager) GetWorker(id string) worker.Worker {
 	if m == nil {
 		return nil
 	}
-	ms := m.getManagedSession(id)
+	ms := m.getManagedSession(context.Background(), id)
 	if ms == nil {
 		return nil
 	}
@@ -496,7 +494,7 @@ func (m *Manager) detachWorkerUnchecked(id string, expected worker.Worker) bool 
 	if m == nil {
 		return false
 	}
-	ms := m.getManagedSession(id)
+	ms := m.getManagedSession(context.Background(), id)
 	if ms == nil {
 		return false
 	}
@@ -600,7 +598,7 @@ func (m *Manager) DeletePhysical(ctx context.Context, id string) error {
 // Returns nil if the user is the owner, or ErrOwnershipMismatch otherwise.
 // Admin bypass: if adminUserID is non-empty, it bypasses ownership check.
 func (m *Manager) ValidateOwnership(ctx context.Context, sessionID, userID, adminUserID string) error {
-	si, err := m.Get(sessionID)
+	si, err := m.Get(ctx, sessionID)
 	if err != nil {
 		return err
 	}
@@ -630,7 +628,7 @@ func (m *Manager) ClearContext(ctx context.Context, sessionID string) error {
 	if m == nil {
 		return ErrSessionNotFound
 	}
-	ms := m.getManagedSession(sessionID)
+	ms := m.getManagedSession(ctx, sessionID)
 	if ms == nil {
 		return ErrSessionNotFound
 	}
@@ -654,7 +652,7 @@ func (m *Manager) UpdateWorkerSessionID(ctx context.Context, id, workerSessionID
 	if m == nil {
 		return ErrSessionNotFound
 	}
-	ms := m.getManagedSession(id)
+	ms := m.getManagedSession(ctx, id)
 	if ms == nil {
 		return ErrSessionNotFound
 	}
@@ -684,7 +682,7 @@ type DebugSessionSnapshot struct {
 
 // DebugSnapshot safely captures debug fields from a managed session under the read lock.
 func (m *Manager) DebugSnapshot(id string) (DebugSessionSnapshot, bool) {
-	ms := m.getManagedSession(id)
+	ms := m.getManagedSession(context.Background(), id)
 	if ms == nil {
 		return DebugSessionSnapshot{}, false
 	}
@@ -703,7 +701,7 @@ func (m *Manager) DebugSnapshot(id string) (DebugSessionSnapshot, bool) {
 // Lock acquires the per-session mutex for exclusive access.
 // The caller MUST call Unlock when done.
 func (m *Manager) Lock(id string) (release func(), err error) {
-	ms := m.getManagedSession(id)
+	ms := m.getManagedSession(context.Background(), id)
 	if ms == nil {
 		return nil, ErrSessionNotFound
 	}
@@ -819,7 +817,7 @@ func (m *Manager) TerminateAllWorkers() {
 	for _, w := range workers {
 		w := w
 		eg.Go(func() error {
-			terminateCtx, cancel := context.WithTimeout(ctx, gracefulShutdownTimeout)
+			terminateCtx, cancel := context.WithTimeout(ctx, base.GracefulShutdownTimeout)
 			defer cancel()
 			return w.Terminate(terminateCtx)
 		})
@@ -997,7 +995,7 @@ func (m *Manager) notifyStateChange(ctx context.Context, sessionID string, state
 	}
 }
 
-func (m *Manager) getManagedSession(id string) *managedSession {
+func (m *Manager) getManagedSession(_ context.Context, id string) *managedSession {
 	m.mu.RLock()
 	ms, ok := m.sessions[id]
 	m.mu.RUnlock()

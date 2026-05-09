@@ -110,7 +110,7 @@ func (c *Conn) ReadPump(handler *Handler) {
 		// If we unregister first, routeMessage finds no connections and the
 		// state event is silently dropped.
 		if c.sessionID != "" && handler.sm != nil {
-			if si, getErr := handler.sm.Get(c.sessionID); getErr == nil && si != nil && si.State == events.StateRunning {
+			if si, getErr := handler.sm.Get(context.Background(), c.sessionID); getErr == nil && si != nil && si.State == events.StateRunning {
 				if err := handler.sm.Transition(context.Background(), c.sessionID, events.StateIdle); err != nil {
 					c.log.Debug("gateway: conn close transition to idle", "session_id", c.sessionID, "err", err)
 				}
@@ -313,7 +313,7 @@ func (c *Conn) performInit(handler *Handler) error {
 	var sessionID string
 	var preResolved *session.SessionInfo
 	if env.SessionID != "" {
-		if existing, getErr := handler.sm.Get(env.SessionID); getErr == nil && existing != nil && existing.State != events.StateDeleted {
+		if existing, getErr := handler.sm.Get(context.Background(), env.SessionID); getErr == nil && existing != nil && existing.State != events.StateDeleted {
 			sessionID = env.SessionID
 			preResolved = existing
 		}
@@ -344,7 +344,7 @@ func (c *Conn) performInit(handler *Handler) error {
 	if preResolved != nil {
 		si = preResolved
 	} else {
-		si, err = handler.sm.Get(sessionID)
+		si, err = handler.sm.Get(context.Background(), sessionID)
 	}
 	if err != nil {
 		// Session does not exist → create and start via SessionStarter.
@@ -356,7 +356,7 @@ func (c *Conn) performInit(handler *Handler) error {
 					metrics.GatewayErrorsTotal.WithLabelValues(string(events.ErrCodeInternalError)).Inc()
 					return fmt.Errorf("create session: %w", err)
 				}
-				si, err = handler.sm.Get(sessionID)
+				si, err = handler.sm.Get(context.Background(), sessionID)
 				if err != nil {
 					c.hub.InitThrottle.RecordFailure(sessionID)
 					c.sendInitError(events.ErrCodeInternalError, "session not found after creation")
@@ -384,7 +384,7 @@ func (c *Conn) performInit(handler *Handler) error {
 				c.sendInitError(events.ErrCodeInternalError, "failed to start session")
 				return fmt.Errorf("start unstarted session: %w", err)
 			}
-			si, err = handler.sm.Get(sessionID)
+			si, err = handler.sm.Get(context.Background(), sessionID)
 			if err != nil {
 				c.sendInitError(events.ErrCodeInternalError, "session lost after creation")
 				return fmt.Errorf("get session after start: %w", err)
@@ -402,7 +402,7 @@ func (c *Conn) performInit(handler *Handler) error {
 				metrics.GatewayErrorsTotal.WithLabelValues(string(events.ErrCodeInternalError)).Inc()
 				return fmt.Errorf("recreate deleted session: %w", err)
 			}
-			si, err = handler.sm.Get(sessionID)
+			si, err = handler.sm.Get(context.Background(), sessionID)
 			if err != nil {
 				c.sendInitError(events.ErrCodeInternalError, "session lost after recreation")
 				return fmt.Errorf("get session after recreation: %w", err)
@@ -431,7 +431,7 @@ func (c *Conn) performInit(handler *Handler) error {
 					return fmt.Errorf("start session after resume fallback: %w", err)
 				}
 			}
-			si, err = handler.sm.Get(sessionID)
+			si, err = handler.sm.Get(context.Background(), sessionID)
 			if err != nil {
 				c.sendInitError(events.ErrCodeInternalError, "session lost after resume")
 				return fmt.Errorf("get session after resume: %w", err)

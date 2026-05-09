@@ -1210,7 +1210,7 @@ func (m *mockBridgeSM) Transition(ctx context.Context, id string, to events.Sess
 	return args.Error(0)
 }
 
-func (m *mockBridgeSM) Get(id string) (*session.SessionInfo, error) {
+func (m *mockBridgeSM) Get(_ context.Context, id string) (*session.SessionInfo, error) {
 	args := m.Called(id)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)

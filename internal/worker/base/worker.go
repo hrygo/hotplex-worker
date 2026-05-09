@@ -21,7 +21,7 @@ var (
 )
 
 // Grace period for graceful worker shutdown.
-const gracefulShutdownTimeout = 5 * time.Second
+const GracefulShutdownTimeout = 5 * time.Second
 
 // BaseWorker provides shared lifecycle methods for CLI-based worker adapters.
 // Embed this struct to get Terminate/Kill/Wait/Health/LastIO/Conn for free.
@@ -67,7 +67,7 @@ func (w *BaseWorker) Terminate(ctx context.Context) error {
 		return nil
 	}
 
-	if err := proc.Terminate(ctx, gracefulShutdownTimeout); err != nil {
+	if err := proc.Terminate(ctx, GracefulShutdownTimeout); err != nil {
 		return fmt.Errorf("base: terminate: %w", err)
 	}
 

@@ -31,7 +31,7 @@ const (
 type SessionManagerProvider interface {
 	Stats() (total, max, unique int)
 	List(ctx context.Context, userID, platform string, limit, offset int) ([]any, error)
-	Get(id string) (any, error)
+	Get(ctx context.Context, id string) (any, error)
 	Delete(ctx context.Context, id string) error
 	DeletePhysical(ctx context.Context, id string) error
 	WorkerHealthStatuses() []worker.WorkerHealth

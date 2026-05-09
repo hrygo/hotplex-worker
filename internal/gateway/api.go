@@ -22,7 +22,7 @@ import (
 
 // apiSM is the narrow subset of SessionManager that GatewayAPI needs.
 type apiSM interface {
-	Get(id string) (*session.SessionInfo, error)
+	Get(ctx context.Context, id string) (*session.SessionInfo, error)
 	List(ctx context.Context, userID, platform string, limit, offset int) ([]*session.SessionInfo, error)
 	DeletePhysical(ctx context.Context, id string) error
 	Transition(ctx context.Context, id string, to events.SessionState) error
@@ -144,7 +144,7 @@ func (g *GatewayAPI) CreateSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Idempotency check: if session exists and is active, just return it.
-	if si, err := g.sm.Get(id); err == nil {
+	if si, err := g.sm.Get(r.Context(), id); err == nil {
 		if si.State != events.StateDeleted {
 			respondJSON(w, map[string]string{"session_id": id})
 			return
@@ -173,7 +173,7 @@ func (g *GatewayAPI) GetSession(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "session id required", http.StatusBadRequest)
 		return
 	}
-	si, err := g.sm.Get(id)
+	si, err := g.sm.Get(r.Context(), id)
 	if err != nil {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
@@ -197,7 +197,7 @@ func (g *GatewayAPI) DeleteSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	si, err := g.sm.Get(id)
+	si, err := g.sm.Get(r.Context(), id)
 	if err != nil {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
@@ -253,7 +253,7 @@ func (g *GatewayAPI) SwitchWorkDir(w http.ResponseWriter, r *http.Request) {
 	body.WorkDir = expanded
 
 	// Ownership check.
-	si, err := g.sm.Get(id)
+	si, err := g.sm.Get(r.Context(), id)
 	if err != nil {
 		http.Error(w, "session not found", http.StatusNotFound)
 		return
@@ -298,7 +298,7 @@ func (g *GatewayAPI) GetHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	si, err := g.sm.Get(id)
+	si, err := g.sm.Get(r.Context(), id)
 	if err != nil {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
@@ -371,7 +371,7 @@ func (g *GatewayAPI) GetEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	si, err := g.sm.Get(id)
+	si, err := g.sm.Get(r.Context(), id)
 	if err != nil {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
