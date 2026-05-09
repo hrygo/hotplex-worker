@@ -326,10 +326,8 @@ func (c *StreamingCardController) SendPlaceholder(ctx context.Context, chatID, c
 		c.log.Warn("feishu: placeholder card send failed, degrading to static",
 			"err", err)
 		c.cardKitOK = false
-		if c.transition(PhaseCreationFailed) {
-			return fmt.Errorf("feishu: send placeholder card failed: %w", err)
-		}
-		return err
+		_ = c.transition(PhaseCreationFailed)
+		return fmt.Errorf("feishu: send placeholder card failed: %w", err)
 	}
 
 	c.mu.Lock()
@@ -586,6 +584,15 @@ func (c *StreamingCardController) Content() string {
 }
 
 func (c *StreamingCardController) Close(ctx context.Context) error {
+	phase := c.getPhase()
+
+	// Handle PhaseCreationFailed: card creation failed, stop flush loop and return.
+	// This can happen when SendPlaceholder fails but the goroutine was already started.
+	if phase == PhaseCreationFailed {
+		c.stopFlushLoop()
+		return nil
+	}
+
 	if !c.transition(PhaseCompleted) {
 		return nil
 	}
