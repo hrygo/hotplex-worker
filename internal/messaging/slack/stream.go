@@ -21,8 +21,8 @@ const (
 	maxAppendRetries  = 3
 	retryDelay        = 50 * time.Millisecond
 	maxAppendSize     = 3000              // Slack limit ~4000, safety margin
-	StreamTTL         = 10 * time.Minute  // server-side streaming limit (undocumented, aligned with Feishu)
-	StreamRotationTTL = 500 * time.Second // proactive rotation before server limit (aligned with Feishu)
+	StreamTTL         = 5 * time.Minute   // server-side wallclock limit (empirically ~5min, see slackapi/python-slack-sdk#1859)
+	StreamRotationTTL = 240 * time.Second // proactive rotation before server limit (safe margin under ~300s observed limit)
 )
 
 func isStreamStateError(err error) bool {
@@ -117,8 +117,6 @@ type NativeStreamingWriter struct {
 	wg           sync.WaitGroup
 
 	// 完整性校验
-	bytesWritten      int64
-	bytesFlushed      int64
 	failedFlushChunks []string
 
 	// Post-stream table upgrade: accumulates full content for table detection on Close.
@@ -187,8 +185,6 @@ func (w *NativeStreamingWriter) Write(p []byte) (int, error) {
 		w.started = true
 		w.streamStartTime = time.Now()
 		w.fullContent.Write(p)
-		w.bytesWritten += int64(len(p))
-		w.bytesFlushed += int64(len(p))
 		if w.onRegister != nil {
 			w.onRegister(w)
 		}
@@ -197,7 +193,6 @@ func (w *NativeStreamingWriter) Write(p []byte) (int, error) {
 
 	w.buf.Write(p)
 	w.fullContent.Write(p)
-	w.bytesWritten += int64(len(p))
 
 	// 超过阈值触发即时 flush
 	if utf8.RuneCount(w.buf.Bytes()) >= flushSize {
@@ -301,9 +296,6 @@ func (w *NativeStreamingWriter) appendWithRetry(content string) error {
 		)
 		cancel()
 		if err == nil {
-			w.mu.Lock()
-			w.bytesFlushed += int64(len(content))
-			w.mu.Unlock()
 			return nil
 		}
 		lastErr = err
@@ -339,39 +331,37 @@ func (w *NativeStreamingWriter) Close() error {
 		return nil
 	}
 	w.closed = true
-	streamExpired := w.streamExpired
-	shouldSkipFallback := w.skipFallback
 	w.mu.Unlock()
 
 	close(w.closeChan)
 	w.wg.Wait()
 
+	// Read all final state AFTER flushLoop completes to avoid TOCTOU races:
+	// streamExpired may be set during the final flushBuffer() in flushLoop.
 	w.mu.Lock()
 	started := w.started
-	bytesWritten := w.bytesWritten
-	bytesFlushed := w.bytesFlushed
+	streamExpired := w.streamExpired
+	shouldSkipFallback := w.skipFallback
 	failedChunks := w.failedFlushChunks
-	remainingBuf := w.buf.String()
+	fullContent := w.fullContent.String()
 	w.mu.Unlock()
 
 	if !started {
 		return nil
 	}
 
-	integrityOK := len(failedChunks) == 0 && bytesWritten == bytesFlushed
+	integrityOK := len(failedChunks) == 0
 	duration := time.Since(w.streamStartTime).Round(time.Millisecond)
 
-	if (!integrityOK || streamExpired) && !shouldSkipFallback {
+	if !integrityOK {
 		w.log.Warn("slack: stream closed with issues",
 			"channel", w.channelID, "thread", w.threadTS,
 			"duration", duration,
-			"bytes_written", bytesWritten, "bytes_flushed", bytesFlushed,
 			"failed_chunks", len(failedChunks), "expired", streamExpired)
 	} else {
 		w.log.Debug("slack: stream closed",
 			"channel", w.channelID, "thread", w.threadTS,
-			"duration", duration,
-			"bytes_written", bytesWritten)
+			"duration", duration)
 	}
 
 	// Use a fresh context for cleanup since startCtx may be cancelled
@@ -393,32 +383,23 @@ func (w *NativeStreamingWriter) Close() error {
 		w.onComplete(w.messageTS)
 	}
 
-	if (!integrityOK || streamExpired) && !shouldSkipFallback {
-		var fallbackText string
-		if streamExpired {
-			fallbackText = "⚠️ *Stream expired, sending complete content:*\n\n"
-		} else if len(failedChunks) > 0 {
-			fallbackText = "⚠️ *Stream interrupted, resending incomplete content:*\n\n"
-			for _, chunk := range failedChunks {
-				fallbackText += chunk
-			}
+	if !integrityOK && !shouldSkipFallback {
+		label := "Stream expired"
+		if !streamExpired {
+			label = "Stream interrupted"
 		}
-		if remainingBuf != "" {
-			fallbackText += remainingBuf
+		fallbackText := fmt.Sprintf("⚠️ *%s, resending complete content:*\n\n%s", label, fullContent)
+		opts := []slack.MsgOption{slack.MsgOptionText(fallbackText, false)}
+		if w.threadTS != "" {
+			opts = append(opts, slack.MsgOptionTS(w.threadTS))
 		}
-		if fallbackText != "" {
-			opts := []slack.MsgOption{slack.MsgOptionText(fallbackText, false)}
-			if w.threadTS != "" {
-				opts = append(opts, slack.MsgOptionTS(w.threadTS))
-			}
-			if w.teamID != "" {
-				opts = append(opts, slack.MsgOptionRecipientTeamID(w.teamID))
-			}
-			_, _, err := w.client.PostMessageContext(cleanupCtx, w.channelID, opts...)
-			if err != nil {
-				w.log.Error("slack: fallback PostMessage failed",
-					"channel", w.channelID, "err", err)
-			}
+		if w.teamID != "" {
+			opts = append(opts, slack.MsgOptionRecipientTeamID(w.teamID))
+		}
+		_, _, err := w.client.PostMessageContext(cleanupCtx, w.channelID, opts...)
+		if err != nil {
+			w.log.Error("slack: fallback PostMessage failed",
+				"channel", w.channelID, "err", err)
 		}
 	}
 	return nil
