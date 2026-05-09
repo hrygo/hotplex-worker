@@ -568,6 +568,7 @@ type FeishuConn struct {
 	sessionID         string
 	streamCtrl        *StreamingCardController
 	typingRid         string
+	thinkingRid       string // THINKING reaction from silence timer
 	silenceTimer      *time.Timer
 	workDir           string // current workDir identity for session key derivation
 	turnCount         int    // cached from last Done event, 0 = first turn
@@ -886,9 +887,11 @@ func (c *FeishuConn) Close() error {
 	c.mu.Lock()
 	streamCtrl := c.streamCtrl
 	typingRid := c.typingRid
+	thinkingRid := c.thinkingRid
 	platformMsgID := c.platformMsgID
 	c.streamCtrl = nil
 	c.typingRid = ""
+	c.thinkingRid = ""
 	if c.silenceTimer != nil {
 		c.silenceTimer.Stop()
 		c.silenceTimer = nil
@@ -905,50 +908,71 @@ func (c *FeishuConn) Close() error {
 	if typingRid != "" && c.adapter.larkClient != nil {
 		_ = c.adapter.RemoveTypingIndicator(context.Background(), platformMsgID, typingRid)
 	}
+	if thinkingRid != "" && c.adapter.larkClient != nil {
+		_ = c.adapter.removeReaction(context.Background(), platformMsgID, thinkingRid)
+	}
 	c.adapter.DeleteConn(c.chatID, c.threadKey)
 	return nil
 }
 
-// clearActiveIndicators removes typing indicators,
+// clearActiveIndicators removes typing and thinking indicators,
 // returning the stream controller for caller cleanup.
 func (c *FeishuConn) clearActiveIndicators(ctx context.Context) *StreamingCardController {
 	c.mu.Lock()
 	streamCtrl := c.streamCtrl
 	c.streamCtrl = nil
 	typingRid := c.typingRid
+	thinkingRid := c.thinkingRid
 	platformMsgID := c.platformMsgID
-	if typingRid != "" {
-		_ = c.adapter.RemoveTypingIndicator(ctx, platformMsgID, typingRid)
-		c.typingRid = ""
-	}
+	c.typingRid = ""
+	c.thinkingRid = ""
 	if c.silenceTimer != nil {
 		c.silenceTimer.Stop()
 		c.silenceTimer = nil
 	}
 	c.mu.Unlock()
+
+	if typingRid != "" {
+		_ = c.adapter.RemoveTypingIndicator(ctx, platformMsgID, typingRid)
+	}
+	if thinkingRid != "" {
+		_ = c.adapter.removeReaction(ctx, platformMsgID, thinkingRid)
+	}
 	return streamCtrl
 }
 
-// removeTypingReaction removes the Typing reaction from the user's message.
-// Called when streaming content first becomes visible to the user.
+// removeTypingReaction removes the Typing and THINKING reactions from the user's message.
+// Called when streaming content first becomes visible — no longer need silence feedback.
 func (c *FeishuConn) removeTypingReaction(ctx context.Context) {
 	c.mu.Lock()
 	rid := c.typingRid
+	thRid := c.thinkingRid
 	msgID := c.platformMsgID
 	c.typingRid = ""
+	c.thinkingRid = ""
 	c.mu.Unlock()
 	if rid != "" && msgID != "" {
 		_ = c.adapter.removeReaction(ctx, msgID, rid)
+	}
+	if thRid != "" && msgID != "" {
+		_ = c.adapter.removeReaction(ctx, msgID, thRid)
 	}
 }
 
 // resetSilenceTimer resets the silence timer. Called on every worker event
 // (ToolCall, ToolResult, MessageDelta) to delay the THINKING reaction.
 // The timer fires only after continuous silence of silenceTimeout.
+// Any existing THINKING reaction from a previous silence period is cleaned up.
 func (c *FeishuConn) resetSilenceTimer() {
 	c.mu.Lock()
 	if c.silenceTimer != nil {
 		c.silenceTimer.Stop()
+	}
+	var oldRid, oldMsgID string
+	if c.thinkingRid != "" {
+		oldRid = c.thinkingRid
+		oldMsgID = c.platformMsgID
+		c.thinkingRid = ""
 	}
 	adapter := c.adapter
 	msgID := c.platformMsgID
@@ -957,9 +981,18 @@ func (c *FeishuConn) resetSilenceTimer() {
 			return
 		}
 		adapter.Log.Debug("feishu: silence timeout, adding THINKING reaction", "msg", msgID)
-		_, _ = adapter.addReaction(context.Background(), msgID, "THINKING")
+		if rid, err := adapter.addReaction(context.Background(), msgID, "THINKING"); err == nil && rid != "" {
+			c.mu.Lock()
+			c.thinkingRid = rid
+			c.mu.Unlock()
+		}
 	})
 	c.mu.Unlock()
+
+	// Remove previous THINKING reaction outside the lock.
+	if oldRid != "" && oldMsgID != "" {
+		_ = adapter.removeReaction(context.Background(), oldMsgID, oldRid)
+	}
 }
 
 // writeContent delivers text content via streaming card or static fallback.
