@@ -90,10 +90,6 @@ func TestAdapterFlow_WriteCtx_ToolCallEvent(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
 	conn := NewFeishuConn(a, "chat123", "", "")
-	conn.mu.Lock()
-	conn.startedAt = time.Now()
-	conn.mu.Unlock()
-
 	env := &events.Envelope{
 		Version:   events.Version,
 		SessionID: "sess-tool-1",
@@ -111,10 +107,6 @@ func TestAdapterFlow_WriteCtx_ToolResultEvent(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
 	conn := NewFeishuConn(a, "chat123", "", "")
-	conn.mu.Lock()
-	conn.startedAt = time.Now()
-	conn.mu.Unlock()
-
 	env := &events.Envelope{
 		Version:   events.Version,
 		SessionID: "sess-tresult-1",
@@ -214,7 +206,6 @@ func TestAdapterFlow_WriteCtx_MessageDelta_NoStreamingCtrl(t *testing.T) {
 	conn.mu.Lock()
 	conn.replyToMsgID = "msg_reply"
 	conn.platformMsgID = "msg123"
-	conn.startedAt = time.Now()
 	conn.mu.Unlock()
 
 	// No streaming controller → WriteCtx uses static message path (nil client).
@@ -256,7 +247,6 @@ func TestAdapterFlow_FeishuConn_Close_WithReactionIDs(t *testing.T) {
 
 	conn.mu.Lock()
 	conn.typingRid = "typing_rid"
-	conn.toolRid = "tool_rid"
 	conn.platformMsgID = "msg123"
 	conn.mu.Unlock()
 
@@ -266,7 +256,6 @@ func TestAdapterFlow_FeishuConn_Close_WithReactionIDs(t *testing.T) {
 
 	conn.mu.RLock()
 	require.Empty(t, conn.typingRid)
-	require.Empty(t, conn.toolRid)
 	conn.mu.RUnlock()
 }
 
@@ -320,28 +309,6 @@ func TestAdapterFlow_SetProcessingReaction_NilClient(t *testing.T) {
 	// Nil client → addReaction fails, returns empty rid.
 	rid := conn.setProcessingReaction(context.Background())
 	require.Empty(t, rid)
-}
-
-func TestAdapterFlow_CycleReaction_EmptyPlatformMsgID(t *testing.T) {
-	t.Parallel()
-	a := newTestAdapter(t)
-	conn := NewFeishuConn(a, "chat123", "", "")
-
-	// No platformMsgID → early return.
-	conn.cycleReaction(context.Background(), "THINKING")
-}
-
-func TestAdapterFlow_CycleReaction_DifferentEmoji_NilClient(t *testing.T) {
-	t.Parallel()
-	a := newTestAdapter(t)
-	conn := NewFeishuConn(a, "chat123", "", "")
-	conn.mu.Lock()
-	conn.platformMsgID = "msg123"
-	conn.toolEmoji = "YEAH"
-	conn.mu.Unlock()
-
-	// Different emoji → tries remove old + add new → both fail on nil client.
-	conn.cycleReaction(context.Background(), "THINKING")
 }
 
 func TestAdapterFlow_SendTextMessage_NilClient(t *testing.T) {
@@ -528,7 +495,6 @@ func TestAdapterFlow_WriteCtx_MessageDelta_StaticPath(t *testing.T) {
 	conn := NewFeishuConn(a, "chat123", "", "")
 	conn.mu.Lock()
 	conn.replyToMsgID = "msg_reply"
-	conn.startedAt = time.Now()
 	conn.mu.Unlock()
 
 	env := &events.Envelope{
@@ -551,10 +517,7 @@ func TestAdapterFlow_WriteCtx_Message_StaticPath_NoReplyTo(t *testing.T) {
 	t.Parallel()
 	a := newTestAdapter(t)
 	conn := NewFeishuConn(a, "chat123", "", "")
-	conn.mu.Lock()
-	conn.startedAt = time.Now()
-	// No replyToMsgID → uses sendTextMessage path.
-	conn.mu.Unlock()
+	// replyToMsgID left empty → uses sendTextMessage path.
 
 	env := &events.Envelope{
 		Version:   events.Version,
@@ -576,7 +539,6 @@ func TestAdapterFlow_WriteCtx_RawEvent_WithText(t *testing.T) {
 	conn := NewFeishuConn(a, "chat123", "", "")
 	conn.mu.Lock()
 	conn.replyToMsgID = "msg_raw"
-	conn.startedAt = time.Now()
 	conn.mu.Unlock()
 
 	env := &events.Envelope{
@@ -600,7 +562,6 @@ func TestAdapterFlow_WriteCtx_Done_WithReactionCleanup(t *testing.T) {
 	conn := NewFeishuConn(a, "chat123", "", "")
 	conn.mu.Lock()
 	conn.typingRid = "typing_rid"
-	conn.toolRid = "tool_rid"
 	conn.platformMsgID = "msg123"
 	conn.mu.Unlock()
 
@@ -618,7 +579,6 @@ func TestAdapterFlow_WriteCtx_Done_WithReactionCleanup(t *testing.T) {
 
 	conn.mu.RLock()
 	require.Empty(t, conn.typingRid)
-	require.Empty(t, conn.toolRid)
 	conn.mu.RUnlock()
 }
 
@@ -629,9 +589,7 @@ func TestAdapterFlow_WriteCtx_Error_WithReactionCleanup(t *testing.T) {
 	conn := NewFeishuConn(a, "chat123", "", "")
 	conn.mu.Lock()
 	conn.typingRid = "typing_rid"
-	conn.toolRid = "tool_rid"
 	conn.platformMsgID = "msg123"
-	conn.startedAt = time.Now()
 	conn.mu.Unlock()
 
 	env := &events.Envelope{
@@ -648,7 +606,6 @@ func TestAdapterFlow_WriteCtx_Error_WithReactionCleanup(t *testing.T) {
 
 	conn.mu.RLock()
 	require.Empty(t, conn.typingRid)
-	require.Empty(t, conn.toolRid)
 	conn.mu.RUnlock()
 }
 
@@ -676,9 +633,6 @@ func TestAdapterFlow_WriteCtx_StreamCtrl_WriteFlush(t *testing.T) {
 	ctrl.cardKitOK = false // skip cardKit path, no msgID → IM patch also skipped
 	ctrl.mu.Unlock()
 	conn.EnableStreaming(ctrl)
-	conn.mu.Lock()
-	conn.startedAt = time.Now()
-	conn.mu.Unlock()
 
 	env := &events.Envelope{
 		Version:   events.Version,
@@ -758,7 +712,6 @@ func TestWriteCtx_InteractionEvents_ClosesStreamCtrl(t *testing.T) {
 			conn.mu.Lock()
 			conn.sessionID = "sess-close"
 			conn.platformMsgID = "msg_001"
-			conn.startedAt = time.Now()
 			conn.mu.Unlock()
 
 			// Set up an active typing reaction indicator to verify clearActiveIndicators runs.

@@ -73,7 +73,6 @@ func TestFeishuConn_Close_ClearsFields(t *testing.T) {
 	conn.mu.Lock()
 	conn.streamCtrl = NewStreamingCardController(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), "TestBot", 0, "", "", "")
 	conn.typingRid = "typing_abc"
-	conn.toolRid = "tool_def"
 	conn.platformMsgID = "msg_xyz"
 	conn.mu.Unlock()
 
@@ -83,8 +82,6 @@ func TestFeishuConn_Close_ClearsFields(t *testing.T) {
 	conn.mu.RLock()
 	require.Nil(t, conn.streamCtrl)
 	require.Empty(t, conn.typingRid)
-	require.Empty(t, conn.toolRid)
-	require.Empty(t, conn.toolEmoji)
 	conn.mu.RUnlock()
 
 	require.Nil(t, a.ConnPool.Get("chat123#"))
@@ -117,7 +114,6 @@ func TestFeishuConn_Close_NilLarkClient(t *testing.T) {
 	conn := NewFeishuConn(a, "chat_close", "", "")
 	conn.mu.Lock()
 	conn.typingRid = "typing_rid"
-	conn.toolRid = "tool_rid"
 	conn.platformMsgID = "msg_id"
 	conn.mu.Unlock()
 
