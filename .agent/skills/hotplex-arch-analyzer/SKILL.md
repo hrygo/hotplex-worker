@@ -1,6 +1,6 @@
 ---
 name: hotplex-arch-analyzer
-description: HotPlex 项目架构和代码健康深度审计 — **立即调用此 skill 进行**：架构分析、代码质量审查、SOLID/DRY 合规检查、并发/性能审计、安全扫描、非功能分析、代码健康度改进、模块质量评估、存量 issue 审计与清理。**专为 HotPlex Gateway 多层架构优化**（WebSocket/Session/Worker/Messaging），自动创建/验证 GitHub Issue。增量式模块分析 + 存量 issue 审计 + 跨会话进度追踪 + 优先级排序 = **最有效的 /loop 循环执行工具**，适用于大型 Go 代码库的系统性审计。
+description: HotPlex 项目架构、代码健康和性能优化深度审计 — **立即调用此 skill 进行**：架构分析、代码质量审查、SOLID/DRY 合规检查、并发安全审计、**性能优化识别**（热路径分配、锁竞争、sync.Pool、JSON 编码开销）、安全扫描、非功能分析、代码健康度改进、模块质量评估、存量 issue 审计与清理。**专为 HotPlex Gateway 多层架构优化**（WebSocket/Session/Worker/Messaging），内建 HotPlex 热路径性能模式库（WritePump、Hub 广播、Streaming Card、Worker stdio、Event Store），自动创建/验证 GitHub Issue。增量式模块分析 + 存量 issue 审计 + 跨会话进度追踪 + 优先级排序 = **最有效的 /loop 循环执行工具**，适用于大型 Go 代码库的系统性审计。**当提到**：性能分析、性能优化、瓶颈定位、延迟优化、内存分配、锁竞争、pprof、benchmark、热路径优化、吞吐量提升 — 即使没有明确说"架构分析"也应使用此 skill。
 ---
 
 # 架构深度分析器
@@ -446,10 +446,10 @@ cmd/hotplex          — Cobra CLI 入口点
 | 6 | **资源管理** | 连接/文件/goroutine 泄漏、defer 清理、关闭路径 |
 
 ### 阶段 3：性能与规模
-| # | 方面 | 重点 |
-|---|--------|-------|
-| 7 | **性能** | 热路径、不必要的分配、N+1 模式、缓冲区重用 |
-| 8 | **可扩展性** | 在 10x/100x 负载下的单点故障、瓶颈 |
+| # | 方面 | 重点 | 参考 |
+|---|--------|-------|------|
+| 7 | **性能** | 热路径、不必要的分配、N+1 模式、缓冲区重用 | `references/performance-patterns.md` |
+| 8 | **可扩展性** | 在 10x/100x 负载下的单点故障、瓶颈 | `references/performance-patterns.md` |
 
 ### 阶段 4：安全与质量
 | # | 方面 | 重点 |
@@ -481,7 +481,8 @@ cmd/hotplex          — Cobra CLI 入口点
 |------|------|----------|
 | `references/issue-template.md` | 完整 issue bash 模板 + 标题/标签格式 + AC 撰写指南 | 创建 issue 前（步骤 5） |
 | `references/audit-mode.md` | 审计模式完整流程（5 步 + bash 命令 + 判定表） | 进入审计模式时（步骤 1.5） |
-| `references/analysis-checklist.md` | 12 个方面的详细分析清单 | 深度分析时（步骤 4） |
+| `references/analysis-checklist.md` | 12 个方面的详细分析清单（含 HotPlex 性能专项） | 深度分析时（步骤 4） |
+| `references/performance-patterns.md` | HotPlex 热路径性能模式 + 通用 Go 反模式 + 检测方法论 + 验证手段 | 分析 aspect 7-8（Performance/Scalability）时 |
 | `references/progress-and-metrics.md` | 进度文件 schema + 边缘情况 + 成功指标 + 持续改进 | 需要查阅 schema 或调优时 |
 | `references/troubleshooting.md` | 9 个常见陷阱及解决方案 | 遇到问题或结果不理想时 |
 

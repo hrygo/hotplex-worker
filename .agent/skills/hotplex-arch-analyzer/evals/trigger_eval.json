@@ -1,0 +1,82 @@
+[
+  {
+    "query": "帮我分析一下 HotPlex gateway 模块的性能瓶颈，WritePump 那块感觉有点慢",
+    "should_trigger": true
+  },
+  {
+    "query": "我注意到 streaming card 更新频率很高，feishu 那边的 flush 机制能不能优化一下？感觉每次都重建整个 card 内容",
+    "should_trigger": true
+  },
+  {
+    "query": "hub.go 的广播机制在高并发下会不会成为瓶颈？帮我看看可扩展性",
+    "should_trigger": true
+  },
+  {
+    "query": "session manager 的锁竞争问题分析一下，现在用的是两层锁",
+    "should_trigger": true
+  },
+  {
+    "query": "HotPlex 的 JSON 编码开销太大了，每条消息都要 json.Marshal，能不能用 sync.Pool 优化？",
+    "should_trigger": true
+  },
+  {
+    "query": "帮我跑一下 HotPlex 的架构分析，看看 SOLID 和 DRY 有什么问题",
+    "should_trigger": true
+  },
+  {
+    "query": "internal/messaging 的代码质量怎么样？看看有没有并发安全问题",
+    "should_trigger": true
+  },
+  {
+    "query": "我想用 pprof 分析一下 HotPlex 的内存分配热点，先帮我看看代码里哪些地方可能有分配问题",
+    "should_trigger": true
+  },
+  {
+    "query": "HotPlex worker 读取 claude code 输出那块，每行 JSON 解析两次，这是个性能问题吧？",
+    "should_trigger": true
+  },
+  {
+    "query": "帮我审计一下现在 open 的 architecture issues，看看哪些已经过时了",
+    "should_trigger": true
+  },
+  {
+    "query": "帮我写一个 benchmark 测试 WritePump 的吞吐量",
+    "should_trigger": false
+  },
+  {
+    "query": "HotPlex 的 WebSocket 连接老是断开，帮我排查一下",
+    "should_trigger": false
+  },
+  {
+    "query": "帮我把 hotplex gateway 的代码重构成事件驱动架构",
+    "should_trigger": false
+  },
+  {
+    "query": "session 状态机有个 bug，从 active 到 idle 的转换好像不对，帮我修一下",
+    "should_trigger": false
+  },
+  {
+    "query": "帮我给 HotPlex 加一个 Prometheus 的自定义 metric，统计每秒处理的消息数",
+    "should_trigger": false
+  },
+  {
+    "query": "HotPlex 部署到生产环境了，帮我配置一下 k8s 的 HPA 和资源限制",
+    "should_trigger": false
+  },
+  {
+    "query": "帮我看看 eventstore 的 SQLite 查询能不能加个索引提速",
+    "should_trigger": false
+  },
+  {
+    "query": "HotPlex 的 CI 流水线太慢了，帮我优化一下 GitHub Actions 的构建时间",
+    "should_trigger": false
+  },
+  {
+    "query": "我需要给 feishu adapter 加一个新功能，支持消息撤回",
+    "should_trigger": false
+  },
+  {
+    "query": "帮我 review 一下这个 PR，看看代码质量怎么样",
+    "should_trigger": false
+  }
+]
