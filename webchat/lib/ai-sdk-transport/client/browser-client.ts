@@ -204,11 +204,8 @@ export class BrowserHotPlexClient extends EventEmitter<BrowserClientEvents> {
           prevWs.close();
         }
 
-        let url = this.config.url;
-        if (this.config.apiKey) {
-          const separator = url.includes('?') ? '&' : '?';
-          url = `${url}${separator}api_key=${encodeURIComponent(this.config.apiKey)}`;
-        }
+        // Build URL without api_key — auth is passed via auth.token in init envelope.
+        const url = this.config.url;
 
         this.ws = new WebSocket(url);
 

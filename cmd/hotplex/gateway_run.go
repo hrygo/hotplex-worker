@@ -197,6 +197,7 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 		Log:           log,
 		Hub:           hub,
 		SM:            sm,
+		Auth:          auth,
 		JWTValidator:  jwtValidator,
 		Bridge:        bridge,
 		SkillsLocator: skillsLocator,

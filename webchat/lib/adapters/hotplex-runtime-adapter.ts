@@ -303,6 +303,7 @@ export function useHotPlexRuntime({
       url: wsUrl,
       workerType,
       apiKey,
+      authToken: apiKey, // pass via init envelope auth.token for deferred auth
       initConfig,
       heartbeat: {
         pingIntervalMs: 20000,

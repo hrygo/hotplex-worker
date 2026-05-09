@@ -65,14 +65,14 @@ func (a *Authenticator) AuthenticateRequest(r *http.Request) (string, string, er
 
 	if len(a.validKey) == 0 {
 		// No keys configured — allow all (dev mode).
-		return "anonymous", a.botIDFromRequest(r), nil
+		return "anonymous", a.BotIDFromRequest(r), nil
 	}
 
 	if !a.validKey[key] {
 		return "", "", ErrUnauthorized
 	}
 
-	return "api_user", a.botIDFromRequest(r), nil
+	return "api_user", a.BotIDFromRequest(r), nil
 }
 
 // ReloadKeys dynamically replaces the set of valid API keys.
@@ -87,15 +87,48 @@ func (a *Authenticator) ReloadKeys(cfg *config.SecurityConfig) {
 	a.mu.Unlock()
 }
 
-// botIDFromRequest extracts the BotID claim from a JWT Bearer token in the Authorization header.
-// Returns "" if no token is present or if extraction fails (fail-open; botID mismatch is
-// enforced later by performInit).
-//
-// SECURITY: The token signature is verified via ES256 before extracting the botID claim.
-// If signature verification fails (e.g. token expired, wrong algorithm), the botID is
-// not extracted and the request proceeds with an empty botID. botID mismatch is still
-// enforced later by performInit as a defense-in-depth measure.
-func (a *Authenticator) botIDFromRequest(r *http.Request) string {
+// ExtractAPIKey returns the API key from header or query param.
+// Returns ("", false) if no key found, (key, true) if found (not yet validated).
+func (a *Authenticator) ExtractAPIKey(r *http.Request) (string, bool) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	header := a.cfg.APIKeyHeader
+	if header == "" {
+		header = "X-API-Key"
+	}
+
+	key := r.Header.Get(header)
+	if key == "" {
+		key = r.URL.Query().Get(apiKeyQueryParam)
+	}
+	if key == "" {
+		return "", false
+	}
+	return key, true
+}
+
+// AuthenticateKey validates an API key string directly.
+// Returns userID if valid, ("", false) if invalid.
+// Handles dev mode (no keys configured → "anonymous").
+func (a *Authenticator) AuthenticateKey(key string) (string, bool) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	if len(a.validKey) == 0 {
+		// No keys configured — allow all (dev mode).
+		return "anonymous", true
+	}
+
+	if !a.validKey[key] {
+		return "", false
+	}
+	return "api_user", true
+}
+
+// BotIDFromRequest extracts the BotID claim from a JWT Bearer token in the Authorization header.
+// Returns "" if no token is present or if extraction fails (fail-open).
+func (a *Authenticator) BotIDFromRequest(r *http.Request) string {
 	if a.jwtValidator == nil {
 		return ""
 	}
