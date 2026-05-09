@@ -379,10 +379,7 @@ func (m *Manager) TransitionWithInput(ctx context.Context, id string, to events.
 		if maxTurns > 0 && ms.TurnCount > maxTurns {
 			m.log.Warn("session: max turns exceeded, initiating anti-pollution restart",
 				"session_id", id, "turn_count", ms.TurnCount, "max_turns", maxTurns)
-			if err := ms.worker.Kill(); err != nil {
-				m.log.Warn("session: worker kill failed during max-turns cleanup",
-					"session_id", id, "err", err)
-			}
+			// Transition state first, then kill worker outside lock.
 			if events.IsValidTransition(from, events.StateTerminated) {
 				if err := m.transitionState(ctx, ms, from, events.StateTerminated, "max_turns"); err != nil {
 					m.log.Error("session: max-turns state transition failed, force-terminating in-memory state",
@@ -390,12 +387,16 @@ func (m *Manager) TransitionWithInput(ctx context.Context, id string, to events.
 					ms.info.State = events.StateTerminated
 				}
 			} else {
-				// Transition not valid from current state — force-set in-memory state to prevent orphan.
-				// Safe because the worker is already killed above. The DB may retain the old state,
-				// but GC will reconcile the inconsistency on the next scan.
 				m.log.Warn("session: max-turns transition invalid, force-terminating in-memory state",
 					"session_id", id, "from_state", from)
 				ms.info.State = events.StateTerminated
+			}
+			w := ms.worker
+			ms.mu.Unlock()
+			// Kill worker outside lock — process termination can block on I/O.
+			if err := w.Kill(); err != nil {
+				m.log.Warn("session: worker kill failed during max-turns cleanup",
+					"session_id", id, "err", err)
 			}
 			return ErrMaxTurnsReached
 		}
@@ -571,17 +572,24 @@ func (m *Manager) Delete(ctx context.Context, id string) error {
 func (m *Manager) DeletePhysical(ctx context.Context, id string) error {
 	m.mu.Lock()
 	ms, ok := m.sessions[id]
+	var workerToKill worker.Worker
+	var workerType string
 	if ok {
 		ms.mu.Lock()
 		if ms.worker != nil {
-			_ = ms.worker.Kill()
-			metrics.WorkersRunning.WithLabelValues(string(ms.info.WorkerType)).Dec()
+			workerToKill = ms.worker
+			workerType = string(ms.info.WorkerType)
+			metrics.WorkersRunning.WithLabelValues(workerType).Dec()
 			m.releaseWorkerQuota(ms)
 		}
 		ms.mu.Unlock()
 		delete(m.sessions, id)
 	}
 	m.mu.Unlock()
+
+	if workerToKill != nil {
+		_ = workerToKill.Kill()
+	}
 
 	return m.store.DeletePhysical(ctx, id)
 }
