@@ -320,6 +320,10 @@ export function useHotPlexRuntime({
 
     clientRef.current = client;
 
+    // Track the streaming fallback message ID (created by delta/reasoning before messageStart).
+    // Used by handleMessage to adopt the fallback instead of creating a duplicate (#331).
+    let streamingFallbackId: string | null = null;
+
     // Append delta content to the last text part of the last assistant message
     const appendDelta = (content: string) => {
       setMessages((prev) => {
@@ -337,10 +341,12 @@ export function useHotPlexRuntime({
           return [...filtered.slice(0, -1), { ...lastMessage, parts }];
         }
         // No streaming message — create one (message.start may not have been sent)
+        const fallbackId = `assistant-${Date.now()}`;
+        streamingFallbackId = fallbackId;
         return [
           ...filtered,
           {
-            id: `assistant-${Date.now()}`,
+            id: fallbackId,
             role: 'assistant' as const,
             parts: [{ type: 'text', text: content }],
             createdAt: new Date(),
@@ -381,10 +387,12 @@ export function useHotPlexRuntime({
           }
           return [...filtered.slice(0, -1), { ...lastMessage, parts }];
         }
+        const fallbackId = `assistant-${Date.now()}`;
+        streamingFallbackId = fallbackId;
         return [
           ...filtered,
           {
-            id: `assistant-${Date.now()}`,
+            id: fallbackId,
             role: 'assistant' as const,
             parts: [{ type: 'reasoning', text: data.content || '' }],
             createdAt: new Date(),
@@ -408,7 +416,17 @@ export function useHotPlexRuntime({
       // Always use env.id for consistency with handleMessageStart
       const msgId = env.id;
       setMessages((prev) => {
-        const existingIdx = prev.findIndex((m) => m.id === msgId);
+        let existingIdx = prev.findIndex((m) => m.id === msgId);
+
+        // Fallback: adopt streaming message with fallback ID instead of creating duplicate (#331).
+        // When delta/reasoning arrives before messageStart, a placeholder message is created
+        // with `assistant-${Date.now()}` ID. We keep that ID to avoid MessageRepository crash,
+        // so handleMessage must find it by the tracked fallback ID.
+        if (existingIdx === -1 && role === 'assistant' && streamingFallbackId) {
+          existingIdx = prev.findIndex((m) => m.id === streamingFallbackId);
+          if (existingIdx !== -1) streamingFallbackId = null;
+        }
+
         if (existingIdx !== -1) {
           // Update existing message (e.g., streaming placeholder → complete)
           const updated = [...prev];
@@ -482,6 +500,7 @@ export function useHotPlexRuntime({
     };
 
     const handleDone = (data: DoneData, _env: Envelope) => {
+      streamingFallbackId = null;
 
       if (data?.stats) {
         recordTurn(data.stats);
@@ -612,8 +631,9 @@ export function useHotPlexRuntime({
       setConnectionState('disconnected');
     };
 
-    // Handle messageStart: adopt any pending streaming assistant message (created by
-    // delta/reasoning fallback) and assign the real env.id, or update an existing one.
+    // Handle messageStart: confirm streaming status on existing message or create new.
+    // IMPORTANT: never rename an existing message's ID — changing IDs between renders
+    // causes assistant-ui MessageRepository orphaned-node crash (#331).
     const handleMessageStart = (data: MessageStartData, env: Envelope) => {
       if (!data) return;
       setMessages((prev) => {
@@ -625,16 +645,15 @@ export function useHotPlexRuntime({
           updated[existingIdx] = { ...filtered[existingIdx], status: 'streaming' };
           return updated;
         }
-        // Delta/reasoning fallback creates assistant-${Date.now()} IDs; adopt with real env.id.
+        // Delta/reasoning fallback already created a streaming message with a placeholder ID.
+        // Keep it as-is — do NOT rename to env.id (causes #331).
         const pendingIdx = filtered.findLastIndex((m) =>
           m.role === 'assistant' && m.status === 'streaming'
         );
         if (pendingIdx !== -1) {
-          const updated = [...filtered];
-          updated[pendingIdx] = { ...filtered[pendingIdx], id: env.id };
-          return updated;
+          return filtered;
         }
-        // No prior message for this turn.
+        // No prior message for this turn — create with real env.id.
         return [
           ...filtered,
           {

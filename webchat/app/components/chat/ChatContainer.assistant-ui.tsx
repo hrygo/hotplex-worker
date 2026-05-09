@@ -8,7 +8,6 @@ import {
 import { useQueryState, parseAsString } from 'nuqs';
 import { useHotPlexRuntime } from '@/lib/adapters/hotplex-runtime-adapter';
 import { useSessions } from '@/lib/hooks/useSessions';
-import { AdapterErrorBoundary } from '@/components/assistant-ui/AdapterErrorBoundary';
 import { Thread } from '@/components/assistant-ui/thread';
 import { BrandIcon } from '@/components/icons';
 import { SessionPanel } from './SessionPanel';
@@ -49,11 +48,9 @@ function ChatInterface({
   const suggestions = adapter.suggestions as readonly { title: string; label: string; prompt: string }[] | undefined;
 
   return (
-    <AdapterErrorBoundary>
-      <AssistantRuntimeProvider runtime={runtime}>
-        <Thread skills={skills} hasMore={hasMore} connectionState={connectionState} onLoadHistory={onLoadHistory} onInteractionRespond={onInteractionRespond} suggestions={suggestions} />
-      </AssistantRuntimeProvider>
-    </AdapterErrorBoundary>
+    <AssistantRuntimeProvider runtime={runtime}>
+      <Thread skills={skills} hasMore={hasMore} connectionState={connectionState} onLoadHistory={onLoadHistory} onInteractionRespond={onInteractionRespond} suggestions={suggestions} />
+    </AssistantRuntimeProvider>
   );
 }
 
