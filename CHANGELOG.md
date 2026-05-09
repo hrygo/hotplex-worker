@@ -2,6 +2,30 @@
 
 ## [Unreleased]
 
+## [1.9.1] - 2026-05-10
+
+### Summary
+
+v1.9.1 是一次 patch 版本更新，聚焦于 **热路径性能优化** 和 **运维可观测性修复**。Worker stdio 热路径消除双重 JSON 解析（每 turn 省约 1000 次分配），SafetyGuard 采用 RLock 快路径 + lazy limiter eviction 防止内存无限增长。WebChat 新增 stop button 取消反馈动画，飞书修复 THINKING 反应泄漏，EventStore/AgentConfig 修复静默错误吞没。
+
+### Added
+
+- **WebChat UI**: Stop button shows spinner animation during 600ms cancellation window, giving clear visual feedback before send button appears.
+
+### Changed
+
+- **Worker**: Eliminate double JSON parse in claudecode `readOutput` hot path — single `json.Unmarshal` + reuse for type routing, control_response, and error extraction. Saves ~1000 allocs/turn. (#327)
+- **Brain**: SafetyGuard uses `RLock` fast path for concurrent lookups and adds lazy limiter eviction — entries not seen within 1 hour are cleaned up when map exceeds 100 entries. (#328)
+- **WebChat UI**: Remove ghost message pattern that caused `MessageRepository` ID collisions.
+
+### Fixed
+
+- **Messaging/Feishu**: THINKING reaction from silence timer was never cleaned up — both Typing and THINKING emojis accumulated on user messages.
+- **EventStore**: `QueryTurnStats` silently skipped scan errors, returning partial or misleading results. Now logs warning with error details. (#293)
+- **CLI**: `status` command hardcoded `http://` for health check URL, reporting "unreachable" when TLS is enabled. (#297)
+- **Agent Config**: Config content exceeding 8KB/40KB limits was silently truncated with no indication — now logs warning with file name and size details. (#247)
+- **CI**: Webchat build was skipped on cache miss when `build-webchat` was false, leaving `internal/webchat/out` absent and failing `go vet`.
+
 ## [1.9.0] - 2026-05-09
 
 ### Summary
