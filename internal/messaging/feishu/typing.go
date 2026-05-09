@@ -3,48 +3,9 @@ package feishu
 import (
 	"context"
 	"fmt"
-	"time"
 
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 )
-
-const (
-	typingEmoji = "Typing"
-)
-
-// timelineEmojis maps elapsed duration thresholds to Feishu emoji_type values.
-// The emoji reflects how long the bot has been processing, giving users a
-// visual sense of progress without reading logs.
-var timelineEmojis = []struct {
-	threshold time.Duration
-	emoji     string
-}{
-	{0, "YEAH"},                       // 耶
-	{10 * time.Second, "SMILE"},       // 呲牙
-	{30 * time.Second, "THINKING"},    // 思考
-	{1 * time.Minute, "SMUG"},         // 得意
-	{5 * time.Minute, "STRIVE"},       // 奋斗
-	{10 * time.Minute, "BLACKFACE"},   // 黑线
-	{15 * time.Minute, "NOSEPICK"},    // 抠鼻
-	{20 * time.Minute, "EMBARRASSED"}, // 尬笑
-	{25 * time.Minute, "WAIL"},        // 泪奔
-	{30 * time.Minute, "DIZZY"},       // 晕
-}
-
-// timelineEmoji returns the emoji_type for the given elapsed duration.
-func timelineEmoji(elapsed time.Duration) string {
-	result := ""
-	for _, t := range timelineEmojis {
-		if elapsed >= t.threshold {
-			result = t.emoji
-		}
-	}
-	// No match means < 0 (impossible), but guard anyway.
-	if result == "" {
-		return timelineEmojis[0].emoji
-	}
-	return result
-}
 
 // addReaction adds an emoji reaction to a message. Returns the reaction ID.
 func (a *Adapter) addReaction(ctx context.Context, messageID, emoji string) (string, error) {
@@ -109,7 +70,7 @@ func (a *Adapter) removeReaction(ctx context.Context, messageID, reactionID stri
 
 // AddTypingIndicator adds a Typing emoji reaction to indicate the bot is processing.
 func (a *Adapter) AddTypingIndicator(ctx context.Context, messageID string) (string, error) {
-	return a.addReaction(ctx, messageID, typingEmoji)
+	return a.addReaction(ctx, messageID, "Typing")
 }
 
 // RemoveTypingIndicator removes a previously added Typing reaction.

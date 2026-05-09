@@ -375,6 +375,7 @@ func (c *StreamingCardController) SendPlaceholder(ctx context.Context, chatID, c
 	if !c.transition(PhaseStreaming) {
 		return fmt.Errorf("feishu: cannot transition to streaming")
 	}
+	c.startFlushLoop()
 	return nil
 }
 
@@ -724,23 +725,12 @@ func (c *StreamingCardController) Abort(ctx context.Context) error {
 	return nil
 }
 
-// buildFinalElements builds the elements list for the final card (Close/Abort),
-// including both streaming content and tool activity strip.
+// buildFinalElements builds the elements list for the final card (Close/Abort).
+// Tool activity is transient and excluded from the final card.
 func (c *StreamingCardController) buildFinalElements(body string) []map[string]any {
-	elements := []map[string]any{
+	return []map[string]any{
 		{"tag": "markdown", "element_id": streamingElementID, "content": body},
 	}
-	c.mu.Lock()
-	entries := make([]toolEntry, len(c.toolEntries))
-	copy(entries, c.toolEntries)
-	c.mu.Unlock()
-	if toolContent := renderToolActivity(entries); toolContent != "" {
-		elements = append(elements, map[string]any{"tag": "hr"})
-		elements = append(elements, map[string]any{
-			"tag": "markdown", "element_id": toolActivityElementID, "content": toolContent,
-		})
-	}
-	return elements
 }
 
 func (c *StreamingCardController) updateHeader(ctx context.Context, cardID string, header cardHeader, body string) {

@@ -459,10 +459,6 @@ func (a *Adapter) handleTextMessage(ctx context.Context, platformMsgID, channelI
 	conn.mu.Lock()
 	// Clean up stale reactions from previous message before switching platformMsgID.
 	if conn.platformMsgID != "" && conn.platformMsgID != platformMsgID {
-		if conn.toolRid != "" {
-			_ = a.removeReaction(context.Background(), conn.platformMsgID, conn.toolRid)
-			conn.toolRid = ""
-		}
 		if conn.typingRid != "" {
 			_ = a.RemoveTypingIndicator(context.Background(), conn.platformMsgID, conn.typingRid)
 			conn.typingRid = ""
@@ -471,7 +467,6 @@ func (a *Adapter) handleTextMessage(ctx context.Context, platformMsgID, channelI
 	conn.replyToMsgID = replyToMsgID
 	conn.platformMsgID = platformMsgID
 	conn.chatType = chatType
-	conn.startedAt = time.Now()
 	conn.mu.Unlock()
 
 	// Typing indicator: add reaction to user's message (non-blocking, failure is non-fatal).
@@ -482,6 +477,9 @@ func (a *Adapter) handleTextMessage(ctx context.Context, platformMsgID, channelI
 			a.Log.Debug("feishu: typing indicator failed (non-fatal)", "err", err)
 		}
 	}
+
+	// Start silence timer: fires THINKING reaction after 30s of no worker events.
+	conn.resetSilenceTimer()
 
 	// Prepare streaming controller (card is lazily created on first content).
 	if a.larkClient != nil && a.rateLimiter != nil {
@@ -570,13 +568,11 @@ type FeishuConn struct {
 	sessionID         string
 	streamCtrl        *StreamingCardController
 	typingRid         string
-	toolRid           string
-	toolEmoji         string    // current timeline emoji, for dedup
-	startedAt         time.Time // when the user sent the current message
-	workDir           string    // current workDir identity for session key derivation
-	turnCount         int       // cached from last Done event, 0 = first turn
-	lastModel         string    // cached from last TurnSummaryData
-	lastBranch        string    // cached from last TurnSummaryData
+	silenceTimer      *time.Timer
+	workDir           string // current workDir identity for session key derivation
+	turnCount         int    // cached from last Done event, 0 = first turn
+	lastModel         string // cached from last TurnSummaryData
+	lastBranch        string // cached from last TurnSummaryData
 	lastSummarySentMs atomic.Int64
 	voiceTriggered    atomic.Bool
 }
@@ -665,13 +661,6 @@ func (c *FeishuConn) resetStreamCtrl() {
 	c.mu.Unlock()
 }
 
-func (c *FeishuConn) handleToolReaction(ctx context.Context) {
-	c.mu.RLock()
-	elapsed := time.Since(c.startedAt)
-	c.mu.RUnlock()
-	c.cycleReaction(ctx, timelineEmoji(elapsed))
-}
-
 func (c *FeishuConn) SetTypingReactionID(rid string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -706,41 +695,6 @@ func (c *FeishuConn) clearProcessingReaction(ctx context.Context, rid string) {
 		return
 	}
 	_ = c.adapter.removeReaction(ctx, msgID, rid)
-}
-
-// cycleReaction replaces the current tool reaction with a new one.
-// The typing indicator is kept alive throughout the session and only
-// removed on done/close to prevent message flicker from repeated add/remove.
-func (c *FeishuConn) cycleReaction(ctx context.Context, emoji string) {
-	c.mu.Lock()
-	toolRid := c.toolRid
-	toolEmoji := c.toolEmoji
-	platformMsgID := c.platformMsgID
-	c.mu.Unlock()
-
-	if platformMsgID == "" {
-		return
-	}
-
-	// Dedup: skip API calls if the emoji hasn't changed.
-	if toolEmoji == emoji {
-		return
-	}
-
-	// Remove previous tool reaction only.
-	if toolRid != "" {
-		_ = c.adapter.removeReaction(ctx, platformMsgID, toolRid)
-	}
-
-	// Add new tool reaction.
-	if rid, err := c.adapter.addReaction(ctx, platformMsgID, emoji); err == nil && rid != "" {
-		c.mu.Lock()
-		c.toolRid = rid
-		c.toolEmoji = emoji
-		c.mu.Unlock()
-	} else if err != nil {
-		c.adapter.Log.Debug("feishu: tool reaction failed (non-fatal)", "err", err)
-	}
 }
 
 func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
@@ -831,7 +785,7 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		}
 		return nil
 	case events.ToolCall:
-		c.handleToolReaction(ctx)
+		c.resetSilenceTimer()
 		if ctrl := c.getStreamCtrl(); ctrl != nil {
 			if id, name, input := extractToolCallData(env); id != "" {
 				ctrl.WriteToolCall(id, name, input)
@@ -839,7 +793,7 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		}
 		return nil
 	case events.ToolResult:
-		c.handleToolReaction(ctx)
+		c.resetSilenceTimer()
 		if ctrl := c.getStreamCtrl(); ctrl != nil {
 			if id, output, errMsg := extractToolResultData(env); id != "" {
 				ctrl.WriteToolResult(id, output, errMsg)
@@ -932,11 +886,13 @@ func (c *FeishuConn) Close() error {
 	c.mu.Lock()
 	streamCtrl := c.streamCtrl
 	typingRid := c.typingRid
-	toolRid := c.toolRid
 	platformMsgID := c.platformMsgID
 	c.streamCtrl = nil
 	c.typingRid = ""
-	c.toolRid = ""
+	if c.silenceTimer != nil {
+		c.silenceTimer.Stop()
+		c.silenceTimer = nil
+	}
 	c.mu.Unlock()
 
 	// Best-effort cleanup: try Close() for proper final flush.
@@ -949,37 +905,66 @@ func (c *FeishuConn) Close() error {
 	if typingRid != "" && c.adapter.larkClient != nil {
 		_ = c.adapter.RemoveTypingIndicator(context.Background(), platformMsgID, typingRid)
 	}
-	if toolRid != "" && c.adapter.larkClient != nil {
-		_ = c.adapter.removeReaction(context.Background(), platformMsgID, toolRid)
-	}
 	c.adapter.DeleteConn(c.chatID, c.threadKey)
 	return nil
 }
 
-// clearActiveIndicators removes typing indicators and tool reactions,
+// clearActiveIndicators removes typing indicators,
 // returning the stream controller for caller cleanup.
 func (c *FeishuConn) clearActiveIndicators(ctx context.Context) *StreamingCardController {
 	c.mu.Lock()
 	streamCtrl := c.streamCtrl
 	c.streamCtrl = nil
 	typingRid := c.typingRid
-	toolRid := c.toolRid
 	platformMsgID := c.platformMsgID
 	if typingRid != "" {
 		_ = c.adapter.RemoveTypingIndicator(ctx, platformMsgID, typingRid)
 		c.typingRid = ""
 	}
-	if toolRid != "" {
-		_ = c.adapter.removeReaction(ctx, platformMsgID, toolRid)
-		c.toolRid = ""
-		c.toolEmoji = ""
+	if c.silenceTimer != nil {
+		c.silenceTimer.Stop()
+		c.silenceTimer = nil
 	}
 	c.mu.Unlock()
 	return streamCtrl
 }
 
+// removeTypingReaction removes the Typing reaction from the user's message.
+// Called when streaming content first becomes visible to the user.
+func (c *FeishuConn) removeTypingReaction(ctx context.Context) {
+	c.mu.Lock()
+	rid := c.typingRid
+	msgID := c.platformMsgID
+	c.typingRid = ""
+	c.mu.Unlock()
+	if rid != "" && msgID != "" {
+		_ = c.adapter.removeReaction(ctx, msgID, rid)
+	}
+}
+
+// resetSilenceTimer resets the silence timer. Called on every worker event
+// (ToolCall, ToolResult, MessageDelta) to delay the THINKING reaction.
+// The timer fires only after continuous silence of silenceTimeout.
+func (c *FeishuConn) resetSilenceTimer() {
+	c.mu.Lock()
+	if c.silenceTimer != nil {
+		c.silenceTimer.Stop()
+	}
+	adapter := c.adapter
+	msgID := c.platformMsgID
+	c.silenceTimer = time.AfterFunc(silenceTimeout, func() {
+		if msgID == "" || adapter.larkClient == nil {
+			return
+		}
+		adapter.Log.Debug("feishu: silence timeout, adding THINKING reaction", "msg", msgID)
+		_, _ = adapter.addReaction(context.Background(), msgID, "THINKING")
+	})
+	c.mu.Unlock()
+}
+
 // writeContent delivers text content via streaming card or static fallback.
 func (c *FeishuConn) writeContent(ctx context.Context, env *events.Envelope, text string) error {
+	c.resetSilenceTimer()
 	c.mu.Lock()
 	chatID := c.chatID
 	replyToMsgID := c.replyToMsgID
@@ -1038,6 +1023,8 @@ func (c *FeishuConn) writeContent(ctx context.Context, env *events.Envelope, tex
 				c.mu.Lock()
 				c.streamCtrl = nil
 				c.mu.Unlock()
+			} else {
+				c.removeTypingReaction(ctx)
 			}
 			return nil
 		}
@@ -1218,7 +1205,6 @@ func (a *Adapter) handleTextWorkerCommand(ctx context.Context, chatID, chatType,
 	conn.platformMsgID = platformMsgID
 	conn.replyToMsgID = replyToMsgID
 	conn.chatType = chatType
-	conn.startedAt = time.Now()
 	conn.mu.Unlock()
 
 	if err := a.Bridge().Handle(ctx, cmdEnv, conn); err != nil {
@@ -1312,6 +1298,8 @@ func (a *Adapter) doReplyCard(ctx context.Context, messageID, cardJSON string, r
 }
 
 const mediaMaxSize = 10 * 1024 * 1024 // 10 MB
+
+const silenceTimeout = 30 * time.Second
 
 // mediaTypeToResourceType maps our internal media types to Feishu resource types.
 var mediaTypeToResourceType = map[string]string{

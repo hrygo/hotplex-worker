@@ -211,31 +211,6 @@ func TestPtrStr(t *testing.T) {
 	}
 }
 
-func TestFeishuConn_CycleReaction_NoOp(t *testing.T) {
-	t.Parallel()
-	adapter := newTestAdapter(t)
-	conn := NewFeishuConn(adapter, "chat123", "", "")
-
-	// cycleReaction with no existing state should not panic
-	conn.cycleReaction(context.Background(), "TOOL_USE")
-}
-
-func TestFeishuConn_CycleReaction_SameEmojiDedup(t *testing.T) {
-	t.Parallel()
-	adapter := newTestAdapter(t)
-	conn := NewFeishuConn(adapter, "chat123", "", "")
-
-	// Set platformMsgID so the early return (platformMsgID=="") is skipped,
-	// but same emoji means no API calls happen.
-	conn.mu.Lock()
-	conn.platformMsgID = "msg123"
-	conn.toolEmoji = "TOOL_USE"
-	conn.mu.Unlock()
-
-	// Same emoji → early return, no API calls made.
-	conn.cycleReaction(context.Background(), "TOOL_USE")
-}
-
 func TestSaveMediaBytes(t *testing.T) {
 	t.Parallel()
 	adapter := newTestAdapter(t)
