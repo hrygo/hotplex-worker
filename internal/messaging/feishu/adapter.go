@@ -488,6 +488,12 @@ func (a *Adapter) handleTextMessage(ctx context.Context, platformMsgID, channelI
 		turnNum, model, branch, workDir := conn.turnHeaderMeta()
 		ctrl := NewStreamingCardController(a.larkClient, a.rateLimiter, a.Log, a.resolveBotName(), turnNum+1, model, branch, workDir)
 		conn.EnableStreaming(ctrl)
+
+		// Send placeholder card immediately — same streaming card structure as real messages.
+		// This eliminates the "black hole" effect where users see nothing while the worker processes.
+		if err := ctrl.SendPlaceholder(ctx, channelID, chatType, replyToMsgID); err != nil {
+			a.Log.Warn("feishu: placeholder card failed (non-fatal)", "err", err)
+		}
 	}
 
 	err := a.Bridge().Handle(ctx, envelope, conn)

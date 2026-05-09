@@ -298,6 +298,91 @@ func (c *StreamingCardController) EnsureCard(ctx context.Context, chatID, chatTy
 	return nil
 }
 
+// SendPlaceholder sends a streaming card immediately with a placeholder message.
+// The card uses the standard streaming card structure (header + tool_activity strip)
+// so it looks identical to real message cards. The card will be updated by
+// subsequent Write() calls when real content arrives. Unlike EnsureCard,
+// this does not store the placeholder text in the buffer.
+func (c *StreamingCardController) SendPlaceholder(ctx context.Context, chatID, chatType, replyToMsgID string) error {
+	if !c.transition(PhaseCreating) {
+		return fmt.Errorf("feishu: cannot transition from %s to creating", c.getPhase())
+	}
+
+	placeholder := "⏳ 正在思考..."
+	c.mu.Lock()
+	c.chatType = chatType
+	c.replyToMsgID = replyToMsgID
+	c.lastFlushed = placeholder
+	c.mu.Unlock()
+
+	// Step 1: Send card message with placeholder content.
+	contentJSON := buildStreamingCard(
+		cardHeader{Title: c.agentName, Template: headerWathet, Tags: turnTags(c.turnNum, c.model, c.branch, c.workDir)},
+		truncateForSummary(placeholder),
+		placeholder,
+	)
+	msgID, err := c.sendCardMessageRaw(ctx, chatID, chatType, contentJSON)
+	if err != nil {
+		c.log.Warn("feishu: placeholder card send failed, degrading to static",
+			"err", err)
+		c.cardKitOK = false
+		if c.transition(PhaseCreationFailed) {
+			return fmt.Errorf("feishu: send placeholder card failed: %w", err)
+		}
+		return err
+	}
+
+	c.mu.Lock()
+	c.msgID = msgID
+	c.streamingActive = true
+	c.mu.Unlock()
+
+	// Check if Close() was called during creation.
+	if c.getPhase() == PhaseCompleted {
+		c.log.Debug("feishu: placeholder card created but Close() already called")
+		return nil
+	}
+
+	// Step 2: Convert msg_id → card_id.
+	cardID, err := c.idConvert(ctx, msgID)
+	if err != nil {
+		c.log.Warn("feishu: id_convert failed for placeholder", "err", err)
+		c.cardKitOK = false
+	} else {
+		c.mu.Lock()
+		c.cardID = cardID
+		c.mu.Unlock()
+
+		// Step 3: Enable streaming on the card.
+		if err := c.enableStreaming(ctx); err != nil {
+			c.log.Warn("feishu: enable streaming failed for placeholder", "err", err)
+			c.cardKitOK = false
+		} else {
+			c.streamingActive = true
+		}
+	}
+
+	if !c.transition(PhaseStreaming) {
+		return fmt.Errorf("feishu: cannot transition to streaming")
+	}
+	c.startFlushLoop()
+	return nil
+}
+
+// sendCardMessageRaw sends a pre-built card JSON to the chat without going through
+// sendCardMessage (which rebuilds the card). Used by SendPlaceholder.
+func (c *StreamingCardController) sendCardMessageRaw(ctx context.Context, chatID, chatType, contentJSON string) (string, error) {
+	c.mu.Lock()
+	replyTo := c.replyToMsgID
+	isGroup := chatType == "group"
+	c.mu.Unlock()
+
+	if isGroup && replyTo != "" {
+		return c.replyCardMessage(ctx, replyTo, contentJSON)
+	}
+	return c.createCardMessage(ctx, chatID, contentJSON)
+}
+
 func (c *StreamingCardController) Write(text string) error {
 	text = messaging.SanitizeText(text)
 
