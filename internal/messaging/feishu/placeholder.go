@@ -9,7 +9,7 @@ var placeholderIntros = []string{
 	"输入 /reset 或 $重置 可清空上下文，从零开始新对话",
 	"输入 /cd ../other-project 或 $切换目录 ../other-project 切换工作目录",
 	"输入 ? 或 /help 查看所有可用命令",
-	"用 $ 前缀可用自然语言触发命令，如 $休眠、$上下文、$切换模型",
+	"用 $ 前缀可用自然语言触发命令，如 $compact、$上下文、$切换模型",
 	// Worker 命令
 	"对话过长时输入 /compact 或 $压缩 可压缩历史，释放上下文窗口",
 	"输入 /commit 或 $提交 可让 AI 快速创建 Git 提交",
