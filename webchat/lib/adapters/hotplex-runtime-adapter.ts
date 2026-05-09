@@ -53,6 +53,12 @@ export interface UseHotPlexRuntimeConfig {
   suggestions?: readonly ThreadSuggestion[];
 }
 
+// Sentinel ID for the optimistic ghost message shown while waiting for the first WS event.
+const GHOST_ASSISTANT_ID = 'ghost-assistant';
+
+// Content-signature prefix length for dedup — covers most short/medium responses.
+const CONTENT_SIG_PREFIX = 300;
+
 const DEFAULT_SUGGESTIONS: readonly ThreadSuggestion[] = [
   { title: '帮我写一个 React 组件', label: '代码', prompt: '帮我写一个 React 组件' },
   { title: '解释这段代码的逻辑', label: '学习', prompt: '解释这段代码的逻辑' },
@@ -317,7 +323,7 @@ export function useHotPlexRuntime({
     // Append delta content to the last text part of the last assistant message
     const appendDelta = (content: string) => {
       setMessages((prev) => {
-        const filtered = prev.filter(m => m.id !== 'ghost-assistant');
+        const filtered = prev.filter(m => m.id !== GHOST_ASSISTANT_ID);
         const lastMessage = filtered[filtered.length - 1];
         if (lastMessage?.role === 'assistant' && lastMessage.status === 'streaming') {
           const parts = [...lastMessage.parts];
@@ -363,7 +369,7 @@ export function useHotPlexRuntime({
       if (!data) return;
 
       setMessages((prev) => {
-        const filtered = prev.filter(m => m.id !== 'ghost-assistant');
+        const filtered = prev.filter(m => m.id !== GHOST_ASSISTANT_ID);
         const lastMessage = filtered[filtered.length - 1];
         if (lastMessage?.role === 'assistant' && lastMessage.status === 'streaming') {
           const parts = [...lastMessage.parts];
@@ -611,16 +617,15 @@ export function useHotPlexRuntime({
     const handleMessageStart = (data: MessageStartData, env: Envelope) => {
       if (!data) return;
       setMessages((prev) => {
-        const filtered = prev.filter(m => m.id !== 'ghost-assistant');
-        // 1. Existing message with this env.id (e.g., reasoning arrived early)
+        const filtered = prev.filter(m => m.id !== GHOST_ASSISTANT_ID);
+        // Reasoning events may arrive before messageStart, creating env.id early.
         const existingIdx = filtered.findIndex((m) => m.id === env.id);
         if (existingIdx !== -1) {
           const updated = [...filtered];
           updated[existingIdx] = { ...filtered[existingIdx], status: 'streaming' };
           return updated;
         }
-        // 2. Adopt a pending streaming assistant (created by delta/reasoning fallback
-        //    with assistant-${Date.now()} ID) and assign the real env.id
+        // Delta/reasoning fallback creates assistant-${Date.now()} IDs; adopt with real env.id.
         const pendingIdx = filtered.findLastIndex((m) =>
           m.role === 'assistant' && m.status === 'streaming'
         );
@@ -629,7 +634,7 @@ export function useHotPlexRuntime({
           updated[pendingIdx] = { ...filtered[pendingIdx], id: env.id };
           return updated;
         }
-        // 3. No existing or pending message — create fresh
+        // No prior message for this turn.
         return [
           ...filtered,
           {
@@ -868,7 +873,7 @@ export function useHotPlexRuntime({
 
     // 2. Add optimistic "Ghost" assistant message to provide immediate feedback
     const ghostMessage: HotPlexMessage = {
-      id: 'ghost-assistant',
+      id: GHOST_ASSISTANT_ID,
       role: 'assistant',
       parts: [{ type: 'reasoning', text: 'Initializing HotPlex Agent and analyzing workspace context...' }],
       createdAt: new Date(),
@@ -976,12 +981,15 @@ export function useHotPlexRuntime({
         seenIds.add(m.id);
         // Layer 2: content-signature dedup for assistant messages
         if (m.role === 'assistant') {
-          const text = m.parts
-            .filter((p): p is TextPart => p.type === 'text')
-            .map(p => p.text)
-            .join('');
-          if (text) {
-            const sig = text.slice(0, 300);
+          let sig = '';
+          for (const p of m.parts) {
+            if (p.type === 'text') {
+              sig += (p as TextPart).text;
+              if (sig.length >= CONTENT_SIG_PREFIX) break;
+            }
+          }
+          sig = sig.slice(0, CONTENT_SIG_PREFIX);
+          if (sig) {
             if (seenAssistantSigs.has(sig)) return false;
             seenAssistantSigs.add(sig);
           }
