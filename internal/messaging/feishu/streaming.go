@@ -109,6 +109,7 @@ type StreamingCardController struct {
 
 	flushDone    chan struct{}
 	flushStop    sync.Once
+	flushStart   sync.Once
 	flushWg      sync.WaitGroup
 	flushTrigger chan struct{} // buffered 1: coalesces rapid signals
 }
@@ -374,7 +375,6 @@ func (c *StreamingCardController) SendPlaceholder(ctx context.Context, chatID, c
 	if !c.transition(PhaseStreaming) {
 		return fmt.Errorf("feishu: cannot transition to streaming")
 	}
-	c.startFlushLoop()
 	return nil
 }
 
@@ -536,8 +536,10 @@ func (c *StreamingCardController) flushToolActivity(ctx context.Context) {
 // startFlushLoop launches the background flush goroutine.
 // Called once after successful transition to PhaseStreaming.
 func (c *StreamingCardController) startFlushLoop() {
-	c.flushWg.Add(1)
-	go c.flushLoop()
+	c.flushStart.Do(func() {
+		c.flushWg.Add(1)
+		go c.flushLoop()
+	})
 }
 
 func (c *StreamingCardController) flushLoop() {
