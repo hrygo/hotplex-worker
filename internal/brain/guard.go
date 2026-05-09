@@ -137,6 +137,7 @@ type SafetyGuard struct {
 	// Per-user rate limiting for CheckInput calls
 	userLimiters   map[string]*rate.Limiter // userID -> limiter
 	userLastSeen   map[string]time.Time     // userID -> last access time
+	limiterTTL     time.Duration            // Limiter eviction TTL
 	rateLimitRPS   float64                  // Configured RPS (0 = disabled)
 	rateLimitBurst int                      // Configured burst
 
@@ -162,6 +163,7 @@ func NewSafetyGuard(brain Brain, config GuardConfig, logger *slog.Logger) (*Safe
 		logger:         logger,
 		userLimiters:   make(map[string]*rate.Limiter),
 		userLastSeen:   make(map[string]time.Time),
+		limiterTTL:     time.Hour,
 		rateLimitRPS:   config.RateLimitRPS,
 		rateLimitBurst: config.RateLimitBurst,
 		cleanupStop:    cancel,
@@ -196,7 +198,9 @@ func (g *SafetyGuard) runCleanup(ctx context.Context, interval time.Duration) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			g.clearExpiredLimiters(interval)
+			g.mu.Lock()
+			g.evictStaleLimiters()
+			g.mu.Unlock()
 		}
 	}
 }
@@ -319,32 +323,42 @@ func (g *SafetyGuard) CheckInputWithUser(ctx context.Context, input, userID stri
 }
 
 // getOrCreateLimiter returns the rate limiter for a user, creating one if needed.
+// Uses RLock fast path for read-heavy workloads and lazy eviction for stale entries.
 func (g *SafetyGuard) getOrCreateLimiter(userID string) *rate.Limiter {
-	g.mu.Lock()
-	defer g.mu.Unlock()
+	g.mu.RLock()
 	limiter, exists := g.userLimiters[userID]
+	g.mu.RUnlock()
+	if exists {
+		g.mu.Lock()
+		g.userLastSeen[userID] = time.Now()
+		g.mu.Unlock()
+		return limiter
+	}
+
+	g.mu.Lock()
+	limiter, exists = g.userLimiters[userID]
 	if !exists {
 		limiter = rate.NewLimiter(rate.Limit(g.rateLimitRPS), g.rateLimitBurst)
 		g.userLimiters[userID] = limiter
 	}
 	g.userLastSeen[userID] = time.Now()
+	g.evictStaleLimiters()
+	g.mu.Unlock()
 	return limiter
 }
 
-func (g *SafetyGuard) clearExpiredLimiters(ttl time.Duration) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	now := time.Now()
-	expired := 0
-	for userID, lastSeen := range g.userLastSeen {
-		if now.Sub(lastSeen) > ttl {
-			delete(g.userLimiters, userID)
-			delete(g.userLastSeen, userID)
-			expired++
-		}
+// evictStaleLimiters removes rate limiters not seen within limiterTTL.
+// Must be called with g.mu held for writing.
+func (g *SafetyGuard) evictStaleLimiters() {
+	if len(g.userLimiters) < 100 {
+		return
 	}
-	if expired > 0 {
-		g.logger.Debug("Cleared expired rate limiters", "expired", expired, "remaining", len(g.userLimiters))
+	now := time.Now()
+	for uid, lastSeen := range g.userLastSeen {
+		if now.Sub(lastSeen) > g.limiterTTL {
+			delete(g.userLimiters, uid)
+			delete(g.userLastSeen, uid)
+		}
 	}
 }
 

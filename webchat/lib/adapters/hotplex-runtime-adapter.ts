@@ -53,9 +53,6 @@ export interface UseHotPlexRuntimeConfig {
   suggestions?: readonly ThreadSuggestion[];
 }
 
-// Sentinel ID for the optimistic ghost message shown while waiting for the first WS event.
-const GHOST_ASSISTANT_ID = 'ghost-assistant';
-
 // Content-signature prefix length for dedup — covers most short/medium responses.
 const CONTENT_SIG_PREFIX = 300;
 
@@ -320,11 +317,14 @@ export function useHotPlexRuntime({
 
     clientRef.current = client;
 
+    // Track the streaming fallback message ID (created by delta/reasoning before messageStart).
+    // Used by handleMessage to adopt the fallback instead of creating a duplicate (#331).
+    let streamingFallbackId: string | null = null;
+
     // Append delta content to the last text part of the last assistant message
     const appendDelta = (content: string) => {
       setMessages((prev) => {
-        const filtered = prev.filter(m => m.id !== GHOST_ASSISTANT_ID);
-        const lastMessage = filtered[filtered.length - 1];
+        const lastMessage = prev[prev.length - 1];
         if (lastMessage?.role === 'assistant' && lastMessage.status === 'streaming') {
           const parts = [...lastMessage.parts];
           // Append to last text part, or add new one
@@ -334,13 +334,15 @@ export function useHotPlexRuntime({
           } else {
             parts.push({ type: 'text', text: content });
           }
-          return [...filtered.slice(0, -1), { ...lastMessage, parts }];
+          return [...prev.slice(0, -1), { ...lastMessage, parts }];
         }
         // No streaming message — create one (message.start may not have been sent)
+        const fallbackId = `assistant-${Date.now()}`;
+        streamingFallbackId = fallbackId;
         return [
-          ...filtered,
+          ...prev,
           {
-            id: `assistant-${Date.now()}`,
+            id: fallbackId,
             role: 'assistant' as const,
             parts: [{ type: 'text', text: content }],
             createdAt: new Date(),
@@ -369,8 +371,7 @@ export function useHotPlexRuntime({
       if (!data) return;
 
       setMessages((prev) => {
-        const filtered = prev.filter(m => m.id !== GHOST_ASSISTANT_ID);
-        const lastMessage = filtered[filtered.length - 1];
+        const lastMessage = prev[prev.length - 1];
         if (lastMessage?.role === 'assistant' && lastMessage.status === 'streaming') {
           const parts = [...lastMessage.parts];
           const lastPart = parts[parts.length - 1];
@@ -379,12 +380,14 @@ export function useHotPlexRuntime({
           } else {
             parts.push({ type: 'reasoning', text: data.content || '' });
           }
-          return [...filtered.slice(0, -1), { ...lastMessage, parts }];
+          return [...prev.slice(0, -1), { ...lastMessage, parts }];
         }
+        const fallbackId = `assistant-${Date.now()}`;
+        streamingFallbackId = fallbackId;
         return [
-          ...filtered,
+          ...prev,
           {
-            id: `assistant-${Date.now()}`,
+            id: fallbackId,
             role: 'assistant' as const,
             parts: [{ type: 'reasoning', text: data.content || '' }],
             createdAt: new Date(),
@@ -408,7 +411,17 @@ export function useHotPlexRuntime({
       // Always use env.id for consistency with handleMessageStart
       const msgId = env.id;
       setMessages((prev) => {
-        const existingIdx = prev.findIndex((m) => m.id === msgId);
+        let existingIdx = prev.findIndex((m) => m.id === msgId);
+
+        // Fallback: adopt streaming message with fallback ID instead of creating duplicate (#331).
+        // When delta/reasoning arrives before messageStart, a placeholder message is created
+        // with `assistant-${Date.now()}` ID. We keep that ID to avoid MessageRepository crash,
+        // so handleMessage must find it by the tracked fallback ID.
+        if (existingIdx === -1 && role === 'assistant' && streamingFallbackId) {
+          existingIdx = prev.findIndex((m) => m.id === streamingFallbackId);
+          if (existingIdx !== -1) streamingFallbackId = null;
+        }
+
         if (existingIdx !== -1) {
           // Update existing message (e.g., streaming placeholder → complete)
           const updated = [...prev];
@@ -482,6 +495,7 @@ export function useHotPlexRuntime({
     };
 
     const handleDone = (data: DoneData, _env: Envelope) => {
+      streamingFallbackId = null;
 
       if (data?.stats) {
         recordTurn(data.stats);
@@ -612,31 +626,30 @@ export function useHotPlexRuntime({
       setConnectionState('disconnected');
     };
 
-    // Handle messageStart: adopt any pending streaming assistant message (created by
-    // delta/reasoning fallback) and assign the real env.id, or update an existing one.
+    // Handle messageStart: confirm streaming status on existing message or create new.
+    // IMPORTANT: never rename an existing message's ID — changing IDs between renders
+    // causes assistant-ui MessageRepository orphaned-node crash (#331).
     const handleMessageStart = (data: MessageStartData, env: Envelope) => {
       if (!data) return;
       setMessages((prev) => {
-        const filtered = prev.filter(m => m.id !== GHOST_ASSISTANT_ID);
         // Reasoning events may arrive before messageStart, creating env.id early.
-        const existingIdx = filtered.findIndex((m) => m.id === env.id);
+        const existingIdx = prev.findIndex((m) => m.id === env.id);
         if (existingIdx !== -1) {
-          const updated = [...filtered];
-          updated[existingIdx] = { ...filtered[existingIdx], status: 'streaming' };
+          const updated = [...prev];
+          updated[existingIdx] = { ...prev[existingIdx], status: 'streaming' };
           return updated;
         }
-        // Delta/reasoning fallback creates assistant-${Date.now()} IDs; adopt with real env.id.
-        const pendingIdx = filtered.findLastIndex((m) =>
+        // Delta/reasoning fallback already created a streaming message with a placeholder ID.
+        // Keep it as-is — do NOT rename to env.id (causes #331).
+        const pendingIdx = prev.findLastIndex((m) =>
           m.role === 'assistant' && m.status === 'streaming'
         );
         if (pendingIdx !== -1) {
-          const updated = [...filtered];
-          updated[pendingIdx] = { ...filtered[pendingIdx], id: env.id };
-          return updated;
+          return prev;
         }
-        // No prior message for this turn.
+        // No prior message for this turn — create with real env.id.
         return [
-          ...filtered,
+          ...prev,
           {
             id: env.id,
             role: 'assistant' as const,
@@ -871,17 +884,8 @@ export function useHotPlexRuntime({
       status: 'complete',
     };
 
-    // 2. Add optimistic "Ghost" assistant message to provide immediate feedback
-    const ghostMessage: HotPlexMessage = {
-      id: GHOST_ASSISTANT_ID,
-      role: 'assistant',
-      parts: [{ type: 'reasoning', text: 'Initializing HotPlex Agent and analyzing workspace context...' }],
-      createdAt: new Date(),
-      status: 'streaming',
-    };
-
-    setMessages((prev) => [...prev, userMessage, ghostMessage]);
-    setIsRunning(true); 
+    setMessages((prev) => [...prev, userMessage]);
+    setIsRunning(true);
     startTurn(); // Begin timing for metrics
 
     // Send to HotPlex gateway with error handling
@@ -889,19 +893,28 @@ export function useHotPlexRuntime({
       client.sendInput(textContent);
     } catch (err) {
       logger.error('RuntimeAdapter', 'sendInput failed', { error: String(err) });
-      // Remove BOTH user message and ghost message since send failed
-      setMessages((prev) => prev.slice(0, -2));
+      // Remove user message since send failed
+      setMessages((prev) => prev.slice(0, -1));
       throw new Error('Failed to send message. Please check your connection.');
     }
   }, []);
 
-  // Handler for cancellation
+  const [isStopping, setIsStopping] = useState(false);
+  const stoppingRef = useRef(false);
+
   const handleCancel = useCallback(async () => {
+    if (stoppingRef.current) return;
+    stoppingRef.current = true;
+    setIsStopping(true);
     const client = clientRef.current;
     if (client?.connected) {
       client.sendControl('terminate');
     }
-    setIsRunning(false);
+    setTimeout(() => {
+      setIsRunning(false);
+      setIsStopping(false);
+      stoppingRef.current = false;
+    }, 600);
   }, []);
 
   // Handler for loading earlier messages (cursor-based pagination)
@@ -1020,7 +1033,8 @@ export function useHotPlexRuntime({
     hasMore: historyHasMore,
     onLoadHistory: handleLoadHistory,
     onInteractionRespond: handleInteractionRespond,
-  }), [sessionMetrics, historyHasMore, handleLoadHistory, handleInteractionRespond]);
+    isStopping,
+  }), [sessionMetrics, historyHasMore, handleLoadHistory, handleInteractionRespond, isStopping]);
 
   // Return ExternalStoreAdapter — memoized to prevent unnecessary setAdapter calls
   // connectionState is returned separately to avoid invalidating the adapter memo on reconnect.

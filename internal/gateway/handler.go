@@ -247,11 +247,18 @@ func (h *Handler) handlePing(ctx context.Context, env *events.Envelope) error {
 	reply := events.NewEnvelope(
 		aep.NewID(),
 		env.SessionID,
-		h.hub.NextSeq(env.SessionID),
+		0, // P2: pong should not consume seq
 		events.Pong,
 		map[string]any{"state": state},
 	)
-	return h.hub.SendToSession(ctx, reply)
+	if h.log.Enabled(ctx, slog.LevelDebug) {
+		h.log.Debug("gateway: ping received, sending pong", "session_id", env.SessionID, "state", state)
+	}
+	err = h.hub.SendToSession(ctx, reply)
+	if err != nil {
+		h.log.Warn("gateway: pong send failed", "session_id", env.SessionID, "err", err)
+	}
+	return err
 }
 
 var passthroughMetricLabel = map[events.Kind]string{
