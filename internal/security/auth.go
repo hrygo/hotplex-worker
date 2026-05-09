@@ -59,7 +59,8 @@ func (a *Authenticator) AuthenticateRequest(r *http.Request) (string, string, er
 		return "", "", ErrUnauthorized
 	}
 
-	// Constant-time comparison to prevent timing attacks.
+	// Key lookup under RLock; map lookup is not constant-time
+	// but acceptable for API keys (small set, low timing sensitivity).
 	defer a.mu.RUnlock()
 
 	if len(a.validKey) == 0 {
