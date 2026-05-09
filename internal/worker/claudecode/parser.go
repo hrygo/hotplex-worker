@@ -102,27 +102,31 @@ func (p *Parser) ParseLine(line string) ([]*WorkerEvent, error) {
 	if err := json.Unmarshal([]byte(line), &msg); err != nil {
 		return nil, fmt.Errorf("parser: unmarshal: %w", err)
 	}
+	return p.ParseMessage(&msg)
+}
 
-	// Route by type
+// ParseMessage processes a pre-parsed SDKMessage into WorkerEvents.
+// Use this when the caller has already unmarshaled the raw line to avoid
+// redundant JSON parsing and []byte(string) allocations.
+func (p *Parser) ParseMessage(msg *SDKMessage) ([]*WorkerEvent, error) {
 	switch msg.Type {
 	case "stream_event":
-		return p.parseStreamEvent(&msg)
+		return p.parseStreamEvent(msg)
 	case "assistant":
-		return p.parseAssistant(&msg)
+		return p.parseAssistant(msg)
 	case "tool_progress":
-		return p.parseToolProgress(&msg)
+		return p.parseToolProgress(msg)
 	case "result":
-		return p.parseResult(&msg)
+		return p.parseResult(msg)
 	case "control_request":
-		return p.parseControlRequest(&msg)
+		return p.parseControlRequest(msg)
 	case "system":
-		return p.parseSystem(&msg)
+		return p.parseSystem(msg)
 	case "session_state_changed":
-		return p.parseSessionState(&msg)
+		return p.parseSessionState(msg)
 	case "user":
-		return p.parseUser(&msg)
+		return p.parseUser(msg)
 	default:
-		// Ignore unknown types (files_persisted, hook_*, task_*, rate_limit, etc.)
 		p.log.Debug("parser: ignoring unknown message type", "type", msg.Type)
 		return nil, nil
 	}
