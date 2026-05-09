@@ -342,11 +342,23 @@ func (h *Hub) HandleHTTP(
 ) http.Handler {
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Authenticate at HTTP upgrade time.
-		userID, botID, err := auth.AuthenticateRequest(r)
-		if err != nil {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
+		// Try to authenticate at HTTP upgrade time.
+		// If no API key is provided, defer auth to the init envelope (browser WS clients).
+		var userID, botID string
+		var pendingAuth bool
+
+		key, found := auth.ExtractAPIKey(r)
+		if found {
+			uid, ok := auth.AuthenticateKey(key)
+			if !ok {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+			userID = uid
+			botID = auth.BotIDFromRequest(r)
+		} else {
+			// No key at HTTP level — defer to init envelope auth (browser WS clients).
+			pendingAuth = true
 		}
 
 		sessionID := r.URL.Query().Get("session_id")
@@ -361,8 +373,11 @@ func (h *Hub) HandleHTTP(
 		}
 
 		c := newConn(h, wc, sessionID, bridge)
-		c.userID = userID
-		c.botID = botID // SEC-007: carry botID from HTTP-level JWT extraction
+		c.pendingAuth = pendingAuth
+		if !pendingAuth {
+			c.userID = userID
+			c.botID = botID
+		}
 		h.RegisterConn(c)
 		h.JoinSession(sessionID, c)
 
@@ -370,7 +385,11 @@ func (h *Hub) HandleHTTP(
 		go c.ReadPump(handler)
 		go c.WritePump()
 
-		h.log.Info("gateway: WS connected", "session_id", sessionID, "user_id", userID, "bot_id", botID)
+		idLog := userID
+		if pendingAuth {
+			idLog = "(pending)"
+		}
+		h.log.Info("gateway: WS connected", "session_id", sessionID, "user_id", idLog, "bot_id", c.botID)
 	})
 }
 

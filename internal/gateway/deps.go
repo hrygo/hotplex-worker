@@ -13,6 +13,7 @@ type HandlerDeps struct {
 	Log           *slog.Logger
 	Hub           *Hub
 	SM            SessionManager
+	Auth          *security.Authenticator
 	JWTValidator  *security.JWTValidator
 	Bridge        *Bridge
 	SkillsLocator SkillsLocator

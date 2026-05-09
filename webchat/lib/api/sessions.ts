@@ -2,13 +2,13 @@
  * Gateway API client for session management.
  *
  * These endpoints are on the same port as WebSocket (gateway :8888),
- * using api_key query param for auth.
+ * using X-API-Key header for authentication.
  */
 
 import { httpBase, apiKey } from "@/lib/config";
 
 const BASE = httpBase();
-const AUTH = `api_key=${encodeURIComponent(apiKey)}`;
+const AUTH_HEADER = { 'X-API-Key': apiKey };
 
 export interface SessionInfo {
   id: string;
@@ -62,8 +62,8 @@ export interface GetHistoryResponse {
 
 export async function listSessions(limit = 20, offset = 0, signal?: AbortSignal): Promise<ListSessionsResponse> {
   const res = await fetch(
-    `${BASE}/api/sessions?${AUTH}&limit=${limit}&offset=${offset}`,
-    { headers: { 'Content-Type': 'application/json' }, signal }
+    `${BASE}/api/sessions?limit=${limit}&offset=${offset}`,
+    { headers: { ...AUTH_HEADER, 'Content-Type': 'application/json' }, signal }
   );
   if (!res.ok) throw new Error(`listSessions failed: ${res.status}`);
   return res.json();
@@ -77,11 +77,11 @@ export interface CreateSessionOptions {
 
 export async function createSession(opts: CreateSessionOptions, signal?: AbortSignal): Promise<{ session_id: string }> {
   const workerType = opts.workerType ?? 'claude_code';
-  let url = `${BASE}/api/sessions?${AUTH}&worker_type=${encodeURIComponent(workerType)}&title=${encodeURIComponent(opts.title)}`;
+  let url = `${BASE}/api/sessions?worker_type=${encodeURIComponent(workerType)}&title=${encodeURIComponent(opts.title)}`;
   if (opts.workDir) {
     url += `&work_dir=${encodeURIComponent(opts.workDir)}`;
   }
-  const res = await fetch(url, { method: 'POST', signal });
+  const res = await fetch(url, { method: 'POST', headers: AUTH_HEADER, signal });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
     throw new Error(body || `createSession failed: ${res.status}`);
@@ -91,8 +91,8 @@ export async function createSession(opts: CreateSessionOptions, signal?: AbortSi
 
 export async function deleteSession(id: string, signal?: AbortSignal): Promise<void> {
   const res = await fetch(
-    `${BASE}/api/sessions/${id}?${AUTH}`,
-    { method: 'DELETE', signal }
+    `${BASE}/api/sessions/${id}`,
+    { method: 'DELETE', headers: AUTH_HEADER, signal }
   );
   if (!res.ok) throw new Error(`deleteSession failed: ${res.status}`);
 }
@@ -105,11 +105,11 @@ export async function getSessionHistory(
     throw new Error('getSessionHistory: empty session ID');
   }
   const limit = options?.limit ?? 50;
-  let url = `${BASE}/api/sessions/${sessionId}/history?${AUTH}&limit=${limit}`;
+  let url = `${BASE}/api/sessions/${sessionId}/history?limit=${limit}`;
   if (options?.beforeSeq) {
     url += `&before_seq=${options.beforeSeq}`;
   }
-  const res = await fetch(url, { headers: { 'Content-Type': 'application/json' }, signal: options?.signal });
+  const res = await fetch(url, { headers: { ...AUTH_HEADER, 'Content-Type': 'application/json' }, signal: options?.signal });
   if (!res.ok) throw new Error(`getSessionHistory failed: ${res.status}`);
   return res.json();
 }

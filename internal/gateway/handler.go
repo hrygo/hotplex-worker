@@ -28,6 +28,7 @@ type Handler struct {
 	log           *slog.Logger
 	hub           *Hub
 	sm            SessionManager
+	auth          *security.Authenticator
 	jwtValidator  *security.JWTValidator
 	bridge        *Bridge
 	skillsLocator SkillsLocator
@@ -45,6 +46,7 @@ func NewHandler(deps HandlerDeps) *Handler {
 		log:           deps.Log.With("component", "handler"),
 		hub:           deps.Hub,
 		sm:            deps.SM,
+		auth:          deps.Auth,
 		jwtValidator:  deps.JWTValidator,
 		bridge:        deps.Bridge,
 		skillsLocator: deps.SkillsLocator,
