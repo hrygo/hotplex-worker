@@ -14,6 +14,7 @@ import { wsUrl, workerType, apiKey, workDir, allowedTools } from '@/lib/config';
 import { useMetrics } from '@/lib/hooks/useMetrics';
 import { getSessionHistory, type ConversationRecord } from '@/lib/api/sessions';
 import { conversationTurnsToMessages } from '@/lib/utils/turn-replay';
+import { logger } from '@/lib/logger';
 import type {
   Envelope,
   MessageDeltaData,
@@ -26,8 +27,10 @@ import type {
   ToolResultData,
 } from '@/lib/ai-sdk-transport';
 import type { TextPart, ReasoningPart, ToolCallPart, ToolSummaryPart, ContextUsagePart, TurnSummaryPart, MessagePart } from '@/lib/types/message-parts';
+import type { HotPlexMessage } from '@/lib/types/message';
 
 // Re-export for consumers
+export type { HotPlexMessage };
 export type { TextPart, ReasoningPart, ToolCallPart, ToolSummaryPart, ContextUsagePart, TurnSummaryPart, MessagePart };
 
 // ThreadSuggestion shape — matches @assistant-ui/core ThreadSuggestion
@@ -48,15 +51,6 @@ export interface UseHotPlexRuntimeConfig {
   onSkillsChange?: (skills: string[]) => void;
   /** Custom welcome suggestions shown when thread is empty. */
   suggestions?: readonly ThreadSuggestion[];
-}
-
-// Internal message format for our store
-interface HotPlexMessage {
-  id: string;
-  role: 'user' | 'assistant' | 'system';
-  parts: MessagePart[];
-  createdAt: Date;
-  status?: 'streaming' | 'complete' | 'error';
 }
 
 // ============================================================================
@@ -80,22 +74,25 @@ function convertToThreadMessage(message: HotPlexMessage): ThreadMessageLike {
   // Extract turn summary data for card rendering
   const turnSummaryPart = parts.find((p): p is TurnSummaryPart => p.type === 'turn-summary');
 
-  const result: ThreadMessageLike = {
+  // Extended ThreadMessageLike for HotPlex-specific metadata
+  // (assistant-ui ThreadMessageLike.metadata is typed, but our custom keys need explicit typing)
+  const result = {
     id: message.id,
     role,
     content,
     createdAt: message.createdAt,
-    attachments: [],
+    attachments: [] as const,
     metadata: {
       ...(contextUsagePart ? { contextUsage: contextUsagePart.data } : {}),
       ...(turnSummaryPart ? { turnSummary: turnSummaryPart.data } : {}),
-    } as any,
+    } satisfies Record<string, unknown>,
+  } as ThreadMessageLike & {
+    status?: { type: 'running' } | { type: 'complete'; reason: string };
   };
 
   // Status is only supported for assistant messages
   if (message.role === 'assistant') {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (result as any).status = message.status === 'streaming'
+    result.status = message.status === 'streaming'
       ? { type: 'running' }
       : { type: 'complete', reason: 'stop' };
   }
@@ -173,6 +170,7 @@ export function useHotPlexRuntime({
   const [messages, setMessages] = useState<HotPlexMessage[]>([]);
   const [isRunning, setIsRunning] = useState(false);
   const [historyHasMore, setHistoryHasMore] = useState(true);
+  const [connectionState, setConnectionState] = useState<'connected' | 'connecting' | 'disconnected'>('disconnected');
 
   // One-time cleanup of orphaned localStorage keys from removed message cache
   useEffect(() => {
@@ -273,7 +271,7 @@ export function useHotPlexRuntime({
       })
       .catch(err => {
         if (err instanceof DOMException && err.name === 'AbortError') return;
-        console.warn('HotPlexRuntimeAdapter: failed to load history', err);
+        logger.warn('RuntimeAdapter', 'Failed to load history', { error: String(err) });
         setMessages(prev => [...prev, {
           id: `history-error-${Date.now()}`,
           role: 'assistant' as const,
@@ -289,7 +287,7 @@ export function useHotPlexRuntime({
   // Initialize WebSocket client
   useEffect(() => {
     if (!sessionId) {
-      console.log('HotPlexRuntimeAdapter: No session ID provided, skipping connection.');
+      logger.info('RuntimeAdapter', 'No session ID, skipping connection');
       return;
     }
 
@@ -443,7 +441,7 @@ export function useHotPlexRuntime({
           // Replace previous todo tool-call instead of stacking duplicates
           if (TODO_TOOLS.has(data.name?.toLowerCase())) {
             const lastTodoIdx = lastMessage.parts.findLastIndex(
-              (p) => p.type === 'tool-call' && TODO_TOOLS.has((p as any).toolName?.toLowerCase())
+              (p): p is ToolCallPart => p.type === 'tool-call' && TODO_TOOLS.has(p.toolName.toLowerCase())
             );
             if (lastTodoIdx !== -1) {
               const parts = [...lastMessage.parts];
@@ -524,7 +522,7 @@ export function useHotPlexRuntime({
       // Shutdown errors are transient — gateway is restarting. Don't pollute the
       // chat with error messages; the client will auto-reconnect.
       if (isShutdown) {
-        console.log('HotPlexRuntimeAdapter: gateway shutdown detected, waiting for reconnect');
+        logger.info('RuntimeAdapter', 'Gateway shutdown, waiting for reconnect');
         return;
       }
 
@@ -533,12 +531,12 @@ export function useHotPlexRuntime({
         const detailsStr = data.details ? ` Details: ${JSON.stringify(data.details)}` : '';
         const eventStr = env?.id ? ` EventID: ${env.id}` : '';
         if (isResumeRetry) {
-          console.warn(`HotPlexRuntimeAdapter: worker recovery triggered. Code: ${data.code}, Message: ${data.message}${detailsStr}${eventStr}`);
+          logger.warn('RuntimeAdapter', 'Worker recovery triggered', { code: data.code, message: data.message, details: data.details, eventId: env?.id });
         } else {
-          console.error(`HotPlexRuntimeAdapter: error received. Code: ${data.code || 'unknown'}, Message: ${data.message || 'none'}${detailsStr}${eventStr}`);
+          logger.error('RuntimeAdapter', 'Error received', { code: data.code || 'unknown', message: data.message || 'none', details: data.details, eventId: env?.id });
         }
       } else {
-        console.warn(`HotPlexRuntimeAdapter: empty error event received (no code/message). EventID: ${env?.id}`);
+        logger.warn('RuntimeAdapter', 'Empty error event', { eventId: env?.id });
       }
 
       // If it's a fatal error, stop the run and complete the streaming message
@@ -600,8 +598,9 @@ export function useHotPlexRuntime({
     };
 
     const handleDisconnected = (reason: string) => {
-      console.log('HotPlexRuntimeAdapter: disconnected', reason);
+      logger.info('RuntimeAdapter', 'Disconnected', { reason });
       setIsRunning(false);
+      setConnectionState('disconnected');
     };
 
     // Handle messageStart: if we already created a placeholder message for this env.id
@@ -726,8 +725,12 @@ export function useHotPlexRuntime({
     };
     client.on('elicitationRequest', handleElicitationRequest);
 
-    client.connect(sessionId).catch((err) => {
-      console.error('HotPlexRuntimeAdapter: connection failed', err);
+    setConnectionState('connecting');
+    client.connect(sessionId).then(() => {
+      setConnectionState('connected');
+    }).catch((err) => {
+      setConnectionState('disconnected');
+      logger.error('RuntimeAdapter', 'Connection failed', { error: String(err) });
     });
 
     return () => {
@@ -748,6 +751,7 @@ export function useHotPlexRuntime({
       interactionMapRef.current.clear();
       client.disconnect();
       clientRef.current = null;
+      setConnectionState('disconnected');
     };
   }, [sessionId]);
 
@@ -781,13 +785,13 @@ export function useHotPlexRuntime({
 
     // Handle disconnected state: attempt to reconnect if not already connecting
     if (!client.connected) {
-      console.log('HotPlexRuntimeAdapter: client not connected, attempting to reconnect...');
+      logger.info('RuntimeAdapter', 'Client not connected, attempting reconnect');
       try {
         if (!client.connecting) {
           // Don't pass sessionId here — the client internally tracks the latest session ID,
           // which may have been updated by a SessionNotFound retry in BrowserHotPlexClient.
           client.connect().catch(err => {
-            console.error('HotPlexRuntimeAdapter: auto-connect failed', err);
+            logger.error('RuntimeAdapter', 'Auto-connect failed', { error: String(err) });
           });
         }
 
@@ -867,7 +871,7 @@ export function useHotPlexRuntime({
     try {
       client.sendInput(textContent);
     } catch (err) {
-      console.error('HotPlexRuntimeAdapter: sendInput failed', err);
+      logger.error('RuntimeAdapter', 'sendInput failed', { error: String(err) });
       // Remove BOTH user message and ghost message since send failed
       setMessages((prev) => prev.slice(0, -2));
       throw new Error('Failed to send message. Please check your connection.');
@@ -914,7 +918,7 @@ export function useHotPlexRuntime({
       setHistoryHasMore(res.has_more);
       return { hasMore: res.has_more };
     } catch (err) {
-      console.warn('HotPlexRuntimeAdapter: failed to load earlier messages', err);
+      logger.warn('RuntimeAdapter', 'Failed to load earlier messages', { error: String(err) });
       return { hasMore: false };
     } finally {
       historyLoadingRef.current = false;
@@ -974,13 +978,14 @@ export function useHotPlexRuntime({
     edit: true,
   }), []);
 
-  // Stable extras reference — only changes when metrics or history state change
+  // Stable extras reference — only changes when metrics, history, or connection state change
   const extras = useMemo(() => ({
     metrics: sessionMetrics,
     hasMore: historyHasMore,
+    connectionState,
     onLoadHistory: handleLoadHistory,
     onInteractionRespond: handleInteractionRespond,
-  }), [sessionMetrics, historyHasMore, handleLoadHistory, handleInteractionRespond]);
+  }), [sessionMetrics, historyHasMore, connectionState, handleLoadHistory, handleInteractionRespond]);
 
   // Return ExternalStoreAdapter — memoized to prevent unnecessary setAdapter calls
   return useMemo(() => ({
