@@ -2,6 +2,38 @@
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-05-09
+
+### Summary
+
+v1.9.0 是一次 minor 版本更新，聚焦于 **跨平台工具格式化统一** 和 **消息通道稳定性**。核心变更是提取共享 `toolfmt` 包，消除飞书与 Slack 适配器约 360 行重复代码并统一工具调用/结果的 UX 呈现。飞书新增 streaming placeholder 卡片（消除了"黑洞"静默等待）和实时 tool activity strip，WebChat 获得 ErrorBoundary 防御上游 assistant-ui 崩溃、双层消息去重和完整的类型系统统一，Gateway Core 修复了多个并发缺陷（WritePump race、Bridge.accum 泄漏、端口冲突静默崩溃）。
+
+### Added
+
+- **Messaging**: Streaming placeholder card sent immediately on message receipt — eliminates perceived silence during worker processing, displays "⏳ 正在思考..." with in-place updates as content arrives.
+- **Messaging/Feishu**: Tool activity strip in streaming cards — real-time emoji + short text display of tool calls with 2-entry scrolling window and CJK-aware visual truncation.
+- **Messaging**: Shared `toolfmt` package for cross-platform tool formatting — `FormatCall`, `FormatResult`, `ShortenPath`, `TruncateRunes` with consistent UX across Feishu and Slack.
+- **WebChat UI**: ErrorBoundary component to catch assistant-ui MessageRepository crash (#2380) with recovery UI.
+- **WebChat UI**: Structured JSON logger replacing 15 console calls, connection state indicator (connected/connecting/disconnected) in thread footer.
+
+### Changed
+
+- **Messaging/Feishu**: Rich placeholder intros with randomized CLI tips covering slash commands, gateway lifecycle, service management, and multi-platform capabilities.
+- **WebChat UI**: Unified `HotPlexMessage<P>` generic type, version synced from v1.1.0 to v1.8.1, all 10 `as-any` casts eliminated with typed accessors.
+- **Messaging/Slack**: Removed per-tool formatter functions and unused `aepEventToStatus` helper, now uses shared `toolfmt` package.
+
+### Fixed
+
+- **Gateway Core**: WritePump panic recovery data race on `Conn.closed` — recovery defer now uses `c.Close()` for locking and idempotency. (#301)
+- **Gateway Core**: Bridge.accum map grew without bound — entries now deleted in `cleanupCrashedWorker` on all worker exit paths. (#298)
+- **Gateway Core**: Silent kill on port conflict — `ensureNotRunning()` check fails with clear message instead of silent crash.
+- **Messaging/Feishu**: Streaming card lifecycle regression fixes — nil streamCtrl guard, flush loop lazy start via `sync.Once`, `PhaseCreationFailed` handling, concurrent card prevention, turn number preservation after TTL rotation, false-positive rate-limit warning on close.
+- **Messaging/Slack**: `flushBuffer` rate-limit reordering — content extraction moved inside lock to prevent message reordering. (#299)
+- **Messaging/Slack**: NativeStreamingWriter TOCTOU race, broken byte accounting from chunk prefixes, and fallback content loss. (#318)
+- **WebChat UI**: Two-layer message dedup (exact ID + content-signature) and messageStart adoption of pending streaming messages for assistant-ui lifecycle consistency.
+- **Admin API**: DB probe errors now logged and conditionally included in health response. (#292)
+- **Client SDK**: Init rejection errors (e.g., auth failure) now propagated instead of silently ignored.
+
 ## [1.8.1] - 2026-05-09
 
 ### Summary
