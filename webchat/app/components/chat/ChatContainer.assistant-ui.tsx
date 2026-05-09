@@ -13,7 +13,7 @@ import { BrandIcon } from '@/components/icons';
 import { SessionPanel } from './SessionPanel';
 import { NewSessionModal } from './NewSessionModal';
 import { MetricsBar } from '@/components/assistant-ui/MetricsBar';
-import { workerType, workDir } from '@/lib/config';
+import { workerType, workDir, type ConnectionState } from '@/lib/config';
 import type { SessionMetrics } from '@/lib/hooks/useMetrics';
 
 function ChatInterface({
@@ -36,7 +36,7 @@ function ChatInterface({
 
   type AdapterExtras = {
     hasMore?: boolean;
-    connectionState?: 'connected' | 'connecting' | 'disconnected';
+    connectionState?: ConnectionState;
     onLoadHistory?: () => Promise<{ hasMore: boolean }>;
     onInteractionRespond?: (toolCallId: string, allowed: boolean) => void;
   };

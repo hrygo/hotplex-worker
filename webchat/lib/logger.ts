@@ -18,12 +18,12 @@ export interface LogEntry {
 }
 
 function emit(entry: LogEntry): void {
-  const args: unknown[] = [JSON.stringify(entry)];
+  const serialized = JSON.stringify(entry);
   switch (entry.level) {
-    case 'error': console.error(...args); break;
-    case 'warn':  console.warn(...args);  break;
-    case 'info':  console.info(...args);  break;
-    default:      console.log(...args);   break;
+    case 'error': console.error(serialized); break;
+    case 'warn':  console.warn(serialized);  break;
+    case 'info':  console.info(serialized);  break;
+    default:      console.log(serialized);   break;
   }
 }
 
