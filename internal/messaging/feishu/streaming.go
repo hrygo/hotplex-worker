@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"math/rand/v2"
 	"runtime/debug"
 	"strings"
 	"sync"
@@ -39,21 +38,6 @@ var cardRateLimitCodes = []string{"230020"}
 // cardTableLimitCodes: Feishu CardKit table/markdown limit error codes.
 // 230099 = table element limit exceeded, 11310 = card content limit.
 var cardTableLimitCodes = []string{"230099", "11310"}
-
-// placeholderIntros are random one-liner capability descriptions shown in the placeholder card.
-var placeholderIntros = []string{
-	"AI 编程助手已就位，随时待命",
-	"正在启动 AI 编程引擎...",
-	"让我来分析一下这个任务",
-	"代码审查、重构、调试，样样精通",
-	"已准备好，正在规划执行路径",
-	"正在连接 AI 大脑，请稍候",
-	"您的专属编程搭档已上线",
-}
-
-func randomPlaceholderIntro() string {
-	return placeholderIntros[rand.IntN(len(placeholderIntros))]
-}
 
 var phaseTransitions = map[CardPhase]map[CardPhase]bool{
 	PhaseIdle:           {PhaseCreating: true},
