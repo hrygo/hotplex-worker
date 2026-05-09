@@ -6,6 +6,7 @@ package agentconfig
 import (
 	"bufio"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -59,11 +60,16 @@ func Load(dir, platform, botID string) (*AgentConfigs, error) {
 			return nil
 		}
 		if total+n > MaxTotalChars {
+			origN := n
 			n = MaxTotalChars - total
 			if n <= 0 {
+				slog.Warn("agentconfig: total budget exhausted, skipping file",
+					"file", baseName, "total", total, "limit", MaxTotalChars)
 				return nil
 			}
 			content = content[:n]
+			slog.Warn("agentconfig: file truncated to fit total budget",
+				"file", baseName, "original", origN, "truncated", n, "total_after", total+n)
 		}
 		total += n
 		*target = content
@@ -145,6 +151,8 @@ func readFile(dir, name string) (string, error) {
 	}
 	s := stripFrontmatter(string(data))
 	if len(s) > MaxFileChars {
+		slog.Warn("agentconfig: file exceeds per-file limit, truncated",
+			"file", name, "original", len(s), "limit", MaxFileChars)
 		s = s[:MaxFileChars]
 	}
 	return s, nil

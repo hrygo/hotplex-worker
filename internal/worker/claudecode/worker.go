@@ -602,42 +602,38 @@ func (w *Worker) readOutput(ctx context.Context) {
 			continue
 		}
 
-		// Handle control_response before parser — it's an internal protocol response,
-		// not a standard SDK event type, so parser ignores it (returns nil).
-		var rawType struct {
-			Type string `json:"type"`
-		}
-		if json.Unmarshal([]byte(line), &rawType) == nil && rawType.Type == "control_response" {
-			var respWrap struct {
-				Response map[string]any `json:"response"`
-			}
-			if json.Unmarshal([]byte(line), &respWrap) == nil && respWrap.Response != nil && w.control != nil {
-				reqID, _ := respWrap.Response["request_id"].(string)
-				if reqID != "" {
-					// Unwrap nested payload: Claude Code returns
-					// {"response":{"request_id":"...","response":{actual data}}}
-					payload := respWrap.Response
-					if inner, ok := payload["response"].(map[string]any); ok {
-						payload = inner
-					}
-					w.control.DeliverResponse(reqID, payload)
-					continue
-				}
-			}
+		// Single parse — eliminates redundant []byte(string) conversions and
+		// json.Unmarshal calls per line (previously 2-3 per line).
+		var msg SDKMessage
+		if err := json.Unmarshal([]byte(line), &msg); err != nil {
+			w.BaseWorker.Log.Warn("claudecode: parse line", "session_id", w.sessionID, "err", err, "line", line)
+			continue
 		}
 
-		workerEvents, err := w.parser.ParseLine(line)
+		// Handle control_response — internal protocol, not a standard SDK event.
+		if msg.Type == "control_response" {
+			if len(msg.Response) > 0 && w.control != nil {
+				var respMap map[string]any
+				if json.Unmarshal(msg.Response, &respMap) == nil && respMap != nil {
+					reqID, _ := respMap["request_id"].(string)
+					if reqID != "" {
+						payload := respMap
+						if inner, ok := payload["response"].(map[string]any); ok {
+							payload = inner
+						}
+						w.control.DeliverResponse(reqID, payload)
+					}
+				}
+			}
+			continue
+		}
+
+		workerEvents, err := w.parser.ParseMessage(&msg)
 		if err != nil {
-			w.BaseWorker.Log.Warn("claudecode: parse line", "session_id", w.sessionID, "err", err, "line", line)
-			// If this is a control_request that failed to parse, deny it to prevent
-			// the Worker from blocking indefinitely waiting for a response.
-			if rawType.Type == "control_request" && w.control != nil {
-				var idHolder struct {
-					RequestID string `json:"request_id"`
-				}
-				if json.Unmarshal([]byte(line), &idHolder) == nil && idHolder.RequestID != "" {
-					_ = w.control.SendPermissionResponse(idHolder.RequestID, false, "gateway: parse error, auto-denied")
-				}
+			w.BaseWorker.Log.Warn("claudecode: parse event", "session_id", w.sessionID, "err", err, "type", msg.Type)
+			// Deny unparseable control_request to prevent Worker from blocking.
+			if msg.Type == "control_request" && w.control != nil && msg.RequestID != "" {
+				_ = w.control.SendPermissionResponse(msg.RequestID, false, "gateway: parse error, auto-denied")
 			}
 			continue
 		}
