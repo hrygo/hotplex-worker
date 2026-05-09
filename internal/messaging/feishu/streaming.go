@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math/rand/v2"
 	"runtime/debug"
 	"strings"
 	"sync"
@@ -38,6 +39,21 @@ var cardRateLimitCodes = []string{"230020"}
 // cardTableLimitCodes: Feishu CardKit table/markdown limit error codes.
 // 230099 = table element limit exceeded, 11310 = card content limit.
 var cardTableLimitCodes = []string{"230099", "11310"}
+
+// placeholderIntros are random one-liner capability descriptions shown in the placeholder card.
+var placeholderIntros = []string{
+	"AI 编程助手已就位，随时待命",
+	"正在启动 AI 编程引擎...",
+	"让我来分析一下这个任务",
+	"代码审查、重构、调试，样样精通",
+	"已准备好，正在规划执行路径",
+	"正在连接 AI 大脑，请稍候",
+	"您的专属编程搭档已上线",
+}
+
+func randomPlaceholderIntro() string {
+	return placeholderIntros[rand.IntN(len(placeholderIntros))]
+}
 
 var phaseTransitions = map[CardPhase]map[CardPhase]bool{
 	PhaseIdle:           {PhaseCreating: true},
@@ -106,6 +122,7 @@ type StreamingCardController struct {
 	branch       string
 	workDir      string
 	closeMeta    atomic.Pointer[messaging.TurnSummaryData]
+	placeholder  string // active placeholder text, cleared on first real content flush
 
 	flushDone    chan struct{}
 	flushStop    sync.Once
@@ -320,11 +337,12 @@ func (c *StreamingCardController) SendPlaceholder(ctx context.Context, chatID, c
 		return fmt.Errorf("feishu: cannot transition from %s to creating", c.getPhase())
 	}
 
-	placeholder := "🫡 收到任务, 🤔 我来看看..."
+	placeholder := "👌 收到指令。\n💡 " + randomPlaceholderIntro()
 	c.mu.Lock()
 	c.chatType = chatType
 	c.replyToMsgID = replyToMsgID
 	c.lastFlushed = placeholder
+	c.placeholder = placeholder
 	c.mu.Unlock()
 
 	// Step 1: Send card message with placeholder content.
@@ -431,7 +449,13 @@ func (c *StreamingCardController) Flush(ctx context.Context) error {
 
 	c.mu.Lock()
 	content := c.buf.String()
+	placeholder := c.placeholder
 	c.mu.Unlock()
+
+	// Don't flush empty buffer while placeholder is showing.
+	if content == "" && placeholder != "" {
+		return nil
+	}
 
 	if content == c.lastFlushed {
 		return nil
@@ -493,6 +517,7 @@ func (c *StreamingCardController) Flush(ctx context.Context) error {
 		}
 		c.mu.Lock()
 		c.lastFlushed = content
+		c.placeholder = ""
 		c.bufRunes = 0
 		c.mu.Unlock()
 	}
