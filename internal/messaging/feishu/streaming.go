@@ -91,8 +91,9 @@ type StreamingCardController struct {
 	failedFlushes   int
 
 	// Tool activity strip state.
-	toolEntries []toolEntry // ring buffer, max 2 entries
-	toolDirty   bool        // true when toolEntries changed and needs flush
+	toolEntries       []toolEntry // ring buffer, max 2 entries
+	toolDirty         bool        // true when toolEntries changed and needs flush
+	failedToolFlushes int         // consecutive flush failures; gives up after 3
 
 	chatType     string
 	replyToMsgID string
@@ -189,15 +190,6 @@ func (c *StreamingCardController) MarkAllToolsDone() {
 		c.toolEntries[i].done = true
 	}
 	c.toolDirty = true
-}
-
-// toolActivityText returns the rendered tool activity strip content.
-func (c *StreamingCardController) toolActivityText() string {
-	c.mu.Lock()
-	entries := make([]toolEntry, len(c.toolEntries))
-	copy(entries, c.toolEntries)
-	c.mu.Unlock()
-	return renderToolActivity(entries)
 }
 
 // closeTags builds text_tag_list from closeMeta (full Turn/Model/Branch).
@@ -429,10 +421,20 @@ func (c *StreamingCardController) flushToolActivity(ctx context.Context) {
 	}
 	seq := int(c.sequence.Add(1))
 	if err := c.flushCardKitElement(ctx, toolActivityElementID, text, seq); err != nil {
-		c.log.Debug("feishu: tool activity flush failed (non-fatal)", "err", err)
+		c.failedToolFlushes++
+		if c.failedToolFlushes >= 3 {
+			c.log.Warn("feishu: tool activity flush repeatedly failed, giving up",
+				"err", err, "failures", c.failedToolFlushes)
+			c.mu.Lock()
+			c.toolDirty = false
+			c.mu.Unlock()
+		} else {
+			c.log.Warn("feishu: tool activity flush failed", "err", err)
+		}
 	} else {
 		c.mu.Lock()
 		c.toolDirty = false
+		c.failedToolFlushes = 0
 		c.mu.Unlock()
 	}
 }
@@ -622,7 +624,11 @@ func (c *StreamingCardController) buildFinalElements(body string) []map[string]a
 	elements := []map[string]any{
 		{"tag": "markdown", "element_id": streamingElementID, "content": body},
 	}
-	if toolContent := c.toolActivityText(); toolContent != "" {
+	c.mu.Lock()
+	entries := make([]toolEntry, len(c.toolEntries))
+	copy(entries, c.toolEntries)
+	c.mu.Unlock()
+	if toolContent := renderToolActivity(entries); toolContent != "" {
 		elements = append(elements, map[string]any{
 			"tag": "markdown", "element_id": toolActivityElementID, "content": toolContent,
 		})
@@ -888,7 +894,8 @@ func (c *StreamingCardController) flushIMPatchWithConfig(ctx context.Context, co
 }
 
 func (c *StreamingCardController) doFlushIMPatch(ctx context.Context, header cardHeader, config map[string]any, content string, final bool) error {
-	contentJSON := buildCard(header, config, []map[string]any{{"tag": "markdown", "content": content}})
+	elements := c.buildFinalElements(content)
+	contentJSON := buildCard(header, config, elements)
 
 	body := larkim.NewPatchMessageReqBodyBuilder().
 		Content(contentJSON).
