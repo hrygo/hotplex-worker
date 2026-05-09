@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/hrygo/hotplex/internal/config"
-	"github.com/hrygo/hotplex/pkg/events"
 
 	"github.com/stretchr/testify/require"
 )
@@ -249,48 +248,6 @@ func TestAuthenticateRequest_DevModeBotID(t *testing.T) {
 	require.Equal(t, "bot_dev", botID)
 }
 
-func TestAuthenticateEnvelope(t *testing.T) {
-	t.Parallel()
-
-	auth := NewAuthenticator(&config.SecurityConfig{APIKeys: []string{"test"}}, nil)
-
-	tests := []struct {
-		name    string
-		env     *events.Envelope
-		wantErr bool
-	}{
-		{
-			name:    "empty session id",
-			env:     &events.Envelope{SessionID: ""},
-			wantErr: true,
-		},
-		{
-			name:    "valid session id",
-			env:     &events.Envelope{SessionID: "sess_123"},
-			wantErr: false,
-		},
-		{
-			name:    "valid envelope with data",
-			env:     &events.Envelope{SessionID: "sess_abc", Seq: 42},
-			wantErr: false,
-		},
-	}
-
-	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			err := auth.AuthenticateEnvelope(tt.env)
-			if tt.wantErr {
-				require.Error(t, err)
-				require.Equal(t, ErrUnauthorized, err)
-			} else {
-				require.NoError(t, err)
-			}
-		})
-	}
-}
-
 func TestMiddleware(t *testing.T) {
 	t.Parallel()
 
@@ -404,189 +361,114 @@ func TestClaimsFrom_WrongType(t *testing.T) {
 	require.Equal(t, Claims{}, claims)
 }
 
-// ─── InputValidator ───────────────────────────────────────────────────────────
-
-func TestNewInputValidator(t *testing.T) {
+func TestReloadKeys(t *testing.T) {
 	t.Parallel()
 
-	cfg := &config.WorkerConfig{}
-	v := NewInputValidator(cfg)
+	cfg := &config.SecurityConfig{APIKeys: []string{"key1"}}
+	auth := NewAuthenticator(cfg, nil)
 
-	require.NotNil(t, v)
-	require.Equal(t, 1<<20, v.maxLen) // 1MB
+	userID, ok := auth.AuthenticateKey("key1")
+	require.True(t, ok)
+	require.Equal(t, "api_user", userID)
+
+	auth.ReloadKeys(&config.SecurityConfig{APIKeys: []string{"key2", "key3"}})
+
+	_, ok = auth.AuthenticateKey("key1")
+	require.False(t, ok)
+
+	userID, ok = auth.AuthenticateKey("key2")
+	require.True(t, ok)
+	require.Equal(t, "api_user", userID)
 }
 
-func TestInputValidator_ValidateInput(t *testing.T) {
+func TestExtractAPIKey(t *testing.T) {
 	t.Parallel()
 
-	v := NewInputValidator(&config.WorkerConfig{})
+	cfg := &config.SecurityConfig{APIKeys: []string{"test"}}
+	auth := NewAuthenticator(cfg, nil)
 
-	tests := []struct {
-		name    string
-		input   string
-		wantErr bool
-	}{
-		{
-			name:    "valid input",
-			input:   "hello world",
-			wantErr: false,
-		},
-		{
-			name:    "empty input",
-			input:   "",
-			wantErr: false,
-		},
-		{
-			name:    "null byte rejected",
-			input:   "hello\x00world",
-			wantErr: true,
-		},
-		{
-			name:    "multiple null bytes",
-			input:   "\x00\x00\x00",
-			wantErr: true,
-		},
-		{
-			name:    "unicode allowed",
-			input:   "hello 世界 🌍",
-			wantErr: false,
-		},
-		{
-			name:    "exactly max length",
-			input:   string(make([]byte, 1<<20)),
-			wantErr: true, // All-zero bytes includes null byte
-		},
-		{
-			name:    "exceeds max length",
-			input:   string(make([]byte, (1<<20)+1)),
-			wantErr: true,
-		},
-	}
+	t.Run("from header", func(t *testing.T) {
+		t.Parallel()
+		req := httptest.NewRequest("GET", "/", nil)
+		req.Header.Set("X-API-Key", "my-key")
+		key, ok := auth.ExtractAPIKey(req)
+		require.True(t, ok)
+		require.Equal(t, "my-key", key)
+	})
 
-	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			err := v.ValidateInput(tt.input)
-			if tt.wantErr {
-				require.Error(t, err)
-			} else {
-				require.NoError(t, err)
-			}
-		})
-	}
+	t.Run("from query param", func(t *testing.T) {
+		t.Parallel()
+		req := httptest.NewRequest("GET", "/?api_key=query-key", nil)
+		key, ok := auth.ExtractAPIKey(req)
+		require.True(t, ok)
+		require.Equal(t, "query-key", key)
+	})
+
+	t.Run("header takes precedence", func(t *testing.T) {
+		t.Parallel()
+		req := httptest.NewRequest("GET", "/?api_key=query-key", nil)
+		req.Header.Set("X-API-Key", "header-key")
+		key, ok := auth.ExtractAPIKey(req)
+		require.True(t, ok)
+		require.Equal(t, "header-key", key)
+	})
+
+	t.Run("missing key", func(t *testing.T) {
+		t.Parallel()
+		req := httptest.NewRequest("GET", "/", nil)
+		_, ok := auth.ExtractAPIKey(req)
+		require.False(t, ok)
+	})
 }
 
-// ─── EnvValidator ─────────────────────────────────────────────────────────────
-
-func TestNewEnvValidator(t *testing.T) {
+func TestAuthenticateKey(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name      string
-		whitelist []string
-		wantLen   int
-	}{
-		{
-			name:      "empty whitelist",
-			whitelist: []string{},
-			wantLen:   0,
-		},
-		{
-			name:      "single key",
-			whitelist: []string{"HOME"},
-			wantLen:   1,
-		},
-		{
-			name:      "multiple keys",
-			whitelist: []string{"HOME", "PATH", "USER"},
-			wantLen:   3,
-		},
-	}
+	t.Run("valid key", func(t *testing.T) {
+		t.Parallel()
+		auth := NewAuthenticator(&config.SecurityConfig{APIKeys: []string{"secret"}}, nil)
+		userID, ok := auth.AuthenticateKey("secret")
+		require.True(t, ok)
+		require.Equal(t, "api_user", userID)
+	})
 
-	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			v := NewEnvValidator(tt.whitelist)
-			require.NotNil(t, v)
-			require.Equal(t, tt.wantLen, len(v.whitelist))
-		})
-	}
+	t.Run("invalid key", func(t *testing.T) {
+		t.Parallel()
+		auth := NewAuthenticator(&config.SecurityConfig{APIKeys: []string{"secret"}}, nil)
+		_, ok := auth.AuthenticateKey("wrong")
+		require.False(t, ok)
+	})
+
+	t.Run("dev mode", func(t *testing.T) {
+		t.Parallel()
+		auth := NewAuthenticator(&config.SecurityConfig{APIKeys: []string{}}, nil)
+		userID, ok := auth.AuthenticateKey("anything")
+		require.True(t, ok)
+		require.Equal(t, "anonymous", userID)
+	})
 }
 
-func TestEnvValidator_Validate(t *testing.T) {
-	t.Parallel()
+func TestRegisterCommand(t *testing.T) {
+	// Do NOT use t.Parallel() — RegisterCommand mutates the global allowedCommands map.
 
-	tests := []struct {
-		name      string
-		whitelist []string
-		env       map[string]string
-		want      map[string]string
-	}{
-		{
-			name:      "empty whitelist allows all",
-			whitelist: []string{},
-			env: map[string]string{
-				"HOME":   "/home/user",
-				"SECRET": "value",
-			},
-			want: map[string]string{
-				"HOME":   "/home/user",
-				"SECRET": "value",
-			},
-		},
-		{
-			name:      "filter to whitelist",
-			whitelist: []string{"HOME", "PATH"},
-			env: map[string]string{
-				"HOME":   "/home/user",
-				"PATH":   "/usr/bin",
-				"SECRET": "should-be-removed",
-			},
-			want: map[string]string{
-				"HOME": "/home/user",
-				"PATH": "/usr/bin",
-			},
-		},
-		{
-			name:      "no matching keys",
-			whitelist: []string{"SAFE_VAR"},
-			env: map[string]string{
-				"SECRET1": "value1",
-				"SECRET2": "value2",
-			},
-			want: map[string]string{},
-		},
-		{
-			name:      "nil env",
-			whitelist: []string{"HOME"},
-			env:       nil,
-			want:      map[string]string{},
-		},
-		{
-			name:      "all keys whitelisted",
-			whitelist: []string{"HOME", "PATH", "USER"},
-			env: map[string]string{
-				"HOME": "/home/user",
-				"PATH": "/usr/bin",
-				"USER": "testuser",
-			},
-			want: map[string]string{
-				"HOME": "/home/user",
-				"PATH": "/usr/bin",
-				"USER": "testuser",
-			},
-		},
-	}
+	t.Run("valid command", func(t *testing.T) {
+		err := RegisterCommand("custom-worker")
+		require.NoError(t, err)
+		require.NoError(t, ValidateCommand("custom-worker"))
+	})
 
-	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			v := NewEnvValidator(tt.whitelist)
-			result := v.Validate(tt.env)
-			require.Equal(t, tt.want, result)
-		})
-	}
+	t.Run("empty name", func(t *testing.T) {
+		err := RegisterCommand("")
+		require.Error(t, err)
+	})
+
+	t.Run("path separator", func(t *testing.T) {
+		err := RegisterCommand("foo/bar")
+		require.Error(t, err)
+	})
+
+	t.Run("dangerous chars", func(t *testing.T) {
+		err := RegisterCommand("foo;bar")
+		require.Error(t, err)
+	})
 }

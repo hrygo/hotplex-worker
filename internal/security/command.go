@@ -5,15 +5,18 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"sync"
 )
 
-// AllowedCommands is the whitelist of permitted worker binary names.
-// Only these commands may be executed by the gateway.
-var AllowedCommands = map[string]bool{
-	"claude":   true,
-	"opencode": true,
-	// Add other allowed worker binaries here.
-}
+// allowedCommands is the whitelist of permitted worker binary names.
+// Protected by commandsMu for concurrent access from worker init and validation.
+var (
+	commandsMu      sync.RWMutex
+	allowedCommands = map[string]bool{
+		"claude":   true,
+		"opencode": true,
+	}
+)
 
 // RegisterCommand adds a binary name to the allowed commands whitelist.
 // Validates the name for path separators, dangerous characters, and empty strings.
@@ -24,10 +27,12 @@ func RegisterCommand(name string) error {
 	if strings.Contains(name, "/") || strings.Contains(name, "\\") {
 		return fmt.Errorf("security: command name %q must not contain path separators", name)
 	}
-	if ContainsDangerousChars(name) {
+	if containsDangerousChars(name) {
 		return fmt.Errorf("security: command name %q contains dangerous characters", name)
 	}
-	AllowedCommands[name] = true
+	commandsMu.Lock()
+	allowedCommands[name] = true
+	commandsMu.Unlock()
 	return nil
 }
 
@@ -37,7 +42,10 @@ func ValidateCommand(name string) error {
 	if name == "" {
 		return fmt.Errorf("security: empty command name")
 	}
-	if !AllowedCommands[name] {
+	commandsMu.RLock()
+	ok := allowedCommands[name]
+	commandsMu.RUnlock()
+	if !ok {
 		return fmt.Errorf("security: command %q not in whitelist", name)
 	}
 	return nil
@@ -51,18 +59,18 @@ func BuildSafeCommand(name string, args ...string) (*exec.Cmd, error) {
 	return exec.Command(name, args...), nil
 }
 
-// DangerousChars contains characters that are unsafe in exec arguments
+// dangerousChars contains characters that are unsafe in exec arguments
 // even when not using a shell. These indicate potential injection attempts.
-var DangerousChars = []string{
+var dangerousChars = []string{
 	";", "|", "&", "`", "$", "\\", "\n", "\r",
 	"(", ")", "{", "}", "[", "]", "<", ">",
 	"!", "#", "~", "*", "?", " ", "\t",
 }
 
-// ContainsDangerousChars reports whether the input contains shell/metacharacters
+// containsDangerousChars reports whether the input contains shell/metacharacters
 // that have no valid use in a non-shell exec argument.
-func ContainsDangerousChars(input string) bool {
-	for _, ch := range DangerousChars {
+func containsDangerousChars(input string) bool {
+	for _, ch := range dangerousChars {
 		if strings.Contains(input, ch) {
 			return true
 		}
