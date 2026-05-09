@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -395,7 +396,8 @@ func (s *SQLiteStore) QueryTurnStats(ctx context.Context, sessionID string) (*Tu
 		if err := rows.Scan(new(string), &ts.Seq, &role, &success, &ts.Source,
 			&toolsJSON, &toolCount, &ts.TokensIn, &ts.TokensOut,
 			&ts.DurationMs, &ts.CostUSD, &ts.Model, &ts.CreatedAt); err != nil {
-			return nil, fmt.Errorf("eventstore: scan turn stat: %w", err)
+			slog.Warn("eventstore: scan turn stats row", "session_id", sessionID, "error", err)
+			continue
 		}
 		ts.Success = success.Valid && success.Int64 == 1
 		stats.TotalTurns++
