@@ -6,6 +6,7 @@
  */
 
 import { EventEmitter } from 'eventemitter3';
+import { logger } from '@/lib/logger';
 import {
   EventKind,
   SessionState,
@@ -265,7 +266,7 @@ export class BrowserHotPlexClient extends EventEmitter<BrowserClientEvents> {
       // Handle handshake-level errors
       if (ackData.error || ackData.code) {
         const errorMsg = ackData.error || `Handshake failed with code: ${ackData.code}`;
-        console.error('BrowserHotPlexClient: handshake error', errorMsg);
+        logger.error('BrowserClient', 'Handshake error', { message: errorMsg });
 
         if (ackData.code === ErrorCode.SessionNotFound) {
           // Session was deleted on server — retry with the original session ID.
@@ -328,7 +329,7 @@ export class BrowserHotPlexClient extends EventEmitter<BrowserClientEvents> {
       case EventKind.Error:
         const errData = event.data as ErrorData;
         if (!event.data || Object.keys(event.data).length === 0) {
-          console.warn('BrowserHotPlexClient: received empty error data', env);
+          logger.warn('BrowserClient', 'Received empty error data', { envId: env?.id });
         }
         
         // Fatal errors shouldn't trigger reconnect
