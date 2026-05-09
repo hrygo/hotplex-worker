@@ -5,7 +5,6 @@ import dev.hotplex.protocol.*;
 import dev.hotplex.security.JwtTokenGenerator;
 
 import java.util.Scanner;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -17,7 +16,8 @@ import java.util.concurrent.TimeUnit;
  * - Event handling
  * <p>
  * Usage:
- * mvn compile && mvn exec:java -Dexec.mainClass="dev.hotplex.example.InteractiveExample"
+ * mvn compile && mvn exec:java
+ * -Dexec.mainClass="dev.hotplex.example.InteractiveExample"
  * <p>
  * Environment Variables:
  * HOTPLEX_GATEWAY_URL - Gateway URL (default: ws://localhost:8888)
