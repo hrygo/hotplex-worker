@@ -70,6 +70,10 @@ type Watcher struct {
 	mu     sync.Mutex
 	closed bool
 
+	// stopCh is closed by Close() to signal the run() goroutine to exit,
+	// preventing a busy-loop when fsnotify channels are closed without ctx cancellation.
+	stopCh chan struct{}
+
 	// callbackSem limits concurrent onChange/onStatic callback goroutines
 	// to prevent unbounded goroutine spawning under rapid config changes.
 	callbackSem chan struct{}
@@ -117,6 +121,7 @@ func NewWatcher(log *slog.Logger, path string, sp SecretsProvider, store *Config
 		audit:         make([]ConfigChange, 0, 64),
 		maxAuditLen:   256,
 		maxHistoryLen: 64,
+		stopCh:        make(chan struct{}),
 	}
 }
 
@@ -153,6 +158,8 @@ func (w *Watcher) run(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
+			return
+		case <-w.stopCh:
 			return
 		case err := <-w.viper.Errors:
 			if err != nil {
@@ -435,6 +442,8 @@ func (w *Watcher) Close() error {
 	}
 	w.closed = true
 	w.mu.Unlock()
+
+	close(w.stopCh)
 
 	if w.viper != nil {
 		return w.viper.Close()
