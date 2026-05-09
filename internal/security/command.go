@@ -78,11 +78,6 @@ func containsDangerousChars(input string) bool {
 	return false
 }
 
-// ContainsDangerousChars is the exported wrapper for containsDangerousChars.
-func ContainsDangerousChars(input string) bool {
-	return containsDangerousChars(input)
-}
-
 // SanitizeArg removes non-printable and control characters from an argument.
 // This is a defense-in-depth measure; os/exec is already safe without it.
 func SanitizeArg(input string) string {

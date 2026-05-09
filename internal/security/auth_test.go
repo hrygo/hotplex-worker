@@ -449,29 +449,25 @@ func TestAuthenticateKey(t *testing.T) {
 }
 
 func TestRegisterCommand(t *testing.T) {
-	t.Parallel()
+	// Do NOT use t.Parallel() — RegisterCommand mutates the global allowedCommands map.
 
 	t.Run("valid command", func(t *testing.T) {
-		t.Parallel()
 		err := RegisterCommand("custom-worker")
 		require.NoError(t, err)
 		require.NoError(t, ValidateCommand("custom-worker"))
 	})
 
 	t.Run("empty name", func(t *testing.T) {
-		t.Parallel()
 		err := RegisterCommand("")
 		require.Error(t, err)
 	})
 
 	t.Run("path separator", func(t *testing.T) {
-		t.Parallel()
 		err := RegisterCommand("foo/bar")
 		require.Error(t, err)
 	})
 
 	t.Run("dangerous chars", func(t *testing.T) {
-		t.Parallel()
 		err := RegisterCommand("foo;bar")
 		require.Error(t, err)
 	})
