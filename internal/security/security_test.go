@@ -121,7 +121,7 @@ func TestContainsDangerousChars(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := ContainsDangerousChars(tt.input)
+			got := containsDangerousChars(tt.input)
 			require.Equal(t, tt.want, got)
 		})
 	}
