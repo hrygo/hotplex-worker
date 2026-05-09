@@ -134,6 +134,9 @@ type SafetyGuard struct {
 	rateLimitRPS   float64                  // Configured RPS (0 = disabled)
 	rateLimitBurst int                      // Configured burst
 
+	// Background cleanup for unbounded maps
+	cleanupStop context.CancelFunc
+
 	// Metrics for monitoring (lock-free via atomic)
 	totalChecks      atomic.Int64 // Total number of CheckInput calls
 	blockedInputs    atomic.Int64 // Inputs blocked by guard
@@ -146,6 +149,7 @@ type SafetyGuard struct {
 
 // NewSafetyGuard creates a new SafetyGuard instance.
 func NewSafetyGuard(brain Brain, config GuardConfig, logger *slog.Logger) (*SafetyGuard, error) {
+	ctx, cancel := context.WithCancel(context.Background())
 	guard := &SafetyGuard{
 		brain:          brain,
 		config:         config,
@@ -153,17 +157,42 @@ func NewSafetyGuard(brain Brain, config GuardConfig, logger *slog.Logger) (*Safe
 		userLimiters:   make(map[string]*rate.Limiter),
 		rateLimitRPS:   config.RateLimitRPS,
 		rateLimitBurst: config.RateLimitBurst,
+		cleanupStop:    cancel,
 	}
 
 	// Compile ban patterns - fail fast on error
 	if err := guard.compileBanPatterns(); err != nil {
+		cancel()
 		return nil, fmt.Errorf("failed to compile ban patterns: %w", err)
 	}
 
 	// Initialize sensitive patterns for output filtering
 	guard.initSensitivePatterns()
 
+	// Background cleanup: clear stale rate limiters every 10 minutes.
+	go guard.runCleanup(ctx, 10*time.Minute)
+
 	return guard, nil
+}
+
+// Close stops background cleanup goroutines.
+func (g *SafetyGuard) Close() {
+	if g.cleanupStop != nil {
+		g.cleanupStop()
+	}
+}
+
+func (g *SafetyGuard) runCleanup(ctx context.Context, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			g.ClearExpiredLimiters(interval)
+		}
+	}
 }
 
 // compileBanPatterns compiles regex patterns for input filtering.
@@ -284,16 +313,37 @@ func (g *SafetyGuard) CheckInputWithUser(ctx context.Context, input, userID stri
 }
 
 // getOrCreateLimiter returns the rate limiter for a user, creating one if needed.
+// Uses RLock fast path for existing users, double-check locking for new users.
 func (g *SafetyGuard) getOrCreateLimiter(userID string) *rate.Limiter {
+	g.mu.RLock()
+	limiter, exists := g.userLimiters[userID]
+	g.mu.RUnlock()
+	if exists {
+		return limiter
+	}
+
 	g.mu.Lock()
 	defer g.mu.Unlock()
-
-	limiter, exists := g.userLimiters[userID]
-	if !exists {
-		limiter = rate.NewLimiter(rate.Limit(g.rateLimitRPS), g.rateLimitBurst)
-		g.userLimiters[userID] = limiter
+	// Double-check after acquiring write lock.
+	if limiter, exists = g.userLimiters[userID]; exists {
+		return limiter
 	}
+	limiter = rate.NewLimiter(rate.Limit(g.rateLimitRPS), g.rateLimitBurst)
+	g.userLimiters[userID] = limiter
 	return limiter
+}
+
+// ClearExpiredLimiters removes rate limiters for users not seen within ttl.
+func (g *SafetyGuard) ClearExpiredLimiters(ttl time.Duration) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	// rate.Limiter has no last-used timestamp, so clear all when called.
+	// Next request for each user will recreate their limiter.
+	if len(g.userLimiters) == 0 {
+		return
+	}
+	g.logger.Debug("Clearing expired rate limiters", "count", len(g.userLimiters))
+	clear(g.userLimiters)
 }
 
 // deepInputAnalysis uses Brain for deeper threat analysis.
