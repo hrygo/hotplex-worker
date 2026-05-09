@@ -69,6 +69,15 @@ func (a *AdminAPI) HandleHealth(w http.ResponseWriter, r *http.Request) {
 		status = "degraded"
 	}
 
+	dbCheck := map[string]any{
+		"status": map[bool]string{true: "healthy", false: "unhealthy"}[dbHealthy],
+		"type":   "sqlite",
+		"path":   cfg.DB.Path,
+	}
+	if dbErr != "" {
+		dbCheck["error"] = dbErr
+	}
+
 	respondJSON(w, map[string]any{
 		"status": status,
 		"checks": map[string]any{
@@ -76,12 +85,7 @@ func (a *AdminAPI) HandleHealth(w http.ResponseWriter, r *http.Request) {
 				"status":         "healthy",
 				"uptime_seconds": int(time.Since(startTime).Seconds()),
 			},
-			"database": map[string]any{
-				"status": map[bool]string{true: "healthy", false: "unhealthy"}[dbHealthy],
-				"type":   "sqlite",
-				"path":   cfg.DB.Path,
-				"error":  dbErr,
-			},
+			"database": dbCheck,
 			"workers": map[string]any{
 				"status": "healthy",
 			},
