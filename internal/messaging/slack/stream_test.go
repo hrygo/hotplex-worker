@@ -192,11 +192,9 @@ func TestAC25_CloseTriggersFallbackOnStreamExpired(t *testing.T) {
 
 	w.streamExpired = false
 	w.failedFlushChunks = []string{"chunk1", "chunk2"}
-	w.bytesWritten = 100
-	w.bytesFlushed = 50
 
-	integrityOK := len(w.failedFlushChunks) == 0 && w.bytesWritten == w.bytesFlushed
-	require.False(t, integrityOK, "AC-2.5: Integrity check should fail with incomplete flush")
+	integrityOK := len(w.failedFlushChunks) == 0
+	require.False(t, integrityOK, "AC-2.5: Integrity check should fail with failed chunks")
 	require.True(t, len(w.failedFlushChunks) > 0 || w.streamExpired, "AC-2.5: Fallback condition should be met")
 }
 
@@ -292,7 +290,7 @@ func TestDeadCodeRemoved(t *testing.T) {
 }
 
 func TestStreamRotationTTL(t *testing.T) {
-	require.Equal(t, 500*time.Second, StreamRotationTTL, "rotation TTL should be 500 seconds (aligned with Feishu)")
+	require.Equal(t, 240*time.Second, StreamRotationTTL, "rotation TTL should be 240 seconds (safe margin under ~300s Slack limit)")
 	require.Less(t, StreamRotationTTL, StreamTTL,
 		"rotation TTL must be less than server TTL")
 }
