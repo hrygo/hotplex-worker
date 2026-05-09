@@ -45,6 +45,8 @@ export const allowedTools: string[] = rawAllowedTools
 
 // -- Derived -----------------------------------------------------------
 
+export type ConnectionState = 'connected' | 'connecting' | 'disconnected';
+
 export function httpBase(): string {
   return (
     wsUrl

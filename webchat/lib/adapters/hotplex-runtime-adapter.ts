@@ -10,7 +10,7 @@ import type { ExternalStoreAdapter, ThreadMessageLike, AppendMessage } from '@as
 import { BrowserHotPlexClient } from '@/lib/ai-sdk-transport';
 import type { InitConfig, ContextUsageData, PermissionRequestData, QuestionRequestData, ElicitationRequestData } from '@/lib/ai-sdk-transport/client/types';
 import { WorkerStdioCommand } from '@/lib/ai-sdk-transport/client/constants';
-import { wsUrl, workerType, apiKey, workDir, allowedTools } from '@/lib/config';
+import { wsUrl, workerType, apiKey, workDir, allowedTools, type ConnectionState } from '@/lib/config';
 import { useMetrics } from '@/lib/hooks/useMetrics';
 import { getSessionHistory, type ConversationRecord } from '@/lib/api/sessions';
 import { conversationTurnsToMessages } from '@/lib/utils/turn-replay';
@@ -52,6 +52,14 @@ export interface UseHotPlexRuntimeConfig {
   /** Custom welcome suggestions shown when thread is empty. */
   suggestions?: readonly ThreadSuggestion[];
 }
+
+const DEFAULT_SUGGESTIONS: readonly ThreadSuggestion[] = [
+  { title: '帮我写一个 React 组件', label: '代码', prompt: '帮我写一个 React 组件' },
+  { title: '解释这段代码的逻辑', label: '学习', prompt: '解释这段代码的逻辑' },
+  { title: '帮我调试这个错误', label: '调试', prompt: '帮我调试这个错误' },
+  { title: '重构这段代码让它更简洁', label: '重构', prompt: '重构这段代码让它更简洁' },
+  { title: '解释系统架构设计', label: '架构', prompt: '解释系统架构设计' },
+];
 
 // ============================================================================
 // Message Converter
@@ -170,7 +178,7 @@ export function useHotPlexRuntime({
   const [messages, setMessages] = useState<HotPlexMessage[]>([]);
   const [isRunning, setIsRunning] = useState(false);
   const [historyHasMore, setHistoryHasMore] = useState(true);
-  const [connectionState, setConnectionState] = useState<'connected' | 'connecting' | 'disconnected'>('disconnected');
+  const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected');
 
   // One-time cleanup of orphaned localStorage keys from removed message cache
   useEffect(() => {
@@ -189,14 +197,7 @@ export function useHotPlexRuntime({
   sessionIdRef.current = sessionId;
 
   // Welcome suggestions — shown when thread is empty (use prop or default list)
-  const defaultSuggestions: readonly ThreadSuggestion[] = [
-    { title: '帮我写一个 React 组件', label: '代码', prompt: '帮我写一个 React 组件' },
-    { title: '解释这段代码的逻辑', label: '学习', prompt: '解释这段代码的逻辑' },
-    { title: '帮我调试这个错误', label: '调试', prompt: '帮我调试这个错误' },
-    { title: '重构这段代码让它更简洁', label: '重构', prompt: '重构这段代码让它更简洁' },
-    { title: '解释系统架构设计', label: '架构', prompt: '解释系统架构设计' },
-  ];
-  const suggestions: readonly ThreadSuggestion[] = configSuggestions ?? defaultSuggestions;
+  const suggestions: readonly ThreadSuggestion[] = configSuggestions ?? DEFAULT_SUGGESTIONS;
 
   // Stable ref for skills callback — avoids adding to useEffect deps
   const onSkillsChangeRef = useRef(onSkillsChange);
@@ -751,7 +752,6 @@ export function useHotPlexRuntime({
       interactionMapRef.current.clear();
       client.disconnect();
       clientRef.current = null;
-      setConnectionState('disconnected');
     };
   }, [sessionId]);
 
@@ -978,16 +978,16 @@ export function useHotPlexRuntime({
     edit: true,
   }), []);
 
-  // Stable extras reference — only changes when metrics, history, or connection state change
+  // Stable extras reference — only changes when metrics or history state change
   const extras = useMemo(() => ({
     metrics: sessionMetrics,
     hasMore: historyHasMore,
-    connectionState,
     onLoadHistory: handleLoadHistory,
     onInteractionRespond: handleInteractionRespond,
-  }), [sessionMetrics, historyHasMore, connectionState, handleLoadHistory, handleInteractionRespond]);
+  }), [sessionMetrics, historyHasMore, handleLoadHistory, handleInteractionRespond]);
 
   // Return ExternalStoreAdapter — memoized to prevent unnecessary setAdapter calls
+  // connectionState is returned separately to avoid invalidating the adapter memo on reconnect.
   return useMemo(() => ({
     // State
     isRunning,
@@ -1008,7 +1008,10 @@ export function useHotPlexRuntime({
 
     // Metrics — exposed for session dashboard (spec §4.5)
     extras,
-  } as ExternalStoreAdapter<HotPlexMessage>), [
+
+    // Connection state — separate from adapter to avoid memo churn
+    connectionState,
+  } as ExternalStoreAdapter<HotPlexMessage> & { connectionState: ConnectionState }), [
     isRunning, adapterMessages, threadMessages, suggestions,
     handleSetMessages, handleNew, handleCancel, capabilities, extras,
   ]);

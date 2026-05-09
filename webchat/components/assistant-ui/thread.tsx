@@ -24,6 +24,7 @@ import { ListTool } from "./tools/ListTool";
 import { TodoTool } from "./tools/TodoTool";
 import { AgentTool } from "./tools/AgentTool";
 import type { ContextUsageData, TurnSessionStats } from "@/lib/ai-sdk-transport/client/types";
+import type { ConnectionState } from "@/lib/config";
 
 // assistant-ui ThreadMessage doesn't expose status/metadata in public types.
 // Centralize the extension access here to avoid scattered as-any casts.
@@ -154,6 +155,7 @@ function MessageActions({ message, isUser }: { message: any, isUser?: boolean })
 
 const AssistantMessage = memo(function AssistantMessage({ message, onInteractionRespond }: { message: any; onInteractionRespond?: (toolCallId: string, allowed: boolean) => void }) {
   const [expandedTools, setExpandedTools] = useState<Record<string, boolean>>({});
+  const ext = getExt(message);
 
   return (
     <motion.div className="group msg-assistant flex items-start gap-4 mb-8" variants={messageVariants} initial="hidden" animate="visible">
@@ -170,13 +172,13 @@ const AssistantMessage = memo(function AssistantMessage({ message, onInteraction
             {({ part }) => {
               const p = part as Record<string, any>;
               if (!p || !p.type) return null;
-              const isStreaming = getExt(message).status?.type === "running";
+              const isStreaming = ext.status?.type === "running";
 
               if (p.type === "reasoning") return <ReasoningBlock text={p.text || p.reasoning || ""} />;
               if (p.type === "text") return <div className={`prose-hotplex ${isStreaming ? "streaming-cursor" : ""}`}><MarkdownText text={p.text} /></div>;
               
               if (p.type === "tool-call") {
-                const parts = getExt(message).content || [];
+                const parts = ext.content || [];
                 const partIndex = parts.indexOf(p);
                 const isLastPart = partIndex === parts.length - 1;
                 const isComplete = p.status?.type === "complete" || p.status?.type === "error";
@@ -257,11 +259,11 @@ const AssistantMessage = memo(function AssistantMessage({ message, onInteraction
               return null;
             }}
           </MessagePrimitive.Parts>
-          {getExt(message).metadata?.contextUsage && (
-            <ContextUsageCard data={getExt(message).metadata!.contextUsage!} />
+          {ext.metadata?.contextUsage && (
+            <ContextUsageCard data={ext.metadata.contextUsage} />
           )}
-          {getExt(message).metadata?.turnSummary && (
-            <TurnSummaryCard data={getExt(message).metadata!.turnSummary!} />
+          {ext.metadata?.turnSummary && (
+            <TurnSummaryCard data={ext.metadata.turnSummary} />
           )}
         </div>
         <MessageActions message={message} />
@@ -398,19 +400,19 @@ function WelcomeScreen({ suggestions, onSuggestionClick }: { suggestions?: reado
 interface ThreadProps {
   skills?: string[];
   hasMore?: boolean;
-  connectionState?: 'connected' | 'connecting' | 'disconnected';
+  connectionState?: ConnectionState;
   onLoadHistory?: () => Promise<{ hasMore: boolean }>;
   onInteractionRespond?: (toolCallId: string, allowed: boolean) => void;
   suggestions?: readonly { title: string; label: string; prompt: string }[];
 }
 
-const connLabel: Record<string, string> = {
+const connLabel: Record<ConnectionState, string> = {
   connected: 'Connected',
   connecting: 'Connecting...',
   disconnected: 'Disconnected',
 };
 
-const connDot: Record<string, string> = {
+const connDot: Record<ConnectionState, string> = {
   connected: 'bg-emerald-400',
   connecting: 'bg-amber-400 animate-pulse',
   disconnected: 'bg-red-400',
