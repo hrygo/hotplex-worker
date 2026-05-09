@@ -11,7 +11,6 @@ import (
 
 	"github.com/slack-go/slack"
 
-	"github.com/hrygo/hotplex/internal/messaging/toolfmt"
 	"github.com/hrygo/hotplex/pkg/events"
 )
 
@@ -237,30 +236,6 @@ func (m *StatusManager) setEmoji(ctx context.Context, channelID, threadTS string
 		return err
 	}
 	return nil
-}
-
-// aepEventToStatus maps an AEP envelope to a status type and text.
-func aepEventToStatus(env *events.Envelope) (StatusType, string) {
-	switch env.Event.Type {
-	case events.ToolCall:
-		name, input := extractCallNameInput(env)
-		text := toolfmt.FormatCall(name, input)
-		if text == "" {
-			text = name
-		}
-		return StatusToolUse, truncateWithSuffix(text, statusTextLimit)
-	case events.ToolResult:
-		output, errMsg := extractResultFields(env)
-		text := toolfmt.FormatResult("", output, errMsg)
-		if text == "" {
-			text = "Tool completed"
-		}
-		return StatusToolResult, truncateWithSuffix(shortenPaths(text), statusTextLimit)
-	case events.MessageDelta:
-		return StatusAnswering, "Composing response..."
-	default:
-		return "", ""
-	}
 }
 
 // extractCallNameInput extracts (name, input) from a tool_call envelope.
