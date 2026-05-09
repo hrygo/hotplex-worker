@@ -974,7 +974,7 @@ func TestPropagateMessagingDefaults(t *testing.T) {
 			require.Equal(t, "claude_code", p.WorkerType)
 			require.Equal(t, "local", p.Provider)
 			require.Equal(t, "edge+moss", p.TTSProvider)
-			require.True(t, p.TTSEnabled) //nolint:staticcheck // QF1008: qualified to distinguish from MessagingPlatformConfig.Enabled
+			require.True(t, p.TTSEnabled)
 			require.Equal(t, "zh-CN-XiaoxiaoNeural", p.Voice)
 			require.Equal(t, 150, p.MaxChars)
 		}
@@ -1018,7 +1018,7 @@ func TestPropagateMessagingDefaults(t *testing.T) {
 	t.Run("does not override bools when messaging enabled is true", func(t *testing.T) {
 		t.Parallel()
 		cfg := Default()
-		cfg.Messaging.TTSEnabled = true //nolint:staticcheck // QF1008
+		cfg.Messaging.TTSEnabled = true
 		cfg.Messaging.Slack.MessagingPlatformConfig = MessagingPlatformConfig{}
 		propagateMessagingDefaults(cfg)
 		require.True(t, cfg.Messaging.Slack.TTSEnabled)
@@ -1027,7 +1027,7 @@ func TestPropagateMessagingDefaults(t *testing.T) {
 	t.Run("does not set bools when messaging enabled is false", func(t *testing.T) {
 		t.Parallel()
 		cfg := Default()
-		cfg.Messaging.TTSEnabled = false //nolint:staticcheck // QF1008
+		cfg.Messaging.TTSEnabled = false
 		cfg.Messaging.Slack.MessagingPlatformConfig = MessagingPlatformConfig{}
 		propagateMessagingDefaults(cfg)
 		require.False(t, cfg.Messaging.Slack.TTSEnabled)
@@ -1088,7 +1088,7 @@ func TestMessagingLevelEnvVars(t *testing.T) {
 	require.Equal(t, "feishu", cfg.Messaging.Provider)
 	require.Equal(t, "/usr/bin/stt", cfg.Messaging.LocalCmd)
 	require.Equal(t, 30*time.Minute, cfg.Messaging.LocalIdleTTL)
-	require.False(t, cfg.Messaging.TTSEnabled) //nolint:staticcheck // QF1008
+	require.False(t, cfg.Messaging.TTSEnabled)
 	require.Equal(t, "edge", cfg.Messaging.TTSProvider)
 	require.Equal(t, "en-US-JennyNeural", cfg.Messaging.Voice)
 	require.Equal(t, 200, cfg.Messaging.MaxChars)
