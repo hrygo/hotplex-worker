@@ -659,6 +659,9 @@ func (c *StreamingCardController) Close(ctx context.Context) error {
 	}
 
 	c.mu.Lock()
+	if finalFlushOK {
+		c.lastFlushed = content
+	}
 	integrityFailed := !finalFlushOK || len(c.lastFlushed) < len(content)*9/10
 	if integrityFailed && c.bytesWritten > 0 {
 		c.log.Warn("feishu: streaming integrity check failed",
