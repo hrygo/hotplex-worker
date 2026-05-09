@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/hrygo/hotplex/internal/config"
+	"github.com/hrygo/hotplex/internal/worker/proc"
 )
 
 func newGatewayCmd() *cobra.Command {
@@ -48,10 +49,17 @@ Use -d to run as a background daemon.`,
 			if daemon {
 				return startDaemon(configPath, devMode)
 			}
+			if err := ensureNotRunning(); err != nil {
+				return err
+			}
 			if err := writeGatewayState(configPath, devMode); err != nil {
 				fmt.Fprintf(os.Stderr, "warning: could not write PID file: %s\n", err)
 			}
-			return runGateway(configPath, devMode, nil)
+			if err := runGateway(configPath, devMode, nil); err != nil {
+				removeGatewayState()
+				return err
+			}
+			return nil
 		},
 	}
 	configFlag(cmd, &configPath)
@@ -121,7 +129,11 @@ Use -d to restart as a background daemon.`,
 			if err := writeGatewayState(configPath, devMode); err != nil {
 				fmt.Fprintf(os.Stderr, "warning: could not write PID file: %s\n", err)
 			}
-			return runGateway(configPath, devMode, nil)
+			if err := runGateway(configPath, devMode, nil); err != nil {
+				removeGatewayState()
+				return err
+			}
+			return nil
 		},
 	}
 	configFlag(cmd, &configPath)
@@ -133,6 +145,10 @@ Use -d to restart as a background daemon.`,
 // startDaemon re-executes the current binary in the background without -d,
 // writes the child PID, and redirects output to a log file.
 func startDaemon(configPath string, devMode bool) error {
+	if err := ensureNotRunning(); err != nil {
+		return err
+	}
+
 	self, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("resolve executable: %w", err)
@@ -180,6 +196,12 @@ func startDaemon(configPath string, devMode bool) error {
 
 	// Release the child so it survives parent exit
 	_ = daemonCmd.Process.Release()
+
+	// Verify daemon started successfully (check process didn't exit immediately).
+	time.Sleep(500 * time.Millisecond)
+	if err := proc.IsProcessAlive(childPID); err != nil {
+		return fmt.Errorf("daemon exited unexpectedly; check logs at %s", logPath)
+	}
 
 	fmt.Fprintf(os.Stderr, "gateway: started as daemon (PID %d, log: %s)\n", childPID, logPath)
 	return nil

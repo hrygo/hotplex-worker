@@ -53,6 +53,12 @@ export interface UseHotPlexRuntimeConfig {
   suggestions?: readonly ThreadSuggestion[];
 }
 
+// Sentinel ID for the optimistic ghost message shown while waiting for the first WS event.
+const GHOST_ASSISTANT_ID = 'ghost-assistant';
+
+// Content-signature prefix length for dedup — covers most short/medium responses.
+const CONTENT_SIG_PREFIX = 300;
+
 const DEFAULT_SUGGESTIONS: readonly ThreadSuggestion[] = [
   { title: '帮我写一个 React 组件', label: '代码', prompt: '帮我写一个 React 组件' },
   { title: '解释这段代码的逻辑', label: '学习', prompt: '解释这段代码的逻辑' },
@@ -317,7 +323,7 @@ export function useHotPlexRuntime({
     // Append delta content to the last text part of the last assistant message
     const appendDelta = (content: string) => {
       setMessages((prev) => {
-        const filtered = prev.filter(m => m.id !== 'ghost-assistant');
+        const filtered = prev.filter(m => m.id !== GHOST_ASSISTANT_ID);
         const lastMessage = filtered[filtered.length - 1];
         if (lastMessage?.role === 'assistant' && lastMessage.status === 'streaming') {
           const parts = [...lastMessage.parts];
@@ -363,7 +369,7 @@ export function useHotPlexRuntime({
       if (!data) return;
 
       setMessages((prev) => {
-        const filtered = prev.filter(m => m.id !== 'ghost-assistant');
+        const filtered = prev.filter(m => m.id !== GHOST_ASSISTANT_ID);
         const lastMessage = filtered[filtered.length - 1];
         if (lastMessage?.role === 'assistant' && lastMessage.status === 'streaming') {
           const parts = [...lastMessage.parts];
@@ -399,7 +405,8 @@ export function useHotPlexRuntime({
 
     const handleMessage = (data: MessageData, env: Envelope) => {
       const role: 'user' | 'assistant' = data?.role === 'user' ? 'user' : 'assistant';
-      const msgId = data.id || env.id;
+      // Always use env.id for consistency with handleMessageStart
+      const msgId = env.id;
       setMessages((prev) => {
         const existingIdx = prev.findIndex((m) => m.id === msgId);
         if (existingIdx !== -1) {
@@ -605,20 +612,29 @@ export function useHotPlexRuntime({
       setConnectionState('disconnected');
     };
 
-    // Handle messageStart: if we already created a placeholder message for this env.id
-    // (from reasoning events arriving early), keep it. Otherwise create new one.
+    // Handle messageStart: adopt any pending streaming assistant message (created by
+    // delta/reasoning fallback) and assign the real env.id, or update an existing one.
     const handleMessageStart = (data: MessageStartData, env: Envelope) => {
       if (!data) return;
       setMessages((prev) => {
-        const filtered = prev.filter(m => m.id !== 'ghost-assistant');
+        const filtered = prev.filter(m => m.id !== GHOST_ASSISTANT_ID);
+        // Reasoning events may arrive before messageStart, creating env.id early.
         const existingIdx = filtered.findIndex((m) => m.id === env.id);
         if (existingIdx !== -1) {
-          // Message already created (e.g., from reasoning events) — just update status
           const updated = [...filtered];
           updated[existingIdx] = { ...filtered[existingIdx], status: 'streaming' };
           return updated;
         }
-        // New message — create with streaming status
+        // Delta/reasoning fallback creates assistant-${Date.now()} IDs; adopt with real env.id.
+        const pendingIdx = filtered.findLastIndex((m) =>
+          m.role === 'assistant' && m.status === 'streaming'
+        );
+        if (pendingIdx !== -1) {
+          const updated = [...filtered];
+          updated[pendingIdx] = { ...filtered[pendingIdx], id: env.id };
+          return updated;
+        }
+        // No prior message for this turn.
         return [
           ...filtered,
           {
@@ -857,7 +873,7 @@ export function useHotPlexRuntime({
 
     // 2. Add optimistic "Ghost" assistant message to provide immediate feedback
     const ghostMessage: HotPlexMessage = {
-      id: 'ghost-assistant',
+      id: GHOST_ASSISTANT_ID,
       role: 'assistant',
       parts: [{ type: 'reasoning', text: 'Initializing HotPlex Agent and analyzing workspace context...' }],
       createdAt: new Date(),
@@ -947,18 +963,37 @@ export function useHotPlexRuntime({
     }
   }, []);
 
-  // Deduped messages for assistant-ui — the ExternalStoreAdapter interface has no
-  // threadMessages field; it processes raw `messages` via convertMessage. Dedup here
-  // to prevent MessageRepository "same id already exists" errors. Also filter out
-  // context-usage messages (internal metadata, not conversation messages).
+  // Deduped messages for assistant-ui. Two-layer dedup prevents the
+  // MessageRepository "same id already exists" error:
+  //   Layer 1: exact ID dedup
+  //   Layer 2: content-signature dedup for assistant messages (catches live-vs-server
+  //            duplicates where the streaming message has a different ID than the history record)
+  // Also filters out internal-only parts (context-usage, turn-summary).
   const adapterMessages = useMemo(() => {
-    const seen = new Set<string>();
+    const seenIds = new Set<string>();
+    const seenAssistantSigs = new Set<string>();
     return messages
       .filter((m): m is HotPlexMessage => !!m && (m.role === 'user' || m.role === 'assistant'))
       .filter((m) => !m.parts.every(p => p.type === 'context-usage' || p.type === 'turn-summary'))
       .filter((m) => {
-        if (seen.has(m.id)) return false;
-        seen.add(m.id);
+        // Layer 1: exact ID dedup
+        if (seenIds.has(m.id)) return false;
+        seenIds.add(m.id);
+        // Layer 2: content-signature dedup for assistant messages
+        if (m.role === 'assistant') {
+          let sig = '';
+          for (const p of m.parts) {
+            if (p.type === 'text') {
+              sig += (p as TextPart).text;
+              if (sig.length >= CONTENT_SIG_PREFIX) break;
+            }
+          }
+          sig = sig.slice(0, CONTENT_SIG_PREFIX);
+          if (sig) {
+            if (seenAssistantSigs.has(sig)) return false;
+            seenAssistantSigs.add(sig);
+          }
+        }
         return true;
       });
   }, [messages]);

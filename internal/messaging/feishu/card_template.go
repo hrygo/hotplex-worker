@@ -92,6 +92,7 @@ func buildStreamingCard(header cardHeader, summary, content string) string {
 			"element_id": streamingElementID,
 			"content":    content,
 		},
+		map[string]any{"tag": "hr"},
 		map[string]any{
 			"tag":        "markdown",
 			"element_id": toolActivityElementID,

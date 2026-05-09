@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -103,7 +102,6 @@ func TestWriteCtx_ErrorEvent_WithMessage(t *testing.T) {
 	conn := NewFeishuConn(a, "chat123", "", "")
 	conn.mu.Lock()
 	conn.platformMsgID = "msg001"
-	conn.startedAt = time.Now()
 	conn.mu.Unlock()
 
 	errorMsg := "测试错误消息"
@@ -132,10 +130,7 @@ func TestWriteCtx_ErrorEvent_WithoutPlatformMsgID(t *testing.T) {
 	a := newTestAdapter(t)
 	a.Interactions = messaging.NewInteractionManager(discardLogger)
 	conn := NewFeishuConn(a, "chat123", "", "")
-	conn.mu.Lock()
-	conn.startedAt = time.Now()
-	// 不设置 platformMsgID
-	conn.mu.Unlock()
+	// platformMsgID left empty to trigger error notification path.
 
 	errorMsg := "测试错误消息"
 	env := &events.Envelope{
@@ -169,7 +164,6 @@ func TestWriteCtx_ErrorEvent_WithStreamCtrl(t *testing.T) {
 	conn.mu.Lock()
 	conn.streamCtrl = ctrl
 	conn.platformMsgID = "msg001"
-	conn.startedAt = time.Now()
 	conn.mu.Unlock()
 
 	errorMsg := "测试错误消息"
@@ -201,7 +195,6 @@ func TestWriteCtx_ErrorEvent_EmptyMessage(t *testing.T) {
 	conn := NewFeishuConn(a, "chat123", "", "")
 	conn.mu.Lock()
 	conn.platformMsgID = "msg001"
-	conn.startedAt = time.Now()
 	conn.mu.Unlock()
 
 	env := &events.Envelope{

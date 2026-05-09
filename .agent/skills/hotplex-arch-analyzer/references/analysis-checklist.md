@@ -96,6 +96,9 @@ HotPlex Worker Gateway 专用架构分析检查清单。针对以下核心架构
 
 ## 7. Performance
 
+> **详细模式和代码示例**：读取 `references/performance-patterns.md` 获取 HotPlex 热路径性能模式和通用 Go 反模式。
+
+**通用检测项**：
 - [ ] Hot path allocations (string concatenation in loops, fmt.Sprintf)
 - [ ] N+1 patterns (repeated DB/API calls in loop)
 - [ ] Unnecessary copies of large structs (should use pointers)
@@ -104,14 +107,35 @@ HotPlex Worker Gateway 专用架构分析检查清单。针对以下核心架构
 - [ ] JSON marshal/unmarshal on every call (could cache)
 - [ ] Regex compilation inside loops (should be package-level)
 
+**HotPlex 热路径专项**：
+- [ ] **HP-1**: AEP 编码 — `pkg/aep/codec.go` 每消息 `json.Marshal` + `interface{}` 反射开销
+- [ ] **HP-2**: Event.Clone — `pkg/events/events.go` JSON 往返深拷贝，控制消息广播时 GC 压力
+- [ ] **HP-3**: Streaming Card — `messaging/feishu/streaming.go` 每 150ms 全量内容重建 + 正则处理
+- [ ] **HP-5**: Worker 双解析 — `worker/claudecode/worker.go` 每行 JSON 解析两次
+- [ ] **HP-6**: WriteCtx 锁持有 — `gateway/conn.go` 锁内包含 JSON 编码，延长锁持有时间
+- [ ] 分配热点：搜索热路径中 `make(`, `&T{}`, `json.Marshal`, `fmt.Sprintf` 的使用频率
+- [ ] Goroutine 泄漏：`go func()` 或 `go method()` 是否有退出条件（ctx.Done 检查）
+- [ ] `time.After` in select loop：每次 select 创建 timer 泄漏，应复用 `time.Timer`
+
 ## 8. Scalability
 
+> **详细模式**：读取 `references/performance-patterns.md` 的 GP-2/GP-3 部分。
+
+**通用检测项**：
 - [ ] Single goroutine bottleneck (e.g., single-writer channel)
 - [ ] Lock contention: global mutex on hot path
 - [ ] In-memory state that should be shared (distributed lock, external store)
 - [ ] Unbounded queues: need backpressure mechanism
 - [ ] Fixed limits that should be configurable
 - [ ] Startup/shutdown time grows with number of X
+
+**HotPlex 可扩展性专项**：
+- [ ] **HP-4**: Hub 单线程广播 — `gateway/hub.go` 所有 session 路由通过单个 goroutine
+- [ ] **HP-7**: Session 缓存未命中 — `session/manager.go` 双锁获取 + DB I/O 路径
+- [ ] 连接数扩展：WS 连接数增长时，per-connection goroutine 和内存是否线性增长
+- [ ] Session 并发：多 session 并发活跃时，全局锁（Hub.mu, Manager.mu）是否成为瓶颈
+- [ ] Worker 并发：Worker 进程数增长时，stdio 读取和事件分发是否可扩展
+- [ ] Event Store 写吞吐：高事件频率下 SQLite WAL 写入是否可跟上（当前 batch 100/100ms）
 
 ## 9. Security
 
