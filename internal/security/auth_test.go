@@ -360,3 +360,119 @@ func TestClaimsFrom_WrongType(t *testing.T) {
 	require.False(t, ok)
 	require.Equal(t, Claims{}, claims)
 }
+
+func TestReloadKeys(t *testing.T) {
+	t.Parallel()
+
+	cfg := &config.SecurityConfig{APIKeys: []string{"key1"}}
+	auth := NewAuthenticator(cfg, nil)
+
+	userID, ok := auth.AuthenticateKey("key1")
+	require.True(t, ok)
+	require.Equal(t, "api_user", userID)
+
+	auth.ReloadKeys(&config.SecurityConfig{APIKeys: []string{"key2", "key3"}})
+
+	_, ok = auth.AuthenticateKey("key1")
+	require.False(t, ok)
+
+	userID, ok = auth.AuthenticateKey("key2")
+	require.True(t, ok)
+	require.Equal(t, "api_user", userID)
+}
+
+func TestExtractAPIKey(t *testing.T) {
+	t.Parallel()
+
+	cfg := &config.SecurityConfig{APIKeys: []string{"test"}}
+	auth := NewAuthenticator(cfg, nil)
+
+	t.Run("from header", func(t *testing.T) {
+		t.Parallel()
+		req := httptest.NewRequest("GET", "/", nil)
+		req.Header.Set("X-API-Key", "my-key")
+		key, ok := auth.ExtractAPIKey(req)
+		require.True(t, ok)
+		require.Equal(t, "my-key", key)
+	})
+
+	t.Run("from query param", func(t *testing.T) {
+		t.Parallel()
+		req := httptest.NewRequest("GET", "/?api_key=query-key", nil)
+		key, ok := auth.ExtractAPIKey(req)
+		require.True(t, ok)
+		require.Equal(t, "query-key", key)
+	})
+
+	t.Run("header takes precedence", func(t *testing.T) {
+		t.Parallel()
+		req := httptest.NewRequest("GET", "/?api_key=query-key", nil)
+		req.Header.Set("X-API-Key", "header-key")
+		key, ok := auth.ExtractAPIKey(req)
+		require.True(t, ok)
+		require.Equal(t, "header-key", key)
+	})
+
+	t.Run("missing key", func(t *testing.T) {
+		t.Parallel()
+		req := httptest.NewRequest("GET", "/", nil)
+		_, ok := auth.ExtractAPIKey(req)
+		require.False(t, ok)
+	})
+}
+
+func TestAuthenticateKey(t *testing.T) {
+	t.Parallel()
+
+	t.Run("valid key", func(t *testing.T) {
+		t.Parallel()
+		auth := NewAuthenticator(&config.SecurityConfig{APIKeys: []string{"secret"}}, nil)
+		userID, ok := auth.AuthenticateKey("secret")
+		require.True(t, ok)
+		require.Equal(t, "api_user", userID)
+	})
+
+	t.Run("invalid key", func(t *testing.T) {
+		t.Parallel()
+		auth := NewAuthenticator(&config.SecurityConfig{APIKeys: []string{"secret"}}, nil)
+		_, ok := auth.AuthenticateKey("wrong")
+		require.False(t, ok)
+	})
+
+	t.Run("dev mode", func(t *testing.T) {
+		t.Parallel()
+		auth := NewAuthenticator(&config.SecurityConfig{APIKeys: []string{}}, nil)
+		userID, ok := auth.AuthenticateKey("anything")
+		require.True(t, ok)
+		require.Equal(t, "anonymous", userID)
+	})
+}
+
+func TestRegisterCommand(t *testing.T) {
+	t.Parallel()
+
+	t.Run("valid command", func(t *testing.T) {
+		t.Parallel()
+		err := RegisterCommand("custom-worker")
+		require.NoError(t, err)
+		require.NoError(t, ValidateCommand("custom-worker"))
+	})
+
+	t.Run("empty name", func(t *testing.T) {
+		t.Parallel()
+		err := RegisterCommand("")
+		require.Error(t, err)
+	})
+
+	t.Run("path separator", func(t *testing.T) {
+		t.Parallel()
+		err := RegisterCommand("foo/bar")
+		require.Error(t, err)
+	})
+
+	t.Run("dangerous chars", func(t *testing.T) {
+		t.Parallel()
+		err := RegisterCommand("foo;bar")
+		require.Error(t, err)
+	})
+}
