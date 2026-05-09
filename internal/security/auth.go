@@ -9,7 +9,6 @@ import (
 	"sync"
 
 	"github.com/hrygo/hotplex/internal/config"
-	"github.com/hrygo/hotplex/pkg/events"
 )
 
 // apiKeyQueryParam is the query parameter name for browser-based WebSocket clients
@@ -150,16 +149,6 @@ func (a *Authenticator) BotIDFromRequest(r *http.Request) string {
 	return claims.BotID
 }
 
-// AuthenticateEnvelope validates the session_id and API key embedded in an envelope.
-// For WS connections the API key is validated at handshake time; this is a
-// secondary check for message-level auth if needed.
-func (a *Authenticator) AuthenticateEnvelope(env *events.Envelope) error {
-	if env.SessionID == "" {
-		return ErrUnauthorized
-	}
-	return nil
-}
-
 // Middleware returns an HTTP middleware that enforces authentication.
 func (a *Authenticator) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -193,57 +182,3 @@ func ClaimsFrom(ctx context.Context) (Claims, bool) {
 	return c, ok
 }
 
-// InputValidator validates user input for safety.
-type InputValidator struct {
-	maxLen     int
-	allowedOps []string
-}
-
-// NewInputValidator creates a new input validator.
-func NewInputValidator(cfg *config.WorkerConfig) *InputValidator {
-	return &InputValidator{
-		maxLen:     1 << 20, // 1MB
-		allowedOps: nil,
-	}
-}
-
-// ValidateInput checks that input is safe to pass to a worker.
-func (v *InputValidator) ValidateInput(content string) error {
-	if len(content) > v.maxLen {
-		return errors.New("input too large")
-	}
-	// Reject null bytes which can corrupt downstream JSON parsers.
-	if strings.Contains(content, "\x00") {
-		return errors.New("input contains null byte")
-	}
-	return nil
-}
-
-// EnvValidator validates environment variables before passing to a worker.
-type EnvValidator struct {
-	whitelist map[string]bool
-}
-
-// NewEnvValidator creates an environment validator from a whitelist.
-func NewEnvValidator(whitelist []string) *EnvValidator {
-	m := make(map[string]bool)
-	for _, k := range whitelist {
-		m[k] = true
-	}
-	return &EnvValidator{whitelist: m}
-}
-
-// Validate checks that all keys in env are allowed.
-// Returns the filtered env map (only allowed keys).
-func (v *EnvValidator) Validate(env map[string]string) map[string]string {
-	if len(v.whitelist) == 0 {
-		return env // allow all
-	}
-	filtered := make(map[string]string)
-	for k, val := range env {
-		if v.whitelist[k] {
-			filtered[k] = val
-		}
-	}
-	return filtered
-}
