@@ -394,6 +394,7 @@ func (c *StreamingCardController) sendCardMessageRaw(ctx context.Context, chatID
 
 func (c *StreamingCardController) Write(text string) error {
 	text = messaging.SanitizeText(text)
+	c.startFlushLoop()
 
 	c.mu.Lock()
 	if c.streamStartTime.IsZero() {
