@@ -203,14 +203,16 @@ func TestE2E_MessageDeltaContent(t *testing.T) {
 func TestE2E_AuthFailure(t *testing.T) {
 	tg := setupTestGateway(t)
 
+	// Connect without API key — WS upgrade succeeds (auth deferred to init envelope).
 	c, err := client.New(context.Background(),
 		client.URL(tg.wsURL()),
 		client.WorkerType(string(worker.TypeClaudeCode)),
 	)
 	require.NoError(t, err)
 
+	// Auth should fail at init handshake since no valid token is provided.
 	_, err = c.Connect(context.Background())
-	require.Error(t, err, "expected auth failure without API key")
+	require.Error(t, err, "expected auth failure at init handshake without valid token")
 }
 
 func TestE2E_LargeInput(t *testing.T) {
