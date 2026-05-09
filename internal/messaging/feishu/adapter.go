@@ -821,16 +821,16 @@ func (c *FeishuConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 	case events.ToolCall:
 		c.handleToolReaction(ctx)
 		if ctrl := c.getStreamCtrl(); ctrl != nil {
-			if id, text := extractToolCallStatus(env); id != "" {
-				ctrl.WriteToolCall(id, text)
+			if id, name, input := extractToolCallData(env); id != "" {
+				ctrl.WriteToolCall(id, name, input)
 			}
 		}
 		return nil
 	case events.ToolResult:
 		c.handleToolReaction(ctx)
 		if ctrl := c.getStreamCtrl(); ctrl != nil {
-			if id := extractToolResultID(env); id != "" {
-				ctrl.WriteToolResult(id)
+			if id, output, errMsg := extractToolResultData(env); id != "" {
+				ctrl.WriteToolResult(id, output, errMsg)
 			}
 		}
 		return nil
@@ -981,6 +981,7 @@ func (c *FeishuConn) writeContent(ctx context.Context, env *events.Envelope, tex
 	// TTL rotation: proactively replace expired streaming cards before
 	// Feishu's 10-minute server limit kicks in.
 	if streamCtrl != nil && streamCtrl.IsCreated() && streamCtrl.Expired() {
+		streamCtrl.ClearToolEntries()
 		oldMsgID := streamCtrl.MsgID()
 		closeCtx, closeCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		go func() {

@@ -15,6 +15,7 @@ import (
 	"github.com/hrygo/hotplex/internal/config"
 	"github.com/hrygo/hotplex/internal/messaging"
 	"github.com/hrygo/hotplex/internal/messaging/stt"
+	"github.com/hrygo/hotplex/internal/messaging/toolfmt"
 	"github.com/hrygo/hotplex/pkg/events"
 
 	"runtime/debug"
@@ -744,8 +745,8 @@ func (c *SlackConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 	}
 	// Log unregistered tool names for status formatter evolution
 	if env.Event.Type == events.ToolCall {
-		if name := toolNameFromEnvelope(env); name != "" {
-			if _, ok := toolStatusFormatters[name]; !ok {
+		if name, _ := extractCallNameInput(env); name != "" {
+			if text := toolfmt.FormatCall(name, nil); text == name {
 				c.adapter.statusMgr.LogOnceUnregistered(name)
 			}
 		}

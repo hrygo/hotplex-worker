@@ -188,34 +188,6 @@ func TestIsAbortCommand(t *testing.T) {
 
 // --- Phase 2.3: Status ---
 
-func TestAepEventToStatus_ToolCall(t *testing.T) {
-	t.Parallel()
-
-	env := &events.Envelope{
-		Event: events.Event{
-			Type: events.ToolCall,
-			Data: &events.ToolCallData{Name: "read_file"},
-		},
-	}
-	status, text := aepEventToStatus(env)
-	require.Equal(t, StatusToolUse, status)
-	require.Equal(t, "read_file", text)
-}
-
-func TestAepEventToStatus_ToolResult(t *testing.T) {
-	t.Parallel()
-
-	env := &events.Envelope{
-		Event: events.Event{
-			Type: events.ToolResult,
-			Data: &events.ToolResultData{},
-		},
-	}
-	status, text := aepEventToStatus(env)
-	require.Equal(t, StatusToolResult, status)
-	require.Equal(t, "Tool completed", text)
-}
-
 func TestAepEventToStatus_MessageDelta(t *testing.T) {
 	t.Parallel()
 
@@ -230,13 +202,13 @@ func TestAepEventToStatus_MessageDelta(t *testing.T) {
 	require.Equal(t, "Composing response...", text)
 }
 
-func TestExtractToolCallStatus(t *testing.T) {
+func TestAepEventToStatus_ToolCall(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name string
-		env  *events.Envelope
-		want string
+		name     string
+		env      *events.Envelope
+		wantText string
 	}{
 		{
 			"unregistered tool name only",
@@ -271,12 +243,12 @@ func TestExtractToolCallStatus(t *testing.T) {
 		{
 			"Grep tool with path",
 			&events.Envelope{Event: events.Event{Type: events.ToolCall, Data: &events.ToolCallData{Name: "Grep", Input: map[string]any{"pattern": "func main", "path": "src/"}}}},
-			"🔍 func main in src",
+			`🔍 "func main" in src`,
 		},
 		{
 			"Grep tool pattern only",
 			&events.Envelope{Event: events.Event{Type: events.ToolCall, Data: &events.ToolCallData{Name: "Grep", Input: map[string]any{"pattern": "aepEventToStatus"}}}},
-			"🔍 aepEventToStatus",
+			`🔍 "aepEventToStatus"`,
 		},
 		{
 			"Glob tool",
@@ -311,12 +283,12 @@ func TestExtractToolCallStatus(t *testing.T) {
 		{
 			"LSP tool hover",
 			&events.Envelope{Event: events.Event{Type: events.ToolCall, Data: &events.ToolCallData{Name: "LSP", Input: map[string]any{"operation": "hover", "filePath": "/src/main.go", "line": 10, "character": 5}}}},
-			"🔎 Hover main.go",
+			"🔎 Hover → main.go",
 		},
 		{
 			"LSP tool go to definition",
 			&events.Envelope{Event: events.Event{Type: events.ToolCall, Data: &events.ToolCallData{Name: "LSP", Input: map[string]any{"operation": "goToDefinition", "filePath": "/src/main.go"}}}},
-			"🔎 Go to def main.go",
+			"🔎 Go to def → main.go",
 		},
 		{
 			"TodoWrite in_progress",
@@ -368,37 +340,40 @@ func TestExtractToolCallStatus(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := extractToolCallStatus(tt.env)
-			if len(got) > statusTextLimit {
-				t.Errorf("status too long (%d chars): %q", len(got), got)
+			status, text := aepEventToStatus(tt.env)
+			require.Equal(t, StatusToolUse, status)
+			if len(text) > statusTextLimit {
+				t.Errorf("status too long (%d chars): %q", len(text), text)
 			}
-			require.Equal(t, tt.want, got)
+			require.Equal(t, tt.wantText, text)
 		})
 	}
 }
 
-func TestExtractToolResultStatus(t *testing.T) {
+func TestAepEventToStatus_ToolResult(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name string
-		env  *events.Envelope
-		want string
+		name     string
+		env      *events.Envelope
+		wantText string
 	}{
 		{"nil data", &events.Envelope{Event: events.Event{Type: events.ToolResult}}, "Tool completed"},
-		{"error", &events.Envelope{Event: events.Event{Type: events.ToolResult, Data: &events.ToolResultData{Error: "file not found"}}}, "Error: file not found"},
-		{"output string", &events.Envelope{Event: events.Event{Type: events.ToolResult, Data: &events.ToolResultData{Output: "ok"}}}, "ok"},
-		{"map error", &events.Envelope{Event: events.Event{Type: events.ToolResult, Data: map[string]any{"error": "timeout"}}}, "Error: timeout"},
-		{"map output", &events.Envelope{Event: events.Event{Type: events.ToolResult, Data: map[string]any{"output": 42}}}, "42"},
+		{"error", &events.Envelope{Event: events.Event{Type: events.ToolResult, Data: &events.ToolResultData{Error: "file not found"}}}, "✗ file not found"},
+		{"output string", &events.Envelope{Event: events.Event{Type: events.ToolResult, Data: &events.ToolResultData{Output: "ok"}}}, "Tool completed"},
+		{"map error", &events.Envelope{Event: events.Event{Type: events.ToolResult, Data: map[string]any{"error": "timeout"}}}, "✗ timeout"},
+		{"map output", &events.Envelope{Event: events.Event{Type: events.ToolResult, Data: map[string]any{"output": 42}}}, "Tool completed"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := extractToolResultStatus(tt.env)
-			if len(got) > statusTextLimit {
-				t.Errorf("status too long (%d chars): %q", len(got), got)
+			t.Parallel()
+			status, text := aepEventToStatus(tt.env)
+			require.Equal(t, StatusToolResult, status)
+			if len(text) > statusTextLimit {
+				t.Errorf("status too long (%d chars): %q", len(text), text)
 			}
-			require.Equal(t, tt.want, got)
+			require.Equal(t, tt.wantText, text)
 		})
 	}
 }
@@ -409,14 +384,6 @@ func TestTruncateStatus(t *testing.T) {
 	require.Equal(t, "hi", truncateWithSuffix("hi", 50))
 	require.Equal(t, "hello world", truncateWithSuffix("hello world", 11))
 	require.Equal(t, "hello...", truncateWithSuffix("hello world", 8))
-}
-
-func TestExtractFileName(t *testing.T) {
-	t.Parallel()
-	require.Equal(t, "main.go", extractFileName("/src/main.go"))
-	require.Equal(t, "main.go", extractFileName("main.go"))
-	require.Equal(t, "bar.go", extractFileName("$WK/internal/foo/bar.go"))
-	require.Equal(t, "", extractFileName(""))
 }
 
 func TestIsAssistantCapabilityError(t *testing.T) {
