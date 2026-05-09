@@ -153,21 +153,22 @@ func (c *StreamingCardController) SetCloseMeta(d messaging.TurnSummaryData) {
 const maxToolEntries = 2
 
 // WriteToolCall appends a tool activity entry. Oldest entry scrolls out when capacity is exceeded.
-func (c *StreamingCardController) WriteToolCall(id, text string) {
+func (c *StreamingCardController) WriteToolCall(id, name string, input map[string]any) {
 	if c.getPhase() >= PhaseCompleted {
 		return
 	}
+	text := formatToolCall(name, input)
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.toolEntries = append(c.toolEntries, toolEntry{id: id, text: text})
+	c.toolEntries = append(c.toolEntries, toolEntry{id: id, name: name, text: text})
 	if len(c.toolEntries) > maxToolEntries {
 		c.toolEntries = c.toolEntries[len(c.toolEntries)-maxToolEntries:]
 	}
 	c.toolDirty = true
 }
 
-// WriteToolResult marks the matching tool entry as done by ID.
-func (c *StreamingCardController) WriteToolResult(id string) {
+// WriteToolResult marks the matching tool entry as done by ID and sets the result summary.
+func (c *StreamingCardController) WriteToolResult(id string, output any, errMsg string) {
 	if c.getPhase() >= PhaseCompleted {
 		return
 	}
@@ -176,6 +177,7 @@ func (c *StreamingCardController) WriteToolResult(id string) {
 	for i := range c.toolEntries {
 		if c.toolEntries[i].id == id {
 			c.toolEntries[i].done = true
+			c.toolEntries[i].result = formatToolResult(c.toolEntries[i].name, output, errMsg)
 			c.toolDirty = true
 			return
 		}
@@ -190,6 +192,15 @@ func (c *StreamingCardController) MarkAllToolsDone() {
 		c.toolEntries[i].done = true
 	}
 	c.toolDirty = true
+}
+
+// ClearToolEntries removes all tool activity entries. Used during card rotation
+// to prevent stale tool activity from appearing on the old card.
+func (c *StreamingCardController) ClearToolEntries() {
+	c.mu.Lock()
+	c.toolEntries = nil
+	c.toolDirty = false
+	c.mu.Unlock()
 }
 
 // closeTags builds text_tag_list from closeMeta (full Turn/Model/Branch).
@@ -308,7 +319,7 @@ func (c *StreamingCardController) SendPlaceholder(ctx context.Context, chatID, c
 		return fmt.Errorf("feishu: cannot transition from %s to creating", c.getPhase())
 	}
 
-	placeholder := "⏳ 正在思考..."
+	placeholder := "🫡 收到任务, 🤔 我来看看..."
 	c.mu.Lock()
 	c.chatType = chatType
 	c.replyToMsgID = replyToMsgID
@@ -721,6 +732,7 @@ func (c *StreamingCardController) buildFinalElements(body string) []map[string]a
 	copy(entries, c.toolEntries)
 	c.mu.Unlock()
 	if toolContent := renderToolActivity(entries); toolContent != "" {
+		elements = append(elements, map[string]any{"tag": "hr"})
 		elements = append(elements, map[string]any{
 			"tag": "markdown", "element_id": toolActivityElementID, "content": toolContent,
 		})
