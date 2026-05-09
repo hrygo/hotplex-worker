@@ -399,7 +399,8 @@ export function useHotPlexRuntime({
 
     const handleMessage = (data: MessageData, env: Envelope) => {
       const role: 'user' | 'assistant' = data?.role === 'user' ? 'user' : 'assistant';
-      const msgId = data.id || env.id;
+      // Always use env.id for consistency with handleMessageStart
+      const msgId = env.id;
       setMessages((prev) => {
         const existingIdx = prev.findIndex((m) => m.id === msgId);
         if (existingIdx !== -1) {
@@ -605,20 +606,30 @@ export function useHotPlexRuntime({
       setConnectionState('disconnected');
     };
 
-    // Handle messageStart: if we already created a placeholder message for this env.id
-    // (from reasoning events arriving early), keep it. Otherwise create new one.
+    // Handle messageStart: adopt any pending streaming assistant message (created by
+    // delta/reasoning fallback) and assign the real env.id, or update an existing one.
     const handleMessageStart = (data: MessageStartData, env: Envelope) => {
       if (!data) return;
       setMessages((prev) => {
         const filtered = prev.filter(m => m.id !== 'ghost-assistant');
+        // 1. Existing message with this env.id (e.g., reasoning arrived early)
         const existingIdx = filtered.findIndex((m) => m.id === env.id);
         if (existingIdx !== -1) {
-          // Message already created (e.g., from reasoning events) — just update status
           const updated = [...filtered];
           updated[existingIdx] = { ...filtered[existingIdx], status: 'streaming' };
           return updated;
         }
-        // New message — create with streaming status
+        // 2. Adopt a pending streaming assistant (created by delta/reasoning fallback
+        //    with assistant-${Date.now()} ID) and assign the real env.id
+        const pendingIdx = filtered.findLastIndex((m) =>
+          m.role === 'assistant' && m.status === 'streaming'
+        );
+        if (pendingIdx !== -1) {
+          const updated = [...filtered];
+          updated[pendingIdx] = { ...filtered[pendingIdx], id: env.id };
+          return updated;
+        }
+        // 3. No existing or pending message — create fresh
         return [
           ...filtered,
           {
@@ -947,18 +958,34 @@ export function useHotPlexRuntime({
     }
   }, []);
 
-  // Deduped messages for assistant-ui — the ExternalStoreAdapter interface has no
-  // threadMessages field; it processes raw `messages` via convertMessage. Dedup here
-  // to prevent MessageRepository "same id already exists" errors. Also filter out
-  // context-usage messages (internal metadata, not conversation messages).
+  // Deduped messages for assistant-ui. Two-layer dedup prevents the
+  // MessageRepository "same id already exists" error:
+  //   Layer 1: exact ID dedup
+  //   Layer 2: content-signature dedup for assistant messages (catches live-vs-server
+  //            duplicates where the streaming message has a different ID than the history record)
+  // Also filters out internal-only parts (context-usage, turn-summary).
   const adapterMessages = useMemo(() => {
-    const seen = new Set<string>();
+    const seenIds = new Set<string>();
+    const seenAssistantSigs = new Set<string>();
     return messages
       .filter((m): m is HotPlexMessage => !!m && (m.role === 'user' || m.role === 'assistant'))
       .filter((m) => !m.parts.every(p => p.type === 'context-usage' || p.type === 'turn-summary'))
       .filter((m) => {
-        if (seen.has(m.id)) return false;
-        seen.add(m.id);
+        // Layer 1: exact ID dedup
+        if (seenIds.has(m.id)) return false;
+        seenIds.add(m.id);
+        // Layer 2: content-signature dedup for assistant messages
+        if (m.role === 'assistant') {
+          const text = m.parts
+            .filter((p): p is TextPart => p.type === 'text')
+            .map(p => p.text)
+            .join('');
+          if (text) {
+            const sig = text.slice(0, 300);
+            if (seenAssistantSigs.has(sig)) return false;
+            seenAssistantSigs.add(sig);
+          }
+        }
         return true;
       });
   }, [messages]);

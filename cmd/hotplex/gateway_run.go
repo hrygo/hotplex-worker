@@ -255,9 +255,9 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 	if cfg.WebChat.Enabled {
 		spa := webchat.Handler()
 		rootHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			h, pattern := mux.Handler(r)
+			_, pattern := mux.Handler(r)
 			if pattern != "" {
-				h.ServeHTTP(w, r)
+				mux.ServeHTTP(w, r)
 				return
 			}
 			spa.ServeHTTP(w, r)
