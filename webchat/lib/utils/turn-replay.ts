@@ -8,6 +8,10 @@
  */
 
 import type { TextPart, ToolSummaryPart } from '@/lib/types/message-parts';
+import type { HotPlexMessage } from '@/lib/types/message';
+
+// Re-export for consumers
+export type { HotPlexMessage };
 
 // -- Types --
 
@@ -33,15 +37,8 @@ export interface ConversationTurn {
   created_at: string;
 }
 
-type HistoryMessagePart = TextPart | ToolSummaryPart;
-
-export interface HotPlexMessage {
-  id: string;
-  role: 'user' | 'assistant' | 'system';
-  parts: HistoryMessagePart[];
-  createdAt: Date;
-  status?: 'streaming' | 'complete' | 'error';
-}
+/** History messages only contain text + tool-summary parts */
+type HistoryMessage = HotPlexMessage<TextPart | ToolSummaryPart>;
 
 // -- Conversion --
 
@@ -52,9 +49,9 @@ export interface HotPlexMessage {
  * - Assistant turns become assistant messages with TextPart + optional ToolSummaryPart
  * - Turns are returned in the same order as input (should be ASC by seq)
  */
-export function conversationTurnsToMessages(turns: ConversationTurn[]): HotPlexMessage[] {
+export function conversationTurnsToMessages(turns: ConversationTurn[]): HistoryMessage[] {
   return turns.map((turn) => {
-    const parts: HistoryMessagePart[] = [];
+    const parts: (TextPart | ToolSummaryPart)[] = [];
 
     // Add text content (always present)
     if (turn.content) {

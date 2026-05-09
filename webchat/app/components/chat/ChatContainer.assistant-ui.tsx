@@ -13,7 +13,7 @@ import { BrandIcon } from '@/components/icons';
 import { SessionPanel } from './SessionPanel';
 import { NewSessionModal } from './NewSessionModal';
 import { MetricsBar } from '@/components/assistant-ui/MetricsBar';
-import { workerType, workDir } from '@/lib/config';
+import { workerType, workDir, type ConnectionState } from '@/lib/config';
 import type { SessionMetrics } from '@/lib/hooks/useMetrics';
 
 function ChatInterface({
@@ -36,18 +36,20 @@ function ChatInterface({
 
   type AdapterExtras = {
     hasMore?: boolean;
+    connectionState?: ConnectionState;
     onLoadHistory?: () => Promise<{ hasMore: boolean }>;
     onInteractionRespond?: (toolCallId: string, allowed: boolean) => void;
   };
   const extras = adapter.extras as AdapterExtras | undefined;
   const hasMore = extras?.hasMore ?? false;
+  const connectionState = extras?.connectionState;
   const onLoadHistory = extras?.onLoadHistory;
   const onInteractionRespond = extras?.onInteractionRespond;
   const suggestions = adapter.suggestions as readonly { title: string; label: string; prompt: string }[] | undefined;
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
-      <Thread skills={skills} hasMore={hasMore} onLoadHistory={onLoadHistory} onInteractionRespond={onInteractionRespond} suggestions={suggestions} />
+      <Thread skills={skills} hasMore={hasMore} connectionState={connectionState} onLoadHistory={onLoadHistory} onInteractionRespond={onInteractionRespond} suggestions={suggestions} />
     </AssistantRuntimeProvider>
   );
 }

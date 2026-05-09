@@ -90,6 +90,11 @@ type StreamingCardController struct {
 	bufRunes        int // running rune count for flush threshold
 	failedFlushes   int
 
+	// Tool activity strip state.
+	toolEntries       []toolEntry // ring buffer, max 2 entries
+	toolDirty         bool        // true when toolEntries changed and needs flush
+	failedToolFlushes int         // consecutive flush failures; gives up after 3
+
 	chatType     string
 	replyToMsgID string
 	limiter      *FeishuRateLimiter
@@ -143,6 +148,48 @@ func NewStreamingCardController(client *lark.Client, limiter *FeishuRateLimiter,
 // SetCloseMeta injects turn summary data before Close() for header enrichment.
 func (c *StreamingCardController) SetCloseMeta(d messaging.TurnSummaryData) {
 	c.closeMeta.Store(&d)
+}
+
+const maxToolEntries = 2
+
+// WriteToolCall appends a tool activity entry. Oldest entry scrolls out when capacity is exceeded.
+func (c *StreamingCardController) WriteToolCall(id, text string) {
+	if c.getPhase() >= PhaseCompleted {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.toolEntries = append(c.toolEntries, toolEntry{id: id, text: text})
+	if len(c.toolEntries) > maxToolEntries {
+		c.toolEntries = c.toolEntries[len(c.toolEntries)-maxToolEntries:]
+	}
+	c.toolDirty = true
+}
+
+// WriteToolResult marks the matching tool entry as done by ID.
+func (c *StreamingCardController) WriteToolResult(id string) {
+	if c.getPhase() >= PhaseCompleted {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for i := range c.toolEntries {
+		if c.toolEntries[i].id == id {
+			c.toolEntries[i].done = true
+			c.toolDirty = true
+			return
+		}
+	}
+}
+
+// MarkAllToolsDone marks all tool entries as done. Called on Close/Abort.
+func (c *StreamingCardController) MarkAllToolsDone() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for i := range c.toolEntries {
+		c.toolEntries[i].done = true
+	}
+	c.toolDirty = true
 }
 
 // closeTags builds text_tag_list from closeMeta (full Turn/Model/Branch).
@@ -283,6 +330,9 @@ func (c *StreamingCardController) Write(text string) error {
 }
 
 func (c *StreamingCardController) Flush(ctx context.Context) error {
+	// Flush tool activity strip independently of content flush.
+	c.flushToolActivity(ctx)
+
 	c.mu.Lock()
 	content := c.buf.String()
 	c.mu.Unlock()
@@ -354,6 +404,41 @@ func (c *StreamingCardController) Flush(ctx context.Context) error {
 	return nil
 }
 
+// flushToolActivity flushes the tool activity element via CardKit.
+func (c *StreamingCardController) flushToolActivity(ctx context.Context) {
+	c.mu.Lock()
+	if !c.toolDirty {
+		c.mu.Unlock()
+		return
+	}
+	entries := make([]toolEntry, len(c.toolEntries))
+	copy(entries, c.toolEntries)
+	c.mu.Unlock()
+
+	text := renderToolActivity(entries)
+	if text == "" || !c.cardKitOK || c.cardID == "" || !c.limiter.AllowCardKit(c.cardID) {
+		return
+	}
+	seq := int(c.sequence.Add(1))
+	if err := c.flushCardKitElement(ctx, toolActivityElementID, text, seq); err != nil {
+		c.failedToolFlushes++
+		if c.failedToolFlushes >= 3 {
+			c.log.Warn("feishu: tool activity flush repeatedly failed, giving up",
+				"err", err, "failures", c.failedToolFlushes)
+			c.mu.Lock()
+			c.toolDirty = false
+			c.mu.Unlock()
+		} else {
+			c.log.Warn("feishu: tool activity flush failed", "err", err)
+		}
+	} else {
+		c.mu.Lock()
+		c.toolDirty = false
+		c.failedToolFlushes = 0
+		c.mu.Unlock()
+	}
+}
+
 // startFlushLoop launches the background flush goroutine.
 // Called once after successful transition to PhaseStreaming.
 func (c *StreamingCardController) startFlushLoop() {
@@ -421,6 +506,7 @@ func (c *StreamingCardController) Close(ctx context.Context) error {
 	}
 
 	c.stopFlushLoop()
+	c.MarkAllToolsDone()
 
 	c.mu.Lock()
 	content := c.buf.String()
@@ -438,7 +524,7 @@ func (c *StreamingCardController) Close(ctx context.Context) error {
 	finalFlushOK := false
 	if c.cardKitOK && c.cardID != "" {
 		seq := int(c.sequence.Add(1))
-		if err := c.flushCardKit(ctx, content, seq); err != nil {
+		if err := c.flushCardKitElement(ctx, c.elementID, content, seq); err != nil {
 			c.log.Warn("feishu: final cardkit flush failed, attempting IM patch fallback",
 				"err", err)
 			if c.msgID != "" {
@@ -507,6 +593,7 @@ func (c *StreamingCardController) Abort(ctx context.Context) error {
 	}
 
 	c.stopFlushLoop()
+	c.MarkAllToolsDone()
 
 	c.mu.Lock()
 	cardID := c.cardID
@@ -531,6 +618,24 @@ func (c *StreamingCardController) Abort(ctx context.Context) error {
 	return nil
 }
 
+// buildFinalElements builds the elements list for the final card (Close/Abort),
+// including both streaming content and tool activity strip.
+func (c *StreamingCardController) buildFinalElements(body string) []map[string]any {
+	elements := []map[string]any{
+		{"tag": "markdown", "element_id": streamingElementID, "content": body},
+	}
+	c.mu.Lock()
+	entries := make([]toolEntry, len(c.toolEntries))
+	copy(entries, c.toolEntries)
+	c.mu.Unlock()
+	if toolContent := renderToolActivity(entries); toolContent != "" {
+		elements = append(elements, map[string]any{
+			"tag": "markdown", "element_id": toolActivityElementID, "content": toolContent,
+		})
+	}
+	return elements
+}
+
 func (c *StreamingCardController) updateHeader(ctx context.Context, cardID string, header cardHeader, body string) {
 	if cardID == "" {
 		return
@@ -541,9 +646,7 @@ func (c *StreamingCardController) updateHeader(ctx context.Context, cardID strin
 			"streaming_mode": false,
 			"summary":        map[string]any{"content": truncateForSummary(body)},
 		},
-		[]map[string]any{
-			{"tag": "markdown", "element_id": streamingElementID, "content": body},
-		},
+		c.buildFinalElements(body),
 	)
 
 	reqBody := larkcardkit.NewUpdateCardReqBodyBuilder().
@@ -723,7 +826,7 @@ func (c *StreamingCardController) disableStreaming(ctx context.Context) error {
 	return nil
 }
 
-func (c *StreamingCardController) flushCardKit(ctx context.Context, content string, seq int) error {
+func (c *StreamingCardController) flushCardKitElement(ctx context.Context, elementID, content string, seq int) error {
 	uuid := fmt.Sprintf("feishu-stream-%d", time.Now().UnixNano())
 
 	body := larkcardkit.NewContentCardElementReqBodyBuilder().
@@ -734,7 +837,7 @@ func (c *StreamingCardController) flushCardKit(ctx context.Context, content stri
 
 	req := larkcardkit.NewContentCardElementReqBuilder().
 		CardId(c.cardID).
-		ElementId(c.elementID).
+		ElementId(elementID).
 		Body(body).
 		Build()
 
@@ -754,7 +857,7 @@ func (c *StreamingCardController) flushCardKit(ctx context.Context, content stri
 func (c *StreamingCardController) flushCardKitWithRetry(ctx context.Context, content string, seq int) error {
 	var lastErr error
 	for attempt := range 3 {
-		if err := c.flushCardKit(ctx, content, seq); err == nil {
+		if err := c.flushCardKitElement(ctx, c.elementID, content, seq); err == nil {
 			return nil
 		} else {
 			lastErr = err
@@ -791,7 +894,8 @@ func (c *StreamingCardController) flushIMPatchWithConfig(ctx context.Context, co
 }
 
 func (c *StreamingCardController) doFlushIMPatch(ctx context.Context, header cardHeader, config map[string]any, content string, final bool) error {
-	contentJSON := buildCard(header, config, []map[string]any{{"tag": "markdown", "content": content}})
+	elements := c.buildFinalElements(content)
+	contentJSON := buildCard(header, config, elements)
 
 	body := larkim.NewPatchMessageReqBodyBuilder().
 		Content(contentJSON).
