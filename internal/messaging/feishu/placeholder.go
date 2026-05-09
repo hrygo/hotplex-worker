@@ -11,7 +11,7 @@ var placeholderIntros = []string{
 	"输入 ? 或 /help 查看所有可用命令",
 	"用 $ 前缀可用自然语言触发命令，如 $compact、$上下文、$切换模型",
 	// Worker 命令
-	"对话过长时输入 /compact 或 $压缩 可压缩历史，释放上下文窗口",
+	"输入 /compact 或 $压缩 可压缩历史，释放上下文窗口",
 	"输入 /commit 或 $提交 可让 AI 快速创建 Git 提交",
 	"输入 /model sonnet 或 $切换模型 sonnet 可切换 AI 模型",
 	"输入 /context 或 $上下文 可查看上下文窗口使用量",
@@ -19,7 +19,7 @@ var placeholderIntros = []string{
 	"输入 /mcp 可查看 MCP 服务器连接状态",
 	"输入 /perm bypassPermissions 或 $权限模式 bypassPermissions 可调整权限",
 	// CLI
-	"首次使用？运行 hotplex onboard 启动交互式配置向导",
+	"运行 hotplex onboard 启动交互式配置向导",
 	"运行 hotplex doctor --fix 可自动检测并修复环境问题",
 	"运行 hotplex update -y --restart 一键更新并重启 Gateway",
 	"运行 hotplex dev 可同时启动 Gateway 和 WebChat 开发环境",
@@ -29,4 +29,9 @@ var placeholderIntros = []string{
 
 func randomPlaceholderIntro() string {
 	return placeholderIntros[rand.IntN(len(placeholderIntros))]
+}
+
+// buildPlaceholderText constructs the placeholder card text with Feishu native stickers.
+func buildPlaceholderText() string {
+	return ":Get: 收到指令。\n:StatusFlashOfInspiration: " + randomPlaceholderIntro()
 }
