@@ -134,6 +134,7 @@ func (e *pcEntry) writeLoop() {
 	var timer *time.Timer
 	var timerCh <-chan time.Time
 	var pendingSID string // tracks SessionID for pending coalesced deltas
+	var runeCount int
 
 	flush := func(sid string) {
 		if db.Len() == 0 {
@@ -152,6 +153,7 @@ func (e *pcEntry) writeLoop() {
 		}
 		metrics.GatewayDeltaFlushTotal.Inc()
 		db.Reset()
+		runeCount = 0
 		if timer != nil {
 			timer.Stop()
 			timerCh = nil
@@ -173,9 +175,10 @@ func (e *pcEntry) writeLoop() {
 					pendingSID = env.SessionID
 				}
 				db.WriteString(content)
+				runeCount += utf8.RuneCountInString(content)
 				metrics.GatewayDeltaCoalescedTotal.Inc()
 
-				if utf8.RuneCountInString(db.String()) >= e.cfg.CoalesceSize {
+				if runeCount >= e.cfg.CoalesceSize {
 					flush(pendingSID)
 				} else if timer == nil {
 					timer = time.NewTimer(e.cfg.CoalesceIntvl)
