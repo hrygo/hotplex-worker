@@ -180,6 +180,14 @@ func (m *Manager) Get(id string) (*SessionInfo, error) {
 	}
 
 	m.mu.Lock()
+	// Double-check: another goroutine may have populated this while we loaded from store.
+	if existing, ok := m.sessions[id]; ok {
+		m.mu.Unlock()
+		existing.mu.RLock()
+		cached := existing.info
+		existing.mu.RUnlock()
+		return &cached, nil
+	}
 	m.sessions[id] = &managedSession{info: *info, log: m.log.With("worker_type", info.WorkerType, "channel", info.Platform)}
 	m.mu.Unlock()
 
@@ -304,12 +312,7 @@ func (m *Manager) transitionState(ctx context.Context, ms *managedSession, from,
 		metrics.SessionsDeleted.Inc()
 	}
 
-	if m.StateNotifier != nil {
-		m.safeGo(func() { m.StateNotifier(ctx, ms.info.ID, to, "") })
-	}
-	if (to == events.StateTerminated || to == events.StateDeleted) && m.OnTerminate != nil {
-		m.safeGo(func() { m.OnTerminate(ms.info.ID) })
-	}
+	m.notifyStateChange(ctx, ms.info.ID, to, "")
 
 	return nil
 }
@@ -557,12 +560,7 @@ func (m *Manager) Delete(ctx context.Context, id string) error {
 	}
 	m.mu.Unlock()
 
-	if m.StateNotifier != nil {
-		m.safeGo(func() { m.StateNotifier(ctx, id, events.StateDeleted, "session deleted") })
-	}
-	if m.OnTerminate != nil {
-		m.safeGo(func() { m.OnTerminate(id) })
-	}
+	m.notifyStateChange(ctx, id, events.StateDeleted, "session deleted")
 
 	m.log.Info("session: deleted", "session_id", id)
 	return nil
@@ -811,7 +809,7 @@ func (m *Manager) TerminateAllWorkers() {
 	for _, w := range workers {
 		w := w
 		eg.Go(func() error {
-			terminateCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			terminateCtx, cancel := context.WithTimeout(ctx, gracefulShutdownTimeout)
 			defer cancel()
 			return w.Terminate(terminateCtx)
 		})
@@ -977,6 +975,16 @@ func (m *Manager) safeGo(fn func()) {
 		}()
 		fn()
 	}()
+}
+
+// notifyStateChange sends state change and termination callbacks.
+func (m *Manager) notifyStateChange(ctx context.Context, sessionID string, state events.SessionState, message string) {
+	if m.StateNotifier != nil {
+		m.safeGo(func() { m.StateNotifier(ctx, sessionID, state, message) })
+	}
+	if (state == events.StateTerminated || state == events.StateDeleted) && m.OnTerminate != nil {
+		m.safeGo(func() { m.OnTerminate(sessionID) })
+	}
 }
 
 func (m *Manager) getManagedSession(id string) *managedSession {
