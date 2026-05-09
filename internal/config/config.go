@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -162,11 +163,21 @@ type Config struct {
 }
 
 // MessagingConfig holds messaging platform adapter settings.
+// Shared defaults (WorkerType, STTConfig, TTSConfig) are set at this level and propagated
+// to each platform config via propagateMessagingDefaults().
+// DMPolicy and GroupPolicy remain platform-level only (different platforms may have different access policies).
+// Priority: platform-level > messaging-level > Default().
 type MessagingConfig struct {
+	TurnSummaryEnabled bool `mapstructure:"turn_summary_enabled"`
+
+	// Shared defaults — platforms inherit; platform-level overrides take precedence.
+	WorkerType string `mapstructure:"worker_type"`
+	STTConfig  `mapstructure:",squash"`
+	TTSConfig  `mapstructure:",squash"`
+
+	// Platform-specific configs.
 	Slack  SlackConfig  `mapstructure:"slack"`
 	Feishu FeishuConfig `mapstructure:"feishu"`
-
-	TurnSummaryEnabled bool `mapstructure:"turn_summary_enabled"`
 }
 
 // STT constants for provider values.
@@ -194,10 +205,23 @@ func (c STTConfig) IsPersistent() bool {
 	return c.LocalCmd != "" && !strings.Contains(c.LocalCmd, "{file}")
 }
 
+// FillFrom propagates zero-value fields from defaults into c.
+func (c *STTConfig) FillFrom(defaults STTConfig) {
+	if c.Provider == "" {
+		c.Provider = defaults.Provider
+	}
+	if c.LocalCmd == "" {
+		c.LocalCmd = defaults.LocalCmd
+	}
+	if c.LocalIdleTTL == 0 {
+		c.LocalIdleTTL = defaults.LocalIdleTTL
+	}
+}
+
 // TTSConfig holds text-to-speech settings. Squashed into platform configs.
 type TTSConfig struct {
-	// Enabled controls whether voice replies are sent for voice-triggered turns.
-	Enabled bool `mapstructure:"tts_enabled"`
+	// TTSEnabled controls whether voice replies are sent for voice-triggered turns.
+	TTSEnabled bool `mapstructure:"tts_enabled"`
 	// Provider: "edge" (Microsoft Edge TTS, free), "edge+moss" (Edge primary + MOSS-TTS-Nano CPU fallback), "" (disabled).
 	TTSProvider string `mapstructure:"tts_provider"`
 	// Voice name for Edge TTS (e.g. "zh-CN-XiaoxiaoNeural", "zh-CN-YunxiNeural").
@@ -215,6 +239,37 @@ type TTSConfig struct {
 	MossIdleTimeout time.Duration `mapstructure:"tts_moss_idle_timeout"`
 	// MossCpuThreads controls ONNX Runtime intra-op threads for the MOSS sidecar (0 = auto-detect = physical cores).
 	MossCpuThreads int `mapstructure:"tts_moss_cpu_threads"`
+}
+
+// FillFrom propagates zero-value fields from defaults into c.
+func (c *TTSConfig) FillFrom(defaults TTSConfig) {
+	if !c.TTSEnabled && defaults.TTSEnabled {
+		c.TTSEnabled = defaults.TTSEnabled
+	}
+	if c.TTSProvider == "" {
+		c.TTSProvider = defaults.TTSProvider
+	}
+	if c.Voice == "" {
+		c.Voice = defaults.Voice
+	}
+	if c.MaxChars == 0 {
+		c.MaxChars = defaults.MaxChars
+	}
+	if c.MossModelDir == "" {
+		c.MossModelDir = defaults.MossModelDir
+	}
+	if c.MossVoice == "" {
+		c.MossVoice = defaults.MossVoice
+	}
+	if c.MossPort == 0 {
+		c.MossPort = defaults.MossPort
+	}
+	if c.MossIdleTimeout == 0 {
+		c.MossIdleTimeout = defaults.MossIdleTimeout
+	}
+	if c.MossCpuThreads == 0 {
+		c.MossCpuThreads = defaults.MossCpuThreads
+	}
 }
 
 // MessagingPlatformConfig holds settings shared by all messaging adapters (Slack, Feishu, etc.).
@@ -516,6 +571,24 @@ func Default() *Config {
 		},
 		Messaging: MessagingConfig{
 			TurnSummaryEnabled: true,
+			// Shared defaults — propagated to platforms via propagateMessagingDefaults().
+			WorkerType: "claude_code",
+			STTConfig: STTConfig{
+				Provider:     "local",
+				LocalCmd:     "python3 " + filepath.Join(HotplexHome(), "scripts", "stt_server.py"),
+				LocalIdleTTL: time.Hour,
+			},
+			TTSConfig: TTSConfig{
+				TTSEnabled:      true,
+				TTSProvider:     "edge+moss",
+				Voice:           "zh-CN-XiaoxiaoNeural",
+				MaxChars:        150,
+				MossModelDir:    filepath.Join(HotplexHome(), "models", "moss-tts-nano"),
+				MossVoice:       "Xiaoyu",
+				MossPort:        18083,
+				MossIdleTimeout: 30 * time.Minute,
+				MossCpuThreads:  0,
+			},
 			Feishu: FeishuConfig{
 				MessagingPlatformConfig: defaultMessagingPlatformConfig(),
 			},
@@ -538,23 +611,27 @@ func defaultMessagingPlatformConfig() MessagingPlatformConfig {
 		RequireMention: true,
 		DMPolicy:       "allowlist",
 		GroupPolicy:    "allowlist",
-		STTConfig: STTConfig{
-			Provider:     "local",
-			LocalCmd:     "python3 " + filepath.Join(HotplexHome(), "scripts", "stt_server.py"),
-			LocalIdleTTL: time.Hour,
-		},
-		TTSConfig: TTSConfig{
-			Enabled:         true,
-			TTSProvider:     "edge+moss",
-			Voice:           "zh-CN-XiaoxiaoNeural",
-			MaxChars:        150,
-			MossModelDir:    filepath.Join(HotplexHome(), "models", "moss-tts-nano"),
-			MossVoice:       "Xiaoyu",
-			MossPort:        18083,
-			MossIdleTimeout: 30 * time.Minute,
-			MossCpuThreads:  0,
-		},
 	}
+}
+
+// propagateMessagingDefaults copies shared fields from MessagingConfig to each
+// platform config. Only zero-value fields on the platform side are filled;
+// existing values are never overwritten.
+//
+// Priority: platform-level (YAML / env) > messaging-level > Default().
+func propagateMessagingDefaults(cfg *Config) {
+	msg := &cfg.Messaging
+	propagatePlatform(&msg.Slack.MessagingPlatformConfig, msg)
+	propagatePlatform(&msg.Feishu.MessagingPlatformConfig, msg)
+}
+
+// propagatePlatform fills zero-value fields on the platform from the messaging-level shared config.
+func propagatePlatform(p *MessagingPlatformConfig, msg *MessagingConfig) {
+	if p.WorkerType == "" {
+		p.WorkerType = msg.WorkerType
+	}
+	p.STTConfig.FillFrom(msg.STTConfig)
+	p.TTSConfig.FillFrom(msg.TTSConfig)
 }
 
 // ─── Loading ─────────────────────────────────────────────────────────────────
@@ -751,6 +828,10 @@ func loadRecursive(filePath string, opts LoadOptions, visited []string) (*Config
 	// Messaging platform env var overrides.
 	applyMessagingEnv(cfg)
 
+	// Propagate shared messaging defaults to per-platform configs.
+	// Priority: platform-level (YAML/env) > messaging-level > Default().
+	propagateMessagingDefaults(cfg)
+
 	// Expand env entries and drop those referencing unset vars without defaults.
 	expanded := make([]string, 0, len(cfg.Worker.Environment))
 	for _, e := range cfg.Worker.Environment {
@@ -923,6 +1004,53 @@ func applyMessagingEnv(cfg *Config) {
 	// Global messaging env vars.
 	if v := os.Getenv("HOTPLEX_MESSAGING_TURN_SUMMARY_ENABLED"); v != "" {
 		cfg.Messaging.TurnSummaryEnabled = strings.EqualFold(v, "true")
+	}
+
+	// Messaging-level shared defaults (propagated to platforms by propagateMessagingDefaults).
+	msgStrs := []envMapping{
+		{"HOTPLEX_MESSAGING_WORKER_TYPE", "WorkerType"},
+		{"HOTPLEX_MESSAGING_STT_PROVIDER", "Provider"},
+		{"HOTPLEX_MESSAGING_STT_LOCAL_CMD", "LocalCmd"},
+		{"HOTPLEX_MESSAGING_TTS_PROVIDER", "TTSProvider"},
+		{"HOTPLEX_MESSAGING_TTS_VOICE", "Voice"},
+		{"HOTPLEX_MESSAGING_TTS_MOSS_MODEL_DIR", "MossModelDir"},
+		{"HOTPLEX_MESSAGING_TTS_MOSS_VOICE", "MossVoice"},
+	}
+	for _, m := range msgStrs {
+		if v := os.Getenv(m.env); v != "" {
+			setField(&cfg.Messaging, m.field, v)
+		}
+	}
+	// Int fields.
+	if v := os.Getenv("HOTPLEX_MESSAGING_TTS_MAX_CHARS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.Messaging.MaxChars = n
+		}
+	}
+	if v := os.Getenv("HOTPLEX_MESSAGING_TTS_MOSS_PORT"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.Messaging.MossPort = n
+		}
+	}
+	if v := os.Getenv("HOTPLEX_MESSAGING_TTS_MOSS_CPU_THREADS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.Messaging.MossCpuThreads = n
+		}
+	}
+	// Duration fields.
+	if v := os.Getenv("HOTPLEX_MESSAGING_STT_LOCAL_IDLE_TTL"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			cfg.Messaging.LocalIdleTTL = d
+		}
+	}
+	if v := os.Getenv("HOTPLEX_MESSAGING_TTS_MOSS_IDLE_TIMEOUT"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			cfg.Messaging.MossIdleTimeout = d
+		}
+	}
+	// Bool fields.
+	if v := os.Getenv("HOTPLEX_MESSAGING_TTS_ENABLED"); v != "" {
+		cfg.Messaging.TTSEnabled = strings.EqualFold(v, "true")
 	}
 }
 
