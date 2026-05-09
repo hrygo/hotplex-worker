@@ -8,7 +8,6 @@ import {
 import { useQueryState, parseAsString } from 'nuqs';
 import { useHotPlexRuntime } from '@/lib/adapters/hotplex-runtime-adapter';
 import { useSessions } from '@/lib/hooks/useSessions';
-import { AdapterErrorBoundary } from '@/components/assistant-ui/AdapterErrorBoundary';
 import { Thread } from '@/components/assistant-ui/thread';
 import { BrandIcon } from '@/components/icons';
 import { SessionPanel } from './SessionPanel';
@@ -33,6 +32,7 @@ function ChatInterface({
     onMetricsChange,
     onSkillsChange: setSkills,
   });
+
   const runtime = useExternalStoreRuntime(adapter);
 
   type AdapterExtras = {
@@ -40,20 +40,20 @@ function ChatInterface({
     connectionState?: ConnectionState;
     onLoadHistory?: () => Promise<{ hasMore: boolean }>;
     onInteractionRespond?: (toolCallId: string, allowed: boolean) => void;
+    isStopping?: boolean;
   };
   const extras = adapter.extras as AdapterExtras | undefined;
   const hasMore = extras?.hasMore ?? false;
   const connectionState = extras?.connectionState;
   const onLoadHistory = extras?.onLoadHistory;
   const onInteractionRespond = extras?.onInteractionRespond;
+  const isStopping = extras?.isStopping ?? false;
   const suggestions = adapter.suggestions as readonly { title: string; label: string; prompt: string }[] | undefined;
 
   return (
-    <AdapterErrorBoundary>
-      <AssistantRuntimeProvider runtime={runtime}>
-        <Thread skills={skills} hasMore={hasMore} connectionState={connectionState} onLoadHistory={onLoadHistory} onInteractionRespond={onInteractionRespond} suggestions={suggestions} />
-      </AssistantRuntimeProvider>
-    </AdapterErrorBoundary>
+    <AssistantRuntimeProvider runtime={runtime}>
+      <Thread skills={skills} hasMore={hasMore} connectionState={connectionState} onLoadHistory={onLoadHistory} onInteractionRespond={onInteractionRespond} suggestions={suggestions} isStopping={isStopping} />
+    </AssistantRuntimeProvider>
   );
 }
 

@@ -72,7 +72,9 @@ export function conversationTurnsToMessages(turns: ConversationTurn[]): HistoryM
 
     const createdAt = new Date(turn.created_at);
     return {
-      id: turn.id,
+      // Use role-suffixed ID to prevent session_id:seq collision between user
+      // and assistant turns from the same session (#331).
+      id: `turn:${turn.id}:${turn.role}`,
       role: turn.role as 'user' | 'assistant',
       parts,
       createdAt: isNaN(createdAt.getTime()) ? new Date() : createdAt,

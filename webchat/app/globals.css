@@ -524,6 +524,24 @@ body {
 .btn-primary:active:not(:disabled) { transform: scale(0.95); }
 .btn-primary:disabled { opacity: 0.3; cursor: not-allowed; }
 
+.btn-stop {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+.btn-stop:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.25);
+  transform: scale(1.05);
+}
+.btn-stop:active:not(:disabled) { transform: scale(0.95); }
+
+.btn-stop-stopping {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+  cursor: wait;
+  opacity: 0.7;
+  pointer-events: none;
+}
+
 /* ============================================================
    Glass Panels — Glassmorphism System
    ============================================================ */

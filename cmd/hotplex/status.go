@@ -102,13 +102,13 @@ func gatewayHealthURL(configPath string) string {
 	if err != nil {
 		return defaultHealthURL
 	}
-	scheme := "http"
-	if cfg.Security.TLSEnabled {
-		scheme = "https"
-	}
 	addr := cfg.Gateway.Addr
 	if addr != "" && addr[0] == ':' {
 		addr = "localhost" + addr
+	}
+	scheme := "http"
+	if cfg.Security.TLSEnabled {
+		scheme = "https"
 	}
 	return scheme + "://" + addr + "/health"
 }
