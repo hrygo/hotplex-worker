@@ -404,6 +404,7 @@ interface ThreadProps {
   onLoadHistory?: () => Promise<{ hasMore: boolean }>;
   onInteractionRespond?: (toolCallId: string, allowed: boolean) => void;
   suggestions?: readonly { title: string; label: string; prompt: string }[];
+  isStopping?: boolean;
 }
 
 const connLabel: Record<ConnectionState, string> = {
@@ -418,7 +419,7 @@ const connDot: Record<ConnectionState, string> = {
   disconnected: 'bg-red-400',
 };
 
-export function Thread({ skills, hasMore, connectionState: conn, onLoadHistory, onInteractionRespond, suggestions }: ThreadProps) {
+export function Thread({ skills, hasMore, connectionState: conn, onLoadHistory, onInteractionRespond, suggestions, isStopping: isStoppingProp }: ThreadProps) {
   const [localText, setLocalText] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(false);
@@ -553,7 +554,18 @@ export function Thread({ skills, hasMore, connectionState: conn, onLoadHistory, 
                 onCompositionEnd={handleCompositionEnd} 
               />
               <div className="flex items-center gap-2">
-                {isRunning && <ComposerPrimitive.Cancel className="btn-icon"><svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" /></svg></ComposerPrimitive.Cancel>}
+                {(isRunning || isStoppingProp) && (
+                  <ComposerPrimitive.Cancel className={`btn-icon ${isStoppingProp ? 'btn-stop-stopping' : 'btn-stop'}`} disabled={isStoppingProp}>
+                    {isStoppingProp ? (
+                      <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                    ) : (
+                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
+                    )}
+                  </ComposerPrimitive.Cancel>
+                )}
                 <ComposerPrimitive.Send className="btn-icon btn-primary"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 12h14M12 5l7 7-7 7" /></svg></ComposerPrimitive.Send>
               </div>
             </div>

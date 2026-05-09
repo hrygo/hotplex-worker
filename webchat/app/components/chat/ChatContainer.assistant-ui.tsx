@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   AssistantRuntimeProvider,
   useExternalStoreRuntime,
@@ -32,24 +32,48 @@ function ChatInterface({
     onMetricsChange,
     onSkillsChange: setSkills,
   });
-  const runtime = useExternalStoreRuntime(adapter);
+
+  // Diagnostic: detect duplicate IDs in adapter messages before passing to runtime (#331)
+  const diagAdapter = useMemo(() => {
+    const msgs = adapter.messages as readonly { id: string; role: string }[] | undefined;
+    if (msgs && msgs.length > 0) {
+      const ids = new Map<string, number>();
+      for (const m of msgs) {
+        const count = (ids.get(m.id) ?? 0) + 1;
+        ids.set(m.id, count);
+        if (count > 1) {
+          console.error('[#331 DIAG] DUPLICATE ID in adapter.messages:', {
+            id: m.id,
+            role: m.role,
+            totalCount: count,
+            allIds: msgs.map((m, i) => `${i}:${m.id}(${m.role})`),
+          });
+        }
+      }
+    }
+    return adapter;
+  }, [adapter]);
+
+  const runtime = useExternalStoreRuntime(diagAdapter);
 
   type AdapterExtras = {
     hasMore?: boolean;
     connectionState?: ConnectionState;
     onLoadHistory?: () => Promise<{ hasMore: boolean }>;
     onInteractionRespond?: (toolCallId: string, allowed: boolean) => void;
+    isStopping?: boolean;
   };
   const extras = adapter.extras as AdapterExtras | undefined;
   const hasMore = extras?.hasMore ?? false;
   const connectionState = extras?.connectionState;
   const onLoadHistory = extras?.onLoadHistory;
   const onInteractionRespond = extras?.onInteractionRespond;
+  const isStopping = extras?.isStopping ?? false;
   const suggestions = adapter.suggestions as readonly { title: string; label: string; prompt: string }[] | undefined;
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
-      <Thread skills={skills} hasMore={hasMore} connectionState={connectionState} onLoadHistory={onLoadHistory} onInteractionRespond={onInteractionRespond} suggestions={suggestions} />
+      <Thread skills={skills} hasMore={hasMore} connectionState={connectionState} onLoadHistory={onLoadHistory} onInteractionRespond={onInteractionRespond} suggestions={suggestions} isStopping={isStopping} />
     </AssistantRuntimeProvider>
   );
 }

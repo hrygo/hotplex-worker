@@ -53,9 +53,6 @@ export interface UseHotPlexRuntimeConfig {
   suggestions?: readonly ThreadSuggestion[];
 }
 
-// Sentinel ID for the optimistic ghost message shown while waiting for the first WS event.
-const GHOST_ASSISTANT_ID = 'ghost-assistant';
-
 // Content-signature prefix length for dedup — covers most short/medium responses.
 const CONTENT_SIG_PREFIX = 300;
 
@@ -327,8 +324,7 @@ export function useHotPlexRuntime({
     // Append delta content to the last text part of the last assistant message
     const appendDelta = (content: string) => {
       setMessages((prev) => {
-        const filtered = prev.filter(m => m.id !== GHOST_ASSISTANT_ID);
-        const lastMessage = filtered[filtered.length - 1];
+        const lastMessage = prev[prev.length - 1];
         if (lastMessage?.role === 'assistant' && lastMessage.status === 'streaming') {
           const parts = [...lastMessage.parts];
           // Append to last text part, or add new one
@@ -338,13 +334,13 @@ export function useHotPlexRuntime({
           } else {
             parts.push({ type: 'text', text: content });
           }
-          return [...filtered.slice(0, -1), { ...lastMessage, parts }];
+          return [...prev.slice(0, -1), { ...lastMessage, parts }];
         }
         // No streaming message — create one (message.start may not have been sent)
         const fallbackId = `assistant-${Date.now()}`;
         streamingFallbackId = fallbackId;
         return [
-          ...filtered,
+          ...prev,
           {
             id: fallbackId,
             role: 'assistant' as const,
@@ -375,8 +371,7 @@ export function useHotPlexRuntime({
       if (!data) return;
 
       setMessages((prev) => {
-        const filtered = prev.filter(m => m.id !== GHOST_ASSISTANT_ID);
-        const lastMessage = filtered[filtered.length - 1];
+        const lastMessage = prev[prev.length - 1];
         if (lastMessage?.role === 'assistant' && lastMessage.status === 'streaming') {
           const parts = [...lastMessage.parts];
           const lastPart = parts[parts.length - 1];
@@ -385,12 +380,12 @@ export function useHotPlexRuntime({
           } else {
             parts.push({ type: 'reasoning', text: data.content || '' });
           }
-          return [...filtered.slice(0, -1), { ...lastMessage, parts }];
+          return [...prev.slice(0, -1), { ...lastMessage, parts }];
         }
         const fallbackId = `assistant-${Date.now()}`;
         streamingFallbackId = fallbackId;
         return [
-          ...filtered,
+          ...prev,
           {
             id: fallbackId,
             role: 'assistant' as const,
@@ -637,25 +632,24 @@ export function useHotPlexRuntime({
     const handleMessageStart = (data: MessageStartData, env: Envelope) => {
       if (!data) return;
       setMessages((prev) => {
-        const filtered = prev.filter(m => m.id !== GHOST_ASSISTANT_ID);
         // Reasoning events may arrive before messageStart, creating env.id early.
-        const existingIdx = filtered.findIndex((m) => m.id === env.id);
+        const existingIdx = prev.findIndex((m) => m.id === env.id);
         if (existingIdx !== -1) {
-          const updated = [...filtered];
-          updated[existingIdx] = { ...filtered[existingIdx], status: 'streaming' };
+          const updated = [...prev];
+          updated[existingIdx] = { ...prev[existingIdx], status: 'streaming' };
           return updated;
         }
         // Delta/reasoning fallback already created a streaming message with a placeholder ID.
         // Keep it as-is — do NOT rename to env.id (causes #331).
-        const pendingIdx = filtered.findLastIndex((m) =>
+        const pendingIdx = prev.findLastIndex((m) =>
           m.role === 'assistant' && m.status === 'streaming'
         );
         if (pendingIdx !== -1) {
-          return filtered;
+          return prev;
         }
         // No prior message for this turn — create with real env.id.
         return [
-          ...filtered,
+          ...prev,
           {
             id: env.id,
             role: 'assistant' as const,
@@ -890,17 +884,8 @@ export function useHotPlexRuntime({
       status: 'complete',
     };
 
-    // 2. Add optimistic "Ghost" assistant message to provide immediate feedback
-    const ghostMessage: HotPlexMessage = {
-      id: GHOST_ASSISTANT_ID,
-      role: 'assistant',
-      parts: [{ type: 'reasoning', text: 'Initializing HotPlex Agent and analyzing workspace context...' }],
-      createdAt: new Date(),
-      status: 'streaming',
-    };
-
-    setMessages((prev) => [...prev, userMessage, ghostMessage]);
-    setIsRunning(true); 
+    setMessages((prev) => [...prev, userMessage]);
+    setIsRunning(true);
     startTurn(); // Begin timing for metrics
 
     // Send to HotPlex gateway with error handling
@@ -908,20 +893,27 @@ export function useHotPlexRuntime({
       client.sendInput(textContent);
     } catch (err) {
       logger.error('RuntimeAdapter', 'sendInput failed', { error: String(err) });
-      // Remove BOTH user message and ghost message since send failed
-      setMessages((prev) => prev.slice(0, -2));
+      // Remove user message since send failed
+      setMessages((prev) => prev.slice(0, -1));
       throw new Error('Failed to send message. Please check your connection.');
     }
   }, []);
 
-  // Handler for cancellation
+  const [isStopping, setIsStopping] = useState(false);
+
+  // Handler for cancellation — brief stopping state for UI feedback
   const handleCancel = useCallback(async () => {
+    if (isStopping) return;
+    setIsStopping(true);
     const client = clientRef.current;
     if (client?.connected) {
       client.sendControl('terminate');
     }
-    setIsRunning(false);
-  }, []);
+    setTimeout(() => {
+      setIsRunning(false);
+      setIsStopping(false);
+    }, 600);
+  }, [isStopping]);
 
   // Handler for loading earlier messages (cursor-based pagination)
   const handleLoadHistory = useCallback(async (): Promise<{ hasMore: boolean }> => {
@@ -1039,7 +1031,8 @@ export function useHotPlexRuntime({
     hasMore: historyHasMore,
     onLoadHistory: handleLoadHistory,
     onInteractionRespond: handleInteractionRespond,
-  }), [sessionMetrics, historyHasMore, handleLoadHistory, handleInteractionRespond]);
+    isStopping,
+  }), [sessionMetrics, historyHasMore, handleLoadHistory, handleInteractionRespond, isStopping]);
 
   // Return ExternalStoreAdapter — memoized to prevent unnecessary setAdapter calls
   // connectionState is returned separately to avoid invalidating the adapter memo on reconnect.
