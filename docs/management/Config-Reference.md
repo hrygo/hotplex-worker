@@ -324,24 +324,19 @@ Audio messages received via messaging platforms (Feishu, Slack) are automaticall
 
 ### Configuration Fields
 
-All STT fields are under the `feishu` section in `config.yaml`:
+STT settings are configured as **messaging-level shared defaults** (inherited by all platforms) with optional per-platform overrides. Priority: platform-level > messaging-level > Default().
 
 ```yaml
 messaging:
+  # ── Shared defaults (inherited by all platforms) ──
+  stt_provider: "local"
+  stt_local_cmd: "python3 scripts/stt_server.py --model iic/SenseVoiceSmall"
+  stt_local_idle_ttl: "10m"
+
   feishu:
-    # STT provider: "feishu" (cloud API), "local" (external command),
-    # "feishu+local" (cloud primary, local fallback), "" (disabled)
-    stt_provider: "local"
-
-    # Local STT command template. No {file} placeholder needed for persistent mode.
-    stt_local_cmd: "python3 scripts/stt_server.py --model iic/SenseVoiceSmall"
-
-    # Local STT mode: "ephemeral" (per-request process) or "persistent" (long-lived subprocess)
-    # Persistent mode keeps the model in memory, avoiding ~2-3s cold start per request.
-
-    # Idle timeout for persistent mode. Subprocess auto-shuts down after this duration
-    # with no transcription requests. 0 = disabled (never auto-shutdown).
-    stt_local_idle_ttl: "10m"
+    enabled: true
+    # Per-platform override (optional):
+    # stt_provider: "feishu+local"  # Override shared default for Feishu only
 ```
 
 ### Provider Options
@@ -380,9 +375,12 @@ The subprocess keeps the model loaded in memory. Lifecycle:
 ### Environment Variables
 
 ```bash
-HOTPLEX_MESSAGING_FEISHU_REQUIRE_MENTION=true # Default: true
-HOTPLEX_MESSAGING_FEISHU_DM_POLICY=allowlist  # open | allowlist | disabled (default: allowlist)
-HOTPLEX_MESSAGING_FEISHU_GROUP_POLICY=allowlist # open | allowlist | disabled (default: allowlist)
+# Messaging-level shared defaults (inherited by all platforms)
+HOTPLEX_MESSAGING_STT_PROVIDER=local
+HOTPLEX_MESSAGING_STT_LOCAL_CMD="python3 /path/to/stt_server.py"
+HOTPLEX_MESSAGING_STT_LOCAL_IDLE_TTL=10m
+
+# Per-platform overrides (replace FEISHU with SLACK for Slack)
 HOTPLEX_MESSAGING_FEISHU_STT_PROVIDER=local
 HOTPLEX_MESSAGING_FEISHU_STT_LOCAL_CMD="python3 /path/to/stt_server.py"
 HOTPLEX_MESSAGING_FEISHU_STT_LOCAL_IDLE_TTL=10m
