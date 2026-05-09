@@ -28,7 +28,7 @@ func TestEmbeddedConfigYAMLIntegrity(t *testing.T) {
 		"max_lifetime: 24h", "execution_timeout: 30m",
 		"max_retries: 9", "base_delay: 5s", "max_delay: 120s",
 		"notify_user: true", "retry_input:",
-		"dm_policy:", "group_policy:", "require_mention:",
+		"require_mention:",
 		"stt_provider:", "stt_local_cmd:",
 		"stt_local_idle_ttl:", "socket_mode: true",
 		"type:", "enabled:",
@@ -58,5 +58,5 @@ func TestBuildConfigYAML_FeishuEnabled(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Contains(t, yaml, "feishu:\n        enabled: true")
-	require.Contains(t, yaml, `dm_policy: "open"`)
+	require.Contains(t, yaml, `dm_policy: open`)
 }

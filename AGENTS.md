@@ -1,6 +1,6 @@
 # HotPlex 项目知识库
 
-**最后更新**: 2026-05-09 · **分支**: main · **版本**: v1.8.0
+**最后更新**: 2026-05-09 · **分支**: main · **版本**: v1.8.1
 
 ---
 
@@ -153,7 +153,7 @@ cp configs/env.example .env
 - `base/` - 共享 BaseWorker + Conn + MetadataHandler
 
 **支撑模块**：
-- `config/` - Viper 配置 + 热重载 + 继承 + 审计/回滚
+- `config/` - Viper 配置 + 热重载 + 继承 + 审计/回滚。消息层共享默认值（WorkerType, STT, TTS）通过 `FillFrom()` 传播到平台配置。三级优先级：platform > messaging > Default()
 - `agentconfig/` - B/C 双通道 Agent 人格/上下文加载器
 - `security/` - JWT、SSRF、路径安全
 - `skills/` - Skills 发现

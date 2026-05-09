@@ -360,8 +360,8 @@ func TestBuildConfigYAML_FeishuEnabled(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Contains(t, got, "feishu:")
-	require.Contains(t, got, `dm_policy: "open"`)
-	require.Contains(t, got, `group_policy: "open"`)
+	require.Contains(t, got, `dm_policy: open`)
+	require.Contains(t, got, `group_policy: open`)
 }
 
 // ─── BuildConfigYAML error propagation ──────────────────────────────────────

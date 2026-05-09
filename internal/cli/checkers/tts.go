@@ -115,15 +115,15 @@ func ttsRequirements() ttsDeps {
 	var deps ttsDeps
 
 	// Edge TTS → MP3 → ffmpeg → platform format (Feishu: Opus, Slack: MP3).
-	slackEdge := cfg.Messaging.Slack.Enabled && cfg.Messaging.Slack.TTSConfig.Enabled
-	feishuEdge := cfg.Messaging.Feishu.Enabled && cfg.Messaging.Feishu.TTSConfig.Enabled
+	slackEdge := cfg.Messaging.Slack.Enabled && cfg.Messaging.Slack.TTSEnabled
+	feishuEdge := cfg.Messaging.Feishu.Enabled && cfg.Messaging.Feishu.TTSEnabled
 	if slackEdge || feishuEdge {
 		deps.FFmpeg = true
 	}
 
 	// MOSS-TTS-Nano sidecar requires python3 + model dir.
-	slackMoss := cfg.Messaging.Slack.Enabled && cfg.Messaging.Slack.TTSConfig.Enabled && mossProvider(cfg.Messaging.Slack.TTSProvider)
-	feishuMoss := cfg.Messaging.Feishu.Enabled && cfg.Messaging.Feishu.TTSConfig.Enabled && mossProvider(cfg.Messaging.Feishu.TTSProvider)
+	slackMoss := cfg.Messaging.Slack.Enabled && cfg.Messaging.Slack.TTSEnabled && mossProvider(cfg.Messaging.Slack.TTSProvider)
+	feishuMoss := cfg.Messaging.Feishu.Enabled && cfg.Messaging.Feishu.TTSEnabled && mossProvider(cfg.Messaging.Feishu.TTSProvider)
 	if slackMoss || feishuMoss {
 		deps.Python3 = true
 		deps.FFmpeg = true
