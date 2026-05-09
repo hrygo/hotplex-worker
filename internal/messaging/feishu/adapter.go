@@ -658,7 +658,7 @@ func (c *FeishuConn) getStreamCtrl() *StreamingCardController {
 func (c *FeishuConn) resetStreamCtrl() {
 	newCtrl := NewStreamingCardController(
 		c.adapter.larkClient, c.adapter.rateLimiter, c.adapter.Log,
-		c.adapter.resolveBotName(), c.turnCount+1, c.lastModel, c.lastBranch, c.workDir,
+		c.adapter.resolveBotName(), c.turnCount, c.lastModel, c.lastBranch, c.workDir,
 	)
 	c.mu.Lock()
 	c.streamCtrl = newCtrl
@@ -961,6 +961,7 @@ func (c *FeishuConn) Close() error {
 func (c *FeishuConn) clearActiveIndicators(ctx context.Context) *StreamingCardController {
 	c.mu.Lock()
 	streamCtrl := c.streamCtrl
+	c.streamCtrl = nil
 	typingRid := c.typingRid
 	toolRid := c.toolRid
 	platformMsgID := c.platformMsgID
