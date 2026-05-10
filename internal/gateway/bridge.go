@@ -138,7 +138,7 @@ func (b *Bridge) StartSession(ctx context.Context, id, userID, botID string, wt 
 			workerInfo.Env["HOTPLEX_SLACK_THREAD_TS"] = threadTS
 		}
 	}
-	injectGatewayContext(&workerInfo.Env, platform, botID, userID, platformKey, id, workDir)
+	workerInfo.Env = injectGatewayContext(workerInfo.Env, platform, botID, userID, platformKey, id, workDir)
 
 	// Inject cron-specific env vars (e.g. admin API creds) only for cron sessions.
 	if platform == "cron" && len(b.cronEnv) > 0 {
@@ -236,7 +236,7 @@ func (b *Bridge) resumeWithOpts(ctx context.Context, id, workDir string, opts fo
 		}
 	}
 
-	injectGatewayContext(&workerInfo.Env, si.Platform, si.BotID, si.UserID, si.PlatformKey, id, workDir)
+	workerInfo.Env = injectGatewayContext(workerInfo.Env, si.Platform, si.BotID, si.UserID, si.PlatformKey, id, workDir)
 	w, err := b.createAndLaunchWorker(workerLaunchParams{
 		ctx:         ctx,
 		wt:          si.WorkerType,
@@ -578,27 +578,27 @@ func firstNonEmpty(vals ...string) string {
 // without parsing logs or gateway internals.
 //
 // Existing HOTPLEX_SLACK_* vars are preserved for backward compatibility.
-func injectGatewayContext(env *map[string]string, platform, botID, userID string, platformKey map[string]string, sessionID, workDir string) {
-	if *env == nil {
-		*env = make(map[string]string)
+func injectGatewayContext(env map[string]string, platform, botID, userID string, platformKey map[string]string, sessionID, workDir string) map[string]string {
+	if env == nil {
+		env = make(map[string]string)
 	}
-	e := *env
-	e["GATEWAY_PLATFORM"] = platform
-	e["GATEWAY_BOT_ID"] = botID
-	e["GATEWAY_USER_ID"] = userID
-	e["GATEWAY_SESSION_ID"] = sessionID
+	env["GATEWAY_PLATFORM"] = platform
+	env["GATEWAY_BOT_ID"] = botID
+	env["GATEWAY_USER_ID"] = userID
+	env["GATEWAY_SESSION_ID"] = sessionID
 	if workDir != "" {
-		e["GATEWAY_WORK_DIR"] = workDir
+		env["GATEWAY_WORK_DIR"] = workDir
 	}
 	if chID := firstNonEmpty(platformKey["channel_id"], platformKey["chat_id"]); chID != "" {
-		e["GATEWAY_CHANNEL_ID"] = chID
+		env["GATEWAY_CHANNEL_ID"] = chID
 	}
 	if threadID := firstNonEmpty(platformKey["thread_ts"], platformKey["message_id"]); threadID != "" {
-		e["GATEWAY_THREAD_ID"] = threadID
+		env["GATEWAY_THREAD_ID"] = threadID
 	}
 	if teamID := platformKey["team_id"]; teamID != "" {
-		e["GATEWAY_TEAM_ID"] = teamID
+		env["GATEWAY_TEAM_ID"] = teamID
 	}
+	return env
 }
 
 func (b *Bridge) sendError(sessionID string, code events.ErrorCode, format string, args ...any) {

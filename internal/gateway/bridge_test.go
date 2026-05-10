@@ -432,14 +432,14 @@ func TestInjectGatewayContext(t *testing.T) {
 			sessionID: "sess-abc",
 			workDir:   "/tmp/work",
 			want: map[string]string{
-				"GATEWAY_PLATFORM":    "slack",
-				"GATEWAY_BOT_ID":      "B123",
-				"GATEWAY_USER_ID":     "U456",
-				"GATEWAY_CHANNEL_ID":  "C789",
-				"GATEWAY_THREAD_ID":   "1234.56",
-				"GATEWAY_TEAM_ID":     "T999",
-				"GATEWAY_SESSION_ID":  "sess-abc",
-				"GATEWAY_WORK_DIR":    "/tmp/work",
+				"GATEWAY_PLATFORM":   "slack",
+				"GATEWAY_BOT_ID":     "B123",
+				"GATEWAY_USER_ID":    "U456",
+				"GATEWAY_CHANNEL_ID": "C789",
+				"GATEWAY_THREAD_ID":  "1234.56",
+				"GATEWAY_TEAM_ID":    "T999",
+				"GATEWAY_SESSION_ID": "sess-abc",
+				"GATEWAY_WORK_DIR":   "/tmp/work",
 			},
 		},
 		{
@@ -454,13 +454,13 @@ func TestInjectGatewayContext(t *testing.T) {
 			sessionID: "sess-def",
 			workDir:   "/tmp/feishu",
 			want: map[string]string{
-				"GATEWAY_PLATFORM":    "feishu",
-				"GATEWAY_BOT_ID":      "ou_bot123",
-				"GATEWAY_USER_ID":     "ou_user456",
-				"GATEWAY_CHANNEL_ID":  "oc_chat789",
-				"GATEWAY_THREAD_ID":   "om_msg001",
-				"GATEWAY_SESSION_ID":  "sess-def",
-				"GATEWAY_WORK_DIR":    "/tmp/feishu",
+				"GATEWAY_PLATFORM":   "feishu",
+				"GATEWAY_BOT_ID":     "ou_bot123",
+				"GATEWAY_USER_ID":    "ou_user456",
+				"GATEWAY_CHANNEL_ID": "oc_chat789",
+				"GATEWAY_THREAD_ID":  "om_msg001",
+				"GATEWAY_SESSION_ID": "sess-def",
+				"GATEWAY_WORK_DIR":   "/tmp/feishu",
 			},
 		},
 		{
@@ -540,7 +540,7 @@ func TestInjectGatewayContext(t *testing.T) {
 
 			// Nil env test: function should initialize the map.
 			if tt.env == nil {
-				injectGatewayContext(&tt.env, tt.platform, tt.botID, tt.userID, tt.platformKey, tt.sessionID, tt.workDir)
+				tt.env = injectGatewayContext(tt.env, tt.platform, tt.botID, tt.userID, tt.platformKey, tt.sessionID, tt.workDir)
 				require.NotNil(t, tt.env, "env should be initialized")
 				for k, v := range tt.want {
 					assert.Equal(t, v, tt.env[k], "env[%q]", k)
@@ -548,7 +548,7 @@ func TestInjectGatewayContext(t *testing.T) {
 				return
 			}
 
-			injectGatewayContext(&tt.env, tt.platform, tt.botID, tt.userID, tt.platformKey, tt.sessionID, tt.workDir)
+			tt.env = injectGatewayContext(tt.env, tt.platform, tt.botID, tt.userID, tt.platformKey, tt.sessionID, tt.workDir)
 
 			for k, v := range tt.want {
 				assert.Equal(t, v, tt.env[k], "env[%q]", k)

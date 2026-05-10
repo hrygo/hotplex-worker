@@ -392,7 +392,7 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 		signal.Notify(sig, syscall.SIGHUP)
 	}
 
-	loop:
+loop:
 	for {
 		select {
 		case s := <-sig:
