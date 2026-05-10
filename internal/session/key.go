@@ -2,6 +2,7 @@ package session
 
 import (
 	"crypto/sha1"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -12,6 +13,10 @@ import (
 // hotplexNamespace is the HotPlex namespace UUID (RFC 4122 §4.3).
 // Using a fixed value ensures cross-environment consistency.
 var hotplexNamespace = uuid.MustParse("urn:uuid:6ba7b810-9dad-11d1-80b4-00c04fd430c8")
+
+// CronNamespace is a sub-namespace derived from hotplexNamespace for cron session isolation.
+// Cron sessions use this namespace to guarantee they never collide with feishu/slack sessions.
+var CronNamespace = uuid.NewHash(sha1.New(), hotplexNamespace, []byte("cron"), 5)
 
 // DeriveSessionKey generates a deterministic server-side session ID using UUIDv5.
 // Same (ownerID, workerType, clientKey, workDir) always maps to the same session.
@@ -114,4 +119,12 @@ func DerivePlatformSessionKey(ownerID string, wt worker.WorkerType, ctx Platform
 	name := b.String()
 	id := uuid.NewHash(sha1.New(), hotplexNamespace, []byte(name), 5)
 	return id.String()
+}
+
+// DeriveCronSessionKey generates a unique UUIDv5 session key for a single cron execution.
+// Uses CronNamespace for platform isolation, and (jobID + epoch) for per-execution uniqueness.
+// Each invocation with a different epoch produces a different key, ensuring fresh sessions.
+func DeriveCronSessionKey(jobID string, epoch int64) string {
+	name := jobID + "|" + strconv.FormatInt(epoch, 10)
+	return uuid.NewHash(sha1.New(), CronNamespace, []byte(name), 5).String()
 }
