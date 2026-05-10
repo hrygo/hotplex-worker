@@ -21,6 +21,9 @@ func TestClientIP(t *testing.T) {
 		{"xff ignored", "10.0.0.1", "1.2.3.4:8080", "1.2.3.4"},
 		{"xff multiple ignored", "10.0.0.1, 10.0.0.2", "1.2.3.4:8080", "1.2.3.4"},
 		{"no port", "", "1.2.3.4", "1.2.3.4"},
+		{"ipv6 loopback", "", "[::1]:8080", "::1"},
+		{"ipv6 full", "", "[2001:db8::1]:9090", "2001:db8::1"},
+		{"ipv6 no port", "", "2001:db8::1", "2001:db8::1"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
