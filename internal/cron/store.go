@@ -59,10 +59,10 @@ func (s *SQLiteStore) Create(ctx context.Context, job *CronJob) error {
 			state, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		job.ID, job.Name, job.Description, boolToInt(job.Enabled),
-		job.Schedule.Kind, string(schedData), job.Payload.Kind, string(payloadData),
-		job.WorkDir, job.BotID, job.OwnerID, job.Platform, string(platformKeyData),
+		job.Schedule.Kind, schedData, job.Payload.Kind, payloadData,
+		job.WorkDir, job.BotID, job.OwnerID, job.Platform, platformKeyData,
 		job.TimeoutSec, boolToInt(job.DeleteAfterRun), job.MaxRetries,
-		string(stateData), job.CreatedAtMs, job.UpdatedAtMs,
+		stateData, job.CreatedAtMs, job.UpdatedAtMs,
 	)
 	if err != nil {
 		return fmt.Errorf("cron store: create job: %w", err)
@@ -88,10 +88,10 @@ func (s *SQLiteStore) Update(ctx context.Context, job *CronJob) error {
 			state = ?, updated_at = ?
 		WHERE id = ?`,
 		job.Name, job.Description, boolToInt(job.Enabled),
-		job.Schedule.Kind, string(schedData), job.Payload.Kind, string(payloadData),
-		job.WorkDir, job.BotID, job.OwnerID, job.Platform, string(platformKeyData),
+		job.Schedule.Kind, schedData, job.Payload.Kind, payloadData,
+		job.WorkDir, job.BotID, job.OwnerID, job.Platform, platformKeyData,
 		job.TimeoutSec, boolToInt(job.DeleteAfterRun), job.MaxRetries,
-		string(stateData), job.UpdatedAtMs,
+		stateData, job.UpdatedAtMs,
 		job.ID,
 	)
 	if err != nil {
