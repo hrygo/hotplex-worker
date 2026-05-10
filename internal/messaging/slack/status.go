@@ -239,34 +239,25 @@ func (m *StatusManager) setEmoji(ctx context.Context, channelID, threadTS string
 }
 
 // extractCallNameInput extracts (name, input) from a tool_call envelope.
+// Uses DecodeAs to handle both typed struct values (from worker mapper)
+// and map[string]any (from JSON round-trip Clone).
 func extractCallNameInput(env *events.Envelope) (string, map[string]any) {
-	if env.Event.Data == nil {
+	data, ok := events.DecodeAs[events.ToolCallData](env.Event.Data)
+	if !ok {
 		return "tool", nil
 	}
-	if data, ok := env.Event.Data.(*events.ToolCallData); ok {
-		return data.Name, data.Input
-	}
-	if m, ok := env.Event.Data.(map[string]any); ok {
-		name, _ := m["name"].(string)
-		input, _ := m["input"].(map[string]any)
-		return name, input
-	}
-	return "tool", nil
+	return data.Name, data.Input
 }
 
 // extractResultFields extracts (output, errMsg) from a tool_result envelope.
+// Uses DecodeAs to handle both typed struct values (from worker mapper)
+// and map[string]any (from JSON round-trip Clone).
 func extractResultFields(env *events.Envelope) (any, string) {
-	if env.Event.Data == nil {
+	data, ok := events.DecodeAs[events.ToolResultData](env.Event.Data)
+	if !ok {
 		return nil, ""
 	}
-	if data, ok := env.Event.Data.(*events.ToolResultData); ok {
-		return data.Output, data.Error
-	}
-	if m, ok := env.Event.Data.(map[string]any); ok {
-		errMsg, _ := m["error"].(string)
-		return m["output"], errMsg
-	}
-	return nil, ""
+	return data.Output, data.Error
 }
 
 // statusTextLimit is the max rune length for tool status text.

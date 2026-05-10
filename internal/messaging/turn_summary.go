@@ -103,7 +103,7 @@ func ExtractTurnSummary(env *events.Envelope) TurnSummaryData {
 	if tn, ok := m["tool_names"].(map[string]any); ok {
 		toolNames = make(map[string]int, len(tn))
 		for k, v := range tn {
-			if n, ok := v.(float64); ok {
+			if n := events.ToInt64(v); n > 0 {
 				toolNames[k] = int(n)
 			}
 		}
