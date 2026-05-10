@@ -116,6 +116,39 @@ type JobCreateOptions struct {
 	MaxRetries     int
 	MaxRuns        int
 	ExpiresAt      string
+	Platform       string
+	PlatformKey    map[string]string
+}
+
+// resolvePlatform resolves the target platform and routing key with three-level priority:
+// 1. CLI flags (explicit --platform / --platform-key)
+// 2. Environment variables (GATEWAY_PLATFORM, GATEWAY_CHANNEL_ID, GATEWAY_THREAD_ID)
+// 3. Default "cron" (backward compatible)
+func resolvePlatform(cliPlatform string, cliPlatformKey map[string]string) (string, map[string]string) {
+	if cliPlatform != "" {
+		return cliPlatform, cliPlatformKey
+	}
+
+	envPlatform := os.Getenv("GATEWAY_PLATFORM")
+	switch envPlatform {
+	case "slack":
+		key := map[string]string{}
+		if ch := os.Getenv("GATEWAY_CHANNEL_ID"); ch != "" {
+			key["channel_id"] = ch
+		}
+		if ts := os.Getenv("GATEWAY_THREAD_ID"); ts != "" {
+			key["thread_ts"] = ts
+		}
+		return "slack", key
+	case "feishu":
+		key := map[string]string{}
+		if chatID := os.Getenv("GATEWAY_CHANNEL_ID"); chatID != "" {
+			key["chat_id"] = chatID
+		}
+		return "feishu", key
+	}
+
+	return "cron", nil
 }
 
 // PrepareJobForCreate builds a CronJob from CLI flags.
@@ -124,6 +157,9 @@ func PrepareJobForCreate(name, scheduleRaw, message, description, workDir, botID
 	if err != nil {
 		return nil, err
 	}
+
+	platform, platformKey := resolvePlatform(opts.Platform, opts.PlatformKey)
+
 	job := &cron.CronJob{
 		Name:           name,
 		Description:    description,
@@ -133,7 +169,8 @@ func PrepareJobForCreate(name, scheduleRaw, message, description, workDir, botID
 		WorkDir:        workDir,
 		BotID:          botID,
 		OwnerID:        ownerID,
-		Platform:       "cron",
+		Platform:       platform,
+		PlatformKey:    platformKey,
 		TimeoutSec:     timeoutSec,
 		DeleteAfterRun: opts.DeleteAfterRun,
 		MaxRetries:     opts.MaxRetries,
