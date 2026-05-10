@@ -193,6 +193,7 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 		TurnTimeout:        cfg.Worker.TurnTimeout,
 		WorkerEnv:          buildWorkerEnv(cfg),
 		WorkerEnvBlocklist: cfg.Worker.EnvBlocklist,
+		CronEnv:            buildCronEnv(cfg),
 	})
 
 	skillsLocator := skills.NewLocator(log, cfg.Skills.CacheTTL)
@@ -701,15 +702,21 @@ func cronConfigToYAMLDefs(jobs []map[string]any) []cron.YAMLJobDef {
 }
 
 // buildWorkerEnv constructs the worker environment variables.
-// When cron is enabled, injects Admin API credentials for cron job management.
 func buildWorkerEnv(cfg *config.Config) []string {
-	env := slices.Clone(cfg.Worker.Environment)
-	if cfg.Cron.Enabled && cfg.Admin.Enabled {
-		adminURL := "http://" + cfg.Admin.Addr
-		env = append(env, "HOTPLEX_ADMIN_API_URL="+adminURL)
-		if len(cfg.Admin.Tokens) > 0 {
-			env = append(env, "HOTPLEX_ADMIN_TOKEN="+cfg.Admin.Tokens[0])
-		}
+	return slices.Clone(cfg.Worker.Environment)
+}
+
+// buildCronEnv builds env vars injected only into cron platform sessions.
+// Separated from buildWorkerEnv to prevent admin credentials from leaking
+// to non-cron workers (env.go blocklist only filters os.Environ, not ConfigEnv).
+func buildCronEnv(cfg *config.Config) []string {
+	if !cfg.Cron.Enabled || !cfg.Admin.Enabled {
+		return nil
+	}
+	var env []string
+	env = append(env, "HOTPLEX_ADMIN_API_URL=http://"+cfg.Admin.Addr)
+	if len(cfg.Admin.Tokens) > 0 {
+		env = append(env, "HOTPLEX_ADMIN_TOKEN="+cfg.Admin.Tokens[0])
 	}
 	return env
 }

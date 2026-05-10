@@ -30,4 +30,5 @@ type BridgeDeps struct {
 	TurnTimeout        time.Duration
 	WorkerEnv          []string // extra env vars from worker.environment config
 	WorkerEnvBlocklist []string // extra blocklist entries from worker.env_blocklist config
+	CronEnv            []string // env vars injected only into cron platform sessions (e.g. admin API creds)
 }

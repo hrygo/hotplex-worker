@@ -235,10 +235,16 @@ func (s *Scheduler) ListJobs(ctx context.Context) ([]*CronJob, error) {
 
 // TriggerJob manually triggers a job execution outside of its schedule.
 func (s *Scheduler) TriggerJob(ctx context.Context, job *CronJob) error {
+	if !s.tickLoop.tryAcquireSlot(s.maxConcurrent) {
+		return fmt.Errorf("cron: concurrency cap (%d) reached, cannot trigger job %s", s.maxConcurrent, job.ID)
+	}
 	j := job.Clone()
 	s.wg.Add(1)
 	go func() {
-		defer s.wg.Done()
+		defer func() {
+			s.tickLoop.releaseSlot()
+			s.wg.Done()
+		}()
 		s.executeJob(j)
 	}()
 	return nil
@@ -358,9 +364,16 @@ func (s *Scheduler) scheduleCatchUp(jobs []*CronJob) {
 			delay = (i - 5 + 1) * 5 // 5s, 10s, 15s, ...
 		}
 		j := job.Clone()
+		if !s.tickLoop.tryAcquireSlot(s.maxConcurrent) {
+			s.log.Warn("cron: catch-up skipped, concurrency cap reached", "job_id", j.ID)
+			continue
+		}
 		s.wg.Add(1)
 		go func(d int) {
-			defer s.wg.Done()
+			defer func() {
+				s.tickLoop.releaseSlot()
+				s.wg.Done()
+			}()
 			if d > 0 {
 				time.Sleep(time.Duration(d) * time.Second)
 			}

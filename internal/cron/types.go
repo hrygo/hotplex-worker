@@ -53,10 +53,20 @@ type CronJobState struct {
 	LastRunID       string    `json:"last_run_id,omitempty"`
 }
 
-// Clone returns a shallow copy of the job. Safe for concurrent use since
-// all mutable state (CronJobState) is a value type.
+// Clone returns a deep copy of the job, including reference-type fields
+// (PlatformKey map, AllowedTools slice), so the clone is safe for concurrent mutation.
 func (j *CronJob) Clone() *CronJob {
 	cp := *j
+	if j.PlatformKey != nil {
+		cp.PlatformKey = make(map[string]string, len(j.PlatformKey))
+		for k, v := range j.PlatformKey {
+			cp.PlatformKey[k] = v
+		}
+	}
+	if j.Payload.AllowedTools != nil {
+		cp.Payload.AllowedTools = make([]string, len(j.Payload.AllowedTools))
+		copy(cp.Payload.AllowedTools, j.Payload.AllowedTools)
+	}
 	return &cp
 }
 

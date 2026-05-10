@@ -22,6 +22,24 @@ func newTimerLoop(s *Scheduler) *timerLoop {
 	return &timerLoop{scheduler: s}
 }
 
+// tryAcquireSlot atomically checks the concurrency cap and reserves a slot.
+// Returns false if the cap is reached.
+func (tl *timerLoop) tryAcquireSlot(max int) bool {
+	for {
+		cur := tl.running.Load()
+		if int(cur) >= max {
+			return false
+		}
+		if tl.running.CompareAndSwap(cur, cur+1) {
+			return true
+		}
+	}
+}
+
+func (tl *timerLoop) releaseSlot() {
+	tl.running.Add(-1)
+}
+
 // arm sets the timer to fire at the given duration (capped at maxTimerInterval).
 func (tl *timerLoop) arm(d time.Duration) {
 	tl.mu.Lock()
@@ -98,16 +116,19 @@ func (tl *timerLoop) onTick() {
 		s.putJob(job)
 
 		// Execute with concurrency cap.
-		if int(tl.running.Load()) >= s.maxConcurrent {
+		if !tl.tryAcquireSlot(s.maxConcurrent) {
 			s.log.Warn("cron: concurrency cap reached, skipping job", "job_id", job.ID)
 			continue
 		}
 
-		tl.running.Add(1)
+		// Fresh clone for the goroutine — putJob stored the previous clone
+		// into s.jobs, so we need an independent copy to avoid data races
+		// when executeJob mutates state fields without holding s.mu.
+		execJob := job.Clone()
 		s.wg.Add(1)
 		go func(j *CronJob) {
 			defer func() {
-				tl.running.Add(-1)
+				tl.releaseSlot()
 				s.wg.Done()
 				if r := recover(); r != nil {
 					s.log.Error("cron: panic in executeJob",
@@ -116,7 +137,7 @@ func (tl *timerLoop) onTick() {
 			}()
 			metrics.CronFiresTotal.WithLabelValues(j.Name).Inc()
 			s.executeJob(j)
-		}(job)
+		}(execJob)
 	}
 
 	tl.arm(s.nextTickDuration(now))
@@ -127,9 +148,7 @@ func (tl *timerLoop) onTick() {
 func (s *Scheduler) executeJob(job *CronJob) {
 	now := time.Now().UnixMilli()
 	job.State.RunningAtMs = now
-	if err := s.store.UpdateState(s.ctx, job.ID, job.State); err != nil {
-		s.log.Error("cron: persist running state", "job_id", job.ID, "err", err)
-	}
+	s.persistState(job.ID, job.State)
 	s.putJob(job)
 
 	timeout := s.jobTimeout(job)
@@ -169,7 +188,7 @@ func (s *Scheduler) executeJob(job *CronJob) {
 	// One-shot: disable or delete after run (success or permanent error).
 	if job.Schedule.Kind == ScheduleAt {
 		if job.DeleteAfterRun {
-			if err := s.store.Delete(s.ctx, job.ID); err != nil {
+			if err := s.store.Delete(s.persistCtx(), job.ID); err != nil {
 				s.log.Error("cron: delete one-shot job", "job_id", job.ID, "err", err)
 			}
 			s.mu.Lock()
@@ -180,10 +199,23 @@ func (s *Scheduler) executeJob(job *CronJob) {
 		job.Enabled = false
 	}
 
-	if err := s.store.UpdateState(s.ctx, job.ID, job.State); err != nil {
-		s.log.Error("cron: persist final state", "job_id", job.ID, "err", err)
-	}
+	s.persistState(job.ID, job.State)
 	s.putJob(job)
+}
+
+// persistState saves job state to the store, using a background context
+// so final state is not lost during scheduler shutdown.
+func (s *Scheduler) persistState(jobID string, state CronJobState) {
+	if err := s.store.UpdateState(s.persistCtx(), jobID, state); err != nil {
+		s.log.Error("cron: persist state", "job_id", jobID, "err", err)
+	}
+}
+
+// persistCtx returns a short-lived background context for state persistence.
+// Unlike s.ctx, this is not cancelled on shutdown, ensuring final state is saved.
+func (s *Scheduler) persistCtx() context.Context {
+	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+	return ctx
 }
 
 // jobTimeout returns the timeout for a job, falling back to the scheduler default.
