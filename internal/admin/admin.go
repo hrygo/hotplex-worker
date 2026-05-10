@@ -15,8 +15,6 @@ import (
 	"github.com/hrygo/hotplex/pkg/events"
 )
 
-var startTime = time.Now()
-
 const (
 	ScopeSessionRead  = "session:read"
 	ScopeSessionWrite = "session:write"
@@ -75,10 +73,12 @@ type AdminAPI struct {
 	bridge        BridgeProvider
 	configWatcher ConfigWatcherProvider
 	cron          CronSchedulerProvider
+	logCollector  LogCollector
 	rateLimiter   atomic.Value // *simpleRateLimiter
 	allowedCIDRs  atomic.Value // []string
 	version       func() string
 	newSessionID  func() string
+	startedAt     time.Time
 }
 
 type Deps struct {
@@ -90,11 +90,16 @@ type Deps struct {
 	Bridge        BridgeProvider
 	ConfigWatcher ConfigWatcherProvider
 	Cron          CronSchedulerProvider
+	LogCollector  LogCollector
 	Version       func() string
 	NewSessionID  func() string
 }
 
 func New(deps Deps) *AdminAPI {
+	lc := deps.LogCollector
+	if lc == nil {
+		lc = LogRing
+	}
 	a := &AdminAPI{
 		log:           deps.Log,
 		cfg:           deps.Config,
@@ -104,8 +109,10 @@ func New(deps Deps) *AdminAPI {
 		bridge:        deps.Bridge,
 		configWatcher: deps.ConfigWatcher,
 		cron:          deps.Cron,
+		logCollector:  lc,
 		version:       deps.Version,
 		newSessionID:  deps.NewSessionID,
+		startedAt:     time.Now(),
 	}
 	return a
 }

@@ -131,14 +131,17 @@ func (u *Updater) Check(ctx context.Context) (*CheckResult, error) {
 // Download fetches the binary to a temp file and returns its path.
 // Caller is responsible for cleaning up the temp file.
 func (u *Updater) Download(ctx context.Context, url string) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
+	req, err := http.NewRequest(http.MethodGet, url, http.NoBody)
 	if err != nil {
 		return "", fmt.Errorf("create request: %w", err)
 	}
 
-	// Use a longer timeout for binary download.
-	dlClient := &http.Client{Timeout: 3 * time.Minute}
-	resp, err := dlClient.Do(req)
+	// Use a longer timeout for binary download via context.
+	dlCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+	defer cancel()
+	req = req.WithContext(dlCtx)
+
+	resp, err := u.Client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("download binary: %w", err)
 	}

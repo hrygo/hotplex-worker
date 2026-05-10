@@ -21,6 +21,16 @@ func hasScope(r *http.Request, required string) bool {
 	return slices.Contains(getScopes(r), required)
 }
 
+// requireScope checks that the request has the required scope.
+// Returns false and writes 403 if not.
+func requireScope(w http.ResponseWriter, r *http.Request, scope string) bool {
+	if !hasScope(r, scope) {
+		http.Error(w, "insufficient scope: need "+scope, http.StatusForbidden)
+		return false
+	}
+	return true
+}
+
 // clientIP extracts the client IP from the request.
 // It uses r.RemoteAddr directly to prevent IP spoofing via X-Forwarded-For.
 // Deploy behind a reverse proxy that strips untrusted XFF headers.

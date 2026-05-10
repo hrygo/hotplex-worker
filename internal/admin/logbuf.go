@@ -42,11 +42,11 @@ func (r *logRingBuffer) Total() int {
 	return r.n
 }
 
-func (r *logRingBuffer) Recent(limit int) []logEntry {
+func (r *logRingBuffer) Recent(limit int) ([]logEntry, int) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.n == 0 {
-		return nil
+		return nil, 0
 	}
 	size := len(r.ent)
 	size = min(r.n, size)
@@ -60,11 +60,11 @@ func (r *logRingBuffer) Recent(limit int) []logEntry {
 		idx := (start + i) % len(r.ent)
 		out = append(out, r.ent[idx])
 	}
-	return out
+	return out, r.n
 }
 
 type LogCollector interface {
-	Recent(limit int) []logEntry
+	Recent(limit int) ([]logEntry, int)
 }
 
 var LogRing = newLogRing(100)
