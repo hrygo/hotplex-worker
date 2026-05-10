@@ -116,52 +116,43 @@ func ValidateBlocks(blocks []slack.Block) error {
 func validateBlockElement(elem slack.BlockElement, blockIdx int, blockType string, actionIDs map[string]bool) error {
 	switch e := elem.(type) {
 	case *slack.ButtonBlockElement:
-		// ActionID ≤ 255 chars and unique
-		if utf8.RuneCountInString(e.ActionID) > maxActionIDLength {
-			return fmt.Errorf("block %d (%s): action_id length %d exceeds maximum of %d",
-				blockIdx, blockType, utf8.RuneCountInString(e.ActionID), maxActionIDLength)
+		if err := checkActionID(e.ActionID, actionIDs, blockIdx, blockType); err != nil {
+			return err
 		}
-		if actionIDs[e.ActionID] {
-			return fmt.Errorf("block %d (%s): duplicate action_id %q",
-				blockIdx, blockType, e.ActionID)
-		}
-		actionIDs[e.ActionID] = true
-
-		// Button text ≤ 75 chars
 		if e.Text != nil && utf8.RuneCountInString(e.Text.Text) > maxButtonTextLength {
 			return fmt.Errorf("block %d (%s): button text length %d exceeds maximum of %d",
 				blockIdx, blockType, utf8.RuneCountInString(e.Text.Text), maxButtonTextLength)
 		}
-
-		// Button value ≤ 2000 chars
 		if utf8.RuneCountInString(e.Value) > maxButtonValueLength {
 			return fmt.Errorf("block %d (%s): button value length %d exceeds maximum of %d",
 				blockIdx, blockType, utf8.RuneCountInString(e.Value), maxButtonValueLength)
 		}
 
 	case *slack.OverflowBlockElement:
-		if utf8.RuneCountInString(e.ActionID) > maxActionIDLength {
-			return fmt.Errorf("block %d (%s): overflow action_id length %d exceeds maximum of %d",
-				blockIdx, blockType, utf8.RuneCountInString(e.ActionID), maxActionIDLength)
+		if err := checkActionID(e.ActionID, actionIDs, blockIdx, blockType); err != nil {
+			return err
 		}
-		if actionIDs[e.ActionID] {
-			return fmt.Errorf("block %d (%s): duplicate action_id %q",
-				blockIdx, blockType, e.ActionID)
-		}
-		actionIDs[e.ActionID] = true
 
 	case *slack.SelectBlockElement:
-		if utf8.RuneCountInString(e.ActionID) > maxActionIDLength {
-			return fmt.Errorf("block %d (%s): select action_id length %d exceeds maximum of %d",
-				blockIdx, blockType, utf8.RuneCountInString(e.ActionID), maxActionIDLength)
+		if err := checkActionID(e.ActionID, actionIDs, blockIdx, blockType); err != nil {
+			return err
 		}
-		if actionIDs[e.ActionID] {
-			return fmt.Errorf("block %d (%s): duplicate action_id %q",
-				blockIdx, blockType, e.ActionID)
-		}
-		actionIDs[e.ActionID] = true
 	}
 
+	return nil
+}
+
+// checkActionID validates action_id length and uniqueness.
+func checkActionID(actionID string, actionIDs map[string]bool, blockIdx int, blockType string) error {
+	if utf8.RuneCountInString(actionID) > maxActionIDLength {
+		return fmt.Errorf("block %d (%s): action_id length %d exceeds maximum of %d",
+			blockIdx, blockType, utf8.RuneCountInString(actionID), maxActionIDLength)
+	}
+	if actionIDs[actionID] {
+		return fmt.Errorf("block %d (%s): duplicate action_id %q",
+			blockIdx, blockType, actionID)
+	}
+	actionIDs[actionID] = true
 	return nil
 }
 
@@ -275,76 +266,43 @@ func sanitizeActionBlock(b *slack.ActionBlock, actionIDs map[string]bool) *slack
 func sanitizeBlockElement(elem slack.BlockElement, actionIDs map[string]bool) slack.BlockElement {
 	switch e := elem.(type) {
 	case *slack.ButtonBlockElement:
-		// Truncate action_id if too long and deduplicate
-		actionID := e.ActionID
-		if utf8.RuneCountInString(actionID) > maxActionIDLength {
-			actionID = truncateWithSuffix(actionID, maxActionIDLength)
-		}
-
-		// Handle duplicate action IDs
-		if actionIDs[actionID] {
-			// Append unique suffix
-			for i := 1; i < 10000; i++ {
-				newID := fmt.Sprintf("%s_%d", actionID[:min(len(actionID), maxActionIDLength-10)], i)
-				if !actionIDs[newID] {
-					actionID = newID
-					break
-				}
-			}
-		}
-		actionIDs[actionID] = true
-		e.ActionID = actionID
-
-		// Truncate button text
+		e.ActionID = dedupActionID(e.ActionID, actionIDs)
 		if e.Text != nil && utf8.RuneCountInString(e.Text.Text) > maxButtonTextLength {
 			e.Text.Text = truncateWithSuffix(e.Text.Text, maxButtonTextLength)
 		}
-
-		// Truncate value
 		if utf8.RuneCountInString(e.Value) > maxButtonValueLength {
 			e.Value = truncateWithSuffix(e.Value, maxButtonValueLength)
 		}
-
 		return e
 
 	case *slack.OverflowBlockElement:
-		actionID := e.ActionID
-		if utf8.RuneCountInString(actionID) > maxActionIDLength {
-			actionID = truncateWithSuffix(actionID, maxActionIDLength)
-		}
-		if actionIDs[actionID] {
-			for i := 1; i < 10000; i++ {
-				newID := fmt.Sprintf("%s_%d", actionID[:min(len(actionID), maxActionIDLength-10)], i)
-				if !actionIDs[newID] {
-					actionID = newID
-					break
-				}
-			}
-		}
-		actionIDs[actionID] = true
-		e.ActionID = actionID
+		e.ActionID = dedupActionID(e.ActionID, actionIDs)
 		return e
 
 	case *slack.SelectBlockElement:
-		actionID := e.ActionID
-		if utf8.RuneCountInString(actionID) > maxActionIDLength {
-			actionID = truncateWithSuffix(actionID, maxActionIDLength)
-		}
-		if actionIDs[actionID] {
-			for i := 1; i < 10000; i++ {
-				newID := fmt.Sprintf("%s_%d", actionID[:min(len(actionID), maxActionIDLength-10)], i)
-				if !actionIDs[newID] {
-					actionID = newID
-					break
-				}
-			}
-		}
-		actionIDs[actionID] = true
-		e.ActionID = actionID
+		e.ActionID = dedupActionID(e.ActionID, actionIDs)
 		return e
 	}
 
 	return elem
+}
+
+// dedupActionID truncates an action_id to max length and resolves duplicates with a unique suffix.
+func dedupActionID(actionID string, actionIDs map[string]bool) string {
+	if utf8.RuneCountInString(actionID) > maxActionIDLength {
+		actionID = truncateWithSuffix(actionID, maxActionIDLength)
+	}
+	if actionIDs[actionID] {
+		for i := 1; i < 10000; i++ {
+			newID := fmt.Sprintf("%s_%d", actionID[:min(len(actionID), maxActionIDLength-10)], i)
+			if !actionIDs[newID] {
+				actionID = newID
+				break
+			}
+		}
+	}
+	actionIDs[actionID] = true
+	return actionID
 }
 
 func sanitizeImageBlock(b *slack.ImageBlock) *slack.ImageBlock {

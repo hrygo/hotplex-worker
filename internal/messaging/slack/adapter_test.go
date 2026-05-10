@@ -380,8 +380,8 @@ func TestUserCache_ResolveMentions_UnknownUID(t *testing.T) {
 func TestUserCache_ResolveMentions_MultipleMentions(t *testing.T) {
 	t.Parallel()
 	uc := NewUserCache(nil)
-	uc.cache["U111"] = cacheEntry{name: "Alice", expiresAt: time.Now().Add(time.Hour)}
-	uc.cache["U222"] = cacheEntry{name: "Bob", expiresAt: time.Now().Add(time.Hour)}
+	uc.cache.Set("U111", "Alice")
+	uc.cache.Set("U222", "Bob")
 
 	result := uc.ResolveMentions(context.Background(), "<@U111> and <@U222>", "B001")
 	require.Equal(t, "@Alice and @Bob", result, "all mentions should be resolved")
@@ -394,7 +394,7 @@ func TestUserCache_ResolveMentions_MultipleMentions(t *testing.T) {
 func TestUserCache_ResolveMentions_MixedFormats(t *testing.T) {
 	t.Parallel()
 	uc := NewUserCache(nil)
-	uc.cache["U111"] = cacheEntry{name: "Alice", expiresAt: time.Now().Add(time.Hour)}
+	uc.cache.Set("U111", "Alice")
 
 	// <@U111> resolved from cache, <@U222|Bob> uses inline fallback
 	result := uc.ResolveMentions(context.Background(), "<@U111> and <@U222|Bob>", "B001")
