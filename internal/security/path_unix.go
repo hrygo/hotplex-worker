@@ -106,27 +106,3 @@ func ConfigureFromConfig(cfg *config.SecurityConfig) {
 		}
 	}
 }
-
-// GetAllowedBaseDirs returns a copy of the current allowed base directories map.
-// Used for testing and diagnostics.
-func GetAllowedBaseDirs() map[string]bool {
-	securityConfigMutex.RLock()
-	defer securityConfigMutex.RUnlock()
-
-	result := make(map[string]bool, len(allowedBaseDirs))
-	for k, v := range allowedBaseDirs {
-		result[k] = v
-	}
-	return result
-}
-
-// GetForbiddenWorkDirs returns a copy of the current forbidden work directories slice.
-// Used for testing and diagnostics.
-func GetForbiddenWorkDirs() []string {
-	securityConfigMutex.RLock()
-	defer securityConfigMutex.RUnlock()
-
-	result := make([]string, len(forbiddenWorkDirs))
-	copy(result, forbiddenWorkDirs)
-	return result
-}

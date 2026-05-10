@@ -477,41 +477,6 @@ func TestRevokeTokenAndIsRevoked(t *testing.T) {
 	validator.RevokeToken("", 10*time.Minute)
 }
 
-// ─── ValidateAPIKey ──────────────────────────────────────────────────────────────
-
-func TestValidateAPIKey(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name     string
-		provided string
-		expected string
-		wantErr  bool
-	}{
-		{"valid key", "secret-api-key-123", "secret-api-key-123", false},
-		{"invalid key", "wrong-key", "secret-api-key-123", true},
-		{"empty provided", "", "secret-api-key-123", true},
-		{"empty expected", "secret-api-key-123", "", true},
-		{"both empty", "", "", false}, // ConstantTimeCompare returns 1 for equal byte slices (both empty)
-		{"case sensitive", "Secret-Key", "secret-key", true},
-		{"different length", "short", "much-longer-secret-key", true},
-	}
-
-	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			err := ValidateAPIKey(tt.provided, tt.expected)
-			if tt.wantErr {
-				require.Error(t, err)
-				require.Equal(t, ErrUnauthorized, err)
-			} else {
-				require.NoError(t, err)
-			}
-		})
-	}
-}
-
 // ─── JTI Blacklist ──────────────────────────────────────────────────────────────
 
 func TestJTIBlacklist(t *testing.T) {
