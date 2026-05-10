@@ -17,6 +17,8 @@ import (
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 
 	"github.com/hrygo/hotplex/internal/messaging"
+
+	"github.com/hrygo/hotplex/internal/metrics"
 )
 
 type CardPhase int32
@@ -196,15 +198,6 @@ func (c *StreamingCardController) MarkAllToolsDone() {
 	c.toolDirty = true
 }
 
-// ClearToolEntries removes all tool activity entries. Used during card rotation
-// to prevent stale tool activity from appearing on the old card.
-func (c *StreamingCardController) ClearToolEntries() {
-	c.mu.Lock()
-	c.toolEntries = nil
-	c.toolDirty = false
-	c.mu.Unlock()
-}
-
 // closeTags builds text_tag_list from closeMeta (full Turn/Model/Branch).
 func (c *StreamingCardController) closeTags() []cardTag {
 	if d := c.closeMeta.Load(); d != nil {
@@ -267,7 +260,7 @@ func (c *StreamingCardController) EnsureCard(ctx context.Context, chatID, chatTy
 
 	c.mu.Lock()
 	c.msgID = msgID
-	c.lastFlushed = initialContent
+	c.lastFlushed = SanitizeForCard(initialContent)
 	c.streamingActive = true // card already sent with streaming_mode: true
 	c.mu.Unlock()
 
@@ -325,7 +318,7 @@ func (c *StreamingCardController) SendPlaceholder(ctx context.Context, chatID, c
 	c.mu.Lock()
 	c.chatType = chatType
 	c.replyToMsgID = replyToMsgID
-	c.lastFlushed = placeholder
+	c.lastFlushed = SanitizeForCard(placeholder)
 	c.placeholder = placeholder
 	c.mu.Unlock()
 
@@ -334,6 +327,7 @@ func (c *StreamingCardController) SendPlaceholder(ctx context.Context, chatID, c
 		cardHeader{Title: c.agentName, Template: headerWathet, Tags: turnTags(c.turnNum, c.model, c.branch, c.workDir)},
 		truncateForSummary(placeholder),
 		placeholder,
+		"",
 	)
 	msgID, err := c.sendCardMessageRaw(ctx, chatID, chatType, contentJSON)
 	if err != nil {
@@ -481,6 +475,7 @@ func (c *StreamingCardController) Flush(ctx context.Context) error {
 					"err", err, "failed_flushes", c.failedFlushes)
 				c.cardKitOK = false
 				c.mu.Unlock()
+				metrics.StreamingCardFlushFallbacks.Inc()
 			}
 		} else {
 			c.mu.Lock()
@@ -623,6 +618,10 @@ func (c *StreamingCardController) Close(ctx context.Context) error {
 
 	c.stopFlushLoop()
 	c.MarkAllToolsDone()
+
+	// Flush tool activity with done markers before the final card rebuild.
+	// This ensures the tools display is updated even if updateHeader fails later.
+	c.flushToolActivity(ctx)
 
 	c.mu.Lock()
 	content := c.buf.String()
@@ -801,10 +800,15 @@ func (c *StreamingCardController) idConvert(ctx context.Context, messageID strin
 }
 
 func (c *StreamingCardController) sendCardMessage(ctx context.Context, chatID, content string) (string, error) {
+	c.mu.Lock()
+	toolActivity := renderToolActivity(c.toolEntries)
+	c.mu.Unlock()
+
 	contentJSON := buildStreamingCard(
 		cardHeader{Title: c.agentName, Template: headerWathet, Tags: turnTags(c.turnNum, c.model, c.branch, c.workDir)},
 		truncateForSummary(content),
 		content,
+		toolActivity,
 	)
 
 	// Group chat: reply to user's message. DM: send directly.

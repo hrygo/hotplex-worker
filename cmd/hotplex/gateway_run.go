@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -21,6 +23,7 @@ import (
 	"github.com/hrygo/hotplex/internal/assets"
 	"github.com/hrygo/hotplex/internal/brain"
 	"github.com/hrygo/hotplex/internal/config"
+	"github.com/hrygo/hotplex/internal/cron"
 	"github.com/hrygo/hotplex/internal/eventstore"
 	"github.com/hrygo/hotplex/internal/gateway"
 	"github.com/hrygo/hotplex/internal/messaging"
@@ -48,6 +51,7 @@ type GatewayDeps struct {
 	Handler        *gateway.Handler
 	Bridge         *gateway.Bridge
 	ConfigWatcher  *config.Watcher
+	CronScheduler  *cron.Scheduler
 }
 
 const defaultConfigPath = "~/.hotplex/config.yaml"
@@ -187,7 +191,7 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 		RetryCtrl:          retryCtrl,
 		AgentConfigDir:     agentConfigDir,
 		TurnTimeout:        cfg.Worker.TurnTimeout,
-		WorkerEnv:          cfg.Worker.Environment,
+		WorkerEnv:          buildWorkerEnv(cfg),
 		WorkerEnvBlocklist: cfg.Worker.EnvBlocklist,
 	})
 
@@ -227,6 +231,52 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 	})
 
 	// Assemble deps and start HTTP + messaging
+
+	// Cron scheduler: init after Bridge, before messaging adapters.
+	var cronScheduler *cron.Scheduler
+	var cronDelivery *cron.Delivery
+	if cfg.Cron.Enabled {
+		cronStore := cron.NewSQLiteStore(stores.session.DB(), log)
+		cronDelivery = cron.NewDelivery(log,
+			func(ctx context.Context, sessionID string) (string, error) {
+				turns, err := stores.event.QueryTurns(ctx, sessionID, 1, 0)
+				if err != nil || len(turns) == 0 {
+					return "", err
+				}
+				return turns[len(turns)-1].Content, nil
+			},
+			nil,
+		)
+		cronScheduler = cron.New(cron.Deps{
+			Log:        log,
+			Store:      cronStore,
+			Bridge:     bridge,
+			SessionMgr: sm,
+			Delivery:   cronDelivery,
+			YAMLDefs:   cronConfigToYAMLDefs(cfg.Cron.Jobs),
+			Cfg: cron.Config{
+				Enabled:           cfg.Cron.Enabled,
+				MaxConcurrentRuns: cfg.Cron.MaxConcurrentRuns,
+				MaxJobs:           cfg.Cron.MaxJobs,
+				DefaultTimeoutSec: cfg.Cron.DefaultTimeoutSec,
+				TickIntervalSec:   cfg.Cron.TickIntervalSec,
+				YAMLConfigPath:    cfg.Cron.YAMLConfigPath,
+			},
+		})
+		if err := cronScheduler.Start(ctx); err != nil {
+			log.Warn("cron: scheduler start failed (cron disabled)", "err", err)
+			cronScheduler = nil
+		} else {
+			// Hot-reload cron config at runtime.
+			cfgStore.RegisterFunc(func(prev, next *config.Config) {
+				if prev.Cron.MaxConcurrentRuns != next.Cron.MaxConcurrentRuns ||
+					prev.Cron.MaxJobs != next.Cron.MaxJobs {
+					cronScheduler.UpdateConfig(next.Cron.MaxConcurrentRuns, next.Cron.MaxJobs)
+				}
+			})
+		}
+	}
+
 	mux := http.NewServeMux()
 	deps := &GatewayDeps{
 		Log:            log,
@@ -240,6 +290,7 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 		Handler:        handler,
 		Bridge:         bridge,
 		ConfigWatcher:  configWatcher,
+		CronScheduler:  cronScheduler,
 	}
 
 	// Brain: lightweight LLM layer for TTS summarization (fail-open).
@@ -248,6 +299,21 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 	}
 
 	msgAdapters, adapterStatuses := startMessagingAdapters(ctx, deps)
+
+	// Wire cron delivery to platform adapters.
+	if cronDelivery != nil {
+		cronDelivery.SetDeliverer(func(ctx context.Context, platform string, platformKey map[string]string, response string) error {
+			for _, a := range msgAdapters {
+				if a.Platform() == messaging.PlatformType(platform) {
+					if sender, ok := a.(messaging.CronResultSender); ok {
+						return sender.SendCronResult(ctx, response, platformKey)
+					}
+				}
+			}
+			return fmt.Errorf("cron delivery: no adapter for platform %q", platform)
+		})
+	}
+
 	adminHandler := setupRoutes(mux, deps)
 
 	// Webchat SPA fallback
@@ -336,7 +402,7 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 	}
 
 	cancel()
-	shutdownGateway(ctx, log, deps, msgAdapters, server, adminServer, jwtValidator, skillsLocator, pidTracker, cleanupWG)
+	shutdownGateway(ctx, log, deps, msgAdapters, server, adminServer, jwtValidator, skillsLocator, pidTracker, cleanupWG, cronScheduler)
 	return nil
 }
 
@@ -452,6 +518,7 @@ func shutdownGateway(
 	skillsLocator *skills.Locator,
 	pidTracker *proc.Tracker,
 	cleanupWG *sync.WaitGroup,
+	cronScheduler *cron.Scheduler,
 ) {
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer func() {
@@ -475,6 +542,10 @@ func shutdownGateway(
 		if err := deps.ConfigWatcher.Close(); err != nil {
 			log.Warn("config: watcher close", "err", err)
 		}
+	}
+
+	if cronScheduler != nil {
+		cronScheduler.Shutdown(shutdownCtx)
 	}
 
 	for _, adapter := range msgAdapters {
@@ -597,4 +668,29 @@ func warnDeprecatedSuffixFiles(dir string, log *slog.Logger) {
 			}
 		}
 	}
+}
+
+// cronConfigToYAMLDefs converts inline job definitions from config to YAMLJobDef slice.
+func cronConfigToYAMLDefs(jobs []map[string]any) []cron.YAMLJobDef {
+	if len(jobs) == 0 {
+		return nil
+	}
+	data, _ := json.Marshal(jobs)
+	var defs []cron.YAMLJobDef
+	_ = json.Unmarshal(data, &defs)
+	return defs
+}
+
+// buildWorkerEnv constructs the worker environment variables.
+// When cron is enabled, injects Admin API credentials for cron job management.
+func buildWorkerEnv(cfg *config.Config) []string {
+	env := slices.Clone(cfg.Worker.Environment)
+	if cfg.Cron.Enabled && cfg.Admin.Enabled {
+		adminURL := "http://" + cfg.Admin.Addr
+		env = append(env, "HOTPLEX_ADMIN_API_URL="+adminURL)
+		if len(cfg.Admin.Tokens) > 0 {
+			env = append(env, "HOTPLEX_ADMIN_TOKEN="+cfg.Admin.Tokens[0])
+		}
+	}
+	return env
 }

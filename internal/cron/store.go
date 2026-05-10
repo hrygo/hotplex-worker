@@ -1,0 +1,330 @@
+package cron
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log/slog"
+	"time"
+)
+
+// Store defines the persistence interface for cron jobs.
+type Store interface {
+	Create(ctx context.Context, job *CronJob) error
+	Update(ctx context.Context, job *CronJob) error
+	Delete(ctx context.Context, id string) error
+	Get(ctx context.Context, id string) (*CronJob, error)
+	GetByName(ctx context.Context, name string) (*CronJob, error)
+	List(ctx context.Context, enabledOnly bool) ([]*CronJob, error)
+	UpdateState(ctx context.Context, id string, state CronJobState) error
+	UpsertByName(ctx context.Context, job *CronJob) error
+}
+
+// SQLiteStore implements Store using SQLite.
+type SQLiteStore struct {
+	db  *sql.DB
+	log *slog.Logger
+}
+
+// NewSQLiteStore creates a new cron store backed by the given database.
+func NewSQLiteStore(db *sql.DB, log *slog.Logger) *SQLiteStore {
+	return &SQLiteStore{db: db, log: log.With("component", "cron_store")}
+}
+
+const defaultTimeout = 5 * time.Second
+
+func withTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
+	if _, ok := ctx.Deadline(); ok {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, defaultTimeout)
+}
+
+func (s *SQLiteStore) Create(ctx context.Context, job *CronJob) error {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+
+	schedData, err := json.Marshal(job.Schedule)
+	if err != nil {
+		return fmt.Errorf("cron store: marshal schedule: %w", err)
+	}
+	payloadData, err := json.Marshal(job.Payload)
+	if err != nil {
+		return fmt.Errorf("cron store: marshal payload: %w", err)
+	}
+	platformKeyData, err := json.Marshal(job.PlatformKey)
+	if err != nil {
+		return fmt.Errorf("cron store: marshal platform_key: %w", err)
+	}
+	stateData, err := json.Marshal(job.State)
+	if err != nil {
+		return fmt.Errorf("cron store: marshal state: %w", err)
+	}
+
+	_, err = s.db.ExecContext(ctx, `
+		INSERT INTO cron_jobs (id, name, description, enabled,
+			schedule_kind, schedule_data, payload_kind, payload_data,
+			work_dir, bot_id, owner_id, platform, platform_key,
+			timeout_sec, delete_after_run, max_retries,
+			state, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		job.ID, job.Name, job.Description, boolToInt(job.Enabled),
+		job.Schedule.Kind, string(schedData), job.Payload.Kind, string(payloadData),
+		job.WorkDir, job.BotID, job.OwnerID, job.Platform, string(platformKeyData),
+		job.TimeoutSec, boolToInt(job.DeleteAfterRun), job.MaxRetries,
+		string(stateData), job.CreatedAtMs, job.UpdatedAtMs,
+	)
+	if err != nil {
+		return fmt.Errorf("cron store: create job: %w", err)
+	}
+	return nil
+}
+
+func (s *SQLiteStore) Update(ctx context.Context, job *CronJob) error {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+
+	schedData, err := json.Marshal(job.Schedule)
+	if err != nil {
+		return fmt.Errorf("cron store: marshal schedule: %w", err)
+	}
+	payloadData, err := json.Marshal(job.Payload)
+	if err != nil {
+		return fmt.Errorf("cron store: marshal payload: %w", err)
+	}
+	platformKeyData, err := json.Marshal(job.PlatformKey)
+	if err != nil {
+		return fmt.Errorf("cron store: marshal platform_key: %w", err)
+	}
+	stateData, err := json.Marshal(job.State)
+	if err != nil {
+		return fmt.Errorf("cron store: marshal state: %w", err)
+	}
+
+	res, err := s.db.ExecContext(ctx, `
+		UPDATE cron_jobs SET
+			name = ?, description = ?, enabled = ?,
+			schedule_kind = ?, schedule_data = ?, payload_kind = ?, payload_data = ?,
+			work_dir = ?, bot_id = ?, owner_id = ?, platform = ?, platform_key = ?,
+			timeout_sec = ?, delete_after_run = ?, max_retries = ?,
+			state = ?, updated_at = ?
+		WHERE id = ?`,
+		job.Name, job.Description, boolToInt(job.Enabled),
+		job.Schedule.Kind, string(schedData), job.Payload.Kind, string(payloadData),
+		job.WorkDir, job.BotID, job.OwnerID, job.Platform, string(platformKeyData),
+		job.TimeoutSec, boolToInt(job.DeleteAfterRun), job.MaxRetries,
+		string(stateData), job.UpdatedAtMs,
+		job.ID,
+	)
+	if err != nil {
+		return fmt.Errorf("cron store: update job: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("cron store: job not found: %s", job.ID)
+	}
+	return nil
+}
+
+func (s *SQLiteStore) Delete(ctx context.Context, id string) error {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+
+	res, err := s.db.ExecContext(ctx, `DELETE FROM cron_jobs WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("cron store: delete job: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("cron store: job not found: %s", id)
+	}
+	return nil
+}
+
+func (s *SQLiteStore) Get(ctx context.Context, id string) (*CronJob, error) {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+
+	row := s.db.QueryRowContext(ctx, `
+		SELECT id, name, description, enabled,
+			schedule_kind, schedule_data, payload_kind, payload_data,
+			work_dir, bot_id, owner_id, platform, platform_key,
+			timeout_sec, delete_after_run, max_retries,
+			state, created_at, updated_at
+		FROM cron_jobs WHERE id = ?`, id)
+	return scanJob(row)
+}
+
+func (s *SQLiteStore) GetByName(ctx context.Context, name string) (*CronJob, error) {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+
+	row := s.db.QueryRowContext(ctx, `
+		SELECT id, name, description, enabled,
+			schedule_kind, schedule_data, payload_kind, payload_data,
+			work_dir, bot_id, owner_id, platform, platform_key,
+			timeout_sec, delete_after_run, max_retries,
+			state, created_at, updated_at
+		FROM cron_jobs WHERE name = ?`, name)
+	return scanJob(row)
+}
+
+func (s *SQLiteStore) List(ctx context.Context, enabledOnly bool) ([]*CronJob, error) {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+
+	q := `SELECT id, name, description, enabled,
+			schedule_kind, schedule_data, payload_kind, payload_data,
+			work_dir, bot_id, owner_id, platform, platform_key,
+			timeout_sec, delete_after_run, max_retries,
+			state, created_at, updated_at
+		FROM cron_jobs`
+	if enabledOnly {
+		q += ` WHERE enabled = 1`
+	}
+	q += ` ORDER BY created_at`
+
+	rows, err := s.db.QueryContext(ctx, q)
+	if err != nil {
+		return nil, fmt.Errorf("cron store: list jobs: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var jobs []*CronJob
+	for rows.Next() {
+		job, err := scanJobRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		jobs = append(jobs, job)
+	}
+	return jobs, rows.Err()
+}
+
+func (s *SQLiteStore) UpdateState(ctx context.Context, id string, state CronJobState) error {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+
+	data, err := json.Marshal(state)
+	if err != nil {
+		return fmt.Errorf("cron store: marshal state: %w", err)
+	}
+
+	now := time.Now().UnixMilli()
+	_, err = s.db.ExecContext(ctx,
+		`UPDATE cron_jobs SET state = ?, updated_at = ? WHERE id = ?`,
+		string(data), now, id,
+	)
+	if err != nil {
+		return fmt.Errorf("cron store: update state: %w", err)
+	}
+	return nil
+}
+
+// UpsertByName inserts or updates a job by name (idempotent for YAML import).
+// It does not overwrite runtime state if the job already exists.
+func (s *SQLiteStore) UpsertByName(ctx context.Context, job *CronJob) error {
+	existing, err := s.GetByName(ctx, job.Name)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) && err.Error() != "cron store: job not found" {
+		return fmt.Errorf("cron store: upsert lookup: %w", err)
+	}
+
+	if existing != nil {
+		// Preserve runtime state, update definition only.
+		existing.Schedule = job.Schedule
+		existing.Payload = job.Payload
+		existing.Description = job.Description
+		existing.WorkDir = job.WorkDir
+		existing.BotID = job.BotID
+		existing.OwnerID = job.OwnerID
+		existing.Platform = job.Platform
+		existing.PlatformKey = job.PlatformKey
+		existing.TimeoutSec = job.TimeoutSec
+		existing.DeleteAfterRun = job.DeleteAfterRun
+		existing.MaxRetries = job.MaxRetries
+		existing.Enabled = job.Enabled
+		existing.UpdatedAtMs = time.Now().UnixMilli()
+		return s.Update(ctx, existing)
+	}
+	return s.Create(ctx, job)
+}
+
+func scanJob(row *sql.Row) (*CronJob, error) {
+	job := &CronJob{}
+	var enabled, deleteAfterRun int
+	var schedData, payloadData, platformKeyData, stateData string
+
+	err := row.Scan(
+		&job.ID, &job.Name, &job.Description, &enabled,
+		&job.Schedule.Kind, &schedData, &job.Payload.Kind, &payloadData,
+		&job.WorkDir, &job.BotID, &job.OwnerID, &job.Platform, &platformKeyData,
+		&job.TimeoutSec, &deleteAfterRun, &job.MaxRetries,
+		&stateData, &job.CreatedAtMs, &job.UpdatedAtMs,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("cron store: job not found")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("cron store: scan job: %w", err)
+	}
+
+	job.Enabled = enabled == 1
+	job.DeleteAfterRun = deleteAfterRun == 1
+
+	if err := json.Unmarshal([]byte(schedData), &job.Schedule); err != nil {
+		return nil, fmt.Errorf("cron store: unmarshal schedule: %w", err)
+	}
+	if err := json.Unmarshal([]byte(payloadData), &job.Payload); err != nil {
+		return nil, fmt.Errorf("cron store: unmarshal payload: %w", err)
+	}
+	if err := json.Unmarshal([]byte(platformKeyData), &job.PlatformKey); err != nil {
+		return nil, fmt.Errorf("cron store: unmarshal platform_key: %w", err)
+	}
+	if err := json.Unmarshal([]byte(stateData), &job.State); err != nil {
+		return nil, fmt.Errorf("cron store: unmarshal state: %w", err)
+	}
+	return job, nil
+}
+
+func scanJobRow(rows *sql.Rows) (*CronJob, error) {
+	job := &CronJob{}
+	var enabled, deleteAfterRun int
+	var schedData, payloadData, platformKeyData, stateData string
+
+	err := rows.Scan(
+		&job.ID, &job.Name, &job.Description, &enabled,
+		&job.Schedule.Kind, &schedData, &job.Payload.Kind, &payloadData,
+		&job.WorkDir, &job.BotID, &job.OwnerID, &job.Platform, &platformKeyData,
+		&job.TimeoutSec, &deleteAfterRun, &job.MaxRetries,
+		&stateData, &job.CreatedAtMs, &job.UpdatedAtMs,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("cron store: scan job row: %w", err)
+	}
+
+	job.Enabled = enabled == 1
+	job.DeleteAfterRun = deleteAfterRun == 1
+
+	if err := json.Unmarshal([]byte(schedData), &job.Schedule); err != nil {
+		return nil, fmt.Errorf("cron store: unmarshal schedule: %w", err)
+	}
+	if err := json.Unmarshal([]byte(payloadData), &job.Payload); err != nil {
+		return nil, fmt.Errorf("cron store: unmarshal payload: %w", err)
+	}
+	if err := json.Unmarshal([]byte(platformKeyData), &job.PlatformKey); err != nil {
+		return nil, fmt.Errorf("cron store: unmarshal platform_key: %w", err)
+	}
+	if err := json.Unmarshal([]byte(stateData), &job.State); err != nil {
+		return nil, fmt.Errorf("cron store: unmarshal state: %w", err)
+	}
+	return job, nil
+}
+
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}

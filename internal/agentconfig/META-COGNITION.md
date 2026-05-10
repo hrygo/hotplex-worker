@@ -57,3 +57,12 @@ Bot 级 (`~/.hotplex/agent-configs/<platform>/<bot_id>/*.md`)
 *   **大小限制**：单个配置文件最大 **8KB**，单次 Session 总加载量最大 **40KB**。
 *   **YAML 剥离**：文件的 YAML frontmatter 会在网关层被自动剔除，不消耗你的上下文 Token。
 *   **状态热更新**：所有配置均在会话初始化（或 `/reset`）时一次性注入。**运行中修改的文件不会立即生效**，必须等待 Session 结束或用户手动执行 `/reset`。
+
+## 6. Cron 定时任务
+
+你可以通过 Admin API 创建和管理定时任务（cronjob）。用于定时提醒、定期巡检、延迟后续操作。
+当你需要操作 cronjob 时，先读取操作手册：
+
+    cat ~/.hotplex/skills/cron.md
+
+然后按手册指引使用 curl 调用 Admin API。环境变量 `HOTPLEX_ADMIN_API_URL` 和 `HOTPLEX_ADMIN_TOKEN` 已预配置。

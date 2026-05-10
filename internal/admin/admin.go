@@ -74,6 +74,7 @@ type AdminAPI struct {
 	hub           HubProvider
 	bridge        BridgeProvider
 	configWatcher ConfigWatcherProvider
+	cron          CronSchedulerProvider
 	rateLimiter   atomic.Value // *simpleRateLimiter
 	allowedCIDRs  atomic.Value // []string
 	version       func() string
@@ -88,6 +89,7 @@ type Deps struct {
 	Hub           HubProvider
 	Bridge        BridgeProvider
 	ConfigWatcher ConfigWatcherProvider
+	Cron          CronSchedulerProvider
 	Version       func() string
 	NewSessionID  func() string
 }
@@ -101,6 +103,7 @@ func New(deps Deps) *AdminAPI {
 		hub:           deps.Hub,
 		bridge:        deps.Bridge,
 		configWatcher: deps.ConfigWatcher,
+		cron:          deps.Cron,
 		version:       deps.Version,
 		newSessionID:  deps.NewSessionID,
 	}

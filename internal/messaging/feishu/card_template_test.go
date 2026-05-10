@@ -136,7 +136,7 @@ func TestBuildStreamingCard(t *testing.T) {
 	t.Parallel()
 	t.Run("no header", func(t *testing.T) {
 		t.Parallel()
-		got := buildStreamingCard(cardHeader{}, "summary", "content")
+		got := buildStreamingCard(cardHeader{}, "summary", "content", "")
 		var card map[string]any
 		require.NoError(t, json.Unmarshal([]byte(got), &card))
 		require.Nil(t, card["header"])
@@ -148,7 +148,7 @@ func TestBuildStreamingCard(t *testing.T) {
 		t.Parallel()
 		got := buildStreamingCard(
 			cardHeader{Title: "Bot", Subtitle: "生成中...", Template: "wathet"},
-			"summary", "content")
+			"summary", "content", "")
 		var card map[string]any
 		require.NoError(t, json.Unmarshal([]byte(got), &card))
 		hdr, ok := card["header"].(map[string]any)

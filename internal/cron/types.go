@@ -1,0 +1,75 @@
+package cron
+
+// Schedule kinds.
+type ScheduleKind string
+
+const (
+	ScheduleAt    ScheduleKind = "at"
+	ScheduleEvery ScheduleKind = "every"
+	ScheduleCron  ScheduleKind = "cron"
+)
+
+// CronSchedule defines when a job fires.
+type CronSchedule struct {
+	Kind    ScheduleKind `json:"kind"`
+	At      string       `json:"at,omitempty"`       // kind=at: ISO-8601 timestamp
+	EveryMs int64        `json:"every_ms,omitempty"` // kind=every: interval in ms
+	Expr    string       `json:"expr,omitempty"`     // kind=cron: cron expression
+	TZ      string       `json:"tz,omitempty"`       // timezone, default Local
+}
+
+// Payload kinds.
+type PayloadKind string
+
+const (
+	PayloadAgentTurn   PayloadKind = "agent_turn"
+	PayloadSystemEvent PayloadKind = "system_event" // reserved
+)
+
+// CronPayload defines what a job executes.
+type CronPayload struct {
+	Kind         PayloadKind `json:"kind"`
+	Message      string      `json:"message"`
+	AllowedTools []string    `json:"allowed_tools,omitempty"`
+}
+
+// JobStatus records the outcome of the last run.
+type JobStatus string
+
+const (
+	StatusSuccess JobStatus = "success"
+	StatusFailed  JobStatus = "failed"
+	StatusTimeout JobStatus = "timeout"
+)
+
+// CronJobState holds mutable runtime state.
+type CronJobState struct {
+	NextRunAtMs     int64     `json:"next_run_at_ms"`
+	LastRunAtMs     int64     `json:"last_run_at_ms"`
+	RunningAtMs     int64     `json:"running_at_ms"`
+	LastStatus      JobStatus `json:"last_status,omitempty"`
+	ConsecutiveErrs int       `json:"consecutive_errors"`
+	RetryCount      int       `json:"retry_count,omitempty"`
+	LastRunID       string    `json:"last_run_id,omitempty"`
+}
+
+// CronJob is the top-level job entity.
+type CronJob struct {
+	ID             string            `json:"id"`
+	Name           string            `json:"name"`
+	Description    string            `json:"description,omitempty"`
+	Enabled        bool              `json:"enabled"`
+	Schedule       CronSchedule      `json:"schedule"`
+	Payload        CronPayload       `json:"payload"`
+	WorkDir        string            `json:"work_dir,omitempty"`
+	BotID          string            `json:"bot_id,omitempty"`
+	OwnerID        string            `json:"owner_id,omitempty"`
+	Platform       string            `json:"platform,omitempty"`
+	PlatformKey    map[string]string `json:"platform_key,omitempty"`
+	TimeoutSec     int               `json:"timeout_sec,omitempty"`
+	DeleteAfterRun bool              `json:"delete_after_run,omitempty"`
+	MaxRetries     int               `json:"max_retries,omitempty"`
+	State          CronJobState      `json:"state"`
+	CreatedAtMs    int64             `json:"created_at_ms"`
+	UpdatedAtMs    int64             `json:"updated_at_ms"`
+}

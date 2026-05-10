@@ -67,6 +67,11 @@ func setupRoutes(
 	configWatcherAdapter := &configWatcherAdapter{watcher: configWatcher}
 	turnsAdapter := &turnsStoreAdapter{es: deps.EventStore}
 
+	var cronAdapter *cronAdminAdapter
+	if deps.CronScheduler != nil {
+		cronAdapter = &cronAdminAdapter{scheduler: deps.CronScheduler, turnsStore: deps.EventStore}
+	}
+
 	adminAPI := admin.New(admin.Deps{
 		Log:           log,
 		Config:        configAdapter,
@@ -75,6 +80,7 @@ func setupRoutes(
 		Hub:           hubAdapter,
 		Bridge:        bridgeAdapter,
 		ConfigWatcher: configWatcherAdapter,
+		Cron:          cronAdapter,
 		Version:       versionString,
 		NewSessionID:  newSessionID,
 	})
@@ -116,6 +122,14 @@ func setupRoutes(
 	adminMux.HandleFunc("POST /admin/sessions/{id}/terminate", adminAPI.TerminateSession)
 	adminMux.HandleFunc("GET /admin/sessions/{id}/stats", adminAPI.HandleSessionStats)
 
+	// Cron API
+	adminMux.HandleFunc("GET /api/cron/jobs", adminAPI.HandleCronList)
+	adminMux.HandleFunc("GET /api/cron/jobs/{id}", adminAPI.HandleCronGet)
+	adminMux.HandleFunc("POST /api/cron/jobs", adminAPI.HandleCronCreate)
+	adminMux.HandleFunc("PATCH /api/cron/jobs/{id}", adminAPI.HandleCronUpdate)
+	adminMux.HandleFunc("DELETE /api/cron/jobs/{id}", adminAPI.HandleCronDelete)
+	adminMux.HandleFunc("POST /api/cron/jobs/{id}/run", adminAPI.HandleCronTrigger)
+	adminMux.HandleFunc("GET /api/cron/jobs/{id}/runs", adminAPI.HandleCronRunHistory)
 	// Webchat SPA is NOT registered on the mux directly.
 	// Instead, the caller wraps the mux with a fallback handler below.
 	return adminAPI.Middleware(adminMux)

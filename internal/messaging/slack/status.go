@@ -354,7 +354,9 @@ func (a *Adapter) ClearStatus(ctx context.Context, channelID, threadTS string) e
 		}
 		a.handleCapabilityError(err)
 	}
-	a.statusMgr.Clear(ctx, channelID, threadTS)
+	if a.statusMgr != nil {
+		a.statusMgr.Clear(ctx, channelID, threadTS)
+	}
 	return nil
 }
 
