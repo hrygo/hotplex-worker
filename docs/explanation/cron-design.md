@@ -249,11 +249,32 @@ Gateway 重启后，可能有 Job 在停机期间错过了触发时间。`loadFr
 `LoadFromYAML` 支持 YAML 文件定义 Job，通过 `name` 字段实现幂等 upsert：
 
 ```yaml
+# cron 表达式调度
 - name: daily-health
   schedule: "cron:0 9 * * 1-5"
   message: "检查系统健康状态"
   bot_id: "${BOT_ID}"
   owner_id: "${USER_ID}"
+
+# every 固定间隔调度
+- name: remind-water
+  schedule: "every:30m"
+  schedule_every_ms: 1800000  # 可选：直接指定毫秒数（覆盖 every 解析）
+  message: "提醒喝水"
+  bot_id: "${BOT_ID}"
+  owner_id: "${USER_ID}"
+  max_runs: 6
+  expires_at: "2026-05-11T00:00:00+08:00"
+
+# at 一次性调度
+- name: deploy-prod
+  schedule: "at:2026-05-15T14:00:00+08:00"
+  schedule_at: "2026-05-15T14:00:00+08:00"  # 可选：显式 ISO-8601 时间戳
+  message: "执行生产环境部署"
+  bot_id: "${BOT_ID}"
+  owner_id: "${USER_ID}"
+  delete_after_run: true
+  max_retries: 3
 ```
 
 YAML 导入在 Gateway 启动时执行，覆盖同名 Job 的定义但保留运行状态（run_count、last_run_at_ms 等）。这使得 Job 定义可以版本化管理（存入 Git 仓库）。

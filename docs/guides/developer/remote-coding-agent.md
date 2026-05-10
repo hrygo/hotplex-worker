@@ -133,7 +133,7 @@ $技能
 | 完成小阶段 | `$提交` | Git checkpoint，防止 /rewind 丢失太多 |
 | 改坏了 | `$回退` | 快速回退到上一轮的安全状态 |
 | 复杂任务前 | `$上下文` | 确认 token 充裕再开始 |
-| 定时巡检 | Cron 任务 | [参考 Cron 教程](../user/cron-scheduling.md) |
+| 定时巡检 | Cron 任务 | [参考 Cron 教程](./cron-automation.md) |
 
 ### 典型工作流示例
 

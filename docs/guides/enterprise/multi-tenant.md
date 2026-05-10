@@ -66,9 +66,10 @@ JWT Claims:
   iss: "hotplex"
   sub: "user_id"
   bot_id: "U12345"      ← 路由隔离关键字段
+  user_id: "U12345"
   session_id: "..."
   role: "user"
-  scope: ["session:read", "session:write"]
+  scopes: ["session:read", "session:write"]
 ```
 
 **隔离规则**：

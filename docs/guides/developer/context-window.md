@@ -24,6 +24,8 @@ HotPlex Gateway 通过 AEP v1 协议的 `context_usage` 事件实时报告 Worke
 | `agents` | int | Agent 配置文件数量 |
 | `skills` | ContextSkillInfo | Skills 相关的 token 消耗 |
 
+> **来源说明**：`memory_files`、`mcp_tools`、`agents`、`skills` 等字段来自 Worker（如 Claude Code）通过 `context_usage` 事件上报的数据，由 Worker 端计算和填充，非 Gateway 定义。Gateway 仅透传这些信息。
+
 **使用示例**：
 
 ```

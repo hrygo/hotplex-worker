@@ -122,18 +122,20 @@
 
 ```bash
 # 每天早上 9 点检查项目健康状态
+# 注意：$GATEWAY_BOT_ID 和 $GATEWAY_USER_ID 是 Gateway 注入的环境变量，
+# 需在 Gateway 运行时的 shell 中使用，或手动设置为实际值
 hotplex cron create \
   --name "daily-health" \
   --schedule "cron:0 9 * * 1-5" \
   -m "检查项目健康：运行测试、检查依赖更新、查看未解决 issue" \
-  --bot-id "$BOT_ID" --owner-id "$USER_ID"
+  --bot-id "$GATEWAY_BOT_ID" --owner-id "$GATEWAY_USER_ID"
 
 # 每 30 分钟提醒喝水
 hotplex cron create \
   --name "water-reminder" \
   --schedule "every:30m" \
   -m "提醒：该喝水了！" \
-  --bot-id "$BOT_ID" --owner-id "$USER_ID" \
+  --bot-id "$GATEWAY_BOT_ID" --owner-id "$GATEWAY_USER_ID" \
   --max-runs 8
 ```
 

@@ -110,13 +110,17 @@ curl -H "Authorization: Bearer $ADMIN_TOKEN" \
 
 ### SecretsProvider 链
 
-支持多来源凭证链式查找：
+支持多来源凭证链式查找，按顺序尝试直到找到值：
 
 ```go
+// 默认链（仅环境变量）
 ChainedSecretsProvider{
-    VaultProvider{},      // 优先: HashiCorp Vault
-    EnvSecretsProvider{}, // 回退: 环境变量
+    EnvSecretsProvider{}, // 从 HOTPLEX_* 环境变量读取
 }
+
+// 可扩展：实现 SecretsProvider 接口接入 Vault 等外部密钥管理
+// type VaultProvider struct{ ... }
+// func (p *VaultProvider) Get(key string) string { ... }
 ```
 
 ### Worker 环境隔离

@@ -166,7 +166,7 @@ hotplex cron create \
 
 ## 下一步
 
-- [User Manual](User-Manual.md) -- 完整功能参考
-- [Architecture Design](Architecture-Design.md) -- 系统架构详解
-- [Security Governance](Security-Governance.md) -- 安全策略与最佳实践
-- [Reference Manual](Reference-Manual.md) -- API 与配置参数手册
+- [用户指南](guides/user/chat-with-ai.md) -- 完整功能参考
+- [架构概览](guides/contributor/architecture.md) -- 系统架构详解
+- [安全模型](explanation/security-model.md) -- 安全策略与最佳实践
+- [配置参考](reference/configuration.md) -- API 与配置参数手册

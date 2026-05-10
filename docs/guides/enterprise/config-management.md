@@ -71,6 +71,7 @@ config-a.yaml → config-b.yaml → config-a.yaml
 | 字段 | 说明 |
 |------|------|
 | `log.level` | 日志级别 |
+| `session.gc_scan_interval` | Session GC 扫描间隔 |
 | `pool.max_size` | 全局 Session 上限 |
 | `pool.max_idle_per_user` | 每用户 Session 上限 |
 | `worker.max_lifetime` / `idle_timeout` / `execution_timeout` | Worker 超时 |

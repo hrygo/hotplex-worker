@@ -15,14 +15,16 @@ difficulty: advanced
 
 ```yaml
 session:
-  max_concurrent: 1000       # 最大并发 Session（默认 1000）
+  max_concurrent: 1000       # 状态机层最大并发 Session（默认 1000）
+  retention_period: 168h     # Session 保留期（默认 7 天）
+  gc_scan_interval: 10m      # GC 扫描间隔（默认 10 分钟）
 
 pool:
   max_size: 100              # 全局最大活跃 Session（默认 100）
   min_size: 0                # 最小保留 Session（默认 0）
 ```
 
-`max_concurrent` 限制状态机层面的并发转换数，`max_size` 限制实际 Worker 进程数。两者独立生效，取较严格者。
+`session.max_concurrent` 限制状态机层面的并发转换数，`pool.max_size` 限制实际 Worker 进程数。两者独立生效，取较严格者。
 
 ---
 

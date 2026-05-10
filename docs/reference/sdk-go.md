@@ -179,6 +179,8 @@ for evt := range ch {
 
 ### AEP v1 事件类型一览
 
+> **注意**：上表列出的是 Go SDK 中导出了 `Kind` 常量的事件类型。部分 AEP 协议事件（如 `context_usage`、`mcp_status`、`skills_list`、`worker_command`、`question_request`、`question_response`、`elicitation_request`、`elicitation_response`）在 Go SDK 中未导出 `Kind` 常量。处理这些事件时需使用字符串形式匹配 `evt.Type == "context_usage"` 等。
+
 | Kind | 方向 | Go Data 类型 | 说明 |
 |------|------|-------------|------|
 | `init` | C→S | `map[string]any` | 握手初始化 |

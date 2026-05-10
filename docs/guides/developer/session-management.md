@@ -32,7 +32,7 @@ CREATED → RUNNING ⟷ IDLE → TERMINATED → DELETED
 | `CREATED → RUNNING` | `init` 握手完成，Worker 启动成功 |
 | `RUNNING → IDLE` | Worker 执行完毕，Turn 结束（`done` 事件） |
 | `IDLE → RUNNING` | 收到新 `input`（`TransitionWithInput` 原子操作） |
-| `IDLE → TERMINATED` | `idle_timeout` / `max_lifetime` / GC 回收 |
+| `IDLE → TERMINATED` | `idle_timeout` / GC 回收 |
 | `RUNNING → TERMINATED` | `/gc`、Worker 崩溃、`max_turns` 限制 |
 | `RUNNING → DELETED` | Admin API 强制删除 |
 | `TERMINATED → RUNNING` | Resume（重启 Worker 进程，`--resume` 恢复对话） |
@@ -172,5 +172,7 @@ type DebugSessionSnapshot struct {
 | Zombie 检测 | `RUNNING` Session 的 `LastIO()` 超过 `execution_timeout` | → TERMINATED |
 | Max Lifetime | `expires_at ≤ now` | → TERMINATED |
 | Idle Timeout | `idle_expires_at ≤ now` | → TERMINATED |
+
+> **注意**：`max_lifetime`（即 `expires_at` 到期）作用于**所有状态**的 Session（包括 `RUNNING`、`IDLE`），不限于 `IDLE → TERMINATED` 转换。它是一个全局生命周期上限，确保 Session 不会无限存活。
 
 **注意**：`TERMINATED` Session 的记录不会被自动删除。它们作为 "resume 决策标记"，告诉 Gateway 之前的 Session 存在过，Worker 的 session 文件可能仍在磁盘上。物理删除应通过 Admin API 显式执行。

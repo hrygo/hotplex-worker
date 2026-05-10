@@ -107,6 +107,7 @@ Layer 4: Resolved  → 所有解析 IP 匹配 BlockedCIDRs
 | IPv6 ULA | `fc00::/7` | IPv6 唯一本地地址 |
 | Link-local | `169.254.0.0/16`, `fe80::/10` | 链路本地 |
 | Cloud Metadata | `169.254.169.254/32`, `100.100.100.200/32` | AWS/GCP/Azure/阿里云元数据 |
+| DHCP Broadcast | `192.0.0.0/24` | RFC 8520 DHCP broadcast |
 | Multicast | `224.0.0.0/4`, `ff00::/8` | 组播 |
 | Reserved | `0.0.0.0/8`, `100.64.0.0/10` | 当前主机 / Carrier-grade NAT |
 

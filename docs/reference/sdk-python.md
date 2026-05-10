@@ -181,7 +181,7 @@ client.on_error(lambda d: print(f"错误: {d['message']}"))
 | `done` | `DoneData` | S→C | 任务完成（Turn 终止符） |
 | `permission_request` | `PermissionRequestData` | S→C | 请求用户授权 |
 | `permission_response` | `PermissionResponseData` | C→S | 用户授权/拒绝 |
-| `control` | `ControlData` | S→C | 服务端控制指令 |
+| `control` | `ControlData` | 双向 | 控制指令（Client 可发送 terminate/delete 等，Server 可发送 reconnect/throttle 等） |
 
 ### Session 状态
 

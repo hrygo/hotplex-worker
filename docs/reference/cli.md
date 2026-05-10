@@ -710,7 +710,7 @@ hotplex cron create \
 | `--max-retries` | | `int` | `0` | 否 | 失败后最大重试次数（一次性任务） |
 | `--max-runs` | | `int` | `0` | 否 | 最大执行次数后自动禁用（`0` = 无限） |
 | `--expires-at` | | `string` | | 否 | 自动禁用时间（RFC3339 格式） |
-| `--platform` | | `string` | | 否 | 目标投递平台：`slack`、`feishu`、`cron`（未设置时自动检测） |
+| `--platform` | | `string` | | 否 | 目标投递平台：`slack`、`feishu`、`cron`（未设置时根据 `bot_id` 关联的 session 平台信息推断；若推断失败则默认为 `cron`，不投递结果） |
 | `--platform-key` | | `string` | | 否 | 平台路由键（JSON 对象），如 `'{"channel_id":"C123"}'` |
 | `--config` | `-c` | `string` | `~/.hotplex/config.yaml` | 否 | 配置文件路径 |
 

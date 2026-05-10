@@ -240,7 +240,7 @@ LLM Provider 返回临时错误（429、529、400 等）时的自动重试配置
 | `max_retries` | int | `9` | `HOTPLEX_WORKER_AUTO_RETRY_MAX_RETRIES` | 最大重试次数 |
 | `base_delay` | duration | `5s` | — | 首次重试延迟。指数退避基数 |
 | `max_delay` | duration | `120s` | — | 最大重试延迟。退避上限 |
-| `retry_input` | string | `继续` | — | 重试时发送给 Worker 的输入文本 |
+| `retry_input` | string | `继续` | — | 重试时发送给 Worker 的输入文本（中文字符串，意为"continue"） |
 | `notify_user` | bool | `true` | — | 重试时是否通知用户 |
 | `patterns` | []string | `[]` | — | 额外的可重试错误正则模式。追加到系统内建模式（429、500 等） |
 
@@ -328,6 +328,8 @@ AI-native 定时任务引擎：自然语言 prompt 作为 payload，结果投递
 | `stt_local_idle_ttl` | duration | `1h` | `HOTPLEX_MESSAGING_STT_LOCAL_IDLE_TTL` | 持久子进程自动关闭的空闲 TTL。0 = 禁用自动关闭 |
 
 #### 3.11.3 TTS（文字转语音）共享配置
+
+> **注意**：以下 `tts_*` 字段在配置结构体中通过 mapstructure `,squash` 标签嵌入到平台级配置（`MessagingPlatformConfig`）。这意味着在 YAML 中这些字段直接位于平台键下（如 `messaging.slack.tts_voice`），而非嵌套在 `tts` 子对象中。
 
 | 字段 | 类型 | 默认值 | 环境变量 | 说明 |
 |------|------|--------|----------|------|

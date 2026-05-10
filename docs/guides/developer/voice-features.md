@@ -159,16 +159,180 @@ HOTPLEX_MESSAGING_TTS_MOSS_MODEL_DIR=~/.hotplex/models/moss-tts-nano
 
 ### 本地 STT
 
+本地 STT 使用阿里达摩院开源的 **SenseVoice-Small** 模型，通过 `funasr-onnx` 运行 ONNX 推理，支持中英日韩粤五语种。
+
+#### 系统要求
+
+| 项目 | 要求 |
+|------|------|
+| Python | 3.9 或更高版本 |
+| 磁盘空间 | ~3 GB（模型文件） |
+| 内存 | 最低 512 MB 可用（INT8 量化推理约 ~400 MB） |
+| 操作系统 | Linux / macOS |
+
 ```bash
-# 1. 安装 Python 依赖
-pip3 install funasr-onnx onnxruntime onnx
-
-# 2. 首次启动 gateway 时自动部署 stt_server.py 到 ~/.hotplex/scripts/
-
-# 3. 配置
-HOTPLEX_MESSAGING_STT_PROVIDER=local
-HOTPLEX_MESSAGING_STT_LOCAL_CMD="python3 ~/.hotplex/scripts/stt_server.py"
+python3 --version   # 确认 Python >= 3.9
 ```
+
+#### Python 依赖安装
+
+```bash
+pip3 install funasr-onnx modelscope onnx
+```
+
+| 包 | 用途 |
+|---|------|
+| `funasr-onnx` | SenseVoice ONNX 推理引擎 |
+| `modelscope` | 模型自动下载（ModelScope Hub） |
+| `onnx` | ONNX 模型修补工具 |
+
+> **注意**：`funasr-onnx` 仅依赖 `onnxruntime`（CPU 版本）。如果环境中误安装了 `torch`、`nvidia-*`、`cuda-*` 等 GPU 包，它们不会被使用但会占用大量内存和磁盘。可通过 `pip uninstall torch nvidia-cublas nvidia-cufft nvidia-cudnn-cu13` 等移除。
+
+验证安装：
+
+```bash
+python3 -c "from funasr_onnx import SenseVoiceSmall; print('OK')"
+# 输出: OK
+```
+
+#### 模型下载
+
+首次运行时，模型会自动从 ModelScope Hub 下载（~3 GB），缓存在 `~/.cache/modelscope/hub/models/iic/SenseVoiceSmall/`。手动预下载（可选）：
+
+```bash
+python3 -c "
+from modelscope.hub.snapshot_download import snapshot_download
+path = snapshot_download('iic/SenseVoiceSmall')
+print(f'Model cached at: {path}')
+"
+```
+
+#### ONNX 模型修补
+
+ModelScope 预导出的 ONNX 模型存在已知 bug：`Less` 算子接收了 float 和 int64 混合输入，ONNX Runtime 1.19+ 会拒绝加载。使用 `persistent` 模式时修补会自动执行，也可手动运行：
+
+```bash
+python3 scripts/fix_onnx_model.py
+```
+
+输出示例：
+
+```
+Patched model.onnx
+model_quant.onnx: already correct
+```
+
+> 修补脚本会在原文件旁创建 `.bak` 备份，不会丢失原始模型。
+
+#### 配置
+
+Ephemeral 模式（低频使用，每次启动新进程）：
+
+```yaml
+stt_provider: "local"
+stt_local_cmd: "python3 scripts/stt_once.py {file}"
+```
+
+Persistent 模式（高频使用，常驻进程零冷启动，推荐）：
+
+```yaml
+stt_provider: "local"
+stt_local_cmd: "python3 scripts/stt_server.py --model iic/SenseVoiceSmall"
+stt_local_idle_ttl: 15m   # 空闲 15 分钟后自动关闭子进程
+```
+
+#### 测试验证
+
+**步骤 1 — 检查 Python 依赖**：
+
+```bash
+python3 -c "from funasr_onnx import SenseVoiceSmall; print('funasr-onnx: OK')"
+python3 -c "from modelscope.hub.snapshot_download import snapshot_download; print('modelscope: OK')"
+python3 -c "import onnx; print('onnx: OK')"
+```
+
+**步骤 2 — 检查模型文件**：
+
+```bash
+ls -lh ~/.cache/modelscope/hub/models/iic/SenseVoiceSmall/model.onnx
+# 应显示约 900MB 的模型文件
+```
+
+**步骤 3 — 手动转写测试**：
+
+```bash
+echo '{"audio_path": "/path/to/test.opus"}' | python3 scripts/stt_server.py --model iic/SenseVoiceSmall
+# 预期输出: {"text": "转写结果", "error": ""}
+```
+
+**步骤 4 — 启动 Gateway 验证**：
+
+```bash
+make dev
+```
+
+飞书：发送语音消息，日志应出现 `feishu stt: transcribed text="你好世界"`。
+Slack：发送语音消息，日志应出现 `persistent stt: transcribed text="hello world"`。
+
+#### Docker 部署
+
+Dockerfile 添加 STT 依赖：
+
+```dockerfile
+FROM python:3.12-slim
+
+# Install STT dependencies
+RUN pip install --no-cache-dir funasr-onnx modelscope onnx
+
+# Copy STT scripts
+COPY scripts/stt_server.py /opt/hotplex/scripts/
+COPY scripts/fix_onnx_model.py /opt/hotplex/scripts/
+COPY scripts/stt_once.py /opt/hotplex/scripts/
+```
+
+Volume 挂载模型缓存（避免每次重建都下载 3GB）：
+
+```yaml
+# docker-compose.yaml
+services:
+  gateway:
+    volumes:
+      - stt-models:/root/.cache/modelscope
+      - ./scripts:/opt/hotplex/scripts
+
+volumes:
+  stt-models:
+```
+
+飞书配置（Docker 环境）：
+
+```yaml
+feishu:
+  stt_provider: "feishu+local"
+  stt_local_cmd: "python3 /opt/hotplex/scripts/stt_server.py --model iic/SenseVoiceSmall"
+  stt_local_idle_ttl: 30m
+```
+
+Slack 配置（Docker 环境）：
+
+```yaml
+slack:
+  stt_provider: "local"
+  stt_local_cmd: "python3 /opt/hotplex/scripts/stt_server.py --model iic/SenseVoiceSmall"
+  stt_local_idle_ttl: 30m
+```
+
+#### 故障排查
+
+| 问题 | 日志关键词 | 解决方案 |
+|------|-----------|---------|
+| funasr-onnx 未安装 | `funasr-onnx not installed` | `pip3 install funasr-onnx` |
+| ONNX 模型加载失败 | `type mismatch` | `python3 scripts/fix_onnx_model.py`，或删除缓存重新下载 |
+| 云端 STT 返回空 | `transcribed text=""` | 检查飞书 `speech_to_text` 权限是否开通 |
+| Slack 语音未被识别 | `user shared a file` | 确认 `slack.stt_provider` 为 `"local"` 且 `stt_local_cmd` 非空 |
+| Persistent 子进程频繁重启 | `persistent stt` 多条 start 日志 | 检查内存是否不足（OOM Kill）、模型文件是否损坏 |
+| Ephemeral 模式延迟 3-5s | — | 正常现象，切换到 persistent 模式 |
+| 模型下载慢/失败 | — | ModelScope 服务器在国内，海外可能较慢；可手动下载后放入 `~/.cache/modelscope/hub/models/iic/SenseVoiceSmall/` |
 
 ### 飞书云端 STT
 

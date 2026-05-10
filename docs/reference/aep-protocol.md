@@ -139,6 +139,8 @@ Session 处于 `RUNNING` 时发送 input 会被拒绝（`SESSION_BUSY`）。
 
 ### worker_command（Worker 命令）
 
+通过 Worker stdio 发送的控制命令，用于在 Agent Turn 过程中查询状态或修改运行时行为。
+
 ```json
 {
   "type": "worker_command",
@@ -149,6 +151,22 @@ Session 处于 `RUNNING` 时发送 input 会被拒绝（`SESSION_BUSY`）。
   }
 }
 ```
+
+`WorkerStdioCommand` 支持以下命令：
+
+| Command | 说明 |
+|---------|------|
+| `context_usage` | 查询当前 context window 使用情况 |
+| `mcp_status` | 查询 MCP 服务器连接状态 |
+| `set_model` | 切换 LLM 模型 |
+| `set_permission` | 修改工具权限策略 |
+| `skills` | 列出可用 Skills |
+| `compact` | 压缩上下文历史 |
+| `clear` | 清空上下文 |
+| `model` | 查询当前模型信息 |
+| `effort` | 调整推理努力级别 |
+| `rewind` | 回退到指定对话快照 |
+| `commit` | 触发代码提交 |
 
 ### ping（心跳）
 
@@ -233,6 +251,8 @@ Autonomous 模式下为**通知性质**，Worker 内部执行，Client 无需回
 ```
 
 `dropped: true` 表示本轮有 `message.delta` 被丢弃，Client 应以最终完整载荷覆盖渲染。
+
+> **注意**：`stats` 字段类型为 `map[string]any`，无固定 schema。上表列出的是常见字段，实际返回的字段取决于 Worker 类型和执行结果，可能包含 `cost_usd`、`cache_read_tokens` 等额外信息。
 
 ### permission_request / question_request / elicitation_request（用户交互）
 
