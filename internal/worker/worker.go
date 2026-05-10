@@ -182,7 +182,8 @@ type SessionInfo struct {
 	WorkerSessionID string
 	AllowedModels   []string // models allowed for this session
 
-	// MCPConfig is the path to a JSON file with MCP server configuration (--mcp-config).
+	// MCPConfig holds MCP server configuration as JSON content ({"mcpServers":{...}}).
+	// Written to a temp file by buildCLIArgs and passed via --mcp-config.
 	MCPConfig string
 	// StrictMCPConfig restricts MCP servers to only those specified in MCPConfig (--strict-mcp-config).
 	StrictMCPConfig bool

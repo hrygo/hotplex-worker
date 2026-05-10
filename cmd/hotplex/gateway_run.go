@@ -194,6 +194,7 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 		WorkerEnv:          buildWorkerEnv(cfg),
 		WorkerEnvBlocklist: cfg.Worker.EnvBlocklist,
 		CronEnv:            buildCronEnv(cfg),
+		MCPConfigJSON:      buildMCPConfigJSON(cfg),
 	})
 
 	skillsLocator := skills.NewLocator(log, cfg.Skills.CacheTTL)
@@ -719,4 +720,19 @@ func buildCronEnv(cfg *config.Config) []string {
 		env = append(env, "HOTPLEX_ADMIN_TOKEN="+cfg.Admin.Tokens[0])
 	}
 	return env
+}
+
+// buildMCPConfigJSON serializes configured MCP servers into the JSON format
+// expected by Claude Code's --mcp-config flag. Returns "" when no servers are
+// configured, which signals the bridge to let Claude Code do default discovery.
+func buildMCPConfigJSON(cfg *config.Config) string {
+	if len(cfg.Worker.ClaudeCode.MCPServers) == 0 {
+		return ""
+	}
+	wrapper := map[string]any{"mcpServers": cfg.Worker.ClaudeCode.MCPServers}
+	b, err := json.Marshal(wrapper)
+	if err != nil {
+		return ""
+	}
+	return string(b)
 }

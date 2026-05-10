@@ -63,6 +63,7 @@ type Bridge struct {
 	workerEnv          []string      // extra env vars from worker.environment config
 	workerEnvBlocklist []string      // extra blocklist entries from worker.env_blocklist config
 	cronEnv            []string      // env vars injected only into cron platform sessions
+	mcpConfigJSON      string        // pre-serialized MCP config JSON; "" = not configured
 
 	accum   map[string]*sessionAccumulator // per-session stats accumulator
 	accumMu sync.Mutex
@@ -95,6 +96,7 @@ func NewBridge(deps BridgeDeps) *Bridge {
 		workerEnv:          deps.WorkerEnv,
 		workerEnvBlocklist: deps.WorkerEnvBlocklist,
 		cronEnv:            deps.CronEnv,
+		mcpConfigJSON:      deps.MCPConfigJSON,
 		retryCancel:        make(map[string]chan struct{}),
 		accum:              make(map[string]*sessionAccumulator),
 		crashTracker:       make(map[string]*crashHistory),
@@ -534,7 +536,7 @@ func firstNonEmpty(vals ...string) string {
 // buildWorkerInfo constructs a worker.SessionInfo from session metadata,
 // carrying over bridge-level config (workerEnv, blocklist).
 func (b *Bridge) buildWorkerInfo(sessionID, userID, workDir string, si *session.SessionInfo) worker.SessionInfo {
-	return worker.SessionInfo{
+	info := worker.SessionInfo{
 		SessionID:       sessionID,
 		UserID:          userID,
 		ProjectDir:      workDir,
@@ -543,6 +545,20 @@ func (b *Bridge) buildWorkerInfo(sessionID, userID, workDir string, si *session.
 		ConfigEnv:       b.workerEnv,
 		ConfigBlocklist: b.workerEnvBlocklist,
 	}
+
+	// MCP config injection — 3 scenarios:
+	// 1. Cron platform: suppress all MCP to save ~600 MB per worker
+	// 2. Configured MCP servers: restrict workers to declared servers only
+	// 3. Not configured: no injection → Claude Code default discovery
+	if si.Platform == "cron" {
+		info.MCPConfig = `{"mcpServers":{}}`
+		info.StrictMCPConfig = true
+	} else if b.mcpConfigJSON != "" {
+		info.MCPConfig = b.mcpConfigJSON
+		info.StrictMCPConfig = true
+	}
+
+	return info
 }
 
 // injectSlackEnv injects HOTPLEX_SLACK_CHANNEL_ID and HOTPLEX_SLACK_THREAD_TS
