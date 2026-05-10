@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"unicode"
 
@@ -39,6 +40,7 @@ type Page struct {
 type NavItem struct {
 	Title    string
 	Path     string // relative to root, e.g., "guides/user/chat-with-ai.html"
+	Weight   int
 	Active   bool
 	Children []NavItem
 }
@@ -164,6 +166,14 @@ func main() {
 		}
 	}
 
+	// Copy explicit assets
+	if err := copyFile(filepath.Join("webchat", "public", "logo.png"), filepath.Join(docsDest, "assets", "logo.png")); err != nil {
+		log.Printf("Warning: failed to copy logo.png: %v", err)
+	}
+	if err := copyFile(filepath.Join("webchat", "public", "logo.webp"), filepath.Join(docsDest, "assets", "logo.webp")); err != nil {
+		log.Printf("Warning: failed to copy logo.webp: %v", err)
+	}
+
 	// Phase 3: Process discovered markdown files
 	for relPath := range discoveredFiles {
 		srcPath := filepath.Join(docsSrc, relPath)
@@ -242,37 +252,150 @@ func normalizePath(p string) string {
 	return filepath.Clean(strings.ReplaceAll(p, "\\", "/"))
 }
 
-func buildNav(root string, discovered map[string]bool) []NavItem {
-	return scanNav(root, "", discovered)
+var categoryTranslations = map[string]string{
+	"guides":       "用户指南",
+	"tutorials":    "实践教程",
+	"reference":    "参考文档",
+	"explanation":  "原理解析",
+	"architecture": "系统架构",
+	"specs":        "技术规范",
+	"security":     "安全中心",
+	"superpowers":  "高级能力",
 }
 
-func scanNav(base, rel string, discovered map[string]bool) []NavItem {
+func translateCategory(name string) string {
+	if t, ok := categoryTranslations[strings.ToLower(name)]; ok {
+		return t
+	}
+	return toTitle(name)
+}
+
+var titleTranslations = map[string]string{
+	"Remote Coding Agent":                      "远程开发助手",
+	"Voice features":                           "语音交互功能",
+	"Enterprise Deployment Guide":              "企业部署指南",
+	"Security Hardening 企业安全加固指南":              "企业安全加固指南",
+	"Integration Patterns Guide":               "系统集成模式",
+	"Multi-Tenant Isolation Guide":             "多租户隔离指南",
+	"Resource Limits Guide":                    "资源配额与限制",
+	"Observability Guide":                      "可观测性指南",
+	"Disaster Recovery Guide":                  "灾备与恢复指南",
+	"Config Management Guide":                  "配置管理指南",
+	"Compliance and Audit Guide":               "合规与审计指南",
+	"Context window":                           "上下文窗口控制",
+	"Cron automation":                          "定时自动化任务",
+	"Mobile access":                            "移动端接入指南",
+	"Multiple agents":                          "多智能体协同",
+	"Security model":                           "安全模型配置",
+	"Session management":                       "会话管理",
+	"Tips and tricks":                          "进阶使用技巧",
+	"Webchat setup":                            "WebChat 部署指南",
+	"WebSocket Full-Duplex Communication Flow": "WebSocket 双工通信流",
+	"Agent Event Protocol (AEP) v1":            "AEP v1 协议规范",
+	"AEP v1 Appendix（时序 / 状态机 / Trace）":        "AEP v1 附录解析",
+	"Admin api":                                "Admin API",
+	"Aep protocol":                             "AEP 协议参考",
+	"Security InputValidation":                 "输入验证与防注入",
+	"Security Authentication":                  "安全认证架构",
+	"AI Tool Policy":                           "AI 工具执行策略",
+	"Env Whitelist Strategy":                   "环境白名单策略",
+	"SSRF Protection":                          "SSRF 防御机制",
+	"Claude Code Context Analysis":             "Claude Code 上下文分析",
+	"Platform Messaging Architecture Diagrams": "消息平台架构图",
+	"Worker Gateway Design":                    "Worker Gateway 设计",
+	"OpenCode Server Context Analysis":         "OpenCode 上下文分析",
+	"Agent Config Design":                      "Agent 配置设计",
+	"Platform Messaging Extension":             "消息平台扩展机制",
+	"Message Persistence":                      "消息持久化设计",
+	"Agent config system":                      "Agent 配置系统",
+	"Session lifecycle":                        "会话生命周期",
+	"Why hotplex":                              "为什么选择 HotPlex",
+	"Brain llm orchestration":                  "LLM 编排机制",
+	"Cron design":                              "Cron 调度器设计",
+}
+
+func translateTitle(title string) string {
+	if t, ok := titleTranslations[title]; ok {
+		return t
+	}
+	for k, v := range titleTranslations {
+		if strings.EqualFold(k, title) {
+			return v
+		}
+	}
+	return title
+}
+
+func buildNav(root string, discovered map[string]bool) []NavItem {
 	var items []NavItem
-	dir := filepath.Join(base, rel)
-	entries, err := os.ReadDir(dir)
+	entries, err := os.ReadDir(root)
 	if err != nil {
 		return nil
 	}
 
-	for _, entry := range entries {
-		if entry.IsDir() {
-			if entry.Name() == "assets" || entry.Name() == "archive" {
-				continue
+	var files []os.DirEntry
+	var dirs []os.DirEntry
+	for _, e := range entries {
+		if e.IsDir() {
+			if e.Name() != "assets" && e.Name() != "archive" {
+				dirs = append(dirs, e)
 			}
-			childRel := filepath.Join(rel, entry.Name())
-			children := scanNav(base, childRel, discovered)
-			if len(children) > 0 {
-				items = append(items, NavItem{
-					Title:    toTitle(entry.Name()),
-					Path:     "",
-					Children: children,
-				})
-			}
+		} else {
+			files = append(files, e)
+		}
+	}
+
+	// 1. Top-level files
+	for _, e := range files {
+		name := e.Name()
+		if filepath.Ext(name) != ".md" || name == "README.md" {
 			continue
 		}
+		if !discovered[name] {
+			continue
+		}
+		title, weight := getFileMeta(filepath.Join(root, name), name)
+		htmlPath := strings.TrimSuffix(name, ".md") + ".html"
+		items = append(items, NavItem{
+			Title:  title,
+			Path:   htmlPath,
+			Weight: weight,
+		})
+	}
+	sortNavItems(items)
 
-		if filepath.Ext(entry.Name()) == ".md" {
-			name := entry.Name()
+	// 2. Sections (Directories)
+	for _, e := range dirs {
+		name := e.Name()
+		children := scanNavFiles(filepath.Join(root, name), name, discovered)
+		if len(children) > 0 {
+			sortNavItems(children)
+			items = append(items, NavItem{
+				Title:    translateCategory(name),
+				Path:     "",
+				Weight:   0, // Directories sort order could also be added later if needed
+				Children: children,
+			})
+		}
+	}
+
+	// Sort top-level again in case we want to mix files and directories? No, files first, then dirs.
+	return items
+}
+
+func scanNavFiles(dir, rel string, discovered map[string]bool) []NavItem {
+	var items []NavItem
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() {
+			// Flatten subdirectories into the current section
+			subItems := scanNavFiles(filepath.Join(dir, name), filepath.Join(rel, name), discovered)
+			items = append(items, subItems...)
+		} else if filepath.Ext(name) == ".md" {
 			if name == "README.md" {
 				continue
 			}
@@ -281,31 +404,52 @@ func scanNav(base, rel string, discovered map[string]bool) []NavItem {
 				continue
 			}
 
-			filePath := filepath.Join(dir, name)
-			var meta struct {
-				Title string `yaml:"title"`
-			}
-			data, err := os.ReadFile(filePath)
-			if err != nil {
-				continue
-			}
-			_, _ = frontmatter.Parse(bytes.NewReader(data), &meta)
-
-			title := meta.Title
-			if title == "" {
-				title = strings.TrimSuffix(name, ".md")
-				title = strings.ReplaceAll(title, "-", " ")
-				title = toTitle(title)
-			}
-
+			title, weight := getFileMeta(filepath.Join(dir, name), name)
 			htmlPath := strings.TrimSuffix(relPath, ".md") + ".html"
 			items = append(items, NavItem{
-				Title: title,
-				Path:  htmlPath,
+				Title:  title,
+				Path:   htmlPath,
+				Weight: weight,
 			})
 		}
 	}
 	return items
+}
+
+func getFileMeta(filePath, name string) (string, int) {
+	var meta struct {
+		Title  string `yaml:"title"`
+		Weight int    `yaml:"weight"`
+	}
+	data, err := os.ReadFile(filePath)
+	if err == nil {
+		_, _ = frontmatter.Parse(bytes.NewReader(data), &meta)
+	}
+
+	title := meta.Title
+	if title == "" {
+		title = strings.TrimSuffix(name, ".md")
+		title = strings.ReplaceAll(title, "-", " ")
+		title = toTitle(title)
+	}
+	return translateTitle(title), meta.Weight
+}
+
+func sortNavItems(items []NavItem) {
+	sort.SliceStable(items, func(i, j int) bool {
+		wi := items[i].Weight
+		if wi == 0 {
+			wi = 9999
+		}
+		wj := items[j].Weight
+		if wj == 0 {
+			wj = 9999
+		}
+		if wi == wj {
+			return items[i].Title < items[j].Title
+		}
+		return wi < wj
+	})
 }
 
 func processFile(path string, nav []NavItem) error {
@@ -323,9 +467,27 @@ func processFile(path string, nav []NavItem) error {
 		page.Title = strings.TrimSuffix(filepath.Base(path), ".md")
 		rest = data
 	}
+	if page.Title == "" {
+		page.Title = strings.TrimSuffix(filepath.Base(path), ".md")
+		page.Title = strings.ReplaceAll(page.Title, "-", " ")
+		page.Title = toTitle(page.Title)
+	}
+	page.Title = translateTitle(page.Title)
+
+	// Parse the markdown
+	reader := text.NewReader(rest)
+	doc := md.Parser().Parse(reader)
+
+	// Remove the first H1 heading if it exists (since we render it in the template)
+	if doc.FirstChild() != nil && doc.FirstChild().Kind() == ast.KindHeading {
+		h, ok := doc.FirstChild().(*ast.Heading)
+		if ok && h.Level == 1 {
+			doc.RemoveChild(doc, h)
+		}
+	}
 
 	var buf bytes.Buffer
-	if err := md.Convert(rest, &buf); err != nil {
+	if err := md.Renderer().Render(&buf, rest, doc); err != nil {
 		return err
 	}
 
@@ -385,9 +547,11 @@ const layout = `
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{.Title}} | HotPlex Docs</title>
+    <link rel="icon" type="image/png" href="{{.RelRoot}}assets/logo.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&family=Noto+Serif+SC:wght@200..900&family=Outfit:wght@100..900&family=Source+Serif+4:ital,opsz,wght@0,8..60,200..900;1,8..60,200..900&display=swap" rel="stylesheet">
+    <link rel="preload" href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&family=Noto+Serif+SC:wght@200..900&family=Outfit:wght@100..900&family=Source+Serif+4:ital,opsz,wght@0,8..60,200..900;1,8..60,200..900&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&family=Noto+Serif+SC:wght@200..900&family=Outfit:wght@100..900&family=Source+Serif+4:ital,opsz,wght@0,8..60,200..900;1,8..60,200..900&display=swap"></noscript>
     <style>
         :root {
             --ivory:    #FAF9F5;
@@ -449,61 +613,110 @@ const layout = `
         .logo-area {
             margin-bottom: 40px;
             padding: 0 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
         }
 
-        .logo {
+        .github-link {
+            color: var(--gray-500);
+            transition: color 0.2s;
+            display: flex;
+            align-items: center;
+        }
+        .github-link:hover {
+            color: var(--slate);
+        }
+        .github-link svg {
+            width: 20px;
+            height: 20px;
+            fill: currentColor;
+        }
+
+        .logo-container {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        .logo-text {
             font-family: var(--font-display);
-            font-size: 24px;
-            font-weight: 700;
+            font-size: 28px;
+            font-weight: 800;
             color: var(--slate);
             text-decoration: none;
             letter-spacing: -0.02em;
-            display: flex;
-            align-items: center;
-            gap: 12px;
             transition: opacity 0.2s;
         }
-        .logo:hover {
-            opacity: 0.85;
+        .logo-text:hover {
+            opacity: 0.8;
         }
-        .logo::before {
-            content: "";
-            width: 12px;
-            height: 12px;
-            background: linear-gradient(135deg, var(--clay), #D76A4F);
-            border-radius: 3px;
-            transform: rotate(45deg);
-            transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
-            box-shadow: 0 2px 6px rgba(195, 90, 62, 0.3);
+        .logo-img-link {
+            display: block;
         }
-        .logo:hover::before {
-            transform: rotate(135deg) scale(1.15);
+        .logo-img {
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            display: block;
+            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+        .logo-img-link:hover .logo-img {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(195, 90, 62, 0.25);
+            filter: brightness(1.02);
         }
 
         nav .nav-section {
-            margin-bottom: 24px;
+            margin-bottom: 12px;
         }
 
         nav .category {
-            font-family: var(--font-mono);
-            font-size: 11px;
-            text-transform: uppercase;
-            letter-spacing: 0.12em;
-            color: var(--gray-500);
-            margin-bottom: 10px;
-            padding: 0 12px;
+            font-family: var(--font-display);
+            font-weight: 700;
+            font-size: 13px;
+            color: var(--gray-700);
+            margin-bottom: 4px;
+            padding: 8px 12px;
             display: flex;
             align-items: center;
+            justify-content: space-between;
+            cursor: pointer;
+            border-radius: 8px;
+            transition: background 0.2s, color 0.2s;
+            user-select: none;
         }
-        nav .category::after {
-            content: "";
-            flex: 1;
-            height: 1px;
+        nav .category:hover {
             background: var(--gray-200);
-            margin-left: 12px;
+            color: var(--slate);
+        }
+        nav .category .chevron {
+            width: 16px;
+            height: 16px;
+            fill: var(--gray-400);
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            transform: rotate(-90deg);
+        }
+        nav .nav-section.open .category .chevron {
+            transform: rotate(0);
+        }
+        nav .nav-links {
+            display: grid;
+            grid-template-rows: 0fr;
+            transition: grid-template-rows 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        nav .nav-section.open .nav-links {
+            grid-template-rows: 1fr;
+        }
+        nav .nav-links ul {
+            min-height: 0;
+            overflow: hidden;
+            list-style: none;
+            padding: 0;
+            margin: 0;
         }
 
-        nav ul { list-style: none; }
+        nav ul { list-style: none; padding: 0; margin: 0; }
         nav li { margin-bottom: 2px; }
         nav a {
             text-decoration: none;
@@ -583,6 +796,17 @@ const layout = `
             font-weight: 600;
             color: var(--slate);
             margin: 40px 0 16px;
+        }
+        .prose hr {
+            border: none;
+            height: 1px;
+            background: var(--gray-200);
+            margin: 48px 0;
+        }
+        .prose hr + h2 {
+            border-top: none;
+            margin-top: 0;
+            padding-top: 0;
         }
         .prose p { 
             margin-bottom: 24px; 
@@ -743,24 +967,49 @@ const layout = `
 <body>
     <aside class="sidebar">
         <div class="logo-area">
-            <a href="{{.RelRoot}}index.html" class="logo">HOTPLEX</a>
+            <div class="logo-container">
+                <a href="/" class="logo-img-link" title="Back to WebChat">
+                    <img src="{{.RelRoot}}assets/logo.webp" alt="HotPlex" class="logo-img">
+                </a>
+                <a href="{{.RelRoot}}index.html" class="logo-text" title="Docs Home">
+                    HOTPLEX
+                </a>
+            </div>
+            <a href="https://github.com/hrygo/hotplex" target="_blank" rel="noopener noreferrer" class="github-link" title="GitHub Repository">
+                <svg viewBox="0 0 24 24"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+            </a>
         </div>
         <nav>
             {{range .Nav}}
                 <div class="nav-section">
                 {{if .Children}}
-                    <div class="category">{{.Title}}</div>
-                    <ul>
-                        {{range .Children}}
-                        <li><a href="{{$.RelRoot}}{{.Path}}" {{if eq $.ActivePath .Path}}class="active"{{end}}>{{.Title}}</a></li>
-                        {{end}}
-                    </ul>
+                    <div class="category" onclick="this.parentElement.classList.toggle('open')">
+                        {{.Title}}
+                        <svg class="chevron" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"/></svg>
+                    </div>
+                    <div class="nav-links">
+                        <ul>
+                            {{range .Children}}
+                            <li><a href="{{$.RelRoot}}{{.Path}}" {{if eq $.ActivePath .Path}}class="active"{{end}}>{{.Title}}</a></li>
+                            {{end}}
+                        </ul>
+                    </div>
                 {{else}}
                     <li><a href="{{$.RelRoot}}{{.Path}}" {{if eq $.ActivePath .Path}}class="active"{{end}}>{{.Title}}</a></li>
                 {{end}}
                 </div>
             {{end}}
         </nav>
+        <script>
+            // Automatically open sections that contain the active page, or match the default preference
+            document.querySelectorAll('.nav-section').forEach(section => {
+                const titleNode = section.querySelector('.category');
+                const hasActive = section.querySelector('.active');
+                if (hasActive || (titleNode && titleNode.textContent.includes('原理解析'))) {
+                    section.classList.add('open');
+                }
+            });
+        </script>
     </aside>
     <main class="content">
         <article>
@@ -777,7 +1026,7 @@ const layout = `
             </footer>
         </article>
     </main>
-    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
     <script>
         window.addEventListener('load', function() {
             if (typeof mermaid !== 'undefined') {

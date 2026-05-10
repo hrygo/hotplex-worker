@@ -1,5 +1,6 @@
 ---
 title: Session 生命周期
+weight: 3
 description: HotPlex 5 状态机 Session 管理：状态流转、确定性 ID、配额控制与 GC 回收
 persona: developer
 difficulty: intermediate

@@ -1,5 +1,6 @@
 ---
 title: HotPlex 术语表
+weight: 10
 description: HotPlex Worker Gateway 全部核心术语的权威中英文对照参考，覆盖协议、架构、模块和运维概念。
 persona: all
 difficulty: beginner

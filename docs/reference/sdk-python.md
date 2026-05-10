@@ -1,5 +1,6 @@
 ---
 title: Python Client SDK 参考
+weight: 7
 description: 基于 AEP v1 协议的 HotPlex Worker Gateway Python 客户端 SDK 完整参考
 persona: developer
 difficulty: intermediate

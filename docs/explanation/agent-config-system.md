@@ -1,5 +1,6 @@
 ---
 title: Agent 配置系统
+weight: 2
 description: HotPlex B/C 双通道 Agent 配置：确定性加载、冲突隔离、XML 安全与热更新时机
 persona: developer
 difficulty: intermediate

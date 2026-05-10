@@ -1,5 +1,6 @@
 ---
 title: 添加 Worker 适配器
+weight: 34
 description: 如何为 HotPlex Gateway 开发新的 AI Coding Agent Worker 适配器
 persona: contributor
 difficulty: advanced

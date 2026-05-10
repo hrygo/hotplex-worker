@@ -1,5 +1,6 @@
 ---
 title: Enterprise Deployment Guide
+weight: 21
 description: Production deployment, security hardening, and operational best practices for HotPlex Gateway.
 persona: enterprise
 difficulty: advanced

@@ -1,5 +1,6 @@
 ---
 title: "HotPlex 5 分钟快速上手"
+weight: 2
 description: "从零开始安装、配置并运行 HotPlex Worker Gateway"
 persona: "all"
 difficulty: "beginner"
@@ -17,13 +18,22 @@ HotPlex 是 AI Coding Agent 统一接入层，让你通过 Slack、飞书或 Web
 
 ### 1. 安装
 
-从 GitHub Releases 下载对应平台的单文件二进制：
+从 [GitHub Releases](https://github.com/hrygo/hotplex/releases/latest) 获取对应平台的单文件二进制程序。你可以直接点击下载，或使用命令行一键获取：
 
-| Platform | Arch |
-|----------|------|
-| macOS | arm64 |
-| Linux | amd64, arm64 |
-| Windows | amd64, arm64 |
+**macOS (Apple Silicon)**
+```bash
+curl -L -o hotplex https://github.com/hrygo/hotplex/releases/latest/download/hotplex-darwin-arm64
+```
+
+**Linux (AMD64)**
+```bash
+curl -L -o hotplex https://github.com/hrygo/hotplex/releases/latest/download/hotplex-linux-amd64
+```
+
+**Windows (AMD64)**
+```powershell
+Invoke-WebRequest -Uri "https://github.com/hrygo/hotplex/releases/latest/download/hotplex-windows-amd64.exe" -OutFile "hotplex.exe"
+```
 
 ```bash
 chmod +x hotplex   # macOS / Linux 赋予执行权限

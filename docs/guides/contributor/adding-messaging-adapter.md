@@ -1,5 +1,6 @@
 ---
 title: 添加消息平台适配器
+weight: 35
 description: 如何为 HotPlex Gateway 开发新的消息平台适配器
 persona: contributor
 difficulty: advanced
