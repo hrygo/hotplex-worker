@@ -2,6 +2,50 @@
 
 ## [Unreleased]
 
+## [1.10.0] - 2026-05-10
+
+### Summary
+
+v1.10.0 是一次 minor 版本更新，核心变更是 **AI-native Cronjob 调度器** 正式投产（SQLite 持久化、at/every/cron 三种调度、Slack/飞书结果投递、7 个 Admin API 端点 + CLI）。安全方面修复了 cron handler 缺失 scope 校验（任意认证请求可管理定时任务）、`mustGenerateJTI` 静默失败、updater 绕过注入的 HTTP client。可靠性方面修复了 Brain 模块多处 data race、Gateway crashTracker 无限增长、WebChat 双实例心跳异常、onboard 向导无限挂起。
+
+### Added
+
+- **Cron**: AI-native cronjob scheduler — timer-driven tick loop with at-most-once semantics, SQLite persistence via goose migration, three schedule types (at/every/cron with timezone), concurrency cap, graceful shutdown with running-job drain. (#340)
+- **Cron/CLI**: `hotplex cron` subcommand — list/get/create/update/delete/trigger/history operations with direct SQLite CRUD and Admin API trigger.
+- **Cron/Admin API**: 7 new endpoints — CRUD + trigger + run history for cron job management.
+- **Cron/Metrics**: Prometheus counters — `cron_fires_total`, `cron_errors_total`, `cron_duration_seconds`.
+- **Gateway**: Context env var injection (`GATEWAY_*`) for worker processes, normalizing Slack/Feishu platform differences.
+
+### Changed
+
+- **Admin API**: DI improvements — `startedAt` and `LogCollector` injected via `Deps` instead of package-level globals; `requireScope` helper eliminates duplicated scope-check boilerplate; `LogCollector.Recent` merged with `Total` to avoid double lock acquisition.
+- **Worker/OCS**: DRY lifecycle helpers — extract `checkNotStarted`, `acquireServer`, `startSSE`, `release` to eliminate ~55 lines of duplicated Terminate/Kill/Start/Resume code. (#344)
+- **Worker**: Unified grace period constant — `proc.DefaultGracePeriod` as canonical source, replacing three scattered 5s definitions. (#258)
+- **Brain**: Replace `sync.Once` + direct assignment in `IntentRouter` with `atomic.Pointer` to eliminate dual-init data race. (#339)
+- **Security**: DRY path getters — `GetAllowedBaseDirs`/`GetForbiddenWorkDirs` unified from platform-specific files to shared `path.go`.
+- **Config**: Unexport field registries (`hotReloadableFields`/`staticFields`), remove dead `MustLoad`/`ReadFile` API. (#253)
+- **Events**: Unexport `ValidTransitions` → `validTransitions`; callers use `IsValidTransition()`. (#252)
+- **Service**: DRY unix helpers — extract `stopAndUnload` (darwin) and `writeServiceFile` (shared unix). (#263)
+
+### Fixed
+
+- **Security**: All 7 cron handler endpoints lacked scope validation — any authenticated request could create, delete, or trigger cron jobs. Read ops now require `admin:read`; write ops require `admin:write`. (#259, #353)
+- **Security**: `mustGenerateJTI` silently returned empty string on `crypto/rand` failure instead of panicking. (#341, #353)
+- **Security**: Cron admin token isolated from worker env — `HOTPLEX_ADMIN_TOKEN` only injected when `platform=="cron"`, preventing credential leak to all worker processes.
+- **Admin API**: `clientIP` broke IPv6 bracketed addresses (`[::1]:8080`) — replaced `strings.Cut` with `net.SplitHostPort`. (#347)
+- **Brain**: Data races in `IntentRouter` (`enabled` → `atomic.Bool`), `ContextCompressor` (`config.Enabled` → `atomic.Bool` reads), and `SafetyGuard` (`Close` → `sync.WaitGroup` for cleanup goroutine). (#346)
+- **Gateway**: `crashTracker` entries never deleted — unbounded map growth on long-running gateways; `pendingError` silently lost when worker recv channel closed; state notification sends now log warnings on failure. (#345)
+- **WebChat**: Duplicate `BrowserHotPlexClient` instances on re-render — useEffect guard disconnects lingering client before creating new one. (#334)
+- **Updater**: `Download()` bypassed injected `u.Client` with hardcoded `http.Client`, making it untestable. Now uses `u.Client` with context deadline. (#251, #353)
+- **Session**: Phantom `DeleteExpiredEvents` mock (method doesn't exist on interface) removed; `Kill()` error now logged in `DeletePhysical`. (#243, #353)
+- **Cmd**: Onboard wizard hung indefinitely on closed stdin — replaced bare `context.Background()` with 5-minute timeout. (#245)
+- **Cron**: Data races in Scheduler (`Clone+putJob`), Delivery (`sync.Mutex`), `executeJob` context propagation; at-schedule busy-loop debounce when concurrency cap hit; `persistCtx` context leak fixed.
+
+### Security
+
+- Cron handler endpoints now enforce JWT scope checks (admin:read / admin:write). Previously any valid token could manage cron jobs. (#259)
+- Cron admin token isolated from generic worker environment to prevent credential exposure. (#340)
+
 ## [1.9.1] - 2026-05-10
 
 ### Summary
