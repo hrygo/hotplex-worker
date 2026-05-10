@@ -330,39 +330,6 @@ func TestLoad_FileNotFound(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestMustLoad_Panic(t *testing.T) {
-	t.Parallel()
-
-	require.Panics(t, func() {
-		MustLoad("/nonexistent/config.yaml", LoadOptions{})
-	})
-}
-
-func TestReadFile(t *testing.T) {
-	t.Parallel()
-
-	// Create a temp file
-	tmp, err := os.CreateTemp("", "test_config_*.yaml")
-	require.NoError(t, err)
-	defer os.Remove(tmp.Name())
-
-	content := []byte("gateway:\n  addr: :9090\n")
-	_, err = tmp.Write(content)
-	require.NoError(t, err)
-	require.NoError(t, tmp.Close())
-
-	data, err := ReadFile(tmp.Name())
-	require.NoError(t, err)
-	require.Equal(t, content, data)
-}
-
-func TestReadFile_NotFound(t *testing.T) {
-	t.Parallel()
-
-	_, err := ReadFile("/nonexistent/file.yaml")
-	require.Error(t, err)
-}
-
 // ─── Config inheritance tests ──────────────────────────────────────────────────
 
 func TestLoad_Inheritance_CycleDetection(t *testing.T) {
@@ -901,7 +868,7 @@ func TestApplyMessagingEnv(t *testing.T) {
 	require.Nil(t, cfg5.Messaging.Slack.AllowFrom)
 }
 
-func TestMustLoad_Success(t *testing.T) {
+func TestLoad_Success(t *testing.T) {
 	t.Parallel()
 
 	tempFile, err := os.CreateTemp("", "valid-config-*.yaml")
@@ -935,7 +902,8 @@ db:
 	require.NoError(t, err)
 	tempFile.Close()
 
-	cfg := MustLoad(tempFile.Name(), LoadOptions{})
+	cfg, err := Load(tempFile.Name(), LoadOptions{})
+	require.NoError(t, err)
 	require.NotNil(t, cfg)
 	require.Equal(t, ":8888", cfg.Gateway.Addr)
 	require.Equal(t, 256, cfg.Gateway.BroadcastQueueSize)
@@ -949,11 +917,6 @@ db:
 	require.True(t, filepath.IsAbs(cfg.DB.Path))
 	require.True(t, strings.HasSuffix(cfg.DB.Path, "/data/test.db"))
 	require.True(t, cfg.DB.WALMode)
-}
-
-func TestMustLoad_WithEnvVars(t *testing.T) {
-	t.Parallel()
-	t.Skip("Only worker.environment supports ${VAR} expansion; general YAML field expansion not yet implemented")
 }
 
 func TestPropagateMessagingDefaults(t *testing.T) {
