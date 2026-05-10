@@ -118,4 +118,4 @@ webchat/*.png
 # --- Embedded Webchat (build artifact) ---
 internal/webchat/out/
 !internal/webchat/out/index.html
- 
+build-docs
