@@ -143,9 +143,7 @@ func (s *Scheduler) CreateJob(ctx context.Context, job *CronJob) error {
 	if len(s.jobs) >= s.maxJobs {
 		return fmt.Errorf("cron: max jobs limit reached (%d)", s.maxJobs)
 	}
-	if job.ID == "" {
-		job.ID = GenerateJobID()
-	}
+
 	now := time.Now().UnixMilli()
 	job.CreatedAtMs = now
 	job.UpdatedAtMs = now
