@@ -161,4 +161,49 @@ var (
 		Name:      "worker_memory_bytes",
 		Help:      "Estimated worker memory by worker_type (set to RLIMIT_AS limit per active worker)",
 	}, []string{"worker_type"})
+
+	// CronFiresTotal counts each cron job fire attempt.
+	CronFiresTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "hotplex",
+		Name:      "cron_fires_total",
+		Help:      "Total cron job fire attempts by job name",
+	}, []string{"job_name"})
+
+	// CronErrorsTotal counts cron job execution errors.
+	CronErrorsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "hotplex",
+		Name:      "cron_errors_total",
+		Help:      "Total cron job execution errors by job name and error type",
+	}, []string{"job_name", "error_type"})
+
+	// CronDurationSeconds records cron job execution duration.
+	CronDurationSeconds = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: "hotplex",
+		Name:      "cron_duration_seconds",
+		Help:      "Cron job execution duration in seconds",
+		Buckets:   []float64{1, 5, 15, 30, 60, 120, 300, 600, 1800},
+	}, []string{"job_name"})
+
+	// Streaming card metrics.
+
+	// StreamingCardRotationsTotal counts TTL-triggered card rotations.
+	StreamingCardRotationsTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: "hotplex",
+		Name:      "streaming_card_rotations_total",
+		Help:      "Total streaming card TTL rotations",
+	})
+
+	// StreamingCardRotationFailures counts rotation failures by phase.
+	StreamingCardRotationFailures = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "hotplex",
+		Name:      "streaming_card_rotation_failures_total",
+		Help:      "Total streaming card rotation failures by phase (close_old, ensure_card)",
+	}, []string{"phase"})
+
+	// StreamingCardFlushFallbacks counts CardKit-to-IM-Patch degradations.
+	StreamingCardFlushFallbacks = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: "hotplex",
+		Name:      "streaming_card_flush_fallbacks_total",
+		Help:      "Total streaming card flush degradations from CardKit to IM Patch",
+	})
 )

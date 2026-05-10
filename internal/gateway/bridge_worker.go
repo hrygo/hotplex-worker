@@ -170,6 +170,7 @@ func (b *Bridge) attemptResumeFallback(p fallbackParams) bool {
 			}
 		}
 	}
+	workerInfo.Env = injectGatewayContext(workerInfo.Env, si.Platform, si.BotID, si.UserID, si.PlatformKey, si.ID, p.workDir)
 
 	w, err := b.createAndLaunchWorker(workerLaunchParams{
 		ctx:         context.Background(),

@@ -62,6 +62,7 @@ type Bridge struct {
 	turnTimeout        time.Duration // per-turn timeout; 0 = disabled
 	workerEnv          []string      // extra env vars from worker.environment config
 	workerEnvBlocklist []string      // extra blocklist entries from worker.env_blocklist config
+	cronEnv            []string      // env vars injected only into cron platform sessions
 
 	accum   map[string]*sessionAccumulator // per-session stats accumulator
 	accumMu sync.Mutex
@@ -93,6 +94,7 @@ func NewBridge(deps BridgeDeps) *Bridge {
 		turnTimeout:        deps.TurnTimeout,
 		workerEnv:          deps.WorkerEnv,
 		workerEnvBlocklist: deps.WorkerEnvBlocklist,
+		cronEnv:            deps.CronEnv,
 		retryCancel:        make(map[string]chan struct{}),
 		accum:              make(map[string]*sessionAccumulator),
 		crashTracker:       make(map[string]*crashHistory),
@@ -134,6 +136,16 @@ func (b *Bridge) StartSession(ctx context.Context, id, userID, botID string, wt 
 		workerInfo.Env["HOTPLEX_SLACK_CHANNEL_ID"] = chID
 		if threadTS, ok := platformKey["thread_ts"]; ok && threadTS != "" {
 			workerInfo.Env["HOTPLEX_SLACK_THREAD_TS"] = threadTS
+		}
+	}
+	workerInfo.Env = injectGatewayContext(workerInfo.Env, platform, botID, userID, platformKey, id, workDir)
+
+	// Inject cron-specific env vars (e.g. admin API creds) only for cron sessions.
+	if platform == "cron" && len(b.cronEnv) > 0 {
+		for _, kv := range b.cronEnv {
+			if i := strings.IndexByte(kv, '='); i >= 0 {
+				workerInfo.Env[kv[:i]] = kv[i+1:]
+			}
 		}
 	}
 
@@ -224,6 +236,7 @@ func (b *Bridge) resumeWithOpts(ctx context.Context, id, workDir string, opts fo
 		}
 	}
 
+	workerInfo.Env = injectGatewayContext(workerInfo.Env, si.Platform, si.BotID, si.UserID, si.PlatformKey, id, workDir)
 	w, err := b.createAndLaunchWorker(workerLaunchParams{
 		ctx:         ctx,
 		wt:          si.WorkerType,
@@ -547,6 +560,45 @@ func sanitizeLastInput(input string) string {
 		return ""
 	}
 	return strings.Join(filtered, "\n")
+}
+
+// firstNonEmpty returns the first non-empty string from the given values.
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// injectGatewayContext injects unified GATEWAY_* environment variables into
+// the worker env map. These vars provide platform-agnostic runtime context so
+// workers can call platform APIs, construct paths, and understand their session
+// without parsing logs or gateway internals.
+//
+// Existing HOTPLEX_SLACK_* vars are preserved for backward compatibility.
+func injectGatewayContext(env map[string]string, platform, botID, userID string, platformKey map[string]string, sessionID, workDir string) map[string]string {
+	if env == nil {
+		env = make(map[string]string)
+	}
+	env["GATEWAY_PLATFORM"] = platform
+	env["GATEWAY_BOT_ID"] = botID
+	env["GATEWAY_USER_ID"] = userID
+	env["GATEWAY_SESSION_ID"] = sessionID
+	if workDir != "" {
+		env["GATEWAY_WORK_DIR"] = workDir
+	}
+	if chID := firstNonEmpty(platformKey["channel_id"], platformKey["chat_id"]); chID != "" {
+		env["GATEWAY_CHANNEL_ID"] = chID
+	}
+	if threadID := firstNonEmpty(platformKey["thread_ts"], platformKey["message_id"]); threadID != "" {
+		env["GATEWAY_THREAD_ID"] = threadID
+	}
+	if teamID := platformKey["team_id"]; teamID != "" {
+		env["GATEWAY_TEAM_ID"] = teamID
+	}
+	return env
 }
 
 func (b *Bridge) sendError(sessionID string, code events.ErrorCode, format string, args ...any) {

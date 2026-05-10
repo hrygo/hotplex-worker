@@ -25,6 +25,7 @@ import (
 	"github.com/hrygo/hotplex/internal/config"
 	"github.com/hrygo/hotplex/internal/messaging"
 	"github.com/hrygo/hotplex/internal/messaging/stt"
+	"github.com/hrygo/hotplex/internal/metrics"
 	"github.com/hrygo/hotplex/pkg/events"
 )
 
@@ -1015,13 +1016,21 @@ func (c *FeishuConn) writeContent(ctx context.Context, env *events.Envelope, tex
 	// TTL rotation: proactively replace expired streaming cards before
 	// Feishu's 10-minute server limit kicks in.
 	if streamCtrl != nil && streamCtrl.IsCreated() && streamCtrl.Expired() {
-		streamCtrl.ClearToolEntries()
+		// Mark all tools done so Close can flush done markers to the old card.
+		streamCtrl.MarkAllToolsDone()
 		oldMsgID := streamCtrl.MsgID()
-		closeCtx, closeCancel := context.WithTimeout(context.Background(), 10*time.Second)
-		go func() {
-			defer closeCancel()
-			_ = streamCtrl.Close(closeCtx)
-		}()
+
+		// Synchronous close: ensures old card is fully finalized before
+		// creating the new one, avoiding API rate-limit collisions.
+		closeCtx, closeCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if err := streamCtrl.Close(closeCtx); err != nil {
+			c.adapter.Log.Warn("feishu: failed to close rotated card",
+				"old_msg_id", oldMsgID, "err", err)
+			metrics.StreamingCardRotationFailures.WithLabelValues("close_old").Inc()
+		}
+		closeCancel()
+
+		metrics.StreamingCardRotationsTotal.Inc()
 		c.adapter.Log.Info("feishu: streaming card rotated",
 			"old_msg_id", oldMsgID)
 
@@ -1042,6 +1051,7 @@ func (c *FeishuConn) writeContent(ctx context.Context, env *events.Envelope, tex
 			if err := streamCtrl.EnsureCard(ctx, chatID, chatType, replyToMsgID, text); err != nil {
 				c.adapter.Log.Warn("feishu: streaming card init failed, falling back to static", "err", err)
 				c.mu.Lock()
+				metrics.StreamingCardRotationFailures.WithLabelValues("ensure_card").Inc()
 				c.streamCtrl = nil
 				c.mu.Unlock()
 			} else {
@@ -1255,6 +1265,16 @@ func (a *Adapter) handleTextWorkerCommand(ctx context.Context, chatID, chatType,
 
 func controlFeedbackMessageCN(action events.ControlAction) string {
 	return messaging.ControlFeedbackMessage(action, messaging.ControlFeedbackCN, "✅ 已完成。")
+}
+
+// SendCronResult delivers a cron job result to a Feishu chat.
+func (a *Adapter) SendCronResult(ctx context.Context, text string, platformKey map[string]string) error {
+	chatID := platformKey["chat_id"]
+	if chatID == "" {
+		return fmt.Errorf("feishu: missing chat_id in platform_key")
+	}
+	text = messaging.SanitizeText(text)
+	return a.sendTextMessage(ctx, chatID, text)
 }
 
 func (a *Adapter) sendTextMessage(ctx context.Context, chatID, text string) error {

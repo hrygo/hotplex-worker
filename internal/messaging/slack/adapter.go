@@ -53,6 +53,20 @@ func init() {
 	})
 }
 
+// SendCronResult delivers a cron job result to a Slack channel.
+func (a *Adapter) SendCronResult(ctx context.Context, text string, platformKey map[string]string) error {
+	channelID := platformKey["channel_id"]
+	if channelID == "" {
+		return fmt.Errorf("slack: missing channel_id in platform_key")
+	}
+	text = messaging.SanitizeText(text)
+	_, _, err := a.client.PostMessageContext(ctx, channelID, slack.MsgOptionText(text, false))
+	if err != nil {
+		return fmt.Errorf("slack: send cron result: %w", err)
+	}
+	return nil
+}
+
 // Adapter implements messaging.PlatformAdapterInterface for Slack Socket Mode.
 type Adapter struct {
 	messaging.BaseAdapter[*SlackConn]
@@ -728,8 +742,8 @@ func (c *SlackConn) notifyStatus(ctx context.Context, text string) {
 
 // clearStatus clears processing status (nil-safe for tests).
 func (c *SlackConn) clearStatus(ctx context.Context) {
-	if c.adapter != nil && c.adapter.statusMgr != nil {
-		c.adapter.statusMgr.Clear(ctx, c.channelID, c.threadTS)
+	if c.adapter != nil {
+		_ = c.adapter.ClearStatus(ctx, c.channelID, c.threadTS)
 	}
 }
 
