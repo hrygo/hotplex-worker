@@ -410,8 +410,8 @@ func (s SessionState) IsActive() bool {
 	return s == StateRunning || s == StateIdle || s == StateCreated
 }
 
-// ValidTransitions maps from a state to the set of valid next states.
-var ValidTransitions = map[SessionState]map[SessionState]bool{
+// validTransitions maps from a state to the set of valid next states.
+var validTransitions = map[SessionState]map[SessionState]bool{
 	StateCreated: {
 		StateRunning:    true,
 		StateTerminated: true,
@@ -435,7 +435,7 @@ var ValidTransitions = map[SessionState]map[SessionState]bool{
 
 // IsValidTransition returns true if transitioning from from → to is allowed.
 func IsValidTransition(from, to SessionState) bool {
-	if m, ok := ValidTransitions[from]; ok {
+	if m, ok := validTransitions[from]; ok {
 		return m[to]
 	}
 	return false
