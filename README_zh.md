@@ -15,7 +15,7 @@
 
 <p align="center">
   <a href="https://github.com/hrygo/hotplex/actions/workflows/ci.yml"><img src="https://github.com/hrygo/hotplex/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <img src="https://img.shields.io/badge/Version-v1.10.2-10B981?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/Version-v1.11.0-10B981?style=flat-square" alt="Version">
   <a href="https://github.com/hrygo/hotplex/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-3B82F6?style=flat-square" alt="License"></a>
   <img src="https://img.shields.io/badge/Go-1.26+-00ADD8?style=flat-square&logo=go" alt="Go">
   <img src="https://img.shields.io/badge/Protocol-AEP%20v1-7C3AED?style=flat-square" alt="AEP v1">
@@ -26,18 +26,27 @@
 
 ## ✨ 核心能力
 
+### 🏗️ 核心架构与智能编排
 - 🌐 **全协议统一网关** — 基于 **AEP v1 (Agent Exchange Protocol)** WebSocket 标准，抹平不同 AI Coding Agent 的协议差异，提供一致的流式交互与权限控制。
-- 📱 **跨平台分发能力** — **"一次接入，全端覆盖"**。无需修改 Agent 代码即可秒级分发至 Web、Slack (Socket Mode) 和飞书。
-- 🛠️ **多模态编程范式** — 原生集成 SenseVoice 语音转文字与 **Edge-TTS 语音合成**，支持"语音下令，语音回传"，开启双向语音编程新纪元。
-- 🤖 **深度配置注入** — 独创 **B/C 双通道** 注入系统。**B 通道** (SOUL/AGENTS/SKILLS) 负责指令约束，**C 通道** (USER/MEMORY) 负责背景上下文。
 - 🧠 **Brain 编排内核** — 新增 `internal/brain` 编排层，支持 LLM 智能总结、意图分发与安全防护（Safety Guard），解耦复杂交互逻辑。
-- 🛡️ **元认知防御基线** — 宪法级 **META-COGNITION** 迁移至 B 通道首位，内置 **XML Sanitizer** 防护，彻底阻断 Prompt 注入与 XML 结构破坏。
-- 🌐 **开箱即用 Web UI** — 内部集成高颜值 Next.js Chat 界面，单二进制文件即可完成从 API 到前端的全栈部署。
-- 🛡️ **企业级安全加固** — 强制 JWT ES256 认证、SSRF 防护、Windows 临时文件式注入（规避 cmd 转义陷阱）及进程级隔离。
-- 📊 **全链路监控审计** — 完整支持 Prometheus 指标、OpenTelemetry 链路追踪及结构化 JSON 日志，掌控每一条指令。
 - ⏰ **AI 原生定时任务** — Agent 自主解析自然语言意图创建定时任务（如"30分钟后提醒我"），支持生命周期管理（`max_runs`、`expires_at`）、自动结果回传和嵌入式技能手册。
-- 🛠️ **一体化 CLI** — `gateway`、`service`、`slack`、`cron`、`update`、`config`、`dev`、`onboard`、`doctor`、`security`、`status` 集成在单个二进制中
+
+### 🤖 AI 智能与多模态交互
+- 🤖 **深度配置注入** — 独创 **B/C 双通道** 注入系统。**B 通道** (SOUL/AGENTS/SKILLS) 负责指令约束，**C 通道** (USER/MEMORY) 负责背景上下文。
+- 🎙️ **多模态交互** — 原生集成 SenseVoice 语音转文字与 **Edge-TTS 语音合成**，支持"语音下令，语音回传"，开启双向语音编程新纪元。
+
+### 🛡️ 安全加固与可靠性
+- 🛡️ **元认知防御基线** — 宪法级 **META-COGNITION** 迁移至 B 通道首位，内置 **XML Sanitizer** 防护，彻底阻断 Prompt 注入与 XML 结构破坏。
+- 🔒 **企业级安全加固** — 强制 JWT ES256 认证、SSRF 防护、Windows 临时文件式注入（规避 cmd 转义陷阱）及进程级隔离。
+
+### 📱 多平台分发与集成
+- 📱 **跨平台分发能力** — **"一次接入，全端覆盖"**。无需修改 Agent 代码即可秒级分发至 Web、Slack (Socket Mode) 和飞书。
+- 💬 **开箱即用 Web UI** — 内部集成高颜值 Next.js Chat 界面，单二进制文件即可完成从 API 到前端的全栈部署。
 - 🌍 **多语言 SDK** — Go、TypeScript、Python、Java 客户端开箱即用
+
+### ⚙️ 开发者体验与自动化运维
+- 🛠️ **一体化 CLI** — `gateway`、`service`、`slack`、`cron`、`update`、`config`、`dev`、`onboard`、`doctor`、`security`、`status` 集成在单个二进制中
+- 📊 **全链路监控审计** — 完整支持 Prometheus 指标、OpenTelemetry 链路追踪及结构化 JSON 日志，掌控每一条指令。
 
 ## ⚡ 快速开始
 

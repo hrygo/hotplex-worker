@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+## [1.11.0] - 2026-05-11
+
+### Summary
+
+v1.11.0 是一次 minor 版本更新，聚焦于 **文档门户基础设施和 MCP 配置治理**。新增静态文档门户（51 篇文档，go:embed + gateway 原生托管）、MCP 配置基础设施（cron 自动抑制 MCP 节省 ~600 MB/worker）、以及 WebChat/docs 启动 banner 的文档链接覆盖。同时修复 Slack 适配器在 Clone 重构后丢失工具信息的关键问题。
+
+### Added
+
+- **Docs Portal**: Static documentation portal — `cmd/build-docs` generates HTML from Markdown, `internal/docs` embeds and serves at `/docs/` route. 51 docs across guides, tutorials, reference, and explanation sections. (#367)
+- **Worker**: MCP config infrastructure — user-configurable MCP server control and automatic MCP suppression for cron workers, saving ~600 MB per cron worker. `config.MCPServerConfig` validation, hot-reload via `atomic.Value`, and pre-serialized JSON injection. (#367)
+- **WebChat UI**: Documentation links in three surfaces — header gold pill badge, sidebar footer, and welcome screen "Read Documentation" button.
+- **CLI**: Startup banner now shows `Docs` line with gateway `/docs/` URL alongside Gateway/Admin/WebChat addresses.
+
+### Changed
+
+- **Docs**: Restructure docs directory — archive 20 legacy docs, delete 4 stale files, merge STT-SETUP into voice-features, consolidate assets. MISE audit fixed 126 issues (12 P0 + 56 P1 + 58 P2) including ghost CLI commands, phantom API endpoints, and hallucinated config fields.
+
+### Fixed
+
+- **Messaging/Slack**: Restore tool info in assistant status messages and turn summaries — `events.Clone` struct copy broke three type assertion paths (`ToolCallData`/`ToolResultData` pointer mismatch, `map[string]int` in `map[string]any` container, `float64` vs `int` in summary). Fix via `events.DecodeAs[T]` and `events.ToInt64`. (#364)
+- **Gateway Core**: `extractDeltaContent`/`extractMessageContent` handle typed struct data from `Clone()` deep copy (was only handling `map[string]any`). (#368)
+
 ## [1.10.2] - 2026-05-10
 
 ### Summary

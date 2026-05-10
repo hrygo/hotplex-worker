@@ -1,6 +1,6 @@
 # HotPlex 项目知识库
 
-**最后更新**: 2026-05-10 · **分支**: main · **版本**: v1.10.2
+**最后更新**: 2026-05-11 · **分支**: main · **版本**: v1.11.0
 
 ---
 
@@ -52,24 +52,23 @@ make dev-status  # 查看运行服务
 
 ## 项目概览
 
-HotPlex Gateway 是基于 Go 1.26 构建的 **AI Coding Agent 统一接入层**。
+HotPlex Gateway 是基于 Go 1.26 构建的 **AI Coding Agent 统一接入层**。通过 AEP v1 协议抹平不同 Agent 的差异，实现"一次接入，全端分发"。
 
-**核心特性**：
-- 🌐 基于 WebSocket (AEP v1) 网关
-- 🔌 抹平 Claude Code、OpenCode Server 协议差异
-- 💬 双向消息支持（Slack/飞书）
-- ⏰ AI-native 定时任务（自然语言 → Agent 自主创建 cronjob）
-- 🎨 Web Chat UI
-- 📦 多语言客户端 SDK (TS/Python/Java/Go)
+### ✨ 核心能力
 
-**架构亮点**：
-- 5 状态机 Session 管理
-- WebSocket Hub 广播
-- Worker 生命周期编排
-- Agent 配置热注入
-- LLM 自动重试机制
-- AI-native Cron 调度器（意图识别 → CLI 创建 → 自动执行+回传）
-- 跨平台支持（Linux/macOS/Windows）
+- **🏗️ 核心架构与智能编排**：基于 WebSocket (AEP v1) 的统一网关，集成 `internal/brain` 编排层，支持 AI-native Cron 定时任务自主调度与分发。
+- **🤖 AI 智能与多模态交互**：独创 B/C 双通道配置注入，原生集成 SenseVoice STT 与 Edge-TTS，支持双向语音编程交互。
+- **🛡️ 安全加固与可靠性**：宪法级元认知防御（META-COGNITION），内置 XML Sanitizer，强制 JWT ES256 认证与 Windows 进程隔离。
+- **📱 多平台分发与集成**：一键分发至 Web、Slack、飞书；内置高颜值 Next.js Web Chat；提供 Go/TS/Python/Java 多语言 SDK。
+- **⚙️ 开发者体验与自动化运维**：单二进制一体化 CLI（gateway/service/cron/update），全链路 Prometheus 指标与 OpenTelemetry 追踪。
+
+### 🛠️ 架构亮点
+
+- **状态管理**：5 状态机 Session 生命周期管理，支持会话恢复与原子状态迁移。
+- **广播引擎**：高性能 WebSocket Hub 广播机制，解耦消息生产与消费。
+- **调度系统**：AI-native Cron 调度器（意图识别 → CLI 创建 → 并发槽控制 → 自动回传）。
+- **重试机制**：LLM 智能重试控制器，支持指数退避与可重试错误检测。
+- **配置热注入**：B/C 通道动态注入，支持 Agent 人格与上下文的即时热更新。
 
 ---
 
