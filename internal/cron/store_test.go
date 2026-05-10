@@ -48,6 +48,7 @@ func newTestStore(t *testing.T) *SQLiteStore {
 			platform_key     TEXT NOT NULL DEFAULT '{}',
 			timeout_sec      INTEGER NOT NULL DEFAULT 0,
 			delete_after_run INTEGER NOT NULL DEFAULT 0 CHECK(delete_after_run IN (0, 1)),
+			silent           INTEGER NOT NULL DEFAULT 0 CHECK(silent IN (0, 1)),
 			max_retries      INTEGER NOT NULL DEFAULT 0,
 			max_runs         INTEGER NOT NULL DEFAULT 0,
 			expires_at       TEXT    NOT NULL DEFAULT '',
@@ -278,6 +279,7 @@ func TestSQLiteStore_FieldsRoundtrip(t *testing.T) {
 		PlatformKey:    map[string]string{"chat_id": "oc_abc", "user_id": "ou_xyz"},
 		TimeoutSec:     300,
 		DeleteAfterRun: true,
+		Silent:         true,
 		MaxRetries:     5,
 		State: CronJobState{
 			NextRunAtMs:     now + 60_000,
@@ -312,6 +314,7 @@ func TestSQLiteStore_FieldsRoundtrip(t *testing.T) {
 	require.Equal(t, job.PlatformKey, got.PlatformKey)
 	require.Equal(t, job.TimeoutSec, got.TimeoutSec)
 	require.Equal(t, job.DeleteAfterRun, got.DeleteAfterRun)
+	require.Equal(t, job.Silent, got.Silent)
 	require.Equal(t, job.MaxRetries, got.MaxRetries)
 	require.Equal(t, job.State, got.State)
 	require.Equal(t, job.CreatedAtMs, got.CreatedAtMs)

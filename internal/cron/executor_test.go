@@ -154,3 +154,22 @@ func TestExecutor_Execute_Success(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, gotKey)
 }
+
+func TestBuildDeliverySuffix_SilentJob(t *testing.T) {
+	t.Parallel()
+
+	job := testJob()
+	job.Silent = true
+	job.Platform = "feishu"
+	job.PlatformKey = map[string]string{"chat_id": "oc_123"}
+	require.Empty(t, buildDeliverySuffix(job))
+}
+
+func TestBuildDeliverySuffix_NonSilentWithPlatform(t *testing.T) {
+	t.Parallel()
+
+	job := testJob()
+	job.Platform = "feishu"
+	job.PlatformKey = map[string]string{"chat_id": "oc_123"}
+	require.NotEmpty(t, buildDeliverySuffix(job))
+}

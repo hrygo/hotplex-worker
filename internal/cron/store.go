@@ -48,7 +48,7 @@ func withTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
 const jobColumns = `id, name, description, enabled,
 	schedule_kind, schedule_data, payload_kind, payload_data,
 	work_dir, bot_id, owner_id, platform, platform_key,
-	timeout_sec, delete_after_run, max_retries, max_runs, expires_at,
+	timeout_sec, delete_after_run, silent, max_retries, max_runs, expires_at,
 	state, created_at, updated_at`
 
 func (s *SQLiteStore) Create(ctx context.Context, job *CronJob) error {
@@ -66,11 +66,11 @@ func (s *SQLiteStore) Create(ctx context.Context, job *CronJob) error {
 
 	_, err = s.db.ExecContext(ctx, `
 		INSERT INTO cron_jobs (`+jobColumns+`)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		job.ID, job.Name, job.Description, boolToInt(job.Enabled),
 		job.Schedule.Kind, schedData, job.Payload.Kind, payloadData,
 		job.WorkDir, job.BotID, job.OwnerID, job.Platform, platformKeyData,
-		job.TimeoutSec, boolToInt(job.DeleteAfterRun), job.MaxRetries, job.MaxRuns, job.ExpiresAt,
+		job.TimeoutSec, boolToInt(job.DeleteAfterRun), boolToInt(job.Silent), job.MaxRetries, job.MaxRuns, job.ExpiresAt,
 		stateData, job.CreatedAtMs, job.UpdatedAtMs,
 	)
 	if err != nil {
@@ -93,14 +93,14 @@ func (s *SQLiteStore) Update(ctx context.Context, job *CronJob) error {
 			name = ?, description = ?, enabled = ?,
 			schedule_kind = ?, schedule_data = ?, payload_kind = ?, payload_data = ?,
 			work_dir = ?, bot_id = ?, owner_id = ?, platform = ?, platform_key = ?,
-			timeout_sec = ?, delete_after_run = ?, max_retries = ?,
+			timeout_sec = ?, delete_after_run = ?, silent = ?, max_retries = ?,
 			max_runs = ?, expires_at = ?,
 			state = ?, updated_at = ?
 		WHERE id = ?`,
 		job.Name, job.Description, boolToInt(job.Enabled),
 		job.Schedule.Kind, schedData, job.Payload.Kind, payloadData,
 		job.WorkDir, job.BotID, job.OwnerID, job.Platform, platformKeyData,
-		job.TimeoutSec, boolToInt(job.DeleteAfterRun), job.MaxRetries,
+		job.TimeoutSec, boolToInt(job.DeleteAfterRun), boolToInt(job.Silent), job.MaxRetries,
 		job.MaxRuns, job.ExpiresAt,
 		stateData, job.UpdatedAtMs,
 		job.ID,
@@ -224,20 +224,20 @@ type scanner interface{ Scan(...any) error }
 
 func scanJobRow(s scanner) (*CronJob, error) {
 	job := &CronJob{}
-	var enabled, deleteAfterRun int
+	var enabled, deleteAfterRun, silent int
 	var schedData, payloadData, platformKeyData, stateData string
 
 	err := s.Scan(
 		&job.ID, &job.Name, &job.Description, &enabled,
 		&job.Schedule.Kind, &schedData, &job.Payload.Kind, &payloadData,
 		&job.WorkDir, &job.BotID, &job.OwnerID, &job.Platform, &platformKeyData,
-		&job.TimeoutSec, &deleteAfterRun, &job.MaxRetries, &job.MaxRuns, &job.ExpiresAt,
+		&job.TimeoutSec, &deleteAfterRun, &silent, &job.MaxRetries, &job.MaxRuns, &job.ExpiresAt,
 		&stateData, &job.CreatedAtMs, &job.UpdatedAtMs,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("cron store: scan job: %w", err)
 	}
-	if err := decodeJobFields(job, enabled, deleteAfterRun, schedData, payloadData, platformKeyData, stateData); err != nil {
+	if err := decodeJobFields(job, enabled, deleteAfterRun, silent, schedData, payloadData, platformKeyData, stateData); err != nil {
 		return nil, err
 	}
 	return job, nil
@@ -263,6 +263,7 @@ func copyJobDefinition(dst, src *CronJob) {
 	dst.PlatformKey = src.PlatformKey
 	dst.TimeoutSec = src.TimeoutSec
 	dst.DeleteAfterRun = src.DeleteAfterRun
+	dst.Silent = src.Silent
 	dst.MaxRetries = src.MaxRetries
 	dst.MaxRuns = src.MaxRuns
 	dst.ExpiresAt = src.ExpiresAt
@@ -270,9 +271,10 @@ func copyJobDefinition(dst, src *CronJob) {
 	dst.UpdatedAtMs = time.Now().UnixMilli()
 }
 
-func decodeJobFields(job *CronJob, enabled, deleteAfterRun int, schedData, payloadData, platformKeyData, stateData string) error {
+func decodeJobFields(job *CronJob, enabled, deleteAfterRun, silent int, schedData, payloadData, platformKeyData, stateData string) error {
 	job.Enabled = enabled == 1
 	job.DeleteAfterRun = deleteAfterRun == 1
+	job.Silent = silent == 1
 	if err := json.Unmarshal([]byte(schedData), &job.Schedule); err != nil {
 		return fmt.Errorf("cron store: unmarshal schedule: %w", err)
 	}
