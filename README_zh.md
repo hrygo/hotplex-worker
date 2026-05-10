@@ -35,7 +35,8 @@
 - 🌐 **开箱即用 Web UI** — 内部集成高颜值 Next.js Chat 界面，单二进制文件即可完成从 API 到前端的全栈部署。
 - 🛡️ **企业级安全加固** — 强制 JWT ES256 认证、SSRF 防护、Windows 临时文件式注入（规避 cmd 转义陷阱）及进程级隔离。
 - 📊 **全链路监控审计** — 完整支持 Prometheus 指标、OpenTelemetry 链路追踪及结构化 JSON 日志，掌控每一条指令。
-- 🛠️ **一体化 CLI** — `gateway`、`service`、`slack`、`update`、`config`、`dev`、`onboard`、`doctor`、`security`、`status` 集成在单个二进制中
+- ⏰ **AI 原生定时任务** — Agent 自主解析自然语言意图创建定时任务（如"30分钟后提醒我"），支持生命周期管理（`max_runs`、`expires_at`）、自动结果回传和嵌入式技能手册。
+- 🛠️ **一体化 CLI** — `gateway`、`service`、`slack`、`cron`、`update`、`config`、`dev`、`onboard`、`doctor`、`security`、`status` 集成在单个二进制中
 - 🌍 **多语言 SDK** — Go、TypeScript、Python、Java 客户端开箱即用
 
 ## ⚡ 快速开始

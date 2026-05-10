@@ -35,7 +35,8 @@
 - 🌐 **Embedded Web Chat** — A single binary serves both the API/WebSocket gateway and a premium Next.js-based web chat interface out of the box.
 - 🛡️ **Enterprise-Grade Security** — JWT ES256 authentication, SSRF protection, and **Windows File-Based Injection** to bypass cmd.exe escaping traps.
 - 📊 **End-to-End Observability** — Native Prometheus metrics, OpenTelemetry tracing, and structured JSON logging for full auditability.
-- 🛠️ **Self-contained CLI** — `gateway`, `service`, `slack`, `update`, `config`, `dev`, `onboard`, `doctor`, `security`, `status` in a single binary
+- ⏰ **AI-Native Cron Scheduler** — Agents autonomously create scheduled tasks from natural language (e.g., "remind me in 30 minutes"), with lifecycle management (`max_runs`, `expires_at`), automatic result delivery, and embedded skill manual.
+- 🛠️ **Self-contained CLI** — `gateway`, `service`, `slack`, `cron`, `update`, `config`, `dev`, `onboard`, `doctor`, `security`, `status` in a single binary
 - 🌍 **Multi-language SDKs** — Go, TypeScript, Python, Java clients ready to use
 
 ## ⚡ Quick Start

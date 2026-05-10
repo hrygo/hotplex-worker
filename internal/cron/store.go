@@ -10,6 +10,9 @@ import (
 	"time"
 )
 
+// ErrJobNotFound is returned when a job is not found in the store.
+var ErrJobNotFound = errors.New("cron store: job not found")
+
 // Store defines the persistence interface for cron jobs.
 type Store interface {
 	Create(ctx context.Context, job *CronJob) error
@@ -42,7 +45,17 @@ func withTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(ctx, defaultTimeout)
 }
 
+const jobColumns = `id, name, description, enabled,
+	schedule_kind, schedule_data, payload_kind, payload_data,
+	work_dir, bot_id, owner_id, platform, platform_key,
+	timeout_sec, delete_after_run, max_retries, max_runs, expires_at,
+	state, created_at, updated_at`
+
 func (s *SQLiteStore) Create(ctx context.Context, job *CronJob) error {
+	if job.ID == "" {
+		job.ID = GenerateJobID()
+	}
+
 	ctx, cancel := withTimeout(ctx)
 	defer cancel()
 
@@ -52,16 +65,12 @@ func (s *SQLiteStore) Create(ctx context.Context, job *CronJob) error {
 	}
 
 	_, err = s.db.ExecContext(ctx, `
-		INSERT INTO cron_jobs (id, name, description, enabled,
-			schedule_kind, schedule_data, payload_kind, payload_data,
-			work_dir, bot_id, owner_id, platform, platform_key,
-			timeout_sec, delete_after_run, max_retries,
-			state, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		INSERT INTO cron_jobs (`+jobColumns+`)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		job.ID, job.Name, job.Description, boolToInt(job.Enabled),
 		job.Schedule.Kind, schedData, job.Payload.Kind, payloadData,
 		job.WorkDir, job.BotID, job.OwnerID, job.Platform, platformKeyData,
-		job.TimeoutSec, boolToInt(job.DeleteAfterRun), job.MaxRetries,
+		job.TimeoutSec, boolToInt(job.DeleteAfterRun), job.MaxRetries, job.MaxRuns, job.ExpiresAt,
 		stateData, job.CreatedAtMs, job.UpdatedAtMs,
 	)
 	if err != nil {
@@ -85,12 +94,14 @@ func (s *SQLiteStore) Update(ctx context.Context, job *CronJob) error {
 			schedule_kind = ?, schedule_data = ?, payload_kind = ?, payload_data = ?,
 			work_dir = ?, bot_id = ?, owner_id = ?, platform = ?, platform_key = ?,
 			timeout_sec = ?, delete_after_run = ?, max_retries = ?,
+			max_runs = ?, expires_at = ?,
 			state = ?, updated_at = ?
 		WHERE id = ?`,
 		job.Name, job.Description, boolToInt(job.Enabled),
 		job.Schedule.Kind, schedData, job.Payload.Kind, payloadData,
 		job.WorkDir, job.BotID, job.OwnerID, job.Platform, platformKeyData,
 		job.TimeoutSec, boolToInt(job.DeleteAfterRun), job.MaxRetries,
+		job.MaxRuns, job.ExpiresAt,
 		stateData, job.UpdatedAtMs,
 		job.ID,
 	)
@@ -99,7 +110,7 @@ func (s *SQLiteStore) Update(ctx context.Context, job *CronJob) error {
 	}
 	n, _ := res.RowsAffected()
 	if n == 0 {
-		return fmt.Errorf("cron store: job not found: %s", job.ID)
+		return fmt.Errorf("%w: %s", ErrJobNotFound, job.ID)
 	}
 	return nil
 }
@@ -114,7 +125,7 @@ func (s *SQLiteStore) Delete(ctx context.Context, id string) error {
 	}
 	n, _ := res.RowsAffected()
 	if n == 0 {
-		return fmt.Errorf("cron store: job not found: %s", id)
+		return fmt.Errorf("%w: %s", ErrJobNotFound, id)
 	}
 	return nil
 }
@@ -123,13 +134,7 @@ func (s *SQLiteStore) Get(ctx context.Context, id string) (*CronJob, error) {
 	ctx, cancel := withTimeout(ctx)
 	defer cancel()
 
-	row := s.db.QueryRowContext(ctx, `
-		SELECT id, name, description, enabled,
-			schedule_kind, schedule_data, payload_kind, payload_data,
-			work_dir, bot_id, owner_id, platform, platform_key,
-			timeout_sec, delete_after_run, max_retries,
-			state, created_at, updated_at
-		FROM cron_jobs WHERE id = ?`, id)
+	row := s.db.QueryRowContext(ctx, `SELECT `+jobColumns+` FROM cron_jobs WHERE id = ?`, id)
 	return scanJob(row)
 }
 
@@ -137,13 +142,7 @@ func (s *SQLiteStore) GetByName(ctx context.Context, name string) (*CronJob, err
 	ctx, cancel := withTimeout(ctx)
 	defer cancel()
 
-	row := s.db.QueryRowContext(ctx, `
-		SELECT id, name, description, enabled,
-			schedule_kind, schedule_data, payload_kind, payload_data,
-			work_dir, bot_id, owner_id, platform, platform_key,
-			timeout_sec, delete_after_run, max_retries,
-			state, created_at, updated_at
-		FROM cron_jobs WHERE name = ?`, name)
+	row := s.db.QueryRowContext(ctx, `SELECT `+jobColumns+` FROM cron_jobs WHERE name = ?`, name)
 	return scanJob(row)
 }
 
@@ -151,12 +150,7 @@ func (s *SQLiteStore) List(ctx context.Context, enabledOnly bool) ([]*CronJob, e
 	ctx, cancel := withTimeout(ctx)
 	defer cancel()
 
-	q := `SELECT id, name, description, enabled,
-			schedule_kind, schedule_data, payload_kind, payload_data,
-			work_dir, bot_id, owner_id, platform, platform_key,
-			timeout_sec, delete_after_run, max_retries,
-			state, created_at, updated_at
-		FROM cron_jobs`
+	q := `SELECT ` + jobColumns + ` FROM cron_jobs`
 	if enabledOnly {
 		q += ` WHERE enabled = 1`
 	}
@@ -189,12 +183,16 @@ func (s *SQLiteStore) UpdateState(ctx context.Context, id string, state CronJobS
 	}
 
 	now := time.Now().UnixMilli()
-	_, err = s.db.ExecContext(ctx,
+	res, err := s.db.ExecContext(ctx,
 		`UPDATE cron_jobs SET state = ?, updated_at = ? WHERE id = ?`,
 		string(data), now, id,
 	)
 	if err != nil {
 		return fmt.Errorf("cron store: update state: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("%w: %s", ErrJobNotFound, id)
 	}
 	return nil
 }
@@ -203,7 +201,7 @@ func (s *SQLiteStore) UpdateState(ctx context.Context, id string, state CronJobS
 // It does not overwrite runtime state if the job already exists.
 func (s *SQLiteStore) UpsertByName(ctx context.Context, job *CronJob) error {
 	existing, err := s.GetByName(ctx, job.Name)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) && err.Error() != "cron store: job not found" {
+	if err != nil && !errors.Is(err, ErrJobNotFound) {
 		return fmt.Errorf("cron store: upsert lookup: %w", err)
 	}
 
@@ -215,43 +213,29 @@ func (s *SQLiteStore) UpsertByName(ctx context.Context, job *CronJob) error {
 }
 
 func scanJob(row *sql.Row) (*CronJob, error) {
-	job := &CronJob{}
-	var enabled, deleteAfterRun int
-	var schedData, payloadData, platformKeyData, stateData string
-
-	err := row.Scan(
-		&job.ID, &job.Name, &job.Description, &enabled,
-		&job.Schedule.Kind, &schedData, &job.Payload.Kind, &payloadData,
-		&job.WorkDir, &job.BotID, &job.OwnerID, &job.Platform, &platformKeyData,
-		&job.TimeoutSec, &deleteAfterRun, &job.MaxRetries,
-		&stateData, &job.CreatedAtMs, &job.UpdatedAtMs,
-	)
+	job, err := scanJobRow(row)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, fmt.Errorf("cron store: job not found")
+		return nil, ErrJobNotFound
 	}
-	if err != nil {
-		return nil, fmt.Errorf("cron store: scan job: %w", err)
-	}
-	if err := decodeJobFields(job, enabled, deleteAfterRun, schedData, payloadData, platformKeyData, stateData); err != nil {
-		return nil, err
-	}
-	return job, nil
+	return job, err
 }
 
-func scanJobRow(rows *sql.Rows) (*CronJob, error) {
+type scanner interface{ Scan(...any) error }
+
+func scanJobRow(s scanner) (*CronJob, error) {
 	job := &CronJob{}
 	var enabled, deleteAfterRun int
 	var schedData, payloadData, platformKeyData, stateData string
 
-	err := rows.Scan(
+	err := s.Scan(
 		&job.ID, &job.Name, &job.Description, &enabled,
 		&job.Schedule.Kind, &schedData, &job.Payload.Kind, &payloadData,
 		&job.WorkDir, &job.BotID, &job.OwnerID, &job.Platform, &platformKeyData,
-		&job.TimeoutSec, &deleteAfterRun, &job.MaxRetries,
+		&job.TimeoutSec, &deleteAfterRun, &job.MaxRetries, &job.MaxRuns, &job.ExpiresAt,
 		&stateData, &job.CreatedAtMs, &job.UpdatedAtMs,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("cron store: scan job row: %w", err)
+		return nil, fmt.Errorf("cron store: scan job: %w", err)
 	}
 	if err := decodeJobFields(job, enabled, deleteAfterRun, schedData, payloadData, platformKeyData, stateData); err != nil {
 		return nil, err
@@ -280,6 +264,8 @@ func copyJobDefinition(dst, src *CronJob) {
 	dst.TimeoutSec = src.TimeoutSec
 	dst.DeleteAfterRun = src.DeleteAfterRun
 	dst.MaxRetries = src.MaxRetries
+	dst.MaxRuns = src.MaxRuns
+	dst.ExpiresAt = src.ExpiresAt
 	dst.Enabled = src.Enabled
 	dst.UpdatedAtMs = time.Now().UnixMilli()
 }

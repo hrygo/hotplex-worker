@@ -51,6 +51,7 @@ type CronJobState struct {
 	ConsecutiveErrs int       `json:"consecutive_errors"`
 	RetryCount      int       `json:"retry_count,omitempty"`
 	LastRunID       string    `json:"last_run_id,omitempty"`
+	RunCount        int       `json:"run_count,omitempty"`
 }
 
 // Clone returns a deep copy of the job, including reference-type fields
@@ -86,6 +87,8 @@ type CronJob struct {
 	TimeoutSec     int               `json:"timeout_sec,omitempty"`
 	DeleteAfterRun bool              `json:"delete_after_run,omitempty"`
 	MaxRetries     int               `json:"max_retries,omitempty"`
+	MaxRuns        int               `json:"max_runs,omitempty"`
+	ExpiresAt      string            `json:"expires_at,omitempty"`
 	State          CronJobState      `json:"state"`
 	CreatedAtMs    int64             `json:"created_at_ms"`
 	UpdatedAtMs    int64             `json:"updated_at_ms"`

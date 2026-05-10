@@ -84,22 +84,21 @@ func (tl *timerLoop) onTick() {
 
 	for _, job := range due {
 		// At-most-once: advance next_run_at_ms BEFORE executing.
-		// Skip for "at" schedules — NextRun returns zero for past timestamps,
-		// which silently loses the job on crash. executeJob handles post-execution
-		// disable/delete.
-		if job.Schedule.Kind != ScheduleAt {
-			next, err := NextRun(job.Schedule, now)
-			if err != nil {
-				s.log.Error("cron: compute next run", "job_id", job.ID, "err", err)
-				job.State.ConsecutiveErrs++
-				if job.State.ConsecutiveErrs >= 5 {
-					s.log.Warn("cron: auto-disabling job after 5 schedule errors", "job_id", job.ID)
-					job.Enabled = false
-				}
-			} else {
-				job.State.NextRunAtMs = next.UnixMilli()
-				job.State.ConsecutiveErrs = 0
+		// For all schedule types including "at": NextRun returns zero time
+		// for past "at" schedules, which sets NextRunAtMs to a large negative
+		// value. collectDue skips entries with NextRunAtMs <= 0, preventing
+		// duplicate execution within the same tick cycle.
+		next, err := NextRun(job.Schedule, now)
+		if err != nil {
+			s.log.Error("cron: compute next run", "job_id", job.ID, "err", err)
+			job.State.ConsecutiveErrs++
+			if job.State.ConsecutiveErrs >= 5 {
+				s.log.Warn("cron: auto-disabling job after 5 schedule errors", "job_id", job.ID)
+				job.Enabled = false
 			}
+		} else {
+			job.State.NextRunAtMs = next.UnixMilli()
+			job.State.ConsecutiveErrs = 0
 		}
 
 		// Persist state before execution.
@@ -118,12 +117,6 @@ func (tl *timerLoop) onTick() {
 		// Execute with concurrency cap.
 		if !tl.tryAcquireSlot(s.maxConcurrent) {
 			s.log.Warn("cron: concurrency cap reached, skipping job", "job_id", job.ID)
-			// For at schedules: debounce to prevent 1-second busy-loop.
-			// putJob already stored the job; re-put with short future time.
-			if job.Schedule.Kind == ScheduleAt {
-				job.State.NextRunAtMs = now.Add(10 * time.Second).UnixMilli()
-				s.putJob(job)
-			}
 			continue
 		}
 
@@ -162,7 +155,7 @@ func (s *Scheduler) executeJob(job *CronJob) {
 	defer cancel()
 
 	start := time.Now()
-	sessionKey, err := s.executor.Execute(ctx, job, s.jobTimeout(job))
+	sessionKey, err := s.executor.Execute(ctx, job, timeout)
 	duration := time.Since(start)
 
 	metrics.CronDurationSeconds.WithLabelValues(job.Name).Observe(duration.Seconds())
@@ -185,6 +178,7 @@ func (s *Scheduler) executeJob(job *CronJob) {
 	} else {
 		job.State.LastStatus = StatusSuccess
 		job.State.ConsecutiveErrs = 0
+		job.State.RunCount++
 		resetRetry(job)
 		if s.delivery != nil && !HasCLIDelivery(job) {
 			s.delivery.Deliver(s.ctx, job, sessionKey)
@@ -205,6 +199,21 @@ func (s *Scheduler) executeJob(job *CronJob) {
 		job.Enabled = false
 	}
 
+	// Lifecycle: check max_runs and expires_at.
+	if job.Enabled {
+		if job.MaxRuns > 0 && job.State.RunCount >= job.MaxRuns {
+			s.log.Info("cron: job reached max_runs, disabling",
+				"job_id", job.ID, "name", job.Name, "run_count", job.State.RunCount, "max_runs", job.MaxRuns)
+			job.Enabled = false
+		} else if job.ExpiresAt != "" {
+			if t, perr := time.Parse(time.RFC3339, job.ExpiresAt); perr == nil && time.Now().After(t) {
+				s.log.Info("cron: job expired, disabling",
+					"job_id", job.ID, "name", job.Name, "expires_at", job.ExpiresAt)
+				job.Enabled = false
+			}
+		}
+	}
+
 	s.persistState(job.ID, job.State)
 	s.putJob(job)
 }
@@ -212,17 +221,18 @@ func (s *Scheduler) executeJob(job *CronJob) {
 // persistState saves job state to the store, using a background context
 // so final state is not lost during scheduler shutdown.
 func (s *Scheduler) persistState(jobID string, state CronJobState) {
-	if err := s.store.UpdateState(s.persistCtx(), jobID, state); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := s.store.UpdateState(ctx, jobID, state); err != nil {
 		s.log.Error("cron: persist state", "job_id", jobID, "err", err)
 	}
 }
 
-// persistCtx returns a short-lived background context for state persistence.
-// Unlike s.ctx, this is not cancelled on shutdown, ensuring final state is saved.
+// persistCtx returns a background context for store operations that must
+// survive scheduler shutdown (e.g., deleting a completed one-shot job).
 func (s *Scheduler) persistCtx() context.Context {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	// Cancel after function returns — the timeout itself prevents indefinite leaks.
-	go func() { <-ctx.Done(); cancel() }()
+	go cancel()
 	return ctx
 }
 
