@@ -110,7 +110,7 @@ func (c *Conn) ReadPump(handler *Handler) {
 		if c.sessionID != "" && handler.sm != nil {
 			if si, getErr := handler.sm.Get(context.Background(), c.sessionID); getErr == nil && si != nil && si.State == events.StateRunning {
 				if err := handler.sm.Transition(context.Background(), c.sessionID, events.StateIdle); err != nil {
-					c.log.Debug("gateway: conn close transition to idle", "session_id", c.sessionID, "err", err)
+					c.log.Warn("gateway: conn close transition to idle", "session_id", c.sessionID, "err", err)
 				}
 			}
 		}
@@ -519,16 +519,16 @@ func (c *Conn) WritePump() {
 
 // WriteCtx writes an envelope to the connection using the provided context for deadline.
 func (c *Conn) WriteCtx(ctx context.Context, env *events.Envelope) error {
+	data, err := aep.EncodeJSON(env)
+	if err != nil {
+		return err
+	}
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	if c.closed {
 		return errors.New("conn closed")
-	}
-
-	data, err := aep.EncodeJSON(env)
-	if err != nil {
-		return err
 	}
 
 	_ = c.wc.SetWriteDeadline(time.Now().Add(writeWait))
