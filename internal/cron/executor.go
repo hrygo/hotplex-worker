@@ -43,16 +43,7 @@ func NewExecutor(log *slog.Logger, bridge BridgeStarter, sm SessionStateChecker)
 // Returns the session key used for delivery routing.
 // timeout is the execution deadline (from job.TimeoutSec or scheduler default).
 func (e *Executor) Execute(ctx context.Context, job *CronJob, timeout time.Duration) (string, error) {
-	sessionKey := session.DerivePlatformSessionKey(
-		job.OwnerID, worker.TypeClaudeCode,
-		session.PlatformContext{
-			Platform: "cron",
-			BotID:    job.BotID,
-			UserID:   job.OwnerID,
-			WorkDir:  job.WorkDir,
-			ChatID:   job.ID,
-		},
-	)
+	sessionKey := session.DeriveCronSessionKey(job.ID, time.Now().UnixNano())
 
 	platformKey := map[string]string{"cron_job_id": job.ID}
 	title := fmt.Sprintf("cron:%s", job.Name)

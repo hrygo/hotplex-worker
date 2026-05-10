@@ -23,19 +23,27 @@ func (m *mockBridge) StartSession(_ context.Context, _, _, _ string, _ worker.Wo
 
 // mockSessionStateChecker implements SessionStateChecker for testing.
 type mockSessionStateChecker struct {
-	sessions map[string]*session.SessionInfo
-	workers  map[string]worker.Worker
+	sessions       map[string]*session.SessionInfo
+	workers        map[string]worker.Worker
+	defaultWorker  worker.Worker
+	defaultSession *session.SessionInfo
 }
 
 func (m *mockSessionStateChecker) Get(_ context.Context, id string) (*session.SessionInfo, error) {
 	if si, ok := m.sessions[id]; ok {
 		return si, nil
 	}
+	if m.defaultSession != nil {
+		return m.defaultSession, nil
+	}
 	return nil, errTestNotFound
 }
 
 func (m *mockSessionStateChecker) GetWorker(id string) worker.Worker {
-	return m.workers[id]
+	if w, ok := m.workers[id]; ok {
+		return w
+	}
+	return m.defaultWorker
 }
 
 // mockWorker implements worker.Worker for testing with minimal stubs.
@@ -65,19 +73,6 @@ func (m *mockWorker) LastIO() time.Time                                    { ret
 func (m *mockWorker) ResetContext(_ context.Context) error                 { return nil }
 
 var errTestNotFound = context.DeadlineExceeded
-
-func deriveExpectedKey(job *CronJob) string {
-	return session.DerivePlatformSessionKey(
-		job.OwnerID, worker.TypeClaudeCode,
-		session.PlatformContext{
-			Platform: "cron",
-			BotID:    job.BotID,
-			UserID:   job.OwnerID,
-			WorkDir:  job.WorkDir,
-			ChatID:   job.ID,
-		},
-	)
-}
 
 func testJob() *CronJob {
 	return &CronJob{
@@ -117,18 +112,13 @@ func TestExecutor_Execute_WorkerNotFound(t *testing.T) {
 func TestExecutor_Execute_InputFails(t *testing.T) {
 	t.Parallel()
 
-	job := testJob()
-	key := deriveExpectedKey(job)
-
 	bridge := &mockBridge{}
 	sm := &mockSessionStateChecker{
-		workers: map[string]worker.Worker{
-			key: &mockWorker{inputErr: errTestNotFound},
-		},
+		defaultWorker: &mockWorker{inputErr: errTestNotFound},
 	}
 
 	e := NewExecutor(slog.Default(), bridge, sm)
-	_, err := e.Execute(context.Background(), job, 5*time.Minute)
+	_, err := e.Execute(context.Background(), testJob(), 5*time.Minute)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "input prompt")
 }
@@ -136,21 +126,14 @@ func TestExecutor_Execute_InputFails(t *testing.T) {
 func TestExecutor_Execute_TimeoutWaiting(t *testing.T) {
 	t.Parallel()
 
-	job := testJob()
-	key := deriveExpectedKey(job)
-
 	bridge := &mockBridge{}
 	sm := &mockSessionStateChecker{
-		sessions: map[string]*session.SessionInfo{
-			key: {State: "running"},
-		},
-		workers: map[string]worker.Worker{
-			key: &mockWorker{},
-		},
+		defaultSession: &session.SessionInfo{State: "running"},
+		defaultWorker:  &mockWorker{},
 	}
 
 	e := NewExecutor(slog.Default(), bridge, sm)
-	_, err := e.Execute(context.Background(), job, 100*time.Millisecond)
+	_, err := e.Execute(context.Background(), testJob(), 100*time.Millisecond)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "timeout")
 }
@@ -158,23 +141,16 @@ func TestExecutor_Execute_TimeoutWaiting(t *testing.T) {
 func TestExecutor_Execute_Success(t *testing.T) {
 	t.Parallel()
 
-	job := testJob()
-	key := deriveExpectedKey(job)
-
 	bridge := &mockBridge{}
 	// Session already completed (terminated) — waitForCompletion returns immediately.
 	sm := &mockSessionStateChecker{
-		sessions: map[string]*session.SessionInfo{
-			key: {State: "terminated"},
-		},
-		workers: map[string]worker.Worker{
-			key: &mockWorker{},
-		},
+		defaultSession: &session.SessionInfo{State: "terminated"},
+		defaultWorker:  &mockWorker{},
 	}
 
 	e := NewExecutor(slog.Default(), bridge, sm)
 
-	gotKey, err := e.Execute(context.Background(), job, 5*time.Second)
+	gotKey, err := e.Execute(context.Background(), testJob(), 5*time.Second)
 	require.NoError(t, err)
-	require.Equal(t, key, gotKey)
+	require.NotEmpty(t, gotKey)
 }
