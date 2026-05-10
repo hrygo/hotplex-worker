@@ -65,6 +65,7 @@ func (r *logRingBuffer) Recent(limit int) []logEntry {
 
 type LogCollector interface {
 	Recent(limit int) []logEntry
+	Total() int
 }
 
 var LogRing = newLogRing(100)

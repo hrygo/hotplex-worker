@@ -41,7 +41,7 @@ func (a *AdminAPI) HandleStats(w http.ResponseWriter, r *http.Request) {
 
 	respondJSON(w, map[string]any{
 		"gateway": map[string]any{
-			"uptime_seconds":        int(time.Since(startTime).Seconds()),
+			"uptime_seconds":        int(time.Since(a.startedAt).Seconds()),
 			"websocket_connections": a.hub.ConnectionsOpen(),
 			"sessions_active":       total,
 			"sessions_total":        len(sessions),
@@ -83,7 +83,7 @@ func (a *AdminAPI) HandleHealth(w http.ResponseWriter, r *http.Request) {
 		"checks": map[string]any{
 			"gateway": map[string]any{
 				"status":         "healthy",
-				"uptime_seconds": int(time.Since(startTime).Seconds()),
+				"uptime_seconds": int(time.Since(a.startedAt).Seconds()),
 			},
 			"database": dbCheck,
 			"workers": map[string]any{
@@ -132,13 +132,13 @@ func (a *AdminAPI) HandleLogs(w http.ResponseWriter, r *http.Request) {
 			limit = v
 		}
 	}
-	logs := LogRing.Recent(limit)
+	logs := a.logCollector.Recent(limit)
 	if logs == nil {
 		logs = []logEntry{}
 	}
 	respondJSON(w, map[string]any{
 		"logs":  logs,
-		"total": LogRing.Total(),
+		"total": a.logCollector.Total(),
 		"limit": limit,
 	})
 }
