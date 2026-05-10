@@ -10,6 +10,9 @@ import (
 	"time"
 )
 
+// ErrJobNotFound is returned when a job is not found in the store.
+var ErrJobNotFound = errors.New("cron store: job not found")
+
 // Store defines the persistence interface for cron jobs.
 type Store interface {
 	Create(ctx context.Context, job *CronJob) error
@@ -43,6 +46,10 @@ func withTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
 }
 
 func (s *SQLiteStore) Create(ctx context.Context, job *CronJob) error {
+	if job.ID == "" {
+		job.ID = GenerateJobID()
+	}
+
 	ctx, cancel := withTimeout(ctx)
 	defer cancel()
 
@@ -99,7 +106,7 @@ func (s *SQLiteStore) Update(ctx context.Context, job *CronJob) error {
 	}
 	n, _ := res.RowsAffected()
 	if n == 0 {
-		return fmt.Errorf("cron store: job not found: %s", job.ID)
+		return fmt.Errorf("%w: %s", ErrJobNotFound, job.ID)
 	}
 	return nil
 }
@@ -114,7 +121,7 @@ func (s *SQLiteStore) Delete(ctx context.Context, id string) error {
 	}
 	n, _ := res.RowsAffected()
 	if n == 0 {
-		return fmt.Errorf("cron store: job not found: %s", id)
+		return fmt.Errorf("%w: %s", ErrJobNotFound, id)
 	}
 	return nil
 }
@@ -189,12 +196,16 @@ func (s *SQLiteStore) UpdateState(ctx context.Context, id string, state CronJobS
 	}
 
 	now := time.Now().UnixMilli()
-	_, err = s.db.ExecContext(ctx,
+	res, err := s.db.ExecContext(ctx,
 		`UPDATE cron_jobs SET state = ?, updated_at = ? WHERE id = ?`,
 		string(data), now, id,
 	)
 	if err != nil {
 		return fmt.Errorf("cron store: update state: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("%w: %s", ErrJobNotFound, id)
 	}
 	return nil
 }
@@ -203,7 +214,7 @@ func (s *SQLiteStore) UpdateState(ctx context.Context, id string, state CronJobS
 // It does not overwrite runtime state if the job already exists.
 func (s *SQLiteStore) UpsertByName(ctx context.Context, job *CronJob) error {
 	existing, err := s.GetByName(ctx, job.Name)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) && err.Error() != "cron store: job not found" {
+	if err != nil && !errors.Is(err, ErrJobNotFound) {
 		return fmt.Errorf("cron store: upsert lookup: %w", err)
 	}
 
@@ -227,7 +238,7 @@ func scanJob(row *sql.Row) (*CronJob, error) {
 		&stateData, &job.CreatedAtMs, &job.UpdatedAtMs,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, fmt.Errorf("cron store: job not found")
+		return nil, ErrJobNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("cron store: scan job: %w", err)
