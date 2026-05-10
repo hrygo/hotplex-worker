@@ -357,12 +357,12 @@ func (b *Bridge) handleWorkerExit(w worker.Worker, p workerExitParams) {
 	// 1. Session completed normally: "done" received with no pending turn text.
 	// 2. Worker was intentionally terminated: SIGTERM (exit 143) is always
 	//    bridge/handler/GC-initiated, never an unexpected crash.
-	suppressError := (p.doneReceived && p.turnTextLen == 0) || exitCode == 143
-
-	if suppressError {
-		b.log.Debug("bridge: worker exit not reported (normal completion or intentional termination)",
-			"session_id", p.sessionID, "worker_type", workerType, "exit_code", exitCode,
-			"done_received", p.doneReceived, "turn_text_len", p.turnTextLen)
+	if p.doneReceived && p.turnTextLen == 0 {
+		b.log.Info("bridge: worker exit clean (done received, no pending output)",
+			"session_id", p.sessionID, "worker_type", workerType, "exit_code", exitCode)
+	} else if exitCode == 143 {
+		b.log.Info("bridge: worker exit intentional (SIGTERM)",
+			"session_id", p.sessionID, "worker_type", workerType)
 	} else if exitCode != 0 && exitCode != -1 {
 		acc := b.getOrInitAccum(p.sessionID, "", p.startTime)
 		b.log.Warn("bridge: worker exited with non-zero code, sending crash error",

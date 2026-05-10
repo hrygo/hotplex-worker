@@ -58,6 +58,31 @@ func respondJSON(w http.ResponseWriter, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
+// authorizeSession performs auth + path ID extraction + session lookup + ownership check.
+// Returns (userID, sessionID, sessionInfo, ok). If ok is false, an HTTP error has been written.
+func (g *GatewayAPI) authorizeSession(w http.ResponseWriter, r *http.Request) (string, *session.SessionInfo, bool) {
+	userID, _, err := g.auth.AuthenticateRequest(r)
+	if err != nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return "", nil, false
+	}
+	id := r.PathValue("id")
+	if id == "" {
+		http.Error(w, "session id required", http.StatusBadRequest)
+		return "", nil, false
+	}
+	si, err := g.sm.Get(r.Context(), id)
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return "", nil, false
+	}
+	if si.UserID != userID {
+		http.Error(w, "ownership required", http.StatusForbidden)
+		return "", nil, false
+	}
+	return id, si, true
+}
+
 func (g *GatewayAPI) ListSessions(w http.ResponseWriter, r *http.Request) {
 	userID, _, err := g.auth.AuthenticateRequest(r)
 	if err != nil {
@@ -121,12 +146,8 @@ func (g *GatewayAPI) CreateSession(w http.ResponseWriter, r *http.Request) {
 		workDir = g.cfgStore.Load().Worker.DefaultWorkDir
 	}
 	if workDir != "" {
-		expanded, err := config.ExpandAndAbs(workDir)
+		expanded, err := validateAndExpandWorkDir(workDir)
 		if err != nil {
-			http.Error(w, "invalid work_dir: "+err.Error(), http.StatusBadRequest)
-			return
-		}
-		if err := security.ValidateWorkDir(expanded); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -163,47 +184,16 @@ func (g *GatewayAPI) CreateSession(w http.ResponseWriter, r *http.Request) {
 }
 
 func (g *GatewayAPI) GetSession(w http.ResponseWriter, r *http.Request) {
-	userID, _, err := g.auth.AuthenticateRequest(r)
-	if err != nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-	id := r.PathValue("id")
-	if id == "" {
-		http.Error(w, "session id required", http.StatusBadRequest)
-		return
-	}
-	si, err := g.sm.Get(r.Context(), id)
-	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-	if si.UserID != userID {
-		http.Error(w, "ownership required", http.StatusForbidden)
+	_, si, ok := g.authorizeSession(w, r)
+	if !ok {
 		return
 	}
 	respondJSON(w, si)
 }
 
 func (g *GatewayAPI) DeleteSession(w http.ResponseWriter, r *http.Request) {
-	userID, _, err := g.auth.AuthenticateRequest(r)
-	if err != nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-	id := r.PathValue("id")
-	if id == "" {
-		http.Error(w, "session id required", http.StatusBadRequest)
-		return
-	}
-
-	si, err := g.sm.Get(r.Context(), id)
-	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-	if si.UserID != userID {
-		http.Error(w, "ownership required", http.StatusForbidden)
+	id, _, ok := g.authorizeSession(w, r)
+	if !ok {
 		return
 	}
 
@@ -221,17 +211,6 @@ func (g *GatewayAPI) DeleteSession(w http.ResponseWriter, r *http.Request) {
 }
 
 func (g *GatewayAPI) SwitchWorkDir(w http.ResponseWriter, r *http.Request) {
-	userID, _, err := g.auth.AuthenticateRequest(r)
-	if err != nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-	id := r.PathValue("id")
-	if id == "" {
-		http.Error(w, "session id required", http.StatusBadRequest)
-		return
-	}
-
 	var body struct {
 		WorkDir string `json:"work_dir"`
 	}
@@ -245,23 +224,19 @@ func (g *GatewayAPI) SwitchWorkDir(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Expand ~ and resolve to absolute path.
-	expanded, err := config.ExpandAndAbs(body.WorkDir)
+	expanded, err := validateAndExpandWorkDir(body.WorkDir)
 	if err != nil {
-		http.Error(w, "invalid work_dir: "+err.Error(), http.StatusBadRequest)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	body.WorkDir = expanded
 
-	// Ownership check.
-	si, err := g.sm.Get(r.Context(), id)
-	if err != nil {
-		http.Error(w, "session not found", http.StatusNotFound)
+	_, si, ok := g.authorizeSession(w, r)
+	if !ok {
 		return
 	}
-	if si.UserID != userID {
-		http.Error(w, "ownership required", http.StatusForbidden)
-		return
-	}
+	id := r.PathValue("id")
+
 	if !si.State.IsActive() {
 		http.Error(w, "session not active", http.StatusConflict)
 		return
@@ -287,24 +262,8 @@ func (g *GatewayAPI) SwitchWorkDir(w http.ResponseWriter, r *http.Request) {
 }
 
 func (g *GatewayAPI) GetHistory(w http.ResponseWriter, r *http.Request) {
-	userID, _, err := g.auth.AuthenticateRequest(r)
-	if err != nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-	id := r.PathValue("id")
-	if id == "" {
-		http.Error(w, "session id required", http.StatusBadRequest)
-		return
-	}
-
-	si, err := g.sm.Get(r.Context(), id)
-	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-	if si.UserID != userID {
-		http.Error(w, "ownership required", http.StatusForbidden)
+	id, _, ok := g.authorizeSession(w, r)
+	if !ok {
 		return
 	}
 
@@ -328,7 +287,10 @@ func (g *GatewayAPI) GetHistory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	fetchLimit := limit + 1
-	var records []*eventstore.TurnRecord
+	var (
+		records []*eventstore.TurnRecord
+		err     error
+	)
 
 	if beforeSeq > 0 {
 		records, err = g.turnsStore.QueryTurnsBefore(r.Context(), id, beforeSeq, fetchLimit)
@@ -360,24 +322,8 @@ func (g *GatewayAPI) GetEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID, _, err := g.auth.AuthenticateRequest(r)
-	if err != nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-	id := r.PathValue("id")
-	if id == "" {
-		http.Error(w, "session id required", http.StatusBadRequest)
-		return
-	}
-
-	si, err := g.sm.Get(r.Context(), id)
-	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-	if si.UserID != userID {
-		http.Error(w, "ownership required", http.StatusForbidden)
+	id, _, ok := g.authorizeSession(w, r)
+	if !ok {
 		return
 	}
 

@@ -148,28 +148,8 @@ func (b *Bridge) attemptResumeFallback(p fallbackParams) bool {
 		return false
 	}
 
-	workerInfo := worker.SessionInfo{
-		SessionID:       si.ID,
-		UserID:          si.UserID,
-		AllowedTools:    si.AllowedTools,
-		WorkerSessionID: si.WorkerSessionID,
-		ProjectDir:      p.workDir,
-		ConfigEnv:       b.workerEnv,
-		ConfigBlocklist: b.workerEnvBlocklist,
-	}
-
-	// Inject Slack context for CLI subcommand auto-resolution (same as StartSession).
-	if si.PlatformKey != nil {
-		if chID, ok := si.PlatformKey["channel_id"]; ok && chID != "" {
-			if workerInfo.Env == nil {
-				workerInfo.Env = make(map[string]string)
-			}
-			workerInfo.Env["HOTPLEX_SLACK_CHANNEL_ID"] = chID
-			if threadTS, ok := si.PlatformKey["thread_ts"]; ok && threadTS != "" {
-				workerInfo.Env["HOTPLEX_SLACK_THREAD_TS"] = threadTS
-			}
-		}
-	}
+	workerInfo := b.buildWorkerInfo(si.ID, si.UserID, p.workDir, si)
+	injectSlackEnv(&workerInfo, si.PlatformKey)
 	workerInfo.Env = injectGatewayContext(workerInfo.Env, si.Platform, si.BotID, si.UserID, si.PlatformKey, si.ID, p.workDir)
 
 	w, err := b.createAndLaunchWorker(workerLaunchParams{
