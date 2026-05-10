@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+## [1.10.2] - 2026-05-10
+
+### Summary
+
+v1.10.2 是一次 patch 更新，修复 cron session 全局碰撞导致 100% 超时失败的关键 bug，同时包含 Gateway 热路径性能优化（handler 拆分、异步写管道消除 HOL 阻塞、Clone 3200x 提速）和 cron `--silent` 结构化字段替代文本前缀。
+
+### Fixed
+
+- **Cron**: Session key derivation ignored job ID — all cron jobs for the same owner/bot/workDir derived the same key, causing 100% timeout failures. Introduce CronNamespace UUIDv5 with per-execution isolation. (#362)
+- **Gateway Core**: Head-of-line blocking — one slow WebSocket client could stall Hub broadcast for up to 10s. Per-conn writeCh (cap 64) decouples Hub.Run from write latency; slow clients are disconnected immediately. (#325)
+
+### Changed
+
+- **Gateway Core**: Split handler.go (852 lines) into 4 files by responsibility — handler.go, commands.go, worker_cmds.go, errors.go. Move EncodeJSON outside c.mu.Lock to reduce lock hold time. (#352)
+- **Gateway Core**: Event.Clone() replaces JSON round-trip with struct copy — 3200x faster, 0 allocs for typed events; recursive deep copy for map[string]any nested values. Add CloneDeep() for full JSON independence. (#325)
+- **Cron**: Promote `silent` from magic `[SILENT]` prompt prefix to structural `Silent bool` field — CLI `--silent` flag, YAML `silent: true`, Admin API support, `cron get` human-readable output. (#366)
+
 ## [1.10.1] - 2026-05-10
 
 ### Summary
