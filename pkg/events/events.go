@@ -358,9 +358,10 @@ type ContextCategory struct {
 
 // ContextSkillInfo carries skill-related context usage.
 type ContextSkillInfo struct {
-	Total    int `json:"total"`
-	Included int `json:"included"`
-	Tokens   int `json:"tokens"`
+	Total    int      `json:"total"`
+	Included int      `json:"included"`
+	Tokens   int      `json:"tokens"`
+	Names    []string `json:"names,omitempty"`
 }
 
 // MCPStatusData carries MCP server connection status from a worker.
