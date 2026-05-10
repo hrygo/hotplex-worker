@@ -41,6 +41,12 @@ jobs:
           path: internal/webchat/out
           retention-days: 1
 
+      - uses: actions/upload-artifact@v7
+        with:
+          name: docs-out
+          path: internal/docs/out
+          retention-days: 1
+
   # ── Build ────────────────────────────────────────────────────────────────
   build:
     needs: [prepare]
@@ -62,6 +68,12 @@ jobs:
         with:
           name: webchat-out
           path: internal/webchat/out
+
+      - name: Restore docs
+        uses: actions/download-artifact@v7
+        with:
+          name: docs-out
+          path: internal/docs/out
 
       - uses: actions/setup-go@v6
         with:

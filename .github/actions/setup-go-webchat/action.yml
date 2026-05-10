@@ -61,3 +61,15 @@ runs:
       if: inputs.download-modules == 'true'
       shell: bash
       run: go mod download
+
+    - name: Restore docs build output
+      id: docs-cache
+      uses: actions/cache@v5
+      with:
+        path: internal/docs/out
+        key: docs-${{ hashFiles('docs/**/*.md', 'cmd/build-docs/**') }}
+
+    - name: Build docs
+      if: steps.docs-cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: go run ./cmd/build-docs
