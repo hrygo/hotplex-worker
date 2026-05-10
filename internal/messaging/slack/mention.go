@@ -5,7 +5,6 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/slack-go/slack"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -21,12 +20,12 @@ var mentionPattern = regexp.MustCompile(`<@([A-Z0-9]+)(?:\|([^>]*))?>`)
 // Uses slack.Client.GetUserInfoContext for resolution.
 // Evicts entries older than 30 minutes and caps at 500 entries.
 type UserCache struct {
-	client *slack.Client
+	client SlackAPI
 	cache  *TTLCache[string, string]
 }
 
 // NewUserCache creates a new user mention resolver with bounded TTL and size.
-func NewUserCache(client *slack.Client) *UserCache {
+func NewUserCache(client SlackAPI) *UserCache {
 	return &UserCache{
 		client: client,
 		cache:  NewTTLCache[string, string](userCacheTTL, userCacheSweepInt),

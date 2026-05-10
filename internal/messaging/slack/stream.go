@@ -96,7 +96,7 @@ type NativeStreamingWriter struct {
 	// appendWithRetry) must NOT reference this — the caller (pcEntry.writeOne)
 	// cancels its context as soon as Write() returns.
 	startCtx  context.Context
-	client    *slack.Client
+	client    SlackAPI
 	channelID string
 	threadTS  string
 	teamID    string
@@ -129,7 +129,7 @@ type NativeStreamingWriter struct {
 }
 
 // NewNativeStreamingWriter creates a new streaming writer for Slack.
-func NewNativeStreamingWriter(ctx context.Context, client *slack.Client, channelID, threadTS, teamID string,
+func NewNativeStreamingWriter(ctx context.Context, client SlackAPI, channelID, threadTS, teamID string,
 	rateLimiter *ChannelRateLimiter, log *slog.Logger, onComplete func(string), onRegister func(*NativeStreamingWriter)) *NativeStreamingWriter {
 	w := &NativeStreamingWriter{
 		startCtx:     ctx,

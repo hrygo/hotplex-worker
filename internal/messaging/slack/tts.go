@@ -18,13 +18,13 @@ import (
 // Slack natively supports MP3 inline playback.
 type TTSPipeline struct {
 	synthesizer tts.Synthesizer
-	client      *slack.Client
+	client      SlackAPI
 	maxChars    int
 	sem         *semaphore.Weighted
 	log         *slog.Logger
 }
 
-func NewTTSPipeline(synthesizer tts.Synthesizer, client *slack.Client, maxChars int, log *slog.Logger) *TTSPipeline {
+func NewTTSPipeline(synthesizer tts.Synthesizer, client SlackAPI, maxChars int, log *slog.Logger) *TTSPipeline {
 	if maxChars <= 0 {
 		maxChars = 150
 	}

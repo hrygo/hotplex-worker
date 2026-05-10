@@ -74,7 +74,7 @@ type Adapter struct {
 
 	botToken           string
 	appToken           string
-	client             *slack.Client
+	client             SlackAPI
 	socketMode         *socketmode.Client
 	botID              string
 	teamID             string
@@ -139,8 +139,9 @@ func (a *Adapter) Start(ctx context.Context) error {
 		return fmt.Errorf("slack: botToken and appToken required")
 	}
 
-	a.client = slack.New(a.botToken, slack.OptionAppLevelToken(a.appToken))
-	a.socketMode = socketmode.New(a.client)
+	client := slack.New(a.botToken, slack.OptionAppLevelToken(a.appToken))
+	a.client = client
+	a.socketMode = socketmode.New(client)
 
 	// Fetch bot identity
 	authTest, err := a.client.AuthTestContext(ctx)
