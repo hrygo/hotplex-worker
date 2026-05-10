@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -26,6 +27,8 @@ func newCronCreateCmd() *cobra.Command {
 		maxRetries     int
 		maxRuns        int
 		expiresAt      string
+		platform       string
+		platformKey    string
 	)
 	cmd := &cobra.Command{
 		Use:   "create",
@@ -50,6 +53,8 @@ Schedule format:
 					MaxRetries:     maxRetries,
 					MaxRuns:        maxRuns,
 					ExpiresAt:      expiresAt,
+					Platform:       platform,
+					PlatformKey:    parsePlatformKey(platformKey),
 				})
 				if err != nil {
 					return err
@@ -82,10 +87,25 @@ Schedule format:
 	cmd.Flags().IntVar(&maxRetries, "max-retries", 0, "max retries for failed one-shot jobs")
 	cmd.Flags().IntVar(&maxRuns, "max-runs", 0, "max executions before auto-disable (0=unlimited)")
 	cmd.Flags().StringVar(&expiresAt, "expires-at", "", "auto-disable after this time (RFC3339)")
+	cmd.Flags().StringVar(&platform, "platform", "", "target delivery platform (slack|feishu|cron), auto-detected from env if unset")
+	cmd.Flags().StringVar(&platformKey, "platform-key", "", "platform routing key as JSON, e.g. '{\"channel_id\":\"C123\"}'")
 	_ = cmd.MarkFlagRequired("name")
 	_ = cmd.MarkFlagRequired("schedule")
 	_ = cmd.MarkFlagRequired("message")
 	_ = cmd.MarkFlagRequired("bot-id")
 	_ = cmd.MarkFlagRequired("owner-id")
 	return cmd
+}
+
+// parsePlatformKey parses a JSON object string into a map[string]string.
+// Returns nil for empty input.
+func parsePlatformKey(raw string) map[string]string {
+	if raw == "" {
+		return nil
+	}
+	var m map[string]string
+	if err := json.Unmarshal([]byte(raw), &m); err != nil {
+		return nil
+	}
+	return m
 }
