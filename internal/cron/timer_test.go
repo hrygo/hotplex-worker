@@ -129,9 +129,11 @@ func TestOnTick_AdvanceNextRunBeforeExecution(t *testing.T) {
 	require.True(t, got.State.NextRunAtMs > now.UnixMilli(), "next_run should be advanced past now")
 }
 
-func TestOnTick_AtSchedule_SkipsAdvance(t *testing.T) {
-	// Verifies that "at" schedules skip NextRun advance to prevent
-	// silent job loss on crash (NextRun returns zero for past timestamps).
+func TestOnTick_AtSchedule_AdvancesToPreventDupes(t *testing.T) {
+	// Verifies that "at" schedules advance NextRunAtMs to prevent
+	// duplicate execution across tick cycles. NextRun returns zero time
+	// for past "at" schedules, which sets NextRunAtMs to a large negative
+	// value. collectDue skips entries with NextRunAtMs <= 0.
 	store := newTestStore(t)
 	bridge := &mockBridge{}
 	sm := &mockSessionStateChecker{
@@ -150,22 +152,22 @@ func TestOnTick_AtSchedule_SkipsAdvance(t *testing.T) {
 	s.tickLoop.scheduler = s
 
 	past := time.Now().Add(-1 * time.Hour).Format(time.RFC3339)
-	job := helperJob("at-skip-advance")
+	job := helperJob("at-advance")
 	job.Schedule = CronSchedule{Kind: ScheduleAt, At: past}
 	job.State.NextRunAtMs = time.Now().Add(-1 * time.Second).UnixMilli()
-	origNextRun := job.State.NextRunAtMs
 	require.NoError(t, store.Create(context.Background(), job))
 	s.jobs[job.ID] = job
 
 	s.tickLoop.onTick()
-	s.closed.Store(true) // prevent re-armed timer from firing
+	s.closed.Store(true)
 	s.tickLoop.stop()
 
-	// next_run should NOT have been advanced to zero — it stays at original.
+	// next_run should have been advanced (negative from zero time),
+	// not remain at the original past value.
 	got, err := store.Get(context.Background(), job.ID)
 	require.NoError(t, err)
-	require.Equal(t, origNextRun, got.State.NextRunAtMs,
-		"at schedule should not advance next_run (would cause silent loss on crash)")
+	require.NotEqual(t, job.State.NextRunAtMs, got.State.NextRunAtMs,
+		"at schedule should advance next_run to prevent duplicate execution")
 }
 
 func TestOnTick_AutoDisableAfterScheduleErrors(t *testing.T) {

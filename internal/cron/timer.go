@@ -84,22 +84,21 @@ func (tl *timerLoop) onTick() {
 
 	for _, job := range due {
 		// At-most-once: advance next_run_at_ms BEFORE executing.
-		// Skip for "at" schedules — NextRun returns zero for past timestamps,
-		// which silently loses the job on crash. executeJob handles post-execution
-		// disable/delete.
-		if job.Schedule.Kind != ScheduleAt {
-			next, err := NextRun(job.Schedule, now)
-			if err != nil {
-				s.log.Error("cron: compute next run", "job_id", job.ID, "err", err)
-				job.State.ConsecutiveErrs++
-				if job.State.ConsecutiveErrs >= 5 {
-					s.log.Warn("cron: auto-disabling job after 5 schedule errors", "job_id", job.ID)
-					job.Enabled = false
-				}
-			} else {
-				job.State.NextRunAtMs = next.UnixMilli()
-				job.State.ConsecutiveErrs = 0
+		// For all schedule types including "at": NextRun returns zero time
+		// for past "at" schedules, which sets NextRunAtMs to a large negative
+		// value. collectDue skips entries with NextRunAtMs <= 0, preventing
+		// duplicate execution within the same tick cycle.
+		next, err := NextRun(job.Schedule, now)
+		if err != nil {
+			s.log.Error("cron: compute next run", "job_id", job.ID, "err", err)
+			job.State.ConsecutiveErrs++
+			if job.State.ConsecutiveErrs >= 5 {
+				s.log.Warn("cron: auto-disabling job after 5 schedule errors", "job_id", job.ID)
+				job.Enabled = false
 			}
+		} else {
+			job.State.NextRunAtMs = next.UnixMilli()
+			job.State.ConsecutiveErrs = 0
 		}
 
 		// Persist state before execution.
@@ -118,12 +117,6 @@ func (tl *timerLoop) onTick() {
 		// Execute with concurrency cap.
 		if !tl.tryAcquireSlot(s.maxConcurrent) {
 			s.log.Warn("cron: concurrency cap reached, skipping job", "job_id", job.ID)
-			// For at schedules: debounce to prevent 1-second busy-loop.
-			// putJob already stored the job; re-put with short future time.
-			if job.Schedule.Kind == ScheduleAt {
-				job.State.NextRunAtMs = now.Add(10 * time.Second).UnixMilli()
-				s.putJob(job)
-			}
 			continue
 		}
 
