@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"net"
 	"net/http"
 	"net/netip"
 	"slices"
@@ -24,7 +25,10 @@ func hasScope(r *http.Request, required string) bool {
 // It uses r.RemoteAddr directly to prevent IP spoofing via X-Forwarded-For.
 // Deploy behind a reverse proxy that strips untrusted XFF headers.
 func clientIP(r *http.Request) string {
-	host, _, _ := strings.Cut(r.RemoteAddr, ":")
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
 	return host
 }
 

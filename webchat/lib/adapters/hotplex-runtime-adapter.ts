@@ -290,6 +290,13 @@ export function useHotPlexRuntime({
 
   // Initialize WebSocket client
   useEffect(() => {
+    // Guard: disconnect any lingering client from a previous effect run
+    // (e.g., React Strict Mode double-render or stale closure from async reconnect)
+    if (clientRef.current) {
+      clientRef.current.disconnect();
+      clientRef.current = null;
+    }
+
     if (!sessionId) {
       logger.info('RuntimeAdapter', 'No session ID, skipping connection');
       return;

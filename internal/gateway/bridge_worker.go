@@ -238,6 +238,10 @@ func (b *Bridge) cleanupCrashedWorker(sessionID string, crashedWorker worker.Wor
 	b.accumMu.Lock()
 	delete(b.accum, sessionID)
 	b.accumMu.Unlock()
+
+	b.crashTrackerMu.Lock()
+	delete(b.crashTracker, sessionID)
+	b.crashTrackerMu.Unlock()
 }
 
 // injectAgentConfig loads agent config files and injects the unified system
