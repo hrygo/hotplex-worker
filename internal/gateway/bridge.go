@@ -119,25 +119,8 @@ func (b *Bridge) StartSession(ctx context.Context, id, userID, botID string, wt 
 		return fmt.Errorf("bridge: create session: %w", err)
 	}
 
-	workerInfo := worker.SessionInfo{
-		SessionID:       id,
-		UserID:          userID,
-		ProjectDir:      workDir,
-		AllowedTools:    si.AllowedTools,
-		ConfigEnv:       b.workerEnv,
-		ConfigBlocklist: b.workerEnvBlocklist,
-	}
-
-	// Inject Slack context for CLI subcommand auto-resolution.
-	if chID, ok := platformKey["channel_id"]; ok && chID != "" {
-		if workerInfo.Env == nil {
-			workerInfo.Env = make(map[string]string)
-		}
-		workerInfo.Env["HOTPLEX_SLACK_CHANNEL_ID"] = chID
-		if threadTS, ok := platformKey["thread_ts"]; ok && threadTS != "" {
-			workerInfo.Env["HOTPLEX_SLACK_THREAD_TS"] = threadTS
-		}
-	}
+	workerInfo := b.buildWorkerInfo(id, userID, workDir, si)
+	injectSlackEnv(&workerInfo, platformKey)
 	workerInfo.Env = injectGatewayContext(workerInfo.Env, platform, botID, userID, platformKey, id, workDir)
 
 	// Inject cron-specific env vars (e.g. admin API creds) only for cron sessions.
@@ -213,29 +196,8 @@ func (b *Bridge) resumeWithOpts(ctx context.Context, id, workDir string, opts fo
 		b.sm.DetachWorker(id)
 	}
 
-	workerInfo := worker.SessionInfo{
-		SessionID:       si.ID,
-		UserID:          si.UserID,
-		AllowedTools:    si.AllowedTools,
-		WorkerSessionID: si.WorkerSessionID,
-		ProjectDir:      workDir,
-		ConfigEnv:       b.workerEnv,
-		ConfigBlocklist: b.workerEnvBlocklist,
-	}
-
-	// Inject Slack context for CLI subcommand auto-resolution (same as StartSession).
-	if si.PlatformKey != nil {
-		if chID, ok := si.PlatformKey["channel_id"]; ok && chID != "" {
-			if workerInfo.Env == nil {
-				workerInfo.Env = make(map[string]string)
-			}
-			workerInfo.Env["HOTPLEX_SLACK_CHANNEL_ID"] = chID
-			if threadTS, ok := si.PlatformKey["thread_ts"]; ok && threadTS != "" {
-				workerInfo.Env["HOTPLEX_SLACK_THREAD_TS"] = threadTS
-			}
-		}
-	}
-
+	workerInfo := b.buildWorkerInfo(si.ID, si.UserID, workDir, si)
+	injectSlackEnv(&workerInfo, si.PlatformKey)
 	workerInfo.Env = injectGatewayContext(workerInfo.Env, si.Platform, si.BotID, si.UserID, si.PlatformKey, id, workDir)
 	w, err := b.createAndLaunchWorker(workerLaunchParams{
 		ctx:         ctx,
@@ -436,11 +398,8 @@ func (b *Bridge) SwitchWorkDir(ctx context.Context, oldSessionID, newWorkDir str
 		return nil, fmt.Errorf("switch-workdir: session not active (state: %s)", si.State)
 	}
 
-	expanded, err := config.ExpandAndAbs(newWorkDir)
+	expanded, err := validateAndExpandWorkDir(newWorkDir)
 	if err != nil {
-		return nil, fmt.Errorf("switch-workdir: expand work dir: %w", err)
-	}
-	if err := security.ValidateWorkDir(expanded); err != nil {
 		return nil, fmt.Errorf("switch-workdir: %w", err)
 	}
 
@@ -570,6 +529,51 @@ func firstNonEmpty(vals ...string) string {
 		}
 	}
 	return ""
+}
+
+// buildWorkerInfo constructs a worker.SessionInfo from session metadata,
+// carrying over bridge-level config (workerEnv, blocklist).
+func (b *Bridge) buildWorkerInfo(sessionID, userID, workDir string, si *session.SessionInfo) worker.SessionInfo {
+	return worker.SessionInfo{
+		SessionID:       sessionID,
+		UserID:          userID,
+		ProjectDir:      workDir,
+		AllowedTools:    si.AllowedTools,
+		WorkerSessionID: si.WorkerSessionID,
+		ConfigEnv:       b.workerEnv,
+		ConfigBlocklist: b.workerEnvBlocklist,
+	}
+}
+
+// injectSlackEnv injects HOTPLEX_SLACK_CHANNEL_ID and HOTPLEX_SLACK_THREAD_TS
+// into the worker env map for CLI subcommand auto-resolution.
+func injectSlackEnv(info *worker.SessionInfo, platformKey map[string]string) {
+	if platformKey == nil {
+		return
+	}
+	if chID := platformKey["channel_id"]; chID != "" {
+		if info.Env == nil {
+			info.Env = make(map[string]string)
+		}
+		info.Env["HOTPLEX_SLACK_CHANNEL_ID"] = chID
+		if threadTS := platformKey["thread_ts"]; threadTS != "" {
+			info.Env["HOTPLEX_SLACK_THREAD_TS"] = threadTS
+		}
+	}
+}
+
+// validateAndExpandWorkDir expands a work directory path and validates it for safety.
+// Combines config.ExpandAndAbs + security.ValidateWorkDir into a single call to prevent
+// accidental omission of the security check at call sites.
+func validateAndExpandWorkDir(input string) (string, error) {
+	expanded, err := config.ExpandAndAbs(input)
+	if err != nil {
+		return "", fmt.Errorf("expand work dir: %w", err)
+	}
+	if err := security.ValidateWorkDir(expanded); err != nil {
+		return "", fmt.Errorf("unsafe work dir: %w", err)
+	}
+	return expanded, nil
 }
 
 // injectGatewayContext injects unified GATEWAY_* environment variables into
