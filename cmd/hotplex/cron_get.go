@@ -48,6 +48,9 @@ func newCronGetCmd() *cobra.Command {
 				if job.TimeoutSec > 0 {
 					_, _ = fmt.Fprintf(tw, "Timeout:\t%ds\n", job.TimeoutSec)
 				}
+				if job.Silent {
+					_, _ = fmt.Fprintf(tw, "Silent:\t%v\n", job.Silent)
+				}
 				_, _ = fmt.Fprintf(tw, "Next Run:\t%s\n", croncli.FormatTimeMs(job.State.NextRunAtMs))
 				_, _ = fmt.Fprintf(tw, "Last Run:\t%s\n", croncli.FormatTimeMs(job.State.LastRunAtMs))
 				if job.State.LastStatus != "" {
