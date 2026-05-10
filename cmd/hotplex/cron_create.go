@@ -24,6 +24,7 @@ func newCronCreateCmd() *cobra.Command {
 		timeoutSec     int
 		allowedTools   string
 		deleteAfterRun bool
+		silent         bool
 		maxRetries     int
 		maxRuns        int
 		expiresAt      string
@@ -57,6 +58,7 @@ Schedule format:
 
 				job, err := croncli.PrepareJobForCreate(name, schedule, message, description, workDir, botID, ownerID, timeoutSec, tools, croncli.JobCreateOptions{
 					DeleteAfterRun: deleteAfterRun,
+					Silent:         silent,
 					MaxRetries:     maxRetries,
 					MaxRuns:        maxRuns,
 					ExpiresAt:      expiresAt,
@@ -91,6 +93,7 @@ Schedule format:
 	cmd.Flags().IntVar(&timeoutSec, "timeout", 0, "execution timeout in seconds")
 	cmd.Flags().StringVar(&allowedTools, "allowed-tools", "", "comma-separated tool list")
 	cmd.Flags().BoolVar(&deleteAfterRun, "delete-after-run", false, "delete one-shot job after execution")
+	cmd.Flags().BoolVar(&silent, "silent", false, "suppress result delivery (self-maintenance tasks)")
 	cmd.Flags().IntVar(&maxRetries, "max-retries", 0, "max retries for failed one-shot jobs")
 	cmd.Flags().IntVar(&maxRuns, "max-runs", 0, "max executions before auto-disable (0=unlimited)")
 	cmd.Flags().StringVar(&expiresAt, "expires-at", "", "auto-disable after this time (RFC3339)")

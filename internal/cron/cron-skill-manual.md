@@ -4,7 +4,7 @@
 
 HotPlex Gateway 内置 AI-native 定时任务系统。载荷为自然语言 Prompt，由 Worker 执行（等同一次 AI 对话），结果自动回传至创建者的平台（飞书卡片 / Slack 消息）。
 
-Prompt 以 `[SILENT]` 开头则不投递结果（用于自维护任务）。
+`--silent` 标志（CLI）或 `silent: true`（YAML/API）标记静默任务，结果不投递（用于自维护任务）。
 
 **操作方式**：`hotplex cron` CLI（本机直接操作 SQLite，自动通知 gateway 刷新索引）。Admin API 仅用于远程场景。
 
@@ -20,6 +20,7 @@ Prompt 以 `[SILENT]` 开头则不投递结果（用于自维护任务）。
 | X 点(提醒我) / 每天/每周 | `cron` | `cron:0 9 * * *` |
 | X 分钟后 / 过一会儿 / 稍后 | `at` | `at:ISO timestamp` |
 | 提醒我 | `at` | `at:ISO timestamp` |
+| 静默 / 悄悄 / 别发 / 不用报告 / 无需通知 | `--silent` | `--silent` |
 
 **禁止**：用 `sleep` 循环、系统 crontab、Claude CronCreate、后台脚本等替代方案。
 
@@ -65,6 +66,7 @@ hotplex cron create \
   [--timeout <秒>] \
   [--allowed-tools <逗号分隔>] \
   [--delete-after-run] \
+  [--silent] \
   [--max-retries <次数>] \
   [--max-runs <次数>] \
   [--expires-at <RFC3339>]
@@ -187,7 +189,16 @@ hotplex cron history <id|name> [--json]
 
 ### 静默自维护
 
-需要定期清理但不需要看到结果 → Prompt 以 `[SILENT]` 开头，结果不投递。
+需要定期清理但不需要看到结果 → 使用 `--silent` 标志，结果不投递。
+
+```bash
+hotplex cron create \
+  --name "silent-cleanup" \
+  --schedule "every:6h" \
+  -m "清理临时文件" \
+  --bot-id "$GATEWAY_BOT_ID" --owner-id "$GATEWAY_USER_ID" \
+  --silent
+```
 
 ## 字段速查
 
@@ -203,6 +214,7 @@ hotplex cron history <id|name> [--json]
 | `timeout_sec` | `--timeout` | 否 | 单次超时（秒），默认 5min |
 | `allowed_tools` | `--allowed-tools` | 否 | 逗号分隔 |
 | `delete_after_run` | `--delete-after-run` | 否 | 执行后自动删除（one-shot 适用） |
+| `silent` | `--silent` | 否 | 静默模式，不投递结果 |
 | `max_retries` | `--max-retries` | 否 | 失败最大重试次数，默认 0 |
 | `max_runs` | `--max-runs` | 否 | 成功执行 N 次后自动 disable，默认 0（无限） |
 | `expires_at` | `--expires-at` | 否 | 过期时间（RFC3339），到期自动 disable |
@@ -236,6 +248,7 @@ hotplex cron history <id|name> [--json]
   "work_dir": "/path",
   "timeout_sec": 300,
   "delete_after_run": false,
+  "silent": false,
   "max_retries": 0,
   "max_runs": 0,
   "expires_at": ""

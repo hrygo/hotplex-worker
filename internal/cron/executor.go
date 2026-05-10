@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strings"
 	"time"
 
 	"github.com/hrygo/hotplex/internal/session"
@@ -112,10 +111,10 @@ func HasCLIDelivery(job *CronJob) bool {
 
 // buildDeliverySuffix appends CLI delivery instructions to the cron prompt.
 func buildDeliverySuffix(job *CronJob) string {
-	if job.Platform == "" || job.Platform == "cron" {
+	if job.Silent {
 		return ""
 	}
-	if strings.HasPrefix(strings.TrimSpace(job.Payload.Message), "[SILENT]") {
+	if job.Platform == "" || job.Platform == "cron" {
 		return ""
 	}
 	switch job.Platform {

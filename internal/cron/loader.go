@@ -20,6 +20,7 @@ type YAMLJobDef struct {
 	Platform       string   `mapstructure:"platform" yaml:"platform"`
 	TimeoutSec     int      `mapstructure:"timeout_sec" yaml:"timeout_sec"`
 	DeleteAfterRun bool     `mapstructure:"delete_after_run" yaml:"delete_after_run"`
+	Silent         bool     `mapstructure:"silent" yaml:"silent"`
 	MaxRetries     int      `mapstructure:"max_retries" yaml:"max_retries"`
 	MaxRuns        int      `mapstructure:"max_runs" yaml:"max_runs"`
 	ExpiresAt      string   `mapstructure:"expires_at" yaml:"expires_at"`
@@ -103,6 +104,7 @@ func yamlDefToJob(def YAMLJobDef) (*CronJob, error) {
 		PlatformKey:    map[string]string{},
 		TimeoutSec:     def.TimeoutSec,
 		DeleteAfterRun: def.DeleteAfterRun,
+		Silent:         def.Silent,
 		MaxRetries:     def.MaxRetries,
 		MaxRuns:        def.MaxRuns,
 		ExpiresAt:      def.ExpiresAt,

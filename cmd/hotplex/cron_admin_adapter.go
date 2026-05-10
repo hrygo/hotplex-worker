@@ -51,6 +51,9 @@ func (a *cronAdminAdapter) UpdateJob(ctx context.Context, id string, updates map
 	if v, ok := updates["delete_after_run"].(bool); ok {
 		job.DeleteAfterRun = v
 	}
+	if v, ok := updates["silent"].(bool); ok {
+		job.Silent = v
+	}
 	if v, ok := updates["max_retries"].(float64); ok {
 		job.MaxRetries = int(v)
 	}

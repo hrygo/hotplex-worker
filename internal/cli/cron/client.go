@@ -113,6 +113,7 @@ func parseDurationMs(s string) (int64, error) {
 // JobCreateOptions groups lifecycle and optional parameters for job creation.
 type JobCreateOptions struct {
 	DeleteAfterRun bool
+	Silent         bool
 	MaxRetries     int
 	MaxRuns        int
 	ExpiresAt      string
@@ -173,6 +174,7 @@ func PrepareJobForCreate(name, scheduleRaw, message, description, workDir, botID
 		PlatformKey:    platformKey,
 		TimeoutSec:     timeoutSec,
 		DeleteAfterRun: opts.DeleteAfterRun,
+		Silent:         opts.Silent,
 		MaxRetries:     opts.MaxRetries,
 		MaxRuns:        opts.MaxRuns,
 		ExpiresAt:      opts.ExpiresAt,

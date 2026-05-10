@@ -3,7 +3,6 @@ package cron
 import (
 	"context"
 	"log/slog"
-	"strings"
 	"sync"
 )
 
@@ -42,12 +41,6 @@ func (d *Delivery) Deliver(ctx context.Context, job *CronJob, sessionKey string)
 		return
 	}
 	if response == "" {
-		return
-	}
-
-	// [SILENT] suppression.
-	if strings.HasPrefix(strings.TrimSpace(response), "[SILENT]") {
-		d.log.Debug("cron delivery: suppressed [SILENT] response", "job_id", job.ID)
 		return
 	}
 

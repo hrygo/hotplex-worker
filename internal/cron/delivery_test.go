@@ -37,50 +37,6 @@ func TestDelivery_Deliver_EmptyResponse(t *testing.T) {
 	require.False(t, delivered)
 }
 
-func TestDelivery_Deliver_SilentSuppression(t *testing.T) {
-	t.Parallel()
-
-	var delivered bool
-	d := NewDelivery(slog.Default(),
-		func(_ context.Context, _ string) (string, error) {
-			return "[SILENT] this output should be suppressed", nil
-		},
-		func(_ context.Context, _ string, _ map[string]string, _ string) error {
-			delivered = true
-			return nil
-		},
-	)
-
-	d.Deliver(context.Background(), &CronJob{
-		ID:       "test",
-		Platform: "feishu",
-	}, "session-key")
-
-	require.False(t, delivered)
-}
-
-func TestDelivery_Deliver_SilentWithLeadingWhitespace(t *testing.T) {
-	t.Parallel()
-
-	var delivered bool
-	d := NewDelivery(slog.Default(),
-		func(_ context.Context, _ string) (string, error) {
-			return "  [SILENT] suppressed with whitespace", nil
-		},
-		func(_ context.Context, _ string, _ map[string]string, _ string) error {
-			delivered = true
-			return nil
-		},
-	)
-
-	d.Deliver(context.Background(), &CronJob{
-		ID:       "test",
-		Platform: "feishu",
-	}, "session-key")
-
-	require.False(t, delivered)
-}
-
 func TestDelivery_Deliver_NoPlatform(t *testing.T) {
 	t.Parallel()
 

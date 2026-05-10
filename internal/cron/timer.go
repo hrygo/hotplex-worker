@@ -180,7 +180,7 @@ func (s *Scheduler) executeJob(job *CronJob) {
 		job.State.ConsecutiveErrs = 0
 		job.State.RunCount++
 		resetRetry(job)
-		if s.delivery != nil && !HasCLIDelivery(job) {
+		if s.delivery != nil && !job.Silent && !HasCLIDelivery(job) {
 			s.delivery.Deliver(s.ctx, job, sessionKey)
 		}
 	}

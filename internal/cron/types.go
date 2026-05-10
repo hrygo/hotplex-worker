@@ -86,6 +86,7 @@ type CronJob struct {
 	PlatformKey    map[string]string `json:"platform_key,omitempty"`
 	TimeoutSec     int               `json:"timeout_sec,omitempty"`
 	DeleteAfterRun bool              `json:"delete_after_run,omitempty"`
+	Silent         bool              `json:"silent,omitempty"`
 	MaxRetries     int               `json:"max_retries,omitempty"`
 	MaxRuns        int               `json:"max_runs,omitempty"`
 	ExpiresAt      string            `json:"expires_at,omitempty"`

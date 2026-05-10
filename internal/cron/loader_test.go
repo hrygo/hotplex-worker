@@ -92,6 +92,7 @@ func TestYAMLDefToJob(t *testing.T) {
 		Platform:      "feishu",
 		TimeoutSec:    120,
 		MaxRetries:    3,
+		Silent:        true,
 		AllowedTools:  []string{"Read", "Bash"},
 	}
 
@@ -112,6 +113,7 @@ func TestYAMLDefToJob(t *testing.T) {
 	require.Equal(t, "feishu", job.Platform)
 	require.Equal(t, 120, job.TimeoutSec)
 	require.Equal(t, 3, job.MaxRetries)
+	require.True(t, job.Silent)
 	require.NotZero(t, job.State.NextRunAtMs)
 	require.NotZero(t, job.CreatedAtMs)
 }
