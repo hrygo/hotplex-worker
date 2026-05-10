@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -43,7 +44,10 @@ Supports non-interactive mode for automated deployments.`,
 				return fmt.Errorf("resolve config path: %w", err)
 			}
 
-			result, err := onboard.Run(context.Background(), onboard.WizardOptions{
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer cancel()
+
+			result, err := onboard.Run(ctx, onboard.WizardOptions{
 				ConfigPath:        configPath,
 				NonInteractive:    nonInteractive,
 				Force:             force,
