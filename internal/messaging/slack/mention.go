@@ -17,7 +17,6 @@ const (
 var mentionPattern = regexp.MustCompile(`<@([A-Z0-9]+)(?:\|([^>]*))?>`)
 
 // UserCache resolves Slack user IDs to display names.
-// Uses slack.Client.GetUserInfoContext for resolution.
 // Evicts entries older than 30 minutes and caps at 500 entries.
 type UserCache struct {
 	client SlackAPI
