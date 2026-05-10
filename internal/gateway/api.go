@@ -59,7 +59,7 @@ func respondJSON(w http.ResponseWriter, v any) {
 }
 
 // authorizeSession performs auth + path ID extraction + session lookup + ownership check.
-// Returns (userID, sessionID, sessionInfo, ok). If ok is false, an HTTP error has been written.
+// Returns (sessionID, sessionInfo, ok). If ok is false, an HTTP error has been written.
 func (g *GatewayAPI) authorizeSession(w http.ResponseWriter, r *http.Request) (string, *session.SessionInfo, bool) {
 	userID, _, err := g.auth.AuthenticateRequest(r)
 	if err != nil {
