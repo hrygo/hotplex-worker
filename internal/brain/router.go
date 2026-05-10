@@ -545,21 +545,26 @@ func DefaultIntentRouterConfig() IntentRouterConfig {
 	}
 }
 
-// GlobalIntentRouter returns the global IntentRouter instance.
-// It uses the global Brain if available.
-func GlobalIntentRouter() *IntentRouter {
-	globalRouterOnce.Do(func() {
-		if Global() != nil {
-			globalIntentRouter = NewIntentRouter(Global(), DefaultIntentRouterConfig(), slog.Default())
-		}
-	})
-	return globalIntentRouter
-}
+// globalIntentRouter holds the global IntentRouter instance.
+// Uses atomic.Pointer for race-free concurrent access — eliminates the
+// previous sync.Once + direct-assignment pattern that caused a data race
+// when GlobalIntentRouter() and InitIntentRouter() were called concurrently.
+var globalIntentRouter atomic.Pointer[IntentRouter]
 
-var (
-	globalIntentRouter *IntentRouter
-	globalRouterOnce   sync.Once
-)
+// GlobalIntentRouter returns the global IntentRouter instance.
+// If no router has been set via InitIntentRouter, it lazily creates one
+// with default config using CompareAndSwap to avoid overwriting a concurrent
+// InitIntentRouter call.
+func GlobalIntentRouter() *IntentRouter {
+	if r := globalIntentRouter.Load(); r != nil {
+		return r
+	}
+	if Global() != nil {
+		r := NewIntentRouter(Global(), DefaultIntentRouterConfig(), slog.Default())
+		globalIntentRouter.CompareAndSwap(nil, r)
+	}
+	return globalIntentRouter.Load()
+}
 
 // InitIntentRouter initializes the global intent router.
 func InitIntentRouter(config IntentRouterConfig, logger *slog.Logger) {
@@ -567,7 +572,7 @@ func InitIntentRouter(config IntentRouterConfig, logger *slog.Logger) {
 		logger.Debug("Cannot init IntentRouter: Brain not configured")
 		return
 	}
-	globalIntentRouter = NewIntentRouter(Global(), config, logger)
+	globalIntentRouter.Store(NewIntentRouter(Global(), config, logger))
 	logger.Info("IntentRouter initialized", "enabled", config.Enabled)
 }
 
