@@ -55,7 +55,7 @@ func TestNewIntentRouter_Defaults(t *testing.T) {
 	}, slog.Default())
 
 	assert.NotNil(t, router)
-	assert.True(t, router.enabled)
+	assert.True(t, router.enabled.Load())
 	assert.Equal(t, 0.7, router.confidenceThreshold)
 	assert.Equal(t, 1000, router.cacheSize)
 }

@@ -51,6 +51,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/text/cases"
@@ -114,9 +115,10 @@ func DefaultCompressionConfig() CompressionConfig {
 //  3. Check compression with CheckAndCompress()
 //  4. Stop background cleanup with Stop()
 type ContextCompressor struct {
-	brain  Brain
-	config CompressionConfig
-	logger *slog.Logger
+	brain   Brain
+	config  CompressionConfig
+	logger  *slog.Logger
+	enabled atomic.Bool // source of truth for Enabled, avoids locking on hot-path reads
 
 	// Session storage (protected by mu)
 	// Key: sessionID, Value: conversation history
@@ -145,6 +147,7 @@ func NewContextCompressor(brain Brain, config CompressionConfig, logger *slog.Lo
 		ctx:      ctx,
 		cancel:   cancel,
 	}
+	compressor.enabled.Store(config.Enabled)
 
 	// Start background cleanup daemon
 	if config.CleanupInterval > 0 {
@@ -156,7 +159,7 @@ func NewContextCompressor(brain Brain, config CompressionConfig, logger *slog.Lo
 
 // RecordTurn records a conversation turn in session history.
 func (c *ContextCompressor) RecordTurn(sessionID, role, content string, tokenCount int) {
-	if !c.config.Enabled {
+	if !c.enabled.Load() {
 		return
 	}
 
@@ -195,7 +198,7 @@ func (c *ContextCompressor) RecordTurn(sessionID, role, content string, tokenCou
 //   - (nil, nil): No compression needed (below threshold)
 //   - (nil, error): Compression failed
 func (c *ContextCompressor) CheckAndCompress(ctx context.Context, sessionID string) (*SessionHistory, error) {
-	if !c.config.Enabled || c.brain == nil {
+	if !c.enabled.Load() || c.brain == nil {
 		return nil, nil
 	}
 
@@ -390,7 +393,7 @@ func (c *ContextCompressor) Stats() map[string]interface{} {
 	c.mu.RUnlock()
 
 	return map[string]interface{}{
-		"enabled":                   c.config.Enabled,
+		"enabled":                   c.enabled.Load(),
 		"session_count":             sessionCount,
 		"total_compressions":        c.totalCompressions,
 		"total_tokens_saved":        c.totalTokensSaved,
@@ -446,7 +449,7 @@ func (c *ContextCompressor) Stop() {
 
 // ForceCompress forces compression of a session regardless of threshold.
 func (c *ContextCompressor) ForceCompress(ctx context.Context, sessionID string) (*SessionHistory, error) {
-	if !c.config.Enabled || c.brain == nil {
+	if !c.enabled.Load() || c.brain == nil {
 		return nil, fmt.Errorf("compression not enabled")
 	}
 	return c.compress(ctx, sessionID)
@@ -454,7 +457,7 @@ func (c *ContextCompressor) ForceCompress(ctx context.Context, sessionID string)
 
 // SetEnabled enables or disables compression at runtime.
 func (c *ContextCompressor) SetEnabled(enabled bool) {
-	c.config.Enabled = enabled
+	c.enabled.Store(enabled)
 }
 
 // UpdateConfig updates the compression configuration.
@@ -462,6 +465,7 @@ func (c *ContextCompressor) UpdateConfig(config CompressionConfig) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.config = config
+	c.enabled.Store(config.Enabled)
 }
 
 // MemoryManager provides high-level memory management capabilities.

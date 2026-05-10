@@ -143,6 +143,7 @@ type SafetyGuard struct {
 
 	// Background cleanup for unbounded maps
 	cleanupStop context.CancelFunc
+	cleanupWg   sync.WaitGroup
 
 	// Metrics for monitoring (lock-free via atomic)
 	totalChecks      atomic.Int64 // Total number of CheckInput calls
@@ -178,6 +179,7 @@ func NewSafetyGuard(brain Brain, config GuardConfig, logger *slog.Logger) (*Safe
 	// Initialize sensitive patterns for output filtering
 	guard.initSensitivePatterns()
 
+	guard.cleanupWg.Add(1)
 	go guard.runCleanup(ctx, 10*time.Minute)
 
 	return guard, nil
@@ -188,9 +190,11 @@ func (g *SafetyGuard) Close() {
 	if g.cleanupStop != nil {
 		g.cleanupStop()
 	}
+	g.cleanupWg.Wait()
 }
 
 func (g *SafetyGuard) runCleanup(ctx context.Context, interval time.Duration) {
+	defer g.cleanupWg.Done()
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {

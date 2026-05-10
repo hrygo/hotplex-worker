@@ -231,6 +231,15 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 		}
 	}
 
+	// Flush buffered error that never reached a retry decision point.
+	if pendingError != nil {
+		if err := b.hub.SendToSession(context.Background(), pendingError); err != nil {
+			b.log.Warn("bridge: flush pending error on exit failed", "session_id", sessionID, "err", err)
+		}
+		b.captureEvent(sessionID, pendingError.Seq, pendingError.Event.Type, pendingError.Event.Data)
+		pendingError = nil
+	}
+
 	b.handleWorkerExit(w, workerExitParams{
 		sessionID:      sessionID,
 		workerType:     workerType,

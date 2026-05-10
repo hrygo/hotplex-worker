@@ -439,10 +439,10 @@ func TestContextCompressor_SetEnabled(t *testing.T) {
 	compressor := NewContextCompressor(mockBrain, config, slog.Default())
 
 	compressor.SetEnabled(false)
-	assert.False(t, compressor.config.Enabled)
+	assert.False(t, compressor.enabled.Load())
 
 	compressor.SetEnabled(true)
-	assert.True(t, compressor.config.Enabled)
+	assert.True(t, compressor.enabled.Load())
 }
 
 // ========================================
