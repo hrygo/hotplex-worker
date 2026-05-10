@@ -163,17 +163,27 @@ func TestPoolRelease_AfterGCTransitions(t *testing.T) {
 func TestValidTransitions_Completeness(t *testing.T) {
 	t.Parallel()
 
-	// Ensure every state has an entry in the table
-	for _, state := range []events.SessionState{
+	allStates := []events.SessionState{
 		events.StateCreated,
 		events.StateRunning,
 		events.StateIdle,
 		events.StateTerminated,
 		events.StateDeleted,
-	} {
-		transitions, ok := events.ValidTransitions[state]
-		require.True(t, ok, "state %s should be in ValidTransitions", state)
-		require.NotNil(t, transitions, "transitions for %s should not be nil", state)
+	}
+
+	for _, state := range allStates {
+		hasTarget := false
+		for _, target := range allStates {
+			if events.IsValidTransition(state, target) {
+				hasTarget = true
+				break
+			}
+		}
+		if state == events.StateDeleted {
+			require.False(t, hasTarget, "DELETED should have no outgoing transitions")
+		} else {
+			require.True(t, hasTarget, "state %s should have at least one valid transition", state)
+		}
 	}
 }
 
