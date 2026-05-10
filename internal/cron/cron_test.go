@@ -1,0 +1,378 @@
+package cron
+
+import (
+	"context"
+	"log/slog"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/hrygo/hotplex/internal/session"
+	"github.com/hrygo/hotplex/internal/worker"
+)
+
+func newTestScheduler(t *testing.T) *Scheduler {
+	t.Helper()
+	store := newTestStore(t)
+	bridge := &mockBridge{}
+	sm := &mockSessionStateChecker{
+		sessions: map[string]*session.SessionInfo{},
+		workers:  map[string]worker.Worker{},
+	}
+	return &Scheduler{
+		log:            slog.Default(),
+		store:          store,
+		executor:       NewExecutor(slog.Default(), bridge, sm),
+		maxConcurrent:  3,
+		maxJobs:        50,
+		defaultTimeout: 5 * time.Minute,
+		jobs:           map[string]*CronJob{},
+		ctx:            context.Background(),
+		tickLoop:       newTimerLoop(&Scheduler{}),
+	}
+}
+
+func TestScheduler_CreateJob(t *testing.T) {
+	s := newTestScheduler(t)
+	ctx := context.Background()
+
+	job := &CronJob{
+		Name:     "test-create",
+		Schedule: CronSchedule{Kind: ScheduleEvery, EveryMs: 60_000},
+		Payload:  CronPayload{Kind: PayloadAgentTurn, Message: "hello world"},
+		OwnerID:  "user1",
+		BotID:    "bot1",
+	}
+
+	require.NoError(t, s.CreateJob(ctx, job))
+	require.NotEmpty(t, job.ID)
+	require.True(t, job.Enabled)
+	require.NotZero(t, job.CreatedAtMs)
+	require.NotZero(t, job.State.NextRunAtMs)
+
+	// Should be in the in-memory index.
+	got, err := s.GetJob(ctx, job.ID)
+	require.NoError(t, err)
+	require.Equal(t, "test-create", got.Name)
+}
+
+func TestScheduler_CreateJob_MaxJobsLimit(t *testing.T) {
+	s := newTestScheduler(t)
+	s.maxJobs = 2
+	ctx := context.Background()
+
+	for i := 0; i < 2; i++ {
+		require.NoError(t, s.CreateJob(ctx, &CronJob{
+			Name:     "job" + string(rune('a'+i)),
+			Schedule: CronSchedule{Kind: ScheduleEvery, EveryMs: 60_000},
+			Payload:  CronPayload{Kind: PayloadAgentTurn, Message: "test"},
+			OwnerID:  "user1",
+			BotID:    "bot1",
+		}))
+	}
+
+	err := s.CreateJob(ctx, &CronJob{
+		Name:     "overflow",
+		Schedule: CronSchedule{Kind: ScheduleEvery, EveryMs: 60_000},
+		Payload:  CronPayload{Kind: PayloadAgentTurn, Message: "test"},
+		OwnerID:  "user1",
+		BotID:    "bot1",
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "max jobs limit")
+}
+
+func TestScheduler_CreateJob_Validation(t *testing.T) {
+	s := newTestScheduler(t)
+	ctx := context.Background()
+
+	tests := []struct {
+		name string
+		job  *CronJob
+	}{
+		{"missing name", &CronJob{Schedule: CronSchedule{Kind: ScheduleEvery, EveryMs: 60_000}, Payload: CronPayload{Message: "hi"}}},
+		{"empty prompt", &CronJob{Name: "x", Schedule: CronSchedule{Kind: ScheduleEvery, EveryMs: 60_000}, Payload: CronPayload{Message: ""}}},
+		{"invalid schedule", &CronJob{Name: "x", Schedule: CronSchedule{Kind: "bad"}, Payload: CronPayload{Message: "hi"}}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Error(t, s.CreateJob(ctx, tt.job))
+		})
+	}
+}
+
+func TestScheduler_UpdateJob(t *testing.T) {
+	s := newTestScheduler(t)
+	ctx := context.Background()
+
+	job := &CronJob{
+		Name:     "test-update",
+		Schedule: CronSchedule{Kind: ScheduleEvery, EveryMs: 60_000},
+		Payload:  CronPayload{Kind: PayloadAgentTurn, Message: "original"},
+		OwnerID:  "user1",
+		BotID:    "bot1",
+	}
+	require.NoError(t, s.CreateJob(ctx, job))
+
+	job.Payload.Message = "updated"
+	require.NoError(t, s.UpdateJob(ctx, job))
+
+	got, err := s.GetJob(ctx, job.ID)
+	require.NoError(t, err)
+	require.Equal(t, "updated", got.Payload.Message)
+}
+
+func TestScheduler_DeleteJob(t *testing.T) {
+	s := newTestScheduler(t)
+	ctx := context.Background()
+
+	job := &CronJob{
+		Name:     "test-delete",
+		Schedule: CronSchedule{Kind: ScheduleEvery, EveryMs: 60_000},
+		Payload:  CronPayload{Kind: PayloadAgentTurn, Message: "bye"},
+		OwnerID:  "user1",
+		BotID:    "bot1",
+	}
+	require.NoError(t, s.CreateJob(ctx, job))
+	require.NoError(t, s.DeleteJob(ctx, job.ID))
+
+	_, err := s.GetJob(ctx, job.ID)
+	require.Error(t, err)
+}
+
+func TestScheduler_ListJobs(t *testing.T) {
+	s := newTestScheduler(t)
+	ctx := context.Background()
+
+	for i := 0; i < 3; i++ {
+		require.NoError(t, s.CreateJob(ctx, &CronJob{
+			Name:     "list-job",
+			Schedule: CronSchedule{Kind: ScheduleEvery, EveryMs: 60_000},
+			Payload:  CronPayload{Kind: PayloadAgentTurn, Message: "test"},
+			OwnerID:  "user1",
+			BotID:    "bot1",
+		}))
+	}
+
+	jobs, err := s.ListJobs(ctx)
+	require.NoError(t, err)
+	require.Len(t, jobs, 3)
+}
+
+func TestScheduler_GetJob_NotFound(t *testing.T) {
+	s := newTestScheduler(t)
+	_, err := s.GetJob(context.Background(), "nonexistent")
+	require.Error(t, err)
+}
+
+func TestScheduler_TriggerJob(t *testing.T) {
+	s := newTestScheduler(t)
+
+	job := &CronJob{
+		Name:     "trigger-test",
+		Schedule: CronSchedule{Kind: ScheduleEvery, EveryMs: 60_000},
+		Payload:  CronPayload{Kind: PayloadAgentTurn, Message: "manual"},
+		OwnerID:  "user1",
+		BotID:    "bot1",
+	}
+
+	// TriggerJob should not block (starts goroutine).
+	require.NoError(t, s.TriggerJob(context.Background(), job))
+	// Give goroutine a moment to start.
+	time.Sleep(50 * time.Millisecond)
+}
+
+func TestScheduler_CollectDue(t *testing.T) {
+	s := newTestScheduler(t)
+	ctx := context.Background()
+	now := time.Now()
+
+	// Due job (next_run in the past).
+	dueJob := &CronJob{
+		Name:     "due",
+		Schedule: CronSchedule{Kind: ScheduleEvery, EveryMs: 60_000},
+		Payload:  CronPayload{Kind: PayloadAgentTurn, Message: "due"},
+		OwnerID:  "user1",
+		BotID:    "bot1",
+	}
+	require.NoError(t, s.CreateJob(ctx, dueJob))
+	// CreateJob overwrites next_run — fix it to be in the past.
+	s.mu.Lock()
+	s.jobs[dueJob.ID].State.NextRunAtMs = now.Add(-1 * time.Minute).UnixMilli()
+	s.mu.Unlock()
+
+	// Future job.
+	futureJob := &CronJob{
+		Name:     "future",
+		Schedule: CronSchedule{Kind: ScheduleEvery, EveryMs: 60_000},
+		Payload:  CronPayload{Kind: PayloadAgentTurn, Message: "future"},
+		OwnerID:  "user1",
+		BotID:    "bot1",
+	}
+	require.NoError(t, s.CreateJob(ctx, futureJob))
+	s.mu.Lock()
+	s.jobs[futureJob.ID].State.NextRunAtMs = now.Add(1 * time.Hour).UnixMilli()
+	s.mu.Unlock()
+
+	// Disabled job (past due but disabled).
+	disabledJob := &CronJob{
+		Name:     "disabled",
+		Schedule: CronSchedule{Kind: ScheduleEvery, EveryMs: 60_000},
+		Payload:  CronPayload{Kind: PayloadAgentTurn, Message: "disabled"},
+		OwnerID:  "user1",
+		BotID:    "bot1",
+	}
+	require.NoError(t, s.CreateJob(ctx, disabledJob))
+	s.mu.Lock()
+	s.jobs[disabledJob.ID].Enabled = false
+	s.jobs[disabledJob.ID].State.NextRunAtMs = now.Add(-1 * time.Minute).UnixMilli()
+	s.mu.Unlock()
+
+	due := s.collectDue(now)
+	require.Len(t, due, 1)
+	require.Equal(t, "due", due[0].Name)
+}
+
+func TestScheduler_NextTickDuration(t *testing.T) {
+	s := newTestScheduler(t)
+	ctx := context.Background()
+	now := time.Now()
+
+	// No jobs → max interval.
+	d := s.nextTickDuration(now)
+	require.Equal(t, maxTimerInterval, d)
+
+	// Add a job due in 30s.
+	job := &CronJob{
+		Name:     "near",
+		Schedule: CronSchedule{Kind: ScheduleEvery, EveryMs: 120_000},
+		Payload:  CronPayload{Kind: PayloadAgentTurn, Message: "near"},
+		OwnerID:  "user1",
+		BotID:    "bot1",
+	}
+	require.NoError(t, s.CreateJob(ctx, job))
+
+	// Override the next_run to 30s from now.
+	s.mu.Lock()
+	s.jobs[job.ID].State.NextRunAtMs = now.Add(30 * time.Second).UnixMilli()
+	s.mu.Unlock()
+
+	d = s.nextTickDuration(now)
+	require.True(t, d > 20*time.Second && d <= 30*time.Second)
+}
+
+func TestScheduler_UpdateConfig(t *testing.T) {
+	s := newTestScheduler(t)
+	require.Equal(t, 3, s.maxConcurrent)
+	require.Equal(t, 50, s.maxJobs)
+
+	s.UpdateConfig(10, 100)
+	require.Equal(t, 10, s.maxConcurrent)
+	require.Equal(t, 100, s.maxJobs)
+
+	// Zero values should not change.
+	s.UpdateConfig(0, 0)
+	require.Equal(t, 10, s.maxConcurrent)
+	require.Equal(t, 100, s.maxJobs)
+}
+
+func TestScheduler_WithinGracePeriod(t *testing.T) {
+	s := newTestScheduler(t)
+	now := time.Now()
+
+	tests := []struct {
+		name      string
+		everyMs   int64
+		missedAgo time.Duration
+		within    bool
+	}{
+		{"just missed 1m job", 60_000, 10 * time.Second, true},
+		{"missed 1m job by 31s", 60_000, 31 * time.Second, false},   // grace = 30s
+		{"missed 1h job by 20m", 3_600_000, 20 * time.Minute, true}, // grace = 30min
+		{"missed 1h job by 40m", 3_600_000, 40 * time.Minute, false},
+		{"missed 5h job by 1h55m", 18_000_000, 115 * time.Minute, true}, // grace capped at 2h, well within
+		{"missed 5h job by 2h5m", 18_000_000, 125 * time.Minute, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			job := &CronJob{
+				Schedule: CronSchedule{Kind: ScheduleEvery, EveryMs: tt.everyMs},
+				State: CronJobState{
+					NextRunAtMs: now.Add(-tt.missedAgo).UnixMilli(),
+				},
+			}
+			got := s.withinGracePeriod(job, now)
+			require.Equal(t, tt.within, got)
+		})
+	}
+}
+
+func TestScheduler_JobTimeout(t *testing.T) {
+	s := newTestScheduler(t)
+	require.Equal(t, 5*time.Minute, s.defaultTimeout)
+
+	// Job with explicit timeout.
+	job := &CronJob{TimeoutSec: 120}
+	require.Equal(t, 2*time.Minute, s.jobTimeout(job))
+
+	// Job without explicit timeout → default.
+	job2 := &CronJob{TimeoutSec: 0}
+	require.Equal(t, 5*time.Minute, s.jobTimeout(job2))
+}
+
+func TestScheduler_StartShutdown(t *testing.T) {
+	store := newTestStore(t)
+	bridge := &mockBridge{}
+	sm := &mockSessionStateChecker{
+		sessions: map[string]*session.SessionInfo{},
+		workers:  map[string]worker.Worker{},
+	}
+
+	// Pre-seed a job in the DB.
+	job := helperJob("lifecycle-test")
+	require.NoError(t, store.Create(context.Background(), job))
+
+	s := New(Deps{
+		Log:        slog.Default(),
+		Store:      store,
+		Bridge:     bridge,
+		SessionMgr: sm,
+		Cfg:        Config{Enabled: true, MaxConcurrentRuns: 3, MaxJobs: 50},
+	})
+
+	ctx := context.Background()
+	require.NoError(t, s.Start(ctx))
+
+	// Verify the job was loaded from DB.
+	got, err := s.GetJob(ctx, job.ID)
+	require.NoError(t, err)
+	require.Equal(t, "lifecycle-test", got.Name)
+	require.True(t, got.Enabled)
+
+	// Shutdown should complete without timeout.
+	shutdownCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	s.Shutdown(shutdownCtx)
+}
+
+func TestScheduler_ScheduleRetry(t *testing.T) {
+	s := newTestScheduler(t)
+	ctx := context.Background()
+
+	job := helperJob("retry-test")
+	job.State.ConsecutiveErrs = 2
+	require.NoError(t, s.store.Create(ctx, job))
+	s.jobs[job.ID] = job
+
+	before := time.Now()
+	s.scheduleRetry(ctx, job)
+
+	require.Equal(t, 1, job.State.RetryCount)
+	require.True(t, job.State.NextRunAtMs > before.UnixMilli())
+
+	// Duration should be backoff(2) = 5 minutes.
+	require.WithinDuration(t, before.Add(5*time.Minute), time.UnixMilli(job.State.NextRunAtMs), 2*time.Second)
+}
