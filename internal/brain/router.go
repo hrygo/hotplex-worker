@@ -90,9 +90,9 @@ type IntentRouter struct {
 	logger *slog.Logger // Structured logger for routing decisions
 
 	// Configuration
-	enabled             bool    // Master switch (disabled → all messages go to Engine)
-	confidenceThreshold float64 // Minimum confidence for Brain classification (0.0-1.0)
-	cacheSize           int     // Maximum cached intent results
+	enabled             atomic.Bool // Master switch (disabled → all messages go to Engine)
+	confidenceThreshold float64     // Minimum confidence for Brain classification (0.0-1.0)
+	cacheSize           int         // Maximum cached intent results
 
 	// LRU Cache for recent intent results
 	// Key: SHA256 hash of normalized message, Value: IntentResult
@@ -121,16 +121,17 @@ func NewIntentRouter(brain Brain, config IntentRouterConfig, logger *slog.Logger
 		config.CacheSize = 1000
 	}
 
-	return &IntentRouter{
+	router := &IntentRouter{
 		brain:               brain,
 		logger:              logger,
-		enabled:             config.Enabled,
 		confidenceThreshold: config.ConfidenceThreshold,
 		cacheSize:           config.CacheSize,
 		cache:               make(map[string]*IntentResult),
 		lruList:             list.New(),
 		lruIndex:            make(map[string]*list.Element),
 	}
+	router.enabled.Store(config.Enabled)
+	return router
 }
 
 // Route determines the intent of a message and returns the routing decision.
@@ -145,7 +146,7 @@ func NewIntentRouter(brain Brain, config IntentRouterConfig, logger *slog.Logger
 // If the Brain is disabled or unavailable, returns IntentTypeTask to ensure
 // the message is processed by the Engine (safe default).
 func (r *IntentRouter) Route(ctx context.Context, msg string) *IntentResult {
-	if !r.enabled || r.brain == nil {
+	if !r.enabled.Load() || r.brain == nil {
 		return &IntentResult{
 			Type:       IntentTypeTask,
 			Confidence: 1.0,
@@ -172,7 +173,7 @@ func (r *IntentRouter) Route(ctx context.Context, msg string) *IntentResult {
 
 // RouteWithHistory determines intent considering conversation history.
 func (r *IntentRouter) RouteWithHistory(ctx context.Context, msg string, history []string) *IntentResult {
-	if !r.enabled || r.brain == nil {
+	if !r.enabled.Load() || r.brain == nil {
 		return &IntentResult{
 			Type:       IntentTypeTask,
 			Confidence: 1.0,
@@ -419,7 +420,7 @@ func (r *IntentRouter) addToCache(key string, result *IntentResult) {
 // IsRelevant checks if a message in a group chat is relevant to the bot.
 // This is used for noise filtering in group channels.
 func (r *IntentRouter) IsRelevant(ctx context.Context, msg string, botMentioned bool) bool {
-	if !r.enabled || r.brain == nil {
+	if !r.enabled.Load() || r.brain == nil {
 		// Without brain, only process if bot is explicitly mentioned
 		return botMentioned
 	}
@@ -460,7 +461,7 @@ Return JSON:
 
 // GenerateResponse generates a quick response for chat/command intents.
 func (r *IntentRouter) GenerateResponse(ctx context.Context, msg string, intent *IntentResult) (string, error) {
-	if !r.enabled || r.brain == nil {
+	if !r.enabled.Load() || r.brain == nil {
 		return "", fmt.Errorf("brain not available")
 	}
 
@@ -495,7 +496,7 @@ func (r *IntentRouter) Stats() map[string]interface{} {
 	r.cacheMu.RUnlock()
 
 	return map[string]interface{}{
-		"enabled":         r.enabled,
+		"enabled":         r.enabled.Load(),
 		"total_processed": r.totalProcessed.Load(),
 		"cache_hits":      r.cacheHits.Load(),
 		"cache_size":      cacheLen,
@@ -518,12 +519,12 @@ func (r *IntentRouter) ShouldUseEngine(result *IntentResult) bool {
 
 // SetEnabled enables or disables the router at runtime.
 func (r *IntentRouter) SetEnabled(enabled bool) {
-	r.enabled = enabled
+	r.enabled.Store(enabled)
 }
 
 // GetEnabled returns whether the router is enabled.
 func (r *IntentRouter) GetEnabled() bool {
-	return r.enabled
+	return r.enabled.Load()
 }
 
 // ClearCache clears the intent cache.

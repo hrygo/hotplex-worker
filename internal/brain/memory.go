@@ -454,7 +454,9 @@ func (c *ContextCompressor) ForceCompress(ctx context.Context, sessionID string)
 
 // SetEnabled enables or disables compression at runtime.
 func (c *ContextCompressor) SetEnabled(enabled bool) {
+	c.mu.Lock()
 	c.config.Enabled = enabled
+	c.mu.Unlock()
 }
 
 // UpdateConfig updates the compression configuration.
