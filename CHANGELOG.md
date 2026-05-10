@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+## [1.10.1] - 2026-05-10
+
+### Summary
+
+v1.10.1 是一次 patch 更新，修复 CLI 创建的 cron job 因 `Platform` 硬编码为 `"cron"` 导致执行结果无法投递到 Slack/飞书的关键 bug。同时包含 Gateway 和 Messaging/Slack 模块的 DRY 重构。
+
+### Fixed
+
+- **CLI**: Cron job creation resolves target platform from env vars (`GATEWAY_PLATFORM`/`GATEWAY_CHANNEL_ID`/`GATEWAY_THREAD_ID`) and `--platform`/`--platform-key` flags, fixing silent delivery failure to Slack/Feishu. (#360)
+
+### Changed
+
+- **Messaging/Slack**: Extract `SlackAPI` interface for testability — adapter tests can mock Slack API calls without Socket Mode. (#361)
+- **Messaging/Slack**: SOLID + DRY refactor — extract `WriteCtx` decomposition into `conn_events.go`, make `TTLCache` generic, deduplicate validator logic. (#356)
+- **Gateway**: DRY refactor — extract Slack context injection, auth boilerplate, and workdir validation helpers. (#357)
+
 ## [1.10.0] - 2026-05-10
 
 ### Summary
