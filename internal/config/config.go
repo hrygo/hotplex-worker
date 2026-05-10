@@ -159,6 +159,7 @@ type Config struct {
 	Messaging   MessagingConfig `mapstructure:"messaging"`
 	AgentConfig AgentConfig     `mapstructure:"agent_config"`
 	Skills      SkillsConfig    `mapstructure:"skills"`
+	Cron        CronConfig      `mapstructure:"cron"`
 	Inherits    string          `mapstructure:"inherits"` // path to parent config file; "" = no inheritance
 }
 
@@ -479,6 +480,17 @@ type SkillsConfig struct {
 	CacheTTL time.Duration `mapstructure:"cache_ttl"` // TTL for skills list cache, default 5m
 }
 
+// CronConfig holds AI-native cronjob scheduler settings.
+type CronConfig struct {
+	Enabled           bool             `mapstructure:"enabled"`
+	MaxConcurrentRuns int              `mapstructure:"max_concurrent_runs"` // default 3
+	MaxJobs           int              `mapstructure:"max_jobs"`            // default 50
+	DefaultTimeoutSec int              `mapstructure:"default_timeout_sec"` // default 300
+	TickIntervalSec   int              `mapstructure:"tick_interval_sec"`   // default 60
+	YAMLConfigPath    string           `mapstructure:"yaml_config_path"`    // optional external YAML
+	Jobs              []map[string]any `mapstructure:"jobs"`                // inline job definitions
+}
+
 // ─── Defaults ────────────────────────────────────────────────────────────────
 
 // Default returns a Config with sensible production defaults.
@@ -602,6 +614,13 @@ func Default() *Config {
 		},
 		Skills: SkillsConfig{
 			CacheTTL: 5 * time.Minute,
+		},
+		Cron: CronConfig{
+			Enabled:           true,
+			MaxConcurrentRuns: 3,
+			MaxJobs:           50,
+			DefaultTimeoutSec: 300,
+			TickIntervalSec:   60,
 		},
 	}
 }

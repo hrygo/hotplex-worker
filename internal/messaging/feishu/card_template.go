@@ -85,7 +85,7 @@ func buildCard(header cardHeader, config map[string]any, elements []map[string]a
 const toolActivityElementID = "tool_activity"
 
 // buildStreamingCard constructs a streaming card with streaming_mode, element_id, summary, and optional header.
-func buildStreamingCard(header cardHeader, summary, content string) string {
+func buildStreamingCard(header cardHeader, summary, content, toolActivity string) string {
 	elements := []any{
 		map[string]any{
 			"tag":        "markdown",
@@ -96,7 +96,7 @@ func buildStreamingCard(header cardHeader, summary, content string) string {
 		map[string]any{
 			"tag":        "markdown",
 			"element_id": toolActivityElementID,
-			"content":    "",
+			"content":    toolActivity,
 		},
 	}
 	card := map[string]any{

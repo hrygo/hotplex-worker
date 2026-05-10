@@ -78,6 +78,11 @@ type PlatformAdapterInterface interface {
 	GetBotID() string
 }
 
+// CronResultSender sends a cron job execution result to a platform target.
+type CronResultSender interface {
+	SendCronResult(ctx context.Context, text string, platformKey map[string]string) error
+}
+
 // AdapterBuilder creates a new adapter instance.
 type AdapterBuilder func(log *slog.Logger) PlatformAdapterInterface
 

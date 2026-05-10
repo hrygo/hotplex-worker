@@ -404,3 +404,172 @@ func TestBridge_InjectAgentConfig_BotIDResolution(t *testing.T) {
 		})
 	}
 }
+
+// ─── Test injectGatewayContext ────────────────────────────────────────────────
+
+func TestInjectGatewayContext(t *testing.T) {
+	tests := []struct {
+		name        string
+		env         map[string]string
+		platform    string
+		botID       string
+		userID      string
+		platformKey map[string]string
+		sessionID   string
+		workDir     string
+		want        map[string]string
+	}{
+		{
+			name:     "slack full fields",
+			platform: "slack",
+			botID:    "B123",
+			userID:   "U456",
+			platformKey: map[string]string{
+				"channel_id": "C789",
+				"thread_ts":  "1234.56",
+				"team_id":    "T999",
+			},
+			sessionID: "sess-abc",
+			workDir:   "/tmp/work",
+			want: map[string]string{
+				"GATEWAY_PLATFORM":   "slack",
+				"GATEWAY_BOT_ID":     "B123",
+				"GATEWAY_USER_ID":    "U456",
+				"GATEWAY_CHANNEL_ID": "C789",
+				"GATEWAY_THREAD_ID":  "1234.56",
+				"GATEWAY_TEAM_ID":    "T999",
+				"GATEWAY_SESSION_ID": "sess-abc",
+				"GATEWAY_WORK_DIR":   "/tmp/work",
+			},
+		},
+		{
+			name:     "feishu maps chat_id to channel_id",
+			platform: "feishu",
+			botID:    "ou_bot123",
+			userID:   "ou_user456",
+			platformKey: map[string]string{
+				"chat_id":    "oc_chat789",
+				"message_id": "om_msg001",
+			},
+			sessionID: "sess-def",
+			workDir:   "/tmp/feishu",
+			want: map[string]string{
+				"GATEWAY_PLATFORM":   "feishu",
+				"GATEWAY_BOT_ID":     "ou_bot123",
+				"GATEWAY_USER_ID":    "ou_user456",
+				"GATEWAY_CHANNEL_ID": "oc_chat789",
+				"GATEWAY_THREAD_ID":  "om_msg001",
+				"GATEWAY_SESSION_ID": "sess-def",
+				"GATEWAY_WORK_DIR":   "/tmp/feishu",
+			},
+		},
+		{
+			name:        "nil env gets initialized",
+			env:         nil,
+			platform:    "slack",
+			botID:       "B1",
+			userID:      "U1",
+			platformKey: nil,
+			sessionID:   "sess-nil",
+			workDir:     "/tmp",
+			want: map[string]string{
+				"GATEWAY_PLATFORM":   "slack",
+				"GATEWAY_BOT_ID":     "B1",
+				"GATEWAY_USER_ID":    "U1",
+				"GATEWAY_SESSION_ID": "sess-nil",
+				"GATEWAY_WORK_DIR":   "/tmp",
+			},
+		},
+		{
+			name:        "empty fields omitted",
+			env:         map[string]string{},
+			platform:    "slack",
+			botID:       "B1",
+			userID:      "U1",
+			platformKey: map[string]string{},
+			sessionID:   "sess-empty",
+			workDir:     "",
+			want: map[string]string{
+				"GATEWAY_PLATFORM":   "slack",
+				"GATEWAY_BOT_ID":     "B1",
+				"GATEWAY_USER_ID":    "U1",
+				"GATEWAY_SESSION_ID": "sess-empty",
+			},
+		},
+		{
+			name:     "preserves existing env",
+			env:      map[string]string{"EXISTING": "kept"},
+			platform: "slack",
+			botID:    "B1",
+			userID:   "U1",
+			platformKey: map[string]string{
+				"channel_id": "C1",
+			},
+			sessionID: "sess-preserve",
+			workDir:   "/tmp",
+			want: map[string]string{
+				"EXISTING":           "kept",
+				"GATEWAY_PLATFORM":   "slack",
+				"GATEWAY_BOT_ID":     "B1",
+				"GATEWAY_USER_ID":    "U1",
+				"GATEWAY_CHANNEL_ID": "C1",
+				"GATEWAY_SESSION_ID": "sess-preserve",
+				"GATEWAY_WORK_DIR":   "/tmp",
+			},
+		},
+		{
+			name:     "channel_id takes priority over chat_id",
+			platform: "slack",
+			botID:    "B1",
+			userID:   "U1",
+			platformKey: map[string]string{
+				"channel_id": "C_PRIORITY",
+				"chat_id":    "oc_lower",
+			},
+			sessionID: "sess-pri",
+			workDir:   "/tmp",
+			want: map[string]string{
+				"GATEWAY_CHANNEL_ID": "C_PRIORITY",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Nil env test: function should initialize the map.
+			if tt.env == nil {
+				tt.env = injectGatewayContext(tt.env, tt.platform, tt.botID, tt.userID, tt.platformKey, tt.sessionID, tt.workDir)
+				require.NotNil(t, tt.env, "env should be initialized")
+				for k, v := range tt.want {
+					assert.Equal(t, v, tt.env[k], "env[%q]", k)
+				}
+				return
+			}
+
+			tt.env = injectGatewayContext(tt.env, tt.platform, tt.botID, tt.userID, tt.platformKey, tt.sessionID, tt.workDir)
+
+			for k, v := range tt.want {
+				assert.Equal(t, v, tt.env[k], "env[%q]", k)
+			}
+			// Verify omitted fields are absent.
+			if _, ok := tt.want["GATEWAY_WORK_DIR"]; !ok {
+				_, exists := tt.env["GATEWAY_WORK_DIR"]
+				assert.False(t, exists, "GATEWAY_WORK_DIR should not be set")
+			}
+			if _, ok := tt.want["GATEWAY_TEAM_ID"]; !ok {
+				_, exists := tt.env["GATEWAY_TEAM_ID"]
+				assert.False(t, exists, "GATEWAY_TEAM_ID should not be set")
+			}
+			if _, ok := tt.want["GATEWAY_CHANNEL_ID"]; !ok {
+				_, exists := tt.env["GATEWAY_CHANNEL_ID"]
+				assert.False(t, exists, "GATEWAY_CHANNEL_ID should not be set")
+			}
+			if _, ok := tt.want["GATEWAY_THREAD_ID"]; !ok {
+				_, exists := tt.env["GATEWAY_THREAD_ID"]
+				assert.False(t, exists, "GATEWAY_THREAD_ID should not be set")
+			}
+		})
+	}
+}
