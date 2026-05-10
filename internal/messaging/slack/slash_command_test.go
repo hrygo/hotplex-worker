@@ -48,32 +48,31 @@ func TestSlashRateLimiter_Stop(t *testing.T) {
 func TestSlashRateLimiter_SweepRemovesStaleEntries(t *testing.T) {
 	t.Parallel()
 
-	rl := &SlashRateLimiter{
-		lastUsed: make(map[string]time.Time),
-		done:     make(chan struct{}),
-	}
-	_ = rl.done
+	rl := NewSlashRateLimiter()
+	defer rl.Stop()
 
-	// Add entries with different timestamps
+	// Inject entries with different expiry times.
 	now := time.Now()
-	rl.lastUsed["user1"] = now.Add(-11 * time.Minute) // stale (>10min)
-	rl.lastUsed["user2"] = now.Add(-5 * time.Minute)  // fresh (<10min)
-	rl.lastUsed["user3"] = now.Add(-20 * time.Minute) // stale (>10min)
+	rl.cache.Do(func(items map[string]ttlEntry[time.Time]) {
+		items["user1"] = ttlEntry[time.Time]{Value: now, Expiry: now.Add(-1 * time.Minute)}  // expired
+		items["user2"] = ttlEntry[time.Time]{Value: now, Expiry: now.Add(5 * time.Minute)}   // fresh
+		items["user3"] = ttlEntry[time.Time]{Value: now, Expiry: now.Add(-10 * time.Minute)} // expired
+	})
 
-	require.Equal(t, 3, len(rl.lastUsed), "should have 3 entries before sweep")
+	require.Equal(t, 3, rl.cache.Len(), "should have 3 entries before sweep")
 
-	// Manually trigger sweep logic
-	rl.mu.Lock()
-	for userID, last := range rl.lastUsed {
-		if now.Sub(last) > slashEntryTTL {
-			delete(rl.lastUsed, userID)
+	// Manually trigger sweep logic (same as what sweepLoop does).
+	rl.cache.Do(func(items map[string]ttlEntry[time.Time]) {
+		for k, e := range items {
+			if now.After(e.Expiry) {
+				delete(items, k)
+			}
 		}
-	}
-	rl.mu.Unlock()
+	})
 
-	require.Equal(t, 1, len(rl.lastUsed), "should have 1 entry after sweep")
-	_, exists := rl.lastUsed["user2"]
-	require.True(t, exists, "user2 should still exist (fresh entry)")
+	require.Equal(t, 1, rl.cache.Len(), "should have 1 entry after sweep")
+	_, ok := rl.cache.Get("user2")
+	require.True(t, ok, "user2 should still exist (fresh entry)")
 }
 
 func TestSlashRateLimiter_SweepLoopExitsOnDone(t *testing.T) {
