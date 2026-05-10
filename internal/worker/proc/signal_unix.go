@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os/exec"
 	"syscall"
+	"time"
 )
 
 // SetSysProcAttr configures the command to create a new process group (POSIX).
@@ -22,6 +23,11 @@ func GracefulTerminate(pgid int) error {
 func ForceKill(pgid int) error {
 	return syscall.Kill(-pgid, syscall.SIGKILL)
 }
+
+// DefaultGracePeriod is the default time to wait after SIGTERM before
+// escalating to SIGKILL. Shared across proc/manager, proc/pidfile, and
+// base/worker to avoid magic number duplication.
+const DefaultGracePeriod = 5 * time.Second
 
 // IsProcessAlive checks if a process exists by sending signal 0.
 func IsProcessAlive(pid int) error {

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"time"
 
 	"golang.org/x/sys/windows"
 )
@@ -61,3 +62,7 @@ func IsProcessNotExist(err error) bool {
 	}
 	return errors.Is(err, windows.ERROR_INVALID_PARAMETER)
 }
+
+// DefaultGracePeriod is the default time to wait after graceful termination
+// before escalating to force kill. Must match signal_unix.go value.
+const DefaultGracePeriod = 5 * time.Second
