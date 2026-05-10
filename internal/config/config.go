@@ -1118,20 +1118,6 @@ func setSliceField(target any, field, value string) {
 	v.FieldByName(field).Set(reflect.ValueOf(slice))
 }
 
-// MustLoad is like Load but panics on error.
-func MustLoad(filePath string, opts LoadOptions) *Config {
-	cfg, err := Load(filePath, opts)
-	if err != nil {
-		panic("config.MustLoad: " + err.Error())
-	}
-	return cfg
-}
-
-// ReadFile loads a config file and returns its raw bytes (for testing).
-func ReadFile(name string) ([]byte, error) {
-	return os.ReadFile(name)
-}
-
 // decodeJWTSecret decodes a base64-encoded JWT secret.
 // It supports both standard base64 and URL-safe base64 (with or without padding).
 // Accepts >= 32 bytes: deriveECDSAP256Key truncates via copy to [32]byte,

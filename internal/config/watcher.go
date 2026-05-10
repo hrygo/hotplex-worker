@@ -12,10 +12,10 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
-// HotReloadableFields are config field paths that can be updated at runtime
+// hotReloadableFields are config field paths that can be updated at runtime
 // without requiring a restart. All other fields are treated as static.
 // Format: "TopLevel.NestedField" (matches mapstructure tags).
-var HotReloadableFields = map[string]bool{
+var hotReloadableFields = map[string]bool{
 	"log.level":                true,
 	"session.gc_scan_interval": true,
 	"pool.max_size":            true,
@@ -31,9 +31,9 @@ var HotReloadableFields = map[string]bool{
 	"admin.tokens":             true,
 }
 
-// StaticFields are config fields that require a restart to take effect.
+// staticFields are config fields that require a restart to take effect.
 // Changing these at runtime is logged but the value is NOT applied.
-var StaticFields = map[string]bool{
+var staticFields = map[string]bool{
 	"gateway.addr":                 true,
 	"gateway.broadcast_queue_size": true,
 	"gateway.read_buffer_size":     true,
@@ -292,8 +292,8 @@ func (w *Watcher) reload() {
 	}
 }
 
-// diffConfigs compares two configs field-by-field against HotReloadableFields
-// and StaticFields, returning precise per-field change records.
+// diffConfigs compares two configs field-by-field against hotReloadableFields
+// and staticFields, returning precise per-field change records.
 func diffConfigs(prev, next *Config) []ConfigChange {
 	if prev == nil || next == nil {
 		return nil
@@ -302,7 +302,7 @@ func diffConfigs(prev, next *Config) []ConfigChange {
 	now := time.Now().UTC()
 
 	// Check all known hot-reloadable fields.
-	for field := range HotReloadableFields {
+	for field := range hotReloadableFields {
 		oldVal := resolveField(prev, field)
 		newVal := resolveField(next, field)
 		if oldVal != newVal {
@@ -317,7 +317,7 @@ func diffConfigs(prev, next *Config) []ConfigChange {
 	}
 
 	// Check all known static fields.
-	for field := range StaticFields {
+	for field := range staticFields {
 		oldVal := resolveField(prev, field)
 		newVal := resolveField(next, field)
 		if oldVal != newVal {
