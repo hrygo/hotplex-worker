@@ -547,7 +547,7 @@ func sendWSInit(conn *websocket.Conn, msg []byte) ([]byte, error) {
 // newBotIDTestConn creates a Conn with a real hub for bot_id isolation tests.
 // It allows setting userID and botID before ReadPump is called.
 func newBotIDTestConn(h *Hub, wc *websocket.Conn, sessionID, userID, botID string) *Conn {
-	return &Conn{
+	c := &Conn{
 		log:       h.log,
 		wc:        wc,
 		hub:       h,
@@ -555,8 +555,12 @@ func newBotIDTestConn(h *Hub, wc *websocket.Conn, sessionID, userID, botID strin
 		userID:    userID,
 		botID:     botID,
 		hb:        newHeartbeat(h.log),
+		initDone:  true,
+		writeCh:   make(chan []byte, 64),
 		done:      make(chan struct{}),
 	}
+	go c.WritePump()
+	return c
 }
 
 // safeTestWorkDir is a work directory that passes security.ValidateWorkDir on all platforms.

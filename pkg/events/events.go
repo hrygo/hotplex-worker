@@ -96,11 +96,51 @@ type Envelope struct {
 	OwnerID string `json:"-"`
 }
 
-// Clone returns a deep copy of the Envelope via JSON round-trip serialization.
-// This prevents data races when the clone and original are encoded concurrently
-// by different goroutines (e.g., Bridge.forwardEvents and Hub.routeMessage):
-// aep.EncodeJSON writes env.Version in-place, so a shallow struct copy would race.
+// Clone returns a copy of the Envelope safe for concurrent use.
+// The copy has independent value-type fields (Version, Timestamp, etc.)
+// so EncodeJSON's in-place mutations on the original do not affect the copy.
+// map[string]any Event.Data is recursively deep-copied so that nested
+// mutable reference types (maps, slices) are never shared.
 func Clone(env *Envelope) *Envelope {
+	if env == nil {
+		return &Envelope{}
+	}
+	c := *env
+	if m, ok := env.Event.Data.(map[string]any); ok && m != nil {
+		c.Event.Data = deepCopyMap(m)
+	}
+	return &c
+}
+
+// deepCopyMap returns a fully independent copy of a map[string]any,
+// recursively copying nested maps and slices.
+func deepCopyMap(src map[string]any) map[string]any {
+	dst := make(map[string]any, len(src))
+	for k, v := range src {
+		dst[k] = deepCopyValue(v)
+	}
+	return dst
+}
+
+// deepCopyValue returns an independent copy of v for reference types.
+func deepCopyValue(v any) any {
+	switch cv := v.(type) {
+	case map[string]any:
+		return deepCopyMap(cv)
+	case []any:
+		dst := make([]any, len(cv))
+		for i, elem := range cv {
+			dst[i] = deepCopyValue(elem)
+		}
+		return dst
+	default:
+		return v
+	}
+}
+
+// CloneDeep returns a deep copy via JSON round-trip for use cases that need
+// full independence (e.g., event store persistence, replay).
+func CloneDeep(env *Envelope) *Envelope {
 	data, err := json.Marshal(env)
 	if err != nil {
 		return &Envelope{}
