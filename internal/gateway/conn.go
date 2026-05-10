@@ -64,6 +64,12 @@ type Conn struct {
 	initDone    bool
 	initPending [][]byte
 
+	// writeCh decouples Hub.Run from WebSocket write latency. Hub.routeMessage
+	// sends pre-encoded messages to writeCh (non-blocking); WritePump drains
+	// and writes to the WebSocket. Prevents head-of-line blocking where one
+	// slow client blocks all sessions for up to writeWait (10s).
+	writeCh chan []byte
+
 	done chan struct{}
 }
 
@@ -73,7 +79,7 @@ func newConn(hub *Hub, wc *websocket.Conn, sessionID string, starter SessionStar
 	if hub != nil {
 		log = hub.log
 	}
-	return &Conn{
+	c := &Conn{
 		log:       log.With("component", "conn", "channel", "webchat"),
 		wc:        wc,
 		hub:       hub,
@@ -81,8 +87,13 @@ func newConn(hub *Hub, wc *websocket.Conn, sessionID string, starter SessionStar
 		sessionID: sessionID,
 		hb:        newHeartbeat(log),
 		initDone:  true, // true by default; performInit sets false during handshake
+		writeCh:   make(chan []byte, 64),
 		done:      make(chan struct{}),
 	}
+	// Start the write pump immediately so WriteCtx/WriteMessage deliver data.
+	// Conn.Close() (via done channel) handles cleanup.
+	go c.WritePump()
+	return c
 }
 
 // RemoteAddr returns the remote address of the client.
@@ -476,10 +487,27 @@ func (c *Conn) performInit(handler *Handler) error {
 	return nil
 }
 
+// writeSync writes data directly to the WebSocket under lock.
+// Used in cleanup paths (init errors, close) where async delivery via writeCh
+// would race with the subsequent Close() call.
+func (c *Conn) writeSync(data []byte) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed {
+		return errors.New("conn closed")
+	}
+	_ = c.wc.SetWriteDeadline(time.Now().Add(writeWait))
+	return c.wc.WriteMessage(websocket.TextMessage, data)
+}
+
 func (c *Conn) sendInitError(code events.ErrorCode, msg string) {
 	ack := BuildInitAckError(c.sessionID, &InitError{Code: code, Message: msg})
 	ack.Seq = c.hub.NextSeq(c.sessionID)
-	_ = c.WriteCtx(context.Background(), ack)
+	data, err := aep.EncodeJSON(ack)
+	if err != nil {
+		return
+	}
+	_ = c.writeSync(data)
 }
 
 // WritePump pumps periodic pings to the WebSocket.
@@ -500,6 +528,22 @@ func (c *Conn) WritePump() {
 			return
 		case <-c.hb.Stopped():
 			return
+		case data, ok := <-c.writeCh:
+			if !ok {
+				return
+			}
+			c.mu.Lock()
+			if c.closed {
+				c.mu.Unlock()
+				return
+			}
+			_ = c.wc.SetWriteDeadline(time.Now().Add(writeWait))
+			if err := c.wc.WriteMessage(websocket.TextMessage, data); err != nil {
+				c.mu.Unlock()
+				c.log.Debug("gateway: write failed", "session_id", c.sessionID, "err", err)
+				return
+			}
+			c.mu.Unlock()
 		case <-ticker.C:
 			c.mu.Lock()
 			if c.closed {
@@ -525,53 +569,69 @@ func (c *Conn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 	}
 
 	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	if c.closed {
+		c.mu.Unlock()
 		return errors.New("conn closed")
 	}
+	c.mu.Unlock()
 
-	_ = c.wc.SetWriteDeadline(time.Now().Add(writeWait))
-	if err := c.wc.WriteMessage(websocket.TextMessage, data); err != nil {
-		metrics.GatewayErrorsTotal.WithLabelValues("write_error").Inc()
-		return err
+	select {
+	case c.writeCh <- data:
+		metrics.GatewayMessagesTotal.WithLabelValues("outgoing", string(env.Event.Type)).Inc()
+		return nil
+	case <-c.done:
+		return errors.New("conn closed")
 	}
-	metrics.GatewayMessagesTotal.WithLabelValues("outgoing", string(env.Event.Type)).Inc()
-	return nil
 }
 
 // WriteMessage writes raw bytes to the connection.
 // During the AEP init handshake, events are buffered instead of written
 // to ensure init_ack is always the first message the client receives.
+// After init, sends to writeCh for WritePump to drain (non-blocking).
 func (c *Conn) WriteMessage(msgType int, data []byte) error {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	if c.closed {
+		c.mu.Unlock()
 		return errors.New("conn closed")
 	}
 	if !c.initDone {
 		buf := make([]byte, len(data))
 		copy(buf, data)
 		c.initPending = append(c.initPending, buf)
+		c.mu.Unlock()
 		return nil
 	}
-	_ = c.wc.SetWriteDeadline(time.Now().Add(writeWait))
-	return c.wc.WriteMessage(msgType, data)
+	c.mu.Unlock()
+
+	select {
+	case c.writeCh <- data:
+		return nil
+	default:
+		// Slow client — write channel full. Disconnect to protect Hub.Run.
+		c.log.Warn("gateway: slow client, write channel full, disconnecting", "session_id", c.sessionID)
+		metrics.GatewayErrorsTotal.WithLabelValues("slow_client").Inc()
+		_ = c.Close()
+		return errors.New("write channel full, slow client disconnected")
+	}
 }
 
 // markInitDone signals that the init handshake is complete and flushes
 // any events buffered by WriteMessage during init. After this call,
-// WriteMessage writes events to the WebSocket immediately.
+// WriteMessage sends to writeCh for WritePump to drain.
 func (c *Conn) markInitDone() {
 	c.mu.Lock()
 	c.initDone = true
+flushLoop:
 	for _, data := range c.initPending {
 		if c.closed {
 			break
 		}
-		_ = c.wc.SetWriteDeadline(time.Now().Add(writeWait))
-		if err := c.wc.WriteMessage(websocket.TextMessage, data); err != nil {
-			break
+		select {
+		case c.writeCh <- data:
+		default:
+			c.log.Warn("gateway: init flush write channel full", "session_id", c.sessionID)
+			_ = c.Close()
+			break flushLoop
 		}
 	}
 	c.initPending = nil
@@ -587,10 +647,10 @@ func (c *Conn) Close() error {
 	}
 	c.closed = true
 	close(c.done)
-	c.mu.Unlock()
-
 	_ = c.wc.SetWriteDeadline(time.Now().Add(writeWait))
 	_ = c.wc.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
+	c.mu.Unlock()
+
 	return c.wc.Close()
 }
 
