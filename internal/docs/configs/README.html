@@ -46,228 +46,243 @@
          
         aside.sidebar {
             width: 300px;
-            background: var(--gray-100);
-            border-right: 1px solid var(--gray-300);
-            padding: 48px 32px;
+            background: var(--gray-50);
+            border-right: 1px solid var(--gray-200);
+            padding: 40px 24px;
             position: sticky;
             top: 0;
             height: 100vh;
             overflow-y: auto;
             display: flex;
             flex-direction: column;
+            scrollbar-width: thin;
+            scrollbar-color: var(--gray-300) transparent;
+        }
+        aside.sidebar::-webkit-scrollbar {
+            width: 4px;
+        }
+        aside.sidebar::-webkit-scrollbar-thumb {
+            background: var(--gray-300);
+            border-radius: 4px;
         }
 
         .logo-area {
-            margin-bottom: 48px;
+            margin-bottom: 40px;
+            padding: 0 12px;
         }
 
         .logo {
             font-family: var(--font-display);
-            font-size: 26px;
+            font-size: 24px;
             font-weight: 700;
             color: var(--slate);
             text-decoration: none;
             letter-spacing: -0.02em;
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 12px;
+            transition: opacity 0.2s;
+        }
+        .logo:hover {
+            opacity: 0.85;
         }
         .logo::before {
             content: "";
             width: 12px;
             height: 12px;
-            background: var(--clay);
-            border-radius: 2px;
+            background: linear-gradient(135deg, var(--clay), #D76A4F);
+            border-radius: 3px;
             transform: rotate(45deg);
+            transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+            box-shadow: 0 2px 6px rgba(195, 90, 62, 0.3);
+        }
+        .logo:hover::before {
+            transform: rotate(135deg) scale(1.15);
         }
 
         nav .nav-section {
-            margin-bottom: 32px;
+            margin-bottom: 24px;
         }
 
         nav .category {
             font-family: var(--font-mono);
-            font-size: 10px;
+            font-size: 11px;
             text-transform: uppercase;
-            letter-spacing: 0.1em;
+            letter-spacing: 0.12em;
             color: var(--gray-500);
-            margin-bottom: 12px;
-            display: block;
+            margin-bottom: 10px;
+            padding: 0 12px;
+            display: flex;
+            align-items: center;
+        }
+        nav .category::after {
+            content: "";
+            flex: 1;
+            height: 1px;
+            background: var(--gray-200);
+            margin-left: 12px;
         }
 
         nav ul { list-style: none; }
-        nav li { margin-bottom: 4px; }
+        nav li { margin-bottom: 2px; }
         nav a {
             text-decoration: none;
             color: var(--gray-500);
             font-size: 14px;
-            padding: 6px 12px;
-            border-radius: 6px;
+            padding: 7px 12px;
+            border-radius: 8px;
             display: block;
             transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
             position: relative;
+            line-height: 1.5;
+            font-weight: 500;
         }
         nav a:hover {
-            background: var(--gray-200);
+            background: rgba(0,0,0,0.03);
             color: var(--slate);
         }
         nav a.active {
             background: var(--white);
             color: var(--clay);
             font-weight: 600;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-        }
-        nav a.active::before {
-            content: "";
-            position: absolute;
-            left: 0;
-            top: 20%;
-            bottom: 20%;
-            width: 3px;
-            background: var(--clay);
-            border-radius: 0 2px 2px 0;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.02);
+            border: 1px solid rgba(0,0,0,0.04);
         }
 
          
         main.content {
             flex: 1;
-            padding: 80px 80px 120px;
+            padding: 40px;
             background: var(--white);
+            color: #24292f;
+            font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif,"Apple Color Emoji","Segoe UI Emoji";
+            line-height: 1.5;
+            word-wrap: break-word;
         }
 
         article {
-            max-width: 840px;
+            max-width: 896px;
             margin: 0 auto;
         }
 
-        header.article-head { margin-bottom: 64px; }
+        header.article-head { margin-bottom: 32px; }
         .eyebrow {
-            font-family: var(--font-mono);
-            font-size: 12px;
-            color: var(--clay);
-            margin-bottom: 16px;
-            text-transform: uppercase;
-            font-weight: 600;
-            letter-spacing: 0.05em;
+            display: none;  
         }
         h1 {
-            font-family: var(--font-serif);
-            font-size: 48px;
-            font-weight: 700;
-            line-height: 1.15;
-            color: var(--slate);
-            margin-bottom: 20px;
-            letter-spacing: -0.01em;
+            font-size: 2em;
+            font-weight: 600;
+            margin-bottom: 16px;
+            padding-bottom: .3em;
+            border-bottom: 1px solid #d0d7de;
         }
         .description { 
-            font-size: 20px; 
-            color: var(--gray-500); 
-            line-height: 1.5;
-            font-family: var(--font-sans);
+            display: none;  
         }
 
          
-        .prose h2 {
-            font-family: var(--font-serif);
-            font-size: 32px;
-            font-weight: 600;
-            color: var(--slate);
-            margin: 64px 0 24px;
-            padding-top: 12px;
-            border-top: 1px solid var(--gray-200);
+        .prose {
+            font-size: 16px;
         }
+        .prose h1, .prose h2 {
+            font-weight: 600;
+            margin-top: 24px;
+            margin-bottom: 16px;
+            padding-bottom: .3em;
+            border-bottom: 1px solid #d0d7de;
+        }
+        .prose h2 { font-size: 1.5em; }
         .prose h3 {
-            font-family: var(--font-serif);
-            font-size: 24px;
+            font-size: 1.25em;
             font-weight: 600;
-            color: var(--slate);
-            margin: 40px 0 16px;
+            margin-top: 24px;
+            margin-bottom: 16px;
         }
-        .prose p { 
-            margin-bottom: 24px; 
-            font-size: 17px; 
-            line-height: 1.7;
+        .prose h4 {
+            font-size: 1em;
+            font-weight: 600;
+            margin-top: 24px;
+            margin-bottom: 16px;
         }
-        .prose ul, .prose ol { margin-bottom: 24px; padding-left: 28px; }
-        .prose li { margin-bottom: 10px; font-size: 17px; }
+        .prose p, .prose blockquote, .prose ul, .prose ol, .prose dl, .prose table, .prose pre, .prose details {
+            margin-top: 0;
+            margin-bottom: 16px;
+        }
+        .prose ul, .prose ol {
+            padding-left: 2em;
+        }
+        .prose li {
+            word-wrap: break-all;
+        }
+        .prose li > p {
+            margin-top: 16px;
+        }
         
         .prose a {
-            color: var(--clay);
+            color: #0969da;
             text-decoration: none;
-            border-bottom: 1px solid rgba(195, 90, 62, 0.2);
-            transition: border-color 0.2s;
         }
-        .prose a:hover { border-bottom-color: var(--clay); }
+        .prose a:hover { 
+            text-decoration: underline; 
+        }
 
          
         .prose table {
-            width: 100%;
-            border-collapse: separate;
             border-spacing: 0;
-            margin: 40px 0;
-            font-size: 15px;
-            border: 1px solid var(--gray-300);
-            border-radius: 12px;
-            overflow: hidden;
+            border-collapse: collapse;
+            width: max-content;
+            max-width: 100%;
+            overflow: auto;
         }
-        .prose th {
-            background: var(--gray-50);
-            text-align: left;
-            padding: 14px 20px;
-            border-bottom: 1px solid var(--gray-300);
-            color: var(--slate);
+        .prose table th {
             font-weight: 600;
-            font-family: var(--font-display);
         }
-        .prose td {
-            padding: 14px 20px;
-            border-bottom: 1px solid var(--gray-100);
-            color: var(--gray-700);
+        .prose table th, .prose table td {
+            padding: 6px 13px;
+            border: 1px solid #d0d7de;
         }
-        .prose tr:last-child td { border-bottom: none; }
+        .prose table tr {
+            background-color: #ffffff;
+            border-top: 1px solid #hsla(210,18%,87%,1);
+        }
+        .prose table tr:nth-child(2n) {
+            background-color: #f6f8fa;
+        }
 
          
         .prose pre {
-            background: var(--slate) !important;
-            color: var(--gray-100);
-            border-radius: 16px;
-            padding: 28px;
-            margin: 40px 0;
-            overflow-x: auto;
-            border: 1px solid rgba(255,255,255,0.05);
-            box-shadow: 0 20px 50px rgba(0,0,0,0.15);
+            background-color: #f6f8fa !important;
+            color: #24292f;
+            border-radius: 6px;
+            padding: 16px;
+            overflow: auto;
+            font-size: 85%;
+            line-height: 1.45;
             position: relative;
+            border: none;
+            box-shadow: none;
         }
         .prose code {
-            font-family: var(--font-mono);
-            font-size: 14px;
-            line-height: 1.6;
+            font-family: ui-monospace,SFMono-Regular,SF Mono,Menlo,Consolas,Liberation Mono,monospace;
         }
         .prose :not(pre) > code {
-            background: var(--gray-100);
-            padding: 3px 8px;
+            padding: .2em .4em;
+            margin: 0;
+            font-size: 85%;
+            background-color: rgba(175,184,192,0.2);
             border-radius: 6px;
-            font-size: 0.85em;
-            color: var(--clay);
-            font-weight: 500;
-            border: 1px solid var(--gray-300);
+            color: #24292f;
+            border: none;
         }
 
          
         .mermaid {
-            background: var(--white);
-            padding: 32px;
-            border-radius: 16px;
-            margin: 48px 0;
-            border: 1px solid var(--gray-300);
+            background: #ffffff;
+            padding: 16px;
+            border-radius: 6px;
+            margin-bottom: 16px;
             display: flex;
             justify-content: center;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.03);
-            transition: transform 0.3s ease;
-        }
-        .mermaid:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 30px rgba(0,0,0,0.06);
         }
         .mermaid:not([data-processed="true"]) {
             visibility: hidden;
@@ -278,53 +293,53 @@
 
          
         .prose blockquote {
-            border-left: 4px solid var(--clay);
-            background: var(--gray-50);
-            padding: 32px 40px;
-            margin: 48px 0;
-            border-radius: 0 16px 16px 0;
-            font-family: var(--font-serif);
-            font-style: italic;
-            font-size: 1.1em;
-            color: var(--slate);
+            padding: 0 1em;
+            color: #57606a;
+            border-left: .25em solid #d0d7de;
+            background: transparent;
+            margin-left: 0;
+            margin-right: 0;
+            border-radius: 0;
+            font-family: inherit;
+            font-style: normal;
+            font-size: 1em;
         }
 
         .prose img {
             max-width: 100%;
-            border-radius: 16px;
-            margin: 48px 0;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.08);
+            box-sizing: content-box;
+            background-color: #ffffff;
         }
 
         footer {
-            margin-top: 120px;
-            padding-top: 48px;
-            border-top: 1px solid var(--gray-200);
-            color: var(--gray-500);
-            font-size: 13px;
+            margin-top: 40px;
+            padding-top: 40px;
+            border-top: 1px solid #d0d7de;
+            color: #57606a;
+            font-size: 12px;
             text-align: center;
-            font-family: var(--font-mono);
-            letter-spacing: 0.02em;
+            font-family: inherit;
         }
 
          
         .copy-btn {
             position: absolute;
-            top: 12px;
-            right: 12px;
-            background: rgba(255,255,255,0.1);
-            border: 1px solid rgba(255,255,255,0.2);
-            color: white;
-            padding: 4px 10px;
+            top: 8px;
+            right: 8px;
+            background: rgba(175,184,192,0.2);
+            border: 1px solid rgba(27,31,36,0.15);
+            color: #24292f;
+            padding: 4px 8px;
             border-radius: 6px;
-            font-size: 11px;
-            font-family: var(--font-mono);
+            font-size: 12px;
+            font-family: inherit;
             cursor: pointer;
             opacity: 0;
             transition: all 0.2s;
+            box-shadow: 0 1px 0 rgba(27,31,36,0.04);
         }
         .prose pre:hover .copy-btn { opacity: 1; }
-        .copy-btn:hover { background: rgba(255,255,255,0.2); }
+        .copy-btn:hover { background: #f3f4f6; }
 
         @media (max-width: 1024px) {
             aside.sidebar { width: 260px; padding: 40px 24px; }
@@ -1772,37 +1787,46 @@
             </footer>
         </article>
     </main>
-    <script type="module">
-        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
-        mermaid.initialize({ 
-            startOnLoad: true,
-            theme: 'neutral',
-            securityLevel: 'loose',
-            fontFamily: 'Inter, system-ui, sans-serif'
-        });
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <script>
+        window.addEventListener('load', function() {
+            if (typeof mermaid !== 'undefined') {
+                
+                const blocks = document.querySelectorAll('pre code.language-mermaid, pre code.language-graph');
+                blocks.forEach(code => {
+                    const pre = code.parentElement;
+                    const div = document.createElement('div');
+                    div.className = 'mermaid';
+                    div.style.background = 'white'; 
+                    div.textContent = code.textContent;
+                    pre.replaceWith(div);
+                });
 
-        
-        document.querySelectorAll('pre code.language-mermaid').forEach(code => {
-            const pre = code.parentElement;
-            const container = document.createElement('pre');
-            container.className = 'mermaid';
-            container.textContent = code.textContent;
-            pre.replaceWith(container);
-        });
+                
+                mermaid.initialize({ 
+                    startOnLoad: false,
+                    theme: 'neutral',
+                    securityLevel: 'loose'
+                });
+                mermaid.init(undefined, '.mermaid');
+            }
 
-        
-        document.querySelectorAll('.prose pre').forEach(pre => {
-            if (pre.classList.contains('mermaid')) return;
-            const btn = document.createElement('button');
-            btn.className = 'copy-btn';
-            btn.textContent = 'COPY';
-            btn.onclick = () => {
-                const code = pre.querySelector('code').innerText;
-                navigator.clipboard.writeText(code);
-                btn.textContent = 'COPIED';
-                setTimeout(() => btn.textContent = 'COPY', 2000);
-            };
-            pre.appendChild(btn);
+            
+            document.querySelectorAll('.prose pre').forEach(pre => {
+                if (pre.classList.contains('mermaid')) return;
+                const btn = document.createElement('button');
+                btn.className = 'copy-btn';
+                btn.textContent = 'COPY';
+                btn.onclick = () => {
+                    const codeBlock = pre.querySelector('code');
+                    if (codeBlock) {
+                        navigator.clipboard.writeText(codeBlock.innerText);
+                        btn.textContent = 'COPIED';
+                        setTimeout(() => btn.textContent = 'COPY', 2000);
+                    }
+                };
+                pre.appendChild(btn);
+            });
         });
     </script>
 </body>
