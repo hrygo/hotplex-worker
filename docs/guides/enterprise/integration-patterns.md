@@ -143,7 +143,7 @@ scrape_configs:
 |------|------|------|
 | `hotplex_pool_utilization_ratio` | Gauge | Session 池利用率 |
 | `hotplex_pool_acquire_total` | Counter | 配额获取（按 result 分维） |
-| `hotplex_session_active` | Gauge | 活跃 Session 数 |
+| `hotplex_sessions_active` | Gauge | 活跃 Session 数 |
 | `hotplex_worker_memory_bytes` | Gauge | Worker 内存估算 |
 
 ### OpenTelemetry 集成

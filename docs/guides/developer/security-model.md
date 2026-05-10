@@ -100,7 +100,7 @@ HotPlex Gateway 采用纵深防御（Defense in Depth）策略，通过七层安
 | 严重级 | 行为 | 示例 |
 |--------|------|------|
 | P0（自动拒绝） | 直接阻止 | `rm -rf /`、`dd of=/`、`mkfs`、fork bomb |
-| P1（需确认） | 记录并要求确认 | SSH key 访问、AWS 元数据探测、crontab 修改 |
+| P1（记录并标记） | 记录日志并标记为高风险，实际确认由 Permission Request 系统处理 | SSH key 访问、AWS 元数据探测、crontab 修改 |
 
 ### 安全审查 Bash 执行
 

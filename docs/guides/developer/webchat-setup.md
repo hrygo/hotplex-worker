@@ -163,8 +163,8 @@ WebChat 使用 AEP v1 协议通过 WebSocket 与 Gateway 通信：
 Gateway 使用 Go 的 `go:embed` 机制将 WebChat 静态文件嵌入二进制：
 
 ```go
-//go:embed static
-var staticFS embed.FS
+//go:embed all:out
+var StaticFS embed.FS
 ```
 
 构建流程：`pnpm build` → `webchat/out/` → `go:embed` → Gateway 二进制

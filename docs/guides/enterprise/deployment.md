@@ -80,7 +80,7 @@ security:
 
 ### 2.2 JWT 认证
 
-ES256（ECDSA P-256）签名，**禁止 HS256**。JWT 包含 `sub`（用户）、`bot_id`（Bot 隔离）、`scope`（权限），Gateway 验证 `aud: "hotplex-gateway"`。
+ES256（ECDSA P-256）签名，**禁止 HS256**。JWT 包含 `sub`（用户）、`bot_id`（Bot 隔离）、`scopes`（权限列表），Gateway 验证 `aud: "hotplex-gateway"`。
 
 ```bash
 export HOTPLEX_JWT_SECRET="$(openssl rand -base64 32 | tr -d '\n')"  # 不要写入配置文件

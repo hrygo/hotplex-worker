@@ -98,8 +98,8 @@ META-COGNITION 定义了 Worker 的**身份边界**——明确告知 Agent "你
    a. 调用 resolveFile(dir, platform, botID, fileName)
    b. 按三级 fallback 查找文件
    c. 读取文件内容，剥离 YAML frontmatter
-   d. 检查单文件大小限制（MaxFileChars = 8KB）
-   e. 检查总量预算（MaxTotalChars = 40KB）
+   d. 检查单文件大小限制（MaxFileChars = 8000 字符）
+   e. 检查总量预算（MaxTotalChars = 40000 字符）
    f. 超出预算的文件截断并记录 warning
 3. 返回 AgentConfigs 结构体
 ```

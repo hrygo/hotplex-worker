@@ -136,7 +136,7 @@ hotplex service logs -f
 1. 在飞书中按住语音按钮发送一段语音
 2. **期望**：Bot 通过 STT 将语音转写为文字，然后正常回复
 
-> 语音转写默认使用本地 STT 引擎。如未安装，参考 `docs/channels/STT-SETUP.md`。
+> 语音转写默认使用本地 STT 引擎。如未安装，参考 `docs/guides/developer/voice-features.md`。
 
 ---
 
@@ -198,4 +198,4 @@ HOTPLEX_MESSAGING_TTS_MAX_CHARS=150
 | 语音不转写 | 检查 STT provider 配置和本地引擎是否安装 |
 | 群聊不响应 | 确认 `REQUIRE_MENTION=true` 时已 @机器人 |
 
-更多细节参考 [配置文档](../../configs/README.md) 和 [STT 安装手册](../channels/STT-SETUP.md)。
+更多细节参考 [配置参考](../reference/configuration.md) 和 [语音功能配置](../guides/developer/voice-features.md)。

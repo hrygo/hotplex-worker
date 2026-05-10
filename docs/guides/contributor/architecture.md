@@ -103,9 +103,9 @@ Gateway (主进程)
 
 ```
 CREATED → RUNNING → IDLE → TERMINATED → DELETED
-   ↑                    ↓            ↑
-   └─── RESUME ←────────┘    │
-          └──────────────────────┘
+   │        ↑          ↓         ↑
+   │        └── RESUME ←─────────┘
+   └──────────────────→ TERMINATED
 ```
 
 | 状态 | IsActive() | 语义 | 持续时间 |

@@ -359,6 +359,8 @@ type ErrorData struct {
 // Seq: 0
 ```
 
+> **注意**：`pong` 的 `data` 为空结构体 `struct{}{}`（Go 端），在 TS SDK 中对应 `PongData` 类型（可能包含 `state` 等附加字段）。Go SDK 不导出 `PongData` 常量，需通过 `Event.Type == "pong"` 匹配。
+
 ## 错误码参考
 
 | 错误码 | 含义 |

@@ -220,7 +220,7 @@ func (m *mockStore) Save(ctx context.Context, info *SessionInfo) error {
 }
 ```
 
-项目在 `internal/messaging/mock/` 中提供了 Messaging 层的 Mock 实现。
+项目测试中普遍使用上述函数字段 mock 模式（如 `getFunc`/`saveFunc`），而非独立的 mock 包。
 
 ### 内嵌 httptest
 

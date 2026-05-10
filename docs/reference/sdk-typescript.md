@@ -232,7 +232,9 @@ client.on('throttle', (data: ControlData, env: Envelope) => {
 | `control` | `ControlData` | S→C | 服务端控制指令 |
 | `pong` | `PongData` | S→C | 心跳响应 |
 
-> **注意**：上表中部分事件类型（如 `question_request`、`question_response`、`elicitation_request`、`elicitation_response`、`context_usage`、`skills_list`、`mcp_status`、`worker_command`）在 AEP 协议中定义，但 TS SDK `constants.ts` 中未导出对应的 `EventKind` 常量。处理这些事件时需使用字符串形式匹配 `event.type` 字段。
+> **注意 1**：上表中部分事件类型（如 `question_request`、`question_response`、`elicitation_request`、`elicitation_response`、`context_usage`、`skills_list`、`mcp_status`、`worker_command`）在 AEP 协议中定义，但 TS SDK `constants.ts` 中未导出对应的 `EventKind` 常量。处理这些事件时需使用字符串形式匹配 `event.type` 字段。
+
+> **注意 2**：`control` 事件的 `reset` 和 `gc` action 在 AEP 协议中定义（Client → Server），但 TS SDK 的 `ControlAction` 常量中未导出这两个值。如需发送 `reset`/`gc` 指令，请直接使用字符串 `client.sendControl('reset')` / `client.sendControl('gc')`。
 
 ### Session 状态
 

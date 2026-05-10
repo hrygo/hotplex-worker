@@ -95,6 +95,7 @@ Brain 的 LLM 客户端使用装饰器模式构建中间件链，按顺序叠加
 BaseClient (OpenAI / Anthropic)
   |- RetryClient (指数退避重试，默认 3 次)
       |- CachedClient (LRU 缓存，默认 1000 条)
+          |- CircuitBreakerClient (故障熔断，默认关闭)
 ```
 
 每个装饰器实现 `LLMClient` 接口，可以独立叠加或移除。

@@ -123,7 +123,8 @@ HotPlex 使用 `log/slog` JSON Handler 输出结构化日志，兼容 OTel Log D
 
 ```bash
 # 启用追踪（设置 endpoint 即激活）
-OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+# 注意：当前使用 stdouttrace 导出器，endpoint 仅作为启用开关
+OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
 
 # 显式禁用（默认也是禁用）
 OTEL_SDK_DISABLED=true
@@ -132,7 +133,7 @@ OTEL_SDK_DISABLED=true
 OTEL_SERVICE_NAME=hotplex-gateway
 ```
 
-> 注意：当前使用 `stdouttrace` 导出器（JSON 行输出到 stdout），适合容器环境由日志采集器收集。生产环境需替换为 `otlptrace` 导出器直连 OTel Collector。
+> 注意：当前使用 `stdouttrace` 导出器（JSON 行输出到 stdout），`OTEL_EXPORTER_OTLP_ENDPOINT` 仅用于启用/禁用开关，实际 trace 数据写入 stdout。适合容器环境由日志采集器收集。生产环境需替换为 `otlptrace` 导出器直连 OTel Collector。
 
 ### Span 命名规范
 

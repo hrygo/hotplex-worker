@@ -242,6 +242,8 @@ img-src 'self' data: blob:;
 font-src 'self' data:
 ```
 
+> **注意**：以上为默认开发配置。`wss://*` 允许连接任意 WSS 端点，在开发环境中方便快速连接本地 Gateway。**生产环境必须收紧**，将 `wss://*` 替换为具体的 Gateway 域名（如 `wss://gateway.example.com`），同时移除 `ws://localhost:*`。`unsafe-inline` 和 `unsafe-eval` 用于支持嵌入式 SPA 的 Next.js 运行时，生产部署时应考虑使用 nonce-based CSP 替代。
+
 ## 路径安全
 
 ### SafePathJoin 参数

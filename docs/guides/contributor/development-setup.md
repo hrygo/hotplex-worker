@@ -192,7 +192,7 @@ make quality        # fmt + lint + test
 make check          # quality + build（CI 等价）
 
 # 开发环境
-make dev-start      # 启动所有服务
+make dev-start      # 启动所有服务（推荐使用 make dev）
 make dev-stop       # 停止所有服务
 make dev-reset      # 停止并重启
 make dev-status     # 查看运行状态
