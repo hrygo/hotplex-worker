@@ -189,7 +189,7 @@ func TestBuildCLIArgs_AllOptions(t *testing.T) {
 		SkipPermissions:        false,
 		SystemPrompt:           "You are a helpful assistant.",
 		SystemPromptReplace:    "",
-		MCPConfig:              "/path/to/mcp.json",
+		MCPConfig:              `{"mcpServers":{"test":{"command":"echo"}}}`,
 		StrictMCPConfig:        true,
 		MaxTurns:               10,
 		Bare:                   true,
@@ -202,7 +202,7 @@ func TestBuildCLIArgs_AllOptions(t *testing.T) {
 
 	args, err := w.buildCLIArgs(session, false)
 	require.NoError(t, err)
-	defer w.cleanupPromptFiles()
+	defer w.cleanupTempFiles()
 
 	require.Contains(t, args, "--print")
 	require.Contains(t, args, "--verbose")
@@ -218,13 +218,17 @@ func TestBuildCLIArgs_AllOptions(t *testing.T) {
 	// System prompt is now injected via temp file.
 	require.Contains(t, args, "--append-system-prompt-file")
 	require.NotContains(t, args, "--append-system-prompt", "You are a helpful assistant.")
-	// Verify the temp file content.
-	require.Len(t, w.promptFiles, 1)
-	content, readErr := os.ReadFile(w.promptFiles[0])
+	// Verify the temp file content (system prompt).
+	require.Len(t, w.tempFiles, 2)
+	content, readErr := os.ReadFile(w.tempFiles[0])
 	require.NoError(t, readErr)
 	require.Equal(t, "You are a helpful assistant.", string(content))
-	require.Contains(t, args, "--mcp-config", "/path/to/mcp.json")
+	// MCP config is also written to a temp file.
+	require.Contains(t, args, "--mcp-config")
 	require.Contains(t, args, "--strict-mcp-config")
+	mcpContent, mcpErr := os.ReadFile(w.tempFiles[1])
+	require.NoError(t, mcpErr)
+	require.Equal(t, `{"mcpServers":{"test":{"command":"echo"}}}`, string(mcpContent))
 	require.Contains(t, args, "--max-turns", "10")
 	require.Contains(t, args, "--bare")
 	require.Contains(t, args, "--add-dir", "/extra/dir")
@@ -253,14 +257,14 @@ func TestBuildCLIArgs_SystemPromptReplace(t *testing.T) {
 
 	args, err := w.buildCLIArgs(session, false)
 	require.NoError(t, err)
-	defer w.cleanupPromptFiles()
+	defer w.cleanupTempFiles()
 
 	// System prompt replace is now via temp file.
 	require.Contains(t, args, "--system-prompt-file")
 	require.NotContains(t, args, "--append-system-prompt-file")
 	// Verify the temp file content.
-	require.Len(t, w.promptFiles, 1)
-	content, readErr := os.ReadFile(w.promptFiles[0])
+	require.Len(t, w.tempFiles, 1)
+	content, readErr := os.ReadFile(w.tempFiles[0])
 	require.NoError(t, readErr)
 	require.Equal(t, "completely new system prompt", string(content))
 }
@@ -309,14 +313,20 @@ func TestBuildCLIArgs_MCPConfig(t *testing.T) {
 		SessionID:       "mcp-session",
 		UserID:          "test-user",
 		ProjectDir:      "/tmp",
-		MCPConfig:       "/etc/mcp.json",
+		MCPConfig:       `{"mcpServers":{"my-server":{"command":"test"}}}`,
 		StrictMCPConfig: true,
 	}
 
 	args, err := w.buildCLIArgs(session, false)
 	require.NoError(t, err)
-	require.Contains(t, args, "--mcp-config", "/etc/mcp.json")
+	defer w.cleanupTempFiles()
+	require.Contains(t, args, "--mcp-config")
 	require.Contains(t, args, "--strict-mcp-config")
+	// MCP config content is written to a temp file.
+	require.Len(t, w.tempFiles, 1)
+	content, readErr := os.ReadFile(w.tempFiles[0])
+	require.NoError(t, readErr)
+	require.Equal(t, `{"mcpServers":{"my-server":{"command":"test"}}}`, string(content))
 }
 
 // TestBuildCLIArgs_Minimal follows below.
