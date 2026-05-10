@@ -222,24 +222,9 @@ func SeqKey(sessionID, eventID string) string {
 	return sessionID + ":" + eventID
 }
 
-// NewEnvelope creates a new Envelope with version, ID, seq, and timestamp set.
-func NewEnvelope(id, sessionID string, seq int64, kind events.Kind, data any) *events.Envelope {
-	return &events.Envelope{
-		Version:   events.Version,
-		ID:        id,
-		Seq:       seq,
-		SessionID: sessionID,
-		Timestamp: nowMillis(),
-		Event: events.Event{
-			Type: kind,
-			Data: data,
-		},
-	}
-}
-
 // NewInputEnvelope creates a new input envelope.
 func NewInputEnvelope(sessionID, content string) *events.Envelope {
-	return NewEnvelope(NewID(), sessionID, 0, events.Input, map[string]any{
+	return events.NewEnvelope(NewID(), sessionID, 0, events.Input, map[string]any{
 		"content": content,
 	})
 }

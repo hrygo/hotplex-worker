@@ -40,7 +40,7 @@ func TestNewID_Uniqueness(t *testing.T) {
 func TestEncodeDecode(t *testing.T) {
 	t.Parallel()
 
-	env := NewEnvelope(
+	env := events.NewEnvelope(
 		NewID(),
 		"sess_test",
 		42,
@@ -191,7 +191,7 @@ func TestValidate_ValidEnvelope(t *testing.T) {
 func TestEncodeJSON(t *testing.T) {
 	t.Parallel()
 
-	env := NewEnvelope(
+	env := events.NewEnvelope(
 		NewID(),
 		"sess_json",
 		1,
@@ -208,7 +208,7 @@ func TestEncodeJSON(t *testing.T) {
 func TestMustMarshal(t *testing.T) {
 	t.Parallel()
 
-	env := NewEnvelope(NewID(), "sess_must", 1, events.Input, events.InputData{Content: "test"})
+	env := events.NewEnvelope(NewID(), "sess_must", 1, events.Input, events.InputData{Content: "test"})
 	data := MustMarshal(env)
 	require.NotEmpty(t, data)
 }
@@ -223,7 +223,7 @@ func TestIsSessionBusy(t *testing.T) {
 	}{
 		{
 			name: "session busy error",
-			env: NewEnvelope(
+			env: events.NewEnvelope(
 				NewID(), "sess_123", 1, events.Error,
 				map[string]any{"code": string(events.ErrCodeSessionBusy), "message": "busy"},
 			),
@@ -231,7 +231,7 @@ func TestIsSessionBusy(t *testing.T) {
 		},
 		{
 			name: "other error",
-			env: NewEnvelope(
+			env: events.NewEnvelope(
 				NewID(), "sess_123", 1, events.Error,
 				map[string]any{"code": string(events.ErrCodeInternalError), "message": "internal"},
 			),
@@ -239,7 +239,7 @@ func TestIsSessionBusy(t *testing.T) {
 		},
 		{
 			name: "not an error event",
-			env: NewEnvelope(
+			env: events.NewEnvelope(
 				NewID(), "sess_123", 1, events.Input,
 				events.InputData{Content: "hello"},
 			),
@@ -357,7 +357,7 @@ func TestEncode_NDJSONSafe(t *testing.T) {
 
 	// Content containing U+2028 (JS line separator) in the message.
 	// Claude Code might emit this in thinking/rendering content.
-	env := NewEnvelope(
+	env := events.NewEnvelope(
 		NewID(),
 		"sess_ndjson",
 		1,
@@ -384,7 +384,7 @@ func TestEncodeJSON_NDJSONSafe(t *testing.T) {
 	t.Parallel()
 
 	// Use actual Unicode codepoints (rune literals) so json.Marshal processes them.
-	env := NewEnvelope(
+	env := events.NewEnvelope(
 		NewID(),
 		"sess_json_ndjson",
 		1,

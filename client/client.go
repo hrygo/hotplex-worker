@@ -233,7 +233,7 @@ func (c *Client) doConnect(ctx context.Context, sessionID string, isResume bool)
 		initData["session_id"] = sessionID
 	}
 
-	env := aep.NewEnvelope(aep.NewID(), sessionID, 1, events.Init, initData)
+	env := events.NewEnvelope(aep.NewID(), sessionID, 1, events.Init, initData)
 	env.Priority = PriorityControl
 	frame, err := aep.EncodeJSON(env)
 	if err != nil {
@@ -517,7 +517,7 @@ func (c *Client) send(ctx context.Context, kind events.Kind, data any, priority 
 		return ErrNotConnected
 	}
 
-	env := aep.NewEnvelope(aep.NewID(), sessionID, seq, kind, data)
+	env := events.NewEnvelope(aep.NewID(), sessionID, seq, kind, data)
 	env.Priority = priority
 	frame, err := aep.EncodeJSON(env)
 	if err != nil {
