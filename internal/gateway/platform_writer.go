@@ -217,7 +217,11 @@ func (e *pcEntry) writeOne(env *events.Envelope) {
 func extractDeltaContent(env *events.Envelope) string {
 	switch env.Event.Type {
 	case events.MessageDelta:
-		// Data arrives as map[string]any from JSON unmarshal; struct type never matches.
+		// Struct type: Clone() preserves the original typed struct.
+		if d, ok := env.Event.Data.(events.MessageDeltaData); ok {
+			return d.Content
+		}
+		// Map type: JSON unmarshal path (e.g., from older Clone or direct decode).
 		if m, ok := env.Event.Data.(map[string]any); ok {
 			if c, _ := m["content"].(string); c != "" {
 				return c

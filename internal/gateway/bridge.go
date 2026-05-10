@@ -63,7 +63,7 @@ type Bridge struct {
 	workerEnv          []string      // extra env vars from worker.environment config
 	workerEnvBlocklist []string      // extra blocklist entries from worker.env_blocklist config
 	cronEnv            []string      // env vars injected only into cron platform sessions
-	mcpConfigJSON      string        // pre-serialized MCP config JSON; "" = not configured
+	mcpConfigJSON      atomic.Value  // pre-serialized MCP config JSON string; "" = not configured
 
 	accum   map[string]*sessionAccumulator // per-session stats accumulator
 	accumMu sync.Mutex
@@ -84,7 +84,7 @@ const (
 
 // NewBridge creates a new bridge.
 func NewBridge(deps BridgeDeps) *Bridge {
-	return &Bridge{
+	b := &Bridge{
 		log:                deps.Log.With("component", "bridge"),
 		hub:                deps.Hub,
 		sm:                 deps.SM,
@@ -96,17 +96,23 @@ func NewBridge(deps BridgeDeps) *Bridge {
 		workerEnv:          deps.WorkerEnv,
 		workerEnvBlocklist: deps.WorkerEnvBlocklist,
 		cronEnv:            deps.CronEnv,
-		mcpConfigJSON:      deps.MCPConfigJSON,
 		retryCancel:        make(map[string]chan struct{}),
 		accum:              make(map[string]*sessionAccumulator),
 		crashTracker:       make(map[string]*crashHistory),
 	}
+	b.mcpConfigJSON.Store(deps.MCPConfigJSON)
+	return b
 }
 
 // SetWorkerFactory replaces the default worker factory. Used by tests to inject
 // simulated workers without requiring external CLI binaries.
 func (b *Bridge) SetWorkerFactory(wf WorkerFactory) {
 	b.wf = wf
+}
+
+// UpdateMCPConfig atomically updates the MCP config JSON. Used by config hot-reload.
+func (b *Bridge) UpdateMCPConfig(json string) {
+	b.mcpConfigJSON.Store(json)
 }
 
 // StartSession creates a new session and starts a worker.
@@ -553,8 +559,8 @@ func (b *Bridge) buildWorkerInfo(sessionID, userID, workDir string, si *session.
 	if si.Platform == "cron" {
 		info.MCPConfig = `{"mcpServers":{}}`
 		info.StrictMCPConfig = true
-	} else if b.mcpConfigJSON != "" {
-		info.MCPConfig = b.mcpConfigJSON
+	} else if mcp, _ := b.mcpConfigJSON.Load().(string); mcp != "" {
+		info.MCPConfig = mcp
 		info.StrictMCPConfig = true
 	}
 

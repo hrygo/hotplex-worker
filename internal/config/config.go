@@ -401,6 +401,17 @@ type MCPServerConfig struct {
 	URL     string            `mapstructure:"url" json:"url,omitempty"`
 }
 
+// Validate checks that the server config specifies exactly one of Command (stdio) or URL (remote).
+func (c *MCPServerConfig) Validate() error {
+	if c.Command == "" && c.URL == "" {
+		return fmt.Errorf("mcp server config: command or url required")
+	}
+	if c.Command != "" && c.URL != "" {
+		return fmt.Errorf("mcp server config: command and url are mutually exclusive")
+	}
+	return nil
+}
+
 // ClaudeCodeConfig holds Claude Code worker startup settings.
 type ClaudeCodeConfig struct {
 	Command               string                      `mapstructure:"command"`                 // binary + optional subcommand, e.g. "claude" or "ccr code"

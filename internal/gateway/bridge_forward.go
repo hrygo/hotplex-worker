@@ -458,6 +458,9 @@ func (b *Bridge) captureSyntheticEvent(sessionID, reason, message, source string
 func extractMessageContent(env *events.Envelope) string {
 	switch env.Event.Type {
 	case events.Message, events.MessageDelta:
+		if d, ok := env.Event.Data.(events.MessageDeltaData); ok {
+			return d.Content
+		}
 		if m, ok := env.Event.Data.(map[string]any); ok {
 			if content, ok := m["content"].(string); ok {
 				return content
