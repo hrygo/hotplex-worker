@@ -31,16 +31,9 @@ func (m *linuxManager) Install(opts InstallOptions) error {
 		return fmt.Errorf("systemctl not found (systemd may not be available)")
 	}
 
-	dir := filepath.Dir(unitPath)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("create %s: %w", dir, err)
-	}
-
 	homeDir, _ := os.UserHomeDir()
-	content := BuildSystemdUnit(opts, homeDir)
-
-	if err := os.WriteFile(unitPath, []byte(content), 0o644); err != nil {
-		return fmt.Errorf("write unit: %w", err)
+	if err := writeServiceFile(unitPath, BuildSystemdUnit(opts, homeDir)); err != nil {
+		return err
 	}
 
 	if out, err := systemctl(opts.Level, "daemon-reload"); err != nil {

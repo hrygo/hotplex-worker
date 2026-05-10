@@ -27,16 +27,9 @@ func (m *darwinManager) Install(opts InstallOptions) error {
 		return fmt.Errorf("service already installed at %s (uninstall first)", plistPath)
 	}
 
-	dir := filepath.Dir(plistPath)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("create %s: %w", dir, err)
-	}
-
 	homeDir, _ := os.UserHomeDir()
-	content := BuildLaunchdPlist(opts, homeDir)
-
-	if err := os.WriteFile(plistPath, []byte(content), 0o644); err != nil {
-		return fmt.Errorf("write plist: %w", err)
+	if err := writeServiceFile(plistPath, BuildLaunchdPlist(opts, homeDir)); err != nil {
+		return err
 	}
 
 	if _, err := exec.LookPath("launchctl"); err != nil {
@@ -64,12 +57,8 @@ func (m *darwinManager) Uninstall(name string, level Level) error {
 		return fmt.Errorf("service not installed at %s", plistPath)
 	}
 
-	label := launchdLabel(name, level)
-	_ = exec.Command("launchctl", "stop", label).Run()
-
-	out, err := exec.Command("launchctl", "unload", plistPath).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("launchctl unload: %s: %w", strings.TrimSpace(string(out)), err)
+	if err := stopAndUnload(plistPath, name, level); err != nil {
+		return err
 	}
 
 	return os.Remove(plistPath)
@@ -157,7 +146,11 @@ func (m *darwinManager) Stop(name string, level Level) error {
 	if _, err := os.Stat(plistPath); os.IsNotExist(err) {
 		return ErrNotInstalled
 	}
+	return stopAndUnload(plistPath, name, level)
+}
 
+// stopAndUnload stops and unloads a launchd service. Shared by Stop and Uninstall.
+func stopAndUnload(plistPath, name string, level Level) error {
 	label := launchdLabel(name, level)
 	_ = exec.Command("launchctl", "stop", label).Run()
 
