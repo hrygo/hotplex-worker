@@ -20,8 +20,7 @@ type CronSchedulerProvider interface {
 
 // HandleCronList returns all cron jobs.
 func (a *AdminAPI) HandleCronList(w http.ResponseWriter, r *http.Request) {
-	if !hasScope(r, ScopeAdminRead) {
-		http.Error(w, "insufficient scope: need admin:read", http.StatusForbidden)
+	if !requireScope(w, r, ScopeAdminRead) {
 		return
 	}
 	if a.cron == nil {
@@ -38,8 +37,7 @@ func (a *AdminAPI) HandleCronList(w http.ResponseWriter, r *http.Request) {
 
 // HandleCronGet returns a single cron job.
 func (a *AdminAPI) HandleCronGet(w http.ResponseWriter, r *http.Request) {
-	if !hasScope(r, ScopeAdminRead) {
-		http.Error(w, "insufficient scope: need admin:read", http.StatusForbidden)
+	if !requireScope(w, r, ScopeAdminRead) {
 		return
 	}
 	if a.cron == nil {
@@ -57,8 +55,7 @@ func (a *AdminAPI) HandleCronGet(w http.ResponseWriter, r *http.Request) {
 
 // HandleCronCreate creates a new cron job.
 func (a *AdminAPI) HandleCronCreate(w http.ResponseWriter, r *http.Request) {
-	if !hasScope(r, ScopeAdminWrite) {
-		http.Error(w, "insufficient scope: need admin:write", http.StatusForbidden)
+	if !requireScope(w, r, ScopeAdminWrite) {
 		return
 	}
 	if a.cron == nil {
@@ -79,8 +76,7 @@ func (a *AdminAPI) HandleCronCreate(w http.ResponseWriter, r *http.Request) {
 
 // HandleCronUpdate updates an existing cron job.
 func (a *AdminAPI) HandleCronUpdate(w http.ResponseWriter, r *http.Request) {
-	if !hasScope(r, ScopeAdminWrite) {
-		http.Error(w, "insufficient scope: need admin:write", http.StatusForbidden)
+	if !requireScope(w, r, ScopeAdminWrite) {
 		return
 	}
 	if a.cron == nil {
@@ -102,8 +98,7 @@ func (a *AdminAPI) HandleCronUpdate(w http.ResponseWriter, r *http.Request) {
 
 // HandleCronDelete deletes a cron job.
 func (a *AdminAPI) HandleCronDelete(w http.ResponseWriter, r *http.Request) {
-	if !hasScope(r, ScopeAdminWrite) {
-		http.Error(w, "insufficient scope: need admin:write", http.StatusForbidden)
+	if !requireScope(w, r, ScopeAdminWrite) {
 		return
 	}
 	if a.cron == nil {
@@ -120,8 +115,7 @@ func (a *AdminAPI) HandleCronDelete(w http.ResponseWriter, r *http.Request) {
 
 // HandleCronTrigger manually triggers a cron job run.
 func (a *AdminAPI) HandleCronTrigger(w http.ResponseWriter, r *http.Request) {
-	if !hasScope(r, ScopeAdminWrite) {
-		http.Error(w, "insufficient scope: need admin:write", http.StatusForbidden)
+	if !requireScope(w, r, ScopeAdminWrite) {
 		return
 	}
 	if a.cron == nil {
@@ -138,8 +132,7 @@ func (a *AdminAPI) HandleCronTrigger(w http.ResponseWriter, r *http.Request) {
 
 // HandleCronRunHistory returns the turn history for a cron job's latest run.
 func (a *AdminAPI) HandleCronRunHistory(w http.ResponseWriter, r *http.Request) {
-	if !hasScope(r, ScopeAdminRead) {
-		http.Error(w, "insufficient scope: need admin:read", http.StatusForbidden)
+	if !requireScope(w, r, ScopeAdminRead) {
 		return
 	}
 	if a.cron == nil {

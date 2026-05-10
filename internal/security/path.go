@@ -14,8 +14,7 @@ func ValidateBaseDir(baseDir string) error {
 	return nil
 }
 
-// GetAllowedBaseDirs returns a copy of the current allowed base directories map.
-// Used for testing and diagnostics.
+// GetAllowedBaseDirs returns a defensive copy for testing.
 func GetAllowedBaseDirs() map[string]bool {
 	securityConfigMutex.RLock()
 	defer securityConfigMutex.RUnlock()
@@ -27,8 +26,7 @@ func GetAllowedBaseDirs() map[string]bool {
 	return result
 }
 
-// GetForbiddenWorkDirs returns a copy of the current forbidden work directories slice.
-// Used for testing and diagnostics.
+// GetForbiddenWorkDirs returns a defensive copy for testing.
 func GetForbiddenWorkDirs() []string {
 	securityConfigMutex.RLock()
 	defer securityConfigMutex.RUnlock()
