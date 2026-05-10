@@ -13,18 +13,7 @@ import (
 )
 
 func newCronUpdateCmd() *cobra.Command {
-	var (
-		configPath   string
-		schedule     string
-		message      string
-		description  string
-		workDir      string
-		botID        string
-		ownerID      string
-		timeoutSec   int
-		allowedTools string
-		enabled      *bool
-	)
+	var configPath string
 	cmd := &cobra.Command{
 		Use:   "update <id|name>",
 		Short: "Update a cron job",
@@ -42,7 +31,7 @@ Schedule format:
 					return err
 				}
 
-				if applyFlags(cmd, job, schedule, message, description, workDir, botID, ownerID, timeoutSec, allowedTools, enabled) {
+				if applyFlags(cmd, job) {
 					if err := cron.ValidateJob(job); err != nil {
 						return err
 					}
@@ -71,58 +60,80 @@ Schedule format:
 		},
 	}
 	configFlag(cmd, &configPath)
-	cmd.Flags().StringVar(&schedule, "schedule", "", "schedule expression")
-	cmd.Flags().StringVarP(&message, "message", "m", "", "prompt message")
-	cmd.Flags().StringVar(&description, "description", "", "job description")
-	cmd.Flags().StringVar(&workDir, "work-dir", "", "working directory")
-	cmd.Flags().StringVar(&botID, "bot-id", "", "bot ID")
-	cmd.Flags().StringVar(&ownerID, "owner-id", "", "owner ID")
-	cmd.Flags().IntVar(&timeoutSec, "timeout", 0, "execution timeout in seconds")
-	cmd.Flags().StringVar(&allowedTools, "allowed-tools", "", "comma-separated tool list")
-	enabled = cmd.Flags().Bool("enabled", true, "enable or disable the job")
+	cmd.Flags().String("schedule", "", "schedule expression")
+	cmd.Flags().StringP("message", "m", "", "prompt message")
+	cmd.Flags().String("description", "", "job description")
+	cmd.Flags().String("work-dir", "", "working directory")
+	cmd.Flags().String("bot-id", "", "bot ID")
+	cmd.Flags().String("owner-id", "", "owner ID")
+	cmd.Flags().Int("timeout", 0, "execution timeout in seconds")
+	cmd.Flags().String("allowed-tools", "", "comma-separated tool list")
+	cmd.Flags().Bool("enabled", true, "enable or disable the job")
+	cmd.Flags().Bool("delete-after-run", false, "delete one-shot job after execution")
+	cmd.Flags().Int("max-retries", 0, "max retries for failed one-shot jobs")
+	cmd.Flags().Int("max-runs", 0, "max executions before auto-disable (0=unlimited)")
+	cmd.Flags().String("expires-at", "", "auto-disable after this time (RFC3339)")
 	return cmd
 }
 
 // applyFlags applies changed CLI flags to the job and returns true if any were changed.
-func applyFlags(cmd *cobra.Command, job *cron.CronJob, schedule, message, description, workDir, botID, ownerID string, timeoutSec int, allowedTools string, enabled *bool) bool {
+func applyFlags(cmd *cobra.Command, job *cron.CronJob) bool {
 	changed := false
 
 	if cmd.Flags().Changed("schedule") {
-		if sched, err := croncli.ParseSchedule(schedule); err == nil {
+		raw, _ := cmd.Flags().GetString("schedule")
+		if sched, err := croncli.ParseSchedule(raw); err == nil {
 			job.Schedule = sched
 			changed = true
 		}
 	}
 	if cmd.Flags().Changed("message") {
-		job.Payload.Message = message
+		job.Payload.Message, _ = cmd.Flags().GetString("message")
 		changed = true
 	}
 	if cmd.Flags().Changed("description") {
-		job.Description = description
+		job.Description, _ = cmd.Flags().GetString("description")
 		changed = true
 	}
 	if cmd.Flags().Changed("work-dir") {
-		job.WorkDir = workDir
+		job.WorkDir, _ = cmd.Flags().GetString("work-dir")
 		changed = true
 	}
 	if cmd.Flags().Changed("bot-id") {
-		job.BotID = botID
+		job.BotID, _ = cmd.Flags().GetString("bot-id")
 		changed = true
 	}
 	if cmd.Flags().Changed("owner-id") {
-		job.OwnerID = ownerID
+		job.OwnerID, _ = cmd.Flags().GetString("owner-id")
 		changed = true
 	}
 	if cmd.Flags().Changed("timeout") {
-		job.TimeoutSec = timeoutSec
+		job.TimeoutSec, _ = cmd.Flags().GetInt("timeout")
 		changed = true
 	}
 	if cmd.Flags().Changed("allowed-tools") {
-		job.Payload.AllowedTools = strings.Split(allowedTools, ",")
+		raw, _ := cmd.Flags().GetString("allowed-tools")
+		job.Payload.AllowedTools = strings.Split(raw, ",")
 		changed = true
 	}
 	if cmd.Flags().Changed("enabled") {
-		job.Enabled = *enabled
+		job.Enabled, _ = cmd.Flags().GetBool("enabled")
+		changed = true
+	}
+	if cmd.Flags().Changed("delete-after-run") {
+		job.DeleteAfterRun, _ = cmd.Flags().GetBool("delete-after-run")
+		changed = true
+	}
+	if cmd.Flags().Changed("max-retries") {
+		job.MaxRetries, _ = cmd.Flags().GetInt("max-retries")
+		changed = true
+	}
+	if cmd.Flags().Changed("max-runs") {
+		job.MaxRuns, _ = cmd.Flags().GetInt("max-runs")
+		changed = true
+	}
+	if cmd.Flags().Changed("expires-at") {
+		job.ExpiresAt, _ = cmd.Flags().GetString("expires-at")
 		changed = true
 	}
 

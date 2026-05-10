@@ -214,7 +214,7 @@ func (s *Scheduler) GetJob(ctx context.Context, id string) (*CronJob, error) {
 	j, ok := s.jobs[id]
 	s.mu.Unlock()
 	if !ok {
-		return nil, fmt.Errorf("cron: job not found: %s", id)
+		return nil, fmt.Errorf("%w: %s", ErrJobNotFound, id)
 	}
 	return j.Clone(), nil
 }

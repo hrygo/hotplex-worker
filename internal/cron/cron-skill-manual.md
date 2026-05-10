@@ -63,7 +63,11 @@ hotplex cron create \
   [--description <描述>] \
   [--work-dir "$GATEWAY_WORK_DIR"] \
   [--timeout <秒>] \
-  [--allowed-tools <逗号分隔>]
+  [--allowed-tools <逗号分隔>] \
+  [--delete-after-run] \
+  [--max-retries <次数>] \
+  [--max-runs <次数>] \
+  [--expires-at <RFC3339>]
 ```
 
 **必填**：`--name`、`--schedule`、`-m`、`--bot-id`、`--owner-id`
@@ -98,6 +102,22 @@ hotplex cron create \
   -m "检查服务指标是否正常" \
   --bot-id "$GATEWAY_BOT_ID" --owner-id "$GATEWAY_USER_ID" \
   --timeout 120
+
+# 有生命周期的周期任务：30 分钟一次，最多 6 次，24 小时后过期
+hotplex cron create \
+  --name "hydration-remind" \
+  --schedule "every:30m" \
+  -m "提醒用户喝水" \
+  --bot-id "$GATEWAY_BOT_ID" --owner-id "$GATEWAY_USER_ID" \
+  --max-runs 6 --expires-at "$(date -d '+24 hours' +%Y-%m-%dT%H:%M:%S+08:00)"
+
+# 一次性延迟任务，失败自动重试，执行后自动删除
+hotplex cron create \
+  --name "deploy-check" \
+  --schedule "at:$(date -d '+1 hour' +%Y-%m-%dT%H:%M:%S+08:00)" \
+  -m "检查部署状态" \
+  --bot-id "$GATEWAY_BOT_ID" --owner-id "$GATEWAY_USER_ID" \
+  --delete-after-run --max-retries 3
 ```
 
 ### list — 列出任务
@@ -182,6 +202,10 @@ hotplex cron history <id|name> [--json]
 | `work_dir` | `--work-dir` | 否 | 取自 `$GATEWAY_WORK_DIR` |
 | `timeout_sec` | `--timeout` | 否 | 单次超时（秒），默认 5min |
 | `allowed_tools` | `--allowed-tools` | 否 | 逗号分隔 |
+| `delete_after_run` | `--delete-after-run` | 否 | 执行后自动删除（one-shot 适用） |
+| `max_retries` | `--max-retries` | 否 | 失败最大重试次数，默认 0 |
+| `max_runs` | `--max-runs` | 否 | 成功执行 N 次后自动 disable，默认 0（无限） |
+| `expires_at` | `--expires-at` | 否 | 过期时间（RFC3339），到期自动 disable |
 
 ## Admin API（备选）
 
@@ -212,7 +236,9 @@ hotplex cron history <id|name> [--json]
   "work_dir": "/path",
   "timeout_sec": 300,
   "delete_after_run": false,
-  "max_retries": 0
+  "max_retries": 0,
+  "max_runs": 0,
+  "expires_at": ""
 }
 ```
 
@@ -231,6 +257,8 @@ Schedule JSON 格式：
 | 创建失败 | 检查必填字段、schedule 格式、prompt ≤ 4KB |
 | 执行超时 | 按 `timeout_sec` 截断（默认 5min），状态标记 `timeout` |
 | 执行失败 | 自动指数退避重试（1min → 5min → 25min），受 `max_retries` 限制 |
+| 达到 max_runs | 成功执行次数达到上限后自动 disable |
+| 超过 expires_at | 到期后自动 disable |
 | 连续 5 次调度错误 | Job 自动 disable，需手动重新启用 |
 | One-shot 执行完成 | 自动 disable；若 `delete_after_run: true` 则自动删除 |
 | 网关重启 | 启动时自动加载未完成 Job，宽限期内的错过任务立即补执行 |

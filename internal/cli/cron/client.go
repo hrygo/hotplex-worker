@@ -110,27 +110,35 @@ func parseDurationMs(s string) (int64, error) {
 	return ms, nil
 }
 
+// JobCreateOptions groups lifecycle and optional parameters for job creation.
+type JobCreateOptions struct {
+	DeleteAfterRun bool
+	MaxRetries     int
+	MaxRuns        int
+	ExpiresAt      string
+}
+
 // PrepareJobForCreate builds a CronJob from CLI flags.
-func PrepareJobForCreate(name, scheduleRaw, message, description, workDir, botID, ownerID string, timeoutSec int, allowedTools []string) (*cron.CronJob, error) {
+func PrepareJobForCreate(name, scheduleRaw, message, description, workDir, botID, ownerID string, timeoutSec int, allowedTools []string, opts JobCreateOptions) (*cron.CronJob, error) {
 	sched, err := ParseSchedule(scheduleRaw)
 	if err != nil {
 		return nil, err
 	}
 	job := &cron.CronJob{
-		Name:        name,
-		Description: description,
-		Enabled:     true,
-		Schedule:    sched,
-		Payload: cron.CronPayload{
-			Kind:         cron.PayloadAgentTurn,
-			Message:      message,
-			AllowedTools: allowedTools,
-		},
-		WorkDir:    workDir,
-		BotID:      botID,
-		OwnerID:    ownerID,
-		Platform:   "cron",
-		TimeoutSec: timeoutSec,
+		Name:           name,
+		Description:    description,
+		Enabled:        true,
+		Schedule:       sched,
+		Payload:        cron.CronPayload{Kind: cron.PayloadAgentTurn, Message: message, AllowedTools: allowedTools},
+		WorkDir:        workDir,
+		BotID:          botID,
+		OwnerID:        ownerID,
+		Platform:       "cron",
+		TimeoutSec:     timeoutSec,
+		DeleteAfterRun: opts.DeleteAfterRun,
+		MaxRetries:     opts.MaxRetries,
+		MaxRuns:        opts.MaxRuns,
+		ExpiresAt:      opts.ExpiresAt,
 	}
 	if err := cron.ValidateJob(job); err != nil {
 		return nil, err

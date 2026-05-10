@@ -12,16 +12,20 @@ import (
 
 func newCronCreateCmd() *cobra.Command {
 	var (
-		configPath   string
-		name         string
-		schedule     string
-		message      string
-		description  string
-		workDir      string
-		botID        string
-		ownerID      string
-		timeoutSec   int
-		allowedTools string
+		configPath     string
+		name           string
+		schedule       string
+		message        string
+		description    string
+		workDir        string
+		botID          string
+		ownerID        string
+		timeoutSec     int
+		allowedTools   string
+		deleteAfterRun bool
+		maxRetries     int
+		maxRuns        int
+		expiresAt      string
 	)
 	cmd := &cobra.Command{
 		Use:   "create",
@@ -41,7 +45,12 @@ Schedule format:
 					tools = strings.Split(allowedTools, ",")
 				}
 
-				job, err := croncli.PrepareJobForCreate(name, schedule, message, description, workDir, botID, ownerID, timeoutSec, tools)
+				job, err := croncli.PrepareJobForCreate(name, schedule, message, description, workDir, botID, ownerID, timeoutSec, tools, croncli.JobCreateOptions{
+					DeleteAfterRun: deleteAfterRun,
+					MaxRetries:     maxRetries,
+					MaxRuns:        maxRuns,
+					ExpiresAt:      expiresAt,
+				})
 				if err != nil {
 					return err
 				}
@@ -69,6 +78,10 @@ Schedule format:
 	cmd.Flags().StringVar(&ownerID, "owner-id", "", "owner ID (required)")
 	cmd.Flags().IntVar(&timeoutSec, "timeout", 0, "execution timeout in seconds")
 	cmd.Flags().StringVar(&allowedTools, "allowed-tools", "", "comma-separated tool list")
+	cmd.Flags().BoolVar(&deleteAfterRun, "delete-after-run", false, "delete one-shot job after execution")
+	cmd.Flags().IntVar(&maxRetries, "max-retries", 0, "max retries for failed one-shot jobs")
+	cmd.Flags().IntVar(&maxRuns, "max-runs", 0, "max executions before auto-disable (0=unlimited)")
+	cmd.Flags().StringVar(&expiresAt, "expires-at", "", "auto-disable after this time (RFC3339)")
 	_ = cmd.MarkFlagRequired("name")
 	_ = cmd.MarkFlagRequired("schedule")
 	_ = cmd.MarkFlagRequired("message")
