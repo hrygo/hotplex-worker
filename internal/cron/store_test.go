@@ -61,7 +61,7 @@ func newTestStore(t *testing.T) *SQLiteStore {
 func helperJob(name string) *CronJob {
 	now := time.Now().UnixMilli()
 	return &CronJob{
-		ID:          generateJobID(),
+		ID:          GenerateJobID(),
 		Name:        name,
 		OwnerID:     "user1",
 		BotID:       "bot1",
@@ -259,7 +259,7 @@ func TestSQLiteStore_FieldsRoundtrip(t *testing.T) {
 
 	now := time.Now().UnixMilli()
 	job := &CronJob{
-		ID:          generateJobID(),
+		ID:          GenerateJobID(),
 		Name:        "full-fields",
 		Description: "a detailed description",
 		Enabled:     true,

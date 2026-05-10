@@ -144,7 +144,7 @@ func (s *Scheduler) CreateJob(ctx context.Context, job *CronJob) error {
 		return fmt.Errorf("cron: max jobs limit reached (%d)", s.maxJobs)
 	}
 	if job.ID == "" {
-		job.ID = generateJobID()
+		job.ID = GenerateJobID()
 	}
 	now := time.Now().UnixMilli()
 	job.CreatedAtMs = now
@@ -460,12 +460,22 @@ func (s *Scheduler) rebuildIndex() {
 	defer s.mu.Unlock()
 
 	s.jobs = make(map[string]*CronJob, len(jobs))
+	now := time.Now()
 	for _, j := range jobs {
+		if j.Enabled && j.State.NextRunAtMs <= 0 {
+			if next, err := NextRun(j.Schedule, now); err == nil && !next.IsZero() {
+				j.State.NextRunAtMs = next.UnixMilli()
+				if err := s.store.UpdateState(context.Background(), j.ID, j.State); err != nil {
+					s.log.Error("cron: persist next_run on reload", "job_id", j.ID, "err", err)
+				}
+			}
+		}
 		s.jobs[j.ID] = j
 	}
 }
 
-func generateJobID() string {
+// GenerateJobID creates a unique cron job identifier.
+func GenerateJobID() string {
 	return "cron_" + uuid.New().String()
 }
 

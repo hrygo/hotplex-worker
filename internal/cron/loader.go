@@ -84,7 +84,7 @@ func yamlDefToJob(def YAMLJobDef) (*CronJob, error) {
 
 	now := time.Now().UnixMilli()
 	job := &CronJob{
-		ID:          generateJobID(),
+		ID:          GenerateJobID(),
 		Name:        def.Name,
 		Description: def.Description,
 		Enabled:     true,

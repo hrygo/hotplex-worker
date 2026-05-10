@@ -236,7 +236,7 @@ func TestMaxTimerInterval(t *testing.T) {
 }
 
 func TestGenerateJobID(t *testing.T) {
-	id := generateJobID()
+	id := GenerateJobID()
 	require.True(t, strings.HasPrefix(id, "cron_"))
 	require.Len(t, id, 5+36) // "cron_" (5) + UUID (36) = 41
 }

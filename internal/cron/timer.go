@@ -118,6 +118,12 @@ func (tl *timerLoop) onTick() {
 		// Execute with concurrency cap.
 		if !tl.tryAcquireSlot(s.maxConcurrent) {
 			s.log.Warn("cron: concurrency cap reached, skipping job", "job_id", job.ID)
+			// For at schedules: debounce to prevent 1-second busy-loop.
+			// putJob already stored the job; re-put with short future time.
+			if job.Schedule.Kind == ScheduleAt {
+				job.State.NextRunAtMs = now.Add(10 * time.Second).UnixMilli()
+				s.putJob(job)
+			}
 			continue
 		}
 

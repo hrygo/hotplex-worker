@@ -135,6 +135,15 @@ func PrepareJobForCreate(name, scheduleRaw, message, description, workDir, botID
 	if err := cron.ValidateJob(job); err != nil {
 		return nil, err
 	}
+
+	job.ID = cron.GenerateJobID()
+
+	next, err := cron.NextRun(sched, time.Now())
+	if err != nil {
+		return nil, fmt.Errorf("cron: compute initial next run: %w", err)
+	}
+	job.State.NextRunAtMs = next.UnixMilli()
+
 	return job, nil
 }
 
