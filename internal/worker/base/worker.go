@@ -21,7 +21,9 @@ var (
 )
 
 // Grace period for graceful worker shutdown.
-const GracefulShutdownTimeout = 5 * time.Second
+// Canonical constant lives in proc.DefaultGracePeriod; referenced here for
+// backward compatibility with existing callers.
+const GracefulShutdownTimeout = proc.DefaultGracePeriod
 
 // BaseWorker provides shared lifecycle methods for CLI-based worker adapters.
 // Embed this struct to get Terminate/Kill/Wait/Health/LastIO/Conn for free.

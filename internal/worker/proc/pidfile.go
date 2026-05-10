@@ -306,7 +306,7 @@ func (t *Tracker) cleanupSingle(ctx context.Context, match string) CleanupResult
 	}
 
 	// Wait for graceful shutdown.
-	graceTimer := time.NewTimer(5 * time.Second)
+	graceTimer := time.NewTimer(DefaultGracePeriod)
 	defer graceTimer.Stop()
 
 	select {

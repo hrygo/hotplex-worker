@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -644,17 +643,15 @@ func TestDefaultIntentRouterConfig(t *testing.T) {
 // ========================================
 
 func TestRoute_NilRouter(t *testing.T) {
-	oldRouter := globalIntentRouter
+	oldRouter := globalIntentRouter.Load()
 	oldBrain := globalBrain
 	defer func() {
-		globalIntentRouter = oldRouter
-		globalRouterOnce = sync.Once{}
+		globalIntentRouter.Store(oldRouter)
 		globalBrain = oldBrain
 	}()
 
 	globalBrain = nil
-	globalIntentRouter = nil
-	globalRouterOnce = sync.Once{}
+	globalIntentRouter.Store(nil)
 
 	result := Route(context.Background(), "hello")
 	assert.Equal(t, IntentTypeTask, result.Type)
@@ -663,16 +660,14 @@ func TestRoute_NilRouter(t *testing.T) {
 
 func TestIsRelevant_NilRouter(t *testing.T) {
 	// Save and restore all global state
-	oldRouter := globalIntentRouter
+	oldRouter := globalIntentRouter.Load()
 	oldBrain := globalBrain
 	defer func() {
-		globalIntentRouter = oldRouter
-		globalRouterOnce = sync.Once{}
+		globalIntentRouter.Store(oldRouter)
 		globalBrain = oldBrain
 	}()
 	globalBrain = nil
-	globalIntentRouter = nil
-	globalRouterOnce = sync.Once{}
+	globalIntentRouter.Store(nil)
 
 	assert.True(t, IsRelevant(context.Background(), "hello", true))
 	assert.False(t, IsRelevant(context.Background(), "hello", false))
@@ -680,16 +675,14 @@ func TestIsRelevant_NilRouter(t *testing.T) {
 
 func TestQuickResponse_NilRouter(t *testing.T) {
 	oldBrain := globalBrain
-	oldRouter := globalIntentRouter
+	oldRouter := globalIntentRouter.Load()
 	defer func() {
 		globalBrain = oldBrain
-		globalIntentRouter = oldRouter
-		globalRouterOnce = sync.Once{}
+		globalIntentRouter.Store(oldRouter)
 	}()
 
 	SetGlobal(nil)
-	globalIntentRouter = nil
-	globalRouterOnce = sync.Once{}
+	globalIntentRouter.Store(nil)
 
 	// Pass a non-nil intent to avoid nil pointer dereference in GenerateResponse
 	_, err := QuickResponse(context.Background(), "hello", &IntentResult{Response: "hi"})
@@ -793,14 +786,14 @@ func TestIntentRouter_ConcurrentRoute(t *testing.T) {
 func TestInitIntentRouter_NoBrain(t *testing.T) {
 	// Save and restore
 	oldBrain := globalBrain
-	oldRouter := globalIntentRouter
+	oldRouter := globalIntentRouter.Load()
 	defer func() {
 		globalBrain = oldBrain
-		globalIntentRouter = oldRouter
+		globalIntentRouter.Store(oldRouter)
 	}()
 
 	SetGlobal(nil)
-	globalIntentRouter = nil
+	globalIntentRouter.Store(nil)
 
 	InitIntentRouter(IntentRouterConfig{Enabled: true}, slog.Default())
 	// Should not create router when brain is nil
@@ -839,10 +832,9 @@ func TestLengthConstants(t *testing.T) {
 // ========================================
 
 func TestRoute_WithRouter(t *testing.T) {
-	oldRouter := globalIntentRouter
+	oldRouter := globalIntentRouter.Load()
 	defer func() {
-		globalIntentRouter = oldRouter
-		globalRouterOnce = sync.Once{}
+		globalIntentRouter.Store(oldRouter)
 	}()
 
 	mockBrain := &mockBrainForRouter{
@@ -850,8 +842,7 @@ func TestRoute_WithRouter(t *testing.T) {
 			return json.Unmarshal([]byte(`{"intent": "task", "confidence": 0.9, "reason": "code question"}`), target)
 		},
 	}
-	globalIntentRouter = NewIntentRouter(mockBrain, IntentRouterConfig{Enabled: true}, slog.Default())
-	globalRouterOnce = sync.Once{}
+	globalIntentRouter.Store(NewIntentRouter(mockBrain, IntentRouterConfig{Enabled: true}, slog.Default()))
 
 	result := Route(context.Background(), "write a function to sort an array")
 	assert.NotNil(t, result)
@@ -915,11 +906,10 @@ func TestIsRelevant_DisabledRouter(t *testing.T) {
 }
 
 func TestQuickResponse_WithRouter(t *testing.T) {
-	oldRouter := globalIntentRouter
+	oldRouter := globalIntentRouter.Load()
 	oldBrain := globalBrain
 	defer func() {
-		globalIntentRouter = oldRouter
-		globalRouterOnce = sync.Once{}
+		globalIntentRouter.Store(oldRouter)
 		globalBrain = oldBrain
 	}()
 
@@ -930,8 +920,7 @@ func TestQuickResponse_WithRouter(t *testing.T) {
 		},
 	}
 	SetGlobal(mockBrain)
-	globalIntentRouter = nil
-	globalRouterOnce = sync.Once{}
+	globalIntentRouter.Store(nil)
 
 	intent := &IntentResult{Type: IntentTypeChat}
 	resp, err := QuickResponse(context.Background(), "hello", intent)
@@ -940,18 +929,16 @@ func TestQuickResponse_WithRouter(t *testing.T) {
 }
 
 func TestQuickResponse_WithPrecomputedResponse(t *testing.T) {
-	oldRouter := globalIntentRouter
+	oldRouter := globalIntentRouter.Load()
 	oldBrain := globalBrain
 	defer func() {
-		globalIntentRouter = oldRouter
-		globalRouterOnce = sync.Once{}
+		globalIntentRouter.Store(oldRouter)
 		globalBrain = oldBrain
 	}()
 
 	mockBrain := &mockBrainForRouter{}
 	SetGlobal(mockBrain)
-	globalIntentRouter = nil
-	globalRouterOnce = sync.Once{}
+	globalIntentRouter.Store(nil)
 
 	intent := &IntentResult{Type: IntentTypeChat, Response: "Pong!"}
 	resp, err := QuickResponse(context.Background(), "ping", intent)
@@ -961,14 +948,14 @@ func TestQuickResponse_WithPrecomputedResponse(t *testing.T) {
 
 func TestInitIntentRouter_WithBrain(t *testing.T) {
 	oldBrain := globalBrain
-	oldRouter := globalIntentRouter
+	oldRouter := globalIntentRouter.Load()
 	defer func() {
 		globalBrain = oldBrain
-		globalIntentRouter = oldRouter
+		globalIntentRouter.Store(oldRouter)
 	}()
 
 	SetGlobal(&mockBrainForRouter{})
-	globalIntentRouter = nil
+	globalIntentRouter.Store(nil)
 
 	InitIntentRouter(IntentRouterConfig{Enabled: true}, slog.Default())
 	assert.NotNil(t, GlobalIntentRouter())
