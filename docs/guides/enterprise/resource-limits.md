@@ -115,7 +115,7 @@ Session 结束 → PoolManager.Release(userID)
 
 ```promql
 # Pool 利用率
-hotplex_pool_utilization{instance="gateway:9999"}
+hotplex_pool_utilization_ratio{instance="gateway:9999"}
 
 # 配额拒绝率
 rate(hotplex_pool_acquire_total{result="pool_exhausted"}[5m])

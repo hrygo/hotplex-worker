@@ -69,6 +69,7 @@ difficulty: beginner
 | `$clear` | `/clear` | `$清空` | `/clear` |
 | `$rewind` | `/rewind` | `$回退` | `/rewind` |
 | `$commit` | `/commit` | `$提交` | `/commit` |
+| `$cd` | `/cd` | `$切换目录` | `/cd` |
 
 ---
 

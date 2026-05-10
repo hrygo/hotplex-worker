@@ -59,10 +59,6 @@ ConfigChange{
 Watcher 维护 **64 个版本**的完整配置快照：
 
 ```bash
-# 查看配置历史
-curl -H "Authorization: Bearer $ADMIN_TOKEN" \
-  http://localhost:9999/admin/config/history
-
 # 回滚到上一个版本
 curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" \
   http://localhost:9999/admin/config/rollback?version=1

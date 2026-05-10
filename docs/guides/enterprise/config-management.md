@@ -113,10 +113,6 @@ Watcher 维护最多 **64 个版本**的完整配置快照：
 ### 回滚操作
 
 ```bash
-# 查看当前配置版本
-curl -H "Authorization: Bearer $ADMIN_TOKEN" \
-  http://localhost:9999/admin/config/history | jq length
-
 # 回滚到上一个版本
 curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" \
   http://localhost:9999/admin/config/rollback?version=1

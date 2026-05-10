@@ -99,7 +99,7 @@ hotplex gateway start -d
 hotplex status
 ```
 
-输出中应包含 `slack ✓`（或类似标记），表示 Socket Mode 已连接。
+输出中应包含 health endpoint 返回 200 的状态，表示 Socket Mode 已连接。
 
 **验证**：`hotplex status` 显示 Slack 连接正常。
 
@@ -196,4 +196,4 @@ Bot 注册了两个斜杠命令：
 
 ---
 
-**下一步**：配置 [Agent 人格](../reference/agent-config.md) 或探索 [飞书集成](./feishu-integration.md)。
+**下一步**：配置 [Agent 人格](../reference/configuration.md) 或探索 [飞书集成](./feishu-integration.md)。

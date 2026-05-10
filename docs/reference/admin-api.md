@@ -81,7 +81,6 @@ Rate Limit 和 IP Whitelist 支持配置热重载，无需重启生效。
 |------|------|-------|------|
 | GET | `/admin/sessions` | `session:read` | 列出会话（分页） |
 | GET | `/admin/sessions/{id}` | `session:read` | 获取单个会话 |
-| POST | `/admin/sessions` | `session:write` | 创建会话 |
 | DELETE | `/admin/sessions/{id}` | `session:delete` | 物理删除会话 |
 | POST | `/admin/sessions/{id}/terminate` | `session:write` | 终止会话（状态迁移） |
 | GET | `/admin/sessions/{id}/stats` | `session:read` | 会话 Turn 统计 |
@@ -100,26 +99,9 @@ curl -H "Authorization: Bearer $TOKEN" \
 | `platform` | string | "" | 按平台过滤 |
 | `user_id` | string | "" | 按用户过滤 |
 
-**POST /admin/sessions** — 通过 query 参数创建：
-
-```bash
-curl -X POST -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:9999/admin/sessions?worker_type=claude_code&user_id=U12345"
-```
-
-| 参数 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `session_id` | string | 自动生成 | 指定 session ID |
-| `user_id` | string | "anonymous" | 用户标识 |
-| `worker_type` | string | "claude_code" | Worker 类型 |
-
-响应：
-
-```json
-{ "session_id": "550e8400-e29b-41d4-a716-446655440000" }
-```
-
 **POST /admin/sessions/{id}/terminate** — 将会话状态迁移至 `terminated`（软终止，保留记录）。DELETE 则为物理删除。
+
+> **注意**：会话创建不通过 Admin API，而是通过 Gateway API（`POST /api/sessions`）或 WebSocket `init` 握手完成。Admin API 仅提供只读查询和终止/删除操作。
 
 ### 监控指标
 
@@ -174,6 +156,22 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 | GET | `/api/cron/jobs/{id}/runs` | `admin:read` | 执行历史 |
 
 Cron 未启用时返回 `503 Service Unavailable`。
+
+## Gateway API 端点
+
+Gateway API（`/api/sessions`）监听在网关主端口（`8888`），面向客户端 SDK 和 WebSocket 连接，使用 API Key 或 JWT 认证（非 Bearer Token）。
+
+| 方法 | 路径 | 认证 | 说明 |
+|------|------|------|------|
+| GET | `/api/sessions` | API Key / JWT | 列出当前用户的会话 |
+| POST | `/api/sessions` | API Key / JWT | 创建会话 |
+| GET | `/api/sessions/{id}` | API Key / JWT | 获取单个会话 |
+| DELETE | `/api/sessions/{id}` | API Key / JWT | 删除会话 |
+| POST | `/api/sessions/{id}/cd` | API Key / JWT | 切换工作目录 |
+| GET | `/api/sessions/{id}/history` | API Key / JWT | 获取会话历史 |
+| GET | `/api/sessions/{id}/events` | API Key / JWT | 获取会话事件流 |
+
+所有 Gateway API 端点启用 CORS（`Access-Control-Allow-Origin: *`），支持 `GET`、`POST`、`DELETE`、`OPTIONS` 方法。
 
 **POST /api/cron/jobs** — JSON body 含 `name`、`schedule`（cron:/every:/at: 前缀）、`message`、`bot_id`、`owner_id`、`enabled`。返回 `201 Created`。
 

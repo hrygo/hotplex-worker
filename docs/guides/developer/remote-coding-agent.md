@@ -59,7 +59,7 @@ Slack/飞书消息 → HotPlex Gateway → Claude Code Worker → 执行 → 结
 
 ## 自动重试
 
-LLM 错误（429/529/网络抖动）自动重试，最多 **9 次**指数退避。覆盖 `429`、`529`、`500-503`、`network timeout`。不需要手动发"继续"。
+LLM 错误自动重试，最多 **9 次**指数退避。覆盖以下错误模式：`429`（rate limit）、`529`（overloaded）、`500`、`502`、`503`（server error）、`INTERNAL_ERROR`（API 内部错误）、`network timeout` / `connection reset`。不需要手动发"继续"。
 
 ---
 

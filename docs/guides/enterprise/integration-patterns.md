@@ -92,9 +92,9 @@ curl -H "Authorization: Bearer $ADMIN_TOKEN" \
 curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" \
   http://localhost:9999/admin/sessions/gc
 
-# 配置热重载验证
-curl -H "Authorization: Bearer $ADMIN_TOKEN" \
-  http://localhost:9999/admin/config/history | jq '.[0]'
+# 配置回滚（CI/CD 安全网）
+curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" \
+  http://localhost:9999/admin/config/rollback?version=1
 ```
 
 ### GitHub Actions 示例
@@ -141,7 +141,7 @@ scrape_configs:
 
 | 指标 | 类型 | 说明 |
 |------|------|------|
-| `hotplex_pool_utilization` | Gauge | Session 池利用率 |
+| `hotplex_pool_utilization_ratio` | Gauge | Session 池利用率 |
 | `hotplex_pool_acquire_total` | Counter | 配额获取（按 result 分维） |
 | `hotplex_session_active` | Gauge | 活跃 Session 数 |
 | `hotplex_worker_memory_bytes` | Gauge | Worker 内存估算 |
@@ -164,7 +164,7 @@ groups:
   - name: hotplex
     rules:
       - alert: HotPlexPoolExhausted
-        expr: hotplex_pool_utilization > 0.9
+        expr: hotplex_pool_utilization_ratio > 0.9
         for: 5m
         labels:
           severity: warning
