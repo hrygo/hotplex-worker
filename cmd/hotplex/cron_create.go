@@ -48,13 +48,20 @@ Schedule format:
 					tools = strings.Split(allowedTools, ",")
 				}
 
+				var platformKeyMap map[string]string
+				if platformKey != "" {
+					if err := json.Unmarshal([]byte(platformKey), &platformKeyMap); err != nil {
+						return fmt.Errorf("invalid --platform-key: expected JSON object, got %q", platformKey)
+					}
+				}
+
 				job, err := croncli.PrepareJobForCreate(name, schedule, message, description, workDir, botID, ownerID, timeoutSec, tools, croncli.JobCreateOptions{
 					DeleteAfterRun: deleteAfterRun,
 					MaxRetries:     maxRetries,
 					MaxRuns:        maxRuns,
 					ExpiresAt:      expiresAt,
 					Platform:       platform,
-					PlatformKey:    parsePlatformKey(platformKey),
+					PlatformKey:    platformKeyMap,
 				})
 				if err != nil {
 					return err
@@ -95,17 +102,4 @@ Schedule format:
 	_ = cmd.MarkFlagRequired("bot-id")
 	_ = cmd.MarkFlagRequired("owner-id")
 	return cmd
-}
-
-// parsePlatformKey parses a JSON object string into a map[string]string.
-// Returns nil for empty input.
-func parsePlatformKey(raw string) map[string]string {
-	if raw == "" {
-		return nil
-	}
-	var m map[string]string
-	if err := json.Unmarshal([]byte(raw), &m); err != nil {
-		return nil
-	}
-	return m
 }
