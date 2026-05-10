@@ -99,21 +99,43 @@ type Envelope struct {
 // Clone returns a copy of the Envelope safe for concurrent use.
 // The copy has independent value-type fields (Version, Timestamp, etc.)
 // so EncodeJSON's in-place mutations on the original do not affect the copy.
-// Event.Data is shared since event payloads are never mutated after creation.
+// map[string]any Event.Data is recursively deep-copied so that nested
+// mutable reference types (maps, slices) are never shared.
 func Clone(env *Envelope) *Envelope {
 	if env == nil {
 		return &Envelope{}
 	}
 	c := *env
-	// Deep copy map[string]any data to prevent sharing mutable reference types.
 	if m, ok := env.Event.Data.(map[string]any); ok && m != nil {
-		dst := make(map[string]any, len(m))
-		for k, v := range m {
-			dst[k] = v
-		}
-		c.Event.Data = dst
+		c.Event.Data = deepCopyMap(m)
 	}
 	return &c
+}
+
+// deepCopyMap returns a fully independent copy of a map[string]any,
+// recursively copying nested maps and slices.
+func deepCopyMap(src map[string]any) map[string]any {
+	dst := make(map[string]any, len(src))
+	for k, v := range src {
+		dst[k] = deepCopyValue(v)
+	}
+	return dst
+}
+
+// deepCopyValue returns an independent copy of v for reference types.
+func deepCopyValue(v any) any {
+	switch cv := v.(type) {
+	case map[string]any:
+		return deepCopyMap(cv)
+	case []any:
+		dst := make([]any, len(cv))
+		for i, elem := range cv {
+			dst[i] = deepCopyValue(elem)
+		}
+		return dst
+	default:
+		return v
+	}
 }
 
 // CloneDeep returns a deep copy via JSON round-trip for use cases that need
