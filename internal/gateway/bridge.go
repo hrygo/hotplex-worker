@@ -136,6 +136,7 @@ func (b *Bridge) StartSession(ctx context.Context, id, userID, botID string, wt 
 			workerInfo.Env["HOTPLEX_SLACK_THREAD_TS"] = threadTS
 		}
 	}
+	injectGatewayContext(workerInfo.Env, platform, botID, userID, platformKey, id, workDir)
 
 	if _, err := b.createAndLaunchWorker(workerLaunchParams{
 		ctx:         ctx,
@@ -547,6 +548,44 @@ func sanitizeLastInput(input string) string {
 		return ""
 	}
 	return strings.Join(filtered, "\n")
+}
+
+// firstNonEmpty returns the first non-empty string from the given values.
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// injectGatewayContext injects unified GATEWAY_* environment variables into
+// the worker env map. These vars provide platform-agnostic runtime context so
+// workers can call platform APIs, construct paths, and understand their session
+// without parsing logs or gateway internals.
+//
+// Existing HOTPLEX_SLACK_* vars are preserved for backward compatibility.
+func injectGatewayContext(env map[string]string, platform, botID, userID string, platformKey map[string]string, sessionID, workDir string) {
+	if env == nil {
+		return
+	}
+	env["GATEWAY_PLATFORM"] = platform
+	env["GATEWAY_BOT_ID"] = botID
+	env["GATEWAY_USER_ID"] = userID
+	env["GATEWAY_SESSION_ID"] = sessionID
+	if workDir != "" {
+		env["GATEWAY_WORK_DIR"] = workDir
+	}
+	if chID := firstNonEmpty(platformKey["channel_id"], platformKey["chat_id"]); chID != "" {
+		env["GATEWAY_CHANNEL_ID"] = chID
+	}
+	if threadID := firstNonEmpty(platformKey["thread_ts"], platformKey["message_id"]); threadID != "" {
+		env["GATEWAY_THREAD_ID"] = threadID
+	}
+	if teamID := platformKey["team_id"]; teamID != "" {
+		env["GATEWAY_TEAM_ID"] = teamID
+	}
 }
 
 func (b *Bridge) sendError(sessionID string, code events.ErrorCode, format string, args ...any) {

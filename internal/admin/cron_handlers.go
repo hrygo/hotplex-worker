@@ -35,7 +35,7 @@ func (a *AdminAPI) HandleCronList(w http.ResponseWriter, r *http.Request) {
 // HandleCronGet returns a single cron job.
 func (a *AdminAPI) HandleCronGet(w http.ResponseWriter, r *http.Request) {
 	if a.cron == nil {
-		http.Error(w, "cron not enabled", http.StatusNotFound)
+		http.Error(w, "cron scheduler not enabled", http.StatusServiceUnavailable)
 		return
 	}
 	id := r.PathValue("id")
@@ -50,7 +50,7 @@ func (a *AdminAPI) HandleCronGet(w http.ResponseWriter, r *http.Request) {
 // HandleCronCreate creates a new cron job.
 func (a *AdminAPI) HandleCronCreate(w http.ResponseWriter, r *http.Request) {
 	if a.cron == nil {
-		http.Error(w, "cron not enabled", http.StatusNotFound)
+		http.Error(w, "cron scheduler not enabled", http.StatusServiceUnavailable)
 		return
 	}
 	var body map[string]any
@@ -68,7 +68,7 @@ func (a *AdminAPI) HandleCronCreate(w http.ResponseWriter, r *http.Request) {
 // HandleCronUpdate updates an existing cron job.
 func (a *AdminAPI) HandleCronUpdate(w http.ResponseWriter, r *http.Request) {
 	if a.cron == nil {
-		http.Error(w, "cron not enabled", http.StatusNotFound)
+		http.Error(w, "cron scheduler not enabled", http.StatusServiceUnavailable)
 		return
 	}
 	id := r.PathValue("id")
@@ -87,7 +87,7 @@ func (a *AdminAPI) HandleCronUpdate(w http.ResponseWriter, r *http.Request) {
 // HandleCronDelete deletes a cron job.
 func (a *AdminAPI) HandleCronDelete(w http.ResponseWriter, r *http.Request) {
 	if a.cron == nil {
-		http.Error(w, "cron not enabled", http.StatusNotFound)
+		http.Error(w, "cron scheduler not enabled", http.StatusServiceUnavailable)
 		return
 	}
 	id := r.PathValue("id")
@@ -101,7 +101,7 @@ func (a *AdminAPI) HandleCronDelete(w http.ResponseWriter, r *http.Request) {
 // HandleCronTrigger manually triggers a cron job run.
 func (a *AdminAPI) HandleCronTrigger(w http.ResponseWriter, r *http.Request) {
 	if a.cron == nil {
-		http.Error(w, "cron not enabled", http.StatusNotFound)
+		http.Error(w, "cron scheduler not enabled", http.StatusServiceUnavailable)
 		return
 	}
 	id := r.PathValue("id")
@@ -115,7 +115,7 @@ func (a *AdminAPI) HandleCronTrigger(w http.ResponseWriter, r *http.Request) {
 // HandleCronRunHistory returns the turn history for a cron job's latest run.
 func (a *AdminAPI) HandleCronRunHistory(w http.ResponseWriter, r *http.Request) {
 	if a.cron == nil {
-		http.Error(w, "cron not enabled", http.StatusNotFound)
+		http.Error(w, "cron scheduler not enabled", http.StatusServiceUnavailable)
 		return
 	}
 	id := r.PathValue("id")

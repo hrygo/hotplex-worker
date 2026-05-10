@@ -202,7 +202,9 @@ func TestOnTick_AutoDisableAfterScheduleErrors(t *testing.T) {
 
 	s.tickLoop.onTick()
 
-	require.False(t, job.Enabled, "job should be auto-disabled after 5 consecutive schedule errors")
+	// collectDue returns clones, so read updated state from the map.
+	got := s.jobs[job.ID]
+	require.False(t, got.Enabled, "job should be auto-disabled after 5 consecutive schedule errors")
 }
 
 func TestContainsAny(t *testing.T) {

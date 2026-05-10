@@ -227,3 +227,14 @@ messaging:
     require_mention: true
     # Override shared defaults here if needed, e.g.:
     # tts_provider: "edge"
+
+# ── Cron Scheduler ─────────────────────────────────────────────────────────
+# AI-native cronjob engine: natural language prompt as payload, results
+# delivered to the creator's platform (Feishu card / Slack message).
+# Docs: https://github.com/hrygo/hotplex/tree/main/internal/cron
+cron:
+  enabled: true
+  # max_concurrent_runs: 3      # Max parallel job executions
+  # max_jobs: 50                # Max registered jobs
+  # default_timeout_sec: 300    # Per-job timeout (5 min)
+  # tick_interval_sec: 60       # Scheduler tick interval

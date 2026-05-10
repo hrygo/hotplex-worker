@@ -210,7 +210,7 @@ func (s *Scheduler) DeleteJob(ctx context.Context, id string) error {
 	return nil
 }
 
-// GetJob returns a job by ID.
+// GetJob returns a clone of the job by ID.
 func (s *Scheduler) GetJob(ctx context.Context, id string) (*CronJob, error) {
 	s.mu.Lock()
 	j, ok := s.jobs[id]
@@ -218,27 +218,28 @@ func (s *Scheduler) GetJob(ctx context.Context, id string) (*CronJob, error) {
 	if !ok {
 		return nil, fmt.Errorf("cron: job not found: %s", id)
 	}
-	return j, nil
+	return j.Clone(), nil
 }
 
-// ListJobs returns all jobs.
+// ListJobs returns clones of all jobs.
 func (s *Scheduler) ListJobs(ctx context.Context) ([]*CronJob, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	result := make([]*CronJob, 0, len(s.jobs))
 	for _, j := range s.jobs {
-		result = append(result, j)
+		result = append(result, j.Clone())
 	}
 	return result, nil
 }
 
 // TriggerJob manually triggers a job execution outside of its schedule.
 func (s *Scheduler) TriggerJob(ctx context.Context, job *CronJob) error {
+	j := job.Clone()
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
-		s.executeJob(job)
+		s.executeJob(j)
 	}()
 	return nil
 }
@@ -356,7 +357,7 @@ func (s *Scheduler) scheduleCatchUp(jobs []*CronJob) {
 		if i >= 5 {
 			delay = (i - 5 + 1) * 5 // 5s, 10s, 15s, ...
 		}
-		jobCopy := job
+		j := job.Clone()
 		s.wg.Add(1)
 		go func(d int) {
 			defer s.wg.Done()
@@ -366,13 +367,14 @@ func (s *Scheduler) scheduleCatchUp(jobs []*CronJob) {
 			if s.closed.Load() {
 				return
 			}
-			s.log.Info("cron: catch-up executing", "job_id", jobCopy.ID, "name", jobCopy.Name, "delay_sec", d)
-			s.executeJob(jobCopy)
+			s.log.Info("cron: catch-up executing", "job_id", j.ID, "name", j.Name, "delay_sec", d)
+			s.executeJob(j)
 		}(delay)
 	}
 }
 
-// collectDue returns all enabled jobs whose next_run_at_ms <= now.
+// collectDue returns clones of all enabled jobs whose next_run_at_ms <= now.
+// Returns copies so callers can mutate without racing with the map.
 func (s *Scheduler) collectDue(now time.Time) []*CronJob {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -383,7 +385,7 @@ func (s *Scheduler) collectDue(now time.Time) []*CronJob {
 			continue
 		}
 		if job.State.NextRunAtMs > 0 && job.State.NextRunAtMs <= now.UnixMilli() {
-			due = append(due, job)
+			due = append(due, job.Clone())
 		}
 	}
 	return due
@@ -413,6 +415,24 @@ func (s *Scheduler) nextTickDuration(now time.Time) time.Duration {
 		return time.Second
 	}
 	return d
+}
+
+// putJob writes a job clone back to the in-memory index under s.mu.
+// Silently skips if the job was deleted from the index.
+func (s *Scheduler) putJob(job *CronJob) {
+	s.mu.Lock()
+	if _, ok := s.jobs[job.ID]; ok {
+		s.jobs[job.ID] = job
+	}
+	s.mu.Unlock()
+}
+
+// ReloadIndex refreshes the in-memory index from the store and re-arms the timer.
+// Called externally (e.g. via SIGHUP) after CLI mutations.
+func (s *Scheduler) ReloadIndex() {
+	s.rebuildIndex()
+	s.tickLoop.arm(s.nextTickDuration(time.Now()))
+	s.log.Info("cron: index reloaded")
 }
 
 // rebuildIndex refreshes the in-memory index from the store.

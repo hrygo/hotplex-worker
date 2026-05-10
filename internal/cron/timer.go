@@ -92,8 +92,10 @@ func (tl *timerLoop) onTick() {
 			if err := s.store.Update(s.ctx, job); err != nil {
 				s.log.Error("cron: persist disabled job", "job_id", job.ID, "err", err)
 			}
+			s.putJob(job)
 			continue
 		}
+		s.putJob(job)
 
 		// Execute with concurrency cap.
 		if int(tl.running.Load()) >= s.maxConcurrent {
@@ -121,15 +123,17 @@ func (tl *timerLoop) onTick() {
 }
 
 // executeJob runs a single job and updates its state.
+// The job must be a clone (not a shared map pointer).
 func (s *Scheduler) executeJob(job *CronJob) {
 	now := time.Now().UnixMilli()
 	job.State.RunningAtMs = now
 	if err := s.store.UpdateState(s.ctx, job.ID, job.State); err != nil {
 		s.log.Error("cron: persist running state", "job_id", job.ID, "err", err)
 	}
+	s.putJob(job)
 
 	timeout := s.jobTimeout(job)
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(s.ctx, timeout)
 	defer cancel()
 
 	start := time.Now()
@@ -150,7 +154,7 @@ func (s *Scheduler) executeJob(job *CronJob) {
 
 		// One-shot retry logic.
 		if job.Schedule.Kind == ScheduleAt && isTemporaryError(err) && job.State.RetryCount < maxRetries(job) {
-			s.scheduleRetry(context.Background(), job)
+			s.scheduleRetry(s.ctx, job)
 			return
 		}
 	} else {
@@ -158,7 +162,7 @@ func (s *Scheduler) executeJob(job *CronJob) {
 		job.State.ConsecutiveErrs = 0
 		resetRetry(job)
 		if s.delivery != nil {
-			s.delivery.Deliver(context.Background(), job, sessionKey)
+			s.delivery.Deliver(s.ctx, job, sessionKey)
 		}
 	}
 
@@ -179,6 +183,7 @@ func (s *Scheduler) executeJob(job *CronJob) {
 	if err := s.store.UpdateState(s.ctx, job.ID, job.State); err != nil {
 		s.log.Error("cron: persist final state", "job_id", job.ID, "err", err)
 	}
+	s.putJob(job)
 }
 
 // jobTimeout returns the timeout for a job, falling back to the scheduler default.

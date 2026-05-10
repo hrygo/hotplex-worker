@@ -384,21 +384,40 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 		RetryDelay:      cfg.Worker.AutoRetry.BaseDelay.String(),
 	}, configPath)
 
-	// Wait for shutdown signal
+	// Wait for shutdown signal or SIGHUP reload
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+	if runtime.GOOS != "windows" {
+		signal.Notify(sig, syscall.SIGHUP)
+	}
 
-	select {
-	case s := <-sig:
-		log.Info("gateway: shutdown", "signal", s)
-	case err := <-serverErr:
-		if err != nil {
-			log.Error("gateway: server failed, exiting", "err", err)
-			return err
+	loop:
+	for {
+		select {
+		case s := <-sig:
+			if s == syscall.SIGHUP {
+				if cronScheduler != nil {
+					cronScheduler.ReloadIndex()
+				}
+				log.Info("gateway: cron index reloaded (SIGHUP)")
+				continue
+			}
+			log.Info("gateway: shutdown", "signal", s)
+			break loop
+		case err := <-serverErr:
+			if err != nil {
+				log.Error("gateway: server failed, exiting", "err", err)
+				cancel()
+				shutdownGateway(ctx, log, deps, msgAdapters, server, adminServer, jwtValidator, skillsLocator, pidTracker, cleanupWG, cronScheduler)
+				return err
+			}
+			cancel()
+			shutdownGateway(ctx, log, deps, msgAdapters, server, adminServer, jwtValidator, skillsLocator, pidTracker, cleanupWG, cronScheduler)
+			return nil
+		case <-stopCh:
+			log.Info("gateway: shutdown", "signal", "stopCh")
+			break loop
 		}
-		return nil
-	case <-stopCh:
-		log.Info("gateway: shutdown", "signal", "stopCh")
 	}
 
 	cancel()

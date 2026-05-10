@@ -46,6 +46,14 @@ func (s *Scheduler) LoadFromYAML(ctx context.Context, defs []YAMLJobDef) error {
 		if existing != nil {
 			copyJobDefinition(existing, job)
 
+			// Recompute next run after schedule change.
+			next, err := NextRun(existing.Schedule, time.Now())
+			if err != nil {
+				s.log.Error("cron: recompute next run for YAML job", "name", def.Name, "err", err)
+				continue
+			}
+			existing.State.NextRunAtMs = next.UnixMilli()
+
 			if err := s.store.Update(ctx, existing); err != nil {
 				s.log.Error("cron: update YAML job", "name", def.Name, "err", err)
 				continue

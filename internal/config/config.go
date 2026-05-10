@@ -616,6 +616,7 @@ func Default() *Config {
 			CacheTTL: 5 * time.Minute,
 		},
 		Cron: CronConfig{
+			Enabled:           true,
 			MaxConcurrentRuns: 3,
 			MaxJobs:           50,
 			DefaultTimeoutSec: 300,

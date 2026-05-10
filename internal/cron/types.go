@@ -53,6 +53,13 @@ type CronJobState struct {
 	LastRunID       string    `json:"last_run_id,omitempty"`
 }
 
+// Clone returns a shallow copy of the job. Safe for concurrent use since
+// all mutable state (CronJobState) is a value type.
+func (j *CronJob) Clone() *CronJob {
+	cp := *j
+	return &cp
+}
+
 // CronJob is the top-level job entity.
 type CronJob struct {
 	ID             string            `json:"id"`

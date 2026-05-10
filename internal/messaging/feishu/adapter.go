@@ -1273,6 +1273,7 @@ func (a *Adapter) SendCronResult(ctx context.Context, text string, platformKey m
 	if chatID == "" {
 		return fmt.Errorf("feishu: missing chat_id in platform_key")
 	}
+	text = messaging.SanitizeText(text)
 	return a.sendTextMessage(ctx, chatID, text)
 }
 

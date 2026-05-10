@@ -59,6 +59,7 @@ func (a *Adapter) SendCronResult(ctx context.Context, text string, platformKey m
 	if channelID == "" {
 		return fmt.Errorf("slack: missing channel_id in platform_key")
 	}
+	text = messaging.SanitizeText(text)
 	_, _, err := a.client.PostMessageContext(ctx, channelID, slack.MsgOptionText(text, false))
 	if err != nil {
 		return fmt.Errorf("slack: send cron result: %w", err)

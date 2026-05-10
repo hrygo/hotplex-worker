@@ -67,9 +67,9 @@ func setupRoutes(
 	configWatcherAdapter := &configWatcherAdapter{watcher: configWatcher}
 	turnsAdapter := &turnsStoreAdapter{es: deps.EventStore}
 
-	var cronAdapter *cronAdminAdapter
+	var cronProvider admin.CronSchedulerProvider
 	if deps.CronScheduler != nil {
-		cronAdapter = &cronAdminAdapter{scheduler: deps.CronScheduler, turnsStore: deps.EventStore}
+		cronProvider = &cronAdminAdapter{scheduler: deps.CronScheduler, turnsStore: deps.EventStore}
 	}
 
 	adminAPI := admin.New(admin.Deps{
@@ -80,7 +80,7 @@ func setupRoutes(
 		Hub:           hubAdapter,
 		Bridge:        bridgeAdapter,
 		ConfigWatcher: configWatcherAdapter,
-		Cron:          cronAdapter,
+		Cron:          cronProvider,
 		Version:       versionString,
 		NewSessionID:  newSessionID,
 	})

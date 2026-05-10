@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"strings"
+	"sync"
 )
 
 // ResponseExtractor extracts the last assistant response from a completed session.
@@ -14,6 +15,7 @@ type PlatformDeliverer func(ctx context.Context, platform string, platformKey ma
 
 // Delivery routes cron job execution results to the originating platform.
 type Delivery struct {
+	mu        sync.Mutex
 	log       *slog.Logger
 	extract   ResponseExtractor
 	deliverFn PlatformDeliverer
@@ -59,7 +61,11 @@ func (d *Delivery) Deliver(ctx context.Context, job *CronJob, sessionKey string)
 		return
 	}
 
-	if err := d.deliverFn(ctx, job.Platform, job.PlatformKey, response); err != nil {
+	d.mu.Lock()
+	fn := d.deliverFn
+	d.mu.Unlock()
+
+	if err := fn(ctx, job.Platform, job.PlatformKey, response); err != nil {
 		d.log.Warn("cron delivery: deliver failed",
 			"job_id", job.ID, "platform", job.Platform, "err", err)
 	}
@@ -68,5 +74,7 @@ func (d *Delivery) Deliver(ctx context.Context, job *CronJob, sessionKey string)
 // SetDeliverer sets the platform deliverer function after construction.
 // Used when the deliverer depends on adapters initialized later than the cron scheduler.
 func (d *Delivery) SetDeliverer(fn PlatformDeliverer) {
+	d.mu.Lock()
 	d.deliverFn = fn
+	d.mu.Unlock()
 }

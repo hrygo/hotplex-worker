@@ -50,6 +50,7 @@ Quick start:
 		newServiceCmd(),
 		newUpdateCmd(),
 		newSlackCmd(),
+		newCronCmd(),
 	)
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "Error:", err)
