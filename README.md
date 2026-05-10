@@ -15,7 +15,7 @@
 
 <p align="center">
   <a href="https://github.com/hrygo/hotplex/actions/workflows/ci.yml"><img src="https://github.com/hrygo/hotplex/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <img src="https://img.shields.io/badge/Version-v1.10.2-10B981?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/Version-v1.11.0-10B981?style=flat-square" alt="Version">
   <a href="https://github.com/hrygo/hotplex/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-3B82F6?style=flat-square" alt="License"></a>
   <img src="https://img.shields.io/badge/Go-1.26+-00ADD8?style=flat-square&logo=go" alt="Go">
   <img src="https://img.shields.io/badge/Protocol-AEP%20v1-7C3AED?style=flat-square" alt="AEP v1">
@@ -26,18 +26,27 @@
 
 ## ✨ Core Capabilities
 
+### 🏗️ Core Architecture & Agent Orchestration
 - 🌐 **Universal Agent Gateway** — Abstract any AI Coding Agent protocol into a unified AEP v1 (Agent Exchange Protocol) WebSocket interface for consistent streaming and interaction.
-- 📱 **Cross-Platform Delivery** — **"Write Once, Deploy Anywhere"**. Bridge agents to Web, Slack (Socket Mode), and Feishu (WebSocket) with zero code changes.
-- 🛠️ **Multi-Modal Interaction** — Native Speech-to-Text (SenseVoice) and **Edge-TTS Voice Reply** support for a complete voice-in, voice-out development workflow.
-- 🤖 **Deep Personality Injection** — Dynamic **B/C dual-channel** injection: **B-channel** (SOUL/AGENTS/SKILLS) for directives and **C-channel** (USER/MEMORY) for context.
 - 🧠 **Brain Orchestration Core** — New `internal/brain` layer for LLM-based summarization, intent routing, and safety guarding, decoupling complex AI logic.
-- 🛡️ **Meta-Cognition Hardening** — Constitutional **META-COGNITION** promoted to the top of B-channel with built-in **XML Sanitizer** to block prompt injection.
-- 🌐 **Embedded Web Chat** — A single binary serves both the API/WebSocket gateway and a premium Next.js-based web chat interface out of the box.
-- 🛡️ **Enterprise-Grade Security** — JWT ES256 authentication, SSRF protection, and **Windows File-Based Injection** to bypass cmd.exe escaping traps.
-- 📊 **End-to-End Observability** — Native Prometheus metrics, OpenTelemetry tracing, and structured JSON logging for full auditability.
 - ⏰ **AI-Native Cron Scheduler** — Agents autonomously create scheduled tasks from natural language (e.g., "remind me in 30 minutes"), with lifecycle management (`max_runs`, `expires_at`), automatic result delivery, and embedded skill manual.
-- 🛠️ **Self-contained CLI** — `gateway`, `service`, `slack`, `cron`, `update`, `config`, `dev`, `onboard`, `doctor`, `security`, `status` in a single binary
+
+### 🤖 AI Intelligence & Interaction
+- 🤖 **Deep Personality Injection** — Dynamic **B/C dual-channel** injection: **B-channel** (SOUL/AGENTS/SKILLS) for directives and **C-channel** (USER/MEMORY) for context.
+- 🎙️ **Multi-Modal Interaction** — Native Speech-to-Text (SenseVoice) and **Edge-TTS Voice Reply** support for a complete voice-in, voice-out development workflow.
+
+### 🛡️ Security & Reliability
+- 🛡️ **Meta-Cognition Hardening** — Constitutional **META-COGNITION** promoted to the top of B-channel with built-in **XML Sanitizer** to block prompt injection.
+- 🔒 **Enterprise-Grade Security** — JWT ES256 authentication, SSRF protection, and **Windows File-Based Injection** to bypass cmd.exe escaping traps.
+
+### 📱 Multi-Platform Delivery & Integration
+- 📱 **Cross-Platform Delivery** — **"Write Once, Deploy Anywhere"**. Bridge agents to Web, Slack (Socket Mode), and Feishu (WebSocket) with zero code changes.
+- 💬 **Embedded Web Chat** — A single binary serves both the API/WebSocket gateway and a premium Next.js-based web chat interface out of the box.
 - 🌍 **Multi-language SDKs** — Go, TypeScript, Python, Java clients ready to use
+
+### ⚙️ Developer Experience & Operations
+- 🛠️ **Self-contained CLI** — `gateway`, `service`, `slack`, `cron`, `update`, `config`, `dev`, `onboard`, `doctor`, `security`, `status` in a single binary
+- 📊 **End-to-End Observability** — Native Prometheus metrics, OpenTelemetry tracing, and structured JSON logging for full auditability.
 
 ## ⚡ Quick Start
 
