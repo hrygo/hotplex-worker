@@ -15,7 +15,6 @@ import (
 	"github.com/hrygo/hotplex/internal/config"
 	"github.com/hrygo/hotplex/internal/messaging"
 	"github.com/hrygo/hotplex/internal/messaging/stt"
-	"github.com/hrygo/hotplex/internal/messaging/toolfmt"
 	"github.com/hrygo/hotplex/pkg/events"
 
 	"runtime/debug"
@@ -753,151 +752,30 @@ func (c *SlackConn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 		return fmt.Errorf("slack: nil envelope")
 	}
 
-	// Status update: map AEP event to status indicator
+	c.notifyStatusFromEvent(ctx, env)
+
 	switch env.Event.Type {
-	case events.ToolCall:
-		name, input := extractCallNameInput(env)
-		text := toolfmt.FormatCall(name, input)
-		if text == "" {
-			text = name
-		}
-		_ = c.adapter.statusMgr.Notify(ctx, c.channelID, c.threadTS, StatusToolUse, truncateWithSuffix(text, statusTextLimit))
-		c.adapter.statusMgr.SetLastTool(c.channelID, c.threadTS, name)
-		if text == name {
-			c.adapter.statusMgr.LogOnceUnregistered(name)
-		}
-	case events.ToolResult:
-		toolName := c.adapter.statusMgr.LastTool(c.channelID, c.threadTS)
-		output, errMsg := extractResultFields(env)
-		text := toolfmt.FormatResult(toolName, output, errMsg)
-		if text == "" {
-			text = "Tool completed"
-		}
-		_ = c.adapter.statusMgr.Notify(ctx, c.channelID, c.threadTS, StatusToolResult, truncateWithSuffix(shortenPaths(text), statusTextLimit))
-	default:
-		if env.Event.Type == events.MessageDelta {
-			_ = c.adapter.statusMgr.Notify(ctx, c.channelID, c.threadTS, StatusAnswering, "Composing response...")
-		}
-	}
-
-	// Clear status indicator on done/error
-	switch env.Event.Type {
-	case events.Done, events.Error:
-		c.clearStatus(ctx)
-		c.adapter.Interactions.CancelAll(env.SessionID)
-
-		// Extract content before closing — Content() may return empty after Close().
-		var fullText string
-		if w := c.getStreamWriter(); w != nil {
-			fullText = w.Content()
-		}
-
-		c.closeStreamWriter()
-		if env.Event.Type == events.Done && c.adapter.turnSummaryEnabled {
-			go c.sendTurnSummary(ctx, env)
-		}
-		// TTS voice reply (async, non-blocking).
-		if env.Event.Type == events.Done && c.adapter.ttsPipeline != nil && c.voiceTriggered.Load() {
-			if fullText != "" {
-				ttsCtx, ttsCancel := context.WithTimeout(context.WithoutCancel(ctx), 60*time.Second)
-				go func() {
-					defer ttsCancel()
-					c.adapter.ttsPipeline.Process(ttsCtx, fullText, c.channelID, c.threadTS)
-				}()
-			}
-			c.voiceTriggered.Store(false)
-		}
-		if env.Event.Type == events.Error {
-			if errMsg := messaging.ExtractErrorMessage(env); errMsg != "" {
-				go func() { _ = c.writeWithPostMessage(ctx, FormatMrkdwn(errPrefix+errMsg), false) }()
-			}
-		}
-		return nil
+	case events.Done:
+		return c.handleDone(ctx, env)
+	case events.Error:
+		return c.handleError(ctx, env)
 	case events.PermissionRequest:
-		c.closeStreamWriter() // finalize any active stream before interaction
-		c.notifyStatus(ctx, "Permission request...")
-		err := c.sendPermissionRequest(ctx, env)
-		c.clearStatus(ctx)
-		return err
+		return c.handleInteraction(ctx, env, "Permission request...", c.sendPermissionRequest)
 	case events.QuestionRequest:
-		c.closeStreamWriter()
-		c.notifyStatus(ctx, "Awaiting response...")
-		qErr := c.sendQuestionRequest(ctx, env)
-		c.clearStatus(ctx)
-		return qErr
+		return c.handleInteraction(ctx, env, "Awaiting response...", c.sendQuestionRequest)
 	case events.ElicitationRequest:
-		c.closeStreamWriter()
-		c.notifyStatus(ctx, "Gathering input...")
-		eErr := c.sendElicitationRequest(ctx, env)
-		c.clearStatus(ctx)
-		return eErr
+		return c.handleInteraction(ctx, env, "Gathering input...", c.sendElicitationRequest)
 	case events.ContextUsage:
-		c.notifyStatus(ctx, "Loading context usage...")
-		cErr := c.sendContextUsage(ctx, env)
-		c.clearStatus(ctx)
-		return cErr
+		return c.handleNotifyAndSend(ctx, env, "Loading context usage...", c.sendContextUsage)
 	case events.MCPStatus:
-		c.notifyStatus(ctx, "Loading MCP status...")
-		mErr := c.sendMCPStatus(ctx, env)
-		c.clearStatus(ctx)
-		return mErr
+		return c.handleNotifyAndSend(ctx, env, "Loading MCP status...", c.sendMCPStatus)
 	case events.SkillsList:
-		c.notifyStatus(ctx, "Loading skills...")
-		slErr := c.sendSkillsList(ctx, env)
-		c.clearStatus(ctx)
-		if slErr == nil || !strings.Contains(slErr.Error(), "invalid_blocks") {
-			return slErr
-		}
-		c.adapter.Log.Warn("slack: skills blocks rejected, falling back to plain text", "err", slErr)
-		return c.postSkillsMessageFallback(ctx, env)
+		return c.handleSkillsList(ctx, env)
 	case events.Message:
-		// Handler/bridge-originated standalone messages (cd confirmation,
-		// command feedback, help text, retry notifications). Workers send
-		// message.delta for streaming content, not message, so these are
-		// never duplicates of streamed output.
-		var text string
-		if msgData, ok := env.Event.Data.(events.MessageData); ok && msgData.Content != "" {
-			text = messaging.SanitizeText(msgData.Content)
-		} else if m, ok := env.Event.Data.(map[string]any); ok {
-			if c, ok := m["content"].(string); ok && c != "" {
-				text = messaging.SanitizeText(c)
-			}
-		}
-		if text != "" {
-			go func() {
-				if err := c.writeWithPostMessage(ctx, FormatMrkdwn(text), false); err != nil {
-					c.adapter.Log.Debug("slack: failed to send message event", "err", err)
-				}
-			}()
-		}
-		return nil
+		return c.handleStandaloneMessage(ctx, env)
 	}
 
-	text, ok := messaging.ExtractResponseText(env)
-	if !ok {
-		return nil
-	}
-	text = messaging.SanitizeText(text)
-
-	// Try file upload for document paths (.pdf, .csv) generated by AI
-	if env.Event.Type != events.MessageDelta {
-		if uploaded := c.tryFileUpload(ctx, text); uploaded {
-			return nil
-		}
-	}
-
-	// Try streaming for delta/text events
-	if env.Event.Type == events.MessageDelta || env.Event.Type == "text" {
-		if err := c.writeWithStreaming(ctx, text); err != nil {
-			c.adapter.Log.Info("slack: streaming failed, falling back to PostMessage",
-				"channel", c.channelID, "err", err)
-			return c.writeWithPostMessage(ctx, text, env.Event.Type == events.MessageDelta)
-		}
-		return nil
-	}
-
-	// Default: use PostMessage for other event types
-	return c.writeWithPostMessage(ctx, text, false)
+	return c.handleDefaultText(ctx, env)
 }
 
 // writeWithStreaming attempts to write using the streaming API.
