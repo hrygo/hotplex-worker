@@ -180,7 +180,7 @@ func (s *Scheduler) executeJob(job *CronJob) {
 		job.State.LastStatus = StatusSuccess
 		job.State.ConsecutiveErrs = 0
 		resetRetry(job)
-		if s.delivery != nil {
+		if s.delivery != nil && !HasCLIDelivery(job) {
 			s.delivery.Deliver(s.ctx, job, sessionKey)
 		}
 	}
@@ -214,7 +214,9 @@ func (s *Scheduler) persistState(jobID string, state CronJobState) {
 // persistCtx returns a short-lived background context for state persistence.
 // Unlike s.ctx, this is not cancelled on shutdown, ensuring final state is saved.
 func (s *Scheduler) persistCtx() context.Context {
-	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// Cancel after function returns — the timeout itself prevents indefinite leaks.
+	go func() { <-ctx.Done(); cancel() }()
 	return ctx
 }
 
