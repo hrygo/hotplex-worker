@@ -180,27 +180,14 @@ func (w *Worker) Modalities() []string    { return []string{"text", "code"} }
 // Start acquires the singleton server, creates a new HTTP session, and starts
 // the SSE reader goroutine.
 func (w *Worker) Start(ctx context.Context, session worker.SessionInfo) error {
-	if w.singleton == nil {
-		return fmt.Errorf("opencodeserver: singleton not initialized (call InitSingleton first)")
+	if err := w.checkNotStarted(); err != nil {
+		return err
 	}
-
-	// Prevent double-start
-	w.Mu.Lock()
-	if w.httpConn != nil {
-		w.Mu.Unlock()
-		return fmt.Errorf("opencodeserver: already started")
-	}
-	w.Mu.Unlock()
 
 	// Acquire ref from singleton (starts process if first session)
-	httpAddr, client, sseClient, crashSub, err := w.singleton.Acquire(ctx)
-	if err != nil {
-		return fmt.Errorf("opencodeserver: acquire server: %w", err)
+	if err := w.acquireServer(ctx); err != nil {
+		return err
 	}
-	w.httpAddr = httpAddr
-	w.client = client
-	w.sseClient = sseClient
-	w.crashSub = crashSub
 
 	// Create new session via HTTP API
 	sessionID, err := w.createSession(ctx, session.ProjectDir)
@@ -210,14 +197,7 @@ func (w *Worker) Start(ctx context.Context, session worker.SessionInfo) error {
 	}
 
 	w.initSessionConn(ctx, sessionID, session)
-
-	// Create cancellable context for SSE request
-	sseCtx, sseCancel := context.WithCancel(context.Background())
-	w.Mu.Lock()
-	w.sseCancel = sseCancel
-	w.Mu.Unlock()
-
-	go w.readSSE(sseCtx, sessionID)
+	w.startSSE(sessionID)
 	return nil
 }
 
@@ -283,93 +263,30 @@ func (w *Worker) HandleElicitationResponse(ctx context.Context, reqID, action st
 
 // Resume reconnects to an existing session on the shared OpenCode server.
 func (w *Worker) Resume(ctx context.Context, session worker.SessionInfo) error {
-	if w.singleton == nil {
-		return fmt.Errorf("opencodeserver: singleton not initialized (call InitSingleton first)")
+	if err := w.checkNotStarted(); err != nil {
+		return err
 	}
 
-	w.Mu.Lock()
-	if w.httpConn != nil {
-		w.Mu.Unlock()
-		return fmt.Errorf("opencodeserver: already started")
+	if err := w.acquireServer(ctx); err != nil {
+		return err
 	}
-	w.Mu.Unlock()
-
-	httpAddr, client, sseClient, crashSub, err := w.singleton.Acquire(ctx)
-	if err != nil {
-		return fmt.Errorf("opencodeserver: acquire server: %w", err)
-	}
-	w.httpAddr = httpAddr
-	w.client = client
-	w.sseClient = sseClient
-	w.crashSub = crashSub
 
 	w.initSessionConn(ctx, session.SessionID, session)
-
-	// Create cancellable context for SSE request
-	sseCtx, sseCancel := context.WithCancel(context.Background())
-	w.Mu.Lock()
-	w.sseCancel = sseCancel
-	w.Mu.Unlock()
-
-	go w.readSSE(sseCtx, session.SessionID)
+	w.startSSE(session.SessionID)
 	return nil
 }
 
 // Terminate closes the SSE connection and releases the singleton ref.
 // Does NOT kill the shared server process.
 func (w *Worker) Terminate(_ context.Context) error {
-	w.Mu.Lock()
-	sseCancel := w.sseCancel
-	w.Mu.Unlock()
-
-	// Cancel SSE request to unblock readSSE goroutine
-	if sseCancel != nil {
-		sseCancel()
-	}
-
-	w.releaseOnce.Do(func() {
-		if w.singleton != nil {
-			w.singleton.Release()
-		}
-	})
-
-	w.Mu.Lock()
-	conn := w.httpConn
-	w.httpConn = nil
-	w.Mu.Unlock()
-
-	if conn != nil {
-		_ = conn.Close()
-	}
+	w.release()
 	return nil
 }
 
 // Kill closes the SSE connection and releases the singleton ref.
 // Does NOT kill the shared server process.
 func (w *Worker) Kill() error {
-	w.Mu.Lock()
-	sseCancel := w.sseCancel
-	w.Mu.Unlock()
-
-	// Cancel SSE request to unblock readSSE goroutine
-	if sseCancel != nil {
-		sseCancel()
-	}
-
-	w.releaseOnce.Do(func() {
-		if w.singleton != nil {
-			w.singleton.Release()
-		}
-	})
-
-	w.Mu.Lock()
-	conn := w.httpConn
-	w.httpConn = nil
-	w.Mu.Unlock()
-
-	if conn != nil {
-		_ = conn.Close()
-	}
+	w.release()
 	return nil
 }
 
@@ -575,6 +492,73 @@ func (w *Worker) initSessionConn(ctx context.Context, serverSessionID string, se
 	w.StartTime = time.Now()
 	w.SetLastIO(w.StartTime)
 	w.Mu.Unlock()
+}
+
+// ─── Shared Lifecycle Helpers ──────────────────────────────────────────────────
+
+// checkNotStarted validates the singleton is ready and the worker is not
+// already running. Shared by Start and Resume.
+func (w *Worker) checkNotStarted() error {
+	if w.singleton == nil {
+		return fmt.Errorf("opencodeserver: singleton not initialized (call InitSingleton first)")
+	}
+	w.Mu.Lock()
+	started := w.httpConn != nil
+	w.Mu.Unlock()
+	if started {
+		return fmt.Errorf("opencodeserver: already started")
+	}
+	return nil
+}
+
+// acquireServer acquires a ref from the singleton process manager.
+func (w *Worker) acquireServer(ctx context.Context) error {
+	httpAddr, client, sseClient, crashSub, err := w.singleton.Acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("opencodeserver: acquire server: %w", err)
+	}
+	w.httpAddr = httpAddr
+	w.client = client
+	w.sseClient = sseClient
+	w.crashSub = crashSub
+	return nil
+}
+
+// startSSE creates a cancellable SSE context and starts the reader goroutine.
+func (w *Worker) startSSE(sessionID string) {
+	sseCtx, sseCancel := context.WithCancel(context.Background())
+	w.Mu.Lock()
+	w.sseCancel = sseCancel
+	w.Mu.Unlock()
+	go w.readSSE(sseCtx, sessionID)
+}
+
+// release closes the SSE connection and releases the singleton ref.
+// Shared by Terminate and Kill — they are semantically identical for OCS
+// workers since the shared server process is never killed by individual sessions.
+func (w *Worker) release() {
+	w.Mu.Lock()
+	sseCancel := w.sseCancel
+	w.Mu.Unlock()
+
+	if sseCancel != nil {
+		sseCancel()
+	}
+
+	w.releaseOnce.Do(func() {
+		if w.singleton != nil {
+			w.singleton.Release()
+		}
+	})
+
+	w.Mu.Lock()
+	conn := w.httpConn
+	w.httpConn = nil
+	w.Mu.Unlock()
+
+	if conn != nil {
+		_ = conn.Close()
+	}
 }
 
 func (w *Worker) readSSE(ctx context.Context, sessionID string) {

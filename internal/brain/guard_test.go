@@ -1048,15 +1048,13 @@ func TestSanitizeOutputString_WithGuard(t *testing.T) {
 // ========================================
 
 func TestSafetyGuard_ExecuteConfigIntent_FeatureGetWithRouter(t *testing.T) {
-	oldRouter := globalIntentRouter
+	oldRouter := globalIntentRouter.Load()
 	defer func() {
-		globalIntentRouter = oldRouter
-		globalRouterOnce = sync.Once{}
+		globalIntentRouter.Store(oldRouter)
 	}()
 
 	SetGlobal(&mockBrainForGuard{})
-	globalRouterOnce = sync.Once{}
-	globalIntentRouter = NewIntentRouter(&mockBrainForGuard{}, IntentRouterConfig{Enabled: true}, slog.Default())
+	globalIntentRouter.Store(NewIntentRouter(&mockBrainForGuard{}, IntentRouterConfig{Enabled: true}, slog.Default()))
 
 	guard := newTestGuard(t, nil, func(c *GuardConfig) {
 		c.Chat2ConfigEnabled = true
