@@ -249,9 +249,10 @@ CommandMenu），Gateway Core 获得了连接稳定性修复（CAS race guard、
 |:---|:---|:---|
 | `README.md` | badge `Version-vX.X.X` | `Version-v1.2.0` |
 | `README_zh.md` | badge `Version-vX.X.X` | `Version-v1.2.0` |
+| `AGENTS.md` | 头部 `**最后更新**: YYYY-MM-DD` | `**最后更新**: 2026-05-10` |
 | `AGENTS.md` | 头部 `**版本**: vX.X.X` | `**版本**: v1.2.0` |
 
-> **注意**：`AGENTS.md` 是 `CLAUDE.md` 的符号链接，只需编辑 `AGENTS.md`（这是实际文件），`CLAUDE.md` 会自动同步。
+> **注意**：`AGENTS.md` 是 `CLAUDE.md` 的符号链接，只需编辑 `AGENTS.md`（这是实际文件），`CLAUDE.md` 会自动同步。修改时请同时更新**版本号**和**最后更新日期**。
 
 ### 4.4 基础设施
 
@@ -264,17 +265,14 @@ CommandMenu），Gateway Core 获得了连接稳定性修复（CAS race guard、
 更新后，验证所有位置都已更改：
 
 ```bash
-# 将 OLD 替换为先前版本（如 1.1.0），确认无残留
-grep -rn "1\.1\.0" cmd/hotplex/main.go Makefile internal/tracing/tracing.go \
-  examples/typescript-client/package.json examples/python-client/pyproject.toml \
-  examples/python-client/hotplex_client/__init__.py examples/java-client/pom.xml \
-  Dockerfile README.md README_zh.md AGENTS.md CHANGELOG.md
+# 推荐验证方法：使用 git diff 检查所有被修改文件的变更是否一致且准确
+git diff
 
-# 确认新版本号已写入（如 1.2.0）
+# 或者使用 grep 确认新版本号已写入所有关键文件（如 1.2.0）
 grep -rn "1\.2\.0" cmd/hotplex/main.go Makefile internal/tracing/tracing.go \
   examples/typescript-client/package.json examples/python-client/pyproject.toml \
   examples/python-client/hotplex_client/__init__.py examples/java-client/pom.xml \
-  Dockerfile README.md README_zh.md AGENTS.md CHANGELOG.md
+  Dockerfile README.md README_zh.md AGENTS.md
 ```
 
 ## 步骤 5：验证
@@ -358,8 +356,10 @@ git push origin main && git push origin vX.X.X
 gh run list --workflow=release.yml --limit=1
 gh run watch <RUN_ID> --exit-status
 
-# CI 完成后，用完整 CHANGELOG 内容替换自动生成的注释
-awk '/^## \[X\.X\.X\]/{found=1} found{print} /^## \[PREV\]/{exit}' CHANGELOG.md | sed '$d' > /tmp/release-notes.md
+# CI 完成后，提取 CHANGELOG 内容替换自动生成的注释
+# 将 1.2.0 替换为当前发布的纯数字版本号
+VERSION="1.2.0" 
+awk -v ver="[${VERSION}]" '/^## \[/ { if ($2 == ver) found=1; else if (found) exit; } found { print }' CHANGELOG.md | sed '$d' > /tmp/release-notes.md
 
 gh release edit vX.X.X --notes-file /tmp/release-notes.md
 
