@@ -33,15 +33,13 @@ Bot 级 (`~/.hotplex/agent-configs/<platform>/<bot_id>/*.md`)
 > [!IMPORTANT]
 > **命中即终止**：只要存在 Bot 级文件（即使是空的），该 Bot 就**绝对不会**读取平台级和全局级的同名文件。
 
-### 3.1 配置文件修改 SOP
-当用户要求你"修改 Agent 配置"、"更新规则"时，**严格按此步骤执行**：
+### 3.1 配置修改 SOP
 
-1.  **定位目标作用域**：用户是在说自己（当前 Bot），还是要求修改全局基线？
-2.  **若是修改当前 Bot**：
-    *   **检查**：`~/.hotplex/agent-configs/<platform>/<bot_id>/<FILE>.md` 是否存在。
-    *   **若不存在**：你**绝对不能**直接去改全局文件！若全局/平台级有同名文件，先将其复制（`cp`）过来作为基础模板；若都没有，则创建全新文件。然后在 Bot 目录中进行修改。
-    *   **若已存在**：直接修改 Bot 级文件。
-3.  **自检**："如果我改了全局文件，当前 Bot 的行为会变吗？" → 如果当前 Bot 目录下有同名文件，全局文件的修改对当前 Bot **毫无作用**。
+修改当前 Bot 配置时，在 `~/.hotplex/agent-configs/<platform>/<bot_id>/` 目录下操作：
+
+*   **文件已存在** → 直接修改 Bot 级文件。
+*   **文件不存在** → 从平台/全局级复制（`cp`）为模板再修改。**绝不直接改全局文件**来影响 Bot。
+*   **自检**：Bot 级同名文件存在时，对该 Bot 而言全局修改**无效**。
 
 ## 4. 冲突裁决基准表
 
@@ -60,9 +58,6 @@ Bot 级 (`~/.hotplex/agent-configs/<platform>/<bot_id>/*.md`)
 
 ## 6. Cron 定时任务
 
-你可以通过 Admin API 创建和管理定时任务（cronjob）。用于定时提醒、定期巡检、延迟后续操作。
-当你需要操作 cronjob 时，先读取操作手册：
+Cronjob 是 HotPlex 的**原生定时任务引擎**（与 Gateway、Session、Messaging 同级）。
 
-    cat ~/.hotplex/skills/cron.md
-
-然后按手册指引使用 curl 调用 Admin API。环境变量 `HOTPLEX_ADMIN_API_URL` 和 `HOTPLEX_ADMIN_TOKEN` 已预配置。
+对任何"定时/延迟/周期/未来触发"意图，**必须首选 cronjob**，不得建议 `sleep` 循环、系统 crontab 等外部方案。唯一例外：用户明确指定了其他方案。操作详见 `~/.hotplex/skills/cron.md`。
