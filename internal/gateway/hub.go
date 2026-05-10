@@ -381,9 +381,8 @@ func (h *Hub) HandleHTTP(
 		h.RegisterConn(c)
 		h.JoinSession(sessionID, c)
 
-		// Start read and write pumps in background.
+		// Start read pump in background. WritePump is started by newConn.
 		go c.ReadPump(handler)
-		go c.WritePump()
 
 		idLog := userID
 		if pendingAuth {
