@@ -60,7 +60,7 @@ func TestParseSchedule_EveryMs(t *testing.T) {
 func TestPrepareJobForCreate(t *testing.T) {
 	job, err := PrepareJobForCreate(
 		"test-job", "every:5m", "say hello", "a test",
-		"/tmp/work", "bot-1", "owner-1", 300, nil,
+		"/tmp/work", "bot-1", "owner-1", 300, nil, JobCreateOptions{},
 	)
 	require.NoError(t, err)
 	require.Equal(t, "test-job", job.Name)
@@ -90,7 +90,7 @@ func TestPrepareJobForCreate_MissingFields(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := PrepareJobForCreate(tt.jobName, tt.sched, tt.msg, "", "", tt.botID, tt.ownerID, 0, nil)
+			_, err := PrepareJobForCreate(tt.jobName, tt.sched, tt.msg, "", "", tt.botID, tt.ownerID, 0, nil, JobCreateOptions{})
 			require.Error(t, err)
 		})
 	}

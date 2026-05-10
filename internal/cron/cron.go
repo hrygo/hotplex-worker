@@ -143,9 +143,7 @@ func (s *Scheduler) CreateJob(ctx context.Context, job *CronJob) error {
 	if len(s.jobs) >= s.maxJobs {
 		return fmt.Errorf("cron: max jobs limit reached (%d)", s.maxJobs)
 	}
-	if job.ID == "" {
-		job.ID = GenerateJobID()
-	}
+
 	now := time.Now().UnixMilli()
 	job.CreatedAtMs = now
 	job.UpdatedAtMs = now
@@ -216,7 +214,7 @@ func (s *Scheduler) GetJob(ctx context.Context, id string) (*CronJob, error) {
 	j, ok := s.jobs[id]
 	s.mu.Unlock()
 	if !ok {
-		return nil, fmt.Errorf("cron: job not found: %s", id)
+		return nil, fmt.Errorf("%w: %s", ErrJobNotFound, id)
 	}
 	return j.Clone(), nil
 }

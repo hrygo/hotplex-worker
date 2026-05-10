@@ -49,6 +49,8 @@ func newTestStore(t *testing.T) *SQLiteStore {
 			timeout_sec      INTEGER NOT NULL DEFAULT 0,
 			delete_after_run INTEGER NOT NULL DEFAULT 0 CHECK(delete_after_run IN (0, 1)),
 			max_retries      INTEGER NOT NULL DEFAULT 0,
+			max_runs         INTEGER NOT NULL DEFAULT 0,
+			expires_at       TEXT    NOT NULL DEFAULT '',
 			state            TEXT NOT NULL DEFAULT '{}',
 			created_at       INTEGER NOT NULL,
 			updated_at       INTEGER NOT NULL

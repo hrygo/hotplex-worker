@@ -51,6 +51,15 @@ func (a *cronAdminAdapter) UpdateJob(ctx context.Context, id string, updates map
 	if v, ok := updates["delete_after_run"].(bool); ok {
 		job.DeleteAfterRun = v
 	}
+	if v, ok := updates["max_retries"].(float64); ok {
+		job.MaxRetries = int(v)
+	}
+	if v, ok := updates["max_runs"].(float64); ok {
+		job.MaxRuns = int(v)
+	}
+	if v, ok := updates["expires_at"].(string); ok {
+		job.ExpiresAt = v
+	}
 
 	if sched, ok := updates["schedule"].(map[string]any); ok {
 		if kind, ok := sched["kind"].(string); ok {
