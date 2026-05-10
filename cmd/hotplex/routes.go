@@ -135,6 +135,11 @@ func setupRoutes(
 	// Documentation
 	mux.Handle("GET /docs/", http.StripPrefix("/docs", docs.Handler()))
 
+	// Global favicon fallback using docs logo
+	mux.HandleFunc("GET /favicon.ico", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/docs/assets/logo.png", http.StatusMovedPermanently)
+	})
+
 	// Webchat SPA is NOT registered on the mux directly.
 	// Instead, the caller wraps the mux with a fallback handler below.
 	return adminAPI.Middleware(adminMux)

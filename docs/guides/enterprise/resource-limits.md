@@ -1,5 +1,6 @@
 ---
 title: Resource Limits Guide
+weight: 25
 description: Global and per-user quotas, worker limits, output limits, pool management, and tuning recommendations for HotPlex.
 persona: enterprise
 difficulty: advanced

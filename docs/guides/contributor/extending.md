@@ -1,5 +1,6 @@
 ---
 title: 扩展 HotPlex
+weight: 37
 description: 如何为 HotPlex 添加新组件：Worker 适配器、消息平台、AEP 事件类型和 CLI 子命令
 persona: contributor
 difficulty: advanced

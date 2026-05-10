@@ -1,5 +1,6 @@
 ---
 title: Brain/LLM 编排层
+weight: 4
 description: HotPlex Brain 智能中间件：意图路由、安全审计、上下文压缩、4 层 API Key 发现与装饰器链
 persona: developer
 difficulty: advanced

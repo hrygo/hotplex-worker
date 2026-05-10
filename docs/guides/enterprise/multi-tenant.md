@@ -1,5 +1,6 @@
 ---
 title: Multi-Tenant Isolation Guide
+weight: 24
 description: Per-bot isolation, access control, and resource quotas for multi-tenant HotPlex deployments.
 persona: enterprise
 difficulty: advanced

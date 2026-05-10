@@ -1,5 +1,6 @@
 ---
 title: HotPlex 文档中心
+weight: 1
 description: HotPlex 用户文档、教程、指南和参考手册
 ---
 

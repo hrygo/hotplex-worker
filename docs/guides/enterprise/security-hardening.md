@@ -2,6 +2,7 @@
 persona: enterprise
 difficulty: advanced
 title: Security Hardening 企业安全加固指南
+weight: 22
 last_updated: 2026-05-10
 version: v1.10.2
 ---

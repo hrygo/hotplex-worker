@@ -1,5 +1,6 @@
 ---
 title: 定时任务 (Cron) 教程
+weight: 4
 description: 用自然语言调度 AI 任务 —— HotPlex AI-native 定时系统完全指南
 persona: developer
 difficulty: beginner

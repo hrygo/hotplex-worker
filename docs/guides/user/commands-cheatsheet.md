@@ -1,5 +1,6 @@
 ---
 title: "命令速查表"
+weight: 2
 description: "HotPlex 聊天命令快速参考卡片，涵盖飞书 / Slack / WebChat 全平台"
 persona: user
 difficulty: beginner

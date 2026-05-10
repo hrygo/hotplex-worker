@@ -1,5 +1,6 @@
 ---
 title: "Remote Coding Agent"
+weight: 11
 description: "通过 Slack / 飞书 / WebChat 远程控制 Claude Code，随时随地写代码"
 persona: developer
 difficulty: intermediate

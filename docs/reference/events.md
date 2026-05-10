@@ -1,5 +1,6 @@
 ---
 title: "AEP 事件类型参考"
+weight: 2
 description: "所有 AEP v1 事件类型的完整字段参考"
 persona: "developer"
 difficulty: "intermediate"

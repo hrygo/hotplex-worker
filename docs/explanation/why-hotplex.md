@@ -1,5 +1,6 @@
 ---
 title: 为什么选择 HotPlex
+weight: 1
 description: HotPlex 存在的原因 — 它解决了什么问题，为谁而建，以及为什么这样设计
 persona: all
 difficulty: beginner

@@ -1,5 +1,6 @@
 ---
 title: 测试指南
+weight: 36
 description: HotPlex 项目的测试策略、约定和最佳实践
 persona: contributor
 difficulty: beginner

@@ -1,5 +1,6 @@
 ---
 title: PR 工作流
+weight: 33
 description: HotPlex 的分支管理、Commit 规范和 PR 提交流程
 persona: contributor
 difficulty: beginner

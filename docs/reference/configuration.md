@@ -1,5 +1,6 @@
 ---
 title: "配置完整参考"
+weight: 3
 description: "HotPlex Worker Gateway 所有配置项的权威参考，覆盖配置文件、环境变量、优先级和热重载机制。"
 persona: "developer|enterprise"
 difficulty: "intermediate"

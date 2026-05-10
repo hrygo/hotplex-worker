@@ -1,5 +1,6 @@
 ---
 title: Config Management Guide
+weight: 28
 description: Configuration layers, inheritance, hot reload, history rollback, and multi-environment strategies for HotPlex.
 persona: enterprise
 difficulty: advanced
