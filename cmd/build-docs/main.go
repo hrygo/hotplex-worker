@@ -426,86 +426,107 @@ const layout = `
         /* Sidebar */
         aside.sidebar {
             width: 300px;
-            background: var(--gray-100);
-            border-right: 1px solid var(--gray-300);
-            padding: 48px 32px;
+            background: var(--gray-50);
+            border-right: 1px solid var(--gray-200);
+            padding: 40px 24px;
             position: sticky;
             top: 0;
             height: 100vh;
             overflow-y: auto;
             display: flex;
             flex-direction: column;
+            scrollbar-width: thin;
+            scrollbar-color: var(--gray-300) transparent;
+        }
+        aside.sidebar::-webkit-scrollbar {
+            width: 4px;
+        }
+        aside.sidebar::-webkit-scrollbar-thumb {
+            background: var(--gray-300);
+            border-radius: 4px;
         }
 
         .logo-area {
-            margin-bottom: 48px;
+            margin-bottom: 40px;
+            padding: 0 12px;
         }
 
         .logo {
             font-family: var(--font-display);
-            font-size: 26px;
+            font-size: 24px;
             font-weight: 700;
             color: var(--slate);
             text-decoration: none;
             letter-spacing: -0.02em;
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 12px;
+            transition: opacity 0.2s;
+        }
+        .logo:hover {
+            opacity: 0.85;
         }
         .logo::before {
             content: "";
             width: 12px;
             height: 12px;
-            background: var(--clay);
-            border-radius: 2px;
+            background: linear-gradient(135deg, var(--clay), #D76A4F);
+            border-radius: 3px;
             transform: rotate(45deg);
+            transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+            box-shadow: 0 2px 6px rgba(195, 90, 62, 0.3);
+        }
+        .logo:hover::before {
+            transform: rotate(135deg) scale(1.15);
         }
 
         nav .nav-section {
-            margin-bottom: 32px;
+            margin-bottom: 24px;
         }
 
         nav .category {
             font-family: var(--font-mono);
-            font-size: 10px;
+            font-size: 11px;
             text-transform: uppercase;
-            letter-spacing: 0.1em;
+            letter-spacing: 0.12em;
             color: var(--gray-500);
-            margin-bottom: 12px;
-            display: block;
+            margin-bottom: 10px;
+            padding: 0 12px;
+            display: flex;
+            align-items: center;
+        }
+        nav .category::after {
+            content: "";
+            flex: 1;
+            height: 1px;
+            background: var(--gray-200);
+            margin-left: 12px;
         }
 
         nav ul { list-style: none; }
-        nav li { margin-bottom: 4px; }
+        nav li { margin-bottom: 2px; }
         nav a {
             text-decoration: none;
             color: var(--gray-500);
             font-size: 14px;
-            padding: 6px 12px;
-            border-radius: 6px;
+            padding: 7px 12px;
+            border-radius: 8px;
             display: block;
             transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
             position: relative;
+            line-height: 1.5;
+            font-weight: 500;
         }
         nav a:hover {
-            background: var(--gray-200);
+            background: rgba(0,0,0,0.03);
             color: var(--slate);
         }
         nav a.active {
             background: var(--white);
             color: var(--clay);
             font-weight: 600;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-        }
-        nav a.active::before {
-            content: "";
-            position: absolute;
-            left: 0;
-            top: 20%;
-            bottom: 20%;
-            width: 3px;
-            background: var(--clay);
-            border-radius: 0 2px 2px 0;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.02);
+            border: 1px solid rgba(0,0,0,0.04);
         }
 
         /* Content */
@@ -756,37 +777,46 @@ const layout = `
             </footer>
         </article>
     </main>
-    <script type="module">
-        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
-        mermaid.initialize({ 
-            startOnLoad: true,
-            theme: 'neutral',
-            securityLevel: 'loose',
-            fontFamily: 'Inter, system-ui, sans-serif'
-        });
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <script>
+        window.addEventListener('load', function() {
+            if (typeof mermaid !== 'undefined') {
+                // 1. Convert code blocks to div.mermaid
+                const blocks = document.querySelectorAll('pre code.language-mermaid, pre code.language-graph');
+                blocks.forEach(code => {
+                    const pre = code.parentElement;
+                    const div = document.createElement('div');
+                    div.className = 'mermaid';
+                    div.style.background = 'white'; // Ensure visible background
+                    div.textContent = code.textContent;
+                    pre.replaceWith(div);
+                });
 
-        // Convert mermaid code blocks
-        document.querySelectorAll('pre code.language-mermaid').forEach(code => {
-            const pre = code.parentElement;
-            const container = document.createElement('pre');
-            container.className = 'mermaid';
-            container.textContent = code.textContent;
-            pre.replaceWith(container);
-        });
+                // 2. Initialize and Render
+                mermaid.initialize({ 
+                    startOnLoad: false,
+                    theme: 'neutral',
+                    securityLevel: 'loose'
+                });
+                mermaid.init(undefined, '.mermaid');
+            }
 
-        // Add copy buttons to code blocks
-        document.querySelectorAll('.prose pre').forEach(pre => {
-            if (pre.classList.contains('mermaid')) return;
-            const btn = document.createElement('button');
-            btn.className = 'copy-btn';
-            btn.textContent = 'COPY';
-            btn.onclick = () => {
-                const code = pre.querySelector('code').innerText;
-                navigator.clipboard.writeText(code);
-                btn.textContent = 'COPIED';
-                setTimeout(() => btn.textContent = 'COPY', 2000);
-            };
-            pre.appendChild(btn);
+            // Add copy buttons to code blocks
+            document.querySelectorAll('.prose pre').forEach(pre => {
+                if (pre.classList.contains('mermaid')) return;
+                const btn = document.createElement('button');
+                btn.className = 'copy-btn';
+                btn.textContent = 'COPY';
+                btn.onclick = () => {
+                    const codeBlock = pre.querySelector('code');
+                    if (codeBlock) {
+                        navigator.clipboard.writeText(codeBlock.innerText);
+                        btn.textContent = 'COPIED';
+                        setTimeout(() => btn.textContent = 'COPY', 2000);
+                    }
+                };
+                pre.appendChild(btn);
+            });
         });
     </script>
 </body>

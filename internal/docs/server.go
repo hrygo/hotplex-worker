@@ -18,10 +18,10 @@ func securityHeaders(next http.Handler) http.Handler {
 		// Slightly more relaxed CSP than webchat because docs might have embedded diagrams/scripts if needed
 		w.Header().Set("Content-Security-Policy",
 			"default-src 'self'; "+
-				"script-src 'self' 'unsafe-inline'; "+
-				"style-src 'self' 'unsafe-inline'; "+
+				"script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "+
+				"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "+
 				"img-src 'self' data: blob:; "+
-				"font-src 'self' data:")
+				"font-src 'self' data: https://fonts.gstatic.com")
 		next.ServeHTTP(w, r)
 	})
 }
