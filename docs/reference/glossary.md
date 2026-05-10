@@ -35,7 +35,7 @@ Agent 配置的指令通道（Directives Channel），以 XML `<directives>` 标
 
 ### Brain
 
-HotPlex 的 LLM 编排层（`internal/brain/`），提供四个递增接口：`Brain`（基础文本生成）→ `StreamingBrain`（流式输出）→ `RoutableBrain`（模型路由）→ `ObservableBrain`（指标观测）。
+HotPlex 的 LLM 编排层（`internal/brain/`），提供四个独立接口（能力递增），通过 `enhancedBrainWrapper` 统一实现：`Brain`（基础文本生成）、`StreamingBrain`（流式输出）、`RoutableBrain`（模型路由）、`ObservableBrain`（指标观测）。这四个接口是概念层级（Interface Segregation Principle），而非代码继承关系。
 
 Brain 通过装饰器链（decorator chain）组合功能：retry → cache → rate limit → circuit breaker → metrics。核心子模块包括 Intent Router（意图分发）、Safety Guard（安全审计）、Context Compressor（上下文压缩）和 LLM 客户端子包（OpenAI/Anthropic 适配 + 模型路由 + 成本估算）。
 

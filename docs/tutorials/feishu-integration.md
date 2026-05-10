@@ -85,8 +85,8 @@ hotplex onboard
 **验证**：
 
 ```bash
-hotplex check
-# 输出应包含：feishu ✓  app_id=cli_xxx  ws=ready
+hotplex doctor
+# 输出应包含：messaging.feishu_creds ✓  Feishu credentials present
 ```
 
 ---
@@ -102,14 +102,14 @@ hotplex gateway start -d
 **验证**：
 
 ```bash
-hotplex gateway status
+hotplex status
 # 输出应显示：feishu ✓  connected
 ```
 
 查看实时日志确认飞书连接成功：
 
 ```bash
-hotplex gateway logs -f
+hotplex service logs -f
 # 期望看到：feishu ws connected  app_id=cli_xxx
 ```
 
@@ -136,7 +136,7 @@ hotplex gateway logs -f
 1. 在飞书中按住语音按钮发送一段语音
 2. **期望**：Bot 通过 STT 将语音转写为文字，然后正常回复
 
-> 语音转写默认使用本地 STT 引擎。如未安装，参考 `docs/STT-Setup.md`。
+> 语音转写默认使用本地 STT 引擎。如未安装，参考 `docs/channels/STT-SETUP.md`。
 
 ---
 
@@ -194,8 +194,8 @@ HOTPLEX_MESSAGING_TTS_MAX_CHARS=150
 | 症状 | 检查项 |
 |------|--------|
 | `feishu ✗` | 确认 `APP_ID`/`APP_SECRET` 正确，应用已发布 |
-| 消息无回复 | `hotplex gateway logs -f` 查看 Worker 错误 |
+| 消息无回复 | `hotplex service logs -f` 查看 Worker 错误 |
 | 语音不转写 | 检查 STT provider 配置和本地引擎是否安装 |
 | 群聊不响应 | 确认 `REQUIRE_MENTION=true` 时已 @机器人 |
 
-更多细节参考 [配置文档](../../configs/README.md) 和 [STT 安装手册](../STT-Setup.md)。
+更多细节参考 [配置文档](../../configs/README.md) 和 [STT 安装手册](../channels/STT-SETUP.md)。

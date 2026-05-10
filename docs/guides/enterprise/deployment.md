@@ -194,8 +194,8 @@ messaging:
 **版本管理**：配置变更自动记录 64 个版本历史，支持快速回滚：
 
 ```bash
-curl -H "Authorization: Bearer $TOKEN" localhost:9999/admin/config/history
-curl -XPOST -H "Authorization: Bearer $TOKEN" localhost:9999/admin/config/rollback?version=42
+# 回滚到指定版本（version=1 回退一步）
+curl -X POST -H "Authorization: Bearer $TOKEN" localhost:9999/admin/config/rollback?version=1
 ```
 
 ---

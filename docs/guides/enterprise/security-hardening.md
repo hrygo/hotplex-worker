@@ -32,8 +32,8 @@ location /ws {
 
 | 配置项 | 默认值 | 生产建议 |
 |--------|--------|---------|
-| `gateway.listen_addr` | `localhost:8888` | 保持 localhost，由反向代理暴露 |
-| `admin.listen_addr` | `localhost:9999` | 禁止公网暴露 |
+| `gateway.addr` | `localhost:8888` | 保持 localhost，由反向代理暴露 |
+| `admin.addr` | `localhost:9999` | 禁止公网暴露 |
 | TLS 终止 | 不内置 | 由 Nginx/Caddy 处理 |
 | CORS | 默认限制 | 按需配置 `allowed_origins` |
 

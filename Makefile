@@ -53,6 +53,7 @@ CYAN   := \033[36m
 .PHONY: dev dev-start dev-stop dev-status dev-logs dev-reset
 .PHONY: gateway-start gateway-stop gateway-status gateway-logs
 .PHONY: webchat-dev webchat-stop webchat-embed webchat-rebuild
+.PHONY: docs-build docs-clean
 .PHONY: test test-short lint fmt quality check clean
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -121,7 +122,7 @@ endef
 # Build
 # ─────────────────────────────────────────────────────────────────────────────
 
-build: webchat-embed
+build: docs-build webchat-embed
 	@echo "$(CYAN)Building...$(RESET)"
 	@mkdir -p $(BUILD_DIR) $(LOG_DIR)
 	@go build $(BUILD_OPTS) -ldflags="$(LDFLAGS)" \
@@ -265,6 +266,19 @@ webchat-rebuild:
 	@echo "  $(GREEN)✓$(RESET) Webchat rebuilt"
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Documentation
+# ─────────────────────────────────────────────────────────────────────────────
+
+docs-build:
+	@echo "$(CYAN)Building documentation...$(RESET)"
+	@go run cmd/build-docs/main.go
+	@echo "  $(GREEN)✓$(RESET) Documentation built"
+
+docs-clean:
+	@rm -rf internal/docs/out
+	@echo "  $(GREEN)✓$(RESET) Documentation cleaned"
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Clean
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -311,6 +325,10 @@ help:
 	@printf "    $(CYAN)make %-15s$(RESET)  %s\n" "gateway-status"  "Gateway"
 	@printf "    $(CYAN)make %-15s$(RESET)  %s\n" "dev-logs"      "View all logs"
 	@printf "    $(CYAN)make %-15s$(RESET)  %s\n" "gateway-logs"   "Gateway logs"
+	@echo ""
+	@echo "  $(BOLD)📖 Documentation"
+	@printf "    $(CYAN)make %-15s$(RESET)  %s\n" "docs-build"    "Build static HTML docs"
+	@printf "    $(CYAN)make %-15s$(RESET)  %s\n" "docs-clean"    "Remove generated docs"
 	@echo ""
 	@echo "  $(BOLD)🔄 Workflow"
 	@printf "    $(CYAN)make %-15s$(RESET)  %s\n" "dev-reset"   "Restart all services"

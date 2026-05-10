@@ -1,0 +1,1808 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title> | HotPlex Docs</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&family=Noto+Serif+SC:wght@200..900&family=Outfit:wght@100..900&family=Source+Serif+4:ital,opsz,wght@0,8..60,200..900;1,8..60,200..900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --ivory:    #FAF9F5;
+            --slate:    #0F0F0E;
+            --clay:     #C35A3E;
+            --oat:      #E3DACC;
+            --olive:    #63744D;
+            --gray-50:  #FBFBF9;
+            --gray-100: #F5F4F0;
+            --gray-200: #EBEAE4;
+            --gray-300: #DCDAD1;
+            --gray-500: #7A7973;
+            --gray-700: #3D3D3A;
+            --white:    #FFFFFF;
+            
+            --font-display: 'Outfit', system-ui, sans-serif;
+            --font-serif: 'Source Serif 4', 'Noto Serif SC', ui-serif, Georgia, serif;
+            --font-sans: 'Inter', 'Noto Sans SC', system-ui, sans-serif;
+            --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        html { scroll-behavior: smooth; }
+
+        body {
+            font-family: var(--font-sans);
+            background: var(--ivory);
+            color: var(--gray-700);
+            line-height: 1.6;
+            display: flex;
+            min-height: 100vh;
+            -webkit-font-smoothing: antialiased;
+        }
+
+         
+        aside.sidebar {
+            width: 300px;
+            background: var(--gray-100);
+            border-right: 1px solid var(--gray-300);
+            padding: 48px 32px;
+            position: sticky;
+            top: 0;
+            height: 100vh;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .logo-area {
+            margin-bottom: 48px;
+        }
+
+        .logo {
+            font-family: var(--font-display);
+            font-size: 26px;
+            font-weight: 700;
+            color: var(--slate);
+            text-decoration: none;
+            letter-spacing: -0.02em;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .logo::before {
+            content: "";
+            width: 12px;
+            height: 12px;
+            background: var(--clay);
+            border-radius: 2px;
+            transform: rotate(45deg);
+        }
+
+        nav .nav-section {
+            margin-bottom: 32px;
+        }
+
+        nav .category {
+            font-family: var(--font-mono);
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--gray-500);
+            margin-bottom: 12px;
+            display: block;
+        }
+
+        nav ul { list-style: none; }
+        nav li { margin-bottom: 4px; }
+        nav a {
+            text-decoration: none;
+            color: var(--gray-500);
+            font-size: 14px;
+            padding: 6px 12px;
+            border-radius: 6px;
+            display: block;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+        }
+        nav a:hover {
+            background: var(--gray-200);
+            color: var(--slate);
+        }
+        nav a.active {
+            background: var(--white);
+            color: var(--clay);
+            font-weight: 600;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+        nav a.active::before {
+            content: "";
+            position: absolute;
+            left: 0;
+            top: 20%;
+            bottom: 20%;
+            width: 3px;
+            background: var(--clay);
+            border-radius: 0 2px 2px 0;
+        }
+
+         
+        main.content {
+            flex: 1;
+            padding: 80px 80px 120px;
+            background: var(--white);
+        }
+
+        article {
+            max-width: 840px;
+            margin: 0 auto;
+        }
+
+        header.article-head { margin-bottom: 64px; }
+        .eyebrow {
+            font-family: var(--font-mono);
+            font-size: 12px;
+            color: var(--clay);
+            margin-bottom: 16px;
+            text-transform: uppercase;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+        }
+        h1 {
+            font-family: var(--font-serif);
+            font-size: 48px;
+            font-weight: 700;
+            line-height: 1.15;
+            color: var(--slate);
+            margin-bottom: 20px;
+            letter-spacing: -0.01em;
+        }
+        .description { 
+            font-size: 20px; 
+            color: var(--gray-500); 
+            line-height: 1.5;
+            font-family: var(--font-sans);
+        }
+
+         
+        .prose h2 {
+            font-family: var(--font-serif);
+            font-size: 32px;
+            font-weight: 600;
+            color: var(--slate);
+            margin: 64px 0 24px;
+            padding-top: 12px;
+            border-top: 1px solid var(--gray-200);
+        }
+        .prose h3 {
+            font-family: var(--font-serif);
+            font-size: 24px;
+            font-weight: 600;
+            color: var(--slate);
+            margin: 40px 0 16px;
+        }
+        .prose p { 
+            margin-bottom: 24px; 
+            font-size: 17px; 
+            line-height: 1.7;
+        }
+        .prose ul, .prose ol { margin-bottom: 24px; padding-left: 28px; }
+        .prose li { margin-bottom: 10px; font-size: 17px; }
+        
+        .prose a {
+            color: var(--clay);
+            text-decoration: none;
+            border-bottom: 1px solid rgba(195, 90, 62, 0.2);
+            transition: border-color 0.2s;
+        }
+        .prose a:hover { border-bottom-color: var(--clay); }
+
+         
+        .prose table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            margin: 40px 0;
+            font-size: 15px;
+            border: 1px solid var(--gray-300);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        .prose th {
+            background: var(--gray-50);
+            text-align: left;
+            padding: 14px 20px;
+            border-bottom: 1px solid var(--gray-300);
+            color: var(--slate);
+            font-weight: 600;
+            font-family: var(--font-display);
+        }
+        .prose td {
+            padding: 14px 20px;
+            border-bottom: 1px solid var(--gray-100);
+            color: var(--gray-700);
+        }
+        .prose tr:last-child td { border-bottom: none; }
+
+         
+        .prose pre {
+            background: var(--slate) !important;
+            border-radius: 16px;
+            padding: 28px;
+            margin: 40px 0;
+            overflow-x: auto;
+            border: 1px solid rgba(255,255,255,0.05);
+            box-shadow: 0 20px 50px rgba(0,0,0,0.15);
+            position: relative;
+        }
+        .prose code {
+            font-family: var(--font-mono);
+            font-size: 14px;
+            line-height: 1.6;
+        }
+        .prose :not(pre) > code {
+            background: var(--gray-100);
+            padding: 3px 8px;
+            border-radius: 6px;
+            font-size: 0.85em;
+            color: var(--clay);
+            font-weight: 500;
+            border: 1px solid var(--gray-300);
+        }
+
+         
+        .mermaid {
+            background: var(--white);
+            padding: 32px;
+            border-radius: 16px;
+            margin: 48px 0;
+            border: 1px solid var(--gray-300);
+            display: flex;
+            justify-content: center;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.03);
+            transition: transform 0.3s ease;
+        }
+        .mermaid:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px rgba(0,0,0,0.06);
+        }
+        .mermaid:not([data-processed="true"]) {
+            visibility: hidden;
+            height: 0;
+            margin: 0;
+            padding: 0;
+        }
+
+         
+        .prose blockquote {
+            border-left: 4px solid var(--clay);
+            background: var(--gray-50);
+            padding: 32px 40px;
+            margin: 48px 0;
+            border-radius: 0 16px 16px 0;
+            font-family: var(--font-serif);
+            font-style: italic;
+            font-size: 1.1em;
+            color: var(--slate);
+        }
+
+        .prose img {
+            max-width: 100%;
+            border-radius: 16px;
+            margin: 48px 0;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.08);
+        }
+
+        footer {
+            margin-top: 120px;
+            padding-top: 48px;
+            border-top: 1px solid var(--gray-200);
+            color: var(--gray-500);
+            font-size: 13px;
+            text-align: center;
+            font-family: var(--font-mono);
+            letter-spacing: 0.02em;
+        }
+
+         
+        .copy-btn {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+            color: white;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-family: var(--font-mono);
+            cursor: pointer;
+            opacity: 0;
+            transition: all 0.2s;
+        }
+        .prose pre:hover .copy-btn { opacity: 1; }
+        .copy-btn:hover { background: rgba(255,255,255,0.2); }
+
+        @media (max-width: 1024px) {
+            aside.sidebar { width: 260px; padding: 40px 24px; }
+            main.content { padding: 60px 40px; }
+        }
+
+        @media (max-width: 768px) {
+            body { flex-direction: column; }
+            aside.sidebar { width: 100%; height: auto; position: relative; border-right: none; border-bottom: 1px solid var(--gray-300); }
+            main.content { padding: 40px 24px; }
+            h1 { font-size: 36px; }
+        }
+    </style>
+</head>
+<body>
+    <aside class="sidebar">
+        <div class="logo-area">
+            <a href="../../index.html" class="logo">HOTPLEX</a>
+        </div>
+        <nav>
+            
+                <div class="nav-section">
+                
+                    <li><a href="../../Architecture-Design.html" >Architecture Design</a></li>
+                
+                </div>
+            
+                <div class="nav-section">
+                
+                    <li><a href="../../Reference-Manual.html" >Reference Manual</a></li>
+                
+                </div>
+            
+                <div class="nav-section">
+                
+                    <li><a href="../../Security-Governance.html" >Security Governance</a></li>
+                
+                </div>
+            
+                <div class="nav-section">
+                
+                    <li><a href="../../User-Manual.html" >User Manual</a></li>
+                
+                </div>
+            
+                <div class="nav-section">
+                
+                    <div class="category">Architecture</div>
+                    <ul>
+                        
+                        <li><a href="../../architecture/Agent-Config-Design.html" >Agent Config Design</a></li>
+                        
+                    </ul>
+                
+                </div>
+            
+                <div class="nav-section">
+                
+                    <div class="category">Channels</div>
+                    <ul>
+                        
+                        <li><a href="../../channels/STT-SETUP.html" >STT SETUP</a></li>
+                        
+                    </ul>
+                
+                </div>
+            
+                <div class="nav-section">
+                
+                    <div class="category">Explanation</div>
+                    <ul>
+                        
+                        <li><a href="../../explanation/agent-config-system.html" >Agent 配置系统</a></li>
+                        
+                        <li><a href="../../explanation/brain-llm-orchestration.html" >Brain/LLM 编排层</a></li>
+                        
+                        <li><a href="../../explanation/cron-design.html" >Cron AI-native 定时任务调度器</a></li>
+                        
+                        <li><a href="../../explanation/security-model.html" >Security Model</a></li>
+                        
+                        <li><a href="../../explanation/session-lifecycle.html" >Session 生命周期</a></li>
+                        
+                        <li><a href="../../explanation/why-hotplex.html" >为什么选择 HotPlex</a></li>
+                        
+                    </ul>
+                
+                </div>
+            
+                <div class="nav-section">
+                
+                    <li><a href="../../getting-started.html" >HotPlex 5 分钟快速上手</a></li>
+                
+                </div>
+            
+                <div class="nav-section">
+                
+                    <div class="category">Guides</div>
+                    <ul>
+                        
+                        <li><a href="../../" >Contributor</a></li>
+                        
+                        <li><a href="../../" >Developer</a></li>
+                        
+                        <li><a href="../../" >Enterprise</a></li>
+                        
+                        <li><a href="../../" >User</a></li>
+                        
+                    </ul>
+                
+                </div>
+            
+                <div class="nav-section">
+                
+                    <li><a href="../../index.html" >HotPlex 文档中心</a></li>
+                
+                </div>
+            
+                <div class="nav-section">
+                
+                    <div class="category">Reference</div>
+                    <ul>
+                        
+                        <li><a href="../../reference/admin-api.html" >Admin Api</a></li>
+                        
+                        <li><a href="../../reference/aep-protocol.html" >Aep Protocol</a></li>
+                        
+                        <li><a href="../../reference/cli.html" >HotPlex CLI 完整参考</a></li>
+                        
+                        <li><a href="../../reference/configuration.html" >配置完整参考</a></li>
+                        
+                        <li><a href="../../reference/events.html" >AEP 事件类型参考</a></li>
+                        
+                        <li><a href="../../reference/glossary.html" >HotPlex 术语表</a></li>
+                        
+                        <li><a href="../../reference/metrics.html" >Metrics 参考</a></li>
+                        
+                        <li><a href="../../reference/sdk-go.html" >Go Client SDK 参考</a></li>
+                        
+                        <li><a href="../../reference/sdk-python.html" >Python Client SDK 参考</a></li>
+                        
+                        <li><a href="../../reference/sdk-typescript.html" >TypeScript Client SDK 参考</a></li>
+                        
+                        <li><a href="../../reference/security-policies.html" >安全策略参考</a></li>
+                        
+                    </ul>
+                
+                </div>
+            
+                <div class="nav-section">
+                
+                    <div class="category">Tutorials</div>
+                    <ul>
+                        
+                        <li><a href="../../tutorials/agent-personality.html" >Agent 人格定制教程</a></li>
+                        
+                        <li><a href="../../tutorials/cron-scheduled-tasks.html" >定时任务 (Cron) 教程</a></li>
+                        
+                        <li><a href="../../tutorials/feishu-integration.html" >飞书 (Feishu) 集成教程</a></li>
+                        
+                        <li><a href="../../tutorials/slack-integration.html" >Slack 集成教程</a></li>
+                        
+                    </ul>
+                
+                </div>
+            
+        </nav>
+    </aside>
+    <main class="content">
+        <article>
+            <header class="article-head">
+                <div class="eyebrow">Documentation</div>
+                
+                
+            </header>
+            <div class="prose">
+                <h1 id="hotplex-worker-gateway--configuration-guide">HotPlex Worker Gateway — Configuration Guide</h1>
+<p><code>configs/</code> 目录包含完整的配置体系。项目遵循 <strong>Convention Over Configuration</strong> 原则——代码内嵌生产就绪的默认值 (<code>internal/config/config.go:Default()</code>)，所有 YAML 字段均可选。</p>
+<hr>
+<h2 id="heading">目录结构</h2>
+<pre tabindex="0" style="color:#f8f8f2;background-color:#272822;"><code><span style="display:flex;"><span>configs/
+</span></span><span style="display:flex;"><span>├── config.yaml          # Base — 生产中性默认值，覆盖代码 Default() 的部分字段
+</span></span><span style="display:flex;"><span>├── config-dev.yaml      # Dev  — 继承 base，覆盖开发环境值
+</span></span><span style="display:flex;"><span>├── config-prod.yaml     # Prod — 继承 base，覆盖生产环境值
+</span></span><span style="display:flex;"><span>├── env.example          # 环境变量模板 → cp 到 .env 使用
+</span></span><span style="display:flex;"><span>└── README.md
+</span></span></code></pre><hr>
+<h2 id="heading-1">快速开始</h2>
+<pre tabindex="0" style="color:#f8f8f2;background-color:#272822;"><code><span style="display:flex;"><span>cp configs/env.example ~/.hotplex/.env   <span style="color:#75715e"># 填入 HOTPLEX_JWT_SECRET、HOTPLEX_ADMIN_TOKEN_1</span>
+</span></span><span style="display:flex;"><span>make dev                                <span style="color:#75715e"># 自动使用 config-dev.yaml</span>
+</span></span></code></pre><hr>
+<h2 id="heading-2">配置优先级（从低到高）</h2>
+<table>
+<thead>
+<tr>
+<th style="text-align:center">优先级</th>
+<th style="text-align:left">来源</th>
+<th style="text-align:left">说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:center">1</td>
+<td style="text-align:left"><code>Default()</code> 代码默认值</td>
+<td style="text-align:left"><code>internal/config/config.go</code> 编译时内嵌</td>
+</tr>
+<tr>
+<td style="text-align:center">2</td>
+<td style="text-align:left">父级配置文件</td>
+<td style="text-align:left"><code>inherits</code> 递归加载，支持多级继承与循环检测</td>
+</tr>
+<tr>
+<td style="text-align:center">3</td>
+<td style="text-align:left">当前配置文件</td>
+<td style="text-align:left"><code>-config</code> 指定的 YAML</td>
+</tr>
+<tr>
+<td style="text-align:center">4</td>
+<td style="text-align:left">环境变量 <code>HOTPLEX_*</code></td>
+<td style="text-align:left">Viper AutomaticEnv + <code>applyMessagingEnv()</code> 手动映射</td>
+</tr>
+<tr>
+<td style="text-align:center">5</td>
+<td style="text-align:left">Secrets Provider</td>
+<td style="text-align:left">JWT/Token 等敏感字段，仅此渠道</td>
+</tr>
+</tbody>
+</table>
+<p>环境变量映射公式：<code>HOTPLEX_&lt;SECTION&gt;_&lt;FIELD&gt;</code>，全大写下划线连接。
+例如 <code>pool.max_size</code> → <code>HOTPLEX_POOL_MAX_SIZE</code>。</p>
+<p>编号式环境变量支持令牌轮转：<code>HOTPLEX_ADMIN_TOKEN_1</code> &hellip; <code>HOTPLEX_ADMIN_TOKEN_N</code>。</p>
+<hr>
+<h2 id="heading-3">配置继承</h2>
+<p>子配置通过 <code>inherits</code> 指定父文件，只需列出与 base 不同的字段。支持多级继承和循环检测。</p>
+<pre tabindex="0" style="color:#f8f8f2;background-color:#272822;"><code><span style="display:flex;"><span><span style="color:#f92672">inherits</span>: <span style="color:#ae81ff">config.yaml</span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">log</span>:
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">level</span>: <span style="color:#e6db74">&#34;debug&#34;</span>
+</span></span></code></pre><hr>
+<h2 id="heading-4">完整字段参考</h2>
+<blockquote>
+<p><strong>默认值列</strong>为 <code>config.yaml</code> 的值（即实际生效的 base 值）。括号内标注代码 <code>Default()</code> 的原始值，仅当两者不同时显示。</p>
+</blockquote>
+<h3 id="gateway--websocket-">gateway — WebSocket 网关</h3>
+<p>控制 WebSocket 连接的底层传输参数。Hub 为每个连接启动独立的 ReadPump / WritePump goroutine，通过带缓冲的 broadcast channel 路由事件。</p>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">字段</th>
+<th style="text-align:left">类型</th>
+<th style="text-align:left">默认值</th>
+<th style="text-align:center">热重载</th>
+<th style="text-align:left">说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><code>addr</code></td>
+<td style="text-align:left">string</td>
+<td style="text-align:left"><code>:8888</code></td>
+<td style="text-align:center">❌</td>
+<td style="text-align:left">网关监听地址。客户端通过此端口建立 WebSocket 连接（AEP v1 协议）。生产环境建议置于反向代理（Nginx/ALB）之后并启用 TLS。<strong>启动后不可变更</strong>——HTTP Server 在启动时绑定端口</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>read_buffer_size</code></td>
+<td style="text-align:left">int</td>
+<td style="text-align:left"><code>4096</code></td>
+<td style="text-align:center">❌</td>
+<td style="text-align:left">WebSocket 读缓冲区大小（bytes）。<code>gorilla/websocket.Upgrader</code> 在 HTTP → WS 升级时分配，影响单连接内存占用。4KB 适合以 JSON 文本为主的消息流。<strong>启动后不可变更</strong>——Upgrader 在 NewHub 时初始化</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>write_buffer_size</code></td>
+<td style="text-align:left">int</td>
+<td style="text-align:left"><code>4096</code></td>
+<td style="text-align:center">❌</td>
+<td style="text-align:left">WebSocket 写缓冲区大小（bytes）。同上，为写方向预分配的缓冲。<strong>启动后不可变更</strong>——同 <code>read_buffer_size</code></td>
+</tr>
+<tr>
+<td style="text-align:left"><code>ping_interval</code></td>
+<td style="text-align:left">duration</td>
+<td style="text-align:left"><code>54s</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">服务端发送 WebSocket Ping 帧的间隔。必须小于 <code>pong_timeout</code>，推荐为其 90%。ReadPump goroutine 在此间隔触发 WritePump 发送 Ping，用于检测半开连接（客户端进程崩溃但 TCP 未关闭）</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>pong_timeout</code></td>
+<td style="text-align:left">duration</td>
+<td style="text-align:left"><code>60s</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">等待客户端 Pong 响应的超时。超时后 ReadPump 关闭连接，触发 Hub 注销和 session 清理。此值应略大于客户端的 ping-pong 往返延迟</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>write_timeout</code></td>
+<td style="text-align:left">duration</td>
+<td style="text-align:left"><code>10s</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">单次 WebSocket 写操作的截止时间。WritePump 在发送每条消息前设置 <code>SetWriteDeadline</code>，超时则判定连接已死。防止慢速客户端阻塞其他连接的写操作</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>idle_timeout</code></td>
+<td style="text-align:left">duration</td>
+<td style="text-align:left"><code>5m</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">WebSocket 物理连接空闲超时。如果连接在此时间内没有任何帧（包括 ping/pong），服务端主动断开。用于清理已断开但 TCP 未关闭的僵尸连接</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>max_frame_size</code></td>
+<td style="text-align:left">int64</td>
+<td style="text-align:left"><code>32768</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">单个 WebSocket 帧最大允许字节数（32KB）。ReadPump 使用此值设置 <code>SetReadLimit</code>，超过则立即关闭连接。防止恶意客户端发送超大帧耗尽内存</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>broadcast_queue_size</code></td>
+<td style="text-align:left">int</td>
+<td style="text-align:left"><code>256</code></td>
+<td style="text-align:center">❌</td>
+<td style="text-align:left">Hub broadcast channel 的缓冲大小。Hub.Run() 从此 channel 消费事件并路由到各 session 连接。增大可缓解瞬时事件突发，但增加内存占用。<strong>启动后不可变更</strong>——Go channel 大小在 make 时确定</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>platform_write_buffer</code></td>
+<td style="text-align:left">int</td>
+<td style="text-align:left"><code>64</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">平台连接（Slack/Feishu）的异步写 channel 容量。每个 platform conn 内部有一个带缓冲 channel 接收待发送事件，WriteCtx 将事件入队后立即返回。64 个槽位在 120ms 合并窗口下可容纳约 8 个批次</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>platform_drop_threshold</code></td>
+<td style="text-align:left">int</td>
+<td style="text-align:left"><code>56</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">平台连接开始丢弃可丢弃事件的水位线（channel 填充度）。当 channel 使用量超过此阈值（87.5%），<code>message.delta</code> 和 <code>raw</code> 事件被静默丢弃以缓解反压，但 <code>state</code>/<code>done</code>/<code>error</code> 等关键事件永不丢弃</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>delta_coalesce_interval</code></td>
+<td style="text-align:left">duration</td>
+<td style="text-align:left"><code>120ms</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">平台连接 Delta 事件的合并窗口。在此时间窗口内的多个 <code>message.delta</code> 事件会被合并为一次 API 调用发送给 Slack/Feishu。120ms 约等于每秒 8.3 次更新，适配飞书 CardKit 的 10 次/秒限制，同时保持首 token 延迟在 200ms 感知阈值内</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>delta_coalesce_size</code></td>
+<td style="text-align:left">int</td>
+<td style="text-align:left"><code>200</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">Delta 合并的 rune 数量阈值。当合并窗口内累积的文本超过 200 个 rune（约 40 个 token），立即刷新而非等待定时器。作为突发流量的安全阀，仅在输出高峰时触发</td>
+</tr>
+</tbody>
+</table>
+<h3 id="admin---api">admin — 管理 API</h3>
+<p>提供 REST 端点用于监控（stats、health）和会话管理（list、get、terminate）。应通过防火墙或网络策略限制访问。</p>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">字段</th>
+<th style="text-align:left">类型</th>
+<th style="text-align:left">默认值</th>
+<th style="text-align:center">热重载</th>
+<th style="text-align:left">说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><code>enabled</code></td>
+<td style="text-align:left">bool</td>
+<td style="text-align:left"><code>true</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">是否启动 Admin HTTP 服务。设为 <code>false</code> 则不监听管理端口，所有 <code>/admin/*</code> 端点不可用</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>addr</code></td>
+<td style="text-align:left">string</td>
+<td style="text-align:left"><code>:9999</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">Admin API 监听地址。生产环境应绑定到内网 IP（如 <code>10.0.0.1:9999</code>）或通过 <code>allowed_cidrs</code> 限制访问</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>tokens</code></td>
+<td style="text-align:left">[]string</td>
+<td style="text-align:left"><code>[]</code></td>
+<td style="text-align:center">✅</td>
+<td style="text-align:left">授权令牌列表。通过 <code>HOTPLEX_ADMIN_TOKEN_1..N</code> 编号式环境变量设置。每个请求需携带 <code>Authorization: Bearer &lt;token&gt;</code> 头。支持多令牌用于无损轮转</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>token_scopes</code></td>
+<td style="text-align:left">map</td>
+<td style="text-align:left"><code>{}</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">令牌到权限的 RBAC 映射。key 为令牌值，value 为权限列表（如 <code>[&quot;session:read&quot;, &quot;session:write&quot;]</code>）。未映射的令牌使用 <code>default_scopes</code></td>
+</tr>
+<tr>
+<td style="text-align:left"><code>default_scopes</code></td>
+<td style="text-align:left">[]string</td>
+<td style="text-align:left"><code>[&quot;session:read&quot;, &quot;stats:read&quot;, &quot;health:read&quot;]</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">未在 <code>token_scopes</code> 中显式映射的令牌的默认权限集</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>ip_whitelist_enabled</code></td>
+<td style="text-align:left">bool</td>
+<td style="text-align:left"><code>false</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">启用 CIDR 白名单。开启后仅 <code>allowed_cidrs</code> 中的网段可访问 Admin API。Docker/Kubernetes 环境建议使用网络策略替代</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>allowed_cidrs</code></td>
+<td style="text-align:left">[]string</td>
+<td style="text-align:left"><code>127.0.0.0/8, 10.0.0.0/8</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">信任的 CIDR 网段列表。仅当 <code>ip_whitelist_enabled: true</code> 时生效</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>rate_limit_enabled</code></td>
+<td style="text-align:left">bool</td>
+<td style="text-align:left"><code>true</code></td>
+<td style="text-align:center">✅</td>
+<td style="text-align:left">启用基于令牌桶的速率限制。按客户端 IP 独立计数，防止单个客户端滥用管理接口</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>requests_per_sec</code></td>
+<td style="text-align:left">int</td>
+<td style="text-align:left"><code>10</code></td>
+<td style="text-align:center">✅</td>
+<td style="text-align:left">令牌桶的持续填充速率（每秒令牌数）。超出此速率的请求返回 429</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>burst</code></td>
+<td style="text-align:left">int</td>
+<td style="text-align:left"><code>20</code></td>
+<td style="text-align:center">✅</td>
+<td style="text-align:left">令牌桶的最大容量（突发上限）。允许短时间内的请求突发，如监控面板轮询</td>
+</tr>
+</tbody>
+</table>
+<h3 id="db--">db — 数据存储</h3>
+<p>控制 SQLite 持久化行为。所有写操作通过单写 goroutine 串行化（channel 缓冲 50 条/100ms 批量刷盘），保证 WAL 模式下的写入一致性。</p>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">字段</th>
+<th style="text-align:left">类型</th>
+<th style="text-align:left">默认值</th>
+<th style="text-align:center">热重载</th>
+<th style="text-align:left">说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><code>path</code></td>
+<td style="text-align:left">string</td>
+<td style="text-align:left"><code>~/.hotplex/data/hotplex.db</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">SQLite 数据库文件路径。<code>~</code> 自动展开为用户主目录。文件不存在时自动创建。加载时自动转为绝对路径</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>events_path</code></td>
+<td style="text-align:left">string</td>
+<td style="text-align:left"><code>~/.hotplex/data/events.db</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">SQLite 事件数据库文件路径。独立于 <code>path</code>，存储事件级持久化数据（AEP Envelope）。默认与主数据库同目录</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>wal_mode</code></td>
+<td style="text-align:left">bool</td>
+<td style="text-align:left"><code>true</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">启用 Write-Ahead Logging 模式。WAL 允许并发读写（读不阻塞写），是单写 goroutine 架构的前提。<strong>禁止关闭</strong>，否则写性能急剧下降且并发读不可用</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>busy_timeout</code></td>
+<td style="text-align:left">duration</td>
+<td style="text-align:left"><code>500ms</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">SQLite 锁等待超时。当另一个写操作持有时，当前操作在此时间内重试。500ms 在单写 goroutine 模型下足够覆盖一次批量刷盘</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>max_open_conns</code></td>
+<td style="text-align:left">int</td>
+<td style="text-align:left"><code>1</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">最大数据库连接数。SQLite 的并发写入受限于单连接，设为 1 确保所有操作在同一连接上串行化</td>
+</tr>
+</tbody>
+</table>
+<h3 id="security--">security — 安全与认证</h3>
+<p>控制客户端认证、TLS 加密、CORS 跨域策略。</p>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">字段</th>
+<th style="text-align:left">类型</th>
+<th style="text-align:left">默认值</th>
+<th style="text-align:center">热重载</th>
+<th style="text-align:left">说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><code>api_key_header</code></td>
+<td style="text-align:left">string</td>
+<td style="text-align:left"><code>X-API-Key</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">API Key 认证的 HTTP 头名称。客户端通过此头发送 API Key，Hub 在 WebSocket 升级前校验</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>api_keys</code></td>
+<td style="text-align:left">[]string</td>
+<td style="text-align:left"><code>[]</code></td>
+<td style="text-align:center">✅</td>
+<td style="text-align:left">允许访问的 API 密钥列表。通过 <code>HOTPLEX_SECURITY_API_KEY_1..N</code> 编号式环境变量设置。为空时不做 API Key 校验（依赖 JWT 或网络策略保护）。热重载时原子替换整个 key 集合，不影响进行中的请求</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>tls_enabled</code></td>
+<td style="text-align:left">bool</td>
+<td style="text-align:left"><code>false</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">启用 TLS（WSS）。生产环境<strong>必须</strong>设为 <code>true</code>。启用后网关使用 <code>tls_cert_file</code> 和 <code>tls_key_file</code> 加载证书</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>tls_cert_file</code></td>
+<td style="text-align:left">string</td>
+<td style="text-align:left"><code>/etc/hotplex/tls/server.crt</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">TLS 证书文件路径。仅当 <code>tls_enabled: true</code> 时使用</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>tls_key_file</code></td>
+<td style="text-align:left">string</td>
+<td style="text-align:left"><code>/etc/hotplex/tls/server.key</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">TLS 私钥文件路径。仅当 <code>tls_enabled: true</code> 时使用</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>allowed_origins</code></td>
+<td style="text-align:left">[]string</td>
+<td style="text-align:left"><code>[&quot;*&quot;]</code></td>
+<td style="text-align:center">✅</td>
+<td style="text-align:left">CORS 允许的 Origin 列表。WebSocket 升级时 <code>Upgrader.CheckOrigin</code> 校验请求的 Origin 头。<code>[&quot;*&quot;]</code> 允许所有来源（仅开发用），生产应限制为具体域名。热重载即时生效——每次 WS 升级请求读取最新配置</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>jwt_audience</code></td>
+<td style="text-align:left">string</td>
+<td style="text-align:left"><code>hotplex-gateway</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">JWT <code>aud</code> 声明的期望值。用于验证令牌的目标受众，防止令牌跨服务复用</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>jwt_secret</code></td>
+<td style="text-align:left">[]byte</td>
+<td style="text-align:left">—</td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">JWT 签名密钥（ES256）。<strong>仅</strong>通过 <code>HOTPLEX_JWT_SECRET</code> 环境变量提供（base64 编码），禁止写入 YAML。用于签发和验证 session token</td>
+</tr>
+</tbody>
+</table>
+<h3 id="session--">session — 会话生命周期</h3>
+<p>会话遵循 5 状态机：<code>CREATED → RUNNING → IDLE → TERMINATED → DELETED</code>。Manager 持有内存中的活跃会话映射，SQLite 持久化元数据，后台 GC goroutine 按 <code>gc_scan_interval</code> 周期扫描过期会话。</p>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">字段</th>
+<th style="text-align:left">类型</th>
+<th style="text-align:left">默认值</th>
+<th style="text-align:center">热重载</th>
+<th style="text-align:left">说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><code>retention_period</code></td>
+<td style="text-align:left">duration</td>
+<td style="text-align:left"><code>168h</code> (7天)</td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">TERMINATED 会话在数据库中的保留时长。过期后 GC 扫描将其标记为 DELETED 并从数据库物理删除。较长的保留期支持会话历史回溯和调试</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>gc_scan_interval</code></td>
+<td style="text-align:left">duration</td>
+<td style="text-align:left"><code>1m</code></td>
+<td style="text-align:center">✅</td>
+<td style="text-align:left">GC 后台扫描间隔。每次扫描检查：① IDLE 会话的 idle_expires_at 是否到期 → TERMINATED ② 会话的 max_lifetime 是否到期 → TERMINATED ③ TERMINATED 会话的 retention_period 是否到期 → DELETE。热重载通过 channel 信号重置 ticker，不中断正在执行的 GC 周期</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>max_concurrent</code></td>
+<td style="text-align:left">int</td>
+<td style="text-align:left"><code>1000</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">全局最大并发活跃会话数（CREATED + RUNNING + IDLE）。超出时新会话创建请求被拒绝并返回 <code>POOL_EXHAUSTED</code> 错误。根据服务器内存和 Worker 资源需求调整。实际配额由 <code>pool.max_size</code> 控制</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>event_store_enabled</code></td>
+<td style="text-align:left">bool</td>
+<td style="text-align:left"><code>true</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">启用事件持久化。Bridge 在每个 <code>done</code> 事件时将完整 Envelope 写入 MessageStore，用于会话回放、调试和审计。关闭后不写事件日志，减少 I/O</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>event_store_type</code></td>
+<td style="text-align:left">string</td>
+<td style="text-align:left"><code>sqlite</code> (代码: <code>&quot;&quot;</code>)</td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">事件存储后端类型。目前仅支持 <code>&quot;sqlite&quot;</code>。空字符串表示未指定，依赖 config.yaml 设置</td>
+</tr>
+</tbody>
+</table>
+<h3 id="pool--">pool — 会话池</h3>
+<p>PoolManager 在内存中追踪全局和每用户的会话配额。每个 Worker 进程按 512MB 估算内存占用。</p>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">字段</th>
+<th style="text-align:left">类型</th>
+<th style="text-align:left">默认值</th>
+<th style="text-align:center">热重载</th>
+<th style="text-align:left">说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><code>min_size</code></td>
+<td style="text-align:left">int</td>
+<td style="text-align:left"><code>0</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">预热池最小维持数量。大于 0 时启动后立即预创建指定数量的 Worker 进程，减少首次请求延迟。生产环境建议 <code>&gt;0</code> 以消除冷启动</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>max_size</code></td>
+<td style="text-align:left">int</td>
+<td style="text-align:left"><code>100</code></td>
+<td style="text-align:center">✅</td>
+<td style="text-align:left">全局最大活跃会话数（所有用户合计）。PoolManager.Acquire() 在 <code>totalCount &gt;= maxSize</code> 时拒绝新会话。与 <code>session.max_concurrent</code> 协同工作</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>max_idle_per_user</code></td>
+<td style="text-align:left">int</td>
+<td style="text-align:left"><code>5</code> (代码: <code>5</code>)</td>
+<td style="text-align:center">✅</td>
+<td style="text-align:left">单个用户（bot_id）允许的最大同时活跃会话数。防止单个用户占用过多资源。0 = 不限</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>max_memory_per_user</code></td>
+<td style="text-align:left">int64</td>
+<td style="text-align:left"><code>3221225472</code> (3GB, 代码: 3GB)</td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">单个用户的总估算内存配额（bytes）。按每 Worker 512MB 估算，3GB 允许约 6 个并发 Worker。超出时拒绝新会话并返回 <code>MEMORY_EXCEEDED</code>。Linux 上 Worker 通过 RLIMIT_AS 硬限制为 512MB，macOS 不支持此机制。内存配额检查使用启动时快照</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h3 id="-workdir-priority">工作目录优先级 (WorkDir Priority)</h3>
+<p>Worker 进程启动时的工作目录遵循以下优先级覆盖逻辑：</p>
+<ol>
+<li><strong>会话级 (Session)</strong>：客户端在 <code>session.init</code> 的 <code>metadata.work_dir</code> 中指定的路径（最高优先级）。</li>
+<li><strong>平台级 (Platform)</strong>：在 <code>messaging.slack.work_dir</code> 或 <code>messaging.feishu.work_dir</code> 中指定的路径。</li>
+<li><strong>全局级 (Global)</strong>：在 <code>worker.default_work_dir</code> 中指定的路径（最低优先级，默认兜底）。</li>
+</ol>
+<hr>
+<h3 id="worker--worker-">worker — Worker 进程</h3>
+<p>每个会话对应一个独立的 Worker 子进程（如 <code>claude</code> CLI），通过 stdin/stdout 的 NDJSON 协议通信。进程使用 PGID 隔离，终止时对整个进程组发送信号。</p>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">字段</th>
+<th style="text-align:left">类型</th>
+<th style="text-align:left">默认值</th>
+<th style="text-align:center">热重载</th>
+<th style="text-align:left">说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><code>max_lifetime</code></td>
+<td style="text-align:left">duration</td>
+<td style="text-align:left"><code>24h</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left"><strong>绝对生存周期</strong>。Worker 进程从启动开始计算的强制最大寿命。到期后无论是否活跃均会被终止。旨在通过定期刷新来清除潜在的内存泄漏或内部状态退化。Worker 可通过 resume 机制在下次请求时无缝重启。</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>idle_timeout</code></td>
+<td style="text-align:left">duration</td>
+<td style="text-align:left"><code>60m</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left"><strong>闲置回收周期</strong>（Idle Recycle）。Worker 在等待新输入（IDLE 状态）时的最大允许时长。每次接收到用户输入后该计时器都会重置。旨在及时释放不活跃会话占用的资源。较短的超时释放资源更快，但可能导致用户体感的冷启动增加。</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>execution_timeout</code></td>
+<td style="text-align:left">duration</td>
+<td style="text-align:left"><code>30m</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left"><strong>僵死检测周期</strong>（Zombie IO Timeout）。Worker 在执行中（RUNNING 状态）无任何 I/O 输出反馈的最大时长。用于检测并强制清理卡死、陷入无限循环或无响应的 Worker 进程，防止会话永久阻塞。</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>default_work_dir</code></td>
+<td style="text-align:left">string</td>
+<td style="text-align:left"><code>~/.hotplex/workspace</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">Worker 进程的默认工作目录。当 session 或 platform 未指定 <code>work_dir</code> 时使用。<code>~</code> 自动展开为用户主目录。目录不存在时自动创建（<code>mkdir -p</code>）</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>pid_dir</code></td>
+<td style="text-align:left">string</td>
+<td style="text-align:left"><code>~/.hotplex/.pids/</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">PID 文件目录。proc.Manager 在启动 Worker 时写入 PID 文件用于孤儿进程清理。网关重启时自动扫描此目录，杀死不再有父进程的孤儿 Worker</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>env_blocklist</code></td>
+<td style="text-align:left">[]string</td>
+<td style="text-align:left"><code>[]</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">环境变量黑名单。默认所有 <code>os.Environ()</code> 变量透传给 Worker，仅黑名单中的变量被过滤。条目以 <code>_</code> 结尾时按前缀匹配（如 <code>HOTPLEX_</code> 阻止所有 <code>HOTPLEX_*</code> 变量）。<code>HOTPLEX_WORKER_</code> 前缀的变量会被剥离前缀后注入（如 <code>HOTPLEX_WORKER_GITHUB_TOKEN</code> → <code>GITHUB_TOKEN</code>）</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>environment</code></td>
+<td style="text-align:left">[]string</td>
+<td style="text-align:left"><code>[]</code></td>
+<td style="text-align:center">✅</td>
+<td style="text-align:left">额外注入 Worker 进程的环境变量列表。每个条目支持 <code>KEY=VALUE</code> 或 <code>KEY=${VAR}</code> 格式。这是唯一支持 <code>${VAR}</code> 展开的配置字段，引用未设置变量（无默认值）的条目会被静默丢弃。优先级最高，覆盖所有其他来源</td>
+</tr>
+</tbody>
+</table>
+<h3 id="workerauto-retry--llm-">worker.auto_retry — LLM 自动重试</h3>
+<p>当 Worker（如 Claude Code）遇到 LLM Provider 的临时错误（429 限流、529 过载、网络超时等），Bridge 自动检测并触发重试，对用户透明。</p>
+<p><strong>错误拦截机制</strong>：当 <code>enabled: true</code> 时，Worker 发出的 <code>error</code> 事件会被 Bridge 暂存而非立即转发。等到 <code>done</code> 事件到达时判断是否可重试——如果可重试，原始 error 事件被丢弃，用户只看到 notify 消息（如&quot;🔄 正在自动重试&quot;）；如果不可重试，error 事件在 done 之后放行给客户端。这样用户不会看到原始的 LLM 技术错误信息（如 &ldquo;429 rate_limit_error&rdquo;），只看到友好的重试通知。</p>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">字段</th>
+<th style="text-align:left">类型</th>
+<th style="text-align:left">默认值</th>
+<th style="text-align:center">热重载</th>
+<th style="text-align:left">说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><code>enabled</code></td>
+<td style="text-align:left">bool</td>
+<td style="text-align:left"><code>true</code></td>
+<td style="text-align:center">✅</td>
+<td style="text-align:left">启用自动重试。关闭后 Worker 遇到临时错误时直接将错误事件转发给客户端</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>max_retries</code></td>
+<td style="text-align:left">int</td>
+<td style="text-align:left"><code>9</code></td>
+<td style="text-align:center">✅</td>
+<td style="text-align:left">单个会话的最大重试次数。每次 Worker 完成一个 turn（<code>done</code> 事件），Bridge 检查输出是否匹配可重试错误模式。达到上限后停止重试，返回提示让用户手动操作。9 次重试在 base_delay=5s 指数退避下总耗时约 5+10+20+40+80+120+120+120+120 ≈ 640s（11 分钟），不会超过网关的 <code>execution_timeout</code>（默认 30 分钟）</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>base_delay</code></td>
+<td style="text-align:left">duration</td>
+<td style="text-align:left"><code>5s</code></td>
+<td style="text-align:center">✅</td>
+<td style="text-align:left">首次重试的等待时间。采用指数退避：第 1 次等 <code>base_delay</code>，第 2 次等 <code>2×base_delay</code>，依此类推，直到 <code>max_delay</code></td>
+</tr>
+<tr>
+<td style="text-align:left"><code>max_delay</code></td>
+<td style="text-align:left">duration</td>
+<td style="text-align:left"><code>120s</code></td>
+<td style="text-align:center">✅</td>
+<td style="text-align:left">退避延迟上限。即使指数增长超过此值，实际延迟也不会超过 120s</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>retry_input</code></td>
+<td style="text-align:left">string</td>
+<td style="text-align:left"><code>继续</code></td>
+<td style="text-align:center">✅</td>
+<td style="text-align:left">重试时发送给 Worker 的文本。Bridge 在 Worker 的 stdin 写入此文本，触发 Worker 重新发起 LLM 请求</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>notify_user</code></td>
+<td style="text-align:left">bool</td>
+<td style="text-align:left"><code>true</code></td>
+<td style="text-align:center">✅</td>
+<td style="text-align:left">重试期间是否通知用户。启用时在重试前发送一条 <code>message</code> 事件（如&quot;🔄 正在自动重试 (1/9)&hellip;&quot;），替代原始 LLM 错误信息。关闭后用户看不到任何重试提示，但错误信息仍然会被拦截</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>patterns</code></td>
+<td style="text-align:left">[]string</td>
+<td style="text-align:left"><code>[]</code></td>
+<td style="text-align:center">✅</td>
+<td style="text-align:left"><strong>追加模式 (Append Mode)</strong>。在此定义的正则表达式将追加到内置模式（如 429, 5xx, 网络超时等）之后。自定义模式与内置模式共同生效，不会覆盖内置逻辑。</td>
+</tr>
+</tbody>
+</table>
+<h3 id="webchat---web-chat">webchat — 嵌入式 Web Chat</h3>
+<p>控制网关内嵌的 Web Chat SPA 服务。Next.js 静态导出通过 <code>go:embed</code> 编译时嵌入二进制，网关同时托管 API 和前端。</p>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">字段</th>
+<th style="text-align:left">类型</th>
+<th style="text-align:left">默认值</th>
+<th style="text-align:center">热重载</th>
+<th style="text-align:left">说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><code>enabled</code></td>
+<td style="text-align:left">bool</td>
+<td style="text-align:left"><code>true</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">启用 Web Chat SPA 托管。设为 <code>false</code> 则网关仅提供 WebSocket/API 端点，不提供前端静态文件</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>addr</code></td>
+<td style="text-align:left">string</td>
+<td style="text-align:left"><code>&quot;&quot;</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">Web Chat 地址（信息展示用）。用于启动 Banner 显示，不控制实际监听端口。Web Chat 由 Gateway 的 HTTP Server 在同一端口托管</td>
+</tr>
+</tbody>
+</table>
+<h3 id="agent-config--agent--bc-channels">agent_config — Agent 角色配置 (B/C Channels)</h3>
+<p>定义 Agent 的“人格（Persona）”与“上下文（Context）”。系统自动将这些 Markdown 文件注入到系统提示词的 XML 标签中。</p>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">字段</th>
+<th style="text-align:left">类型</th>
+<th style="text-align:left">默认值</th>
+<th style="text-align:center">热重载</th>
+<th style="text-align:left">说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><code>enabled</code></td>
+<td style="text-align:left">bool</td>
+<td style="text-align:left"><code>true</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">是否启用 Agent 配置注入。关闭后 Agent 将仅使用代码内建的通用提示词。</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>config_dir</code></td>
+<td style="text-align:left">string</td>
+<td style="text-align:left"><code>~/.hotplex/agent-configs</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">配置文件根目录。支持 <strong>per-bot 3 级目录 fallback</strong>，按文件独立解析：<code>&lt;config_dir&gt;/&lt;platform&gt;/&lt;botID&gt;/&lt;file&gt;</code> → <code>&lt;config_dir&gt;/&lt;platform&gt;/&lt;file&gt;</code> → <code>&lt;config_dir&gt;/&lt;file&gt;</code>，命中第一个非空文件即停止。有效平台值：<code>slack</code>、<code>feishu</code>、<code>webchat</code>、<code>&quot;&quot;</code>（仅全局级）</td>
+</tr>
+</tbody>
+</table>
+<h3 id="skills--">skills — 技能管理</h3>
+<p>管理 Agent 可调用的工具和发现逻辑。</p>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">字段</th>
+<th style="text-align:left">类型</th>
+<th style="text-align:left">默认值</th>
+<th style="text-align:center">热重载</th>
+<th style="text-align:left">说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><code>cache_ttl</code></td>
+<td style="text-align:left">duration</td>
+<td style="text-align:left"><code>5m</code></td>
+<td style="text-align:center">✅</td>
+<td style="text-align:left">技能发现结果在内存中的缓存时长。过期后触发重新扫描。设为 <code>0</code> 则禁用缓存（不推荐，会增加磁盘 I/O）。</td>
+</tr>
+</tbody>
+</table>
+<h3 id="log--">log — 日志</h3>
+<p>控制网关进程的日志输出。使用 <code>log/slog</code> 结构化日志，所有日志带有 <code>service=hotplex-gateway</code> 和 <code>version</code> 字段。</p>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">字段</th>
+<th style="text-align:left">类型</th>
+<th style="text-align:left">默认值</th>
+<th style="text-align:center">热重载</th>
+<th style="text-align:left">说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><code>level</code></td>
+<td style="text-align:left">string</td>
+<td style="text-align:left"><code>info</code></td>
+<td style="text-align:center">✅</td>
+<td style="text-align:left">最低日志级别。<code>debug</code> 输出所有事件流转细节（每个收发的事件），适合开发调试。<code>info</code> 仅输出关键生命周期事件（连接注册、会话创建/终止等）。<code>warn</code>/<code>error</code> 仅输出异常情况。热重载通过 <code>slog.LevelVar</code> 即时生效，无需重启</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>format</code></td>
+<td style="text-align:left">string</td>
+<td style="text-align:left"><code>json</code></td>
+<td style="text-align:center">❌</td>
+<td style="text-align:left">日志格式。<code>json</code> 为结构化 JSON（适合日志聚合系统如 ELK/Loki）。<code>text</code> 为人类可读的 key=value 格式（适合终端直接查看）。Makefile <code>dev-logs</code> 使用 <code>tail -f</code> 展示。<strong>启动后不可变更</strong>——Handler 在初始化时确定格式</td>
+</tr>
+</tbody>
+</table>
+<h3 id="messaging--">messaging — 消息平台全局设置</h3>
+<p>控制所有消息平台（Slack/飞书）的共享行为。</p>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">字段</th>
+<th style="text-align:left">类型</th>
+<th style="text-align:left">默认值</th>
+<th style="text-align:center">热重载</th>
+<th style="text-align:left">说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><code>turn_summary_enabled</code></td>
+<td style="text-align:left">bool</td>
+<td style="text-align:left"><code>true</code></td>
+<td style="text-align:center">❌</td>
+<td style="text-align:left">是否在每次会话回合完成后发送 turn summary（回合摘要）。关闭后 Slack 不发送 TableBlock 摘要，飞书不发送 CardKit 卡片（但飞书仍保留 <code>Log.Info</code> 遥测日志）。通过环境变量 <code>HOTPLEX_MESSAGING_TURN_SUMMARY_ENABLED</code> 覆盖。<strong>启动时确定</strong>，运行中变更需重启</td>
+</tr>
+</tbody>
+</table>
+<h3 id="messagingslack--slack-socket-mode">messaging.slack — Slack Socket Mode</h3>
+<p>通过 Slack Socket Mode 建立 WebSocket 连接到 Slack 服务器，实现无需公网入口的消息收发。消息经过 chunker（长消息拆分）→ dedup（TTL 去重）→ format（Markdown 转换）→ rate limiter → send 的流水线处理。Streaming 使用 SlackStreamingWriter，以 150ms 间隔、20 rune 阈值增量更新消息。</p>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">字段</th>
+<th style="text-align:left">类型</th>
+<th style="text-align:left">默认值</th>
+<th style="text-align:center">热重载</th>
+<th style="text-align:left">说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><code>enabled</code></td>
+<td style="text-align:left">bool</td>
+<td style="text-align:left"><code>false</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">启用 Slack 适配器。启动时通过 Socket Mode 连接到 Slack 服务器，开始监听消息事件</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>bot_token</code></td>
+<td style="text-align:left">string</td>
+<td style="text-align:left">—</td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">Slack Bot User OAuth Token（<code>xoxb-</code> 前缀）。用于调用 Slack Web API 发送消息、更新卡片。通过环境变量 <code>HOTPLEX_MESSAGING_SLACK_BOT_TOKEN</code> 设置</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>app_token</code></td>
+<td style="text-align:left">string</td>
+<td style="text-align:left">—</td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">Slack App-Level Token（<code>xapp-</code> 前缀）。用于建立 Socket Mode WebSocket 连接。需要在 Slack App 配置中启用 Socket Mode 并生成。通过环境变量 <code>HOTPLEX_MESSAGING_SLACK_APP_TOKEN</code> 设置</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>socket_mode</code></td>
+<td style="text-align:left">bool</td>
+<td style="text-align:left"><code>true</code> (代码: <code>false</code>)</td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">启用 Socket Mode。Socket Mode 通过 WebSocket 与 Slack 服务器通信，无需公网可访问的 HTTP 端点。关闭则需要配置 Events API URL</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>worker_type</code></td>
+<td style="text-align:left">string</td>
+<td style="text-align:left"><code>claude_code</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">为 Slack 会话创建的 Worker 类型。决定使用哪个适配器启动 Worker 进程（<code>claude_code</code> = Claude Code CLI，<code>opencodeserver</code> = OpenCode Server）</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>work_dir</code></td>
+<td style="text-align:left">string</td>
+<td style="text-align:left">—</td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">Worker 进程的工作目录。为空时使用 <code>worker.default_work_dir</code>。可按平台设置不同目录</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>dm_policy</code></td>
+<td style="text-align:left">string</td>
+<td style="text-align:left"><code>allowlist</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">私聊（DM）的访问策略。<code>open</code> = 允许所有人，<code>allowlist</code> = 仅 <code>allow_from</code> + <code>allow_dm_from</code> 中的用户，<code>disabled</code> = 禁止所有私聊</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>group_policy</code></td>
+<td style="text-align:left">string</td>
+<td style="text-align:left"><code>allowlist</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">频道和群组 DM 的访问策略。选项同 <code>dm_policy</code>。<code>require_mention: true</code> 时，即使策略允许，也需要 @机器人 才触发</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>require_mention</code></td>
+<td style="text-align:left">bool</td>
+<td style="text-align:left"><code>true</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">群组中是否需要 @机器人 才触发处理。私聊始终触发，不受此限制。<code>true</code> 避免群组中的每条消息都创建 Worker 会话</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>allow_from</code></td>
+<td style="text-align:left">[]string</td>
+<td style="text-align:left"><code>[]</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">全局白名单（同时授权 DM 和群组）。值为 Slack User ID 或显示名。在 <code>allowlist</code> 策略下生效</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>allow_dm_from</code></td>
+<td style="text-align:left">[]string</td>
+<td style="text-align:left"><code>[]</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">仅私聊白名单。与 <code>allow_from</code> 合并去重</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>allow_group_from</code></td>
+<td style="text-align:left">[]string</td>
+<td style="text-align:left"><code>[]</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">仅群组白名单。与 <code>allow_from</code> 合并去重</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>reconnect_base_delay</code></td>
+<td style="text-align:left">duration</td>
+<td style="text-align:left"><code>1s</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">Socket Mode 连接断开后的首次重连延迟。采用指数退避，每次翻倍直到 <code>reconnect_max_delay</code></td>
+</tr>
+<tr>
+<td style="text-align:left"><code>reconnect_max_delay</code></td>
+<td style="text-align:left">duration</td>
+<td style="text-align:left"><code>60s</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">重连延迟上限。避免在网络故障时过于频繁地重试</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>assistant_api_enabled</code></td>
+<td style="text-align:left">*bool</td>
+<td style="text-align:left"><code>nil</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">是否启用 Assistant API 模式。<code>nil</code>（未设置）= 自动检测。<code>true</code> = 强制使用 Assistant API，<code>false</code> = 使用标准对话模式</td>
+</tr>
+</tbody>
+</table>
+<h3 id="messagingfeishu---websocket">messaging.feishu — 飞书 WebSocket</h3>
+<p>通过飞书 WebSocket 客户端接收事件（P2 模式），使用流式卡片（CardKit）实现增量更新。消息发送经过 4 层防护：TTL 守卫 → 完整性检查 → 带退避重试 → IM Patch 降级。</p>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">字段</th>
+<th style="text-align:left">类型</th>
+<th style="text-align:left">默认值</th>
+<th style="text-align:center">热重载</th>
+<th style="text-align:left">说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><code>enabled</code></td>
+<td style="text-align:left">bool</td>
+<td style="text-align:left"><code>false</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">启用飞书适配器。启动时通过 WebSocket 连接到飞书服务器，监听消息事件</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>app_id</code></td>
+<td style="text-align:left">string</td>
+<td style="text-align:left">—</td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">飞书应用 ID（<code>cli_</code> 前缀）。在飞书开放平台创建应用后获取。通过环境变量 <code>HOTPLEX_MESSAGING_FEISHU_APP_ID</code> 设置</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>app_secret</code></td>
+<td style="text-align:left">string</td>
+<td style="text-align:left">—</td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">飞书应用密钥。用于获取 tenant_access_token 调用飞书 API。通过环境变量 <code>HOTPLEX_MESSAGING_FEISHU_APP_SECRET</code> 设置</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>worker_type</code></td>
+<td style="text-align:left">string</td>
+<td style="text-align:left"><code>claude_code</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">为飞书会话创建的 Worker 类型。同 Slack 的 <code>worker_type</code></td>
+</tr>
+<tr>
+<td style="text-align:left"><code>work_dir</code></td>
+<td style="text-align:left">string</td>
+<td style="text-align:left">—</td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">Worker 进程工作目录。同 Slack 的 <code>work_dir</code></td>
+</tr>
+<tr>
+<td style="text-align:left"><code>dm_policy</code></td>
+<td style="text-align:left">string</td>
+<td style="text-align:left"><code>allowlist</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">单聊访问策略。选项同 Slack</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>group_policy</code></td>
+<td style="text-align:left">string</td>
+<td style="text-align:left"><code>allowlist</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">群组和话题群访问策略。选项同 Slack</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>require_mention</code></td>
+<td style="text-align:left">bool</td>
+<td style="text-align:left"><code>true</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">群组中是否需要 @机器人。同 Slack</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>allow_from</code></td>
+<td style="text-align:left">[]string</td>
+<td style="text-align:left"><code>[]</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">全局白名单。值为飞书 User ID 或 Open ID</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>allow_dm_from</code></td>
+<td style="text-align:left">[]string</td>
+<td style="text-align:left"><code>[]</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">仅单聊白名单</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>allow_group_from</code></td>
+<td style="text-align:left">[]string</td>
+<td style="text-align:left"><code>[]</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">仅群组白名单</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>stt_provider</code></td>
+<td style="text-align:left">string</td>
+<td style="text-align:left"><code>feishu+local</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">语音转文字引擎。<code>feishu</code> = 飞书 speech_to_text API（需开通权限），<code>local</code> = 本地命令行引擎（SenseVoice-Small ONNX），<code>feishu+local</code> = 云端优先本地降级（推荐），空 = 禁用 STT</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>stt_local_cmd</code></td>
+<td style="text-align:left">string</td>
+<td style="text-align:left"><code>python3 scripts/stt_server.py</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">本地 STT 命令。含 <code>{file}</code> → 每次请求 fork 新进程（冷启动约 3-5s）；不含 <code>{file}</code> → 常驻子进程 + stdin/stdout JSON 协议（零冷启动，适合高频使用，模型约占 900MB 内存）。详细安装说明见 <a href="../docs/STT-Setup.html">STT 安装手册</a></td>
+</tr>
+<tr>
+<td style="text-align:left"><code>stt_local_idle_ttl</code></td>
+<td style="text-align:left">duration</td>
+<td style="text-align:left"><code>15m</code></td>
+<td style="text-align:center">—</td>
+<td style="text-align:left">常驻模式空闲超时。STT 子进程在此时间内无转写请求则自动关闭，节省内存。0 = 永不关闭。仅常驻模式生效</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong>完整的 STT 安装配置说明</strong>见 <a href="../docs/STT-Setup.html">STT-Setup.md</a> —— 涵盖 Python 依赖安装、模型下载、Ephemeral/Persistent 模式配置、Docker 部署和故障排查。</p>
+</blockquote>
+<hr>
+<h2 id="heading-5">环境变量速查</h2>
+<p>所有环境变量以 <code>HOTPLEX_</code> 前缀。编号式变量 (<code>_1..N</code>) 支持多值轮转。</p>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">变量</th>
+<th style="text-align:center">必填</th>
+<th style="text-align:left">说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><code>HOTPLEX_JWT_SECRET</code></td>
+<td style="text-align:center"><strong>是</strong></td>
+<td style="text-align:left">JWT 签名密钥（base64 编码，ES256 算法）</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>HOTPLEX_ADMIN_TOKEN_1</code></td>
+<td style="text-align:center"><strong>是</strong></td>
+<td style="text-align:left">主管理端令牌</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>HOTPLEX_ADMIN_TOKEN_2..N</code></td>
+<td style="text-align:center">否</td>
+<td style="text-align:left">备用管理端令牌（轮转用）</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>HOTPLEX_SECURITY_API_KEY_1..N</code></td>
+<td style="text-align:center">否</td>
+<td style="text-align:left">客户端 API 密钥</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>HOTPLEX_LOG_LEVEL</code></td>
+<td style="text-align:center">否</td>
+<td style="text-align:left">覆盖 <code>log.level</code></td>
+</tr>
+<tr>
+<td style="text-align:left"><code>HOTPLEX_LOG_FORMAT</code></td>
+<td style="text-align:center">否</td>
+<td style="text-align:left">覆盖 <code>log.format</code></td>
+</tr>
+<tr>
+<td style="text-align:left"><code>HOTPLEX_DB_PATH</code></td>
+<td style="text-align:center">否</td>
+<td style="text-align:left">覆盖 <code>db.path</code></td>
+</tr>
+<tr>
+<td style="text-align:left"><code>HOTPLEX_GATEWAY_ADDR</code></td>
+<td style="text-align:center">否</td>
+<td style="text-align:left">覆盖 <code>gateway.addr</code></td>
+</tr>
+<tr>
+<td style="text-align:left"><code>HOTPLEX_ADMIN_ADDR</code></td>
+<td style="text-align:center">否</td>
+<td style="text-align:left">覆盖 <code>admin.addr</code></td>
+</tr>
+<tr>
+<td style="text-align:left"><code>HOTPLEX_SESSION_MAX_CONCURRENT</code></td>
+<td style="text-align:center">否</td>
+<td style="text-align:left">覆盖 <code>session.max_concurrent</code></td>
+</tr>
+<tr>
+<td style="text-align:left"><code>HOTPLEX_POOL_MAX_SIZE</code></td>
+<td style="text-align:center">否</td>
+<td style="text-align:left">覆盖 <code>pool.max_size</code></td>
+</tr>
+<tr>
+<td style="text-align:left"><code>HOTPLEX_POOL_MAX_MEMORY_PER_USER</code></td>
+<td style="text-align:center">否</td>
+<td style="text-align:left">覆盖 <code>pool.max_memory_per_user</code></td>
+</tr>
+<tr>
+<td style="text-align:left"><code>HOTPLEX_MESSAGING_SLACK_*</code></td>
+<td style="text-align:center">否</td>
+<td style="text-align:left">覆盖 <code>messaging.slack.*</code> 全部字段</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>HOTPLEX_MESSAGING_FEISHU_*</code></td>
+<td style="text-align:center">否</td>
+<td style="text-align:left">覆盖 <code>messaging.feishu.*</code> 全部字段</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>HOTPLEX_MESSAGING_TURN_SUMMARY_ENABLED</code></td>
+<td style="text-align:center">否</td>
+<td style="text-align:left">覆盖 <code>messaging.turn_summary_enabled</code></td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="heading-6">热重载</h2>
+<p>Watcher 监听 <code>-config</code> 指定文件的变更（500ms 防抖），通过反射逐字段比较检测变化，验证新配置后原子替换 <code>ConfigStore</code> 并通知各组件的 observer。</p>
+<h3 id="heading-7">可热重载字段（即时生效，无需重启）</h3>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">模块</th>
+<th style="text-align:left">字段</th>
+<th style="text-align:left">生效机制</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">log</td>
+<td style="text-align:left"><code>level</code></td>
+<td style="text-align:left"><code>slog.LevelVar</code> 动态切换</td>
+</tr>
+<tr>
+<td style="text-align:left">security</td>
+<td style="text-align:left"><code>api_keys</code></td>
+<td style="text-align:left">Authenticator 原子替换 key map</td>
+</tr>
+<tr>
+<td style="text-align:left">security</td>
+<td style="text-align:left"><code>allowed_origins</code></td>
+<td style="text-align:left">每次 WS 升级请求读取最新值</td>
+</tr>
+<tr>
+<td style="text-align:left">session</td>
+<td style="text-align:left"><code>gc_scan_interval</code></td>
+<td style="text-align:left">Channel 信号重置 GC ticker</td>
+</tr>
+<tr>
+<td style="text-align:left">pool</td>
+<td style="text-align:left"><code>max_size</code></td>
+<td style="text-align:left">PoolManager 加锁更新</td>
+</tr>
+<tr>
+<td style="text-align:left">pool</td>
+<td style="text-align:left"><code>max_idle_per_user</code></td>
+<td style="text-align:left">同上</td>
+</tr>
+<tr>
+<td style="text-align:left">worker.auto_retry</td>
+<td style="text-align:left"><code>enabled</code> / <code>max_retries</code> / <code>base_delay</code> / <code>max_delay</code> / <code>retry_input</code> / <code>notify_user</code> / <code>patterns</code></td>
+<td style="text-align:left">LLMRetryController 原子替换配置和编译后的正则</td>
+</tr>
+<tr>
+<td style="text-align:left">admin</td>
+<td style="text-align:left"><code>requests_per_sec</code> / <code>burst</code></td>
+<td style="text-align:left">令牌桶动态调整填充速率和容量</td>
+</tr>
+<tr>
+<td style="text-align:left">admin</td>
+<td style="text-align:left"><code>tokens</code></td>
+<td style="text-align:left">Admin API token 列表热更新</td>
+</tr>
+</tbody>
+</table>
+<h3 id="heading-8">不可热重载字段（变更需重启）</h3>
+<p>以下字段涉及<strong>启动时一次性创建的资源</strong>，运行中无法变更：</p>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">模块</th>
+<th style="text-align:left">字段</th>
+<th style="text-align:left">原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">gateway</td>
+<td style="text-align:left"><code>addr</code></td>
+<td style="text-align:left">HTTP Server 启动时绑定端口</td>
+</tr>
+<tr>
+<td style="text-align:left">gateway</td>
+<td style="text-align:left"><code>read_buffer_size</code> / <code>write_buffer_size</code></td>
+<td style="text-align:left">WebSocket Upgrader 在 NewHub 时初始化</td>
+</tr>
+<tr>
+<td style="text-align:left">gateway</td>
+<td style="text-align:left"><code>broadcast_queue_size</code></td>
+<td style="text-align:left">Go channel 大小在 make 时确定</td>
+</tr>
+<tr>
+<td style="text-align:left">log</td>
+<td style="text-align:left"><code>format</code></td>
+<td style="text-align:left">slog Handler 在初始化时确定格式</td>
+</tr>
+<tr>
+<td style="text-align:left">db</td>
+<td style="text-align:left"><code>path</code> / <code>wal_mode</code></td>
+<td style="text-align:left">SQLite 连接在启动时建立</td>
+</tr>
+<tr>
+<td style="text-align:left">security</td>
+<td style="text-align:left"><code>tls_*</code> / <code>jwt_secret</code></td>
+<td style="text-align:left">TLS 证书和 JWT 密钥在启动时加载</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>变更不可热重载字段时，Watcher 会记录日志 <code>config: static field changed, restart required</code>，新值存入 ConfigStore 但不产生实际效果，需重启网关才能生效。</p>
+</blockquote>
+<p>支持历史快照和回滚（最多 64 个版本），回滚操作同样通过 ConfigStore 原子传播到所有 observer。</p>
+<hr>
+<h2 id="dev-vs-prod-">Dev vs Prod 差异</h2>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">字段</th>
+<th style="text-align:left">config-dev.yaml</th>
+<th style="text-align:left">config-prod.yaml</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><code>admin.rate_limit_enabled</code></td>
+<td style="text-align:left"><code>false</code></td>
+<td style="text-align:left">(base: <code>true</code>)</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>session.retention_period</code></td>
+<td style="text-align:left"><code>24h</code></td>
+<td style="text-align:left">(base: <code>168h</code>)</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>session.max_concurrent</code></td>
+<td style="text-align:left"><code>100</code></td>
+<td style="text-align:left">(base: <code>1000</code>)</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>pool.max_size</code></td>
+<td style="text-align:left"><code>50</code></td>
+<td style="text-align:left"><code>500</code></td>
+</tr>
+<tr>
+<td style="text-align:left"><code>pool.min_size</code></td>
+<td style="text-align:left">(base: <code>0</code>)</td>
+<td style="text-align:left"><code>10</code>（预热）</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>pool.max_memory_per_user</code></td>
+<td style="text-align:left">3GB</td>
+<td style="text-align:left">3GB</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>worker.idle_timeout</code></td>
+<td style="text-align:left"><code>30m</code></td>
+<td style="text-align:left"><code>30m</code></td>
+</tr>
+<tr>
+<td style="text-align:left"><code>worker.execution_timeout</code></td>
+<td style="text-align:left"><code>30m</code></td>
+<td style="text-align:left">(base: <code>30m</code>)</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>log.level</code></td>
+<td style="text-align:left"><code>debug</code></td>
+<td style="text-align:left">(base: <code>info</code>)</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>log.format</code></td>
+<td style="text-align:left"><code>text</code></td>
+<td style="text-align:left">(base: <code>json</code>)</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>security.tls_enabled</code></td>
+<td style="text-align:left">(base: <code>false</code>)</td>
+<td style="text-align:left"><code>true</code></td>
+</tr>
+<tr>
+<td style="text-align:left"><code>security.allowed_origins</code></td>
+<td style="text-align:left">(base: <code>*</code>)</td>
+<td style="text-align:left">具体域名</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>messaging.*.enabled</code></td>
+<td style="text-align:left"><code>true</code></td>
+<td style="text-align:left">(base: <code>false</code>)</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>messaging.feishu.*_policy</code></td>
+<td style="text-align:left">(base: <code>allowlist</code>)</td>
+<td style="text-align:left"><code>open</code></td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="heading-9">生产安全清单</h2>
+<ul>
+<li><code>jwt_secret</code> 仅通过 <code>HOTPLEX_JWT_SECRET</code> 设置，禁止写入 YAML</li>
+<li><code>admin.tokens</code> 仅通过 <code>HOTPLEX_ADMIN_TOKEN_1..N</code> 设置</li>
+<li>生产必须 <code>tls_enabled: true</code></li>
+<li><code>admin.addr</code> 绑定内网或通过 <code>allowed_cidrs</code> 限制访问</li>
+<li>敏感凭据使用编号式环境变量支持轮转</li>
+<li><code>db.wal_mode</code> 禁止关闭（<code>true</code>）</li>
+</ul>
+
+            </div>
+            <footer>
+                HOTPLEX &bull; BUILT FOR THE FUTURE OF AGENTIC CODING &bull; 2026
+            </footer>
+        </article>
+    </main>
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        mermaid.initialize({ 
+            startOnLoad: true,
+            theme: 'neutral',
+            securityLevel: 'loose',
+            fontFamily: 'Inter, system-ui, sans-serif'
+        });
+
+        
+        document.querySelectorAll('pre code.language-mermaid').forEach(code => {
+            const pre = code.parentElement;
+            const container = document.createElement('pre');
+            container.className = 'mermaid';
+            container.textContent = code.textContent;
+            pre.replaceWith(container);
+        });
+
+        
+        document.querySelectorAll('.prose pre').forEach(pre => {
+            if (pre.classList.contains('mermaid')) return;
+            const btn = document.createElement('button');
+            btn.className = 'copy-btn';
+            btn.textContent = 'COPY';
+            btn.onclick = () => {
+                const code = pre.querySelector('code').innerText;
+                navigator.clipboard.writeText(code);
+                btn.textContent = 'COPIED';
+                setTimeout(() => btn.textContent = 'COPY', 2000);
+            };
+            pre.appendChild(btn);
+        });
+    </script>
+</body>
+</html>

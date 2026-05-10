@@ -8,6 +8,7 @@ import (
 
 	"github.com/hrygo/hotplex/internal/admin"
 	"github.com/hrygo/hotplex/internal/config"
+	"github.com/hrygo/hotplex/internal/docs"
 	"github.com/hrygo/hotplex/internal/gateway"
 )
 
@@ -130,6 +131,10 @@ func setupRoutes(
 	adminMux.HandleFunc("DELETE /api/cron/jobs/{id}", adminAPI.HandleCronDelete)
 	adminMux.HandleFunc("POST /api/cron/jobs/{id}/run", adminAPI.HandleCronTrigger)
 	adminMux.HandleFunc("GET /api/cron/jobs/{id}/runs", adminAPI.HandleCronRunHistory)
+
+	// Documentation
+	mux.Handle("GET /docs/", http.StripPrefix("/docs", docs.Handler()))
+
 	// Webchat SPA is NOT registered on the mux directly.
 	// Instead, the caller wraps the mux with a fallback handler below.
 	return adminAPI.Middleware(adminMux)
