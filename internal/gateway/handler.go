@@ -469,7 +469,9 @@ func (h *Handler) handleReset(ctx context.Context, env *events.Envelope) error {
 		State:   events.StateRunning,
 		Message: "context_reset",
 	})
-	_ = h.hub.SendToSession(ctx, stateEvt)
+	if err := h.hub.SendToSession(ctx, stateEvt); err != nil {
+		h.log.Warn("gateway: state notification send failed", "session_id", env.SessionID, "err", err)
+	}
 
 	h.log.Info("gateway: session reset", "session_id", env.SessionID)
 	return nil
@@ -509,7 +511,9 @@ func (h *Handler) handleGC(ctx context.Context, env *events.Envelope) error {
 		State:   events.StateTerminated,
 		Message: "session_archived",
 	})
-	_ = h.hub.SendToSession(ctx, stateEvt)
+	if err := h.hub.SendToSession(ctx, stateEvt); err != nil {
+		h.log.Warn("gateway: state notification send failed", "session_id", env.SessionID, "err", err)
+	}
 
 	h.log.Info("gateway: session gc'd", "session_id", env.SessionID)
 	return nil
@@ -571,7 +575,9 @@ func (h *Handler) handleCD(ctx context.Context, env *events.Envelope) error {
 		aep.NewID(), env.SessionID, h.hub.NextSeq(env.SessionID),
 		events.Message, events.MessageData{Content: msg},
 	)
-	_ = h.hub.SendToSession(ctx, msgEnv)
+	if err := h.hub.SendToSession(ctx, msgEnv); err != nil {
+		h.log.Warn("gateway: state notification send failed", "session_id", env.SessionID, "err", err)
+	}
 
 	return nil
 }
