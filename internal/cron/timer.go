@@ -92,7 +92,6 @@ func (tl *timerLoop) onTick() {
 			if err := s.store.Update(s.ctx, job); err != nil {
 				s.log.Error("cron: persist disabled job", "job_id", job.ID, "err", err)
 			}
-			s.rebuildIndex()
 			continue
 		}
 
@@ -152,7 +151,6 @@ func (s *Scheduler) executeJob(job *CronJob) {
 		// One-shot retry logic.
 		if job.Schedule.Kind == ScheduleAt && isTemporaryError(err) && job.State.RetryCount < maxRetries(job) {
 			s.scheduleRetry(context.Background(), job)
-			s.rebuildIndex()
 			return
 		}
 	} else {
@@ -181,7 +179,6 @@ func (s *Scheduler) executeJob(job *CronJob) {
 	if err := s.store.UpdateState(s.ctx, job.ID, job.State); err != nil {
 		s.log.Error("cron: persist final state", "job_id", job.ID, "err", err)
 	}
-	s.rebuildIndex()
 }
 
 // jobTimeout returns the timeout for a job, falling back to the scheduler default.

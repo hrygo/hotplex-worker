@@ -46,21 +46,9 @@ func (s *SQLiteStore) Create(ctx context.Context, job *CronJob) error {
 	ctx, cancel := withTimeout(ctx)
 	defer cancel()
 
-	schedData, err := json.Marshal(job.Schedule)
+	schedData, payloadData, platformKeyData, stateData, err := marshalJobColumns(job)
 	if err != nil {
-		return fmt.Errorf("cron store: marshal schedule: %w", err)
-	}
-	payloadData, err := json.Marshal(job.Payload)
-	if err != nil {
-		return fmt.Errorf("cron store: marshal payload: %w", err)
-	}
-	platformKeyData, err := json.Marshal(job.PlatformKey)
-	if err != nil {
-		return fmt.Errorf("cron store: marshal platform_key: %w", err)
-	}
-	stateData, err := json.Marshal(job.State)
-	if err != nil {
-		return fmt.Errorf("cron store: marshal state: %w", err)
+		return err
 	}
 
 	_, err = s.db.ExecContext(ctx, `
@@ -86,21 +74,9 @@ func (s *SQLiteStore) Update(ctx context.Context, job *CronJob) error {
 	ctx, cancel := withTimeout(ctx)
 	defer cancel()
 
-	schedData, err := json.Marshal(job.Schedule)
+	schedData, payloadData, platformKeyData, stateData, err := marshalJobColumns(job)
 	if err != nil {
-		return fmt.Errorf("cron store: marshal schedule: %w", err)
-	}
-	payloadData, err := json.Marshal(job.Payload)
-	if err != nil {
-		return fmt.Errorf("cron store: marshal payload: %w", err)
-	}
-	platformKeyData, err := json.Marshal(job.PlatformKey)
-	if err != nil {
-		return fmt.Errorf("cron store: marshal platform_key: %w", err)
-	}
-	stateData, err := json.Marshal(job.State)
-	if err != nil {
-		return fmt.Errorf("cron store: marshal state: %w", err)
+		return err
 	}
 
 	res, err := s.db.ExecContext(ctx, `
@@ -232,20 +208,7 @@ func (s *SQLiteStore) UpsertByName(ctx context.Context, job *CronJob) error {
 	}
 
 	if existing != nil {
-		// Preserve runtime state, update definition only.
-		existing.Schedule = job.Schedule
-		existing.Payload = job.Payload
-		existing.Description = job.Description
-		existing.WorkDir = job.WorkDir
-		existing.BotID = job.BotID
-		existing.OwnerID = job.OwnerID
-		existing.Platform = job.Platform
-		existing.PlatformKey = job.PlatformKey
-		existing.TimeoutSec = job.TimeoutSec
-		existing.DeleteAfterRun = job.DeleteAfterRun
-		existing.MaxRetries = job.MaxRetries
-		existing.Enabled = job.Enabled
-		existing.UpdatedAtMs = time.Now().UnixMilli()
+		copyJobDefinition(existing, job)
 		return s.Update(ctx, existing)
 	}
 	return s.Create(ctx, job)
@@ -269,21 +232,8 @@ func scanJob(row *sql.Row) (*CronJob, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cron store: scan job: %w", err)
 	}
-
-	job.Enabled = enabled == 1
-	job.DeleteAfterRun = deleteAfterRun == 1
-
-	if err := json.Unmarshal([]byte(schedData), &job.Schedule); err != nil {
-		return nil, fmt.Errorf("cron store: unmarshal schedule: %w", err)
-	}
-	if err := json.Unmarshal([]byte(payloadData), &job.Payload); err != nil {
-		return nil, fmt.Errorf("cron store: unmarshal payload: %w", err)
-	}
-	if err := json.Unmarshal([]byte(platformKeyData), &job.PlatformKey); err != nil {
-		return nil, fmt.Errorf("cron store: unmarshal platform_key: %w", err)
-	}
-	if err := json.Unmarshal([]byte(stateData), &job.State); err != nil {
-		return nil, fmt.Errorf("cron store: unmarshal state: %w", err)
+	if err := decodeJobFields(job, enabled, deleteAfterRun, schedData, payloadData, platformKeyData, stateData); err != nil {
+		return nil, err
 	}
 	return job, nil
 }
@@ -303,21 +253,8 @@ func scanJobRow(rows *sql.Rows) (*CronJob, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cron store: scan job row: %w", err)
 	}
-
-	job.Enabled = enabled == 1
-	job.DeleteAfterRun = deleteAfterRun == 1
-
-	if err := json.Unmarshal([]byte(schedData), &job.Schedule); err != nil {
-		return nil, fmt.Errorf("cron store: unmarshal schedule: %w", err)
-	}
-	if err := json.Unmarshal([]byte(payloadData), &job.Payload); err != nil {
-		return nil, fmt.Errorf("cron store: unmarshal payload: %w", err)
-	}
-	if err := json.Unmarshal([]byte(platformKeyData), &job.PlatformKey); err != nil {
-		return nil, fmt.Errorf("cron store: unmarshal platform_key: %w", err)
-	}
-	if err := json.Unmarshal([]byte(stateData), &job.State); err != nil {
-		return nil, fmt.Errorf("cron store: unmarshal state: %w", err)
+	if err := decodeJobFields(job, enabled, deleteAfterRun, schedData, payloadData, platformKeyData, stateData); err != nil {
+		return nil, err
 	}
 	return job, nil
 }
@@ -327,4 +264,60 @@ func boolToInt(b bool) int {
 		return 1
 	}
 	return 0
+}
+
+// copyJobDefinition copies editable definition fields from src to dst,
+// preserving dst's runtime state (ID, State, CreatedAtMs).
+func copyJobDefinition(dst, src *CronJob) {
+	dst.Schedule = src.Schedule
+	dst.Payload = src.Payload
+	dst.Description = src.Description
+	dst.WorkDir = src.WorkDir
+	dst.BotID = src.BotID
+	dst.OwnerID = src.OwnerID
+	dst.Platform = src.Platform
+	dst.PlatformKey = src.PlatformKey
+	dst.TimeoutSec = src.TimeoutSec
+	dst.DeleteAfterRun = src.DeleteAfterRun
+	dst.MaxRetries = src.MaxRetries
+	dst.Enabled = src.Enabled
+	dst.UpdatedAtMs = time.Now().UnixMilli()
+}
+
+func decodeJobFields(job *CronJob, enabled, deleteAfterRun int, schedData, payloadData, platformKeyData, stateData string) error {
+	job.Enabled = enabled == 1
+	job.DeleteAfterRun = deleteAfterRun == 1
+	if err := json.Unmarshal([]byte(schedData), &job.Schedule); err != nil {
+		return fmt.Errorf("cron store: unmarshal schedule: %w", err)
+	}
+	if err := json.Unmarshal([]byte(payloadData), &job.Payload); err != nil {
+		return fmt.Errorf("cron store: unmarshal payload: %w", err)
+	}
+	if err := json.Unmarshal([]byte(platformKeyData), &job.PlatformKey); err != nil {
+		return fmt.Errorf("cron store: unmarshal platform_key: %w", err)
+	}
+	if err := json.Unmarshal([]byte(stateData), &job.State); err != nil {
+		return fmt.Errorf("cron store: unmarshal state: %w", err)
+	}
+	return nil
+}
+
+func marshalJobColumns(job *CronJob) (schedData, payloadData, platformKeyData, stateData string, err error) {
+	sd, err := json.Marshal(job.Schedule)
+	if err != nil {
+		return "", "", "", "", fmt.Errorf("cron store: marshal schedule: %w", err)
+	}
+	pd, err := json.Marshal(job.Payload)
+	if err != nil {
+		return "", "", "", "", fmt.Errorf("cron store: marshal payload: %w", err)
+	}
+	pkd, err := json.Marshal(job.PlatformKey)
+	if err != nil {
+		return "", "", "", "", fmt.Errorf("cron store: marshal platform_key: %w", err)
+	}
+	std, err := json.Marshal(job.State)
+	if err != nil {
+		return "", "", "", "", fmt.Errorf("cron store: marshal state: %w", err)
+	}
+	return string(sd), string(pd), string(pkd), string(std), nil
 }

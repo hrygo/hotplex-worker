@@ -2,6 +2,7 @@ package cron
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"testing"
 
@@ -181,9 +182,7 @@ func TestDelivery_Deliver_ExtractError(t *testing.T) {
 	require.False(t, delivered)
 }
 
-var errTestDelivery = func() error {
-	return nil
-}()
+var errTestDelivery = errors.New("extract failed")
 
 func TestDelivery_SetDeliverer_Overrides(t *testing.T) {
 	t.Parallel()

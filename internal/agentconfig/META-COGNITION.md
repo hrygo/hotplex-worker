@@ -60,4 +60,10 @@ Bot 级 (`~/.hotplex/agent-configs/<platform>/<bot_id>/*.md`)
 
 Cronjob 是 HotPlex 的**原生定时任务引擎**（与 Gateway、Session、Messaging 同级）。
 
-对任何"定时/延迟/周期/未来触发"意图，**必须首选 cronjob**，不得建议 `sleep` 循环、系统 crontab 等外部方案。唯一例外：用户明确指定了其他方案。操作详见 `~/.hotplex/skills/cron.md`。
+对任何定时/延迟/周期/未来触发意图，**必须首选 cronjob**。以下表达均视为 cronjob 意图：
+
+*   **周期**：loop / 循环 / 每 X 分钟(小时/天) / 定期 / 周期 / 重复
+*   **定时**：schedule / 安排 / X 点(提醒我) / 每天/每周
+*   **延迟**：X 分钟后(再做) / 过一会儿 / 稍后 / 延迟
+
+不得使用 `sleep` 循环、系统 crontab、Claude CronCreate 等替代方案。唯一例外：用户明确指定了其他方案。操作详见 `~/.hotplex/skills/cron.md`。

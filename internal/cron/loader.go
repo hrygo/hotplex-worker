@@ -44,20 +44,7 @@ func (s *Scheduler) LoadFromYAML(ctx context.Context, defs []YAMLJobDef) error {
 
 		existing, _ := s.store.GetByName(ctx, def.Name)
 		if existing != nil {
-			// Update definition, preserve runtime state.
-			existing.Schedule = job.Schedule
-			existing.Payload = job.Payload
-			existing.Description = job.Description
-			existing.WorkDir = job.WorkDir
-			existing.BotID = job.BotID
-			existing.OwnerID = job.OwnerID
-			existing.Platform = job.Platform
-			existing.PlatformKey = job.PlatformKey
-			existing.TimeoutSec = job.TimeoutSec
-			existing.DeleteAfterRun = job.DeleteAfterRun
-			existing.MaxRetries = job.MaxRetries
-			existing.Enabled = true
-			existing.UpdatedAtMs = time.Now().UnixMilli()
+			copyJobDefinition(existing, job)
 
 			if err := s.store.Update(ctx, existing); err != nil {
 				s.log.Error("cron: update YAML job", "name", def.Name, "err", err)

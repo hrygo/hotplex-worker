@@ -8,6 +8,7 @@ import (
 
 	"github.com/hrygo/hotplex/internal/session"
 	"github.com/hrygo/hotplex/internal/worker"
+	"github.com/hrygo/hotplex/pkg/events"
 )
 
 // BridgeStarter is the narrow interface the executor needs from the gateway Bridge.
@@ -96,7 +97,7 @@ func (e *Executor) waitForCompletion(ctx context.Context, sessionID string, time
 			}
 			// IDLE means the worker finished this turn and is waiting.
 			// TERMINATED means the worker exited.
-			if si.State != "running" && si.State != "created" {
+			if si.State != events.StateRunning && si.State != events.StateCreated {
 				return nil
 			}
 		}

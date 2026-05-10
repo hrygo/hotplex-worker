@@ -6,6 +6,21 @@ HotPlex Gateway 内置 AI-native 定时任务系统。载荷为自然语言 Prom
 
 Prompt 以 `[SILENT]` 开头则不投递结果（用于自维护任务）。
 
+## 意图识别
+
+用户消息中出现以下模式时，应创建 cronjob：
+
+| 用户表达 | schedule 类型 | 示例 |
+|----------|--------------|------|
+| 每 X 分钟/小时/天 | `every` | "每30分钟检查" → every_ms=1800000 |
+| loop / 循环 / 重复 / 定期 | `every` 或 `cron` | "loop 5m 发消息" → every_ms=300000 |
+| schedule / 安排 / 定时 | `at` 或 `cron` | "schedule 周一9点" → cron expr |
+| X 点(提醒我) / 每天/每周 | `cron` | "每天早上9点" → `0 9 * * *` |
+| X 分钟后 / 过一会儿 / 稍后 / 延迟 | `at` | "30分钟后提醒" → ISO timestamp |
+| 提醒我 | `at` | "明天提醒我发周报" → at timestamp |
+
+**禁止**：用 `sleep` 循环、系统 crontab、Claude CronCreate、后台脚本等替代方案。
+
 ## 环境变量
 
 以下变量已预配置，直接使用即可：
