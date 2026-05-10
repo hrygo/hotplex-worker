@@ -132,13 +132,13 @@ func (a *AdminAPI) HandleLogs(w http.ResponseWriter, r *http.Request) {
 			limit = v
 		}
 	}
-	logs := a.logCollector.Recent(limit)
+	logs, total := a.logCollector.Recent(limit)
 	if logs == nil {
 		logs = []logEntry{}
 	}
 	respondJSON(w, map[string]any{
 		"logs":  logs,
-		"total": a.logCollector.Total(),
+		"total": total,
 		"limit": limit,
 	})
 }
