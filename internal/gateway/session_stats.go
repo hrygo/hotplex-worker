@@ -133,9 +133,9 @@ func (a *sessionAccumulator) computeContextPct() float64 {
 func (a *sessionAccumulator) snapshot() map[string]any {
 	ctxPct := a.computeContextPct()
 	elapsed := time.Since(a.StartedAt)
-	var toolNames map[string]int
+	var toolNames map[string]any
 	if len(a.ToolNames) > 0 {
-		toolNames = make(map[string]int, len(a.ToolNames))
+		toolNames = make(map[string]any, len(a.ToolNames))
 		for k, v := range a.ToolNames {
 			toolNames[k] = v
 		}
