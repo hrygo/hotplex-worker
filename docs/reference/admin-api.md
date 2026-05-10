@@ -38,17 +38,21 @@ admin:
 
 ### Scope 权限矩阵
 
-| Scope | 健康检查 | 会话管理 | 监控 | 配置 | 日志/调试 | Cron |
-|-------|---------|---------|------|------|----------|------|
-| `health:read` | /health/workers, /health/ready | - | - | - | - | - |
-| `session:read` | - | GET sessions, GET stats | - | - | - | - |
-| `session:write` | - | POST create, POST terminate | - | - | - | - |
-| `session:delete` | - | DELETE session | - | - | - | - |
-| `stats:read` | - | - | GET stats, GET metrics | - | - | - |
-| `config:read` | - | - | - | POST validate | - | - |
-| `config:write` | - | - | - | POST rollback | - | - |
-| `admin:read` | - | - | - | - | GET logs, GET debug | - |
-| `admin:write` | - | - | - | - | - | Cron 写操作 |
+不同的 Scope 控制着对 Admin API 不同模块的访问级别。
+
+| Scope Token | Health | Sessions | Stats | Config | Debug | Cron | 覆盖的核心端点 (Endpoints) |
+|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---|
+| `health:read` | 🟢 Read | - | - | - | - | - | `/admin/health/workers`<br>`/admin/health/ready` |
+| `session:read` | - | 🟢 Read | - | - | - | - | `GET /admin/sessions`<br>`GET /admin/sessions/{id}/stats` |
+| `session:write` | - | 🟠 Write | - | - | - | - | `POST /admin/sessions/{id}/terminate` |
+| `session:delete` | - | 🔴 Delete | - | - | - | - | `DELETE /admin/sessions/{id}` |
+| `stats:read` | - | - | 🟢 Read | - | - | - | `GET /admin/stats`<br>`GET /admin/metrics` |
+| `config:read` | - | - | - | 🟢 Read | - | - | `POST /admin/config/validate` |
+| `config:write` | - | - | - | 🟠 Write | - | - | `POST /admin/config/rollback` |
+| `admin:read` | - | - | - | - | 🟢 Read | 🟢 Read | `GET /admin/logs`<br>`GET /admin/debug/...`<br>`GET /api/cron/jobs` |
+| `admin:write` | - | - | - | - | - | 🟠 Write | `POST/PATCH/DELETE /api/cron/jobs`<br>`POST /api/cron/jobs/{id}/run` |
+
+> 💡 **图例**：🟢 **Read** (只读查询) | 🟠 **Write** (状态变更/操作) | 🔴 **Delete** (物理删除)
 
 ## 安全中间件
 
