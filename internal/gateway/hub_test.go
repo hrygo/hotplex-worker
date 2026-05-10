@@ -860,7 +860,7 @@ func TestPCEntry_ExtractDeltaContent(t *testing.T) {
 	}{
 		{
 			"message.delta struct",
-			events.NewEnvelope("id", "s", 1, events.MessageDelta, map[string]any{"content": "hello"}),
+			events.NewEnvelope("id", "s", 1, events.MessageDelta, events.MessageDeltaData{Content: "hello"}),
 			"hello",
 		},
 		{

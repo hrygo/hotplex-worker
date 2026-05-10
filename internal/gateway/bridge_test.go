@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/hrygo/hotplex/internal/session"
 	"github.com/hrygo/hotplex/internal/worker"
 	"github.com/hrygo/hotplex/pkg/events"
 )
@@ -570,6 +571,81 @@ func TestInjectGatewayContext(t *testing.T) {
 				_, exists := tt.env["GATEWAY_THREAD_ID"]
 				assert.False(t, exists, "GATEWAY_THREAD_ID should not be set")
 			}
+		})
+	}
+}
+
+// ─── Test buildWorkerInfo MCP Injection ────────────────────────────────────────
+
+func TestBuildWorkerInfo_MCPInjection(t *testing.T) {
+	t.Parallel()
+
+	mcpJSON := `{"mcpServers":{"test":{"command":"echo"}}}`
+
+	tests := []struct {
+		name          string
+		mcpConfigJSON string
+		platform      string
+		wantMCP       string
+		wantStrict    bool
+	}{
+		{
+			name:          "cron platform always suppresses MCP",
+			mcpConfigJSON: mcpJSON,
+			platform:      "cron",
+			wantMCP:       `{"mcpServers":{}}`,
+			wantStrict:    true,
+		},
+		{
+			name:          "configured MCP with non-cron platform",
+			mcpConfigJSON: mcpJSON,
+			platform:      "slack",
+			wantMCP:       mcpJSON,
+			wantStrict:    true,
+		},
+		{
+			name:          "empty platform with configured MCP",
+			mcpConfigJSON: mcpJSON,
+			platform:      "",
+			wantMCP:       mcpJSON,
+			wantStrict:    true,
+		},
+		{
+			name:          "no config and non-cron platform uses default discovery",
+			mcpConfigJSON: "",
+			platform:      "slack",
+			wantMCP:       "",
+			wantStrict:    false,
+		},
+		{
+			name:          "cron platform wins over empty config",
+			mcpConfigJSON: "",
+			platform:      "cron",
+			wantMCP:       `{"mcpServers":{}}`,
+			wantStrict:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			log := slog.Default()
+			hub := newTestHub(t)
+			sm := new(mockBridgeSM)
+			b := NewBridge(BridgeDeps{
+				Log:           log,
+				Hub:           hub,
+				SM:            sm,
+				MCPConfigJSON: tt.mcpConfigJSON,
+			})
+
+			si := &session.SessionInfo{
+				Platform: tt.platform,
+			}
+			info := b.buildWorkerInfo("session-1", "user-1", "/tmp", si)
+			assert.Equal(t, tt.wantMCP, info.MCPConfig, "MCPConfig mismatch")
+			assert.Equal(t, tt.wantStrict, info.StrictMCPConfig, "StrictMCPConfig mismatch")
 		})
 	}
 }

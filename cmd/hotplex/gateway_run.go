@@ -194,6 +194,7 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 		WorkerEnv:          buildWorkerEnv(cfg),
 		WorkerEnvBlocklist: cfg.Worker.EnvBlocklist,
 		CronEnv:            buildCronEnv(cfg),
+		MCPConfigJSON:      buildMCPConfigJSON(cfg),
 	})
 
 	skillsLocator := skills.NewLocator(log, cfg.Skills.CacheTTL)
@@ -228,6 +229,12 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 	cfgStore.RegisterFunc(func(prev, next *config.Config) {
 		if prev.Worker.ClaudeCode.Command != next.Worker.ClaudeCode.Command {
 			claudecode.InitConfig(next.Worker.ClaudeCode)
+		}
+	})
+	cfgStore.RegisterFunc(func(prev, next *config.Config) {
+		if !reflect.DeepEqual(prev.Worker.ClaudeCode.MCPServers, next.Worker.ClaudeCode.MCPServers) {
+			bridge.UpdateMCPConfig(buildMCPConfigJSON(next))
+			log.Info("config: MCP servers updated", "count", len(next.Worker.ClaudeCode.MCPServers))
 		}
 	})
 
@@ -719,4 +726,32 @@ func buildCronEnv(cfg *config.Config) []string {
 		env = append(env, "HOTPLEX_ADMIN_TOKEN="+cfg.Admin.Tokens[0])
 	}
 	return env
+}
+
+// buildMCPConfigJSON serializes configured MCP servers into the JSON format
+// expected by Claude Code's --mcp-config flag. Returns "" when no servers are
+// configured, which signals the bridge to let Claude Code do default discovery.
+func buildMCPConfigJSON(cfg *config.Config) string {
+	if len(cfg.Worker.ClaudeCode.MCPServers) == 0 {
+		return ""
+	}
+	// Validate each server config before serializing.
+	valid := make(map[string]*config.MCPServerConfig, len(cfg.Worker.ClaudeCode.MCPServers))
+	for name, srv := range cfg.Worker.ClaudeCode.MCPServers {
+		if err := srv.Validate(); err != nil {
+			slog.Error("config: invalid MCP server config, skipping", "server", name, "err", err)
+			continue
+		}
+		valid[name] = srv
+	}
+	if len(valid) == 0 {
+		return ""
+	}
+	wrapper := map[string]any{"mcpServers": valid}
+	b, err := json.Marshal(wrapper)
+	if err != nil {
+		slog.Error("config: failed to serialize MCP server config", "err", err, "server_count", len(valid))
+		return ""
+	}
+	return string(b)
 }

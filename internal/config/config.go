@@ -393,11 +393,31 @@ type WorkerConfig struct {
 	Environment      []string             `mapstructure:"environment"`
 }
 
+// MCPServerConfig defines a single MCP server for worker startup.
+type MCPServerConfig struct {
+	Command string            `mapstructure:"command" json:"command"`
+	Args    []string          `mapstructure:"args" json:"args,omitempty"`
+	Env     map[string]string `mapstructure:"env" json:"env,omitempty"`
+	URL     string            `mapstructure:"url" json:"url,omitempty"`
+}
+
+// Validate checks that the server config specifies exactly one of Command (stdio) or URL (remote).
+func (c *MCPServerConfig) Validate() error {
+	if c.Command == "" && c.URL == "" {
+		return fmt.Errorf("mcp server config: command or url required")
+	}
+	if c.Command != "" && c.URL != "" {
+		return fmt.Errorf("mcp server config: command and url are mutually exclusive")
+	}
+	return nil
+}
+
 // ClaudeCodeConfig holds Claude Code worker startup settings.
 type ClaudeCodeConfig struct {
-	Command               string   `mapstructure:"command"`                 // binary + optional subcommand, e.g. "claude" or "ccr code"
-	PermissionPrompt      bool     `mapstructure:"permission_prompt"`       // enable --permission-prompt-tool stdio for interaction chain
-	PermissionAutoApprove []string `mapstructure:"permission_auto_approve"` // tool names to auto-approve without user interaction
+	Command               string                      `mapstructure:"command"`                 // binary + optional subcommand, e.g. "claude" or "ccr code"
+	PermissionPrompt      bool                        `mapstructure:"permission_prompt"`       // enable --permission-prompt-tool stdio for interaction chain
+	PermissionAutoApprove []string                    `mapstructure:"permission_auto_approve"` // tool names to auto-approve without user interaction
+	MCPServers            map[string]*MCPServerConfig `mapstructure:"mcp_servers"`             // user-configured MCP servers; empty = default discovery
 }
 
 // OpenCodeServerConfig holds OpenCode Server singleton process settings.
