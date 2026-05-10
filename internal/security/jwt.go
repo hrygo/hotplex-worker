@@ -4,7 +4,6 @@ package security
 import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
-	"crypto/subtle"
 	"errors"
 	"fmt"
 	"math/big"
@@ -228,14 +227,6 @@ func (v *JWTValidator) Stop() {
 	}
 }
 
-// ValidateAPIKey performs constant-time comparison of an API key.
-func ValidateAPIKey(provided, expected string) error {
-	if subtle.ConstantTimeCompare([]byte(provided), []byte(expected)) != 1 {
-		return ErrUnauthorized
-	}
-	return nil
-}
-
 // ─── JTI Blacklist ────────────────────────────────────────────────────────────
 
 type jtiBlacklist struct {
@@ -321,7 +312,7 @@ func GenerateJTI() (string, error) {
 func mustGenerateJTI() string {
 	jti, err := GenerateJTI()
 	if err != nil {
-		return "" // crypto/rand should never fail on a healthy system
+		panic(fmt.Sprintf("security: failed to generate JTI: %v", err))
 	}
 	return jti
 }

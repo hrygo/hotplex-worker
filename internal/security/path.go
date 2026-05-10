@@ -14,6 +14,28 @@ func ValidateBaseDir(baseDir string) error {
 	return nil
 }
 
+// GetAllowedBaseDirs returns a defensive copy for testing.
+func GetAllowedBaseDirs() map[string]bool {
+	securityConfigMutex.RLock()
+	defer securityConfigMutex.RUnlock()
+
+	result := make(map[string]bool, len(allowedBaseDirs))
+	for k, v := range allowedBaseDirs {
+		result[k] = v
+	}
+	return result
+}
+
+// GetForbiddenWorkDirs returns a defensive copy for testing.
+func GetForbiddenWorkDirs() []string {
+	securityConfigMutex.RLock()
+	defer securityConfigMutex.RUnlock()
+
+	result := make([]string, len(forbiddenWorkDirs))
+	copy(result, forbiddenWorkDirs)
+	return result
+}
+
 // ValidateWorkDir validates that a work directory is safe for worker execution.
 //
 // Rules:

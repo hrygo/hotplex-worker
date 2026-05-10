@@ -588,7 +588,10 @@ func (m *Manager) DeletePhysical(ctx context.Context, id string) error {
 	m.mu.Unlock()
 
 	if workerToKill != nil {
-		_ = workerToKill.Kill()
+		if err := workerToKill.Kill(); err != nil {
+			m.log.Warn("session: worker kill failed during physical delete",
+				"session_id", id, "err", err)
+		}
 	}
 
 	return m.store.DeletePhysical(ctx, id)

@@ -13,8 +13,8 @@ func TestLogRingBuffer_Add(t *testing.T) {
 	r.Add("warn", "msg2", "sess2")
 	r.Add("error", "msg3", "sess3")
 
-	require.Equal(t, 3, r.Total())
-	entries := r.Recent(0)
+	entries, total := r.Recent(0)
+	require.Equal(t, 3, total)
 	require.Len(t, entries, 3)
 	require.Equal(t, "msg1", entries[0].Msg)
 	require.Equal(t, "msg2", entries[1].Msg)
@@ -29,8 +29,8 @@ func TestLogRingBuffer_Wraparound(t *testing.T) {
 	r.Add("info", "msg3", "")
 	r.Add("info", "msg4", "") // overwrites msg1
 
-	require.Equal(t, 4, r.Total())
-	entries := r.Recent(0)
+	entries, total := r.Recent(0)
+	require.Equal(t, 4, total)
 	require.Len(t, entries, 3)
 	require.Equal(t, "msg2", entries[0].Msg)
 	require.Equal(t, "msg3", entries[1].Msg)
@@ -43,13 +43,14 @@ func TestLogRingBuffer_RecentLimit(t *testing.T) {
 		r.Add("info", "msg", "")
 	}
 
-	entries := r.Recent(3)
+	entries, total := r.Recent(3)
 	require.Len(t, entries, 3)
-	require.Equal(t, 5, r.Total())
+	require.Equal(t, 5, total)
 }
 
 func TestLogRingBuffer_Empty(t *testing.T) {
 	r := newLogRing(5)
-	require.Equal(t, 0, r.Total())
-	require.Nil(t, r.Recent(0))
+	entries, total := r.Recent(0)
+	require.Equal(t, 0, total)
+	require.Nil(t, entries)
 }
