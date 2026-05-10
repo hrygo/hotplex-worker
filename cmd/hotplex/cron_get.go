@@ -48,6 +48,9 @@ func newCronGetCmd() *cobra.Command {
 				if job.TimeoutSec > 0 {
 					_, _ = fmt.Fprintf(tw, "Timeout:\t%ds\n", job.TimeoutSec)
 				}
+				if job.DeleteAfterRun {
+					_, _ = fmt.Fprintf(tw, "Delete After Run:\t%v\n", job.DeleteAfterRun)
+				}
 				if job.Silent {
 					_, _ = fmt.Fprintf(tw, "Silent:\t%v\n", job.Silent)
 				}
