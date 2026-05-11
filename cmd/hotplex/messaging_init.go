@@ -72,18 +72,14 @@ func startMessagingAdapters(ctx context.Context, deps *GatewayDeps) ([]messaging
 				continue
 			}
 			workerType = appCfg.Messaging.Slack.WorkerType
-			workDir = appCfg.Messaging.Slack.WorkDir
 		case messaging.PlatformFeishu:
 			if !appCfg.Messaging.Feishu.Enabled {
 				statuses = append(statuses, AdapterStatus{Name: "feishu", Started: false})
 				continue
 			}
 			workerType = appCfg.Messaging.Feishu.WorkerType
-			workDir = appCfg.Messaging.Feishu.WorkDir
 		}
-		if workDir == "" {
-			workDir = appCfg.Worker.DefaultWorkDir
-		}
+		workDir = appCfg.ResolvePlatformWorkDir(string(pt))
 
 		adapter, err := messaging.New(pt, log)
 		if err != nil {

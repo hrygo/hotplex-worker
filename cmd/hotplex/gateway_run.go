@@ -270,6 +270,9 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 				TickIntervalSec:   cfg.Cron.TickIntervalSec,
 				YAMLConfigPath:    cfg.Cron.YAMLConfigPath,
 			},
+			ResolveWorkDir: func(job *cron.CronJob) string {
+				return cfgStore.Load().ResolvePlatformWorkDir(job.Platform)
+			},
 		})
 		if err := cronScheduler.Start(ctx); err != nil {
 			log.Warn("cron: scheduler start failed (cron disabled)", "err", err)

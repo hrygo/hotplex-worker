@@ -154,6 +154,13 @@ func (tl *timerLoop) onTick() {
 // The job must be a clone (not a shared map pointer).
 // Uses mergeJobState to avoid overwriting concurrent state changes (e.g. CLI disable).
 func (s *Scheduler) executeJob(job *CronJob) {
+	// Resolve workdir with system fallback: explicit > platform-specific > worker default.
+	if job.WorkDir == "" && s.resolveWorkDir != nil {
+		if resolved := s.resolveWorkDir(job); resolved != "" {
+			job.WorkDir = resolved
+		}
+	}
+
 	now := time.Now().UnixMilli()
 	job.State.RunningAtMs = now
 	s.persistState(job.ID, job.State)
