@@ -73,43 +73,53 @@ func (p CardPhase) String() string {
 }
 
 type StreamingCardController struct {
+	// Phase machine — card lifecycle state.
 	phase     atomic.Int32
 	cardID    string
 	elementID string
 	msgID     string
 	sequence  atomic.Int64
 
-	mu              sync.Mutex
-	buf             strings.Builder
-	lastFlushed     string
-	cardKitOK       bool
-	streamingActive bool // true once enableStreaming succeeds; disables on disableStreaming
+	// Content buffer — text accumulation and flush state.
+	mu          sync.Mutex
+	buf         strings.Builder
+	lastFlushed string
+	bufRunes    int // running rune count for flush threshold
 
-	// Reliability tracking.
+	// Degradation — fallback tracking when CardKit fails.
+	cardKitOK       bool
+	streamingActive bool // true once enableStreaming succeeds
+	failedFlushes   int
+
+	// Reliability — metrics and health tracking.
 	streamStartTime time.Time
 	ttlWarnOnce     sync.Once
 	bytesWritten    int64
-	bufRunes        int // running rune count for flush threshold
-	failedFlushes   int
 
-	// Tool activity strip state.
+	// Tool state — tool call/result display strip.
 	toolEntries       []toolEntry // ring buffer, max 2 entries
 	toolDirty         bool        // true when toolEntries changed and needs flush
 	failedToolFlushes int         // consecutive flush failures; gives up after 3
 
+	// Delivery — Lark API client and routing config.
 	chatType     string
 	replyToMsgID string
 	limiter      *FeishuRateLimiter
 	client       *lark.Client
 	log          *slog.Logger
-	agentName    string
-	turnNum      int
-	model        string
-	branch       string
-	workDir      string
-	closeMeta    atomic.Pointer[messaging.TurnSummaryData]
-	placeholder  string // active placeholder text, cleared on first real content flush
 
+	// Header metadata — card header display info.
+	agentName string
+	turnNum   int
+	model     string
+	branch    string
+	workDir   string
+
+	// Close metadata — turn summary injected before card finalization.
+	closeMeta   atomic.Pointer[messaging.TurnSummaryData]
+	placeholder string // active placeholder text, cleared on first real content flush
+
+	// Flush lifecycle — background goroutine control.
 	flushDone    chan struct{}
 	flushStop    sync.Once
 	flushStart   sync.Once
@@ -824,54 +834,11 @@ func (c *StreamingCardController) sendCardMessage(ctx context.Context, chatID, c
 }
 
 func (c *StreamingCardController) createCardMessage(ctx context.Context, chatID, contentJSON string) (string, error) {
-	body := larkim.NewCreateMessageReqBodyBuilder().
-		ReceiveId(chatID).
-		MsgType("interactive").
-		Content(contentJSON).
-		Build()
-
-	req := larkim.NewCreateMessageReqBuilder().
-		ReceiveIdType(larkim.ReceiveIdTypeChatId).
-		Body(body).
-		Build()
-
-	resp, err := c.client.Im.V1.Message.Create(ctx, req)
-	if err != nil {
-		return "", fmt.Errorf("im message create: %w", err)
-	}
-	if !resp.Success() {
-		return "", fmt.Errorf("im message create failed: code=%d msg=%s", resp.Code, resp.Msg)
-	}
-
-	if resp.Data == nil || resp.Data.MessageId == nil {
-		return "", fmt.Errorf("im message create: missing message_id in response")
-	}
-	return *resp.Data.MessageId, nil
+	return larkCreateMessage(ctx, c.client, chatID, contentJSON)
 }
 
 func (c *StreamingCardController) replyCardMessage(ctx context.Context, messageID, contentJSON string) (string, error) {
-	body := larkim.NewReplyMessageReqBodyBuilder().
-		MsgType("interactive").
-		Content(contentJSON).
-		Build()
-
-	req := larkim.NewReplyMessageReqBuilder().
-		MessageId(messageID).
-		Body(body).
-		Build()
-
-	resp, err := c.client.Im.V1.Message.Reply(ctx, req)
-	if err != nil {
-		return "", fmt.Errorf("im message reply: %w", err)
-	}
-	if !resp.Success() {
-		return "", fmt.Errorf("im message reply failed: code=%d msg=%s", resp.Code, resp.Msg)
-	}
-
-	if resp.Data == nil || resp.Data.MessageId == nil {
-		return "", fmt.Errorf("im message reply: missing message_id in response")
-	}
-	return *resp.Data.MessageId, nil
+	return larkReplyMessage(ctx, c.client, messageID, contentJSON)
 }
 
 func (c *StreamingCardController) enableStreaming(ctx context.Context) error {
