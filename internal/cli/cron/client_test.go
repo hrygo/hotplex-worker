@@ -60,7 +60,10 @@ func TestParseSchedule_EveryMs(t *testing.T) {
 func TestPrepareJobForCreate(t *testing.T) {
 	job, err := PrepareJobForCreate(
 		"test-job", "every:5m", "say hello", "a test",
-		"/tmp/work", "bot-1", "owner-1", 300, nil, JobCreateOptions{},
+		"/tmp/work", "bot-1", "owner-1", 300, nil, JobCreateOptions{
+			MaxRuns:   50,
+			ExpiresAt: "2099-01-01T00:00:00Z",
+		},
 	)
 	require.NoError(t, err)
 	require.Equal(t, "test-job", job.Name)
@@ -70,6 +73,33 @@ func TestPrepareJobForCreate(t *testing.T) {
 	require.Equal(t, cron.ScheduleEvery, job.Schedule.Kind)
 	require.Equal(t, int64(5*60*1000), job.Schedule.EveryMs)
 	require.True(t, job.Enabled)
+	require.Equal(t, 50, job.MaxRuns)
+	require.Equal(t, "2099-01-01T00:00:00Z", job.ExpiresAt)
+}
+
+func TestPrepareJobForCreate_DefaultLifecycle(t *testing.T) {
+	// Recurring job without lifecycle opts gets safe defaults.
+	job, err := PrepareJobForCreate(
+		"default-lifecycle", "every:30m", "test", "", "",
+		"bot-1", "owner-1", 0, nil, JobCreateOptions{},
+	)
+	require.NoError(t, err)
+	require.Equal(t, 10, job.MaxRuns)
+	require.NotEmpty(t, job.ExpiresAt)
+	expires, err := time.Parse(time.RFC3339, job.ExpiresAt)
+	require.NoError(t, err)
+	require.WithinDuration(t, time.Now().Add(24*time.Hour), expires, 5*time.Second)
+}
+
+func TestPrepareJobForCreate_OneShotNoLifecycle(t *testing.T) {
+	// One-shot jobs don't need lifecycle constraints.
+	job, err := PrepareJobForCreate(
+		"one-shot", "at:2099-01-01T00:00:00Z", "test", "", "",
+		"bot-1", "owner-1", 0, nil, JobCreateOptions{},
+	)
+	require.NoError(t, err)
+	require.Equal(t, 0, job.MaxRuns)
+	require.Equal(t, "", job.ExpiresAt)
 }
 
 func TestPrepareJobForCreate_MissingFields(t *testing.T) {
@@ -90,7 +120,7 @@ func TestPrepareJobForCreate_MissingFields(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := PrepareJobForCreate(tt.jobName, tt.sched, tt.msg, "", "", tt.botID, tt.ownerID, 0, nil, JobCreateOptions{})
+			_, err := PrepareJobForCreate(tt.jobName, tt.sched, tt.msg, "", "", tt.botID, tt.ownerID, 0, nil, JobCreateOptions{MaxRuns: 10, ExpiresAt: "2099-01-01T00:00:00Z"})
 			require.Error(t, err)
 		})
 	}

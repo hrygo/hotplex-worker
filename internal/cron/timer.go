@@ -65,6 +65,10 @@ func (tl *timerLoop) stop() {
 	}
 }
 
+// maxConsecutiveErrors is the threshold for auto-disabling a job after
+// repeated execution failures.
+const maxConsecutiveErrors = 10
+
 const maxTimerInterval = 60 * time.Second
 
 func (tl *timerLoop) onTick() {
@@ -144,11 +148,12 @@ func (tl *timerLoop) onTick() {
 
 // executeJob runs a single job and updates its state.
 // The job must be a clone (not a shared map pointer).
+// Uses mergeJobState to avoid overwriting concurrent state changes (e.g. CLI disable).
 func (s *Scheduler) executeJob(job *CronJob) {
 	now := time.Now().UnixMilli()
 	job.State.RunningAtMs = now
 	s.persistState(job.ID, job.State)
-	s.putJob(job)
+	s.mergeJobState(job.ID, job.State, false)
 
 	timeout := s.jobTimeout(job)
 	ctx, cancel := context.WithTimeout(s.ctx, timeout)
@@ -163,12 +168,21 @@ func (s *Scheduler) executeJob(job *CronJob) {
 	job.State.RunningAtMs = 0
 	job.State.LastRunAtMs = now
 
+	var shouldDisable bool
+
 	if err != nil {
 		s.log.Error("cron: job execution failed",
 			"job_id", job.ID, "name", job.Name, "duration", duration, "err", err)
 		job.State.LastStatus = StatusFailed
 		job.State.ConsecutiveErrs++
 		metrics.CronErrorsTotal.WithLabelValues(job.Name, errorType(err)).Inc()
+
+		// Auto-disable after too many consecutive execution failures.
+		if job.State.ConsecutiveErrs >= maxConsecutiveErrors {
+			s.log.Warn("cron: auto-disabling job after consecutive execution failures",
+				"job_id", job.ID, "name", job.Name, "consecutive_errors", job.State.ConsecutiveErrs)
+			shouldDisable = true
+		}
 
 		// One-shot retry logic.
 		if job.Schedule.Kind == ScheduleAt && isTemporaryError(err) && job.State.RetryCount < maxRetries(job) {
@@ -196,26 +210,26 @@ func (s *Scheduler) executeJob(job *CronJob) {
 			s.mu.Unlock()
 			return
 		}
-		job.Enabled = false
+		shouldDisable = true
 	}
 
 	// Lifecycle: check max_runs and expires_at.
-	if job.Enabled {
+	if !shouldDisable {
 		if job.MaxRuns > 0 && job.State.RunCount >= job.MaxRuns {
 			s.log.Info("cron: job reached max_runs, disabling",
 				"job_id", job.ID, "name", job.Name, "run_count", job.State.RunCount, "max_runs", job.MaxRuns)
-			job.Enabled = false
+			shouldDisable = true
 		} else if job.ExpiresAt != "" {
 			if t, perr := time.Parse(time.RFC3339, job.ExpiresAt); perr == nil && time.Now().After(t) {
 				s.log.Info("cron: job expired, disabling",
 					"job_id", job.ID, "name", job.Name, "expires_at", job.ExpiresAt)
-				job.Enabled = false
+				shouldDisable = true
 			}
 		}
 	}
 
 	s.persistState(job.ID, job.State)
-	s.putJob(job)
+	s.mergeJobState(job.ID, job.State, shouldDisable)
 }
 
 // persistState saves job state to the store, using a background context

@@ -395,6 +395,9 @@ func (s *Scheduler) collectDue(now time.Time) []*CronJob {
 		if !job.Enabled {
 			continue
 		}
+		if job.State.RunningAtMs > 0 {
+			continue
+		}
 		if job.State.NextRunAtMs > 0 && job.State.NextRunAtMs <= now.UnixMilli() {
 			due = append(due, job.Clone())
 		}
@@ -434,6 +437,21 @@ func (s *Scheduler) putJob(job *CronJob) {
 	s.mu.Lock()
 	if _, ok := s.jobs[job.ID]; ok {
 		s.jobs[job.ID] = job
+	}
+	s.mu.Unlock()
+}
+
+// mergeJobState updates only the State field of the in-memory job and optionally
+// disables it. Unlike putJob (full replace), this preserves concurrent changes
+// to Enabled, Schedule, etc. — preventing a goroutine's stale clone from
+// overwriting an external disable.
+func (s *Scheduler) mergeJobState(jobID string, state CronJobState, disable bool) {
+	s.mu.Lock()
+	if j, ok := s.jobs[jobID]; ok {
+		j.State = state
+		if disable {
+			j.Enabled = false
+		}
 	}
 	s.mu.Unlock()
 }

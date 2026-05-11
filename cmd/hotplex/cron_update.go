@@ -72,8 +72,8 @@ Schedule format:
 	cmd.Flags().Bool("delete-after-run", false, "delete one-shot job after execution")
 	cmd.Flags().Bool("silent", false, "suppress result delivery (self-maintenance tasks)")
 	cmd.Flags().Int("max-retries", 0, "max retries for failed one-shot jobs")
-	cmd.Flags().Int("max-runs", 0, "max executions before auto-disable (0=unlimited)")
-	cmd.Flags().String("expires-at", "", "auto-disable after this time (RFC3339)")
+	cmd.Flags().Int("max-runs", 0, "max executions before auto-disable (required for every/cron)")
+	cmd.Flags().String("expires-at", "", "auto-disable after this time RFC3339 (required for every/cron)")
 	return cmd
 }
 

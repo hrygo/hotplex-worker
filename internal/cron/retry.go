@@ -73,7 +73,7 @@ func (s *Scheduler) scheduleRetry(ctx context.Context, job *CronJob) {
 	job.State.NextRunAtMs = nextRun.UnixMilli()
 	job.State.RetryCount++
 	_ = s.store.UpdateState(ctx, job.ID, job.State)
-	s.putJob(job)
+	s.mergeJobState(job.ID, job.State, false)
 
 	s.log.Info("cron: retry scheduled",
 		"job_id", job.ID, "name", job.Name,

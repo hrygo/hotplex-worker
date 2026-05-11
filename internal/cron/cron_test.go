@@ -33,17 +33,24 @@ func newTestScheduler(t *testing.T) *Scheduler {
 	}
 }
 
+// testRecurringJob returns a CronJob with valid lifecycle fields for recurring schedules.
+func testRecurringJob(name, message string) *CronJob {
+	return &CronJob{
+		Name:      name,
+		Schedule:  CronSchedule{Kind: ScheduleEvery, EveryMs: 60_000},
+		Payload:   CronPayload{Kind: PayloadAgentTurn, Message: message},
+		OwnerID:   "user1",
+		BotID:     "bot1",
+		MaxRuns:   100,
+		ExpiresAt: "2099-01-01T00:00:00Z",
+	}
+}
+
 func TestScheduler_CreateJob(t *testing.T) {
 	s := newTestScheduler(t)
 	ctx := context.Background()
 
-	job := &CronJob{
-		Name:     "test-create",
-		Schedule: CronSchedule{Kind: ScheduleEvery, EveryMs: 60_000},
-		Payload:  CronPayload{Kind: PayloadAgentTurn, Message: "hello world"},
-		OwnerID:  "user1",
-		BotID:    "bot1",
-	}
+	job := testRecurringJob("test-create", "hello world")
 
 	require.NoError(t, s.CreateJob(ctx, job))
 	require.NotEmpty(t, job.ID)
@@ -63,22 +70,10 @@ func TestScheduler_CreateJob_MaxJobsLimit(t *testing.T) {
 	ctx := context.Background()
 
 	for i := 0; i < 2; i++ {
-		require.NoError(t, s.CreateJob(ctx, &CronJob{
-			Name:     "job" + string(rune('a'+i)),
-			Schedule: CronSchedule{Kind: ScheduleEvery, EveryMs: 60_000},
-			Payload:  CronPayload{Kind: PayloadAgentTurn, Message: "test"},
-			OwnerID:  "user1",
-			BotID:    "bot1",
-		}))
+		require.NoError(t, s.CreateJob(ctx, testRecurringJob("job"+string(rune('a'+i)), "test")))
 	}
 
-	err := s.CreateJob(ctx, &CronJob{
-		Name:     "overflow",
-		Schedule: CronSchedule{Kind: ScheduleEvery, EveryMs: 60_000},
-		Payload:  CronPayload{Kind: PayloadAgentTurn, Message: "test"},
-		OwnerID:  "user1",
-		BotID:    "bot1",
-	})
+	err := s.CreateJob(ctx, testRecurringJob("overflow", "test"))
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "max jobs limit")
 }
@@ -91,9 +86,10 @@ func TestScheduler_CreateJob_Validation(t *testing.T) {
 		name string
 		job  *CronJob
 	}{
-		{"missing name", &CronJob{Schedule: CronSchedule{Kind: ScheduleEvery, EveryMs: 60_000}, Payload: CronPayload{Message: "hi"}}},
-		{"empty prompt", &CronJob{Name: "x", Schedule: CronSchedule{Kind: ScheduleEvery, EveryMs: 60_000}, Payload: CronPayload{Message: ""}}},
-		{"invalid schedule", &CronJob{Name: "x", Schedule: CronSchedule{Kind: "bad"}, Payload: CronPayload{Message: "hi"}}},
+		{"missing name", &CronJob{Schedule: CronSchedule{Kind: ScheduleEvery, EveryMs: 60_000}, Payload: CronPayload{Message: "hi"}, MaxRuns: 10, ExpiresAt: "2099-01-01T00:00:00Z"}},
+		{"empty prompt", &CronJob{Name: "x", Schedule: CronSchedule{Kind: ScheduleEvery, EveryMs: 60_000}, Payload: CronPayload{Message: ""}, MaxRuns: 10, ExpiresAt: "2099-01-01T00:00:00Z"}},
+		{"invalid schedule", &CronJob{Name: "x", Schedule: CronSchedule{Kind: "bad"}, Payload: CronPayload{Message: "hi"}, MaxRuns: 10, ExpiresAt: "2099-01-01T00:00:00Z"}},
+		{"missing lifecycle", &CronJob{Name: "x", Schedule: CronSchedule{Kind: ScheduleEvery, EveryMs: 60_000}, Payload: CronPayload{Message: "hi"}}},
 	}
 
 	for _, tt := range tests {
@@ -107,13 +103,7 @@ func TestScheduler_UpdateJob(t *testing.T) {
 	s := newTestScheduler(t)
 	ctx := context.Background()
 
-	job := &CronJob{
-		Name:     "test-update",
-		Schedule: CronSchedule{Kind: ScheduleEvery, EveryMs: 60_000},
-		Payload:  CronPayload{Kind: PayloadAgentTurn, Message: "original"},
-		OwnerID:  "user1",
-		BotID:    "bot1",
-	}
+	job := testRecurringJob("test-update", "original")
 	require.NoError(t, s.CreateJob(ctx, job))
 
 	job.Payload.Message = "updated"
@@ -128,13 +118,7 @@ func TestScheduler_DeleteJob(t *testing.T) {
 	s := newTestScheduler(t)
 	ctx := context.Background()
 
-	job := &CronJob{
-		Name:     "test-delete",
-		Schedule: CronSchedule{Kind: ScheduleEvery, EveryMs: 60_000},
-		Payload:  CronPayload{Kind: PayloadAgentTurn, Message: "bye"},
-		OwnerID:  "user1",
-		BotID:    "bot1",
-	}
+	job := testRecurringJob("test-delete", "bye")
 	require.NoError(t, s.CreateJob(ctx, job))
 	require.NoError(t, s.DeleteJob(ctx, job.ID))
 
@@ -147,13 +131,7 @@ func TestScheduler_ListJobs(t *testing.T) {
 	ctx := context.Background()
 
 	for i := 0; i < 3; i++ {
-		require.NoError(t, s.CreateJob(ctx, &CronJob{
-			Name:     "list-job",
-			Schedule: CronSchedule{Kind: ScheduleEvery, EveryMs: 60_000},
-			Payload:  CronPayload{Kind: PayloadAgentTurn, Message: "test"},
-			OwnerID:  "user1",
-			BotID:    "bot1",
-		}))
+		require.NoError(t, s.CreateJob(ctx, testRecurringJob("list-job", "test")))
 	}
 
 	jobs, err := s.ListJobs(ctx)
@@ -170,13 +148,7 @@ func TestScheduler_GetJob_NotFound(t *testing.T) {
 func TestScheduler_TriggerJob(t *testing.T) {
 	s := newTestScheduler(t)
 
-	job := &CronJob{
-		Name:     "trigger-test",
-		Schedule: CronSchedule{Kind: ScheduleEvery, EveryMs: 60_000},
-		Payload:  CronPayload{Kind: PayloadAgentTurn, Message: "manual"},
-		OwnerID:  "user1",
-		BotID:    "bot1",
-	}
+	job := testRecurringJob("trigger-test", "manual")
 
 	// TriggerJob should not block (starts goroutine).
 	require.NoError(t, s.TriggerJob(context.Background(), job))
@@ -190,13 +162,7 @@ func TestScheduler_CollectDue(t *testing.T) {
 	now := time.Now()
 
 	// Due job (next_run in the past).
-	dueJob := &CronJob{
-		Name:     "due",
-		Schedule: CronSchedule{Kind: ScheduleEvery, EveryMs: 60_000},
-		Payload:  CronPayload{Kind: PayloadAgentTurn, Message: "due"},
-		OwnerID:  "user1",
-		BotID:    "bot1",
-	}
+	dueJob := testRecurringJob("due", "due")
 	require.NoError(t, s.CreateJob(ctx, dueJob))
 	// CreateJob overwrites next_run — fix it to be in the past.
 	s.mu.Lock()
@@ -204,30 +170,26 @@ func TestScheduler_CollectDue(t *testing.T) {
 	s.mu.Unlock()
 
 	// Future job.
-	futureJob := &CronJob{
-		Name:     "future",
-		Schedule: CronSchedule{Kind: ScheduleEvery, EveryMs: 60_000},
-		Payload:  CronPayload{Kind: PayloadAgentTurn, Message: "future"},
-		OwnerID:  "user1",
-		BotID:    "bot1",
-	}
+	futureJob := testRecurringJob("future", "future")
 	require.NoError(t, s.CreateJob(ctx, futureJob))
 	s.mu.Lock()
 	s.jobs[futureJob.ID].State.NextRunAtMs = now.Add(1 * time.Hour).UnixMilli()
 	s.mu.Unlock()
 
 	// Disabled job (past due but disabled).
-	disabledJob := &CronJob{
-		Name:     "disabled",
-		Schedule: CronSchedule{Kind: ScheduleEvery, EveryMs: 60_000},
-		Payload:  CronPayload{Kind: PayloadAgentTurn, Message: "disabled"},
-		OwnerID:  "user1",
-		BotID:    "bot1",
-	}
+	disabledJob := testRecurringJob("disabled", "disabled")
 	require.NoError(t, s.CreateJob(ctx, disabledJob))
 	s.mu.Lock()
 	s.jobs[disabledJob.ID].Enabled = false
 	s.jobs[disabledJob.ID].State.NextRunAtMs = now.Add(-1 * time.Minute).UnixMilli()
+	s.mu.Unlock()
+
+	// Running job (past due but currently executing).
+	runningJob := testRecurringJob("running", "running")
+	require.NoError(t, s.CreateJob(ctx, runningJob))
+	s.mu.Lock()
+	s.jobs[runningJob.ID].State.NextRunAtMs = now.Add(-1 * time.Minute).UnixMilli()
+	s.jobs[runningJob.ID].State.RunningAtMs = now.UnixMilli()
 	s.mu.Unlock()
 
 	due := s.collectDue(now)
@@ -245,13 +207,8 @@ func TestScheduler_NextTickDuration(t *testing.T) {
 	require.Equal(t, maxTimerInterval, d)
 
 	// Add a job due in 30s.
-	job := &CronJob{
-		Name:     "near",
-		Schedule: CronSchedule{Kind: ScheduleEvery, EveryMs: 120_000},
-		Payload:  CronPayload{Kind: PayloadAgentTurn, Message: "near"},
-		OwnerID:  "user1",
-		BotID:    "bot1",
-	}
+	job := testRecurringJob("near", "near")
+	job.Schedule.EveryMs = 120_000
 	require.NoError(t, s.CreateJob(ctx, job))
 
 	// Override the next_run to 30s from now.

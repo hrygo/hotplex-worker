@@ -179,6 +179,17 @@ func PrepareJobForCreate(name, scheduleRaw, message, description, workDir, botID
 		MaxRuns:        opts.MaxRuns,
 		ExpiresAt:      opts.ExpiresAt,
 	}
+
+	// Default lifecycle constraints for recurring jobs.
+	if sched.Kind != cron.ScheduleAt {
+		if job.MaxRuns <= 0 {
+			job.MaxRuns = 10
+		}
+		if job.ExpiresAt == "" {
+			job.ExpiresAt = time.Now().Add(24 * time.Hour).Format(time.RFC3339)
+		}
+	}
+
 	if err := cron.ValidateJob(job); err != nil {
 		return nil, err
 	}

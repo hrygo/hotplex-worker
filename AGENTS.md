@@ -445,14 +445,15 @@ hotplex slack react add --channel <id> --ts <ts> --emoji white_check_mark
 ### Cron 定时任务
 
 ```bash
-# 创建（必填：name, schedule, message, bot-id, owner-id）
+# 创建周期任务（必填：name, schedule, message, bot-id, owner-id, max-runs, expires-at）
 hotplex cron create \
   --name "daily-health" \
   --schedule "cron:0 9 * * 1-5" \
   -m "检查系统健康状态" \
-  --bot-id "$BOT_ID" --owner-id "$USER_ID"
+  --bot-id "$BOT_ID" --owner-id "$USER_ID" \
+  --max-runs 100 --expires-at "2027-01-01T00:00:00+08:00"
 
-# 带生命周期限制的周期任务
+# 带短生命周期的周期任务
 hotplex cron create \
   --name "remind" \
   --schedule "every:30m" \
