@@ -1665,3 +1665,66 @@ func TestBridge_ResumeSession_NoopWorker(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(data), `"type":"state"`)
 }
+
+func TestTryWriteMessage_SilentlyDropsWhenFull(t *testing.T) {
+	h := newTestHub(t)
+	client, server := newTestWSConnPair(t)
+	defer client.Close()
+	defer server.Close()
+
+	c := newConn(h, server, "sess-trywrite", nil)
+	h.RegisterConn(c)
+	h.JoinSession("sess-trywrite", c)
+
+	// Fill the write channel (capacity 64).
+	for i := 0; i < 64; i++ {
+		c.writeCh <- []byte("filler")
+	}
+
+	// TryWriteMessage should silently drop without error or disconnect.
+	err := c.TryWriteMessage(websocket.TextMessage, []byte(`{"dropped":true}`))
+	require.NoError(t, err, "TryWriteMessage should not return error on full channel")
+
+	// Connection should still be alive — not closed.
+	c.mu.Lock()
+	closed := c.closed
+	c.mu.Unlock()
+	require.False(t, closed, "connection should not be closed after TryWriteMessage drop")
+}
+
+func TestTryWriteMessage_DeliversWhenSpace(t *testing.T) {
+	h := newTestHub(t)
+	client, server := newTestWSConnPair(t)
+	defer client.Close()
+	defer server.Close()
+
+	c := newConn(h, server, "sess-trywrite-ok", nil)
+	h.RegisterConn(c)
+	h.JoinSession("sess-trywrite-ok", c)
+
+	payload := `{"test":"trywrite"}`
+	err := c.TryWriteMessage(websocket.TextMessage, []byte(payload))
+	require.NoError(t, err)
+
+	// Drain from client side.
+	_ = client.SetReadDeadline(time.Now().Add(2 * time.Second))
+	_, data, err := client.ReadMessage()
+	require.NoError(t, err)
+	require.Contains(t, string(data), "trywrite")
+}
+
+func TestTryWriteMessage_ClosedConn(t *testing.T) {
+	h := newTestHub(t)
+	client, server := newTestWSConnPair(t)
+	defer client.Close()
+
+	c := newConn(h, server, "sess-closed", nil)
+	h.RegisterConn(c)
+	h.JoinSession("sess-closed", c)
+
+	require.NoError(t, c.Close())
+
+	err := c.TryWriteMessage(websocket.TextMessage, []byte("after-close"))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "closed")
+}

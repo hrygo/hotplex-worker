@@ -465,6 +465,7 @@ func (h *Hub) routeMessage(msg *EnvelopeWithConn) {
 		h.LogHandler(level, fmt.Sprintf("event %s seq=%d", msg.Env.Event.Type, msg.Env.Seq), msg.Env.SessionID)
 	}
 
+	droppable := isDroppable(msg.Env.Event.Type)
 	var encoded []byte
 	var err error
 	for _, conn := range conns {
@@ -478,8 +479,15 @@ func (h *Hub) routeMessage(msg *EnvelopeWithConn) {
 					return
 				}
 			}
-			if err := c.WriteMessage(websocket.TextMessage, encoded); err != nil {
-				h.log.Warn("gateway: write failed", "session_id", msg.Env.SessionID, "err", err)
+			// Droppable events (message.delta, raw) silently drop instead of disconnecting.
+			var writeErr error
+			if droppable {
+				writeErr = c.TryWriteMessage(websocket.TextMessage, encoded)
+			} else {
+				writeErr = c.WriteMessage(websocket.TextMessage, encoded)
+			}
+			if writeErr != nil {
+				h.log.Warn("gateway: write failed", "session_id", msg.Env.SessionID, "err", writeErr)
 				_ = conn.Close()
 			}
 		} else {

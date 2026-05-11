@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 )
 
 var threatPatterns = []string{
@@ -48,6 +49,18 @@ func ValidateJob(job *CronJob) error {
 	}
 	if err := ValidateJobPrompt(job.Payload.Message); err != nil {
 		return err
+	}
+	// Recurring jobs must have lifecycle constraints to prevent infinite execution.
+	if job.Schedule.Kind != ScheduleAt {
+		if job.MaxRuns <= 0 {
+			return errors.New("cron: max_runs is required for recurring jobs (every/cron)")
+		}
+		if job.ExpiresAt == "" {
+			return errors.New("cron: expires_at is required for recurring jobs (every/cron)")
+		}
+		if _, err := time.Parse(time.RFC3339, job.ExpiresAt); err != nil {
+			return fmt.Errorf("cron: invalid expires_at: %w", err)
+		}
 	}
 	return nil
 }

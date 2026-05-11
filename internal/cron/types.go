@@ -48,7 +48,8 @@ type CronJobState struct {
 	LastRunAtMs     int64     `json:"last_run_at_ms"`
 	RunningAtMs     int64     `json:"running_at_ms"`
 	LastStatus      JobStatus `json:"last_status,omitempty"`
-	ConsecutiveErrs int       `json:"consecutive_errors"`
+	ConsecutiveErrs int       `json:"consecutive_errors"` // execution failures
+	SchedErrs       int       `json:"sched_errors"`       // schedule computation failures
 	RetryCount      int       `json:"retry_count,omitempty"`
 	LastRunID       string    `json:"last_run_id,omitempty"`
 	RunCount        int       `json:"run_count,omitempty"`
