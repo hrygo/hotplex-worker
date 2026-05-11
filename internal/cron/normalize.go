@@ -50,6 +50,15 @@ func ValidateJob(job *CronJob) error {
 	if err := ValidateJobPrompt(job.Payload.Message); err != nil {
 		return err
 	}
+	// Attached session validation.
+	if job.Payload.Kind == PayloadAttachedSession {
+		if job.Payload.TargetSessionID == "" {
+			return errors.New("cron: target_session_id is required for attached_session")
+		}
+		if job.Schedule.Kind == ScheduleCron {
+			return errors.New("cron: attached_session does not support cron expression schedules")
+		}
+	}
 	// Recurring jobs must have lifecycle constraints to prevent infinite execution.
 	if job.Schedule.Kind != ScheduleAt {
 		if job.MaxRuns <= 0 {

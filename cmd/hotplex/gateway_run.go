@@ -101,8 +101,15 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 	if err != nil {
 		return err
 	}
+	var cronScheduler *cron.Scheduler
+	var cronDelivery *cron.Delivery
+	var cronAttRouter *cronAttachedRouter
+
 	sm.OnTerminate = func(sessionID string) {
 		log.Info("gateway: session terminated", "session_id", sessionID)
+		if cronScheduler != nil {
+			cronScheduler.CleanupForSession(sessionID)
+		}
 	}
 
 	// Wait for orphan process cleanup to finish before repairing sessions.
@@ -241,8 +248,6 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 	// Assemble deps and start HTTP + messaging
 
 	// Cron scheduler: init after Bridge, before messaging adapters.
-	var cronScheduler *cron.Scheduler
-	var cronDelivery *cron.Delivery
 	if cfg.Cron.Enabled {
 		cronStore := cron.NewSQLiteStore(stores.session.DB(), log)
 		cronDelivery = cron.NewDelivery(log,
@@ -255,13 +260,15 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 			},
 			nil,
 		)
+		cronAttRouter = &cronAttachedRouter{bridge: bridge, sm: sm}
 		cronScheduler = cron.New(cron.Deps{
-			Log:        log,
-			Store:      cronStore,
-			Bridge:     bridge,
-			SessionMgr: sm,
-			Delivery:   cronDelivery,
-			YAMLDefs:   cronConfigToYAMLDefs(cfg.Cron.Jobs),
+			Log:            log,
+			Store:          cronStore,
+			Bridge:         bridge,
+			SessionMgr:     sm,
+			Delivery:       cronDelivery,
+			AttachedRouter: cronAttRouter,
+			YAMLDefs:       cronConfigToYAMLDefs(cfg.Cron.Jobs),
 			Cfg: cron.Config{
 				Enabled:           cfg.Cron.Enabled,
 				MaxConcurrentRuns: cfg.Cron.MaxConcurrentRuns,

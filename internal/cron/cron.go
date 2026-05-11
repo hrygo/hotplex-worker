@@ -15,13 +15,14 @@ import (
 
 // Scheduler manages cron job lifecycle: loading, scheduling, execution, and shutdown.
 type Scheduler struct {
-	log            *slog.Logger
-	store          Store
-	executor       *Executor
-	delivery       *Delivery
-	maxConcurrent  int
-	maxJobs        int
-	defaultTimeout time.Duration
+	log             *slog.Logger
+	store           Store
+	executor        *Executor
+	delivery        *Delivery
+	attachedHandler *AttachedSessionHandler
+	maxConcurrent   int
+	maxJobs         int
+	defaultTimeout  time.Duration
 
 	mu     sync.Mutex
 	jobs   map[string]*CronJob // in-memory index
@@ -58,6 +59,7 @@ type Deps struct {
 	Bridge         BridgeStarter
 	SessionMgr     SessionStateChecker
 	Delivery       *Delivery
+	AttachedRouter AttachedSessionRouter
 	YAMLDefs       []YAMLJobDef
 	Cfg            Config
 	ResolveWorkDir WorkDirResolver
@@ -88,6 +90,9 @@ func New(deps Deps) *Scheduler {
 	}
 	s.defaultTimeout = defaultTimeout
 	s.executor = NewExecutor(deps.Log, deps.Bridge, deps.SessionMgr)
+	if deps.AttachedRouter != nil {
+		s.attachedHandler = NewAttachedSessionHandler(deps.Log, deps.AttachedRouter)
+	}
 	s.yamlDefs = deps.YAMLDefs
 	s.resolveWorkDir = deps.ResolveWorkDir
 	s.tickLoop = newTimerLoop(s)
@@ -520,4 +525,29 @@ func (s *Scheduler) UpdateConfig(maxConcurrent, maxJobs int) {
 		s.maxJobs = maxJobs
 	}
 	s.log.Info("cron: config updated", "max_concurrent", s.maxConcurrent, "max_jobs", s.maxJobs)
+}
+
+// CleanupForSession removes all attached_session jobs targeting the given session.
+// Called from session manager's OnTerminate callback.
+func (s *Scheduler) CleanupForSession(sessionID string) {
+	s.mu.Lock()
+	var toDelete []string
+	for id, job := range s.jobs {
+		if job.Payload.Kind == PayloadAttachedSession &&
+			job.Payload.TargetSessionID == sessionID {
+			toDelete = append(toDelete, id)
+		}
+	}
+	s.mu.Unlock()
+
+	for _, id := range toDelete {
+		if err := s.DeleteJob(context.Background(), id); err != nil {
+			s.log.Warn("callback cascade: failed to delete job",
+				"job_id", id, "session_id", sessionID, "err", err)
+		}
+	}
+	if len(toDelete) > 0 {
+		s.log.Info("callback cascade: cleaned up jobs for session",
+			"session_id", sessionID, "jobs_removed", len(toDelete))
+	}
 }

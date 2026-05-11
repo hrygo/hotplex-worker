@@ -147,3 +147,56 @@ func TestFormatCost(t *testing.T) {
 	require.Equal(t, "-", FormatCost(0))
 	require.Equal(t, "$0.0012", FormatCost(0.0012))
 }
+
+func TestParseSchedule_Relative(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantErr bool
+		errPart string
+	}{
+		{"at plus 5m", "at:+5m", false, ""},
+		{"at plus 2h", "at:+2h", false, ""},
+		{"at plus 1h30m", "at:+1h30m", false, ""},
+		{"at plus 90s", "at:+90s", false, ""},
+		{"at plus too short", "at:+30s", true, "at least 1 minute"},
+		{"at plus too long", "at:+100h", true, "exceed 72 hours"},
+		{"at plus invalid", "at:+abc", true, "invalid relative duration"},
+		{"at plus empty", "at:+", true, "invalid relative duration"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			sched, err := ParseSchedule(tt.input)
+			if tt.wantErr {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tt.errPart)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, cron.ScheduleAt, sched.Kind)
+			require.NotEmpty(t, sched.At)
+			// Verify resolved time is in the future.
+			resolved, err := time.Parse(time.RFC3339, sched.At)
+			require.NoError(t, err)
+			require.True(t, resolved.After(time.Now()), "resolved time should be in the future")
+		})
+	}
+}
+
+func TestPrepareJobForCreate_Callback(t *testing.T) {
+	job, err := PrepareJobForCreate(
+		"callback-test", "at:+5m", "check result", "", "",
+		"bot-1", "owner-1", 0, nil, JobCreateOptions{
+			Attach:          true,
+			TargetSessionID: "sess_abc",
+			DeleteAfterRun:  true,
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(t, cron.PayloadAttachedSession, job.Payload.Kind)
+	require.Equal(t, "sess_abc", job.Payload.TargetSessionID)
+	require.True(t, job.DeleteAfterRun)
+	require.Equal(t, cron.ScheduleAt, job.Schedule.Kind)
+}

@@ -93,7 +93,7 @@ func yamlDefToJob(def YAMLJobDef) (*CronJob, error) {
 		Enabled:     true,
 		Schedule:    sched,
 		Payload: CronPayload{
-			Kind:         PayloadAgentTurn,
+			Kind:         PayloadIsolatedSession,
 			Message:      def.Prompt,
 			AllowedTools: def.AllowedTools,
 		},

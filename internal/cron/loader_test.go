@@ -106,7 +106,7 @@ func TestYAMLDefToJob(t *testing.T) {
 	require.Equal(t, "A test job", job.Description)
 	require.True(t, job.Enabled)
 	require.Equal(t, ScheduleEvery, job.Schedule.Kind)
-	require.Equal(t, PayloadAgentTurn, job.Payload.Kind)
+	require.Equal(t, PayloadIsolatedSession, job.Payload.Kind)
 	require.Equal(t, "Check system health", job.Payload.Message)
 	require.ElementsMatch(t, []string{"Read", "Bash"}, job.Payload.AllowedTools)
 	require.Equal(t, "/tmp", job.WorkDir)
