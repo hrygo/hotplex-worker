@@ -590,19 +590,9 @@ func (c *Conn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 // After init, sends to writeCh for WritePump to drain (non-blocking).
 // If the write channel is full, the client is disconnected to protect Hub.Run.
 func (c *Conn) WriteMessage(msgType int, data []byte) error {
-	c.mu.Lock()
-	if c.closed {
-		c.mu.Unlock()
-		return errors.New("conn closed")
+	if handled, err := c.bufferOrReject(data); handled {
+		return err
 	}
-	if !c.initDone {
-		buf := make([]byte, len(data))
-		copy(buf, data)
-		c.initPending = append(c.initPending, buf)
-		c.mu.Unlock()
-		return nil
-	}
-	c.mu.Unlock()
 
 	select {
 	case c.writeCh <- data:
@@ -620,19 +610,9 @@ func (c *Conn) WriteMessage(msgType int, data []byte) error {
 // Unlike WriteMessage, it silently drops the message if the write channel is full
 // instead of disconnecting the client. Use for droppable events (message.delta, raw).
 func (c *Conn) TryWriteMessage(msgType int, data []byte) error {
-	c.mu.Lock()
-	if c.closed {
-		c.mu.Unlock()
-		return errors.New("conn closed")
+	if handled, err := c.bufferOrReject(data); handled {
+		return err
 	}
-	if !c.initDone {
-		buf := make([]byte, len(data))
-		copy(buf, data)
-		c.initPending = append(c.initPending, buf)
-		c.mu.Unlock()
-		return nil
-	}
-	c.mu.Unlock()
 
 	select {
 	case c.writeCh <- data:
@@ -640,6 +620,25 @@ func (c *Conn) TryWriteMessage(msgType int, data []byte) error {
 	default:
 		return nil // silently dropped
 	}
+}
+
+// bufferOrReject handles the closed-check and init-phase buffering shared by
+// WriteMessage and TryWriteMessage. Returns (true, err) if the message was
+// handled (buffered or rejected), or (false, nil) if the caller should proceed
+// to send to writeCh.
+func (c *Conn) bufferOrReject(data []byte) (bool, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed {
+		return true, errors.New("conn closed")
+	}
+	if !c.initDone {
+		buf := make([]byte, len(data))
+		copy(buf, data)
+		c.initPending = append(c.initPending, buf)
+		return true, nil
+	}
+	return false, nil
 }
 
 // markInitDone signals that the init handshake is complete and flushes

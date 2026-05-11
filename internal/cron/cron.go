@@ -384,7 +384,7 @@ func (s *Scheduler) scheduleCatchUp(jobs []*CronJob) {
 	}
 }
 
-// collectDue returns clones of all enabled jobs whose next_run_at_ms <= now.
+// collectDue returns clones of all enabled, non-running jobs whose next_run_at_ms <= now.
 // Returns copies so callers can mutate without racing with the map.
 func (s *Scheduler) collectDue(now time.Time) []*CronJob {
 	s.mu.Lock()

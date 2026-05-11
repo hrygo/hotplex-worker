@@ -197,7 +197,7 @@ func TestOnTick_AutoDisableAfterScheduleErrors(t *testing.T) {
 		Payload:  CronPayload{Kind: PayloadAgentTurn, Message: "test"},
 		State: CronJobState{
 			NextRunAtMs: time.Now().Add(-1 * time.Second).UnixMilli(),
-			SchedErrs:   4, // one more error → auto-disable
+			SchedErrs:   maxScheduleErrors - 1, // one more error → auto-disable
 		},
 	}
 	// Put directly in memory — "unknown" kind violates DB CHECK constraint.
@@ -207,7 +207,7 @@ func TestOnTick_AutoDisableAfterScheduleErrors(t *testing.T) {
 
 	// collectDue returns clones, so read updated state from the map.
 	got := s.jobs[job.ID]
-	require.False(t, got.Enabled, "job should be auto-disabled after 5 consecutive schedule errors")
+	require.False(t, got.Enabled, "job should be auto-disabled after consecutive schedule errors")
 }
 
 func TestContainsAny(t *testing.T) {

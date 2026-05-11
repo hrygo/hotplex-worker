@@ -69,6 +69,10 @@ func (tl *timerLoop) stop() {
 // repeated execution failures.
 const maxConsecutiveErrors = 10
 
+// maxScheduleErrors is the threshold for auto-disabling a job after
+// repeated schedule computation failures.
+const maxScheduleErrors = 5
+
 const maxTimerInterval = 60 * time.Second
 
 func (tl *timerLoop) onTick() {
@@ -96,8 +100,8 @@ func (tl *timerLoop) onTick() {
 		if err != nil {
 			s.log.Error("cron: compute next run", "job_id", job.ID, "err", err)
 			job.State.SchedErrs++
-			if job.State.SchedErrs >= 5 {
-				s.log.Warn("cron: auto-disabling job after 5 schedule errors", "job_id", job.ID)
+			if job.State.SchedErrs >= maxScheduleErrors {
+				s.log.Warn("cron: auto-disabling job after schedule errors", "job_id", job.ID, "errors", job.State.SchedErrs)
 				job.Enabled = false
 			}
 		} else {
