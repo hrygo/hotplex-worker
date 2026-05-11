@@ -9,31 +9,33 @@
 
 ## 1. Problem Statement
 
-Current Cron (`agent_turn`) always creates an **isolated, stateless session** — ideal for standalone tasks but fundamentally unable to:
+Current Cron (`isolated_session`) always creates an **isolated, stateless session** — ideal for standalone tasks but fundamentally unable to:
 
 - Continue an ongoing conversation with full context
 - Follow up on an in-progress task (e.g., "check the build result in 5 minutes")
 - Inject a reminder into an active agent session
 
-This spec adds **`session_callback`**: a new payload kind that injects a scheduled input into an **existing session**, preserving all conversation context.
+This spec adds **`attached_session`**: a new payload kind that injects a scheduled input into an **existing session**, preserving all conversation context.
 
 ---
 
 ## 2. Design Decisions
 
-### D1: Additive Constant — No Rename
+### D1: Rename for Clarity — `isolated_session` / `attached_session`
 
-**Decision**: Add `PayloadSessionCallback` as a new constant. Do NOT rename `PayloadAgentTurn` or `PayloadSystemEvent`.
+**Decision**: Rename `agent_turn` → `isolated_session`, add `attached_session`. Also rename `session_callback` (v1.1 draft name) → `attached_session`.
 
-**Rationale**: Existing SQLite records use `"agent_turn"`. Renaming requires data migration and risks breaking running jobs. Additive is zero-risk.
+**Rationale**: `agent_turn` doesn't convey "isolated session"; `attached_session` mirrors `isolated_session` with parallel structure. The pair is self-documenting: one creates an isolated session, the other attaches to an existing one. Data migration is a single `UPDATE` statement — low risk, high clarity payoff.
 
-### D2: New `SessionCallbackHandler` — Not Executor Extension
+**Migration**: SQLite `UPDATE cron_jobs SET payload_kind = 'isolated_session' WHERE payload_kind = 'agent_turn'` in migration `008`.
 
-**Decision**: Create a dedicated `SessionCallbackHandler` struct in `internal/cron/callback.go`. The existing `Executor` handles only `agent_turn`.
+### D2: New `AttachedSessionHandler` — Not Executor Extension
+
+**Decision**: Create a dedicated `AttachedSessionHandler` struct in `internal/cron/callback.go`. The existing `Executor` handles only `isolated_session`.
 
 **Rationale**: The two paths have fundamentally different lifecycles:
 
-| Aspect | `agent_turn` (Executor) | `session_callback` (CallbackHandler) |
+| Aspect | `isolated_session` (Executor) | `attached_session` (AttachedSessionHandler) |
 |--------|------------------------|--------------------------------------|
 | Session | Create new | Find existing |
 | Worker | Start fresh | Resume or reuse |
@@ -44,9 +46,9 @@ This spec adds **`session_callback`**: a new payload kind that injects a schedul
 
 ### D3: Fire-and-Forget Delivery Model
 
-**Decision**: `session_callback` does NOT use the Delivery pipeline. The callback result becomes the agent's next turn in the existing session — visible to the user through normal platform channels.
+**Decision**: `attached_session` does NOT use the Delivery pipeline. The callback result becomes the agent's next turn in the existing session — visible to the user through normal platform channels.
 
-**Consequence**: The delivery path (`delivery.go`) is never called for `session_callback`. The `Silent` field is irrelevant for this payload kind.
+**Consequence**: The delivery path (`delivery.go`) is never called for `attached_session`. The `Silent` field is irrelevant for this payload kind.
 
 ### D4: Session Reference via `TargetSessionID`
 
@@ -77,15 +79,15 @@ sessionMgr.OnTerminate = func(sessionID string) {
 
 ```go
 const (
-	PayloadAgentTurn       PayloadKind = "agent_turn"          // existing, unchanged
+	PayloadIsolatedSession       PayloadKind = "isolated_session"          // existing, unchanged
 	PayloadSystemEvent     PayloadKind = "system_event"        // existing, reserved
-	PayloadSessionCallback PayloadKind = "session_callback"    // NEW
+	PayloadAttachedSession PayloadKind = "attached_session"    // NEW
 )
 
 type CronPayload struct {
 	Kind            PayloadKind `json:"kind"`
 	Message         string      `json:"message"`
-	TargetSessionID string      `json:"target_session_id,omitempty"` // NEW: only for session_callback
+	TargetSessionID string      `json:"target_session_id,omitempty"` // NEW: only for attached_session
 	AllowedTools    []string    `json:"allowed_tools,omitempty"`
 	WorkerType      string      `json:"worker_type,omitempty"`
 }
@@ -101,32 +103,35 @@ The `payload_kind` column has a CHECK constraint that must be updated:
 -- Current (005_cron_jobs_table.sql line 10):
 payload_kind TEXT NOT NULL DEFAULT 'agent_turn' CHECK(payload_kind IN ('agent_turn', 'system_event')),
 
--- New migration: 008_cron_session_callback.sql
+-- New migration: 008_cron_attached_session.sql
 -- +goose Up
 ALTER TABLE cron_jobs DROP CONSTRAINT payload_kind;  -- SQLite doesn't support DROP CONSTRAINT
 -- → Use replacement table pattern for SQLite:
 
--- Step 1: Create new table with expanded CHECK
+-- Step 1: Create new table with renamed values
 CREATE TABLE cron_jobs_new (
     -- ... identical columns ...
-    payload_kind TEXT NOT NULL DEFAULT 'agent_turn'
-        CHECK(payload_kind IN ('agent_turn', 'system_event', 'session_callback')),
+    payload_kind TEXT NOT NULL DEFAULT 'isolated_session'
+        CHECK(payload_kind IN ('isolated_session', 'system_event', 'attached_session')),
     -- ... rest identical ...
 );
 
--- Step 2: Copy data
+-- Step 2: Copy data with rename migration
 INSERT INTO cron_jobs_new SELECT * FROM cron_jobs;
 
--- Step 3: Swap
+-- Step 3: Rename legacy payload_kind values
+UPDATE cron_jobs_new SET payload_kind = 'isolated_session' WHERE payload_kind = 'agent_turn';
+
+-- Step 4: Swap
 DROP TABLE cron_jobs;
 ALTER TABLE cron_jobs_new RENAME TO cron_jobs;
 
--- Step 4: Recreate indexes
+-- Step 5: Recreate indexes
 CREATE INDEX idx_cron_jobs_enabled ON cron_jobs(enabled);
 CREATE INDEX idx_cron_jobs_next_run ON cron_jobs(enabled, json_extract(state, '$.next_run_at_ms'));
 
 -- +goose Down
--- (reverse: rebuild without 'session_callback' in CHECK)
+-- (reverse: rebuild without 'attached_session' in CHECK, rename back to 'agent_turn')
 ```
 
 > **Note**: `payload_data` is a JSON text column. The new `TargetSessionID` field is automatically serialized/deserialized by `json.Marshal`/`json.Unmarshal` in `store.go` — no column change needed for this.
@@ -136,13 +141,13 @@ CREATE INDEX idx_cron_jobs_next_run ON cron_jobs(enabled, json_extract(state, '$
 Add to `ValidateJob` before the recurring job lifecycle check:
 
 ```go
-// Session callback validation.
-if job.Payload.Kind == PayloadSessionCallback {
+// Attached session validation.
+if job.Payload.Kind == PayloadAttachedSession {
     if job.Payload.TargetSessionID == "" {
-        return errors.New("cron: target_session_id is required for session_callback")
+        return errors.New("cron: target_session_id is required for attached_session")
     }
     if job.Schedule.Kind == ScheduleCron {
-        return errors.New("cron: session_callback does not support cron expression schedules")
+        return errors.New("cron: attached_session does not support cron expression schedules")
     }
 }
 ```
@@ -157,14 +162,14 @@ if job.Payload.Kind == PayloadSessionCallback {
 
 ## 4. Execution Flow
 
-### 4.1 New Interface: `SessionCallbackRouter`
+### 4.1 New Interface: `AttachedSessionRouter`
 
 Defined in `internal/cron/callback.go`. Uses types from packages `cron` already depends on (`session`, `events`).
 
 ```go
-// SessionCallbackRouter is the narrow interface for session callback execution.
+// AttachedSessionRouter is the narrow interface for session callback execution.
 // Implemented by an adapter in cmd/hotplex/ that bridges Bridge + SessionManager.
-type SessionCallbackRouter interface {
+type AttachedSessionRouter interface {
 	// GetSessionInfo returns session metadata for callback dispatch.
 	GetSessionInfo(ctx context.Context, id string) (*session.SessionInfo, error)
 
@@ -178,18 +183,18 @@ type SessionCallbackRouter interface {
 
 > Uses `*session.SessionInfo` directly (not a custom DTO) since `cron` already imports `session` via `SessionStateChecker`. This avoids type duplication.
 
-### 4.2 `SessionCallbackHandler`
+### 4.2 `AttachedSessionHandler`
 
 ```go
 // internal/cron/callback.go
 
-type SessionCallbackHandler struct {
+type AttachedSessionHandler struct {
 	log    *slog.Logger
-	router SessionCallbackRouter
+	router AttachedSessionRouter
 }
 
-func NewSessionCallbackHandler(log *slog.Logger, router SessionCallbackRouter) *SessionCallbackHandler {
-	return &SessionCallbackHandler{
+func NewAttachedSessionHandler(log *slog.Logger, router AttachedSessionRouter) *AttachedSessionHandler {
+	return &AttachedSessionHandler{
 		log:    log.With("component", "cron_callback"),
 		router: router,
 	}
@@ -197,7 +202,7 @@ func NewSessionCallbackHandler(log *slog.Logger, router SessionCallbackRouter) *
 
 // Execute dispatches a callback into the target session.
 // Returns nil on successful injection (fire-and-forget), or an error if dispatch fails.
-func (h *SessionCallbackHandler) Execute(ctx context.Context, job *CronJob) error {
+func (h *AttachedSessionHandler) Execute(ctx context.Context, job *CronJob) error {
 	sid := job.Payload.TargetSessionID
 
 	// Step 1: Look up session
@@ -248,21 +253,21 @@ func (h *SessionCallbackHandler) Execute(ctx context.Context, job *CronJob) erro
 
 ### 4.3 Bridge Adapter Implementation
 
-In `cmd/hotplex/`, implement `SessionCallbackRouter` using existing `Bridge` + `SessionManager`:
+In `cmd/hotplex/`, implement `AttachedSessionRouter` using existing `Bridge` + `SessionManager`:
 
 ```go
 // cmd/hotplex/cron_admin_adapter.go (or a new file)
 
-type cronCallbackRouter struct {
+type cronAttachedRouter struct {
 	bridge *gateway.Bridge
 	sm     *session.Manager
 }
 
-func (r *cronCallbackRouter) GetSessionInfo(ctx context.Context, id string) (*session.SessionInfo, error) {
+func (r *cronAttachedRouter) GetSessionInfo(ctx context.Context, id string) (*session.SessionInfo, error) {
 	return r.sm.Get(ctx, id)
 }
 
-func (r *cronCallbackRouter) InjectInput(ctx context.Context, sessionID string, prompt string, metadata map[string]any) error {
+func (r *cronAttachedRouter) InjectInput(ctx context.Context, sessionID string, prompt string, metadata map[string]any) error {
 	w := r.sm.GetWorker(sessionID)
 	if w == nil {
 		return fmt.Errorf("no worker for session %s", sessionID)
@@ -270,7 +275,7 @@ func (r *cronCallbackRouter) InjectInput(ctx context.Context, sessionID string, 
 	return w.Input(ctx, prompt, metadata)
 }
 
-func (r *cronCallbackRouter) ResumeAndInput(ctx context.Context, sessionID string, workDir string, prompt string, metadata map[string]any) error {
+func (r *cronAttachedRouter) ResumeAndInput(ctx context.Context, sessionID string, workDir string, prompt string, metadata map[string]any) error {
 	if err := r.bridge.ResumeSession(ctx, sessionID, workDir); err != nil {
 		return fmt.Errorf("resume session: %w", err)
 	}
@@ -295,27 +300,27 @@ func (s *Scheduler) executeJob(job *CronJob) {
 		}
 	}
 
-	// *** NEW: Dispatch session_callback to dedicated handler ***
-	if job.Payload.Kind == PayloadSessionCallback {
-		s.executeCallback(job)
+	// *** NEW: Dispatch attached_session to dedicated handler ***
+	if job.Payload.Kind == PayloadAttachedSession {
+		s.executeAttached(job)
 		return
 	}
 
-	// Existing agent_turn execution path (unchanged)
+	// Existing isolated_session execution path (unchanged)
 	// ...
 }
 ```
 
-Full `executeCallback` method:
+Full `executeAttached` method:
 
 ```go
-func (s *Scheduler) executeCallback(job *CronJob) {
+func (s *Scheduler) executeAttached(job *CronJob) {
 	now := time.Now().UnixMilli()
 	job.State.RunningAtMs = now
 	s.persistState(job.ID, job.State)
 	s.mergeJobState(job.ID, job.State, false)
 
-	err := s.callbackHandler.Execute(s.ctx, job)
+	err := s.attachedHandler.Execute(s.ctx, job)
 
 	job.State.RunningAtMs = 0
 	job.State.LastRunAtMs = now
@@ -387,12 +392,12 @@ func (s *Scheduler) executeCallback(job *CronJob) {
 ```go
 type Scheduler struct {
 	// ... existing fields ...
-	callbackHandler *SessionCallbackHandler  // NEW: nil when SessionCallbackRouter is nil
+	attachedHandler *AttachedSessionHandler  // NEW: nil when AttachedSessionRouter is nil
 }
 
 type Deps struct {
 	// ... existing fields ...
-	CallbackRouter SessionCallbackRouter  // NEW: nil → callback jobs fail at execution
+	CallbackRouter AttachedSessionRouter  // NEW: nil → callback jobs fail at execution
 }
 ```
 
@@ -400,11 +405,11 @@ In `New(deps)`:
 
 ```go
 if deps.CallbackRouter != nil {
-	s.callbackHandler = NewSessionCallbackHandler(deps.Log, deps.CallbackRouter)
+	s.attachedHandler = NewAttachedSessionHandler(deps.Log, deps.CallbackRouter)
 }
 ```
 
-When `callbackHandler` is nil (CLI-only mode without gateway), `session_callback` jobs are created successfully but fail at execution with a logged warning.
+When `attachedHandler` is nil (CLI-only mode without gateway), `attached_session` jobs are created successfully but fail at execution with a logged warning.
 
 ---
 
@@ -415,12 +420,12 @@ When `callbackHandler` is nil (CLI-only mode without gateway), `session_callback
 Add to `cmd/hotplex/cron_create.go`:
 
 ```
---callback    Create a session_callback job (requires $GATEWAY_SESSION_ID)
+--callback    Create an attached_session job (requires $GATEWAY_SESSION_ID)
 ```
 
 When `--callback` is set:
 
-1. `Payload.Kind` = `"session_callback"`
+1. `Payload.Kind` = `"attached_session"`
 2. `Payload.TargetSessionID` = `$GATEWAY_SESSION_ID` (fail if unset)
 3. `BotID` and `OwnerID` are auto-filled from `$GATEWAY_BOT_ID` / `$GATEWAY_USER_ID` — these remain structurally required by `ValidateJob` but the CLI fills them automatically
 4. `Platform` and `PlatformKey` are set to `"callback"` (no delivery routing needed)
@@ -502,7 +507,7 @@ func (s *Scheduler) CleanupForSession(sessionID string) {
 	s.mu.Lock()
 	var toDelete []string
 	for id, job := range s.jobs {
-		if job.Payload.Kind == PayloadSessionCallback &&
+		if job.Payload.Kind == PayloadAttachedSession &&
 			job.Payload.TargetSessionID == sessionID {
 			toDelete = append(toDelete, id)
 		}
@@ -526,7 +531,7 @@ func (s *Scheduler) CleanupForSession(sessionID string) {
 
 ### 6.2 Schedule Restrictions
 
-`session_callback` jobs support:
+`attached_session` jobs support:
 
 | Schedule Kind | Allowed | Rationale |
 |--------------|---------|-----------|
@@ -538,7 +543,7 @@ Validation enforces this in `ValidateJob` (see [§3.3](#33-internalcronnormalize
 
 ### 6.3 Gateway Restart
 
-On restart, `loadFromDB` loads `session_callback` jobs normally. When they fire:
+On restart, `loadFromDB` loads `attached_session` jobs normally. When they fire:
 
 - If target session is `RUNNING` or `IDLE` → normal execution (inject or resume)
 - If target session is `TERMINATED` → attempt resume (valid transition: `TERMINATED → RUNNING`)
@@ -547,7 +552,7 @@ On restart, `loadFromDB` loads `session_callback` jobs normally. When they fire:
 
 ### 6.4 Concurrency
 
-- Callback execution occupies a concurrency slot (same `tryAcquireSlot` / `releaseSlot` as `agent_turn`)
+- Callback execution occupies a concurrency slot (same `tryAcquireSlot` / `releaseSlot` as `isolated_session`)
 - Callback injection is serialized per-session by the session manager's per-session mutex (same as user input via `TransitionWithInput`)
 - If the worker is currently streaming a response, `Input` is buffered by the worker adapter (existing behavior for Claude Code `--print` mode stdin)
 - No additional queuing is needed — the existing backpressure mechanism is sufficient
@@ -570,14 +575,14 @@ For `every:` callbacks: Normal `max_runs` / `expires_at` lifecycle applies.
 
 ### 6.6 CLI-Only Mode
 
-When `SessionCallbackRouter` is nil (running `hotplex cron` commands outside gateway):
+When `AttachedSessionRouter` is nil (running `hotplex cron` commands outside gateway):
 
-- `session_callback` job **creation** succeeds normally (no gateway needed for CRUD)
-- `session_callback` job **execution** logs a warning and marks the job as failed:
+- `attached_session` job **creation** succeeds normally (no gateway needed for CRUD)
+- `attached_session` job **execution** logs a warning and marks the job as failed:
 
 ```go
-if s.callbackHandler == nil {
-    s.log.Warn("cron: session_callback execution skipped, no callback router",
+if s.attachedHandler == nil {
+    s.log.Warn("cron: attached_session execution skipped, no attached router",
         "job_id", job.ID, "name", job.Name)
     job.State.LastStatus = StatusFailed
     // ... persist state, no retry ...
@@ -792,7 +797,7 @@ var CronCallbackTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 }, []string{"result"}) // result: success, session_not_found, resume_failed, inject_failed, no_router
 ```
 
-Record in `executeCallback`:
+Record in `executeAttached`:
 
 ```go
 metrics.CronCallbackTotal.WithLabelValues("success").Inc()
@@ -817,11 +822,11 @@ metrics.CronCallbackTotal.WithLabelValues("session_not_found").Inc()
 | `TestCallbackHandler_Deleted` | `callback_test.go` | Verify specific error returned for deleted session |
 | `TestCallbackHandler_Created` | `callback_test.go` | Verify error for session in CREATED state |
 | `TestCallbackHandler_NotFound` | `callback_test.go` | Verify error when session doesn't exist |
-| `TestCleanupForSession` | `callback_test.go` | Create N callback + M agent_turn jobs, delete session, verify only callbacks removed |
+| `TestCleanupForSession` | `callback_test.go` | Create N attached + M isolated jobs, delete session, verify only attached removed |
 | `TestCleanupForSession_NoCallbackJobs` | `callback_test.go` | Delete session with no callbacks → no-op, no errors |
 | `TestParseSchedule_Relative` | `client_test.go` | `at:+5m`, `at:+2h30m`, `at:+90s` resolve correctly |
 | `TestParseSchedule_RelativeInvalid` | `client_test.go` | `at:+30s` (too short), `at:+100h` (too long), `at:+abc` (invalid) |
-| `TestCallback_NoRouter` | `cron_test.go` | Verify graceful failure when `callbackHandler` is nil |
+| `TestCallback_NoRouter` | `cron_test.go` | Verify graceful failure when `attachedHandler` is nil |
 
 ### Integration Tests
 
@@ -836,14 +841,14 @@ metrics.CronCallbackTotal.WithLabelValues("session_not_found").Inc()
 
 Ordered by dependency chain:
 
-- [ ] **P1: SQLite migration** — `008_cron_session_callback.sql` (expand CHECK constraint)
-- [ ] **P1: Data model** — Add `PayloadSessionCallback` constant, `TargetSessionID` field to `CronPayload`
+- [ ] **P1: SQLite migration** — `008_cron_attached_session.sql` (expand CHECK constraint)
+- [ ] **P1: Data model** — Add `PayloadAttachedSession` constant, `TargetSessionID` field to `CronPayload`
 - [ ] **P1: Validation** — Add callback-specific rules to `ValidateJob`
-- [ ] **P2: `SessionCallbackRouter` interface** — Define in `internal/cron/callback.go`
-- [ ] **P2: `SessionCallbackHandler`** — Implement `Execute` with state-based dispatch
+- [ ] **P2: `AttachedSessionRouter` interface** — Define in `internal/cron/callback.go`
+- [ ] **P2: `AttachedSessionHandler`** — Implement `Execute` with state-based dispatch
 - [ ] **P2: `CleanupForSession`** — Implement cascade deletion in `Scheduler`
-- [ ] **P3: Scheduler integration** — Wire `callbackHandler` into `Scheduler`, add `executeCallback`
-- [ ] **P3: Bridge adapter** — Implement `cronCallbackRouter` in `cmd/hotplex/`
+- [ ] **P3: Scheduler integration** — Wire `attachedHandler` into `Scheduler`, add `executeAttached`
+- [ ] **P3: Bridge adapter** — Implement `cronAttachedRouter` in `cmd/hotplex/`
 - [ ] **P3: Session hook** — Wire `OnTerminate` callback in `gateway_run.go` startup
 - [ ] **P4: CLI `--callback` flag** — Add flag to `cron_create.go`, auto-fill `TargetSessionID`, default schedule `at:+10m`
 - [ ] **P4: Relative time parsing** — Extend `ParseSchedule` for `at:+N` syntax
@@ -860,21 +865,21 @@ The following sections of [AI-Native-Cronjob-Spec.md](AI-Native-Cronjob-Spec.md)
 
 ### A.1 §1 Overview — Non-Goals
 
-**Remove** `system_event payload（注入已有 session）` from the Non-Goals list. This is now implemented as `session_callback`.
+**Remove** `system_event payload（注入已有 session）` from the Non-Goals list. This is now implemented as `attached_session`.
 
-### A.2 §2.2 CronPayload — Add `session_callback`
+### A.2 §2.2 CronPayload — Rename `agent_turn` → `isolated_session`, add `attached_session`
 
 ```go
 const (
-    PayloadAgentTurn       Payload = "agent_turn"        // isolated session
-    PayloadSystemEvent     Payload = "system_event"      // reserved
-    PayloadSessionCallback Payload = "session_callback"  // inject existing session — NEW
+    PayloadIsolatedSession  Payload = "isolated_session"   // renamed from agent_turn
+    PayloadSystemEvent      Payload = "system_event"       // reserved
+    PayloadAttachedSession  Payload = "attached_session"   // inject existing session — NEW
 )
 
 type CronPayload struct {
     Kind            Payload  `json:"kind"`
     Message         string   `json:"message"`
-    TargetSessionID string   `json:"target_session_id,omitempty"` // NEW: session_callback only
+    TargetSessionID string   `json:"target_session_id,omitempty"` // attached_session only
     AllowedTools    []string `json:"allowed_tools,omitempty"`
 }
 ```
@@ -885,14 +890,14 @@ type CronPayload struct {
 -- Change line 10 from:
 payload_kind TEXT NOT NULL DEFAULT 'agent_turn' CHECK(payload_kind IN ('agent_turn', 'system_event')),
 -- To:
-payload_kind TEXT NOT NULL DEFAULT 'agent_turn' CHECK(payload_kind IN ('agent_turn', 'system_event', 'session_callback')),
+payload_kind TEXT NOT NULL DEFAULT 'isolated_session' CHECK(payload_kind IN ('isolated_session', 'system_event', 'attached_session')),
 ```
 
 ### A.4 §4.1 Directory Layout — Add `callback.go`
 
 ```
 internal/cron/
-├── callback.go    # NEW: SessionCallbackRouter + SessionCallbackHandler
+├── callback.go    # NEW: AttachedSessionRouter + AttachedSessionHandler
 ├── cron.go
 ├── store.go
 ├── timer.go
@@ -907,12 +912,12 @@ internal/cron/
 └── cron_test.go
 ```
 
-### A.5 §4.2 Scheduler — Add `callbackHandler`
+### A.5 §4.2 Scheduler — Add `attachedHandler`
 
 ```go
 type Scheduler struct {
     // ... existing fields ...
-    callbackHandler *SessionCallbackHandler  // NEW
+    attachedHandler *AttachedSessionHandler  // NEW
 }
 ```
 
@@ -938,11 +943,11 @@ Add after §5.3:
 ### Phase 4 — Session Callback (Fast Path)
 
 - SQLite migration: expand `payload_kind` CHECK constraint
-- `internal/cron/callback.go`: `SessionCallbackRouter` interface + `SessionCallbackHandler`
-- `internal/cron/types.go`: `PayloadSessionCallback` + `TargetSessionID`
+- `internal/cron/callback.go`: `AttachedSessionRouter` interface + `AttachedSessionHandler`
+- `internal/cron/types.go`: `PayloadAttachedSession` + `TargetSessionID`
 - `internal/cron/normalize.go`: callback validation rules
-- `internal/cron/timer.go`: `executeCallback` dispatch in `executeJob`
-- Bridge adapter in `cmd/hotplex/`: `cronCallbackRouter`
+- `internal/cron/timer.go`: `executeAttached` dispatch in `executeJob`
+- Bridge adapter in `cmd/hotplex/`: `cronAttachedRouter`
 - Session GC hook: `OnTerminate` → `CleanupForSession`
 - CLI: `--callback` flag + `at:+N` relative time
 - Skill manual: `<callback_mode>` section
