@@ -333,3 +333,52 @@ func TestScheduler_ScheduleRetry(t *testing.T) {
 	// Duration should be backoff(2) = 5 minutes.
 	require.WithinDuration(t, before.Add(5*time.Minute), time.UnixMilli(job.State.NextRunAtMs), 2*time.Second)
 }
+
+func TestScheduler_MergeJobState(t *testing.T) {
+	s := newTestScheduler(t)
+
+	job := testRecurringJob("merge-test", "hello")
+	require.NoError(t, s.CreateJob(context.Background(), job))
+
+	t.Run("merges state without overwriting Enabled", func(t *testing.T) {
+		// Simulate external disable via CLI.
+		s.mu.Lock()
+		s.jobs[job.ID].Enabled = false
+		s.mu.Unlock()
+
+		// mergeJobState should update State but keep Enabled=false.
+		newState := CronJobState{
+			NextRunAtMs: time.Now().Add(1 * time.Hour).UnixMilli(),
+			RunCount:    42,
+		}
+		s.mergeJobState(job.ID, newState, false)
+
+		s.mu.Lock()
+		got := s.jobs[job.ID]
+		s.mu.Unlock()
+		require.False(t, got.Enabled, "Enabled should remain false")
+		require.Equal(t, 42, got.State.RunCount, "State should be merged")
+	})
+
+	t.Run("disable flag overrides Enabled", func(t *testing.T) {
+		job2 := testRecurringJob("merge-disable", "world")
+		require.NoError(t, s.CreateJob(context.Background(), job2))
+
+		s.mu.Lock()
+		require.True(t, s.jobs[job2.ID].Enabled)
+		s.mu.Unlock()
+
+		s.mergeJobState(job2.ID, CronJobState{RunCount: 5}, true)
+
+		s.mu.Lock()
+		got := s.jobs[job2.ID]
+		s.mu.Unlock()
+		require.False(t, got.Enabled, "disable=true should set Enabled=false")
+		require.Equal(t, 5, got.State.RunCount)
+	})
+
+	t.Run("no-op for deleted job", func(t *testing.T) {
+		// Should not panic.
+		s.mergeJobState("nonexistent", CronJobState{RunCount: 99}, true)
+	})
+}

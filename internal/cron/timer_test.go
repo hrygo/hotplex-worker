@@ -161,13 +161,14 @@ func TestOnTick_AtSchedule_AdvancesToPreventDupes(t *testing.T) {
 	s.tickLoop.onTick()
 	s.closed.Store(true)
 	s.tickLoop.stop()
+	s.wg.Wait() // wait for executeJob goroutine to finish before reading state
 
-	// next_run should have been advanced (negative from zero time),
-	// not remain at the original past value.
+	// next_run should have been advanced to zero time (negative UnixMilli),
+	// preventing collectDue from picking it up again.
 	got, err := store.Get(context.Background(), job.ID)
 	require.NoError(t, err)
-	require.NotEqual(t, job.State.NextRunAtMs, got.State.NextRunAtMs,
-		"at schedule should advance next_run to prevent duplicate execution")
+	require.True(t, got.State.NextRunAtMs <= 0,
+		"at schedule should advance next_run to zero time (got %d)", got.State.NextRunAtMs)
 }
 
 func TestOnTick_AutoDisableAfterScheduleErrors(t *testing.T) {
@@ -195,8 +196,8 @@ func TestOnTick_AutoDisableAfterScheduleErrors(t *testing.T) {
 		Schedule: CronSchedule{Kind: "unknown"}, // will cause schedule error
 		Payload:  CronPayload{Kind: PayloadAgentTurn, Message: "test"},
 		State: CronJobState{
-			NextRunAtMs:     time.Now().Add(-1 * time.Second).UnixMilli(),
-			ConsecutiveErrs: 4, // one more error → auto-disable
+			NextRunAtMs: time.Now().Add(-1 * time.Second).UnixMilli(),
+			SchedErrs:   4, // one more error → auto-disable
 		},
 	}
 	// Put directly in memory — "unknown" kind violates DB CHECK constraint.

@@ -95,14 +95,14 @@ func (tl *timerLoop) onTick() {
 		next, err := NextRun(job.Schedule, now)
 		if err != nil {
 			s.log.Error("cron: compute next run", "job_id", job.ID, "err", err)
-			job.State.ConsecutiveErrs++
-			if job.State.ConsecutiveErrs >= 5 {
+			job.State.SchedErrs++
+			if job.State.SchedErrs >= 5 {
 				s.log.Warn("cron: auto-disabling job after 5 schedule errors", "job_id", job.ID)
 				job.Enabled = false
 			}
 		} else {
 			job.State.NextRunAtMs = next.UnixMilli()
-			job.State.ConsecutiveErrs = 0
+			job.State.SchedErrs = 0
 		}
 
 		// Persist state before execution.
@@ -113,10 +113,10 @@ func (tl *timerLoop) onTick() {
 			if err := s.store.Update(s.ctx, job); err != nil {
 				s.log.Error("cron: persist disabled job", "job_id", job.ID, "err", err)
 			}
-			s.putJob(job)
+			s.mergeJobState(job.ID, job.State, true)
 			continue
 		}
-		s.putJob(job)
+		s.mergeJobState(job.ID, job.State, false)
 
 		// Execute with concurrency cap.
 		if !tl.tryAcquireSlot(s.maxConcurrent) {
@@ -124,9 +124,9 @@ func (tl *timerLoop) onTick() {
 			continue
 		}
 
-		// Fresh clone for the goroutine — putJob stored the previous clone
-		// into s.jobs, so we need an independent copy to avoid data races
-		// when executeJob mutates state fields without holding s.mu.
+		// Fresh clone for the goroutine — mergeJobState updated the shared
+		// in-memory entry's State, so we need an independent copy to avoid
+		// data races when executeJob mutates state fields without holding s.mu.
 		execJob := job.Clone()
 		s.wg.Add(1)
 		go func(j *CronJob) {

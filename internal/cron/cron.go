@@ -431,18 +431,8 @@ func (s *Scheduler) nextTickDuration(now time.Time) time.Duration {
 	return d
 }
 
-// putJob writes a job clone back to the in-memory index under s.mu.
-// Silently skips if the job was deleted from the index.
-func (s *Scheduler) putJob(job *CronJob) {
-	s.mu.Lock()
-	if _, ok := s.jobs[job.ID]; ok {
-		s.jobs[job.ID] = job
-	}
-	s.mu.Unlock()
-}
-
 // mergeJobState updates only the State field of the in-memory job and optionally
-// disables it. Unlike putJob (full replace), this preserves concurrent changes
+// disables it. Unlike a full replace, this preserves concurrent changes
 // to Enabled, Schedule, etc. — preventing a goroutine's stale clone from
 // overwriting an external disable.
 func (s *Scheduler) mergeJobState(jobID string, state CronJobState, disable bool) {

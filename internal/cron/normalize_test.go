@@ -184,7 +184,7 @@ func TestValidateJob(t *testing.T) {
 			errPart: "invalid expires_at",
 		},
 		{
-			name: "cron schedule requires lifecycle",
+			name: "cron schedule with lifecycle passes",
 			job: func() *CronJob {
 				j := validJob()
 				j.Schedule = CronSchedule{Kind: ScheduleCron, Expr: "0 9 * * 1-5"}

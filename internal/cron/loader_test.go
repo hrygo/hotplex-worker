@@ -94,6 +94,8 @@ func TestYAMLDefToJob(t *testing.T) {
 		MaxRetries:    3,
 		Silent:        true,
 		AllowedTools:  []string{"Read", "Bash"},
+		MaxRuns:       50,
+		ExpiresAt:     "2099-01-01T00:00:00Z",
 	}
 
 	job, err := yamlDefToJob(def)
@@ -122,9 +124,24 @@ func TestYAMLDefToJob_InvalidSchedule(t *testing.T) {
 	def := YAMLJobDef{
 		Name:     "bad-sched",
 		Schedule: "invalid cron expr!!!",
+		BotID:    "bot1",
+		OwnerID:  "user1",
 	}
 	_, err := yamlDefToJob(def)
 	require.Error(t, err)
+}
+
+func TestYAMLDefToJob_MissingLifecycle(t *testing.T) {
+	def := YAMLJobDef{
+		Name:          "no-lifecycle",
+		ScheduleEvery: 60_000,
+		Prompt:        "test",
+		BotID:         "bot1",
+		OwnerID:       "user1",
+	}
+	_, err := yamlDefToJob(def)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "max_runs is required")
 }
 
 func TestLoadFromYAML_Integration(t *testing.T) {
@@ -144,12 +161,18 @@ func TestLoadFromYAML_Integration(t *testing.T) {
 			ScheduleEvery: 60_000,
 			Prompt:        "Job A",
 			OwnerID:       "user1",
+			BotID:         "bot1",
+			MaxRuns:       10,
+			ExpiresAt:     "2099-01-01T00:00:00Z",
 		},
 		{
 			Name:          "job-b",
 			ScheduleEvery: 120_000,
 			Prompt:        "Job B",
 			OwnerID:       "user1",
+			BotID:         "bot1",
+			MaxRuns:       10,
+			ExpiresAt:     "2099-01-01T00:00:00Z",
 		},
 	}
 
@@ -180,7 +203,7 @@ func TestLoadFromYAML_SkipNoName(t *testing.T) {
 
 	defs := []YAMLJobDef{
 		{Name: "", ScheduleEvery: 60_000, Prompt: "no name"},
-		{Name: "valid", ScheduleEvery: 60_000, Prompt: "valid job"},
+		{Name: "valid", ScheduleEvery: 60_000, Prompt: "valid job", BotID: "bot1", OwnerID: "user1", MaxRuns: 10, ExpiresAt: "2099-01-01T00:00:00Z"},
 	}
 
 	require.NoError(t, s.LoadFromYAML(ctx, defs))
@@ -204,7 +227,7 @@ func TestLoadFromYAML_UpdatePreservesState(t *testing.T) {
 
 	// First load.
 	defs := []YAMLJobDef{
-		{Name: "update-test", ScheduleEvery: 60_000, Prompt: "original"},
+		{Name: "update-test", ScheduleEvery: 60_000, Prompt: "original", BotID: "bot1", OwnerID: "user1", MaxRuns: 10, ExpiresAt: "2099-01-01T00:00:00Z"},
 	}
 	require.NoError(t, s.LoadFromYAML(ctx, defs))
 
