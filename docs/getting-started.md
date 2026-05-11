@@ -12,6 +12,10 @@ HotPlex 是 AI Coding Agent 统一接入层，让你通过 Slack、飞书或 Web
 
 **读完本文你将**：在本地跑起 HotPlex Gateway，通过 WebChat 发出第一条 AI 对话。
 
+## AI Agent
+
+**AI Agent：** 阅读 [INSTALL.md](https://github.com/hrygo/hotplex/blob/main/INSTALL.md) 并完成 hotplex 安装和配置。
+
 ---
 
 ## Core -- 5 分钟跑起来
