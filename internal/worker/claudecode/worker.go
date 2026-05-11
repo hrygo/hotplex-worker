@@ -379,6 +379,14 @@ func (w *Worker) Input(ctx context.Context, content string, metadata map[string]
 	return nil
 }
 
+// CloseInput signals EOF on the worker's stdin so it exits after processing.
+func (w *Worker) CloseInput() error {
+	if conn, ok := w.Conn().(*base.Conn); ok {
+		return conn.CloseInput()
+	}
+	return nil
+}
+
 func (w *Worker) HandlePermissionResponse(_ context.Context, reqID string, allowed bool, reason string) error {
 	w.Log.Info("claudecode: sending permission response to stdin",
 		"request_id", reqID,

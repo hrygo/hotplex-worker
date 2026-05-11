@@ -81,6 +81,12 @@ func (e *Executor) Execute(ctx context.Context, job *CronJob, timeout time.Durat
 		return "", fmt.Errorf("cron executor: input prompt: %w", err)
 	}
 
+	// Signal EOF so --print mode workers exit after processing instead of
+	// waiting for more streaming input that will never arrive.
+	if ci, ok := w.(interface{ CloseInput() error }); ok {
+		_ = ci.CloseInput()
+	}
+
 	err := e.waitForCompletion(ctx, sessionKey, timeout)
 
 	// Explicitly terminate the session to ensure the worker process exits immediately.

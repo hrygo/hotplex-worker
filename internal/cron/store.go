@@ -22,6 +22,7 @@ type Store interface {
 	GetByName(ctx context.Context, name string) (*CronJob, error)
 	List(ctx context.Context, enabledOnly bool) ([]*CronJob, error)
 	UpdateState(ctx context.Context, id string, state CronJobState) error
+	SetEnabled(ctx context.Context, id string, enabled bool) error
 	UpsertByName(ctx context.Context, job *CronJob) error
 }
 
@@ -189,6 +190,26 @@ func (s *SQLiteStore) UpdateState(ctx context.Context, id string, state CronJobS
 	)
 	if err != nil {
 		return fmt.Errorf("cron store: update state: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("%w: %s", ErrJobNotFound, id)
+	}
+	return nil
+}
+
+// SetEnabled updates the enabled flag for a job without touching other fields.
+func (s *SQLiteStore) SetEnabled(ctx context.Context, id string, enabled bool) error {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+
+	now := time.Now().UnixMilli()
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE cron_jobs SET enabled = ?, updated_at = ? WHERE id = ?`,
+		boolToInt(enabled), now, id,
+	)
+	if err != nil {
+		return fmt.Errorf("cron store: set enabled: %w", err)
 	}
 	n, _ := res.RowsAffected()
 	if n == 0 {
