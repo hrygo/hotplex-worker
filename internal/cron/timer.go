@@ -168,10 +168,7 @@ func (s *Scheduler) executeJob(job *CronJob) {
 		return
 	}
 
-	now := time.Now().UnixMilli()
-	job.State.RunningAtMs = now
-	s.persistState(job.ID, job.State)
-	s.mergeJobState(job.ID, job.State, false)
+	s.beginExecution(job)
 
 	timeout := s.jobTimeout(job)
 	ctx, cancel := context.WithTimeout(s.ctx, timeout)
@@ -183,41 +180,111 @@ func (s *Scheduler) executeJob(job *CronJob) {
 
 	metrics.CronDurationSeconds.WithLabelValues(job.Name).Observe(duration.Seconds())
 
-	job.State.RunningAtMs = 0
-	job.State.LastRunAtMs = now
 	job.State.LastRunID = sessionKey
+	shouldDisable := s.finishExecution(job, start.UnixMilli(), err, errorType(err))
 
-	var shouldDisable bool
+	if shouldDisable {
+		s.persistAndDisable(job.ID, job.State)
+		return
+	}
 
 	if err != nil {
-		s.log.Error("cron: job execution failed",
-			"job_id", job.ID, "name", job.Name, "duration", duration, "err", err)
-		job.State.LastStatus = StatusFailed
-		job.State.ConsecutiveErrs++
-		metrics.CronErrorsTotal.WithLabelValues(job.Name, errorType(err)).Inc()
-
-		// Auto-disable after too many consecutive execution failures.
-		if job.State.ConsecutiveErrs >= maxConsecutiveErrors {
-			s.log.Warn("cron: auto-disabling job after consecutive execution failures",
-				"job_id", job.ID, "name", job.Name, "consecutive_errors", job.State.ConsecutiveErrs)
-			shouldDisable = true
-		}
-
-		// One-shot retry logic.
+		// One-shot retry logic (checked after finishExecution records the error).
 		if job.Schedule.Kind == ScheduleAt && isTemporaryError(err) && job.State.RetryCount < maxRetries(job) {
 			s.scheduleRetry(s.ctx, job)
 			return
 		}
-	} else {
-		job.State.LastStatus = StatusSuccess
-		job.State.ConsecutiveErrs = 0
-		job.State.RunCount++
-		resetRetry(job)
-		if s.delivery != nil && !job.Silent && !HasCLIDelivery(job) {
-			s.delivery.Deliver(s.ctx, job, sessionKey)
-		}
+		return
 	}
 
+	// Deliver results for successful isolated_session runs.
+	if s.delivery != nil && !job.Silent && !HasCLIDelivery(job) {
+		s.delivery.Deliver(s.ctx, job, sessionKey)
+	}
+
+	s.applyLifecycle(job)
+}
+
+// executeAttached handles attached_session payload jobs.
+// Fire-and-forget: the result stays in the target session.
+func (s *Scheduler) executeAttached(job *CronJob) {
+	if s.attachedHandler == nil {
+		s.log.Warn("cron: attached_session execution skipped, no attached router",
+			"job_id", job.ID, "name", job.Name)
+		metrics.CronAttachedTotal.WithLabelValues("no_router").Inc()
+		job.State.LastStatus = StatusFailed
+		s.persistState(job.ID, job.State)
+		return
+	}
+
+	s.beginExecution(job)
+
+	timeout := s.jobTimeout(job)
+	ctx, cancel := context.WithTimeout(s.ctx, timeout)
+	defer cancel()
+
+	err := s.attachedHandler.Execute(ctx, job)
+
+	shouldDisable := s.finishExecution(job, time.Now().UnixMilli(), err, "attached")
+
+	if shouldDisable {
+		s.persistAndDisable(job.ID, job.State)
+		return
+	}
+
+	if err != nil {
+		// One-shot retry logic (checked after finishExecution records the error).
+		if job.Schedule.Kind == ScheduleAt && isTemporaryError(err) && job.State.RetryCount < maxRetries(job) {
+			s.scheduleRetry(s.ctx, job)
+			return
+		}
+		return
+	}
+
+	s.applyLifecycle(job)
+}
+
+// beginExecution marks a job as running and persists state.
+func (s *Scheduler) beginExecution(job *CronJob) {
+	now := time.Now().UnixMilli()
+	job.State.RunningAtMs = now
+	s.persistState(job.ID, job.State)
+	s.mergeJobState(job.ID, job.State, false)
+}
+
+// finishExecution records the outcome of a job execution.
+// It handles error bookkeeping (consecutive errors) and success bookkeeping.
+// Returns true if the job should be auto-disabled due to consecutive failures.
+// The caller is responsible for persisting disable and checking retry logic.
+func (s *Scheduler) finishExecution(job *CronJob, startedAtMs int64, err error, errType string) bool {
+	job.State.RunningAtMs = 0
+	job.State.LastRunAtMs = startedAtMs
+
+	if err != nil {
+		s.log.Error("cron: job execution failed",
+			"job_id", job.ID, "name", job.Name, "err", err)
+		job.State.LastStatus = StatusFailed
+		job.State.ConsecutiveErrs++
+		metrics.CronErrorsTotal.WithLabelValues(job.Name, errType).Inc()
+
+		if job.State.ConsecutiveErrs >= maxConsecutiveErrors {
+			s.log.Warn("cron: auto-disabling job after consecutive failures",
+				"job_id", job.ID, "name", job.Name, "consecutive_errors", job.State.ConsecutiveErrs)
+			return true
+		}
+		return false
+	}
+
+	job.State.LastStatus = StatusSuccess
+	job.State.ConsecutiveErrs = 0
+	job.State.RunCount++
+	resetRetry(job)
+	metrics.CronFiresTotal.WithLabelValues(job.Name).Inc()
+	return false
+}
+
+// applyLifecycle handles post-execution lifecycle: one-shot delete/disable, recurring max_runs/expires_at.
+func (s *Scheduler) applyLifecycle(job *CronJob) {
 	// One-shot: disable or delete after run (success or permanent error).
 	if job.Schedule.Kind == ScheduleAt {
 		if job.DeleteAfterRun {
@@ -229,21 +296,21 @@ func (s *Scheduler) executeJob(job *CronJob) {
 			s.mu.Unlock()
 			return
 		}
-		shouldDisable = true
+		s.persistAndDisable(job.ID, job.State)
+		return
 	}
 
-	// Lifecycle: check max_runs and expires_at.
-	if !shouldDisable {
-		if job.MaxRuns > 0 && job.State.RunCount >= job.MaxRuns {
-			s.log.Info("cron: job reached max_runs, disabling",
-				"job_id", job.ID, "name", job.Name, "run_count", job.State.RunCount, "max_runs", job.MaxRuns)
+	// Recurring lifecycle: check max_runs and expires_at.
+	shouldDisable := false
+	if job.MaxRuns > 0 && job.State.RunCount >= job.MaxRuns {
+		s.log.Info("cron: job reached max_runs, disabling",
+			"job_id", job.ID, "name", job.Name, "run_count", job.State.RunCount, "max_runs", job.MaxRuns)
+		shouldDisable = true
+	} else if job.ExpiresAt != "" {
+		if t, perr := time.Parse(time.RFC3339, job.ExpiresAt); perr == nil && time.Now().After(t) {
+			s.log.Info("cron: job expired, disabling",
+				"job_id", job.ID, "name", job.Name, "expires_at", job.ExpiresAt)
 			shouldDisable = true
-		} else if job.ExpiresAt != "" {
-			if t, perr := time.Parse(time.RFC3339, job.ExpiresAt); perr == nil && time.Now().After(t) {
-				s.log.Info("cron: job expired, disabling",
-					"job_id", job.ID, "name", job.Name, "expires_at", job.ExpiresAt)
-				shouldDisable = true
-			}
 		}
 	}
 
@@ -254,6 +321,16 @@ func (s *Scheduler) executeJob(job *CronJob) {
 		}
 	}
 	s.mergeJobState(job.ID, job.State, shouldDisable)
+}
+
+// persistAndDisable persists state and disables a job in both store and memory.
+// Used for one-shot jobs and auto-disabled jobs after consecutive failures.
+func (s *Scheduler) persistAndDisable(jobID string, state CronJobState) {
+	s.persistState(jobID, state)
+	if err := s.store.SetEnabled(s.persistCtx(), jobID, false); err != nil {
+		s.log.Error("cron: persist disable", "job_id", jobID, "err", err)
+	}
+	s.mergeJobState(jobID, state, true)
 }
 
 // persistState saves job state to the store, using a background context
@@ -308,102 +385,4 @@ func errorType(err error) string {
 		}
 	}
 	return "execution"
-}
-
-// executeAttached handles attached_session payload jobs.
-// Fire-and-forget: the result stays in the target session.
-func (s *Scheduler) executeAttached(job *CronJob) {
-	if s.attachedHandler == nil {
-		s.log.Warn("cron: attached_session execution skipped, no attached router",
-			"job_id", job.ID, "name", job.Name)
-		metrics.CronAttachedTotal.WithLabelValues("no_router").Inc()
-		job.State.LastStatus = StatusFailed
-		s.persistState(job.ID, job.State)
-		return
-	}
-
-	now := time.Now().UnixMilli()
-	job.State.RunningAtMs = now
-	s.persistState(job.ID, job.State)
-	s.mergeJobState(job.ID, job.State, false)
-
-	timeout := s.jobTimeout(job)
-	ctx, cancel := context.WithTimeout(s.ctx, timeout)
-	defer cancel()
-
-	err := s.attachedHandler.Execute(ctx, job)
-
-	job.State.RunningAtMs = 0
-	job.State.LastRunAtMs = now
-
-	if err != nil {
-		s.log.Error("cron: attached failed",
-			"job_id", job.ID, "name", job.Name, "err", err)
-		job.State.LastStatus = StatusFailed
-		job.State.ConsecutiveErrs++
-		metrics.CronErrorsTotal.WithLabelValues(job.Name, "attached").Inc()
-
-		// Auto-disable after too many consecutive failures.
-		if job.State.ConsecutiveErrs >= maxConsecutiveErrors {
-			s.log.Warn("cron: auto-disabling attached job after consecutive failures",
-				"job_id", job.ID, "name", job.Name, "consecutive_errors", job.State.ConsecutiveErrs)
-			s.persistState(job.ID, job.State)
-			if err := s.store.SetEnabled(s.persistCtx(), job.ID, false); err != nil {
-				s.log.Error("cron: persist disable attached", "job_id", job.ID, "err", err)
-			}
-			s.mergeJobState(job.ID, job.State, true)
-			return
-		}
-
-		// One-shot retry logic.
-		if job.Schedule.Kind == ScheduleAt && isTemporaryError(err) && job.State.RetryCount < maxRetries(job) {
-			s.scheduleRetry(s.ctx, job)
-			return
-		}
-	} else {
-		job.State.LastStatus = StatusSuccess
-		job.State.ConsecutiveErrs = 0
-		job.State.RunCount++
-		resetRetry(job)
-		metrics.CronFiresTotal.WithLabelValues(job.Name).Inc()
-	}
-
-	// One-shot lifecycle: delete or disable after execution.
-	if job.Schedule.Kind == ScheduleAt {
-		if job.DeleteAfterRun {
-			if err := s.store.Delete(s.persistCtx(), job.ID); err != nil {
-				s.log.Error("cron: delete one-shot callback", "job_id", job.ID, "err", err)
-			}
-			s.mu.Lock()
-			delete(s.jobs, job.ID)
-			s.mu.Unlock()
-			return
-		}
-		shouldDisable := true
-		s.persistState(job.ID, job.State)
-		if shouldDisable {
-			if err := s.store.SetEnabled(s.persistCtx(), job.ID, false); err != nil {
-				s.log.Error("cron: persist disable callback", "job_id", job.ID, "err", err)
-			}
-		}
-		s.mergeJobState(job.ID, job.State, shouldDisable)
-		return
-	}
-
-	// Recurring (every:) lifecycle: max_runs / expires_at.
-	s.persistState(job.ID, job.State)
-	shouldDisable := false
-	if job.MaxRuns > 0 && job.State.RunCount >= job.MaxRuns {
-		shouldDisable = true
-	} else if job.ExpiresAt != "" {
-		if t, perr := time.Parse(time.RFC3339, job.ExpiresAt); perr == nil && time.Now().After(t) {
-			shouldDisable = true
-		}
-	}
-	if shouldDisable {
-		if err := s.store.SetEnabled(s.persistCtx(), job.ID, false); err != nil {
-			s.log.Error("cron: persist disable callback", "job_id", job.ID, "err", err)
-		}
-	}
-	s.mergeJobState(job.ID, job.State, shouldDisable)
 }
