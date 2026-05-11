@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+## [1.11.2] - 2026-05-11
+
+### Summary
+
+v1.11.2 是一次 patch 更新，聚焦于 **Cron 执行器可靠性** 和 **飞书适配器代码健康**。修复 cron executor stdin 未关闭导致 `--print` 模式 worker 永久挂起的关键 bug，同时持久化 auto-disable 标志防止 `rebuildIndex` 重新启用已失败的 job。飞书适配器完成 SOLID 重构，将 1562 行 god file 拆分为 5 个职责明确的模块。
+
+### Fixed
+
+- **Cron**: Executor stdin EOF — close stdin after writing cron prompt so `--print` mode workers exit cleanly instead of hanging indefinitely. Persist auto-disable flag to SQLite so `rebuildIndex` does not re-enable failed jobs. (#372)
+- **Worker**: Base conn `CloseStdin()` method for cross-worker stdin shutdown.
+
+### Changed
+
+- **Messaging/Feishu**: SOLID + DRY refactoring — split `adapter.go` (1562→353 lines) into `conn.go`, `handler.go`, `media.go`, `ws.go`. Extract 184-line `WriteCtx` dispatcher into per-event handlers, consolidate Lark IM API helpers to eliminate 4× duplication. (#370)
+
 ## [1.11.1] - 2026-05-11
 
 ### Summary
