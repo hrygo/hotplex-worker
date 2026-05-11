@@ -44,13 +44,5 @@ func (c *FeishuConn) sendSkillsList(ctx context.Context, env *events.Envelope) e
 }
 
 func (c *FeishuConn) sendSkillsText(ctx context.Context, text string) error {
-	c.mu.RLock()
-	chatID := c.chatID
-	replyToMsgID := c.replyToMsgID
-	c.mu.RUnlock()
-
-	if replyToMsgID != "" {
-		return c.adapter.replyMessage(ctx, replyToMsgID, text, false)
-	}
-	return c.adapter.sendTextMessage(ctx, chatID, text)
+	return c.sendOrReply(ctx, text)
 }

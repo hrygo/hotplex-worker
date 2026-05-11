@@ -120,6 +120,12 @@ HOTPLEX_MESSAGING_FEISHU_APP_SECRET=<your-app-secret>
 
 ---
 
+## AI Agent
+
+**AI Agent：** 阅读 [INSTALL.md](https://github.com/hrygo/hotplex/blob/main/INSTALL.md) 并完成 hotplex 安装和配置。
+
+---
+
 ## Advanced Setup
 
 ### 系统服务

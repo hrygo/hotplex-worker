@@ -8,8 +8,6 @@ import (
 
 	"github.com/hrygo/hotplex/internal/messaging"
 
-	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
-
 	"github.com/hrygo/hotplex/pkg/events"
 )
 
@@ -313,24 +311,9 @@ func (a *Adapter) sendCardMessage(ctx context.Context, chatID, cardJSON string) 
 	if a.larkClient == nil {
 		return fmt.Errorf("feishu: lark client not initialized")
 	}
-
-	body := larkim.NewCreateMessageReqBodyBuilder().
-		ReceiveId(chatID).
-		MsgType(larkim.MsgTypeInteractive).
-		Content(cardJSON).
-		Build()
-
-	req := larkim.NewCreateMessageReqBuilder().
-		ReceiveIdType(larkim.ReceiveIdTypeChatId).
-		Body(body).
-		Build()
-
-	resp, err := a.larkClient.Im.Message.Create(ctx, req)
+	_, err := larkCreateMessage(ctx, a.larkClient, chatID, cardJSON)
 	if err != nil {
 		return fmt.Errorf("feishu: send card message: %w", err)
-	}
-	if !resp.Success() {
-		return fmt.Errorf("feishu: send card message failed: code=%d msg=%s", resp.Code, resp.Msg)
 	}
 	return nil
 }
