@@ -34,6 +34,13 @@
 | [Slack-CLI-Subcommand-Spec.md](./Slack-CLI-Subcommand-Spec.md) | Slack CLI 子命令规格 — 独立 CLI 操作 Slack | draft | 2026-05-03 | - |
 | [Slack-Stream-Rotation-Spec.md](./Slack-Stream-Rotation-Spec.md) | Slack 流式旋转 — TTL 超时自动续流 | implemented | 2026-05-05 | 90% |
 
+### 定时任务
+
+| 文档 | 描述 | 状态 | 日期 | 进度 |
+|------|------|------|------|------|
+| [AI-Native-Cronjob-Spec.md](./AI-Native-Cronjob-Spec.md) | AI 原生定时任务 — Worker 自管理调度系统 | implemented | 2026-05-09 | 100% |
+| [Cron-Fast-Path-Spec.md](./Cron-Fast-Path-Spec.md) | Cron Fast Path — 会话内回调机制 | draft | 2026-05-11 | 0% |
+
 ### CLI 与 Onboard
 
 | 文档 | 描述 | 状态 | 日期 | 进度 |
@@ -74,6 +81,7 @@
 - **架构/Gateway**: 9 个
 - **Worker/Session**: 4 个
 - **平台适配**: 2 个
+- **定时任务**: 2 个
 - **CLI/Onboard**: 3 个
 - **前端/平台**: 3 个
 - **跟踪矩阵**: 4 个
