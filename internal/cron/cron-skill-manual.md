@@ -1,7 +1,7 @@
 # Cron 定时任务操作手册
 
 <role>
-你当前需要为用户创建定时任务。从用户的自然语言中识别调度意图，选择执行策略（独立任务 or 会话回调），组装对应格式的 Prompt，调用 `hotplex cron` CLI 完成创建。后续调度与执行由系统自动完成，无需你参与。
+你当前需要为用户创建定时任务。从用户的自然语言中识别调度意图，选择执行策略（独立任务 or 会话附加），组装对应格式的 Prompt，调用 `hotplex cron` CLI 完成创建。后续调度与执行由系统自动完成，无需你参与。
 </role>
 
 <critical_rules>
@@ -24,39 +24,9 @@
 | X 分钟后/过一会儿/稍后 + 上下文相关 | at + attach   | `--attach` (默认 at:+10m) |
 | X 分钟后/过一会儿/稍后 + 独立任务    | at            | `at:ISO timestamp`           |
 | 静默/悄悄/别发/不用报告 | --silent      | `--silent`         |
+
+决策规则：任务依赖当前对话上下文（"刚才的""继续""检查结果"）→ `--attach`；否则 → 标准。不确定时默认标准模式（更安全，不依赖会话存活）。`--attach` 前提：`$GATEWAY_SESSION_ID` 环境变量存在（仅在会话内可用）。
 </intent_recognition>
-
-<strategy_selection>
-识别到调度意图后，根据以下决策树选择执行策略：
-
-用户意图含定时/调度
-    │
-    ├─ 任务需要当前对话上下文？
-    │   │
-    │   ├─ 是：用户说"跟进/继续/刚才那个/检查结果" → attach（会话附加）
-    │   │      特征：依赖当前文件、之前的操作结果、对话中的上下文
-    │   │      CLI: 加 --attach
-    │   │      Prompt: 可以简短，有上下文
-    │   │
-    │   └─ 否：独立任务，无上下文依赖 → standard（标准模式）
-    │          特征：自包含操作、巡检、提醒、定时报告
-    │          CLI: 不加 --attach
-    │          Prompt: 必须自包含
-    │
-    └─ 不确定 → 默认 standard（更安全，不依赖会话存活）
-
-attach 适用场景：
-- "5分钟后检查刚才的构建结果"
-- "过一会儿提醒我继续这个任务"
-- "10分钟后跟进那个 PR 的 review 状态"
-
-standard 适用场景：
-- "每天9点做健康巡检"
-- "30分钟后提醒我开会"（纯提醒，无上下文）
-- "每小时检查一次 API 可用性"
-
-attach 前提：`$GATEWAY_SESSION_ID` 环境变量存在（仅在会话内可用）。
-</strategy_selection>
 
 <prompt_assembly>
 根据执行策略，`-m` 参数的组装方式不同：
@@ -69,10 +39,7 @@ attach 前提：`$GATEWAY_SESSION_ID` 环境变量存在（仅在会话内可用
 - 换位思考：把这段话单独发给一个刚唤醒的 AI，它能正确完成吗？
 
 对比示例：
-- 不充分：`"检查一下刚才那个文件是否更新了"`
-- 充分：`"检查 /Users/xxx/project/main.go 文件，对比最新 commit 的修改内容，生成 markdown 报告"`
-- 不充分：`"帮我跟进一下工单"`
-- 充分：`"查询 Jira 中状态为 Open 且分配给 user@example.com 的工单，按 P0→P3 排序，输出 markdown 列表含标题、优先级、创建时间"`
+- 不充分：`"检查一下刚才那个文件是否更新了"` → 充分：`"检查 /Users/xxx/project/main.go 文件，对比最新 commit 的修改内容，生成 markdown 报告"`
 
 **附加模式**（`--attach`）：`-m` 注入当前会话，有完整对话上下文。可以使用代词和简短指令。
 </prompt_assembly>
@@ -92,38 +59,19 @@ attach 前提：`$GATEWAY_SESSION_ID` 环境变量存在（仅在会话内可用
 </lifecycle_inference>
 
 <timeout_estimation>
-必须根据任务复杂度预估时长，并在评估值基础上增加 **50%-100% 的 Buffer**，通过 `--timeout` 参数设置。
+根据任务复杂度预估时长，增加 **50%-100% Buffer**，通过 `--timeout` 设置。
 
-**评估基准**：
-- **快速检查**（单文件读取、HTTP 状态查询）：建议 120s (2m)
-- **常规分析**（多文件、Git Diff、日志检索）：建议 300s (5m) —— **系统默认值**
-- **深度处理**（跨仓库、海量日志统计、多步逻辑）：建议 600s-1200s (10-20m)
-- **极限任务**：建议 1800s-3600s (30-60m)
-
-**计算逻辑**：`timeout_sec = (预估耗时 + 外部 IO 等待) * 1.5 (Buffer系数)`。
+| 复杂度 | 建议 timeout | 典型场景 |
+| ------ | ------------ | -------- |
+| 快速 | 120s (2m) | 单文件、HTTP 状态查询 |
+| 常规 | 300s (5m) | 多文件、Git Diff、日志检索（**默认**） |
+| 深度 | 600-1200s | 跨仓库、海量日志、多步逻辑 |
+| 极限 | 1800-3600s | 大规模重构分析 |
 </timeout_estimation>
-
-<environment>
-当前 Worker 进程已注入以下环境变量，创建 cronjob 时直接使用：
-
-| 环境变量             | CLI flag     | 示例值   |
-| -------------------- | ------------ | -------- |
-| `GATEWAY_BOT_ID`     | `--bot-id`   | B12345   |
-| `GATEWAY_USER_ID`    | `--owner-id` | U12345   |
-| `GATEWAY_WORK_DIR`   | `--work-dir` | /tmp/xxx |
-| `GATEWAY_CHANNEL_ID` | —            | C12345   |
-| `GATEWAY_THREAD_ID`  | —            | 1234.56  |
-| `GATEWAY_PLATFORM`   | —            | slack    |
-| `GATEWAY_TEAM_ID`    | —            | T12345   |
-| `GATEWAY_SESSION_ID` | —            | uuid-v5  |
-
-必填字段直接从环境变量读取：
-`--bot-id "$GATEWAY_BOT_ID" --owner-id "$GATEWAY_USER_ID" --work-dir "$GATEWAY_WORK_DIR"`
-</environment>
 
 <cli_quick_ref>
 
-创建：
+创建（标准模式）：
 ```bash
 hotplex cron create \
   --name <名称> \
@@ -147,7 +95,7 @@ hotplex cron create --attach \
   [--schedule <调度>]       # 省略则默认 at:+10m
   [--max-runs <次数>]       # every: 时需要
 
-省略 --schedule 时默认 at:+10m（10分钟后回调）。--bot-id / --owner-id 自动填充。
+省略 --schedule 时默认 at:+10m（10分钟后附加）。--bot-id / --owner-id 自动填充。
 ```
 
 周期任务额外必填：`--max-runs`、`--expires-at`（默认 max-runs=10, expires-at=创建时间+24h）
@@ -177,7 +125,7 @@ Schedule 格式：
 # 一次性提醒（30分钟后）
 hotplex cron create \
   --name "deploy-check" \
-  --schedule "at:$(date -d '+30 minutes' +%Y-%m-%dT%H:%M:%S+08:00)" \
+  --schedule "at:+30m" \
   -m "检查 /home/deploy/app 目录下最新部署日志，确认服务是否正常启动。有错误则列出关键信息和可能原因。" \
   --bot-id "$GATEWAY_BOT_ID" --owner-id "$GATEWAY_USER_ID"
 
@@ -220,7 +168,7 @@ hotplex cron create --attach \
   --name "follow-up-test" \
   -m "之前的测试跑完了吗？结果如何？"
 
-# 指定时间的回调
+# 指定时间的附加
 hotplex cron create --attach \
   --name "deploy-check" \
   --schedule "at:+30m" \
@@ -255,20 +203,6 @@ hotplex cron create --attach \
 | `--max-runs`         | 周期必填 | 成功N次后自动disable                        |
 | `--expires-at`       | 周期必填 | 过期时间（RFC3339）                         |
 | `--worker-type`      | 否       | Agent引擎类型 (claude_code/opencode_server) |
-| `--attach`          | 否       | 会话附加模式，需要 `$GATEWAY_SESSION_ID`。省略 `--schedule` 时默认 `at:+10m` |
+| `--attach`           | 否       | 会话附加模式，需要 `$GATEWAY_SESSION_ID`。省略 `--schedule` 时默认 `at:+10m` |
 
 </field_reference>
-
-<error_handling>
-| 场景             | 行为                                                 |
-| ---------------- | ---------------------------------------------------- |
-| 执行超时         | 按 timeout_sec 截断（默认5min），标记 timeout        |
-| 执行失败         | 指数退避重试（1min→5min→25min），受 max_retries 限制 |
-| 达到 max_runs    | 自动 disable                                         |
-| 超过 expires_at  | 自动 disable                                         |
-| 连续5次调度错误  | 自动 disable，需手动启用                             |
-| 连续10次执行失败 | 自动 disable，需手动启用                             |
-| One-shot 完成    | 自动 disable；delete_after_run 则自动删除            |
-| 网关重启         | 启动时加载未完成 Job，宽限期内补执行                 |
-| CLI 修改后       | CLI 自动发 SIGHUP，失败在 stderr 警告                |
-</error_handling>
