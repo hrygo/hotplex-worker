@@ -13,7 +13,7 @@ var hotplexMetacognition string // computed once at init
 
 func init() {
 	if embeddedMetacognition != "" {
-		hotplexMetacognition = "    <hotplex>\n" + embeddedMetacognition + "\n    </hotplex>"
+		hotplexMetacognition = "    <hotplex>\n" + sanitize(embeddedMetacognition) + "\n    </hotplex>"
 	}
 }
 
