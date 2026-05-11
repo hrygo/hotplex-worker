@@ -91,6 +91,20 @@ Schedule format:
 					opts.Attach = true
 					opts.TargetSessionID = sid
 					opts.DeleteAfterRun = true
+				} else {
+					if schedule == "" {
+						return cmd.Help()
+					}
+					var missing []string
+					if botID == "" {
+						missing = append(missing, "--bot-id")
+					}
+					if ownerID == "" {
+						missing = append(missing, "--owner-id")
+					}
+					if len(missing) > 0 {
+						return fmt.Errorf("required flag(s) %s not set", strings.Join(missing, ", "))
+					}
 				}
 
 				job, err := croncli.PrepareJobForCreate(name, schedule, message, description, workDir, botID, ownerID, timeoutSec, tools, opts)

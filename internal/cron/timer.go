@@ -327,7 +327,11 @@ func (s *Scheduler) executeAttached(job *CronJob) {
 	s.persistState(job.ID, job.State)
 	s.mergeJobState(job.ID, job.State, false)
 
-	err := s.attachedHandler.Execute(s.ctx, job)
+	timeout := s.jobTimeout(job)
+	ctx, cancel := context.WithTimeout(s.ctx, timeout)
+	defer cancel()
+
+	err := s.attachedHandler.Execute(ctx, job)
 
 	job.State.RunningAtMs = 0
 	job.State.LastRunAtMs = now
@@ -338,6 +342,18 @@ func (s *Scheduler) executeAttached(job *CronJob) {
 		job.State.LastStatus = StatusFailed
 		job.State.ConsecutiveErrs++
 		metrics.CronErrorsTotal.WithLabelValues(job.Name, "attached").Inc()
+
+		// Auto-disable after too many consecutive failures.
+		if job.State.ConsecutiveErrs >= maxConsecutiveErrors {
+			s.log.Warn("cron: auto-disabling attached job after consecutive failures",
+				"job_id", job.ID, "name", job.Name, "consecutive_errors", job.State.ConsecutiveErrs)
+			s.persistState(job.ID, job.State)
+			if err := s.store.SetEnabled(s.persistCtx(), job.ID, false); err != nil {
+				s.log.Error("cron: persist disable attached", "job_id", job.ID, "err", err)
+			}
+			s.mergeJobState(job.ID, job.State, true)
+			return
+		}
 
 		// One-shot retry logic.
 		if job.Schedule.Kind == ScheduleAt && isTemporaryError(err) && job.State.RetryCount < maxRetries(job) {
