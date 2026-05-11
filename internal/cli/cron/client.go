@@ -119,6 +119,7 @@ type JobCreateOptions struct {
 	ExpiresAt      string
 	Platform       string
 	PlatformKey    map[string]string
+	WorkerType     string
 }
 
 // resolvePlatform resolves the target platform and routing key with three-level priority:
@@ -166,7 +167,7 @@ func PrepareJobForCreate(name, scheduleRaw, message, description, workDir, botID
 		Description:    description,
 		Enabled:        true,
 		Schedule:       sched,
-		Payload:        cron.CronPayload{Kind: cron.PayloadAgentTurn, Message: message, AllowedTools: allowedTools},
+		Payload:        cron.CronPayload{Kind: cron.PayloadAgentTurn, Message: message, AllowedTools: allowedTools, WorkerType: opts.WorkerType},
 		WorkDir:        workDir,
 		BotID:          botID,
 		OwnerID:        ownerID,

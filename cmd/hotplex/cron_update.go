@@ -74,6 +74,7 @@ Schedule format:
 	cmd.Flags().Int("max-retries", 0, "max retries for failed one-shot jobs")
 	cmd.Flags().Int("max-runs", 0, "max executions before auto-disable (required for every/cron)")
 	cmd.Flags().String("expires-at", "", "auto-disable after this time RFC3339 (required for every/cron)")
+	cmd.Flags().String("worker-type", "", "AI Agent engine to use (e.g. claude_code, opencode_server)")
 	return cmd
 }
 
@@ -139,6 +140,10 @@ func applyFlags(cmd *cobra.Command, job *cron.CronJob) bool {
 	}
 	if cmd.Flags().Changed("expires-at") {
 		job.ExpiresAt, _ = cmd.Flags().GetString("expires-at")
+		changed = true
+	}
+	if cmd.Flags().Changed("worker-type") {
+		job.Payload.WorkerType, _ = cmd.Flags().GetString("worker-type")
 		changed = true
 	}
 

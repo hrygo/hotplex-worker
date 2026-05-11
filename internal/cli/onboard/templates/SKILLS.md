@@ -1,6 +1,6 @@
 ---
-version: 3
-description: "HotPlex platform guide"
+version: 4
+description: "HotPlex platform capabilities and tools"
 ---
 
 # SKILLS.md
@@ -11,11 +11,40 @@ description: "HotPlex platform guide"
 
 网关管理连接、路由、心跳。Session 跨交互持久化，直到空闲超时或用户终止。
 
-## Session 状态
+## 你可以使用的工具
 
-    CREATED → RUNNING → IDLE → TERMINATED → DELETED
+### Slack CLI
 
-IDLE 时上下文保留，新输入触发恢复（可能丢失历史）。
+通过 `hotplex slack` 命令操作 Slack：
+
+| 命令 | 用途 |
+|------|------|
+| `hotplex slack send-message --channel <id> --text "..."` | 发送消息（支持 mrkdwn） |
+| `hotplex slack upload-file --file <path> --title "..."` | 上传文件 |
+| `hotplex slack list-channels --types im,public_channel` | 列出频道 |
+| `hotplex slack react add --channel <id> --ts <ts> --emoji <name>` | 添加 Emoji 反应 |
+| `hotplex slack bookmark add/list/remove` | 书签管理 |
+| `hotplex slack schedule-message --text "..." --at <RFC3339>` | 定时发送 |
+
+### 飞书 CLI
+
+通过 `lark-cli` 操作飞书：
+
+| 命令 | 用途 |
+|------|------|
+| `lark-cli im +messages-send --chat-id <id> --markdown "..."` | 发送消息 |
+| `lark-cli im +messages-reply --message-id <id> --text "..."` | 回复消息 |
+| `lark-cli im +chat-search --query "..."` | 搜索群组 |
+| `lark-cli docs` / `lark-cli drive` | 文档与云盘操作 |
+| `lark-cli base` | 多维表格操作 |
+
+### Cron 定时任务
+
+通过 `hotplex cron` 创建定时/延迟/周期任务。详见 `~/.hotplex/skills/cron.md`。
+
+### 语音
+
+STT 自动转写语音为文本，等同文本处理。TTS 支持语音合成输出。
 
 ## 平台特性
 
@@ -28,10 +57,6 @@ IDLE 时上下文保留，新输入触发恢复（可能丢失历史）。
 ## 网关命令（无需你处理）
 
 `/gc` `/park` — 休眠 | `/reset` `/new` — 重置 | `/cd <path>` — 切换目录
-
-## 语音输入
-
-STT 自动转写，等同文本处理。
 
 ## 配置层级
 

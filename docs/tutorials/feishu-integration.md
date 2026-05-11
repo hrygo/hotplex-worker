@@ -57,6 +57,23 @@ difficulty: beginner
 
 **验证**：事件订阅页面显示「已启用」且 `im.message.receive_v1` 状态为正常。
 
+### 1.5 一键配置速查
+
+应用创建完成后，将以下内容复制到项目 `.env` 文件（首次使用：`cp configs/env.example .env`）：
+
+```bash
+# 飞书一键配置 — 填入步骤 1.1 获取的凭证即可
+HOTPLEX_MESSAGING_FEISHU_ENABLED=true
+HOTPLEX_MESSAGING_FEISHU_APP_ID=cli_xxxxxxxxxxxx
+HOTPLEX_MESSAGING_FEISHU_APP_SECRET=your_app_secret_here
+```
+
+或使用交互式向导自动写入：
+
+```bash
+hotplex onboard
+```
+
 ---
 
 ## 2. 配置 HotPlex
