@@ -2,6 +2,7 @@ package cron
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -241,6 +242,11 @@ func (s *Scheduler) executeJob(job *CronJob) {
 	}
 
 	s.persistState(job.ID, job.State)
+	if shouldDisable {
+		if err := s.store.SetEnabled(s.persistCtx(), job.ID, false); err != nil {
+			s.log.Error("cron: persist disable", "job_id", job.ID, "err", err)
+		}
+	}
 	s.mergeJobState(job.ID, job.State, shouldDisable)
 }
 
@@ -250,6 +256,10 @@ func (s *Scheduler) persistState(jobID string, state CronJobState) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := s.store.UpdateState(ctx, jobID, state); err != nil {
+		if errors.Is(err, ErrJobNotFound) {
+			s.log.Debug("cron: persist state skipped, job deleted", "job_id", jobID)
+			return
+		}
 		s.log.Error("cron: persist state", "job_id", jobID, "err", err)
 	}
 }

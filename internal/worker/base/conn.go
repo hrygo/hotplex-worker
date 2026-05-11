@@ -131,6 +131,20 @@ func (c *Conn) WriteMu() *sync.Mutex {
 	return &c.mu
 }
 
+// CloseInput closes the stdin pipe to signal EOF to the worker process.
+// The worker will finish processing buffered input and exit.
+// Safe to call multiple times; sets stdin to nil after close.
+func (c *Conn) CloseInput() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.stdin != nil {
+		err := c.stdin.Close()
+		c.stdin = nil
+		return err
+	}
+	return nil
+}
+
 // Close terminates the connection and releases resources.
 func (c *Conn) Close() error {
 	c.mu.Lock()
