@@ -605,7 +605,3 @@ func (c *FeishuConn) sendMCPStatus(ctx context.Context, env *events.Envelope) er
 }
 
 var _ messaging.PlatformConn = (*FeishuConn)(nil)
-
-// handleTextControlCommand sends a control event derived from a text message
-// through the bridge, then sends feedback via card message.
-var _ messaging.PlatformConn = (*FeishuConn)(nil)
