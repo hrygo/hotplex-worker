@@ -586,13 +586,15 @@ func TestBuildWorkerInfo_MCPInjection(t *testing.T) {
 		name          string
 		mcpConfigJSON string
 		platform      string
+		platformKey   map[string]string
 		wantMCP       string
 		wantStrict    bool
 	}{
 		{
-			name:          "cron platform always suppresses MCP",
+			name:          "cron session always suppresses MCP",
 			mcpConfigJSON: mcpJSON,
-			platform:      "cron",
+			platform:      "feishu",
+			platformKey:   map[string]string{"cron_job_id": "job-1"},
 			wantMCP:       `{"mcpServers":{}}`,
 			wantStrict:    true,
 		},
@@ -600,6 +602,7 @@ func TestBuildWorkerInfo_MCPInjection(t *testing.T) {
 			name:          "configured MCP with non-cron platform",
 			mcpConfigJSON: mcpJSON,
 			platform:      "slack",
+			platformKey:   nil,
 			wantMCP:       mcpJSON,
 			wantStrict:    true,
 		},
@@ -607,6 +610,7 @@ func TestBuildWorkerInfo_MCPInjection(t *testing.T) {
 			name:          "empty platform with configured MCP",
 			mcpConfigJSON: mcpJSON,
 			platform:      "",
+			platformKey:   nil,
 			wantMCP:       mcpJSON,
 			wantStrict:    true,
 		},
@@ -614,13 +618,15 @@ func TestBuildWorkerInfo_MCPInjection(t *testing.T) {
 			name:          "no config and non-cron platform uses default discovery",
 			mcpConfigJSON: "",
 			platform:      "slack",
+			platformKey:   nil,
 			wantMCP:       "",
 			wantStrict:    false,
 		},
 		{
-			name:          "cron platform wins over empty config",
+			name:          "cron session wins over empty config",
 			mcpConfigJSON: "",
-			platform:      "cron",
+			platform:      "feishu",
+			platformKey:   map[string]string{"cron_job_id": "job-2"},
 			wantMCP:       `{"mcpServers":{}}`,
 			wantStrict:    true,
 		},
@@ -641,7 +647,8 @@ func TestBuildWorkerInfo_MCPInjection(t *testing.T) {
 			})
 
 			si := &session.SessionInfo{
-				Platform: tt.platform,
+				Platform:    tt.platform,
+				PlatformKey: tt.platformKey,
 			}
 			info := b.buildWorkerInfo("session-1", "user-1", "/tmp", si)
 			assert.Equal(t, tt.wantMCP, info.MCPConfig, "MCPConfig mismatch")

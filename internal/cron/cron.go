@@ -33,6 +33,8 @@ type Scheduler struct {
 
 	tickLoop *timerLoop
 	yamlDefs []YAMLJobDef
+
+	resolveWorkDir WorkDirResolver
 }
 
 // Config holds scheduler configuration from the main config file.
@@ -45,15 +47,20 @@ type Config struct {
 	YAMLConfigPath    string `mapstructure:"yaml_config_path"`
 }
 
+// WorkDirResolver determines the effective workdir for a cron job when job.WorkDir is empty.
+// Implementations should follow the system priority: platform-specific > worker default.
+type WorkDirResolver func(job *CronJob) string
+
 // Dependencies for creating a Scheduler.
 type Deps struct {
-	Log        *slog.Logger
-	Store      Store
-	Bridge     BridgeStarter
-	SessionMgr SessionStateChecker
-	Delivery   *Delivery
-	YAMLDefs   []YAMLJobDef
-	Cfg        Config
+	Log            *slog.Logger
+	Store          Store
+	Bridge         BridgeStarter
+	SessionMgr     SessionStateChecker
+	Delivery       *Delivery
+	YAMLDefs       []YAMLJobDef
+	Cfg            Config
+	ResolveWorkDir WorkDirResolver
 }
 
 // New creates a new cron Scheduler.
@@ -82,6 +89,7 @@ func New(deps Deps) *Scheduler {
 	s.defaultTimeout = defaultTimeout
 	s.executor = NewExecutor(deps.Log, deps.Bridge, deps.SessionMgr)
 	s.yamlDefs = deps.YAMLDefs
+	s.resolveWorkDir = deps.ResolveWorkDir
 	s.tickLoop = newTimerLoop(s)
 	return s
 }

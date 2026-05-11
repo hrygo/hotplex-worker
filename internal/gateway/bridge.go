@@ -132,7 +132,9 @@ func (b *Bridge) StartSession(ctx context.Context, id, userID, botID string, wt 
 	workerInfo.Env = injectGatewayContext(workerInfo.Env, platform, botID, userID, platformKey, id, workDir)
 
 	// Inject cron-specific env vars (e.g. admin API creds) only for cron sessions.
-	if platform == "cron" && len(b.cronEnv) > 0 {
+	// Detected via platformKey rather than platform value, since cron executor now
+	// passes the job's actual platform for correct agent config resolution.
+	if _, isCron := platformKey["cron_job_id"]; isCron && len(b.cronEnv) > 0 {
 		for _, kv := range b.cronEnv {
 			if i := strings.IndexByte(kv, '='); i >= 0 {
 				workerInfo.Env[kv[:i]] = kv[i+1:]
@@ -556,7 +558,7 @@ func (b *Bridge) buildWorkerInfo(sessionID, userID, workDir string, si *session.
 	// 1. Cron platform: suppress all MCP to save ~600 MB per worker
 	// 2. Configured MCP servers: restrict workers to declared servers only
 	// 3. Not configured: no injection → Claude Code default discovery
-	if si.Platform == "cron" {
+	if _, isCron := si.PlatformKey["cron_job_id"]; isCron {
 		info.MCPConfig = `{"mcpServers":{}}`
 		info.StrictMCPConfig = true
 	} else if mcp, _ := b.mcpConfigJSON.Load().(string); mcp != "" {

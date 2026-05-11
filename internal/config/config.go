@@ -961,6 +961,22 @@ func ExpandAndAbs(p string) (string, error) {
 	return p, nil
 }
 
+// ResolvePlatformWorkDir returns the workdir for the given platform,
+// falling back to Worker.DefaultWorkDir when the platform has no override.
+func (c *Config) ResolvePlatformWorkDir(platform string) string {
+	switch platform {
+	case "slack":
+		if c.Messaging.Slack.WorkDir != "" {
+			return c.Messaging.Slack.WorkDir
+		}
+	case "feishu":
+		if c.Messaging.Feishu.WorkDir != "" {
+			return c.Messaging.Feishu.WorkDir
+		}
+	}
+	return c.Worker.DefaultWorkDir
+}
+
 // HotplexHome returns the base directory for all HotPlex state (~/.hotplex).
 // It does not create the directory — callers should use ensureDir or rely on
 // the components that need the directory to create it on first use.

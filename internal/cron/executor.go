@@ -63,7 +63,7 @@ func (e *Executor) Execute(ctx context.Context, job *CronJob, timeout time.Durat
 
 	if err := e.bridge.StartSession(ctx, sessionKey, job.OwnerID, job.BotID,
 		wt, job.Payload.AllowedTools, job.WorkDir,
-		"cron", platformKey, title,
+		job.Platform, platformKey, title,
 	); err != nil {
 		return "", fmt.Errorf("start cron session: %w", err)
 	}
