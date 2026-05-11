@@ -162,6 +162,12 @@ func (s *Scheduler) executeJob(job *CronJob) {
 		}
 	}
 
+	// Dispatch attached_session to dedicated handler.
+	if job.Payload.Kind == PayloadAttachedSession {
+		s.executeAttached(job)
+		return
+	}
+
 	now := time.Now().UnixMilli()
 	job.State.RunningAtMs = now
 	s.persistState(job.ID, job.State)
@@ -302,4 +308,86 @@ func errorType(err error) string {
 		}
 	}
 	return "execution"
+}
+
+// executeAttached handles attached_session payload jobs.
+// Fire-and-forget: the result stays in the target session.
+func (s *Scheduler) executeAttached(job *CronJob) {
+	if s.attachedHandler == nil {
+		s.log.Warn("cron: attached_session execution skipped, no attached router",
+			"job_id", job.ID, "name", job.Name)
+		metrics.CronAttachedTotal.WithLabelValues("no_router").Inc()
+		job.State.LastStatus = StatusFailed
+		s.persistState(job.ID, job.State)
+		return
+	}
+
+	now := time.Now().UnixMilli()
+	job.State.RunningAtMs = now
+	s.persistState(job.ID, job.State)
+	s.mergeJobState(job.ID, job.State, false)
+
+	err := s.attachedHandler.Execute(s.ctx, job)
+
+	job.State.RunningAtMs = 0
+	job.State.LastRunAtMs = now
+
+	if err != nil {
+		s.log.Error("cron: attached failed",
+			"job_id", job.ID, "name", job.Name, "err", err)
+		job.State.LastStatus = StatusFailed
+		job.State.ConsecutiveErrs++
+		metrics.CronErrorsTotal.WithLabelValues(job.Name, "attached").Inc()
+
+		// One-shot retry logic.
+		if job.Schedule.Kind == ScheduleAt && isTemporaryError(err) && job.State.RetryCount < maxRetries(job) {
+			s.scheduleRetry(s.ctx, job)
+			return
+		}
+	} else {
+		job.State.LastStatus = StatusSuccess
+		job.State.ConsecutiveErrs = 0
+		job.State.RunCount++
+		resetRetry(job)
+		metrics.CronFiresTotal.WithLabelValues(job.Name).Inc()
+	}
+
+	// One-shot lifecycle: delete or disable after execution.
+	if job.Schedule.Kind == ScheduleAt {
+		if job.DeleteAfterRun {
+			if err := s.store.Delete(s.persistCtx(), job.ID); err != nil {
+				s.log.Error("cron: delete one-shot callback", "job_id", job.ID, "err", err)
+			}
+			s.mu.Lock()
+			delete(s.jobs, job.ID)
+			s.mu.Unlock()
+			return
+		}
+		shouldDisable := true
+		s.persistState(job.ID, job.State)
+		if shouldDisable {
+			if err := s.store.SetEnabled(s.persistCtx(), job.ID, false); err != nil {
+				s.log.Error("cron: persist disable callback", "job_id", job.ID, "err", err)
+			}
+		}
+		s.mergeJobState(job.ID, job.State, shouldDisable)
+		return
+	}
+
+	// Recurring (every:) lifecycle: max_runs / expires_at.
+	s.persistState(job.ID, job.State)
+	shouldDisable := false
+	if job.MaxRuns > 0 && job.State.RunCount >= job.MaxRuns {
+		shouldDisable = true
+	} else if job.ExpiresAt != "" {
+		if t, perr := time.Parse(time.RFC3339, job.ExpiresAt); perr == nil && time.Now().After(t) {
+			shouldDisable = true
+		}
+	}
+	if shouldDisable {
+		if err := s.store.SetEnabled(s.persistCtx(), job.ID, false); err != nil {
+			s.log.Error("cron: persist disable callback", "job_id", job.ID, "err", err)
+		}
+	}
+	s.mergeJobState(job.ID, job.State, shouldDisable)
 }

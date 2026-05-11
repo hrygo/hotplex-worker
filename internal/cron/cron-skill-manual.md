@@ -1,12 +1,14 @@
 # Cron 定时任务操作手册
 
 <role>
-你当前需要为用户创建定时任务。从用户的自然语言中识别调度意图，组装自包含的 Prompt，调用 `hotplex cron` CLI 完成创建。后续调度与执行由系统自动完成，无需你参与。
+你当前需要为用户创建定时任务。从用户的自然语言中识别调度意图，选择执行策略（独立任务 or 会话回调），组装对应格式的 Prompt，调用 `hotplex cron` CLI 完成创建。后续调度与执行由系统自动完成，无需你参与。
 </role>
 
 <critical_rules>
-1. **Prompt 自包含**：`-m` 参数将由未来的全新 Worker 实例执行，无当前对话上下文。提供绝对路径、确切 URL、具体操作指令和输出格式。
-2. **仅用 hotplex cron**：通过 CLI 操作（直接操作 SQLite，自动通知 gateway 刷新索引）。使用 sleep 循环、系统 crontab、后台脚本等替代方案不适用。 
+1. **Prompt 自包含**：
+   - **标准模式**（无 `--attach`）：`-m` 由全新 Worker 执行，无当前对话上下文。提供绝对路径、确切 URL、具体操作指令和输出格式。
+   - **附加模式**（`--attach`）：`-m` 注入当前会话，有完整对话上下文。Prompt 可以简短（如"继续上一步""检查结果"）。
+2. **仅用 hotplex cron**：通过 CLI 操作（直接操作 SQLite，自动通知 gateway 刷新索引）。Admin API 仅用于远程场景。使用 sleep 循环、系统 crontab、后台脚本等替代方案不适用。
 3. **生命周期约束**：周期任务（every/cron 类型）设置 `--max-runs` 和 `--expires-at` 防止无限执行。若用户未指定，按 `<lifecycle_inference>` 规则推断并直接创建，不追问。
 </critical_rules>
 
@@ -19,12 +21,47 @@
 | loop/循环/重复/定期     | every 或 cron | `every:5m`         |
 | schedule/安排/定时      | at 或 cron    | `cron:0 9 * * 1`   |
 | X 点(提醒我)/每天/每周  | cron          | `cron:0 9 * * *`   |
-| X 分钟后/过一会儿/稍后  | at            | `at:ISO timestamp` |
+| X 分钟后/过一会儿/稍后 + 上下文相关 | at + attach   | `--attach` (默认 at:+10m) |
+| X 分钟后/过一会儿/稍后 + 独立任务    | at            | `at:ISO timestamp`           |
 | 静默/悄悄/别发/不用报告 | --silent      | `--silent`         |
 </intent_recognition>
 
+<strategy_selection>
+识别到调度意图后，根据以下决策树选择执行策略：
+
+用户意图含定时/调度
+    │
+    ├─ 任务需要当前对话上下文？
+    │   │
+    │   ├─ 是：用户说"跟进/继续/刚才那个/检查结果" → attach（会话附加）
+    │   │      特征：依赖当前文件、之前的操作结果、对话中的上下文
+    │   │      CLI: 加 --attach
+    │   │      Prompt: 可以简短，有上下文
+    │   │
+    │   └─ 否：独立任务，无上下文依赖 → standard（标准模式）
+    │          特征：自包含操作、巡检、提醒、定时报告
+    │          CLI: 不加 --attach
+    │          Prompt: 必须自包含
+    │
+    └─ 不确定 → 默认 standard（更安全，不依赖会话存活）
+
+attach 适用场景：
+- "5分钟后检查刚才的构建结果"
+- "过一会儿提醒我继续这个任务"
+- "10分钟后跟进那个 PR 的 review 状态"
+
+standard 适用场景：
+- "每天9点做健康巡检"
+- "30分钟后提醒我开会"（纯提醒，无上下文）
+- "每小时检查一次 API 可用性"
+
+attach 前提：`$GATEWAY_SESSION_ID` 环境变量存在（仅在会话内可用）。
+</strategy_selection>
+
 <prompt_assembly>
-`-m` 参数由全新 Worker 实例在将来执行，该实例看不到当前对话的任何上下文。
+根据执行策略，`-m` 参数的组装方式不同：
+
+**标准模式**（无 `--attach`）：`-m` 参数由全新 Worker 实例在将来执行，该实例看不到当前对话的任何上下文。
 
 自包含校验：
 - 用绝对路径、确切 URL、具体文件名替代代词
@@ -36,6 +73,8 @@
 - 充分：`"检查 /Users/xxx/project/main.go 文件，对比最新 commit 的修改内容，生成 markdown 报告"`
 - 不充分：`"帮我跟进一下工单"`
 - 充分：`"查询 Jira 中状态为 Open 且分配给 user@example.com 的工单，按 P0→P3 排序，输出 markdown 列表含标题、优先级、创建时间"`
+
+**附加模式**（`--attach`）：`-m` 注入当前会话，有完整对话上下文。可以使用代词和简短指令。
 </prompt_assembly>
 
 <lifecycle_inference>
@@ -100,6 +139,17 @@ hotplex cron create \
 
 必填：`--name`、`--schedule`、`-m`、`--bot-id`、`--owner-id`
 
+创建（附加模式 — 在当前会话中跟进）：
+```bash
+hotplex cron create --attach \
+  --name <名称> \
+  [-m <Prompt>] \
+  [--schedule <调度>]       # 省略则默认 at:+10m
+  [--max-runs <次数>]       # every: 时需要
+
+省略 --schedule 时默认 at:+10m（10分钟后回调）。--bot-id / --owner-id 自动填充。
+```
+
 周期任务额外必填：`--max-runs`、`--expires-at`（默认 max-runs=10, expires-at=创建时间+24h）
 
 Schedule 格式：
@@ -109,6 +159,7 @@ Schedule 格式：
 | `cron:表达式` | 5域cron  | 分 时 日 月 周 | `cron:*/5 * * * *`             |
 | `every:时长`  | 固定间隔 | 最低1分钟      | `every:30m`、`every:2h`        |
 | `at:时间戳`   | 一次性   | ISO-8601       | `at:2026-05-12T09:00:00+08:00` |
+| `at:+N`       | 相对偏移 | 最低1分钟，最高72小时 | `at:+5m`、`at:+2h`、`at:+30m` |
 
 其他命令：
 - `hotplex cron list [--json] [--enabled]`
@@ -161,6 +212,26 @@ hotplex cron create \
   -m "清理 /tmp/hotplex-sessions/ 下超过24小时的临时文件。" \
   --bot-id "$GATEWAY_BOT_ID" --owner-id "$GATEWAY_USER_ID" \
   --silent
+
+# ===== 附加模式（--attach）=====
+
+# 快速跟进（默认10分钟后，自动清理）
+hotplex cron create --attach \
+  --name "follow-up-test" \
+  -m "之前的测试跑完了吗？结果如何？"
+
+# 指定时间的回调
+hotplex cron create --attach \
+  --name "deploy-check" \
+  --schedule "at:+30m" \
+  -m "检查刚才部署的服务状态"
+
+# 周期性会话跟进
+hotplex cron create --attach \
+  --name "build-monitor" \
+  --schedule "every:5m" \
+  -m "继续检查构建进度" \
+  --max-runs 10
 ```
 
 </examples>
@@ -184,6 +255,7 @@ hotplex cron create \
 | `--max-runs`         | 周期必填 | 成功N次后自动disable                        |
 | `--expires-at`       | 周期必填 | 过期时间（RFC3339）                         |
 | `--worker-type`      | 否       | Agent引擎类型 (claude_code/opencode_server) |
+| `--attach`          | 否       | 会话附加模式，需要 `$GATEWAY_SESSION_ID`。省略 `--schedule` 时默认 `at:+10m` |
 
 </field_reference>
 

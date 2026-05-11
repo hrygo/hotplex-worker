@@ -82,6 +82,20 @@ func ParseSchedule(raw string) (cron.CronSchedule, error) {
 	case cron.ScheduleCron:
 		return cron.CronSchedule{Kind: kind, Expr: value}, nil
 	case cron.ScheduleAt:
+		if strings.HasPrefix(value, "+") {
+			d, err := time.ParseDuration(value[1:])
+			if err != nil {
+				return cron.CronSchedule{}, fmt.Errorf("invalid relative duration in at schedule: %w", err)
+			}
+			if d < time.Minute {
+				return cron.CronSchedule{}, fmt.Errorf("relative duration must be at least 1 minute")
+			}
+			if d > 72*time.Hour {
+				return cron.CronSchedule{}, fmt.Errorf("relative duration must not exceed 72 hours")
+			}
+			abs := time.Now().Add(d).Format(time.RFC3339)
+			return cron.CronSchedule{Kind: kind, At: abs}, nil
+		}
 		if _, err := time.Parse(time.RFC3339, value); err != nil {
 			return cron.CronSchedule{}, fmt.Errorf("invalid at timestamp: %w", err)
 		}
@@ -112,14 +126,16 @@ func parseDurationMs(s string) (int64, error) {
 
 // JobCreateOptions groups lifecycle and optional parameters for job creation.
 type JobCreateOptions struct {
-	DeleteAfterRun bool
-	Silent         bool
-	MaxRetries     int
-	MaxRuns        int
-	ExpiresAt      string
-	Platform       string
-	PlatformKey    map[string]string
-	WorkerType     string
+	DeleteAfterRun  bool
+	Silent          bool
+	MaxRetries      int
+	MaxRuns         int
+	ExpiresAt       string
+	Platform        string
+	PlatformKey     map[string]string
+	WorkerType      string
+	Attach          bool   // --attach: attached_session mode
+	TargetSessionID string // auto-filled from $GATEWAY_SESSION_ID
 }
 
 // resolvePlatform resolves the target platform and routing key with three-level priority:
@@ -162,12 +178,17 @@ func PrepareJobForCreate(name, scheduleRaw, message, description, workDir, botID
 
 	platform, platformKey := resolvePlatform(opts.Platform, opts.PlatformKey)
 
+	payloadKind := cron.PayloadIsolatedSession
+	if opts.Attach {
+		payloadKind = cron.PayloadAttachedSession
+	}
+
 	job := &cron.CronJob{
 		Name:           name,
 		Description:    description,
 		Enabled:        true,
 		Schedule:       sched,
-		Payload:        cron.CronPayload{Kind: cron.PayloadAgentTurn, Message: message, AllowedTools: allowedTools, WorkerType: opts.WorkerType},
+		Payload:        cron.CronPayload{Kind: payloadKind, Message: message, TargetSessionID: opts.TargetSessionID, AllowedTools: allowedTools, WorkerType: opts.WorkerType},
 		WorkDir:        workDir,
 		BotID:          botID,
 		OwnerID:        ownerID,

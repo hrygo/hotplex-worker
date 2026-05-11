@@ -86,7 +86,7 @@ func testJob() *CronJob {
 		OwnerID: "user1",
 		BotID:   "bot1",
 		WorkDir: "/tmp",
-		Payload: CronPayload{Kind: PayloadAgentTurn, Message: "hello"},
+		Payload: CronPayload{Kind: PayloadIsolatedSession, Message: "hello"},
 	}
 }
 

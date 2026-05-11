@@ -38,7 +38,7 @@ func testRecurringJob(name, message string) *CronJob {
 	return &CronJob{
 		Name:      name,
 		Schedule:  CronSchedule{Kind: ScheduleEvery, EveryMs: 60_000},
-		Payload:   CronPayload{Kind: PayloadAgentTurn, Message: message},
+		Payload:   CronPayload{Kind: PayloadIsolatedSession, Message: message},
 		OwnerID:   "user1",
 		BotID:     "bot1",
 		MaxRuns:   100,
