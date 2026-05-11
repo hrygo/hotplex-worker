@@ -588,6 +588,7 @@ func (c *Conn) WriteCtx(ctx context.Context, env *events.Envelope) error {
 // During the AEP init handshake, events are buffered instead of written
 // to ensure init_ack is always the first message the client receives.
 // After init, sends to writeCh for WritePump to drain (non-blocking).
+// If the write channel is full, the client is disconnected to protect Hub.Run.
 func (c *Conn) WriteMessage(msgType int, data []byte) error {
 	c.mu.Lock()
 	if c.closed {
@@ -612,6 +613,32 @@ func (c *Conn) WriteMessage(msgType int, data []byte) error {
 		metrics.GatewayErrorsTotal.WithLabelValues("slow_client").Inc()
 		_ = c.Close()
 		return errors.New("write channel full, slow client disconnected")
+	}
+}
+
+// TryWriteMessage attempts to write raw bytes to the connection without blocking.
+// Unlike WriteMessage, it silently drops the message if the write channel is full
+// instead of disconnecting the client. Use for droppable events (message.delta, raw).
+func (c *Conn) TryWriteMessage(msgType int, data []byte) error {
+	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		return errors.New("conn closed")
+	}
+	if !c.initDone {
+		buf := make([]byte, len(data))
+		copy(buf, data)
+		c.initPending = append(c.initPending, buf)
+		c.mu.Unlock()
+		return nil
+	}
+	c.mu.Unlock()
+
+	select {
+	case c.writeCh <- data:
+		return nil
+	default:
+		return nil // silently dropped
 	}
 }
 
