@@ -194,6 +194,7 @@ func (s *Scheduler) executeJob(job *CronJob) {
 			s.scheduleRetry(s.ctx, job)
 			return
 		}
+		s.persistState(job.ID, job.State)
 		return
 	}
 
@@ -238,6 +239,7 @@ func (s *Scheduler) executeAttached(job *CronJob) {
 			s.scheduleRetry(s.ctx, job)
 			return
 		}
+		s.persistState(job.ID, job.State)
 		return
 	}
 
@@ -279,7 +281,6 @@ func (s *Scheduler) finishExecution(job *CronJob, startedAtMs int64, err error, 
 	job.State.ConsecutiveErrs = 0
 	job.State.RunCount++
 	resetRetry(job)
-	metrics.CronFiresTotal.WithLabelValues(job.Name).Inc()
 	return false
 }
 
