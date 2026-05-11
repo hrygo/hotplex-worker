@@ -6,7 +6,7 @@
 
 <critical_rules>
 1. **Prompt 自包含**：`-m` 参数将由未来的全新 Worker 实例执行，无当前对话上下文。提供绝对路径、确切 URL、具体操作指令和输出格式。
-2. **仅用 hotplex cron**：通过 CLI 操作（直接操作 SQLite，自动通知 gateway 刷新索引）。Admin API 仅用于远程场景。使用 sleep 循环、系统 crontab、后台脚本等替代方案不适用。
+2. **仅用 hotplex cron**：通过 CLI 操作（直接操作 SQLite，自动通知 gateway 刷新索引）。使用 sleep 循环、系统 crontab、后台脚本等替代方案不适用。 
 3. **生命周期约束**：周期任务（every/cron 类型）设置 `--max-runs` 和 `--expires-at` 防止无限执行。若用户未指定，按 `<lifecycle_inference>` 规则推断并直接创建，不追问。
 </critical_rules>
 
