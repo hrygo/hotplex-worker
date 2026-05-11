@@ -38,6 +38,9 @@ func newCronCreateCmd() *cobra.Command {
 
 Required flags: --name, --schedule, --message, --bot-id, --owner-id
 
+For recurring jobs (every/cron), --max-runs and --expires-at are also required.
+One-shot jobs (at) do not require lifecycle constraints.
+
 Schedule format:
   --schedule "cron:*/5 * * * *"
   --schedule "every:30m"
@@ -95,8 +98,8 @@ Schedule format:
 	cmd.Flags().BoolVar(&deleteAfterRun, "delete-after-run", false, "delete one-shot job after execution")
 	cmd.Flags().BoolVar(&silent, "silent", false, "suppress result delivery (self-maintenance tasks)")
 	cmd.Flags().IntVar(&maxRetries, "max-retries", 0, "max retries for failed one-shot jobs")
-	cmd.Flags().IntVar(&maxRuns, "max-runs", 0, "max executions before auto-disable (0=unlimited)")
-	cmd.Flags().StringVar(&expiresAt, "expires-at", "", "auto-disable after this time (RFC3339)")
+	cmd.Flags().IntVar(&maxRuns, "max-runs", 0, "max executions before auto-disable (required for every/cron)")
+	cmd.Flags().StringVar(&expiresAt, "expires-at", "", "auto-disable after this time RFC3339 (required for every/cron)")
 	cmd.Flags().StringVar(&platform, "platform", "", "target delivery platform (slack|feishu|cron), auto-detected from env if unset")
 	cmd.Flags().StringVar(&platformKey, "platform-key", "", "platform routing key as JSON, e.g. '{\"channel_id\":\"C123\"}'")
 	_ = cmd.MarkFlagRequired("name")

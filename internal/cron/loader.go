@@ -112,6 +112,10 @@ func yamlDefToJob(def YAMLJobDef) (*CronJob, error) {
 		UpdatedAtMs:    now,
 	}
 
+	if err := ValidateJob(job); err != nil {
+		return nil, err
+	}
+
 	next, err := NextRun(job.Schedule, time.Now())
 	if err != nil {
 		return nil, fmt.Errorf("compute initial next run: %w", err)

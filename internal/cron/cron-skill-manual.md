@@ -74,6 +74,33 @@ hotplex cron create \
 
 **必填**：`--name`、`--schedule`、`-m`、`--bot-id`、`--owner-id`
 
+**周期任务额外必填**：`--max-runs`、`--expires-at`（`every`/`cron` 类型必须设置，防止无限执行）
+
+> 若未指定，系统自动填充默认值：`--max-runs 10`、`--expires-at` = 创建时间 +24 小时。
+
+### 生命周期智能推断
+
+用户创建周期任务时，若未明确指定 `--max-runs` 或 `--expires-at`，**不要追问用户**，应按以下规则推断合理值并直接创建，创建后告知用户可随时更新：
+
+**推断规则**（按优先级）：
+
+1. **用户意图明确** → 直接使用用户值（如"每天跑一周"→ `--max-runs 7`、`--expires-at` = 7 天后）
+2. **从用途推断** → 根据任务性质设定合理生命周期：
+
+| 用途 | `--max-runs` | `--expires-at` |
+|------|-------------|----------------|
+| 监控/巡检（长期运行） | 100 | 30 天后 |
+| 定期提醒（中期） | 30 | 7 天后 |
+| 临时测试/验证 | 5 | 24 小时后 |
+| 无法判断 | 10（系统默认） | 24 小时后（系统默认） |
+
+3. **从频率推断** → 高频任务（≤5min）用较小 max-runs，低频任务（≥1h）用较大 max-runs
+
+**回复模板**：
+
+> 已创建周期任务 `xxx`，schedule: `every:30m`，max-runs: 30，expires: 2026-05-18。
+> 如需调整执行次数或过期时间，可发送：`更新定时任务 xxx --max-runs 50`
+
 **schedule 格式**（`kind:value` 前缀）：
 
 | 格式 | 说明 | 约束 | 示例 |
@@ -90,12 +117,13 @@ hotplex cron create \
   -m "检查部署状态，如有异常立即报告" \
   --bot-id "$GATEWAY_BOT_ID" --owner-id "$GATEWAY_USER_ID"
 
-# 工作日每天 9 点
+# 工作日每天 9 点（周期任务必须设置 max-runs 和 expires-at）
 hotplex cron create \
   --name "daily-health" \
   --schedule "cron:0 9 * * 1-5" \
   -m "检查系统健康状态，汇总异常事件" \
-  --bot-id "$GATEWAY_BOT_ID" --owner-id "$GATEWAY_USER_ID"
+  --bot-id "$GATEWAY_BOT_ID" --owner-id "$GATEWAY_USER_ID" \
+  --max-runs 100 --expires-at "2027-01-01T00:00:00+08:00"
 
 # 固定间隔
 hotplex cron create \
@@ -103,7 +131,7 @@ hotplex cron create \
   --schedule "every:10m" \
   -m "检查服务指标是否正常" \
   --bot-id "$GATEWAY_BOT_ID" --owner-id "$GATEWAY_USER_ID" \
-  --timeout 120
+  --timeout 120 --max-runs 50 --expires-at "$(date -d '+7 days' +%Y-%m-%dT%H:%M:%S+08:00)"
 
 # 有生命周期的周期任务：30 分钟一次，最多 6 次，24 小时后过期
 hotplex cron create \
@@ -181,7 +209,7 @@ hotplex cron history <id|name> [--json]
 
 ### 定期巡检
 
-用户说"每天早上9点检查服务状态" → `hotplex cron create --schedule "cron:0 9 * * *"`。
+用户说"每天早上9点检查服务状态" → `hotplex cron create --schedule "cron:0 9 * * *" --max-runs N --expires-at "RFC3339"`。
 
 ### 延迟执行
 
@@ -197,6 +225,7 @@ hotplex cron create \
   --schedule "every:6h" \
   -m "清理临时文件" \
   --bot-id "$GATEWAY_BOT_ID" --owner-id "$GATEWAY_USER_ID" \
+  --max-runs 30 --expires-at "$(date -d '+7 days' +%Y-%m-%dT%H:%M:%S+08:00)" \
   --silent
 ```
 
@@ -216,8 +245,8 @@ hotplex cron create \
 | `delete_after_run` | `--delete-after-run` | 否 | 执行后自动删除（one-shot 适用） |
 | `silent` | `--silent` | 否 | 静默模式，不投递结果 |
 | `max_retries` | `--max-retries` | 否 | 失败最大重试次数，默认 0 |
-| `max_runs` | `--max-runs` | 否 | 成功执行 N 次后自动 disable，默认 0（无限） |
-| `expires_at` | `--expires-at` | 否 | 过期时间（RFC3339），到期自动 disable |
+| `max_runs` | `--max-runs` | 周期必填 | 成功执行 N 次后自动 disable |
+| `expires_at` | `--expires-at` | 周期必填 | 过期时间（RFC3339），到期自动 disable |
 
 ## Admin API（备选）
 
@@ -273,6 +302,7 @@ Schedule JSON 格式：
 | 达到 max_runs | 成功执行次数达到上限后自动 disable |
 | 超过 expires_at | 到期后自动 disable |
 | 连续 5 次调度错误 | Job 自动 disable，需手动重新启用 |
+| 连续 10 次执行失败 | Job 自动 disable，需手动重新启用 |
 | One-shot 执行完成 | 自动 disable；若 `delete_after_run: true` 则自动删除 |
 | 网关重启 | 启动时自动加载未完成 Job，宽限期内的错过任务立即补执行 |
 | CLI 修改后 gateway 未刷新 | CLI 自动发送 SIGHUP，若失败会在 stderr 输出警告 |

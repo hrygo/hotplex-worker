@@ -384,7 +384,7 @@ func (s *Scheduler) scheduleCatchUp(jobs []*CronJob) {
 	}
 }
 
-// collectDue returns clones of all enabled jobs whose next_run_at_ms <= now.
+// collectDue returns clones of all enabled, non-running jobs whose next_run_at_ms <= now.
 // Returns copies so callers can mutate without racing with the map.
 func (s *Scheduler) collectDue(now time.Time) []*CronJob {
 	s.mu.Lock()
@@ -393,6 +393,9 @@ func (s *Scheduler) collectDue(now time.Time) []*CronJob {
 	var due []*CronJob
 	for _, job := range s.jobs {
 		if !job.Enabled {
+			continue
+		}
+		if job.State.RunningAtMs > 0 {
 			continue
 		}
 		if job.State.NextRunAtMs > 0 && job.State.NextRunAtMs <= now.UnixMilli() {
@@ -428,12 +431,17 @@ func (s *Scheduler) nextTickDuration(now time.Time) time.Duration {
 	return d
 }
 
-// putJob writes a job clone back to the in-memory index under s.mu.
-// Silently skips if the job was deleted from the index.
-func (s *Scheduler) putJob(job *CronJob) {
+// mergeJobState updates only the State field of the in-memory job and optionally
+// disables it. Unlike a full replace, this preserves concurrent changes
+// to Enabled, Schedule, etc. — preventing a goroutine's stale clone from
+// overwriting an external disable.
+func (s *Scheduler) mergeJobState(jobID string, state CronJobState, disable bool) {
 	s.mu.Lock()
-	if _, ok := s.jobs[job.ID]; ok {
-		s.jobs[job.ID] = job
+	if j, ok := s.jobs[jobID]; ok {
+		j.State = state
+		if disable {
+			j.Enabled = false
+		}
 	}
 	s.mu.Unlock()
 }
