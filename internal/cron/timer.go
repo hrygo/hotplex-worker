@@ -171,6 +171,7 @@ func (s *Scheduler) executeJob(job *CronJob) {
 
 	job.State.RunningAtMs = 0
 	job.State.LastRunAtMs = now
+	job.State.LastRunID = sessionKey
 
 	var shouldDisable bool
 

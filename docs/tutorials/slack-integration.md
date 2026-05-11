@@ -14,7 +14,91 @@ difficulty: beginner
 
 ## 1. 创建 Slack App
 
-访问 [api.slack.com/apps](https://api.slack.com/apps)，点击 **Create New App** → **From scratch**。
+访问 [api.slack.com/apps](https://api.slack.com/apps)，点击 **Create New App**。
+
+### 方式 A：一键 Manifest（推荐）
+
+选择 **From an app manifest** → 粘贴以下 JSON，一次性完成权限、事件、交互、斜杠命令的全部配置：
+
+```json
+{
+  "_metadata": { "major_version": 2, "minor_version": 1 },
+  "display_information": {
+    "name": "HotPlex",
+    "long_description": "HotPlex is your AI coding partner in Slack. Write code, fix bugs, review PRs, create issues, and manage your entire development workflow directly in conversations.",
+    "description": "AI coding partner — write, review, fix, and ship code in Slack",
+    "background_color": "#1e293b"
+  },
+  "features": {
+    "assistant_view": {
+      "assistant_description": "Your AI coding partner. Supports code writing & review, bug fixes, PR and issue creation, directory switching, and more.",
+      "suggested_prompts": [
+        { "title": "💡 Creative Sparks", "message": "Use brainstorm mode to analyze current project architecture, identify three areas for improvement, and explain their value and implementation ideas." },
+        { "title": "📝 Create Issue", "message": "Create a GitHub Issue using the project's defined template, describing an important bug or feature requirement." },
+        { "title": "🔀 Create PR", "message": "Create a pull request based on current code changes using the project's defined PR template." },
+        { "title": "🔍 Code Review", "message": "Perform a comprehensive code review of the current branch, covering DRY, SOLID, clean architecture, security vulnerabilities, and performance optimization." }
+      ]
+    },
+    "app_home": {
+      "home_tab_enabled": false,
+      "messages_tab_enabled": true,
+      "messages_tab_read_only_enabled": false
+    },
+    "bot_user": { "display_name": "HotPlex", "always_online": true },
+    "slash_commands": [
+      { "command": "/gc", "description": "Sleep session (stop Worker, preserve context)", "should_escape": false },
+      { "command": "/park", "description": "Sleep session (same as /gc)", "should_escape": false },
+      { "command": "/reset", "description": "Reset context (fresh start)", "should_escape": false },
+      { "command": "/new", "description": "Reset context (same as /reset)", "should_escape": false },
+      { "command": "/cd", "description": "Switch working directory", "usage_hint": "/cd /path/to/project", "should_escape": false },
+      { "command": "/context", "description": "View context window usage", "should_escape": false },
+      { "command": "/skills", "description": "List loaded skills", "should_escape": false },
+      { "command": "/mcp", "description": "Show MCP server status", "should_escape": false },
+      { "command": "/model", "description": "Switch AI model", "usage_hint": "/model claude-sonnet-4-6", "should_escape": false },
+      { "command": "/perm", "description": "Set permission mode", "usage_hint": "/perm bypassPermissions", "should_escape": false },
+      { "command": "/effort", "description": "Set reasoning effort level", "usage_hint": "/effort high", "should_escape": false },
+      { "command": "/compact", "description": "Compact conversation history", "should_escape": false },
+      { "command": "/clear", "description": "Clear conversation", "should_escape": false },
+      { "command": "/rewind", "description": "Undo last conversation turn", "should_escape": false },
+      { "command": "/commit", "description": "Create a Git commit", "should_escape": false }
+    ]
+  },
+  "oauth_config": {
+    "scopes": {
+      "bot": [
+        "app_mentions:read", "assistant:write", "bookmarks:read", "bookmarks:write",
+        "canvases:read", "canvases:write", "channels:history", "channels:manage",
+        "channels:read", "chat:write", "chat:write.customize", "chat:write.public",
+        "commands", "dnd:read", "emoji:read", "files:read", "files:write",
+        "groups:history", "groups:read", "im:history", "im:read", "im:write",
+        "links:read", "links:write", "metadata.message:read", "mpim:history",
+        "mpim:read", "mpim:write", "pins:read", "pins:write", "reactions:read",
+        "reactions:write", "remote_files:read", "remote_files:write", "team:read",
+        "usergroups:read", "users:read", "search:read.files", "search:read.im",
+        "search:read.users", "search:read.public"
+      ]
+    }
+  },
+  "settings": {
+    "event_subscriptions": {
+      "bot_events": [
+        "app_home_opened", "app_mention", "assistant_thread_context_changed",
+        "assistant_thread_started", "message.channels", "message.groups",
+        "message.im", "message.mpim"
+      ]
+    },
+    "interactivity": { "is_enabled": true },
+    "org_deploy_enabled": true,
+    "socket_mode_enabled": true
+  }
+}
+```
+
+创建后跳到 [步骤 1.3 生成 Token](#13-生成-token)。
+
+### 方式 B：手动配置
+
+选择 **From scratch**，按以下步骤逐项配置。
 
 ### 1.1 启用 Socket Mode
 

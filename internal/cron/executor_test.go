@@ -10,6 +10,7 @@ import (
 
 	"github.com/hrygo/hotplex/internal/session"
 	"github.com/hrygo/hotplex/internal/worker"
+	"github.com/hrygo/hotplex/pkg/events"
 )
 
 // mockBridge implements BridgeStarter for testing.
@@ -44,6 +45,10 @@ func (m *mockSessionStateChecker) GetWorker(id string) worker.Worker {
 		return w
 	}
 	return m.defaultWorker
+}
+
+func (m *mockSessionStateChecker) Transition(_ context.Context, _ string, _ events.SessionState) error {
+	return nil
 }
 
 // mockWorker implements worker.Worker for testing with minimal stubs.

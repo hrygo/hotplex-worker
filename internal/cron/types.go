@@ -31,6 +31,7 @@ type CronPayload struct {
 	Kind         PayloadKind `json:"kind"`
 	Message      string      `json:"message"`
 	AllowedTools []string    `json:"allowed_tools,omitempty"`
+	WorkerType   string      `json:"worker_type,omitempty"` // e.g. "claude_code"
 }
 
 // JobStatus records the outcome of the last run.

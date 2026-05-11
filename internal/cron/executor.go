@@ -8,6 +8,7 @@ import (
 
 	"github.com/hrygo/hotplex/internal/session"
 	"github.com/hrygo/hotplex/internal/worker"
+	"github.com/hrygo/hotplex/internal/worker/base"
 	"github.com/hrygo/hotplex/pkg/events"
 )
 
@@ -20,6 +21,7 @@ type BridgeStarter interface {
 type SessionStateChecker interface {
 	Get(ctx context.Context, id string) (*session.SessionInfo, error)
 	GetWorker(id string) worker.Worker
+	Transition(ctx context.Context, id string, to events.SessionState) error
 }
 
 // Executor runs a single cron job by starting a worker session and delivering the prompt.
@@ -44,11 +46,23 @@ func NewExecutor(log *slog.Logger, bridge BridgeStarter, sm SessionStateChecker)
 func (e *Executor) Execute(ctx context.Context, job *CronJob, timeout time.Duration) (string, error) {
 	sessionKey := session.DeriveCronSessionKey(job.ID, time.Now().UnixNano())
 
-	platformKey := map[string]string{"cron_job_id": job.ID}
+	// Merge platform context so the bridge can inject environment variables (like channel_id).
+	platformKey := make(map[string]string)
+	if job.PlatformKey != nil {
+		for k, v := range job.PlatformKey {
+			platformKey[k] = v
+		}
+	}
+	platformKey["cron_job_id"] = job.ID
 	title := fmt.Sprintf("cron:%s", job.Name)
 
+	wt := worker.WorkerType(job.Payload.WorkerType)
+	if wt == "" {
+		wt = worker.TypeClaudeCode // Default
+	}
+
 	if err := e.bridge.StartSession(ctx, sessionKey, job.OwnerID, job.BotID,
-		worker.TypeClaudeCode, job.Payload.AllowedTools, job.WorkDir,
+		wt, job.Payload.AllowedTools, job.WorkDir,
 		"cron", platformKey, title,
 	); err != nil {
 		return "", fmt.Errorf("start cron session: %w", err)
@@ -67,14 +81,32 @@ func (e *Executor) Execute(ctx context.Context, job *CronJob, timeout time.Durat
 		return "", fmt.Errorf("cron executor: input prompt: %w", err)
 	}
 
-	return sessionKey, e.waitForCompletion(ctx, sessionKey, timeout)
+	err := e.waitForCompletion(ctx, sessionKey, timeout)
+
+	// Explicitly terminate the session to ensure the worker process exits immediately.
+	// We use context.Background() with a short timeout to ensure termination happens
+	// even if the original context is canceled.
+	termCtx, cancel := context.WithTimeout(context.Background(), base.GracefulShutdownTimeout)
+	defer cancel()
+	if termErr := e.sm.Transition(termCtx, sessionKey, events.StateTerminated); termErr != nil {
+		e.log.Warn("cron executor: failed to terminate session", "session_id", sessionKey, "err", termErr)
+	}
+
+	return sessionKey, err
 }
 
 func (e *Executor) waitForCompletion(ctx context.Context, sessionID string, timeout time.Duration) error {
 	timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	ticker := time.NewTicker(2 * time.Second)
+	// Initial check to avoid waiting for the first ticker tick if the task is near-instant.
+	si, err := e.sm.Get(timeoutCtx, sessionID)
+	if err == nil && si.State != events.StateRunning && si.State != events.StateCreated {
+		return nil
+	}
+
+	// 500ms provides a good balance between responsiveness and system overhead.
+	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 
 	for {
@@ -132,11 +164,11 @@ func buildSlackDelivery(job *CronJob) string {
 	if ch == "" {
 		return ""
 	}
-	cmd := fmt.Sprintf("hotplex slack send-message --text \"结果内容\" --channel %s", ch)
+	cmd := fmt.Sprintf("hotplex slack send-message --channel %s --text \"结果内容\"", ch)
 	if ts := job.PlatformKey["thread_ts"]; ts != "" {
 		cmd += fmt.Sprintf(" --thread-ts %s", ts)
 	}
-	return fmt.Sprintf(deliveryBlockFmt, cmd)
+	return fmt.Sprintf(deliveryBlockFmt, job.Name, cmd)
 }
 
 func buildFeishuDelivery(job *CronJob) string {
@@ -144,14 +176,16 @@ func buildFeishuDelivery(job *CronJob) string {
 	if chatID == "" {
 		return ""
 	}
-	cmd := fmt.Sprintf("lark-cli im +messages-send --chat-id %s --text \"结果内容\"", chatID)
-	return fmt.Sprintf(deliveryBlockFmt, cmd)
+	cmd := fmt.Sprintf("lark-cli im +messages-send --chat-id %s --markdown \"结果内容\"", chatID)
+	return fmt.Sprintf(deliveryBlockFmt, job.Name, cmd)
 }
 
 const deliveryBlockFmt = `
 
 ## 结果投递（必须执行）
 
-任务执行完成后，必须通过以下命令将结果投递给用户。将 "结果内容" 替换为实际执行结果。
+任务「%s」执行完成后，你必须将结果通过以下命令投递给用户。将 "结果内容" 替换为执行结果的简洁摘要（支持 Markdown 格式）。
 
-` + "```bash\n%s\n```"
+` + "```bash\n%s\n```" + `
+
+投递完成后，直接结束对话退出。如果投递命令执行失败，在日志中记录错误后仍然退出。`

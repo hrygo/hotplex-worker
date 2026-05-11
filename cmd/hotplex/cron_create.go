@@ -30,6 +30,7 @@ func newCronCreateCmd() *cobra.Command {
 		expiresAt      string
 		platform       string
 		platformKey    string
+		workerType     string
 	)
 	cmd := &cobra.Command{
 		Use:   "create",
@@ -67,6 +68,7 @@ Schedule format:
 					ExpiresAt:      expiresAt,
 					Platform:       platform,
 					PlatformKey:    platformKeyMap,
+					WorkerType:     workerType,
 				})
 				if err != nil {
 					return err
@@ -102,6 +104,7 @@ Schedule format:
 	cmd.Flags().StringVar(&expiresAt, "expires-at", "", "auto-disable after this time RFC3339 (required for every/cron)")
 	cmd.Flags().StringVar(&platform, "platform", "", "target delivery platform (slack|feishu|cron), auto-detected from env if unset")
 	cmd.Flags().StringVar(&platformKey, "platform-key", "", "platform routing key as JSON, e.g. '{\"channel_id\":\"C123\"}'")
+	cmd.Flags().StringVar(&workerType, "worker-type", "", "AI Agent engine to use (e.g. claude_code, opencode_server)")
 	_ = cmd.MarkFlagRequired("name")
 	_ = cmd.MarkFlagRequired("schedule")
 	_ = cmd.MarkFlagRequired("message")
