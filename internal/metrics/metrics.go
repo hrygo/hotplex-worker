@@ -184,6 +184,13 @@ var (
 		Buckets:   []float64{1, 5, 15, 30, 60, 120, 300, 600, 1800},
 	}, []string{"job_name"})
 
+	// CronAttachedTotal counts session callback attempts by result.
+	CronAttachedTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "hotplex",
+		Name:      "cron_attached_total",
+		Help:      "Total session callback attempts by result",
+	}, []string{"result"}) // result: success, session_not_found, resume_failed, inject_failed, no_router
+
 	// Streaming card metrics.
 
 	// StreamingCardRotationsTotal counts TTL-triggered card rotations.

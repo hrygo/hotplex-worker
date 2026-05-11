@@ -194,7 +194,7 @@ func TestOnTick_AutoDisableAfterScheduleErrors(t *testing.T) {
 		Name:     "bad-schedule",
 		Enabled:  true,
 		Schedule: CronSchedule{Kind: "unknown"}, // will cause schedule error
-		Payload:  CronPayload{Kind: PayloadAgentTurn, Message: "test"},
+		Payload:  CronPayload{Kind: PayloadIsolatedSession, Message: "test"},
 		State: CronJobState{
 			NextRunAtMs: time.Now().Add(-1 * time.Second).UnixMilli(),
 			SchedErrs:   maxScheduleErrors - 1, // one more error → auto-disable

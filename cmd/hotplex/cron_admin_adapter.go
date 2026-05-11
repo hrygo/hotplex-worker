@@ -7,6 +7,7 @@ import (
 
 	"github.com/hrygo/hotplex/internal/cron"
 	"github.com/hrygo/hotplex/internal/eventstore"
+	"github.com/hrygo/hotplex/internal/gateway"
 	"github.com/hrygo/hotplex/internal/session"
 	"github.com/hrygo/hotplex/internal/worker"
 )
@@ -141,4 +142,33 @@ func (a *cronAdminAdapter) RunHistory(ctx context.Context, id string) (any, erro
 		return nil, fmt.Errorf("eventstore not available")
 	}
 	return a.turnsStore.QueryTurnStats(ctx, sessionKey)
+}
+
+// cronAttachedRouter implements cron.AttachedSessionRouter using Bridge + SessionManager.
+type cronAttachedRouter struct {
+	bridge *gateway.Bridge
+	sm     *session.Manager
+}
+
+func (r *cronAttachedRouter) GetSessionInfo(ctx context.Context, id string) (*session.SessionInfo, error) {
+	return r.sm.Get(ctx, id)
+}
+
+func (r *cronAttachedRouter) InjectInput(ctx context.Context, sessionID, prompt string, metadata map[string]any) error {
+	w := r.sm.GetWorker(sessionID)
+	if w == nil {
+		return fmt.Errorf("no worker for session %s", sessionID)
+	}
+	return w.Input(ctx, prompt, metadata)
+}
+
+func (r *cronAttachedRouter) ResumeAndInput(ctx context.Context, sessionID, workDir, prompt string, metadata map[string]any) error {
+	if err := r.bridge.ResumeSession(ctx, sessionID, workDir); err != nil {
+		return fmt.Errorf("resume session: %w", err)
+	}
+	w := r.sm.GetWorker(sessionID)
+	if w == nil {
+		return fmt.Errorf("no worker after resume for session %s", sessionID)
+	}
+	return w.Input(ctx, prompt, metadata)
 }

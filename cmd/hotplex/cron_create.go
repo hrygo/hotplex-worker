@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -31,6 +32,7 @@ func newCronCreateCmd() *cobra.Command {
 		platform       string
 		platformKey    string
 		workerType     string
+		attach         bool
 	)
 	cmd := &cobra.Command{
 		Use:   "create",
@@ -45,7 +47,8 @@ One-shot jobs (at) do not require lifecycle constraints.
 Schedule format:
   --schedule "cron:*/5 * * * *"
   --schedule "every:30m"
-  --schedule "at:2026-01-01T00:00:00Z"`,
+  --schedule "at:2026-01-01T00:00:00Z"
+  --schedule "at:+10m" (relative offset)`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withStore(context.Background(), configPath, func(store croncli.Store) error {
 				var tools []string
@@ -60,7 +63,7 @@ Schedule format:
 					}
 				}
 
-				job, err := croncli.PrepareJobForCreate(name, schedule, message, description, workDir, botID, ownerID, timeoutSec, tools, croncli.JobCreateOptions{
+				opts := croncli.JobCreateOptions{
 					DeleteAfterRun: deleteAfterRun,
 					Silent:         silent,
 					MaxRetries:     maxRetries,
@@ -69,7 +72,42 @@ Schedule format:
 					Platform:       platform,
 					PlatformKey:    platformKeyMap,
 					WorkerType:     workerType,
-				})
+				}
+
+				if attach {
+					sid := os.Getenv("GATEWAY_SESSION_ID")
+					if sid == "" {
+						return fmt.Errorf("--attach requires GATEWAY_SESSION_ID environment variable")
+					}
+					if schedule == "" {
+						schedule = "at:+10m"
+					}
+					if botID == "" {
+						botID = os.Getenv("GATEWAY_BOT_ID")
+					}
+					if ownerID == "" {
+						ownerID = os.Getenv("GATEWAY_USER_ID")
+					}
+					opts.Attach = true
+					opts.TargetSessionID = sid
+					opts.DeleteAfterRun = true
+				} else {
+					if schedule == "" {
+						return cmd.Help()
+					}
+					var missing []string
+					if botID == "" {
+						missing = append(missing, "--bot-id")
+					}
+					if ownerID == "" {
+						missing = append(missing, "--owner-id")
+					}
+					if len(missing) > 0 {
+						return fmt.Errorf("required flag(s) %s not set", strings.Join(missing, ", "))
+					}
+				}
+
+				job, err := croncli.PrepareJobForCreate(name, schedule, message, description, workDir, botID, ownerID, timeoutSec, tools, opts)
 				if err != nil {
 					return err
 				}
@@ -105,10 +143,8 @@ Schedule format:
 	cmd.Flags().StringVar(&platform, "platform", "", "target delivery platform (slack|feishu|cron), auto-detected from env if unset")
 	cmd.Flags().StringVar(&platformKey, "platform-key", "", "platform routing key as JSON, e.g. '{\"channel_id\":\"C123\"}'")
 	cmd.Flags().StringVar(&workerType, "worker-type", "", "AI Agent engine to use (e.g. claude_code, opencode_server)")
+	cmd.Flags().BoolVar(&attach, "attach", false, "Create attached_session job (requires $GATEWAY_SESSION_ID)")
 	_ = cmd.MarkFlagRequired("name")
-	_ = cmd.MarkFlagRequired("schedule")
 	_ = cmd.MarkFlagRequired("message")
-	_ = cmd.MarkFlagRequired("bot-id")
-	_ = cmd.MarkFlagRequired("owner-id")
 	return cmd
 }

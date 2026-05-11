@@ -22,16 +22,18 @@ type CronSchedule struct {
 type PayloadKind string
 
 const (
-	PayloadAgentTurn   PayloadKind = "agent_turn"
-	PayloadSystemEvent PayloadKind = "system_event" // reserved
+	PayloadIsolatedSession PayloadKind = "isolated_session" // renamed from agent_turn
+	PayloadSystemEvent     PayloadKind = "system_event"     // reserved
+	PayloadAttachedSession PayloadKind = "attached_session" // inject existing session
 )
 
 // CronPayload defines what a job executes.
 type CronPayload struct {
-	Kind         PayloadKind `json:"kind"`
-	Message      string      `json:"message"`
-	AllowedTools []string    `json:"allowed_tools,omitempty"`
-	WorkerType   string      `json:"worker_type,omitempty"` // e.g. "claude_code"
+	Kind            PayloadKind `json:"kind"`
+	Message         string      `json:"message"`
+	TargetSessionID string      `json:"target_session_id,omitempty"` // attached_session only
+	AllowedTools    []string    `json:"allowed_tools,omitempty"`
+	WorkerType      string      `json:"worker_type,omitempty"` // e.g. "claude_code"
 }
 
 // JobStatus records the outcome of the last run.

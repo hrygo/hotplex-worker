@@ -94,7 +94,7 @@ func TestValidateJob(t *testing.T) {
 			OwnerID:   "user1",
 			BotID:     "bot1",
 			Schedule:  validSched,
-			Payload:   CronPayload{Kind: PayloadAgentTurn, Message: "Do something"},
+			Payload:   CronPayload{Kind: PayloadIsolatedSession, Message: "Do something"},
 			MaxRuns:   10,
 			ExpiresAt: "2027-01-01T00:00:00Z",
 		}
@@ -202,6 +202,94 @@ func TestValidateJob(t *testing.T) {
 			}(),
 			wantErr: true,
 			errPart: "max_runs is required",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			err := ValidateJob(tt.job)
+			if tt.wantErr {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tt.errPart)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestValidateJob_Callback(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		job     *CronJob
+		wantErr bool
+		errPart string
+	}{
+		{
+			name: "valid callback at schedule",
+			job: &CronJob{
+				Name:     "cb-1",
+				OwnerID:  "u1",
+				BotID:    "b1",
+				Schedule: CronSchedule{Kind: ScheduleAt, At: "2027-01-01T00:00:00Z"},
+				Payload: CronPayload{
+					Kind:            PayloadAttachedSession,
+					Message:         "check result",
+					TargetSessionID: "sess_123",
+				},
+			},
+		},
+		{
+			name: "valid callback every schedule",
+			job: &CronJob{
+				Name:     "cb-2",
+				OwnerID:  "u1",
+				BotID:    "b1",
+				Schedule: CronSchedule{Kind: ScheduleEvery, EveryMs: 300_000},
+				Payload: CronPayload{
+					Kind:            PayloadAttachedSession,
+					Message:         "monitor",
+					TargetSessionID: "sess_456",
+				},
+				MaxRuns:   10,
+				ExpiresAt: "2027-01-01T00:00:00Z",
+			},
+		},
+		{
+			name: "callback missing target_session_id",
+			job: &CronJob{
+				Name:     "cb-3",
+				OwnerID:  "u1",
+				BotID:    "b1",
+				Schedule: CronSchedule{Kind: ScheduleAt, At: "2027-01-01T00:00:00Z"},
+				Payload: CronPayload{
+					Kind:    PayloadAttachedSession,
+					Message: "check",
+				},
+			},
+			wantErr: true,
+			errPart: "target_session_id is required",
+		},
+		{
+			name: "callback with cron schedule rejected",
+			job: &CronJob{
+				Name:     "cb-4",
+				OwnerID:  "u1",
+				BotID:    "b1",
+				Schedule: CronSchedule{Kind: ScheduleCron, Expr: "0 9 * * 1-5"},
+				Payload: CronPayload{
+					Kind:            PayloadAttachedSession,
+					Message:         "daily check",
+					TargetSessionID: "sess_789",
+				},
+				MaxRuns:   100,
+				ExpiresAt: "2027-01-01T00:00:00Z",
+			},
+			wantErr: true,
+			errPart: "does not support cron expression",
 		},
 	}
 
