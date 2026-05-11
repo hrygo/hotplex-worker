@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+## [1.11.1] - 2026-05-11
+
+### Summary
+
+v1.11.1 是一次 patch 更新，聚焦于 **Cron 定时任务可靠性** 和 **WebSocket 连接稳定性**。核心改动包括：Cron 生命周期约束系统（防止无限执行、race condition 修复、mergeJobState 原子状态更新）、Cron executor 传递 job 实际 platform 以正确加载 agent 配置、WebSocket backpressure 优化（TryWriteMessage 防止慢客户端因 delta 丢弃而断连）。影响 Cron 调度器、Gateway Core 和 Agent Config 加载层。
+
+### Added
+
+- **Cron**: Lifecycle constraint system — recurring jobs require `max_runs` + `expires_at`, auto-default to max-runs=10 / expires-at=now+24h, auto-disable after 10 consecutive execution failures or 5 schedule errors. (#369)
+- **Cron**: WorkDirResolver — platform-aware workdir resolution (explicit > platform-specific > worker default) via `config.ResolvePlatformWorkDir`.
+- **Cron**: `mergeJobState` atomic state update — prevents executeJob goroutines from overwriting concurrent CLI state changes (e.g. disable).
+- **Gateway Core**: TryWriteMessage — non-blocking write that silently drops droppable events (message.delta, raw) instead of disconnecting slow clients.
+
+### Changed
+
+- **Cron**: Executor passes job's actual platform (e.g. "feishu", "slack") to agent config loader instead of hardcoded "cron", enabling correct 3-tier config fallback (global → platform → bot).
+- **Cron**: Session detection for env injection and MCP suppression switched from `platform == "cron"` to `platformKey["cron_job_id"]` presence check.
+- **Cron**: Skill manual restructured with XML sections (`<critical_rules>`, `<intent_recognition>`, `<prompt_assembly>`, `<lifecycle_inference>`) for clearer Agent consumption.
+- **Gateway Core**: Extract `bufferOrReject` helper to eliminate duplication between WriteMessage and TryWriteMessage closed-check + init-phase buffering.
+
 ## [1.11.0] - 2026-05-11
 
 ### Summary
