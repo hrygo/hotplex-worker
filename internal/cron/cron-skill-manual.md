@@ -13,14 +13,14 @@
 <intent_recognition>
 用户消息中出现以下模式时，创建 cronjob：
 
-| 用户表达 | schedule 类型 | CLI 写法 |
-|---|---|---|
-| 每 X 分钟/小时/天 | every | `every:30m` |
-| loop/循环/重复/定期 | every 或 cron | `every:5m` |
-| schedule/安排/定时 | at 或 cron | `cron:0 9 * * 1` |
-| X 点(提醒我)/每天/每周 | cron | `cron:0 9 * * *` |
-| X 分钟后/过一会儿/稍后 | at | `at:ISO timestamp` |
-| 静默/悄悄/别发/不用报告 | --silent | `--silent` |
+| 用户表达                | schedule 类型 | CLI 写法           |
+| ----------------------- | ------------- | ------------------ |
+| 每 X 分钟/小时/天       | every         | `every:30m`        |
+| loop/循环/重复/定期     | every 或 cron | `every:5m`         |
+| schedule/安排/定时      | at 或 cron    | `cron:0 9 * * 1`   |
+| X 点(提醒我)/每天/每周  | cron          | `cron:0 9 * * *`   |
+| X 分钟后/过一会儿/稍后  | at            | `at:ISO timestamp` |
+| 静默/悄悄/别发/不用报告 | --silent      | `--silent`         |
 </intent_recognition>
 
 <prompt_assembly>
@@ -52,19 +52,31 @@
 创建后告知用户可随时调整执行次数或过期时间。
 </lifecycle_inference>
 
+<timeout_estimation>
+必须根据任务复杂度预估时长，并在评估值基础上增加 **50%-100% 的 Buffer**，通过 `--timeout` 参数设置。
+
+**评估基准**：
+- **快速检查**（单文件读取、HTTP 状态查询）：建议 120s (2m)
+- **常规分析**（多文件、Git Diff、日志检索）：建议 300s (5m) —— **系统默认值**
+- **深度处理**（跨仓库、海量日志统计、多步逻辑）：建议 600s-1200s (10-20m)
+- **极限任务**：建议 1800s-3600s (30-60m)
+
+**计算逻辑**：`timeout_sec = (预估耗时 + 外部 IO 等待) * 1.5 (Buffer系数)`。
+</timeout_estimation>
+
 <environment>
 当前 Worker 进程已注入以下环境变量，创建 cronjob 时直接使用：
 
-| 环境变量 | CLI flag | 示例值 |
-|---|---|---|
-| `GATEWAY_BOT_ID` | `--bot-id` | B12345 |
-| `GATEWAY_USER_ID` | `--owner-id` | U12345 |
-| `GATEWAY_WORK_DIR` | `--work-dir` | /tmp/xxx |
-| `GATEWAY_CHANNEL_ID` | — | C12345 |
-| `GATEWAY_THREAD_ID` | — | 1234.56 |
-| `GATEWAY_PLATFORM` | — | slack |
-| `GATEWAY_TEAM_ID` | — | T12345 |
-| `GATEWAY_SESSION_ID` | — | uuid-v5 |
+| 环境变量             | CLI flag     | 示例值   |
+| -------------------- | ------------ | -------- |
+| `GATEWAY_BOT_ID`     | `--bot-id`   | B12345   |
+| `GATEWAY_USER_ID`    | `--owner-id` | U12345   |
+| `GATEWAY_WORK_DIR`   | `--work-dir` | /tmp/xxx |
+| `GATEWAY_CHANNEL_ID` | —            | C12345   |
+| `GATEWAY_THREAD_ID`  | —            | 1234.56  |
+| `GATEWAY_PLATFORM`   | —            | slack    |
+| `GATEWAY_TEAM_ID`    | —            | T12345   |
+| `GATEWAY_SESSION_ID` | —            | uuid-v5  |
 
 必填字段直接从环境变量读取：
 `--bot-id "$GATEWAY_BOT_ID" --owner-id "$GATEWAY_USER_ID" --work-dir "$GATEWAY_WORK_DIR"`
@@ -92,11 +104,11 @@ hotplex cron create \
 
 Schedule 格式：
 
-| 格式 | 说明 | 约束 | 示例 |
-|---|---|---|---|
-| `cron:表达式` | 5域cron | 分 时 日 月 周 | `cron:*/5 * * * *` |
-| `every:时长` | 固定间隔 | 最低1分钟 | `every:30m`、`every:2h` |
-| `at:时间戳` | 一次性 | ISO-8601 | `at:2026-05-12T09:00:00+08:00` |
+| 格式          | 说明     | 约束           | 示例                           |
+| ------------- | -------- | -------------- | ------------------------------ |
+| `cron:表达式` | 5域cron  | 分 时 日 月 周 | `cron:*/5 * * * *`             |
+| `every:时长`  | 固定间隔 | 最低1分钟      | `every:30m`、`every:2h`        |
+| `at:时间戳`   | 一次性   | ISO-8601       | `at:2026-05-12T09:00:00+08:00` |
 
 其他命令：
 - `hotplex cron list [--json] [--enabled]`
@@ -140,7 +152,7 @@ hotplex cron create \
   --schedule "at:$(date -d '+1 hour' +%Y-%m-%dT%H:%M:%S+08:00)" \
   -m "验证 production 环境 v2.1.0 部署：1) 检查 /opt/app/version.txt 版本号 2) curl localhost:8080/health 验证可用性 3) 最近10分钟日志有无 panic。" \
   --bot-id "$GATEWAY_BOT_ID" --owner-id "$GATEWAY_USER_ID" \
-  --delete-after-run --max-retries 3
+  --timeout 600 --delete-after-run --max-retries 3
 
 # 静默自维护（不通知用户）
 hotplex cron create \
@@ -155,36 +167,36 @@ hotplex cron create \
 
 <field_reference>
 
-| CLI flag | 必填 | 说明 |
-|---|---|---|
-| `--name` | 是 | 唯一标识 |
-| `--schedule` | 是 | 调度表达式 |
-| `-m` | 是 | Prompt，最大4KB |
-| `--owner-id` | 是 | 取自 `$GATEWAY_USER_ID` |
-| `--bot-id` | 是 | 取自 `$GATEWAY_BOT_ID` |
-| `--description` | 否 | 任务描述 |
-| `--work-dir` | 否 | 取自 `$GATEWAY_WORK_DIR` |
-| `--timeout` | 否 | 单次超时（秒），默认5min |
-| `--allowed-tools` | 否 | 逗号分隔 |
-| `--delete-after-run` | 否 | 执行后删除（one-shot适用） |
-| `--silent` | 否 | 静默模式，不通知用户 |
-| `--max-retries` | 否 | 失败重试次数，默认0 |
-| `--max-runs` | 周期必填 | 成功N次后自动disable |
-| `--expires-at` | 周期必填 | 过期时间（RFC3339） |
-| `--worker-type` | 否 | Agent引擎类型 (claude_code/opencode_server) |
+| CLI flag             | 必填     | 说明                                        |
+| -------------------- | -------- | ------------------------------------------- |
+| `--name`             | 是       | 唯一标识                                    |
+| `--schedule`         | 是       | 调度表达式                                  |
+| `-m`                 | 是       | Prompt，最大4KB                             |
+| `--owner-id`         | 是       | 取自 `$GATEWAY_USER_ID`                     |
+| `--bot-id`           | 是       | 取自 `$GATEWAY_BOT_ID`                      |
+| `--description`      | 否       | 任务描述                                    |
+| `--work-dir`         | 否       | 取自 `$GATEWAY_WORK_DIR`                    |
+| `--timeout`          | 否       | 单次超时（秒），默认5min                    |
+| `--allowed-tools`    | 否       | 逗号分隔                                    |
+| `--delete-after-run` | 否       | 执行后删除（one-shot适用）                  |
+| `--silent`           | 否       | 静默模式，不通知用户                        |
+| `--max-retries`      | 否       | 失败重试次数，默认0                         |
+| `--max-runs`         | 周期必填 | 成功N次后自动disable                        |
+| `--expires-at`       | 周期必填 | 过期时间（RFC3339）                         |
+| `--worker-type`      | 否       | Agent引擎类型 (claude_code/opencode_server) |
 
 </field_reference>
 
 <error_handling>
-| 场景 | 行为 |
-|---|---|
-| 执行超时 | 按 timeout_sec 截断（默认5min），标记 timeout |
-| 执行失败 | 指数退避重试（1min→5min→25min），受 max_retries 限制 |
-| 达到 max_runs | 自动 disable |
-| 超过 expires_at | 自动 disable |
-| 连续5次调度错误 | 自动 disable，需手动启用 |
-| 连续10次执行失败 | 自动 disable，需手动启用 |
-| One-shot 完成 | 自动 disable；delete_after_run 则自动删除 |
-| 网关重启 | 启动时加载未完成 Job，宽限期内补执行 |
-| CLI 修改后 | CLI 自动发 SIGHUP，失败在 stderr 警告 |
+| 场景             | 行为                                                 |
+| ---------------- | ---------------------------------------------------- |
+| 执行超时         | 按 timeout_sec 截断（默认5min），标记 timeout        |
+| 执行失败         | 指数退避重试（1min→5min→25min），受 max_retries 限制 |
+| 达到 max_runs    | 自动 disable                                         |
+| 超过 expires_at  | 自动 disable                                         |
+| 连续5次调度错误  | 自动 disable，需手动启用                             |
+| 连续10次执行失败 | 自动 disable，需手动启用                             |
+| One-shot 完成    | 自动 disable；delete_after_run 则自动删除            |
+| 网关重启         | 启动时加载未完成 Job，宽限期内补执行                 |
+| CLI 修改后       | CLI 自动发 SIGHUP，失败在 stderr 警告                |
 </error_handling>
