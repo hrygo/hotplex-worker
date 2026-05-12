@@ -212,17 +212,23 @@ func main() {
 | `log.level`                 | `info`                       | 日志级别 (debug, info, warn, error) |
 
 > [!TIP]
-> 完整的环境变量和 YAML 设置请参考 [配置指南](docs/management/Config-Reference.md)。
+> 完整的环境变量和 YAML 设置请参考 [配置参考](docs/reference/configuration.md)。
 
 ## 📖 文档中心
 
-| 领域         | 指南                                                                                                                                                                           |
-| :----------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **入门指南** | [快速上手](docs/User-Manual.md) · [技术参考手册](docs/Reference-Manual.md) · [产品白皮书](docs/Product-Whitepaper.md)                                                          |
-| **协议规范** | [AEP v1 协议详解](docs/architecture/AEP-v1-Protocol.md)                                                                                                                        |
-| **架构设计** | [网关架构](docs/architecture/Worker-Gateway-Design.md) · [Agent 配置设计](docs/architecture/Agent-Config-Design.md) · [元认知内核设计](internal/agentconfig/META-COGNITION.md) |
-| **安全**     | [认证机制](docs/security/Security-Authentication.md) · [SSRF 防护](docs/security/SSRF-Protection.md)                                                                           |
-| **运维**     | [Admin API 手册](docs/management/Admin-API-Design.md) · [可观测性](docs/management/Observability-Design.md) · [测试策略](docs/testing/Testing-Strategy.md)                     |
+HotPlex 内置**自托管中文文档门户** — Markdown 源文件编译为静态 HTML，通过 `go:embed` 嵌入网关二进制。启动网关后访问 `http://localhost:8888/docs` 即可浏览。
+
+| 领域         | 指南                                                                                                               |
+| :----------- | :----------------------------------------------------------------------------------------------------------------- |
+| **入门指南** | [5 分钟快速上手](docs/getting-started.md) · [文档门户](docs/index.md)                                             |
+| **教程**     | [Slack 集成](docs/tutorials/slack-integration.md) · [飞书集成](docs/tutorials/feishu-integration.md) · [AI 人格定制](docs/tutorials/agent-personality.md) · [定时任务](docs/tutorials/cron-scheduled-tasks.md) |
+| **指南**     | [远程 Coding Agent](docs/guides/developer/remote-coding-agent.md) · [企业部署](docs/guides/enterprise/deployment.md) · [贡献开发](docs/guides/contributor/development-setup.md) |
+| **参考**     | [CLI 参考](docs/reference/cli.md) · [配置参考](docs/reference/configuration.md) · [Admin API](docs/reference/admin-api.md) · [AEP v1 协议](docs/reference/aep-protocol.md) |
+| **架构设计** | [网关架构](docs/architecture/Worker-Gateway-Design.md) · [Agent 配置设计](docs/architecture/Agent-Config-Design.md) · [元认知内核](internal/agentconfig/META-COGNITION.md) |
+| **安全**     | [安全策略](docs/reference/security-policies.md) · [认证机制](docs/security/Security-Authentication.md) · [SSRF 防护](docs/security/SSRF-Protection.md) |
+
+> [!TIP]
+> 本地构建文档：`make docs-build`。源文件位于 `docs/`，编译输出到 `internal/docs/out/`（通过 `go:embed` 嵌入二进制）。
 
 ## 👥 参与贡献
 
