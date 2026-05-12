@@ -185,6 +185,9 @@ jobs:
       - name: Verify + Vet + Build
         run: go mod verify && go vet ./... && go build ./...
 
+      - name: Build & validate docs
+        run: make docs-build
+
       - name: Build gateway binary
         run: |
           mkdir -p bin

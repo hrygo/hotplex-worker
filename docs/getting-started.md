@@ -180,7 +180,7 @@ hotplex cron create \
 
 ## 下一步
 
-- [用户指南](guides/user/chat-with-ai.md) -- 完整功能参考
+- [使用指南](guides/user/chat-with-ai.md) -- 完整功能参考
 - [架构概览](guides/contributor/architecture.md) -- 系统架构详解
 - [安全模型](explanation/security-model.md) -- 安全策略与最佳实践
 - [配置参考](reference/configuration.md) -- API 与配置参数手册

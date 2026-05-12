@@ -58,8 +58,8 @@ files_weights = {
     "docs/reference/sdk-python.md": 7,
     "docs/reference/sdk-typescript.md": 8,
     "docs/reference/sdk-java.md": 9,
-    "docs/reference/security-policies.md": 9,
-    "docs/reference/glossary.md": 10,
+    "docs/reference/security-policies.md": 10,
+    "docs/reference/glossary.md": 11,
 }
 
 for path, weight in files_weights.items():
