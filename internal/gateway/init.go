@@ -4,6 +4,7 @@ package gateway
 import (
 	"time"
 
+	"github.com/hrygo/hotplex/internal/security"
 	"github.com/hrygo/hotplex/internal/worker"
 	"github.com/hrygo/hotplex/pkg/aep"
 	"github.com/hrygo/hotplex/pkg/events"
@@ -85,6 +86,7 @@ var (
 	ErrInitVersionMismatch  = &InitError{Code: events.ErrCodeVersionMismatch, Message: "version mismatch"}
 	ErrInitCapacityExceeded = &InitError{Code: events.ErrCodeRateLimited, Message: "capacity exceeded"}
 	ErrInitSessionNotFound  = &InitError{Code: events.ErrCodeSessionNotFound, Message: "session not found"}
+	ErrInitConfigInvalid    = &InitError{Code: events.ErrCodeConfigInvalid, Message: "invalid config"}
 )
 
 // BuildInitAck builds an init_ack envelope from handshake result.
@@ -175,6 +177,17 @@ func ValidateInit(env *events.Envelope) (InitData, *InitError) {
 		}
 		if workDir, ok := cfgData["work_dir"].(string); ok {
 			cfg.WorkDir = workDir
+		}
+	}
+
+	if len(cfg.AllowedTools) > 0 {
+		if err := security.ValidateTools(cfg.AllowedTools); err != nil {
+			return InitData{}, &InitError{Code: events.ErrCodeConfigInvalid, Message: err.Error()}
+		}
+	}
+	if cfg.Model != "" {
+		if err := security.ValidateModel(cfg.Model); err != nil {
+			return InitData{}, &InitError{Code: events.ErrCodeConfigInvalid, Message: err.Error()}
 		}
 	}
 

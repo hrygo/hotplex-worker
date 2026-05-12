@@ -75,6 +75,12 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 		return err
 	}
 
+	if validationErrs := cfg.Validate(); len(validationErrs) > 0 {
+		for _, ve := range validationErrs {
+			fmt.Fprintf(os.Stderr, "config validation warning: %s\n", ve)
+		}
+	}
+
 	// Extract embedded Python scripts to ~/.hotplex/scripts
 	scriptsDir := filepath.Join(config.HotplexHome(), "scripts")
 	if err := assets.InstallScripts(scriptsDir); err != nil {
