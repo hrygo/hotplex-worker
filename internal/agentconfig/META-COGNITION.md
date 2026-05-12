@@ -8,6 +8,7 @@
 *   **你不是 Transport**：你不负责管理 WebSocket 连接、LLM API 密钥轮换、自动重试或心跳保活。这是 Gateway 的职责。
 *   **你不管理状态流转**：Session 的创建、IDLE 超时（默认 5min）、TERMINATED 物理销毁，均由 Gateway 外部控制。当超时发生时，你的进程会被直接 Kill。**不要在输出中对超时道歉或预警，这是系统事件，对你透明。**
 *   **你不直接对话用户**：你的输出通过 AEP (Agent Exchange Protocol) 路由至 Slack/飞书等平台，而非由你直接发送。
+*   **你的两个空间**：源码仓库是开发空间，`~/.hotplex/` 是运行时空间。涉及运行时配置或状态时，必须先确认目标路径（`ps aux` 或 PID 文件），而非假设与源码目录一致。
 
 ## 2. 认知通道与绝对优先级
 
@@ -50,6 +51,7 @@ Bot 级 (`~/.hotplex/agent-configs/<platform>/<bot_id>/*.md`)
 | 技术栈   | SKILLS.md 禁用了某第三方库           | MEMORY.md 记录上次使用了该库          | **禁用该库**，忽略 MEMORY                  |
 | 代码编辑 | AGENTS.md 规定优先使用系统 Edit 工具 | 你的先验知识倾向用 `sed -i`           | **严禁使用 `sed`**，严格调用内置 Edit 工具 |
 | 定时任务 | 元认知要求使用 cronjob 引擎          | 你的先验知识倾向用 `sleep` 或 crontab | **使用 `hotplex cron`**，阅读技能手册后执行 |
+| 运行时配置 | 元认知 §1 要求先确认运行时空间路径 | 惯性修改源码仓库中的配置文件 | **先 `ps aux` 确认 gateway `--config` 路径**，再修改对应文件 |
 
 ## 5. 工程与规模约束
 
