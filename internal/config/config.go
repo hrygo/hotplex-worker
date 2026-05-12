@@ -1073,7 +1073,14 @@ func applyMessagingEnv(cfg *Config) {
 	}
 	for _, m := range msgStrs {
 		if v := os.Getenv(m.env); v != "" {
-			setField(&cfg.Messaging, m.field, v)
+			if err := setField(&cfg.Messaging, m.field, v); err != nil {
+				slog.Warn("config: env mapping skipped",
+					"env", m.env,
+					"field", m.field,
+					"target", "config.Messaging",
+					"error", err,
+				)
+			}
 		}
 	}
 	// Int fields.
@@ -1116,42 +1123,78 @@ type envMapping struct{ env, field string }
 func applyPlatformEnv(target any, strs, bools, slices []envMapping) {
 	for _, m := range strs {
 		if v := os.Getenv(m.env); v != "" {
-			setField(target, m.field, v)
+			if err := setField(target, m.field, v); err != nil {
+				slog.Warn("config: env mapping skipped",
+					"env", m.env,
+					"field", m.field,
+					"target", fmt.Sprintf("%T", target),
+					"error", err,
+				)
+			}
 		}
 	}
 	for _, m := range bools {
 		if v := os.Getenv(m.env); v != "" {
-			setBoolField(target, m.field, strings.EqualFold(v, "true"))
+			if err := setBoolField(target, m.field, strings.EqualFold(v, "true")); err != nil {
+				slog.Warn("config: env mapping skipped",
+					"env", m.env,
+					"field", m.field,
+					"target", fmt.Sprintf("%T", target),
+					"error", err,
+				)
+			}
 		}
 	}
 	for _, m := range slices {
 		if v := os.Getenv(m.env); v != "" {
-			setSliceField(target, m.field, v)
+			if err := setSliceField(target, m.field, v); err != nil {
+				slog.Warn("config: env mapping skipped",
+					"env", m.env,
+					"field", m.field,
+					"target", fmt.Sprintf("%T", target),
+					"error", err,
+				)
+			}
 		}
 	}
 }
 
 // setField sets a string field on a struct by name using reflection.
-func setField(target any, field, value string) {
+func setField(target any, field, value string) error {
 	v := reflect.ValueOf(target).Elem()
-	v.FieldByName(field).SetString(value)
+	f := v.FieldByName(field)
+	if !f.IsValid() {
+		return fmt.Errorf("config: setField: no such field %q on %T", field, target)
+	}
+	f.SetString(value)
+	return nil
 }
 
 // setBoolField sets a bool field on a struct by name using reflection.
-func setBoolField(target any, field string, value bool) {
+func setBoolField(target any, field string, value bool) error {
 	v := reflect.ValueOf(target).Elem()
-	v.FieldByName(field).SetBool(value)
+	f := v.FieldByName(field)
+	if !f.IsValid() {
+		return fmt.Errorf("config: setBoolField: no such field %q on %T", field, target)
+	}
+	f.SetBool(value)
+	return nil
 }
 
 // setSliceField sets a []string field on a struct by name using reflection.
-func setSliceField(target any, field, value string) {
+func setSliceField(target any, field, value string) error {
 	v := reflect.ValueOf(target).Elem()
+	f := v.FieldByName(field)
+	if !f.IsValid() {
+		return fmt.Errorf("config: setSliceField: no such field %q on %T", field, target)
+	}
 	parts := strings.Split(value, ",")
 	slice := make([]string, len(parts))
 	for i, p := range parts {
 		slice[i] = strings.TrimSpace(p)
 	}
-	v.FieldByName(field).Set(reflect.ValueOf(slice))
+	f.Set(reflect.ValueOf(slice))
+	return nil
 }
 
 // decodeJWTSecret decodes a base64-encoded JWT secret.
