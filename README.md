@@ -216,13 +216,19 @@ func main() {
 
 ## 📖 Documentation
 
-| Area                | Guide                                                                                                                                                                                            |
-| :------------------ | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Getting Started** | [Quick Start](docs/User-Manual.md) · [Reference Manual](docs/Reference-Manual.md) · [Whitepaper](docs/Product-Whitepaper.md)                                                                     |
-| **Protocol**        | [AEP v1 Specification](docs/architecture/AEP-v1-Protocol.md)                                                                                                                                     |
-| **Architecture**    | [Gateway Design](docs/architecture/Worker-Gateway-Design.md) · [Agent Config Design](docs/architecture/Agent-Config-Design.md) · [Meta-Cognition Design](internal/agentconfig/META-COGNITION.md) |
-| **Security**        | [Authentication](docs/security/Security-Authentication.md) · [SSRF Protection](docs/security/SSRF-Protection.md)                                                                                 |
-| **Operations**      | [Admin API](docs/management/Admin-API-Design.md) · [Observability](docs/management/Observability-Design.md) · [Testing](docs/testing/Testing-Strategy.md)                                        |
+HotPlex ships with **self-hosted documentation** — a Chinese-first docs portal built from Markdown sources, compiled into static HTML, and embedded directly into the gateway binary. Access it at `http://localhost:8888/docs` after starting the gateway.
+
+| Area                | Guide                                                                                                              |
+| :------------------ | :----------------------------------------------------------------------------------------------------------------- |
+| **Getting Started** | [5-Minute Quick Start](docs/getting-started.md) · [Docs Portal](docs/index.md)                                    |
+| **Tutorials**       | [Slack Integration](docs/tutorials/slack-integration.md) · [Feishu Integration](docs/tutorials/feishu-integration.md) · [AI Personality](docs/tutorials/agent-personality.md) · [Cron Tasks](docs/tutorials/cron-scheduled-tasks.md) |
+| **Guides**          | [Remote Coding Agent](docs/guides/developer/remote-coding-agent.md) · [Enterprise Deployment](docs/guides/enterprise/deployment.md) · [Contributing](docs/guides/contributor/development-setup.md) |
+| **Reference**       | [CLI Reference](docs/reference/cli.md) · [Configuration](docs/reference/configuration.md) · [Admin API](docs/reference/admin-api.md) · [AEP v1 Protocol](docs/reference/aep-protocol.md) |
+| **Architecture**    | [Gateway Design](docs/architecture/Worker-Gateway-Design.md) · [Agent Config Design](docs/architecture/Agent-Config-Design.md) · [Meta-Cognition](internal/agentconfig/META-COGNITION.md) |
+| **Security**        | [Security Policies](docs/reference/security-policies.md) · [Authentication](docs/security/Security-Authentication.md) · [SSRF Protection](docs/security/SSRF-Protection.md) |
+
+> [!TIP]
+> Build docs locally: `make docs-build`. Source files live in `docs/`, output goes to `internal/docs/out/` (embedded via `go:embed`).
 
 ## 👥 Contributing
 
