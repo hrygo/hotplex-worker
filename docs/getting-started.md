@@ -45,7 +45,7 @@ chmod +x hotplex   # macOS / Linux 赋予执行权限
 
 或从源码构建：`git clone` → `make build`，产物在 `bin/` 目录。
 
-验证：`hotplex version`，应输出版本号如 `v1.10.2`。
+验证：`hotplex version`，应输出版本号（如 `v1.11.0` 或更高版本）。
 
 ### 2. 环境配置
 

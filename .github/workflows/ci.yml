@@ -12,6 +12,8 @@ on:
       - 'webchat/**'
       - 'internal/webchat/**'
       - 'configs/**'
+      - 'docs/**/*.md'
+      - 'cmd/build-docs/**'
       - '.github/workflows/**'
   pull_request:
     branches: [main]
@@ -24,6 +26,8 @@ on:
       - 'webchat/**'
       - 'internal/webchat/**'
       - 'configs/**'
+      - 'docs/**/*.md'
+      - 'cmd/build-docs/**'
       - '.github/workflows/**'
 
 concurrency:

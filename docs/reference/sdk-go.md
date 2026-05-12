@@ -10,6 +10,8 @@ difficulty: intermediate
 
 > `github.com/hrygo/hotplex/client` — HotPlex Gateway 的官方 Go 客户端，实现 AEP v1 WebSocket 全双工协议。
 
+> **SDK 位置**：Go SDK 位于仓库根目录的 `client/`（独立 Go module），Python / TypeScript / Java SDK 位于 `examples/` 目录。
+
 ## 安装
 
 ```bash
