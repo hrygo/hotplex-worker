@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"runtime/debug"
 	"sync"
 	"time"
 )
@@ -72,6 +73,13 @@ func (q *ChatQueue) Enqueue(chatID string, task func(ctx context.Context) error)
 // elapses with no new tasks. On exit, it removes itself from the workers map.
 func (q *ChatQueue) runWorker(chatID string, w *chatWorker) {
 	defer q.wg.Done()
+	defer func() {
+		if r := recover(); r != nil {
+			if q.log != nil {
+				q.log.Error("feishu: panic in chat queue worker", "chat_id", chatID, "panic", r, "stack", string(debug.Stack()))
+			}
+		}
+	}()
 
 	idleTimer := time.NewTimer(chatIdleTimeout)
 	defer idleTimer.Stop()
