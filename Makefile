@@ -53,7 +53,7 @@ CYAN   := \033[36m
 .PHONY: dev dev-start dev-stop dev-status dev-logs dev-reset
 .PHONY: gateway-start gateway-stop gateway-status gateway-logs
 .PHONY: webchat-dev webchat-stop webchat-embed webchat-rebuild
-.PHONY: docs-build docs-clean
+.PHONY: docs-build docs-clean docs-lint
 .PHONY: test test-short lint fmt quality check clean
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -277,6 +277,9 @@ docs-build:
 docs-clean:
 	@rm -rf internal/docs/out
 	@echo "  $(GREEN)✓$(RESET) Documentation cleaned"
+
+docs-lint: docs-build
+	@echo "$(CYAN)Docs link validation passed$(RESET)"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Clean

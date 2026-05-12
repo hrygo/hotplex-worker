@@ -244,3 +244,9 @@ Brain 使用 `sync.RWMutex` 保护全局实例。IntentRouter 使用 `atomic.Poi
 - `internal/brain/guard.go` -- Safety Guard + Chat2Config
 - `internal/brain/memory.go` -- ContextCompressor + MemoryManager
 - `internal/brain/extractor.go` -- Worker 配置文件凭证提取
+
+---
+
+## 相关实践
+
+- [配置参考 — brain 配置段](../reference/configuration.md) — Brain/IntentRouter/SafetyGuard 的全部可配置参数

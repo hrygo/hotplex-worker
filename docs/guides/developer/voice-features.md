@@ -369,3 +369,9 @@ hotplex doctor
 | 摘要生成 | `internal/messaging/tts/prompt.go` |
 | 环境检查 | `internal/cli/checkers/stt.go` + `tts.go` |
 | 配置模板 | `configs/env.example` |
+
+---
+
+## 延伸阅读
+
+- [配置参考 — STT/TTS 配置段](../../reference/configuration.md) — 语音功能的完整配置参数

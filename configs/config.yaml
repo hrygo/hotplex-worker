@@ -40,7 +40,7 @@ admin:
   addr: "localhost:9999"
   # Tokens must be provided via HOTPLEX_ADMIN_TOKEN_1..N env vars
   tokens: []
-  default_scopes: ["session:read", "stats:read", "health:read"]
+  default_scopes: ["session:read", "stats:read", "health:read", "admin:write"]
   ip_whitelist_enabled: false
   allowed_cidrs: ["127.0.0.0/8", "10.0.0.0/8"]
   rate_limit_enabled: true

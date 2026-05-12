@@ -12,6 +12,8 @@ on:
       - 'webchat/**'
       - 'internal/webchat/**'
       - 'configs/**'
+      - 'docs/**/*.md'
+      - 'cmd/build-docs/**'
       - '.github/workflows/**'
   pull_request:
     branches: [main]
@@ -24,6 +26,8 @@ on:
       - 'webchat/**'
       - 'internal/webchat/**'
       - 'configs/**'
+      - 'docs/**/*.md'
+      - 'cmd/build-docs/**'
       - '.github/workflows/**'
 
 concurrency:
@@ -180,6 +184,9 @@ jobs:
 
       - name: Verify + Vet + Build
         run: go mod verify && go vet ./... && go build ./...
+
+      - name: Build & validate docs
+        run: make docs-build
 
       - name: Build gateway binary
         run: |
