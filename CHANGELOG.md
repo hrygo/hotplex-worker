@@ -1,22 +1,39 @@
 # Changelog
 
-## [Unreleased]
+## [1.11.3] - 2026-05-12
 
 ### Summary
 
-Unreleased 包含跨 **配置、安全、Gateway** 三个模块的安全加固与可靠性改进。配置层消除 env-mapping 拼写错误导致的 reflection panic；Gateway init 握手阶段接入安全白名单验证（tool/model），将定义了但从未执行的死代码安全策略激活；JWT 密钥派生升级为 HKDF (RFC 5869)，并修复 GenerateToken 缺失 audience claim 和 SanitizeArg 截断非 ASCII 字符的问题。
+v1.11.3 是一次 patch 更新，聚焦于 **Cron attached session**、**安全加固双批次** 和 **文档中心演进**。新增 attached session 支持定时注入现有会话（`--attach` CLI，`at:+N` 相对时间语法）；两个安全批次覆盖 config reflection panic、dead validators 激活、飞书 goroutine panic recovery、admin body size limit 等 11 项修复；文档中心新增 sidebar audience grouping、构建时 link validation、Java SDK 参考文档。
+
+### Added
+
+- **Cron**: Attached session — inject cron prompts into existing live sessions via `--attach` CLI flag. Supports state-based dispatch (Running→InjectInput, Idle→ResumeAndInput), auto-fills from `$GATEWAY_SESSION_ID`, cascade-deletes on session terminate. (#377)
+- **Cron**: `at:+N` relative time syntax (min 1min, max 72h) for one-shot attached jobs with `--attach`. (#377)
+- **Cron**: Prometheus metric `hotplex_cron_attached_total` for attached session dispatch tracking. (#377)
+- **Admin**: `admin:write` scope added to default scopes for cron trigger authorization. (#393)
+- **Docs**: Java SDK reference documentation (`docs/reference/sdk-java.md`). (#393)
 
 ### Fixed
 
-- **Config**: Reflection panic on env-mapping typo — `setField`/`setBoolField`/`setSliceField` 在环境变量映射指向不存在的 struct 字段时不再 panic，而是返回带字段名和目标类型诊断的错误信息。`applyPlatformEnv` 和 `applyMessagingEnv` 通过结构化 warning 日志优雅降级，单个映射失败不阻塞其他环境变量。`runGateway` 启动时调用 `cfg.Validate()`，配置错误（如负 retention_period、零 max_size）在启动阶段输出可见警告。（#390）
-- **Gateway Init**: 死代码安全验证器激活 — `ValidateTools` 和 `ValidateModel` 之前定义了但零生产调用者，tools/models 未经白名单校验直接透传。现在 `ValidateInit` 在 init 握手时对 `allowed_tools` 和 `model` 强制执行白名单校验，不合规的请求返回 `CONFIG_INVALID` 错误。`claudecode/worker.go` 增加 defense-in-depth 模型校验，不在白名单的模型以 warning 记录并静默丢弃。（#386）
-- **Security**: JWT 密钥派生升级至 HKDF (RFC 5869) — `deriveECDSAP256Key` 从直接模约简（`secret bytes mod N`）升级为 `crypto/hkdf.Key` 标准 KDF，info 参数绑定 `"hotplex-ecdsa-p256"` 上下文防止跨协议密钥重用。Go Client SDK (`client/token.go`) 同步更新，消除 Gateway 与 SDK 的密钥派生差异。（#391）
-- **Security**: `GenerateToken`/`GenerateTokenWithJTI` 在 `JWTValidator` 配置 audience 时自动填充 `aud` claim。之前两个函数从不设置 Audience，导致配置 audience 的部署中生成的 token 静默验证失败。（#391）
-- **Security**: `SanitizeArg` 保留非 ASCII 字符 — 过滤条件从 `r < 127` 改为 `r != 127`，CJK/Emoji 等 Unicode 字符不再被截断。`os/exec` 已原生安全，此函数为 defense-in-depth。（#391）
+- **Config**: Reflection panic on env-mapping typo — `setField`/`setBoolField`/`setSliceField` no longer panic on non-existent struct fields, return descriptive errors instead. Startup `Validate()` warns on misconfigurations (negative retention_period, zero max_size). (#390)
+- **Security**: Dead validators activated — `ValidateTools` and `ValidateModel` enforced at init handshake, previously zero production callers. Defense-in-depth model validation in claudecode worker. (#386)
+- **Security**: JWT key derivation upgraded to HKDF (RFC 5869) — Go Client SDK synchronized to match gateway implementation. (#391)
+- **Security**: `GenerateToken`/`GenerateTokenWithJTI` auto-fill `aud` claim when audience configured. (#391)
+- **Security**: `SanitizeArg` preserves non-ASCII characters (CJK/Emoji). (#391)
+- **Admin**: Request body size limit (1MB) added to cron create/update handlers to prevent memory exhaustion. (#380)
+- **Worker**: URL path escaping added to OCS question/elicitation handlers. (#388)
+- **Messaging/Feishu**: Panic recovery added to 3 unprotected goroutine entries (sendTurnSummaryCard, TTS Process, ChatQueue.runWorker). (#378)
+- **Brain**: Structured logging when SafetyGuard blocks threats — previously only incremented atomic counter. (#381)
+- **Brain**: Configurable fail-closed policy (`FailClosedOnBrainError`) + `atomic.Pointer` for global singletons to eliminate data race. (#379)
+- **Cron**: Double metric counting fixed, error path persist fix, migration 008 CHECK constraint two-step table replacement. (#377)
 
 ### Changed
 
-- **Config**: `setField`/`setBoolField`/`setSliceField` 签名从 `void` 改为 `error` 返回类型，调用方 `applyPlatformEnv` 和 `applyMessagingEnv` 已同步更新。（#390）
+- **Cron**: Rename `PayloadAgentTurn` → `PayloadIsolatedSession`, `agent_turn` → `isolated_session` in SQLite migration 008. (#377)
+- **Cron**: Skill manual trimmed 24% — removed creator-unnecessary sections for tighter Agent consumption. (#377)
+- **Config**: `setField`/`setBoolField`/`setSliceField` signatures changed from void to error return type. (#390)
+- **Docs**: Sidebar audience grouping, last-modified timestamps, build-time link validation (zero broken links enforced), CI path expansion for docs changes. (#393)
 
 
 ## [1.11.2] - 2026-05-11
