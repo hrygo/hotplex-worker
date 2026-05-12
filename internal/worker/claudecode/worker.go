@@ -279,7 +279,15 @@ func (w *Worker) buildCLIArgs(session worker.SessionInfo, resume bool) ([]string
 	}
 
 	if len(session.AllowedModels) > 0 {
-		args = append(args, "--model", session.AllowedModels[0])
+		if err := security.ValidateModel(session.AllowedModels[0]); err != nil {
+			slog.Warn("claudecode: model rejected by security policy",
+				"model", session.AllowedModels[0],
+				"session_id", session.SessionID,
+				"error", err,
+			)
+		} else {
+			args = append(args, "--model", session.AllowedModels[0])
+		}
 	}
 	if len(session.AllowedTools) > 0 {
 		args = append(args, "--allowed-tools", joinTools(session.AllowedTools))
