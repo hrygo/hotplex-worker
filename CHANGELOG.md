@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Summary
+
+Unreleased 包含跨 **配置、安全、Gateway** 三个模块的安全加固与可靠性改进。配置层消除 env-mapping 拼写错误导致的 reflection panic；Gateway init 握手阶段接入安全白名单验证（tool/model），将定义了但从未执行的死代码安全策略激活；JWT 密钥派生升级为 HKDF (RFC 5869)，并修复 GenerateToken 缺失 audience claim 和 SanitizeArg 截断非 ASCII 字符的问题。
+
+### Fixed
+
+- **Config**: Reflection panic on env-mapping typo — `setField`/`setBoolField`/`setSliceField` 在环境变量映射指向不存在的 struct 字段时不再 panic，而是返回带字段名和目标类型诊断的错误信息。`applyPlatformEnv` 和 `applyMessagingEnv` 通过结构化 warning 日志优雅降级，单个映射失败不阻塞其他环境变量。`runGateway` 启动时调用 `cfg.Validate()`，配置错误（如负 retention_period、零 max_size）在启动阶段输出可见警告。（#390）
+- **Gateway Init**: 死代码安全验证器激活 — `ValidateTools` 和 `ValidateModel` 之前定义了但零生产调用者，tools/models 未经白名单校验直接透传。现在 `ValidateInit` 在 init 握手时对 `allowed_tools` 和 `model` 强制执行白名单校验，不合规的请求返回 `CONFIG_INVALID` 错误。`claudecode/worker.go` 增加 defense-in-depth 模型校验，不在白名单的模型以 warning 记录并静默丢弃。（#386）
+- **Security**: JWT 密钥派生升级至 HKDF (RFC 5869) — `deriveECDSAP256Key` 从直接模约简（`secret bytes mod N`）升级为 `crypto/hkdf.Key` 标准 KDF，info 参数绑定 `"hotplex-ecdsa-p256"` 上下文防止跨协议密钥重用。Go Client SDK (`client/token.go`) 同步更新，消除 Gateway 与 SDK 的密钥派生差异。（#391）
+- **Security**: `GenerateToken`/`GenerateTokenWithJTI` 在 `JWTValidator` 配置 audience 时自动填充 `aud` claim。之前两个函数从不设置 Audience，导致配置 audience 的部署中生成的 token 静默验证失败。（#391）
+- **Security**: `SanitizeArg` 保留非 ASCII 字符 — 过滤条件从 `r < 127` 改为 `r != 127`，CJK/Emoji 等 Unicode 字符不再被截断。`os/exec` 已原生安全，此函数为 defense-in-depth。（#391）
+
+### Changed
+
+- **Config**: `setField`/`setBoolField`/`setSliceField` 签名从 `void` 改为 `error` 返回类型，调用方 `applyPlatformEnv` 和 `applyMessagingEnv` 已同步更新。（#390）
+
+
 ## [1.11.2] - 2026-05-11
 
 ### Summary
