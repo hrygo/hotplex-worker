@@ -45,7 +45,7 @@ chmod +x hotplex   # macOS / Linux 赋予执行权限
 
 或从源码构建：`git clone` → `make build`，产物在 `bin/` 目录。
 
-验证：`hotplex version`，应输出版本号如 `v1.10.2`。
+验证：`hotplex version`，应输出版本号（如 `v1.11.0` 或更高版本）。
 
 ### 2. 环境配置
 
@@ -180,7 +180,7 @@ hotplex cron create \
 
 ## 下一步
 
-- [用户指南](guides/user/chat-with-ai.md) -- 完整功能参考
+- [使用指南](guides/user/chat-with-ai.md) -- 完整功能参考
 - [架构概览](guides/contributor/architecture.md) -- 系统架构详解
 - [安全模型](explanation/security-model.md) -- 安全策略与最佳实践
 - [配置参考](reference/configuration.md) -- API 与配置参数手册

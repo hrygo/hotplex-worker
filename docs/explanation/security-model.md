@@ -184,3 +184,10 @@ Layer 4: IP 段检查 → 所有解析结果与 BlockedCIDRs 比对
 | 网络绑定 | `localhost` | 按需配置 |
 
 **核心权衡**：Dev 模式优先开发效率（减少认证摩擦），生产模式优先安全（严格的访问控制）。两者共享同一套安全检查代码，只是策略参数不同。
+
+---
+
+## 相关实践
+
+- [安全模型操作指南](../guides/developer/security-model.md) — 7 层安全体系的日常配置与审计
+- [安全策略参数参考](../reference/security-policies.md) — JWT、SSRF、命令白名单、工具控制的完整参数

@@ -155,3 +155,9 @@ pool.UpdateLimits(newMaxSize, newMaxIdlePerUser)
 4. **单用户限制**：根据实际内存设置 `max_memory_per_user`
 5. **开发环境**：`max_size` 设为 5-10，避免开发机资源耗尽
 6. **生产环境**：根据服务器内存计算 `max_size`（每个 Worker ~512MB）
+
+---
+
+## 延伸阅读
+
+- [Session 生命周期](../../explanation/session-lifecycle.md) — 5 状态机、UUIDv5 Key 派生、GC 策略的设计原理

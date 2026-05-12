@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"unicode"
@@ -31,10 +32,12 @@ const (
 type Page struct {
 	Title       string `yaml:"title"`
 	Description string `yaml:"description"`
+	LastMod     string `yaml:"last_modified"`
 	Content     template.HTML
 	Nav         []NavItem
 	ActivePath  string
 	RelRoot     string
+	ModTime     string
 }
 
 type NavItem struct {
@@ -187,6 +190,11 @@ func main() {
 		}
 	}
 
+	// Phase 4: Validate internal links
+	if err := validateLinks(docsDest); err != nil {
+		log.Fatalf("Link validation failed: %v", err)
+	}
+
 	fmt.Println("Documentation built successfully!")
 }
 
@@ -253,7 +261,7 @@ func normalizePath(p string) string {
 }
 
 var categoryTranslations = map[string]string{
-	"guides":       "用户指南",
+	"guides":       "使用指南",
 	"tutorials":    "实践教程",
 	"reference":    "参考文档",
 	"explanation":  "原理解析",
@@ -261,6 +269,11 @@ var categoryTranslations = map[string]string{
 	"specs":        "技术规范",
 	"security":     "安全中心",
 	"superpowers":  "高级能力",
+	// Guide sub-categories
+	"user":        "普通用户",
+	"developer":   "开发者",
+	"enterprise":  "企业运维",
+	"contributor": "贡献者",
 }
 
 func translateCategory(name string) string {
@@ -389,30 +402,50 @@ func scanNavFiles(dir, rel string, discovered map[string]bool) []NavItem {
 	if err != nil {
 		return nil
 	}
-	for _, entry := range entries {
-		name := entry.Name()
-		if entry.IsDir() {
-			// Flatten subdirectories into the current section
-			subItems := scanNavFiles(filepath.Join(dir, name), filepath.Join(rel, name), discovered)
-			items = append(items, subItems...)
-		} else if filepath.Ext(name) == ".md" {
-			if name == "README.md" {
-				continue
-			}
-			relPath := normalizePath(filepath.Join(rel, name))
-			if !discovered[relPath] {
-				continue
-			}
 
-			title, weight := getFileMeta(filepath.Join(dir, name), name)
-			htmlPath := strings.TrimSuffix(relPath, ".md") + ".html"
-			items = append(items, NavItem{
-				Title:  title,
-				Path:   htmlPath,
-				Weight: weight,
-			})
+	var files []os.DirEntry
+	var dirs []os.DirEntry
+	for _, e := range entries {
+		if e.IsDir() {
+			dirs = append(dirs, e)
+		} else if filepath.Ext(e.Name()) == ".md" && e.Name() != "README.md" {
+			files = append(files, e)
 		}
 	}
+
+	// Process markdown files
+	for _, e := range files {
+		relPath := normalizePath(filepath.Join(rel, e.Name()))
+		if !discovered[relPath] {
+			continue
+		}
+		title, weight := getFileMeta(filepath.Join(dir, e.Name()), e.Name())
+		htmlPath := strings.TrimSuffix(relPath, ".md") + ".html"
+		items = append(items, NavItem{
+			Title:  title,
+			Path:   htmlPath,
+			Weight: weight,
+		})
+	}
+
+	// Process subdirectories: preserve hierarchy when directory has only subdirs (>1)
+	groupSubDirs := len(files) == 0 && len(dirs) > 1
+	for _, e := range dirs {
+		name := e.Name()
+		subItems := scanNavFiles(filepath.Join(dir, name), filepath.Join(rel, name), discovered)
+		if len(subItems) == 0 {
+			continue
+		}
+		if groupSubDirs {
+			items = append(items, NavItem{
+				Title:    translateCategory(name),
+				Children: subItems,
+			})
+		} else {
+			items = append(items, subItems...)
+		}
+	}
+
 	return items
 }
 
@@ -473,6 +506,13 @@ func processFile(path string, nav []NavItem) error {
 		page.Title = toTitle(page.Title)
 	}
 	page.Title = translateTitle(page.Title)
+
+	// Resolve display date: explicit frontmatter > file mtime
+	if page.LastMod != "" {
+		page.ModTime = page.LastMod
+	} else if info, err := os.Stat(path); err == nil {
+		page.ModTime = info.ModTime().Format("2006-01-02")
+	}
 
 	// Parse the markdown
 	reader := text.NewReader(rest)
@@ -538,6 +578,40 @@ func toTitle(s string) string {
 	r := []rune(s)
 	r[0] = unicode.ToUpper(r[0])
 	return string(r)
+}
+
+var hrefRegex = regexp.MustCompile(`href="([^"]*\.html[^"]*)"`)
+
+func validateLinks(dest string) error {
+	var broken []string
+	_ = filepath.Walk(dest, func(path string, info os.FileInfo, err error) error {
+		if err != nil || filepath.Ext(path) != ".html" {
+			return nil
+		}
+		data, _ := os.ReadFile(path)
+		rel, _ := filepath.Rel(dest, path)
+		dir := filepath.Dir(path)
+
+		for _, m := range hrefRegex.FindAllSubmatch(data, -1) {
+			href := string(m[1])
+			if strings.HasPrefix(href, "http") || strings.HasPrefix(href, "#") {
+				continue
+			}
+			// Strip query/fragment
+			if idx := strings.IndexAny(href, "#?"); idx >= 0 {
+				href = href[:idx]
+			}
+			target := filepath.Join(dir, href)
+			if _, err := os.Stat(target); err != nil {
+				broken = append(broken, fmt.Sprintf("%s → %s", rel, string(m[1])))
+			}
+		}
+		return nil
+	})
+	if len(broken) > 0 {
+		return fmt.Errorf("%d broken links:\n  %s", len(broken), strings.Join(broken, "\n  "))
+	}
+	return nil
 }
 
 const layout = `
@@ -669,6 +743,27 @@ const layout = `
 
         nav .nav-section {
             margin-bottom: 12px;
+        }
+
+        .nav-subsection { margin: 4px 0 4px 8px; }
+        .subcategory {
+            font-family: var(--font-display);
+            font-weight: 600;
+            font-size: 11px;
+            color: var(--gray-500);
+            padding: 6px 12px 4px 24px;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+        }
+        .nav-subsection ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        .nav-subsection li { margin-bottom: 1px; }
+        .nav-subsection a {
+            padding-left: 24px;
+            font-size: 13px;
         }
 
         nav .category {
@@ -932,6 +1027,13 @@ const layout = `
             letter-spacing: 0.02em;
         }
 
+        .last-updated {
+            font-size: 12px;
+            color: var(--gray-500);
+            margin-bottom: 12px;
+            opacity: 0.7;
+        }
+
         /* Copy Button (JS Generated) */
         .copy-btn {
             position: absolute;
@@ -990,7 +1092,18 @@ const layout = `
                     <div class="nav-links">
                         <ul>
                             {{range .Children}}
+                            {{if .Children}}
+                            <div class="nav-subsection">
+                                <div class="subcategory">{{.Title}}</div>
+                                <ul>
+                                    {{range .Children}}
+                                    <li><a href="{{$.RelRoot}}{{.Path}}" {{if eq $.ActivePath .Path}}class="active"{{end}}>{{.Title}}</a></li>
+                                    {{end}}
+                                </ul>
+                            </div>
+                            {{else}}
                             <li><a href="{{$.RelRoot}}{{.Path}}" {{if eq $.ActivePath .Path}}class="active"{{end}}>{{.Title}}</a></li>
+                            {{end}}
                             {{end}}
                         </ul>
                     </div>
@@ -1022,6 +1135,7 @@ const layout = `
                 {{.Content}}
             </div>
             <footer>
+                {{if .ModTime}}<p class="last-updated">最后更新: {{.ModTime}}</p>{{end}}
                 HOTPLEX &bull; BUILT FOR THE FUTURE OF AGENTIC CODING &bull; 2026
             </footer>
         </article>

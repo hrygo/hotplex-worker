@@ -122,3 +122,9 @@ Agent 配置通过 B/C 双通道注入，每个通道都消耗 context window：
 4. **控制输出**：让 AI 给出简洁回答而非冗长解释，减少 token 消耗
 5. **及时归档**：完成一个主题后 `/gc`，开始新主题时通过新 Session 保持 context 清洁
 6. **监控 tool output**：文件读取是 token 消耗大户，指导 AI 只读必要内容
+
+---
+
+## 延伸阅读
+
+- [Session 生命周期](../../explanation/session-lifecycle.md) — Session 状态机与上下文回收机制的设计原理

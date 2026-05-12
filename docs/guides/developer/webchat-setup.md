@@ -176,3 +176,9 @@ WebChat 通过以下方式之一进行认证：
 - Query Parameter `api_key`（浏览器 WebSocket 的 CORS 兼容方案）
 
 开发模式下（未配置 API Key）自动使用 `anonymous` 用户身份。
+
+---
+
+## 延伸阅读
+
+- [配置参考 — webchat 配置段](../../reference/configuration.md) — WebChat 相关的完整配置参数
