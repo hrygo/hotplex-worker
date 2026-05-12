@@ -142,18 +142,19 @@ func Init(logger *slog.Logger) error {
 
 	if config.Guard.Enabled {
 		if err := InitGuard(GuardConfig{
-			Enabled:            config.Guard.Enabled,
-			InputGuardEnabled:  config.Guard.InputGuardEnabled,
-			OutputGuardEnabled: config.Guard.OutputGuardEnabled,
-			Chat2ConfigEnabled: config.Guard.Chat2ConfigEnabled,
-			MaxInputLength:     config.Guard.MaxInputLength,
-			ScanDepth:          config.Guard.ScanDepth,
-			Sensitivity:        config.Guard.Sensitivity,
-			AdminUsers:         config.Guard.AdminUsers,
-			AdminChannels:      config.Guard.AdminChannels,
-			ResponseTimeout:    config.Guard.ResponseTimeout,
-			RateLimitRPS:       config.Guard.RateLimitRPS,
-			RateLimitBurst:     config.Guard.RateLimitBurst,
+			Enabled:                config.Guard.Enabled,
+			InputGuardEnabled:      config.Guard.InputGuardEnabled,
+			OutputGuardEnabled:     config.Guard.OutputGuardEnabled,
+			Chat2ConfigEnabled:     config.Guard.Chat2ConfigEnabled,
+			MaxInputLength:         config.Guard.MaxInputLength,
+			ScanDepth:              config.Guard.ScanDepth,
+			Sensitivity:            config.Guard.Sensitivity,
+			AdminUsers:             config.Guard.AdminUsers,
+			AdminChannels:          config.Guard.AdminChannels,
+			ResponseTimeout:        config.Guard.ResponseTimeout,
+			RateLimitRPS:           config.Guard.RateLimitRPS,
+			RateLimitBurst:         config.Guard.RateLimitBurst,
+			FailClosedOnBrainError: config.Guard.FailClosedOnBrainError,
 		}, logger); err != nil {
 			logger.Warn("Failed to initialize SafetyGuard", "error", err)
 		}
