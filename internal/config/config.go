@@ -1199,8 +1199,7 @@ func setSliceField(target any, field, value string) error {
 
 // decodeJWTSecret decodes a base64-encoded JWT secret.
 // It supports both standard base64 and URL-safe base64 (with or without padding).
-// Accepts >= 32 bytes: deriveECDSAP256Key truncates via copy to [32]byte,
-// and RequireSecrets validates len >= 32. Canonical length is 32 bytes.
+// Requires >= 32 bytes (HKDF-derived ECDSA key needs sufficient entropy).
 func decodeJWTSecret(secret string) []byte {
 	if decoded, err := base64.StdEncoding.DecodeString(secret); err == nil && len(decoded) >= 32 {
 		return decoded

@@ -3,6 +3,8 @@ package client
 import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
+	"crypto/hkdf"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/pem"
@@ -103,12 +105,14 @@ func loadKey(keyOrPath string) (*ecdsa.PrivateKey, error) {
 	return nil, fmt.Errorf("token: unrecognized key format (expected PEM file, 64-char hex, or 44-char base64): %q", keyOrPath)
 }
 
-// deriveECDSAP256Key mirrors internal/security/jwt.go:161-171.
+// deriveECDSAP256Key mirrors internal/security/jwt.go:deriveECDSAP256Key.
 func deriveECDSAP256Key(seed []byte) *ecdsa.PrivateKey {
-	var scalarBytes [32]byte
-	copy(scalarBytes[:], seed)
+	scalarBytes, err := hkdf.Key(sha256.New, seed, nil, "hotplex-ecdsa-p256", 32)
+	if err != nil {
+		panic("hkdf.Key: " + err.Error())
+	}
+	s := new(big.Int).SetBytes(scalarBytes)
 	N := elliptic.P256().Params().N
-	s := new(big.Int).SetBytes(scalarBytes[:])
 	s.Mod(s, new(big.Int).Sub(N, big.NewInt(1)))
 	s.Add(s, big.NewInt(1))
 	x, y := elliptic.P256().ScalarBaseMult(s.Bytes()) //nolint:staticcheck // SA1019: must use deprecated scalar multiplication for deterministic ECDSA key derivation from seed
