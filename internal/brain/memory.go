@@ -599,59 +599,58 @@ func (m *MemoryManager) GetCompressor() *ContextCompressor {
 	return m.compressor
 }
 
-// Global memory manager instance
+// Global memory manager instances.
+// Use atomic.Pointer for race-free concurrent access.
 var (
-	globalCompressor *ContextCompressor
-	globalMemoryMgr  *MemoryManager
-	memoryOnce       sync.Once
+	globalCompressor atomic.Pointer[ContextCompressor]
+	globalMemoryMgr  atomic.Pointer[MemoryManager]
 )
 
 // GlobalCompressor returns the global ContextCompressor instance.
 func GlobalCompressor() *ContextCompressor {
-	return globalCompressor
+	return globalCompressor.Load()
 }
 
 // GlobalMemoryManager returns the global MemoryManager instance.
 func GlobalMemoryManager() *MemoryManager {
-	return globalMemoryMgr
+	return globalMemoryMgr.Load()
 }
 
 // InitMemory initializes the global memory management system.
 func InitMemory(config CompressionConfig, logger *slog.Logger) {
-	memoryOnce.Do(func() {
-		if Global() == nil {
-			logger.Debug("Cannot init Memory: Brain not configured")
-			return
-		}
+	if Global() == nil {
+		logger.Debug("Cannot init Memory: Brain not configured")
+		return
+	}
 
-		globalCompressor = NewContextCompressor(Global(), config, logger)
-		globalMemoryMgr = NewMemoryManager(globalCompressor, Global(), logger)
+	comp := NewContextCompressor(Global(), config, logger)
+	globalCompressor.Store(comp)
+	globalMemoryMgr.Store(NewMemoryManager(comp, Global(), logger))
 
-		logger.Info("Memory management initialized",
-			"enabled", config.Enabled,
-			"token_threshold", config.TokenThreshold)
-	})
+	logger.Info("Memory management initialized",
+		"enabled", config.Enabled,
+		"token_threshold", config.TokenThreshold)
 }
 
 // RecordTurn is a convenience function to record a turn.
 func RecordTurn(sessionID, role, content string, tokenCount int) {
-	if globalCompressor != nil {
-		globalCompressor.RecordTurn(sessionID, role, content, tokenCount)
+	if c := globalCompressor.Load(); c != nil {
+		c.RecordTurn(sessionID, role, content, tokenCount)
 	}
 }
 
 // CheckCompress is a convenience function to check and compress.
 func CheckCompress(ctx context.Context, sessionID string) (*SessionHistory, error) {
-	if globalCompressor == nil {
-		return nil, nil
+	if c := globalCompressor.Load(); c != nil {
+		return c.CheckAndCompress(ctx, sessionID)
 	}
-	return globalCompressor.CheckAndCompress(ctx, sessionID)
+	return nil, nil
 }
 
 // GetSessionSummary is a convenience function to get session summary.
 func GetSessionSummary(sessionID string) string {
-	if globalCompressor == nil {
-		return ""
+	if c := globalCompressor.Load(); c != nil {
+		return c.GetSessionSummary(sessionID)
 	}
-	return globalCompressor.GetSessionSummary(sessionID)
+	return ""
 }

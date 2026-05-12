@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"sync"
 	"testing"
 	"time"
 
@@ -795,17 +794,15 @@ func TestGetSessionSummary_NilCompressor(t *testing.T) {
 
 func TestInitMemory_NoBrain(t *testing.T) {
 	oldBrain := globalBrain
-	oldCompressor := globalCompressor
-	oldMgr := globalMemoryMgr
+	oldCompressor := globalCompressor.Load()
+	oldMgr := globalMemoryMgr.Load()
 	defer func() {
 		globalBrain = oldBrain
-		globalCompressor = oldCompressor
-		globalMemoryMgr = oldMgr
-		memoryOnce = sync.Once{}
+		globalCompressor.Store(oldCompressor)
+		globalMemoryMgr.Store(oldMgr)
 	}()
 
 	SetGlobal(nil)
-	memoryOnce = sync.Once{}
 
 	InitMemory(DefaultCompressionConfig(), slog.Default())
 	// Should not create compressor when brain is nil
@@ -888,17 +885,15 @@ func TestEstimateTokens_MixedContent(t *testing.T) {
 
 func TestInitMemory_WithBrain(t *testing.T) {
 	oldBrain := globalBrain
-	oldCompressor := globalCompressor
-	oldMemoryMgr := globalMemoryMgr
+	oldCompressor := globalCompressor.Load()
+	oldMemoryMgr := globalMemoryMgr.Load()
 	defer func() {
 		globalBrain = oldBrain
-		globalCompressor = oldCompressor
-		globalMemoryMgr = oldMemoryMgr
-		memoryOnce = sync.Once{}
+		globalCompressor.Store(oldCompressor)
+		globalMemoryMgr.Store(oldMemoryMgr)
 	}()
 
 	SetGlobal(&mockBrainForMemory{})
-	memoryOnce = sync.Once{}
 
 	InitMemory(CompressionConfig{Enabled: true}, slog.Default())
 	assert.NotNil(t, GlobalCompressor())
@@ -914,46 +909,54 @@ func TestInitMemory_WithBrain(t *testing.T) {
 // ========================================
 
 func TestRecordTurn_WithGlobalCompressor(t *testing.T) {
-	oldCompressor := globalCompressor
-	defer func() { globalCompressor = oldCompressor }()
+	oldCompressor := globalCompressor.Load()
+	defer func() { globalCompressor.Store(oldCompressor) }()
 
 	mockBrain := &mockBrainForMemory{}
-	globalCompressor = NewContextCompressor(mockBrain, CompressionConfig{
+	globalCompressor.Store(NewContextCompressor(mockBrain, CompressionConfig{
 		Enabled:         true,
 		TokenThreshold:  10000,
 		CleanupInterval: 0,
-	}, slog.Default())
-	defer globalCompressor.Stop()
+	}, slog.Default()))
+	defer func() {
+		if c := globalCompressor.Load(); c != nil {
+			c.Stop()
+		}
+	}()
 
 	// Should not panic
 	RecordTurn("session1", "user", "hello", 10)
 
-	history := globalCompressor.GetHistory("session1")
+	history := globalCompressor.Load().GetHistory("session1")
 	require.NotNil(t, history)
 	assert.Len(t, history.Turns, 1)
 }
 
 func TestRecordTurn_NilGlobalCompressor(t *testing.T) {
-	oldCompressor := globalCompressor
-	defer func() { globalCompressor = oldCompressor }()
+	oldCompressor := globalCompressor.Load()
+	defer func() { globalCompressor.Store(oldCompressor) }()
 
-	globalCompressor = nil
+	globalCompressor.Store(nil)
 
 	// Should not panic
 	RecordTurn("session1", "user", "hello", 10)
 }
 
 func TestCheckCompress_WithGlobalCompressor(t *testing.T) {
-	oldCompressor := globalCompressor
-	defer func() { globalCompressor = oldCompressor }()
+	oldCompressor := globalCompressor.Load()
+	defer func() { globalCompressor.Store(oldCompressor) }()
 
 	mockBrain := &mockBrainForMemory{}
-	globalCompressor = NewContextCompressor(mockBrain, CompressionConfig{
+	globalCompressor.Store(NewContextCompressor(mockBrain, CompressionConfig{
 		Enabled:         true,
 		TokenThreshold:  10000,
 		CleanupInterval: 0,
-	}, slog.Default())
-	defer globalCompressor.Stop()
+	}, slog.Default()))
+	defer func() {
+		if c := globalCompressor.Load(); c != nil {
+			c.Stop()
+		}
+	}()
 
 	result, err := CheckCompress(context.Background(), "session1")
 	assert.NoError(t, err)
@@ -962,10 +965,10 @@ func TestCheckCompress_WithGlobalCompressor(t *testing.T) {
 }
 
 func TestCheckCompress_NilGlobalCompressor(t *testing.T) {
-	oldCompressor := globalCompressor
-	defer func() { globalCompressor = oldCompressor }()
+	oldCompressor := globalCompressor.Load()
+	defer func() { globalCompressor.Store(oldCompressor) }()
 
-	globalCompressor = nil
+	globalCompressor.Store(nil)
 
 	result, err := CheckCompress(context.Background(), "session1")
 	assert.NoError(t, err)
@@ -973,26 +976,30 @@ func TestCheckCompress_NilGlobalCompressor(t *testing.T) {
 }
 
 func TestGetSessionSummary_WithGlobalCompressor(t *testing.T) {
-	oldCompressor := globalCompressor
-	defer func() { globalCompressor = oldCompressor }()
+	oldCompressor := globalCompressor.Load()
+	defer func() { globalCompressor.Store(oldCompressor) }()
 
 	mockBrain := &mockBrainForMemory{}
-	globalCompressor = NewContextCompressor(mockBrain, CompressionConfig{
+	globalCompressor.Store(NewContextCompressor(mockBrain, CompressionConfig{
 		Enabled:         true,
 		TokenThreshold:  10000,
 		CleanupInterval: 0,
-	}, slog.Default())
-	defer globalCompressor.Stop()
+	}, slog.Default()))
+	defer func() {
+		if c := globalCompressor.Load(); c != nil {
+			c.Stop()
+		}
+	}()
 
 	summary := GetSessionSummary("nonexistent")
 	assert.Empty(t, summary)
 }
 
 func TestGetSessionSummary_NilGlobalCompressor(t *testing.T) {
-	oldCompressor := globalCompressor
-	defer func() { globalCompressor = oldCompressor }()
+	oldCompressor := globalCompressor.Load()
+	defer func() { globalCompressor.Store(oldCompressor) }()
 
-	globalCompressor = nil
+	globalCompressor.Store(nil)
 
 	summary := GetSessionSummary("session1")
 	assert.Empty(t, summary)
