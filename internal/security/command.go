@@ -79,11 +79,12 @@ func containsDangerousChars(input string) bool {
 }
 
 // SanitizeArg removes non-printable and control characters from an argument.
+// Keeps ASCII printable (32-126) and all non-ASCII Unicode (>= 128).
 // This is a defense-in-depth measure; os/exec is already safe without it.
 func SanitizeArg(input string) string {
 	var b strings.Builder
 	for _, r := range input {
-		if r >= 32 && r < 127 {
+		if r >= 32 && r != 127 {
 			b.WriteRune(r)
 		}
 	}
