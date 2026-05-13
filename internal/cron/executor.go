@@ -182,7 +182,7 @@ func buildFeishuDelivery(job *CronJob) string {
 	if chatID == "" {
 		return ""
 	}
-	cmd := fmt.Sprintf("lark-cli im +messages-send --chat-id %s --markdown \"结果内容\"", chatID)
+	cmd := fmt.Sprintf("lark-cli im +messages-send --as bot --chat-id %s --markdown \"结果内容\"", chatID)
 	return fmt.Sprintf(deliveryBlockFmt, job.Name, cmd)
 }
 

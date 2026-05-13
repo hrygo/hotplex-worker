@@ -15,15 +15,18 @@ import java.util.List;
 import java.util.UUID;
 
 import org.bouncycastle.asn1.x9.X9ECParameters;
+import org.bouncycastle.crypto.digests.SHA256Digest;
+import org.bouncycastle.crypto.generators.HKDFBytesGenerator;
+import org.bouncycastle.crypto.params.HKDFParameters;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.jce.spec.ECParameterSpec;
 import org.bouncycastle.math.ec.ECPoint;
 
 /**
  * JWT Token Generator for HotPlex Gateway authentication.
- * Uses ES256 (ECDSA P-256) signing method with key derivation from secret.
- * Key derivation algorithm matches the Go implementation:
- * scalar = (secret_bytes mod (N-1)) + 1, where N is the P-256 curve order.
+ * Uses ES256 (ECDSA P-256) signing method with HKDF key derivation from secret.
+ * Key derivation matches the Go implementation (v1.11.3+):
+ * HKDF-SHA256(secret, salt=nil, info="hotplex-ecdsa-p256") → scalar mod (N-1) + 1
  */
 public class JwtTokenGenerator {
 
@@ -61,22 +64,24 @@ public class JwtTokenGenerator {
     }
 
     /**
-     * Derives an ECDSA P-256 key pair from the secret.
-     * Algorithm matches the Go implementation: scalar mod (N-1) + 1
+     * Derives an ECDSA P-256 key pair from the secret using HKDF (RFC 5869).
+     * Matches the Go gateway implementation (v1.11.3+):
+     * HKDF-SHA256(secret, salt=nil, info="hotplex-ecdsa-p256") → 32 bytes
+     * scalar = derived_bytes mod (N-1) + 1
      */
     private KeyPair deriveKeyPair(String secret) {
         try {
-            // Get P-256 curve parameters from BouncyCastle
             X9ECParameters ecParams = org.bouncycastle.asn1.nist.NISTNamedCurves.getByName("P-256");
             org.bouncycastle.math.ec.ECCurve curve = ecParams.getCurve();
             BigInteger n = ecParams.getN();
             BigInteger nMinusOne = n.subtract(BigInteger.ONE);
             ECPoint g = ecParams.getG();
 
-            // Take first 32 bytes of secret
-            byte[] secretBytes = secret.getBytes();
+            // HKDF-SHA256 extract-then-expand, matching Go implementation
+            HKDFBytesGenerator hkdf = new HKDFBytesGenerator(new SHA256Digest());
+            hkdf.init(new HKDFParameters(secret.getBytes(), null, "hotplex-ecdsa-p256".getBytes()));
             byte[] scalarBytes = new byte[32];
-            System.arraycopy(secretBytes, 0, scalarBytes, 0, Math.min(32, secretBytes.length));
+            hkdf.generateBytes(scalarBytes, 0, 32);
 
             // s = (scalar mod (N-1)) + 1
             BigInteger s = new BigInteger(1, scalarBytes);
