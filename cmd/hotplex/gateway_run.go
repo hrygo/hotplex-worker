@@ -596,6 +596,7 @@ func shutdownGateway(
 			log.Warn("messaging: adapter close", "err", err)
 		}
 	}
+	messaging.DefaultBotRegistry().UnregisterAll()
 
 	closeSTTCache(shutdownCtx, log)
 	closeTTSCache(shutdownCtx, log)

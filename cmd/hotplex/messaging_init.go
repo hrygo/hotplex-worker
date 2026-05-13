@@ -108,6 +108,28 @@ func startMessagingAdapters(ctx context.Context, deps *GatewayDeps) ([]messaging
 		if len(botEntries) == 0 {
 			continue
 		}
+
+		// Startup validation: duplicate bot name within same platform.
+		seenNames := make(map[string]bool, len(botEntries))
+		var validated []*messaging.BotEntry
+		for _, e := range botEntries {
+			if seenNames[e.Name] {
+				log.Error("messaging: duplicate bot name, skipping", "platform", pt, "bot", e.Name)
+				continue
+			}
+			seenNames[e.Name] = true
+			validated = append(validated, e)
+		}
+		botEntries = validated
+
+		// Startup validation: bot count limit.
+		const maxBotsPerPlatform = 10
+		if len(botEntries) > maxBotsPerPlatform {
+			log.Warn("messaging: bot count exceeds limit, excess bots ignored",
+				"platform", pt, "count", len(botEntries), "limit", maxBotsPerPlatform)
+			botEntries = botEntries[:maxBotsPerPlatform]
+		}
+
 		workDir = appCfg.ResolvePlatformWorkDir(string(pt))
 
 		for _, entry := range botEntries {

@@ -87,3 +87,13 @@ func TestBotRegistry_Concurrent(t *testing.T) {
 	all := r.ListAll()
 	require.Len(t, all, 100)
 }
+
+func TestBotRegistry_UnregisterAll(t *testing.T) {
+	r := newBotRegistry()
+	r.Register(&BotEntry{Name: "s1", Platform: PlatformSlack})
+	r.Register(&BotEntry{Name: "f1", Platform: PlatformFeishu})
+	require.Len(t, r.ListAll(), 2)
+
+	r.UnregisterAll()
+	require.Empty(t, r.ListAll())
+}

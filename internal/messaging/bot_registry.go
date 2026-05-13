@@ -113,6 +113,13 @@ func (r *BotRegistry) ListByPlatform(platform PlatformType) []*BotEntry {
 	return result
 }
 
+// UnregisterAll removes all bot entries. Used during gateway shutdown.
+func (r *BotRegistry) UnregisterAll() {
+	r.mu.Lock()
+	clear(r.entries)
+	r.mu.Unlock()
+}
+
 // Global registry instance.
 var defaultRegistry = newBotRegistry()
 
