@@ -9,9 +9,11 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/hrygo/hotplex/internal/worker"
 )
 
-// ServerCommander implements ControlRequester + WorkerCommander for OpenCode Server.
+// ServerCommander implements worker.ControlRequester + worker.WorkerCommander for OpenCode Server.
 // Routes worker commands to OpenCode's HTTP REST API.
 type ServerCommander struct {
 	client       *http.Client
@@ -276,8 +278,8 @@ func (c *ServerCommander) lastAssistantMessageID(ctx context.Context) string {
 
 // Compile-time interface checks.
 var (
-	_ ControlRequester = (*ServerCommander)(nil)
-	_ WorkerCommander  = (*ServerCommander)(nil)
+	_ worker.ControlRequester = (*ServerCommander)(nil)
+	_ worker.WorkerCommander  = (*ServerCommander)(nil)
 )
 
 type openCodeMessage struct {
@@ -300,17 +302,4 @@ type openCodeMessage struct {
 			ModelID    string `json:"modelID"`
 		} `json:"model"`
 	} `json:"info"`
-}
-
-// ControlRequester is implemented by workers that support structured control queries.
-type ControlRequester interface {
-	SendControlRequest(ctx context.Context, subtype string, body map[string]any) (map[string]any, error)
-}
-
-// WorkerCommander is implemented by workers that support worker-level commands
-// beyond the basic Input() passthrough.
-type WorkerCommander interface {
-	Compact(ctx context.Context, args map[string]any) error
-	Clear(ctx context.Context) error
-	Rewind(ctx context.Context, targetID string) error
 }

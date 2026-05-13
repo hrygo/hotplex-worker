@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"runtime"
 	"testing"
 	"time"
 
@@ -483,9 +484,14 @@ func TestManager_WaitOnce_TerminateThenWait(t *testing.T) {
 
 		// Wait after Terminate: waitOnce already fired via the <-done path.
 		// Signal-killed processes have exit code -1 and cmd.Wait returns ExitError.
+		// On Windows, killed processes return STATUS_CONTROL_C_EXIT (3221225786) and nil error.
 		code, waitErr := m.Wait()
-		require.Equal(t, -1, code)
-		require.Error(t, waitErr)
+		if runtime.GOOS == "windows" {
+			require.NotEqual(t, 0, code)
+		} else {
+			require.Equal(t, -1, code)
+			require.Error(t, waitErr)
+		}
 		require.False(t, m.IsRunning())
 	})
 
@@ -505,7 +511,9 @@ func TestManager_WaitOnce_TerminateThenWait(t *testing.T) {
 		require.NoError(t, err) // Kill() returns nil
 
 		_, waitErr := m.Wait()
-		require.Error(t, waitErr) // exec.ExitError: signal
+		if runtime.GOOS != "windows" {
+			require.Error(t, waitErr) // exec.ExitError: signal
+		}
 		require.False(t, m.IsRunning())
 	})
 }
@@ -530,7 +538,9 @@ func TestManager_WaitOnce_KillThenWait(t *testing.T) {
 		require.NoError(t, err)
 
 		_, waitErr := m.Wait()
-		require.Error(t, waitErr) // exec.ExitError: signal: killed
+		if runtime.GOOS != "windows" {
+			require.Error(t, waitErr) // exec.ExitError: signal: killed
+		}
 		require.False(t, m.IsRunning())
 	})
 
