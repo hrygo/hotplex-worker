@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.11.4] - 2026-05-13
+
+### Summary
+
+v1.11.4 是一次 patch 更新，聚焦于 **Cron 迁移修复**。原 migration 005-008 使用 ALTER TABLE ADD COLUMN 追加列后，migration 008 通过 `INSERT INTO ... SELECT *` 重建表，因 SQLite 物理列序与逻辑列序不一致导致 7 列数据错位（state JSON 写入 max_retries、max_runs 写入 state 等）。本次将 4 个迁移合并为单一 005，直接创建最终 schema，彻底消除列序问题。附带迁移修复脚本供已有部署使用。
+
+### Fixed
+
+- **Cron**: Migration column order corruption — consolidating migrations 005-008 into a single 005 that creates the final schema directly, eliminating ALTER TABLE ADD COLUMN + SELECT * misalignment. Data fix script provided for existing deployments.
+
+### ⚠️ Migration Notice (v1.11.0-v1.11.3 users)
+
+If you deployed any version from v1.11.0 to v1.11.3, your `cron_jobs` table has corrupted column data. See `scripts/fix-cron-column-order.sh` for the one-time repair script.
+
 ## [1.11.3] - 2026-05-12
 
 ### Summary
