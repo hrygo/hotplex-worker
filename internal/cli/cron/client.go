@@ -30,6 +30,8 @@ type (
 	CronJob = cron.CronJob
 )
 
+const defaultHotplexConfig = "~/.hotplex/config.yaml"
+
 // gatewayState mirrors cmd/hotplex/pid.go gatewayState to avoid circular imports.
 type gatewayState struct {
 	PID        int    `json:"pid"`
@@ -229,6 +231,14 @@ func PrepareJobForCreate(name, scheduleRaw, message, description, workDir, botID
 
 // TriggerViaAdmin calls the gateway admin API to trigger a job run.
 func TriggerViaAdmin(ctx context.Context, configPath, jobID string) error {
+	// If the user didn't specify --config, try reading the gateway's actual
+	// config path from the PID file to avoid loading a different .env.
+	if configPath == "" || configPath == defaultHotplexConfig {
+		if gwCfg := gatewayConfigPath(); gwCfg != "" {
+			configPath = gwCfg
+		}
+	}
+
 	cfg, err := loadConfig(configPath)
 	if err != nil {
 		return err
@@ -306,6 +316,22 @@ func NotifyGateway() error {
 	}
 
 	return sendReloadSignal(state.PID)
+}
+
+// gatewayConfigPath reads the gateway PID file and returns the config path
+// the running gateway is using. Returns "" if the gateway is not running or
+// the PID file doesn't exist.
+func gatewayConfigPath() string {
+	pidPath := filepath.Join(config.HotplexHome(), ".pids", "gateway.pid")
+	data, err := os.ReadFile(pidPath)
+	if err != nil {
+		return ""
+	}
+	var state gatewayState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return ""
+	}
+	return state.ConfigPath
 }
 
 func loadConfig(configPath string) (*config.Config, error) {
