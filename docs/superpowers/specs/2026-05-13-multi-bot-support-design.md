@@ -32,11 +32,25 @@ Each bot gets an independent Adapter + Bridge + ConnPool instance with its own W
 
 ### New `BotConfig` struct
 
+Each platform has its own bot config type with platform-specific credential fields:
+
 ```go
-type BotConfig struct {
+// SlackBotConfig — credentials are bot_token + app_token
+type SlackBotConfig struct {
     Name       string                `mapstructure:"name"`
     BotToken   string                `mapstructure:"bot_token"`
     AppToken   string                `mapstructure:"app_token"`
+    Soul       string                `mapstructure:"soul,omitempty"`
+    WorkerType string                `mapstructure:"worker_type,omitempty"`
+    STT        *STTConfig            `mapstructure:"stt,omitempty"`
+    TTS        *TTSConfig            `mapstructure:"tts,omitempty"`
+}
+
+// FeishuBotConfig — credentials are app_id + app_secret
+type FeishuBotConfig struct {
+    Name       string                `mapstructure:"name"`
+    AppID      string                `mapstructure:"app_id"`
+    AppSecret  string                `mapstructure:"app_secret"`
     Soul       string                `mapstructure:"soul,omitempty"`
     WorkerType string                `mapstructure:"worker_type,omitempty"`
     STT        *STTConfig            `mapstructure:"stt,omitempty"`
@@ -72,7 +86,22 @@ messaging:
         soul: hr-assistant
 ```
 
-Same pattern applies to `feishu:` with `app_id`/`app_secret` instead of `bot_token`/`app_token`.
+Same pattern applies to `feishu:` with `app_id`/`app_secret` credential fields:
+
+```yaml
+messaging:
+  feishu:
+    enabled: true
+    bots:
+      - name: feishu-tech
+        app_id: cli_xxx
+        app_secret: xxx
+        soul: tech-support
+      - name: feishu-hr
+        app_id: cli_yyy
+        app_secret: yyy
+        soul: hr-assistant
+```
 
 ### Backward compatibility
 
@@ -218,7 +247,7 @@ Existing shutdown ordering (signal → cancel ctx → hub → bridge → session
 
 | File | Change |
 |------|--------|
-| `internal/config/config.go` | Add `BotConfig` struct, `normalizeBots()` to `SlackConfig`/`FeishuConfig` |
+| `internal/config/config.go` | Add `SlackBotConfig`/`FeishuBotConfig` structs, `normalizeBots()` to `SlackConfig`/`FeishuConfig` |
 | `cmd/hotplex/messaging_init.go` | Nested loop: platforms × bots, register to bot registry |
 | `internal/messaging/platform_adapter.go` | Extend `AdapterConfig` with bot-specific fields |
 | `internal/messaging/bot_registry.go` | **New** — thread-safe bot registry |
