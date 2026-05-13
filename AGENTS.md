@@ -6,326 +6,12 @@
 
 ## 目录
 
-- [快速开始](#快速开始)
-- [项目概览](#项目概览)
-- [环境配置](#环境配置)
-- [项目结构](#项目结构)
-- [贡献工作流](#贡献工作流)
-- [开发指南](#开发指南)
-- [代码地图](#代码地图)
 - [约定与规范](#约定与规范)
+- [项目结构](#项目结构)
+- [开发指南](#开发指南)
+- [快速开始](#快速开始)
 - [命令参考](#命令参考)
 - [备注](#备注)
-
----
-
-## 快速开始
-
-**首次使用**：
-```bash
-# 1. 环境配置
-cp configs/env.example .env
-# 编辑 .env 填入 API 密钥
-
-# 2. 快速安装
-make quickstart  # check-tools + build + test-short
-
-# 3. 启动开发环境
-make dev  # gateway + webchat
-```
-
-**开发验证**：
-```bash
-make check   # 完整 CI: quality + build
-make dev-status  # 查看运行服务
-```
-
-**常用命令**：
-- `make build` - 构建网关二进制
-- `make test` - 运行测试（含 -race）
-- `make lint` - golangci-lint 检查
-- `make dev` - 启动开发环境
-- `hotplex service start` - 启动系统服务
-- `hotplex update` - 自更新到最新版本
-
----
-
-## 项目概览
-
-HotPlex Gateway 是基于 Go 1.26 构建的 **AI Coding Agent 统一接入层**。通过 AEP v1 协议抹平不同 Agent 的差异，实现"一次接入，全端分发"。
-
-### ✨ 核心能力
-
-- **🏗️ 核心架构与智能编排**：基于 WebSocket (AEP v1) 的统一网关，集成 `internal/brain` 编排层，支持 AI-native Cron 定时任务自主调度与分发。
-- **🤖 AI 智能与多模态交互**：独创 B/C 双通道配置注入，原生集成 SenseVoice STT 与 Edge-TTS，支持双向语音编程交互。
-- **🛡️ 安全加固与可靠性**：宪法级元认知防御（META-COGNITION），内置 XML Sanitizer，强制 JWT ES256 认证与 Windows 进程隔离。
-- **📱 多平台分发与集成**：一键分发至 Web、Slack、飞书；内置高颜值 Next.js Web Chat；提供 Go/TS/Python/Java 多语言 SDK。
-- **📖 自托管中文文档门户**：Markdown 源文件编译为静态 HTML，通过 `go:embed` 嵌入二进制，`/docs` 路由开箱即用，无需外部服务。
-- **⚙️ 开发者体验与自动化运维**：单二进制一体化 CLI（gateway/service/cron/update），全链路 Prometheus 指标与 OpenTelemetry 追踪。
-
-### 🛠️ 架构亮点
-
-- **状态管理**：5 状态机 Session 生命周期管理，支持会话恢复与原子状态迁移。
-- **广播引擎**：高性能 WebSocket Hub 广播机制，解耦消息生产与消费。
-- **调度系统**：AI-native Cron 调度器（意图识别 → CLI 创建 → 并发槽控制 → 自动回传）。
-- **重试机制**：LLM 智能重试控制器，支持指数退避与可重试错误检测。
-- **配置热注入**：B/C 通道动态注入，支持 Agent 人格与上下文的即时热更新。
-
----
-
-## 环境配置
-
-### 端口分配
-
-| 服务 | 地址 | 说明 |
-|------|------|------|
-| Gateway | localhost:8888 | 默认仅监听本地（安全基线） |
-| Webchat | http://localhost:3000 | Web UI |
-| Admin API | localhost:9999 | 管理 API |
-
-### 目录结构
-
-- **日志**: `./logs/`
-- **PID 文件**: `~/.hotplex/.pids/`
-- **配置**: `configs/` (config.yaml、config-dev.yaml、env.example)
-
-### 环境变量
-
-首次使用需复制并编辑环境配置：
-```bash
-cp configs/env.example .env
-# 编辑 .env 填入 API 密钥
-```
-
----
-
-## 项目结构
-
-### 入口文件 (`cmd/hotplex/`)
-
-| 文件 | 行数 | 功能 |
-|------|------|------|
-| `main.go` | 54 | cobra CLI 根命令 |
-| `gateway_run.go` | 773 | 网关运行：DI 容器、信号处理、hub/session/bridge 初始化 |
-| `gateway_cmd.go` | 219 | gateway 子命令：start/stop/restart + `--detached` 重启 |
-| `gateway_restart_helper.go` | 176 | 独立 PGID restart-helper（Worker-initiated restart） |
-| `gateway_restart_helper_unix.go` | 9 | Unix 平台 `Setpgid: true` |
-| `gateway_restart_helper_windows.go` | 15 | Windows 平台 `CREATE_NEW_PROCESS_GROUP` |
-| `routes.go` | 197 | HTTP 路由注册 |
-| `messaging_init.go` | 233 | 消息适配器生命周期 |
-| `cron_cmd.go` | 82 | cron 子命令注册 |
-| `cron_*` | - | cron CRUD CLI（create/update/delete/get/list/trigger/history） |
-| `service_*.go` | - | 系统服务管理（systemd/launchd/SCM） |
-| `update.go` | 168 | 自更新命令：GitHub API、下载、校验、替换 |
-
-### 核心模块 (`internal/`)
-
-**Gateway** (WebSocket)：
-- `hub.go` - WS 广播 hub
-- `conn.go` - 单个 WS 连接
-- `handler.go` - AEP 事件分发
-- `bridge.go` - Session ↔ Worker 生命周期编排
-- `llm_retry.go` - LLM 自动重试
-- `api.go` - HTTP session 端点
-
-**Session**：
-- `manager.go` - 5 状态机、状态迁移、GC
-- `store.go` - SQLite 持久化
-- `key.go` - UUIDv5 确定性 session ID
-- `pool.go` - 全局 + 每用户配额
-
-**Messaging** (Slack/飞书/TTS)：
-- `bridge.go` - SessionStarter + ConnFactory
-- `platform_adapter.go` - 基础适配器
-- `control_command.go` - 斜杠命令解析
-- `slack/` - Socket Mode 适配器
-- `feishu/` - WS 适配器 + STT
-- `tts/` - Edge-TTS 语音合成 + FFmpeg Opus 转换
-- `interaction/` - Q&A 交互流转
-
-**Brain** (LLM 编排层)：
-- `brain.go` - 核心接口 (Brain/StreamingBrain/RoutableBrain/ObservableBrain) + 全局单例
-- `init.go` - Init() 编排 + enhancedBrainWrapper 中间件链 (retry → cache → rate limit)
-- `config.go` - 13 子配置 + 4 层 API key 发现
-- `guard.go` - 输入/输出安全审计 (Safety Guard)、威胁检测、Chat2Config
-- `router.go` - 意图分发 (Intent Router)、LRU 缓存、快速路径检测
-- `memory.go` - 上下文压缩 + 用户偏好提取 + TTL 清理
-- `extractor.go` - 从 Claude Code / OpenCode 配置文件提取凭证
-- `llm/` - LLM 客户端子包：OpenAI/Anthropic 客户端 + 装饰器链 (retry/cache/ratelimit/circuit/metrics) + 模型路由 + 成本估算
-
-**Worker**：
-- `claudecode/` - Claude Code 适配器 (stdio, `--print --session-id`)
-- `opencodeserver/` - Open Code Server 适配器（单例进程, HTTP+SSE）
-- `proc/` - 跨平台进程生命周期管理 (PGID/Job Object)
-- `base/` - 共享 BaseWorker + Conn + MetadataHandler
-
-**支撑模块**：
-- `config/` - Viper 配置 + 热重载 + 继承 + 审计/回滚。消息层共享默认值（WorkerType, STT, TTS）通过 `FillFrom()` 传播到平台配置。三级优先级：platform > messaging > Default()
-- `agentconfig/` - B/C 双通道 Agent 人格/上下文加载器
-- `security/` - JWT、SSRF、路径安全
-- `skills/` - Skills 发现
-- `metrics/` - Prometheus 指标
-- `service/` - 跨平台系统服务管理（systemd/launchd/SCM）
-- `eventstore/` - 会话事件持久化 + delta 聚合
-- `cron/` - AI-native 定时任务调度器（timerLoop + 并发槽控制 + 生命周期管理 + Skill Manual go:embed）
-- `updater/` - 自更新（GitHub API、sha256 校验、原子替换）
-- `sqlutil/` - SQLite CGO/no-CGO 驱动切换（build tags）
-- `webchat/` - 嵌入式 Next.js SPA (go:embed)
-- `docs/` - 自托管中文文档门户（Markdown → 静态 HTML → go:embed → `/docs` 路由）
-
-### 公共包 (`pkg/`)
-
-- `events/` - AEP v1 数据结构
-- `aep/` - AEP v1 编解码
-
-### 顶层目录
-
-```
-client/    - Go 客户端 SDK
-webchat/   - Next.js Web Chat UI
-examples/  - TS/Python/Java 客户端 SDK
-docs/      - 自托管中文文档源文件（教程、指南、参考、架构设计）
-scripts/   - 构建/校验脚本
-configs/   - 配置文件
-```
-
----
-
-## 贡献工作流
-
-### Admin（仓库管理员）
-
-拥有仓库 write/admin 权限的协作者直接在 origin 仓库创建分支和 PR。
-
-```bash
-# 1. 从最新 main 创建功能分支
-git fetch origin main
-git checkout -b feat/<feature-name> origin/main
-
-# 2. 开发和提交
-git add <files>
-git commit -m "feat(scope): description"
-
-# 3. 推送并创建 PR
-git push -u origin feat/<feature-name>
-gh pr create --title "feat(scope): description"
-
-# 4. 合并后清理
-git checkout main && git pull origin main
-git branch -d feat/<feature-name>
-git push origin --delete feat/<feature-name>
-```
-
-### 外部贡献者（Fork-PR）
-
-无仓库直接权限的外部贡献者使用 fork-PR 工作流。
-
-```bash
-# 1. Fork 并添加远程
-git remote add fork https://github.com/<your-username>/hotplex.git
-
-# 2. 创建功能分支
-git fetch origin main
-git checkout -b feat/<feature-name> origin/main
-
-# 3. 推送到 fork 并创建 PR
-git push -u fork feat/<feature-name>
-gh pr create --base main --head <your-username>:feat/<feature-name> --title "feat(scope): description"
-
-# 4. 合并后清理
-git branch -d feat/<feature-name>
-git push fork --delete feat/<feature-name>
-```
-
-### 通用规范
-
-- 所有变更通过 PR 合并，不直接推送到 main
-- 遵循 Conventional Commits 格式
-- PR 必须通过 CI（lint + test + build）
-
----
-
-## 开发指南
-
-### 新增组件
-
-| 组件类型 | 位置 | 说明 |
-|---------|------|------|
-| 新 AEP 事件类型 | `pkg/events/events.go` | 添加 Kind 常量 + Data 结构体 |
-| 新 Worker 适配器 | `internal/worker/<name>/` | 嵌入 `base.BaseWorker` |
-| 新消息适配器 | `internal/messaging/<name>/` | 嵌入 `PlatformAdapter` |
-| 新诊断检查 | `internal/cli/checkers/` | 实现 `Checker` 接口 |
-| 新 cobra 子命令 | `cmd/hotplex/<name>.go` | 在根命令注册 |
-
-### 修改已有组件
-
-| 组件 | 文件 | 说明 |
-|------|------|------|
-| Agent 配置 | `internal/agentconfig/loader.go` | 文件加载、大小限制 |
-| Session 管理 | `internal/session/manager.go` | 状态机、原子操作 |
-| WebSocket 协议 | `internal/gateway/conn.go` | ReadPump/WritePump |
-| LLM 重试 | `internal/gateway/llm_retry.go` | 可重试错误检测 |
-| Worker 启动命令 | `configs/config.yaml` | `claude_code.command` / `opencode_server.command` |
-| 路由注册 | `cmd/hotplex/routes.go` | HTTP 路由 |
-
-### 跨平台兼容
-
-**必须使用跨平台函数**：
-- 路径：`filepath.Join()`、`filepath.Dir()`、`filepath.Base()`
-- 临时目录：`os.TempDir()`
-- 用户主目录：`os.UserHomeDir()`
-- 进程终止：`process.Kill()`
-
-**平台分离**：
-- 使用 `*_unix.go` / `*_windows.go` build tags
-- CI 必须通过 Linux + macOS + Windows 三平台测试
-
----
-
-## 代码地图
-
-### 入口点
-
-- **CLI Root** → `cmd/hotplex/main.go` - cobra 根命令
-- **GatewayDeps** → `cmd/hotplex/gateway_run.go` - DI 容器
-- **Restart Helper** → `cmd/hotplex/gateway_restart_helper.go` - 独立 PGID restart-helper（`--detached`）
-
-### 核心流程
-
-**Gateway** (`internal/gateway/`):
-- `Hub:68` - WS 广播 hub
-- `Conn:35` - 单个 WS 连接
-- `Handler` - AEP 事件分发
-- `Bridge` - Session ↔ Worker 生命周期
-- `LLMRetryController` - 自动重试
-- `GatewayAPI` - HTTP session 端点
-
-**Session** (`internal/session/`):
-- `Manager:34` - 5 状态机
-- `DeriveSessionKey` - UUIDv5 session ID
-- `PoolManager` - 配额管理
-
-**Messaging** (`internal/messaging/`):
-- `Bridge` - StartSession → Join → Handle
-- `InteractionManager` - 权限/Q&A 管理
-- `ParseControlCommand` - 斜杠命令解析
-
-**Agent Config** (`internal/agentconfig/`):
-- `Load` - 配置加载
-- `BuildSystemPrompt` - B+C 通道组装
-
-**Cron** (`internal/cron/`):
-- `cron.go` - Scheduler 核心：内存索引、CreateJob/UpdateJob/DeleteJob、rebuildIndex
-- `timer.go` - timerLoop tick 引擎：collectDue → 并发槽 CAS → executeJob → 生命周期检查
-- `store.go` - SQLite 持久化：ErrJobNotFound 哨兵、jobColumns 常量、scanner 接口统一 scan
-- `types.go` - CronJob/CronSchedule/CronPayload 数据结构 + Clone() 深拷贝
-- `schedule.go` - 三种调度：cron 表达式 / every 固定间隔 / at 一次性
-- `executor.go` - Worker 执行适配：构造 session、注入环境变量、调用 Agent
-- `delivery.go` - 结果投递：按 platform 回传飞书卡片/Slack 消息
-- `loader.go` - YAML 批量导入：name 幂等 upsert
-- `skill.go` - go:embed cron-skill-manual.md → B 通道技能手册
-- `retry.go` - at 类型指数退避重试
-- `normalize.go` - cron 表达式标准化（? → *，周几映射）
 
 ---
 
@@ -368,6 +54,180 @@ git push fork --delete feat/<feature-name>
 - **元认知层**: `internal/agentconfig/META-COGNITION.md` 定义 Worker 的身份边界（不管理 Transport/状态/协议）、B/C 通道冲突隔离法则（directives 无条件覆盖 context）、配置替换的"命中即终止"机制、配置修改 SOP（禁止改全局来影响 Bot）
 - **XML 安全**: 强制开启 **XML Sanitizer**，对保留标签进行 HTML 转义预防注入
 - **Windows 注入**: 强制使用 **临时文件注入**（`--append-system-prompt-file`），严禁使用内联参数防止 cmd.exe 截断
+
+---
+
+## 项目结构
+
+### 入口点 (`cmd/hotplex/`)
+
+| 文件                                       | 功能                                                           |
+| ------------------------------------------ | -------------------------------------------------------------- |
+| `main.go`                                  | CLI Root (cobra 根命令)                                        |
+| `gateway_run.go`                           | GatewayDeps (DI 容器、信号处理、hub/session/bridge 初始化)     |
+| `gateway_cmd.go`                           | gateway 子命令：start/stop/restart + `--detached`              |
+| `gateway_restart_helper.go`                | Restart Helper（独立 PGID，Worker-initiated restart）          |
+| `gateway_restart_helper_{unix,windows}.go` | 平台隔离（Setpgid / CREATE_NEW_PROCESS_GROUP）                 |
+| `routes.go`                                | HTTP 路由注册                                                  |
+| `messaging_init.go`                        | 消息适配器生命周期                                             |
+| `cron_cmd.go`                              | cron 子命令注册                                                |
+| `cron_*`                                   | cron CRUD CLI（create/update/delete/get/list/trigger/history） |
+| `service_*.go`                             | 系统服务管理（systemd/launchd/SCM）                            |
+| `update.go`                                | 自更新命令：GitHub API、下载、校验、替换                       |
+
+### 核心模块 (`internal/`)
+
+**Gateway** (`internal/gateway/`)：
+- `hub.go` - `Hub` WS 广播 hub
+- `conn.go` - `Conn` 单个 WS 连接 (ReadPump/WritePump)
+- `handler.go` - `Handler` AEP 事件分发
+- `bridge.go` - `Bridge` Session ↔ Worker 生命周期编排
+- `llm_retry.go` - `LLMRetryController` 自动重试
+- `api.go` - `GatewayAPI` HTTP session 端点
+
+**Session** (`internal/session/`)：
+- `manager.go` - `Manager` 5 状态机、状态迁移、GC
+- `store.go` - SQLite 持久化
+- `key.go` - `DeriveSessionKey` UUIDv5 确定性 session ID
+- `pool.go` - `PoolManager` 全局 + 每用户配额
+
+**Messaging** (`internal/messaging/`)：
+- `bridge.go` - `Bridge` StartSession → Join → Handle
+- `platform_adapter.go` - 基础适配器
+- `control_command.go` - `ParseControlCommand` 斜杠命令解析
+- `slack/` - Socket Mode 适配器
+- `feishu/` - WS 适配器 + STT
+- `tts/` - Edge-TTS 语音合成 + FFmpeg Opus 转换
+- `interaction/` - `InteractionManager` 权限/Q&A 管理
+
+**Brain** (`internal/brain/`)：
+- `brain.go` - 核心接口 (Brain/StreamingBrain/RoutableBrain/ObservableBrain) + 全局单例
+- `init.go` - Init() 编排 + enhancedBrainWrapper 中间件链 (retry → cache → rate limit)
+- `config.go` - 13 子配置 + 4 层 API key 发现
+- `guard.go` - 输入/输出安全审计 (Safety Guard)、威胁检测、Chat2Config
+- `router.go` - 意图分发 (Intent Router)、LRU 缓存、快速路径检测
+- `memory.go` - 上下文压缩 + 用户偏好提取 + TTL 清理
+- `extractor.go` - 从 Claude Code / OpenCode 配置文件提取凭证
+- `llm/` - LLM 客户端子包：OpenAI/Anthropic 客户端 + 装饰器链 (retry/cache/ratelimit/circuit/metrics) + 模型路由 + 成本估算
+
+**Agent Config** (`internal/agentconfig/`)：
+- `Load` - 配置加载
+- `BuildSystemPrompt` - B+C 通道组装
+
+**Worker**：
+- `claudecode/` - Claude Code 适配器 (stdio, `--print --session-id`)
+- `opencodeserver/` - Open Code Server 适配器（单例进程, HTTP+SSE）
+- `proc/` - 跨平台进程生命周期管理 (PGID/Job Object)
+- `base/` - 共享 BaseWorker + Conn + MetadataHandler
+
+**Cron** (`internal/cron/`)：
+- `cron.go` - Scheduler 核心：内存索引、CreateJob/UpdateJob/DeleteJob、rebuildIndex
+- `timer.go` - timerLoop tick 引擎：collectDue → 并发槽 CAS → executeJob → 生命周期检查
+- `store.go` - SQLite 持久化：ErrJobNotFound 哨兵、jobColumns 常量、scanner 接口统一 scan
+- `types.go` - CronJob/CronSchedule/CronPayload 数据结构 + Clone() 深拷贝
+- `schedule.go` - 三种调度：cron 表达式 / every 固定间隔 / at 一次性
+- `executor.go` - Worker 执行适配：构造 session、注入环境变量、调用 Agent
+- `delivery.go` - 结果投递：按 platform 回传飞书卡片/Slack 消息
+- `loader.go` - YAML 批量导入：name 幂等 upsert
+- `skill.go` - go:embed cron-skill-manual.md → B 通道技能手册
+- `retry.go` - at 类型指数退避重试
+- `normalize.go` - cron 表达式标准化（? → *，周几映射）
+
+**支撑模块**：
+- `config/` - Viper 配置 + 热重载 + 继承 + 审计/回滚。消息层共享默认值（WorkerType, STT, TTS）通过 `FillFrom()` 传播到平台配置。三级优先级：platform > messaging > Default()
+- `security/` - JWT、SSRF、路径安全
+- `skills/` - Skills 发现
+- `metrics/` - Prometheus 指标
+- `service/` - 跨平台系统服务管理（systemd/launchd/SCM）
+- `eventstore/` - 会话事件持久化 + delta 聚合
+- `updater/` - 自更新（GitHub API、sha256 校验、原子替换）
+- `sqlutil/` - SQLite CGO/no-CGO 驱动切换（build tags）
+- `webchat/` - 嵌入式 Next.js SPA (go:embed)
+- `docs/` - 自托管中文文档门户（Markdown → 静态 HTML → go:embed → `/docs` 路由）
+
+### 公共包 (`pkg/`)
+
+- `events/` - AEP v1 数据结构
+- `aep/` - AEP v1 编解码
+
+### 顶层目录
+
+```
+client/    - Go 客户端 SDK
+webchat/   - Next.js Web Chat UI
+examples/  - TS/Python/Java 客户端 SDK
+docs/      - 自托管中文文档源文件（教程、指南、参考、架构设计）
+scripts/   - 构建/校验脚本
+configs/   - 配置文件
+```
+
+---
+
+## 开发指南
+
+### 新增组件
+
+| 组件类型         | 位置                         | 说明                         |
+| ---------------- | ---------------------------- | ---------------------------- |
+| 新 AEP 事件类型  | `pkg/events/events.go`       | 添加 Kind 常量 + Data 结构体 |
+| 新 Worker 适配器 | `internal/worker/<name>/`    | 嵌入 `base.BaseWorker`       |
+| 新消息适配器     | `internal/messaging/<name>/` | 嵌入 `PlatformAdapter`       |
+| 新诊断检查       | `internal/cli/checkers/`     | 实现 `Checker` 接口          |
+| 新 cobra 子命令  | `cmd/hotplex/<name>.go`      | 在根命令注册                 |
+
+### 修改已有组件
+
+| 组件            | 文件                             | 说明                                              |
+| --------------- | -------------------------------- | ------------------------------------------------- |
+| Agent 配置      | `internal/agentconfig/loader.go` | 文件加载、大小限制                                |
+| Session 管理    | `internal/session/manager.go`    | 状态机、原子操作                                  |
+| WebSocket 协议  | `internal/gateway/conn.go`       | ReadPump/WritePump                                |
+| LLM 重试        | `internal/gateway/llm_retry.go`  | 可重试错误检测                                    |
+| Worker 启动命令 | `configs/config.yaml`            | `claude_code.command` / `opencode_server.command` |
+| 路由注册        | `cmd/hotplex/routes.go`          | HTTP 路由                                         |
+
+### 跨平台兼容
+
+**必须使用跨平台函数**：
+- 路径：`filepath.Join()`、`filepath.Dir()`、`filepath.Base()`
+- 临时目录：`os.TempDir()`
+- 用户主目录：`os.UserHomeDir()`
+- 进程终止：`process.Kill()`
+
+**平台分离**：
+- 使用 `*_unix.go` / `*_windows.go` build tags
+- CI 必须通过 Linux + macOS + Windows 三平台测试
+
+---
+
+## 快速开始
+
+**首次使用**：
+```bash
+# 1. 环境配置
+cp configs/env.example .env
+# 编辑 .env 填入 API 密钥
+
+# 2. 快速安装
+make quickstart  # check-tools + build + test-short
+
+# 3. 启动开发环境
+make dev  # gateway + webchat
+```
+
+**开发验证**：
+```bash
+make check   # 完整 CI: quality + build
+make dev-status  # 查看运行服务
+```
+
+**常用命令**：
+- `make build` - 构建网关二进制
+- `make test` - 运行测试（含 -race）
+- `make lint` - golangci-lint 检查
+- `make dev` - 启动开发环境
+- `hotplex service start` - 启动系统服务
+- `hotplex update` - 自更新到最新版本
 
 ---
 
@@ -513,29 +373,3 @@ hotplex cron history <id|name> [--json]
 - C 通道（`<context>`）：USER.md + MEMORY.md
 - 三级 fallback：全局 → 平台（slack/）→ Bot（slack/U12345/），每文件独立解析，命中即终止
 - 配置热更新：仅在 session 初始化或 `/reset` 时加载，运行中修改不立即生效
-
-### 最大文件
-
-| 文件 | 行数 |
-|------|------|
-| `manager_test.go` | 2249 |
-| `adapter_test.go` (slack) | 2212 |
-| `init_test.go` (brain) | 1472 |
-| `conn_test.go` | 1424 |
-| `adapter.go` (feishu) | 1384 |
-| `wizard.go` (onboard) | 1380 |
-| `adapter.go` (slack) | 1366 |
-| `guard_test.go` (brain) | 1179 |
-| `hub_test.go` | 1172 |
-| `handler_test.go` | 1105 |
-| `memory_test.go` (brain) | 1062 |
-| `commands_test.go` (ocs) | 1050 |
-| `router_test.go` (brain) | 1035 |
-| `store_test.go` (cron) | 1032 |
-| `manager.go` | 998 |
-| `cron.go` | 998 |
-| `e2e_test.go` (slack) | 970 |
-| `worker.go` (ocs) | 878 |
-| `streaming.go` (feishu) | 870 |
-| `worker.go` (claudecode) | 846 |
-| `handler.go` | 843 |

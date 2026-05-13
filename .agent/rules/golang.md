@@ -5,9 +5,8 @@ paths:
 
 # Go 代码规范
 
-> 适用于 hotplex 项目范围的 Go 编码规范
-> 通用标准 → 见 `linting.md` | 测试规范 → 见 `testing.md`
-> AEP 协议 → 见 `aep.md` | Session 管理 → 见 `session.md`
+> 通用标准 → 见 AGENTS.md 约定与规范 | 测试 → 见 `testing.md`
+> AEP 协议 → 见 `aep.md` | Session → 见 `session.md`
 > 安全 → 见 `security.md` | 进程管理 → 见 `worker-proc.md`
 > 可观测性 → 见 `metrics.md` | Agent Config → 见 `agentconfig.md`
 
@@ -88,43 +87,6 @@ type SessionManagerProvider interface { ... }
 
 ---
 
-## atomic.Value / sync.Once 模式
-
-**无锁全局单例**（推荐用于懒初始化单例进程）：
-```go
-// ✅ atomic.Pointer：并发安全的指针替换
-var singleton atomic.Pointer[SingletonProcessManager]
-
-func GetSingleton() *SingletonProcessManager {
-    p := singleton.Load()
-    if p != nil {
-        return p
-    }
-    // 初始化 + CAS 替换
-    sm := newSMP()
-    if !singleton.CompareAndSwap(nil, &sm) {
-        return singleton.Load()
-    }
-    return &sm
-}
-
-// ✅ sync.Once：简单单次初始化
-var initOnce sync.Once
-func Init() { initOnce.Do(func() { /* ... */ }) }
-
-// ✅ atomic.Value：任意类型（比 Pointer 更灵活）
-var v atomic.Value
-v.Store(someData)
-data := v.Load().(Type)
-```
-
-**禁止**：对带 sync.Mutex 的类型用 atomic 操作替代锁；atomic 只适用于简单读/写/交换。
-
-> OCS 单例进程管理模式 → 见 `worker-proc.md`
-> go:embed 模式 → 见 `agentconfig.md`
-
----
-
 ## 错误处理层级
 
 | 场景 | 处理方式 |
@@ -177,22 +139,6 @@ func (l sdkLogger) Error(msg string)  { l.slog.Error(msg) }
 - **超时**：外部请求 30s，Worker 生命周期绑定请求 ctx
 - **衍生**：子任务用 `context.WithTimeout` / `context.WithCancel` 创建
 - **otel 链路**：入口处 `ctx, span := otel.Tracer("hotplex-gateway").Start(ctx, "...")`，结束时 `defer span.End()`
-
----
-
-## Lock 顺序（防止死锁）
-
-固定顺序：`Manager.mu` → `managedSession.mu` — 始终按此顺序加锁
-
-```go
-func (sm *Manager) GetSession(id string) (*ManagedSession, error) {
-    sm.mu.Lock()
-    defer sm.mu.Unlock()
-    ms, ok := sm.sessions[id]
-    // 调用方负责锁 ms.mu，不在这里嵌套
-    return ms, nil
-}
-```
 
 ---
 
