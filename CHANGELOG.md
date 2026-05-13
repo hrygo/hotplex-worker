@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.12.0] - 2026-05-13
+
+### Summary
+
+v1.12.0 是一次 minor 版本更新，聚焦于 **Gateway 运维可靠性**。新增 detached restart helper（Worker-initiated restart 独立 PGID 进程），解决 Worker 进程执行 gateway restart 时被连带杀死的长期问题。同步修复 JWT audience 类型匹配、admin CIDR 热重载和 cron trigger 配置路径解析三个 bug。
+
+### Added
+
+- **Gateway Core**: Detached restart helper — fork 独立 PGID 进程完成 `gateway restart --detached`，在 Gateway/Worker shutdown 后存活并重启。60s 冷却期防止重启循环，跨平台支持 Unix (Setpgid) / Windows (CREATE_NEW_PROCESS_GROUP)。 (#404)
+
+### Fixed
+
+- **Security**: JWT `hasAudience` 类型匹配 — type switch 改为匹配 `jwt.ClaimStrings`（named `[]string` type），修复 audience 验证始终失败的问题。 (#403)
+- **Config**: Admin `allowed_cidrs` 热重载 — 新增 hot-reload callback，配置变更即时生效无需重启。 (#403)
+- **Cron/CLI**: TriggerViaAdmin 配置路径解析 — 通过 gateway PID 文件定位实际 config path，修复 CLI 从不同目录运行时 `.env` 路径不匹配问题。 (#403)
+
 ## [1.11.4] - 2026-05-13
 
 ### Summary
