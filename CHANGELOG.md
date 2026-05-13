@@ -4,11 +4,13 @@
 
 ### Summary
 
-v1.11.4 是一次 patch 更新，聚焦于 **Cron 迁移修复**。原 migration 005-008 使用 ALTER TABLE ADD COLUMN 追加列后，migration 008 通过 `INSERT INTO ... SELECT *` 重建表，因 SQLite 物理列序与逻辑列序不一致导致 7 列数据错位（state JSON 写入 max_retries、max_runs 写入 state 等）。本次将 4 个迁移合并为单一 005，直接创建最终 schema，彻底消除列序问题。附带迁移修复脚本供已有部署使用。
+v1.11.4 是一次 patch 更新，聚焦于 **Cron 迁移修复、投递身份和 Java SDK JWT 同步**。修复 Cron migration 005-008 的 SQLite 列序错位（4 个迁移合并为单一 005）；修复 Cron 飞书投递身份（`--as bot`）；同步 Java SDK JWT 密钥派生至 HKDF (RFC 5869) 与 Gateway 一致；更新 JWT 安全文档。
 
 ### Fixed
 
 - **Cron**: Migration column order corruption — consolidating migrations 005-008 into a single 005 that creates the final schema directly, eliminating ALTER TABLE ADD COLUMN + SELECT * misalignment. Data fix script provided for existing deployments.
+- **Cron**: Feishu delivery identity — executor adds `--as bot` to lark-cli command so cron results are sent as bot identity instead of user identity. (#402)
+- **SDK/Java**: JWT key derivation synced to HKDF-SHA256 (RFC 5869) with info "hotplex-ecdsa-p256", matching Go gateway and Go client SDK. Previous direct-copy derivation produced incompatible keys, causing all Java-generated tokens to be rejected by v1.11.3+ gateways. (#402)
 
 ### ⚠️ Migration Notice (v1.11.0-v1.11.3 users)
 
