@@ -1,7 +1,6 @@
 package admin
 
 import (
-	"encoding/json"
 	"net/http"
 )
 
@@ -29,7 +28,9 @@ func (a *AdminAPI) HandleListBots(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if a.botLister == nil {
-		writeJSON(w, http.StatusOK, []BotEntry{})
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("[]"))
 		return
 	}
 
@@ -37,7 +38,7 @@ func (a *AdminAPI) HandleListBots(w http.ResponseWriter, r *http.Request) {
 	if entries == nil {
 		entries = []BotEntry{}
 	}
-	writeJSON(w, http.StatusOK, entries)
+	respondJSON(w, entries)
 }
 
 // HandleGetBot returns details for a single bot by name.
@@ -62,13 +63,5 @@ func (a *AdminAPI) HandleGetBot(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bot not found", http.StatusNotFound)
 		return
 	}
-	writeJSON(w, http.StatusOK, entry)
-}
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		http.Error(w, "encode failed", http.StatusInternalServerError)
-	}
+	respondJSON(w, entry)
 }
