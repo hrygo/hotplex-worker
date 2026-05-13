@@ -626,6 +626,12 @@ func (m *Manager) Delete(ctx context.Context, id string) error {
 
 	m.mu.Lock()
 	if _, exists := m.sessions[id]; exists {
+		// Re-check worker under lock: AttachWorker may have attached during DB write gap.
+		ms.mu.Lock()
+		if ms.worker != nil {
+			hasWorker = true
+		}
+		ms.mu.Unlock()
 		if hasWorker {
 			metrics.WorkersRunning.WithLabelValues(string(workerType)).Dec()
 			m.pool.Release(uid)
