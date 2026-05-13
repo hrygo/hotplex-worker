@@ -609,9 +609,9 @@ func TestSessionFileGlobs(t *testing.T) {
 
 	patterns := sessionFileGlobs("/home/user", "abc-123")
 	require.Len(t, patterns, 3)
-	require.Contains(t, patterns[0], "projects/*/abc-123.jsonl")
-	require.Contains(t, patterns[1], "projects/*/abc-123")
-	require.Contains(t, patterns[2], "session-env/abc-123")
+	require.Contains(t, filepath.ToSlash(patterns[0]), "projects/*/abc-123.jsonl")
+	require.Contains(t, filepath.ToSlash(patterns[1]), "projects/*/abc-123")
+	require.Contains(t, filepath.ToSlash(patterns[2]), "session-env/abc-123")
 }
 
 func TestSessionFileGlobs_Matches(t *testing.T) {

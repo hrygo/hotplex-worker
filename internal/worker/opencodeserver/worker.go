@@ -55,11 +55,11 @@ import (
 
 // Compile-time interface compliance checks.
 var (
-	_ worker.Worker         = (*Worker)(nil)
-	_ worker.SessionConn    = (*conn)(nil)
-	_ worker.InPlaceReseter = (*Worker)(nil)
-	_ ControlRequester      = (*Worker)(nil)
-	_ WorkerCommander       = (*Worker)(nil)
+	_ worker.Worker           = (*Worker)(nil)
+	_ worker.SessionConn      = (*conn)(nil)
+	_ worker.InPlaceReseter   = (*Worker)(nil)
+	_ worker.ControlRequester = (*Worker)(nil)
+	_ worker.WorkerCommander  = (*Worker)(nil)
 )
 
 // Env blocklist for OpenCode Server worker.

@@ -146,7 +146,7 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 
 			// Query precise context usage from worker via control channel.
 			// Silently falls back to aggregated Done stats on failure.
-			if cr, ok := w.(ControlRequester); ok {
+			if cr, ok := w.(worker.ControlRequester); ok {
 				fetchContextUsage(cr, acc)
 			}
 
@@ -520,7 +520,7 @@ func gitBranchOf(dir string) string { return messaging.GitBranchOf(dir) }
 
 // fetchContextUsage queries the worker for precise context usage via control channel.
 // Errors are silently ignored; the caller falls back to aggregated Done stats.
-func fetchContextUsage(cr ControlRequester, acc *sessionAccumulator) {
+func fetchContextUsage(cr worker.ControlRequester, acc *sessionAccumulator) {
 	ctrlCtx, ctrlCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer ctrlCancel()
 	if resp, err := cr.SendControlRequest(ctrlCtx, "get_context_usage", nil); err == nil {

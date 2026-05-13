@@ -569,6 +569,17 @@ func newBotIDTestConn(h *Hub, wc *websocket.Conn, sessionID, userID, botID strin
 // /tmp/hotplex is an allowed base directory — see AllowedBaseDirs.
 const safeTestWorkDir = "/tmp/hotplex/test-workspace"
 
+// expandedSafeTestWorkDir is the OS-expanded version of safeTestWorkDir,
+// matching what validateAndExpandWorkDir produces at runtime (filepath.Abs on Windows
+// converts the Unix path to a drive-rooted path, changing the UUIDv5 output).
+var expandedSafeTestWorkDir = func() string {
+	expanded, err := config.ExpandAndAbs(safeTestWorkDir)
+	if err != nil {
+		panic("failed to expand safeTestWorkDir: " + err.Error())
+	}
+	return expanded
+}()
+
 // newECDSAKey generates a fresh P-256 ECDSA key pair for ES256 JWT signing in tests.
 func newECDSAKey(t *testing.T) *ecdsa.PrivateKey {
 	t.Helper()
@@ -588,7 +599,7 @@ func TestBotIDIsolation_CreateMismatch(t *testing.T) {
 		botBob         = "bot_bob"
 	)
 	// Derive the server session ID using the same algorithm as conn.go:DeriveSessionKey.
-	derivedSID := session.DeriveSessionKey("alice", worker.WorkerType(workerType), sessionIDConst, safeTestWorkDir)
+	derivedSID := session.DeriveSessionKey("alice", worker.WorkerType(workerType), sessionIDConst, expandedSafeTestWorkDir)
 
 	// Build a JWT token for bot_alice using ES256 (ECDSA P-256).
 	jwtKey := newECDSAKey(t)
@@ -733,7 +744,7 @@ func TestBotIDIsolation_MatchAllowed(t *testing.T) {
 		workerType     = "claude-code"
 		botID          = "bot_team_a"
 	)
-	derivedSID := session.DeriveSessionKey("user1", worker.WorkerType(workerType), sessionIDConst, safeTestWorkDir)
+	derivedSID := session.DeriveSessionKey("user1", worker.WorkerType(workerType), sessionIDConst, expandedSafeTestWorkDir)
 
 	jwtKey := newECDSAKey(t)
 	jwtVal := security.NewJWTValidator(jwtKey, "")
@@ -812,10 +823,10 @@ func TestUserIDOwnership_MismatchRejected(t *testing.T) {
 		workerType     = "claude-code"
 		botID          = "bot_shared"
 	)
-	derivedSIDAlice := session.DeriveSessionKey("alice", worker.WorkerType(workerType), sessionIDConst, safeTestWorkDir)
+	derivedSIDAlice := session.DeriveSessionKey("alice", worker.WorkerType(workerType), sessionIDConst, expandedSafeTestWorkDir)
 	// Bob's derived key is different from alice's, but mock returns alice's session
 	// to simulate a key collision or direct UUID lookup scenario.
-	derivedSIDBob := session.DeriveSessionKey("bob", worker.WorkerType(workerType), sessionIDConst, safeTestWorkDir)
+	derivedSIDBob := session.DeriveSessionKey("bob", worker.WorkerType(workerType), sessionIDConst, expandedSafeTestWorkDir)
 
 	jwtKey := newECDSAKey(t)
 	jwtVal := security.NewJWTValidator(jwtKey, "")
@@ -896,7 +907,7 @@ func TestUserIDOwnership_MatchAllowed(t *testing.T) {
 		workerType     = "claude-code"
 		botID          = "bot_team"
 	)
-	derivedSID := session.DeriveSessionKey("alice", worker.WorkerType(workerType), sessionIDConst, safeTestWorkDir)
+	derivedSID := session.DeriveSessionKey("alice", worker.WorkerType(workerType), sessionIDConst, expandedSafeTestWorkDir)
 
 	jwtKey := newECDSAKey(t)
 	jwtVal := security.NewJWTValidator(jwtKey, "")
@@ -976,7 +987,7 @@ func TestUserIDOwnership_EmptyConnectionUserID_Allowed(t *testing.T) {
 		botID          = "bot_anon_reconnect"
 	)
 	// Empty userID in DeriveSessionKey produces a different key than "alice".
-	derivedSIDEmpty := session.DeriveSessionKey("", worker.WorkerType(workerType), sessionIDConst, safeTestWorkDir)
+	derivedSIDEmpty := session.DeriveSessionKey("", worker.WorkerType(workerType), sessionIDConst, expandedSafeTestWorkDir)
 
 	// Session owned by "alice".
 	existingSession := &session.SessionInfo{
@@ -1047,7 +1058,7 @@ func TestBotIDIsolation_EmptyBotIDAllowed(t *testing.T) {
 		workerType     = "claude-code"
 	)
 	// When no JWT is provided, c.userID defaults to "anon" (from newBotIDTestConn).
-	derivedSID := session.DeriveSessionKey("anon", worker.WorkerType(workerType), sessionIDConst, safeTestWorkDir)
+	derivedSID := session.DeriveSessionKey("anon", worker.WorkerType(workerType), sessionIDConst, expandedSafeTestWorkDir)
 
 	// No JWT token (empty botID scenario).
 	store := new(mockSessionStoreForBotID)
@@ -1111,7 +1122,7 @@ func TestBotIDIsolation_NewSessionStoresBotID(t *testing.T) {
 		workerType     = "claude-code"
 		botID          = "bot_new_session"
 	)
-	derivedSID := session.DeriveSessionKey("user1", worker.WorkerType(workerType), sessionIDConst, safeTestWorkDir)
+	derivedSID := session.DeriveSessionKey("user1", worker.WorkerType(workerType), sessionIDConst, expandedSafeTestWorkDir)
 
 	jwtKey := newECDSAKey(t)
 	jwtVal := security.NewJWTValidator(jwtKey, "")

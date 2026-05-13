@@ -248,7 +248,7 @@ func (m *mockWorkerForHandler) ResetContext(ctx context.Context) error {
 
 // ─── handleReset tests ──────────────────────────────────────────────────────
 
-// mockControlWorker implements both worker.Worker and ControlRequester.
+// mockControlWorker implements both worker.Worker and worker.ControlRequester.
 type mockControlWorker struct {
 	mockWorkerForHandler
 	controlResp    map[string]any
@@ -267,7 +267,7 @@ func (m *mockControlWorker) Terminate(_ context.Context) error {
 	return nil
 }
 
-// mockCommanderWorker implements worker.Worker and WorkerCommander.
+// mockCommanderWorker implements worker.Worker and worker.WorkerCommander.
 type mockCommanderWorker struct {
 	mockWorkerForHandler
 	compactCalled bool
