@@ -227,55 +227,69 @@ func (c *ContextCompressor) CheckAndCompress(ctx context.Context, sessionID stri
 }
 
 // compress performs the actual compression of session history.
+// Uses lock-dropping to avoid blocking all sessions during the LLM call.
 func (c *ContextCompressor) compress(ctx context.Context, sessionID string) (*SessionHistory, error) {
+	// Phase 1: Extract turns to compress under lock (fast).
 	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	history, exists := c.sessions[sessionID]
 	if !exists {
+		c.mu.Unlock()
 		return nil, fmt.Errorf("session %s not found", sessionID)
 	}
-
-	// Identify turns to compress (all except preserved)
 	if len(history.Turns) <= c.config.PreserveTurns*2 {
-		return nil, nil // Not enough turns to compress
+		c.mu.Unlock()
+		return nil, nil
 	}
-
 	preserveStart := len(history.Turns) - c.config.PreserveTurns*2
-	toCompress := history.Turns[:preserveStart]
-	preserved := history.Turns[preserveStart:]
+	toCompress := make([]Turn, preserveStart)
+	copy(toCompress, history.Turns[:preserveStart])
+	totalTokens := history.TotalTokens
+	c.mu.Unlock()
 
-	// Generate summary of old turns
+	// Phase 2: Generate summary outside lock (slow LLM call, 5-30s).
 	summary, err := c.generateSummary(ctx, toCompress)
 	if err != nil {
 		c.logger.Warn("Failed to generate summary", "session_id", sessionID, "error", err)
 		return nil, fmt.Errorf("generate summary: %w", err)
 	}
 
-	// Calculate tokens saved
+	// Phase 3: Apply summary under lock (fast).
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	history, exists = c.sessions[sessionID]
+	if !exists {
+		return nil, fmt.Errorf("session %s not found after compression", sessionID)
+	}
+
+	// Recalculate: turns may have been added during the LLM call.
+	if len(history.Turns) <= c.config.PreserveTurns*2 {
+		return nil, nil
+	}
+	preserveStart = len(history.Turns) - c.config.PreserveTurns*2
+	// Only drop turns up to what we compressed — newly added turns are preserved.
+	dropCount := min(preserveStart, len(toCompress))
 	oldTokens := 0
-	for _, t := range toCompress {
+	for _, t := range history.Turns[:dropCount] {
 		oldTokens += t.TokenCount
 	}
-	summaryTokens := llm.EstimateTokens(summary)
 
-	// Update history
-	history.Turns = preserved
+	summaryTokens := llm.EstimateTokens(summary)
+	history.Turns = history.Turns[dropCount:]
 	history.Summary = summary
 	history.Compressed = true
 	history.TotalTokens = history.TotalTokens - oldTokens + summaryTokens
 
-	// Update metrics
 	c.totalCompressions++
 	c.totalTokensSaved += int64(oldTokens - summaryTokens)
-	c.updateCompressionRatio(float64(history.TotalTokens) / float64(oldTokens+history.TotalTokens))
+	c.updateCompressionRatio(float64(history.TotalTokens) / float64(oldTokens+totalTokens))
 
 	c.logger.Info("Context compressed",
 		"session_id", sessionID,
 		"old_tokens", oldTokens,
 		"summary_tokens", summaryTokens,
 		"tokens_saved", oldTokens-summaryTokens,
-		"preserved_turns", len(preserved))
+		"preserved_turns", len(history.Turns))
 
 	return history, nil
 }
