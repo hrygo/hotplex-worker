@@ -43,17 +43,26 @@ func (a *cronAdminAdapter) UpdateJob(ctx context.Context, id string, updates map
 		return err
 	}
 
-	// Marshal current job, overlay updates, unmarshal back.
+	updated, err := mergeJobUpdates(job, updates)
+	if err != nil {
+		return err
+	}
+	return a.scheduler.UpdateJob(ctx, updated)
+}
+
+// mergeJobUpdates overlays user-supplied updates onto a CronJob via JSON merge.
+// Nested objects (schedule, payload) are replaced entirely, not deep-merged.
+// Protected fields (id, created_at_ms, updated_at_ms, state) are silently dropped.
+func mergeJobUpdates(job *cron.CronJob, updates map[string]any) (*cron.CronJob, error) {
 	base, err := json.Marshal(job)
 	if err != nil {
-		return fmt.Errorf("marshal job: %w", err)
+		return nil, fmt.Errorf("marshal job: %w", err)
 	}
 	var merged map[string]any
 	if err := json.Unmarshal(base, &merged); err != nil {
-		return fmt.Errorf("unmarshal job: %w", err)
+		return nil, fmt.Errorf("unmarshal job: %w", err)
 	}
 	for k, v := range updates {
-		// Protect internal fields from external injection.
 		if _, ok := protectedFields[k]; ok {
 			continue
 		}
@@ -61,14 +70,13 @@ func (a *cronAdminAdapter) UpdateJob(ctx context.Context, id string, updates map
 	}
 	data, err := json.Marshal(merged)
 	if err != nil {
-		return fmt.Errorf("re-marshal: %w", err)
+		return nil, fmt.Errorf("re-marshal: %w", err)
 	}
 	var updated cron.CronJob
 	if err := json.Unmarshal(data, &updated); err != nil {
-		return fmt.Errorf("unmarshal updated: %w", err)
+		return nil, fmt.Errorf("unmarshal updated: %w", err)
 	}
-
-	return a.scheduler.UpdateJob(ctx, &updated)
+	return &updated, nil
 }
 
 func (a *cronAdminAdapter) DeleteJob(ctx context.Context, id string) error {

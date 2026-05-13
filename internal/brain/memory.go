@@ -134,6 +134,9 @@ type ContextCompressor struct {
 	totalCompressions       int64   // Total compression operations performed
 	totalTokensSaved        int64   // Tokens saved by compression
 	averageCompressionRatio float64 // Running average of compression ratios
+
+	// In-flight guard prevents redundant LLM calls for the same session.
+	compressing sync.Map // sessionID → struct{}
 }
 
 // NewContextCompressor creates a new ContextCompressor.
@@ -228,7 +231,13 @@ func (c *ContextCompressor) CheckAndCompress(ctx context.Context, sessionID stri
 
 // compress performs the actual compression of session history.
 // Uses lock-dropping to avoid blocking all sessions during the LLM call.
+// An in-flight guard prevents redundant LLM calls for the same session.
 func (c *ContextCompressor) compress(ctx context.Context, sessionID string) (*SessionHistory, error) {
+	if _, loaded := c.compressing.LoadOrStore(sessionID, struct{}{}); loaded {
+		return nil, nil // another compression already in progress
+	}
+	defer c.compressing.Delete(sessionID)
+
 	// Phase 1: Extract turns to compress under lock (fast).
 	c.mu.Lock()
 	history, exists := c.sessions[sessionID]
