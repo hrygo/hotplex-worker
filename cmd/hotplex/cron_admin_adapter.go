@@ -17,6 +17,14 @@ type cronAdminAdapter struct {
 	turnsStore *eventstore.SQLiteStore
 }
 
+// Fields that must not be overwritten via admin API UpdateJob.
+var protectedFields = map[string]struct{}{
+	"id":            {},
+	"created_at_ms": {},
+	"updated_at_ms": {},
+	"state":         {},
+}
+
 func (a *cronAdminAdapter) CreateJob(ctx context.Context, raw any) error {
 	data, err := json.Marshal(raw)
 	if err != nil {
@@ -45,6 +53,10 @@ func (a *cronAdminAdapter) UpdateJob(ctx context.Context, id string, updates map
 		return fmt.Errorf("unmarshal job: %w", err)
 	}
 	for k, v := range updates {
+		// Protect internal fields from external injection.
+		if _, ok := protectedFields[k]; ok {
+			continue
+		}
 		merged[k] = v
 	}
 	data, err := json.Marshal(merged)

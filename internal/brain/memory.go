@@ -403,17 +403,16 @@ func (c *ContextCompressor) ClearExpired() int {
 // Stats returns compressor statistics.
 func (c *ContextCompressor) Stats() map[string]interface{} {
 	c.mu.RLock()
-	sessionCount := len(c.sessions)
-	c.mu.RUnlock()
-
-	return map[string]interface{}{
+	stats := map[string]interface{}{
 		"enabled":                   c.enabled.Load(),
-		"session_count":             sessionCount,
+		"session_count":             len(c.sessions),
 		"total_compressions":        c.totalCompressions,
 		"total_tokens_saved":        c.totalTokensSaved,
 		"average_compression_ratio": c.averageCompressionRatio,
 		"token_threshold":           c.config.TokenThreshold,
 	}
+	c.mu.RUnlock()
+	return stats
 }
 
 // Context compression limits.
