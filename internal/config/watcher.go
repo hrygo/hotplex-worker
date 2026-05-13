@@ -29,6 +29,7 @@ var hotReloadableFields = map[string]bool{
 	"admin.requests_per_sec":   true,
 	"admin.burst":              true,
 	"admin.tokens":             true,
+	"admin.allowed_cidrs":      true,
 }
 
 // staticFields are config fields that require a restart to take effect.

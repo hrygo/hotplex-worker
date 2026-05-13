@@ -977,6 +977,11 @@ func (c *Config) ResolvePlatformWorkDir(platform string) string {
 	return c.Worker.DefaultWorkDir
 }
 
+// DefaultConfigPath is the default configuration file path used by the CLI
+// and the gateway. Defined here as the single source of truth to avoid
+// duplication across packages.
+const DefaultConfigPath = "~/.hotplex/config.yaml"
+
 // HotplexHome returns the base directory for all HotPlex state (~/.hotplex).
 // It does not create the directory — callers should use ensureDir or rely on
 // the components that need the directory to create it on first use.
