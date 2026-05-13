@@ -69,7 +69,7 @@
 | `gateway_restart_helper.go`                | Restart Helper（独立 PGID，Worker-initiated restart）          |
 | `gateway_restart_helper_{unix,windows}.go` | 平台隔离（Setpgid / CREATE_NEW_PROCESS_GROUP）                 |
 | `routes.go`                                | HTTP 路由注册                                                  |
-| `messaging_init.go`                        | 消息适配器生命周期                                             |
+| `messaging_init.go`                        | 消息适配器生命周期（多 bot 初始化 + fillSlackExtras/fillFeishuExtras） |
 | `cron_cmd.go`                              | cron 子命令注册                                                |
 | `cron_*`                                   | cron CRUD CLI（create/update/delete/get/list/trigger/history） |
 | `service_*.go`                             | 系统服务管理（systemd/launchd/SCM）                            |
@@ -95,6 +95,9 @@
 - `bridge.go` - `Bridge` StartSession → Join → Handle
 - `platform_adapter.go` - 基础适配器
 - `control_command.go` - `ParseControlCommand` 斜杠命令解析
+- `bot_registry.go` - `BotRegistry` 并发安全多 bot 注册表
+- `config.go` - `AdapterConfig` 含 `BotName` 字段
+- `slack/` - Socket Mode 适配器
 - `slack/` - Socket Mode 适配器
 - `feishu/` - WS 适配器 + STT
 - `tts/` - Edge-TTS 语音合成 + FFmpeg Opus 转换
@@ -134,7 +137,7 @@
 - `normalize.go` - cron 表达式标准化（? → *，周几映射）
 
 **支撑模块**：
-- `config/` - Viper 配置 + 热重载 + 继承 + 审计/回滚。消息层共享默认值（WorkerType, STT, TTS）通过 `FillFrom()` 传播到平台配置。三级优先级：platform > messaging > Default()
+- `config/` - Viper 配置 + 热重载 + 继承 + 审计/回滚。消息层共享默认值（WorkerType, STT, TTS）通过 `FillFrom()` 传播到平台配置。三级优先级：platform > messaging > Default()。多 bot 支持：`SlackBotConfig`/`FeishuBotConfig` + `normalizeSlackBots`/`normalizeFeishuBots` 向后兼容归一化
 - `security/` - JWT、SSRF、路径安全
 - `skills/` - Skills 发现
 - `metrics/` - Prometheus 指标
@@ -185,6 +188,8 @@ configs/   - 配置文件
 | LLM 重试        | `internal/gateway/llm_retry.go`  | 可重试错误检测                                    |
 | Worker 启动命令 | `configs/config.yaml`            | `claude_code.command` / `opencode_server.command` |
 | 路由注册        | `cmd/hotplex/routes.go`          | HTTP 路由                                         |
+| 多 bot 配置     | `internal/config/config.go`      | `SlackBotConfig`/`FeishuBotConfig`、normalize、propagation |
+| Bot 状态 API    | `internal/admin/bot_handlers.go` | `BotListerProvider` + HTTP handlers               |
 
 ### 跨平台兼容
 

@@ -10,8 +10,8 @@ cmd/hotplex/
   gateway_run.go     (~530 lines) gateway run: DI pipeline decomposed into initLogging, initOrphanCleanup, initStores, shutdownGateway
   gateway_cmd.go     (~185 lines) gateway subcommand: start/stop/restart + daemon launcher; preserves config path across restarts
   routes.go          (~127 lines) HTTP route registration: /ws (gateway), /admin/*, /health, /metrics
-  admin_adapters.go  (~116 lines) admin provider adapters: bridge concrete types to admin.Provider interfaces
-  messaging_init.go  (~233 lines) messaging adapter lifecycle: iterate enabled platforms → New → Configure → SetHub/SetSM → Start; STT engine setup
+  admin_adapters.go  (~158 lines) admin provider adapters: bridge concrete types to admin.Provider interfaces; botListerAdapter for multi-bot registry
+  messaging_init.go  (~260 lines) messaging adapter lifecycle: multi-bot init (platforms × bots loop), fillSlackExtras/fillFeishuExtras, startup validation, STT engine setup
   doctor.go          (~150 lines) doctor subcommand: run DefaultRegistry checkers, render structured report
   security.go        (~182 lines) security subcommand: path validation, env isolation checks
   onboard.go         (~105 lines) onboard subcommand: launch interactive wizard, generate config
@@ -32,7 +32,7 @@ cmd/hotplex/
 | Signal handler | `gateway_run.go` | SIGINT/SIGTERM → cancel ctx → ordered shutdown |
 | Shutdown order | `gateway_run.go` | signal → cancel → tracing → hub → configWatcher → sessionMgr → HTTP server |
 | HTTP route registration | `routes.go` | `/ws`, `/admin/*`, `/health`, `/metrics` — add new routes here |
-| Messaging adapter wiring | `messaging_init.go` | `startMessagingAdapters()`: iterate config → Register → Configure → Start |
+| Messaging adapter wiring | `messaging_init.go` | `startMessagingAdapters()`: multi-bot loop (platforms × bots) → validate → Register → Configure → Start; `resolveSlackBot`/`resolveFeishuBot` per-bot config lookup |
 | STT engine setup | `messaging_init.go` | STT engine creation per platform: local/persistent/fallback |
 | Gateway flags | `serve.go` | `-config`, `-addr`, `-log-level` etc. → Viper binding |
 | GatewayDeps struct | `serve.go` | Holds all runtime deps: Hub, SM, Bridge, ConfigStore, LLMRetryController |
