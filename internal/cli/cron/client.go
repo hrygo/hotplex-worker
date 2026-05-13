@@ -22,6 +22,7 @@ import (
 	"github.com/hrygo/hotplex/internal/security"
 	"github.com/hrygo/hotplex/internal/session"
 	"github.com/hrygo/hotplex/internal/worker"
+	"github.com/hrygo/hotplex/internal/worker/proc"
 )
 
 // Re-export types for callers that only import this package.
@@ -29,8 +30,6 @@ type (
 	Store   = cron.Store
 	CronJob = cron.CronJob
 )
-
-const defaultHotplexConfig = "~/.hotplex/config.yaml"
 
 // gatewayState mirrors cmd/hotplex/pid.go gatewayState to avoid circular imports.
 type gatewayState struct {
@@ -233,7 +232,7 @@ func PrepareJobForCreate(name, scheduleRaw, message, description, workDir, botID
 func TriggerViaAdmin(ctx context.Context, configPath, jobID string) error {
 	// If the user didn't specify --config, try reading the gateway's actual
 	// config path from the PID file to avoid loading a different .env.
-	if configPath == "" || configPath == defaultHotplexConfig {
+	if configPath == "" || configPath == config.DefaultConfigPath {
 		if gwCfg := gatewayConfigPath(); gwCfg != "" {
 			configPath = gwCfg
 		}
@@ -329,6 +328,9 @@ func gatewayConfigPath() string {
 	}
 	var state gatewayState
 	if err := json.Unmarshal(data, &state); err != nil {
+		return ""
+	}
+	if err := proc.IsProcessAlive(state.PID); err != nil {
 		return ""
 	}
 	return state.ConfigPath
