@@ -31,6 +31,7 @@ func newGatewayCmd() *cobra.Command {
 		newGatewayStartCmd(),
 		newGatewayStopCmd(),
 		newGatewayRestartCmd(),
+		newRestartHelperCmd(),
 	)
 	return cmd
 }
@@ -89,15 +90,24 @@ func newGatewayStopCmd() *cobra.Command {
 
 func newGatewayRestartCmd() *cobra.Command {
 	var configPath string
-	var devMode, daemon bool
+	var devMode, daemon, detached bool
 
 	cmd := &cobra.Command{
 		Use:   "restart",
 		Short: "Restart the gateway server",
 		Long: `Restart the gateway server by stopping the current instance and starting a new one.
 Preserves the same configuration file and mode.
-Use -d to restart as a background daemon.`,
+Use -d to restart as a background daemon.
+Use --detached to spawn a helper process that survives worker shutdown.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if detached {
+				inst, err := findRunningGateway()
+				if err != nil {
+					return fmt.Errorf("gateway: %w", err)
+				}
+				return forkRestartHelper(inst, configPath, devMode, daemon)
+			}
+
 			inst, err := findRunningGateway()
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "gateway: %s (proceeding with start)\n", err)
@@ -139,6 +149,7 @@ Use -d to restart as a background daemon.`,
 	configFlag(cmd, &configPath)
 	cmd.Flags().BoolVar(&devMode, "dev", false, "development mode")
 	cmd.Flags().BoolVarP(&daemon, "daemon", "d", false, "run as background daemon")
+	cmd.Flags().BoolVar(&detached, "detached", false, "spawn detached restart helper (safe when called from worker)")
 	return cmd
 }
 
