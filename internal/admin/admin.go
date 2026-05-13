@@ -73,6 +73,7 @@ type AdminAPI struct {
 	bridge        BridgeProvider
 	configWatcher ConfigWatcherProvider
 	cron          CronSchedulerProvider
+	botLister     BotListerProvider
 	logCollector  LogCollector
 	rateLimiter   atomic.Value // *simpleRateLimiter
 	allowedCIDRs  atomic.Value // []string
@@ -90,6 +91,7 @@ type Deps struct {
 	Bridge        BridgeProvider
 	ConfigWatcher ConfigWatcherProvider
 	Cron          CronSchedulerProvider
+	BotLister     BotListerProvider
 	LogCollector  LogCollector
 	Version       func() string
 	NewSessionID  func() string
@@ -109,6 +111,7 @@ func New(deps Deps) *AdminAPI {
 		bridge:        deps.Bridge,
 		configWatcher: deps.ConfigWatcher,
 		cron:          deps.Cron,
+		botLister:     deps.BotLister,
 		logCollector:  lc,
 		version:       deps.Version,
 		newSessionID:  deps.NewSessionID,

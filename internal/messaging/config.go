@@ -14,6 +14,9 @@ type AdapterConfig struct {
 	// Access control
 	Gate *Gate
 
+	// BotName identifies which bot in a multi-bot configuration this adapter serves.
+	BotName string
+
 	// Platform-specific credentials and settings.
 	// Slack: bot_token, app_token, assistant_enabled, reconnect_base_delay, reconnect_max_delay, transcriber
 	// Feishu: app_id, app_secret, reconnect_base_delay, reconnect_max_delay, transcriber
