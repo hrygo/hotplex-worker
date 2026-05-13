@@ -1423,6 +1423,7 @@ func TestManager_GC_ZombieDetection(t *testing.T) {
 	ms := &managedSession{info: *seed}
 	m.sessions["sess_zombie"] = ms
 	m.mu.Unlock()
+	m.addToRunningIndex("sess_zombie")
 
 	w := newMockWorker(worker.TypeClaudeCode, 0)
 	w.On("Terminate", mock.Anything).Return(nil)
@@ -1467,6 +1468,7 @@ func TestManager_GC_NoZombieWhenRecentIO(t *testing.T) {
 	m.mu.Lock()
 	m.sessions["sess_healthy"] = &managedSession{info: *seed}
 	m.mu.Unlock()
+	m.addToRunningIndex("sess_healthy")
 
 	w := newMockWorker(worker.TypeClaudeCode, 0)
 	w.lastIO = now // very recent IO
@@ -1606,16 +1608,16 @@ func TestManager_GC_TerminatedSessionPreserved(t *testing.T) {
 	m, err := NewManager(ctx, nil, cfg, nil, store)
 	require.NoError(t, err)
 
-	// Seed a TERMINATED session with UpdatedAt old enough to be past retention.
-	oldTime := time.Now().Add(-cfg.Session.RetentionPeriod - time.Hour)
+	// Seed a TERMINATED session within TTL (recent UpdatedAt) — should survive GC eviction.
+	now := time.Now()
 	ms := &managedSession{
 		info: SessionInfo{
 			ID:         "sess_retention_preserved",
 			UserID:     "user1",
 			WorkerType: worker.TypeClaudeCode,
 			State:      events.StateTerminated,
-			CreatedAt:  oldTime,
-			UpdatedAt:  oldTime,
+			CreatedAt:  now.Add(-cfg.Session.RetentionPeriod - time.Hour),
+			UpdatedAt:  now, // within 24h TTL — will not be evicted
 		},
 	}
 	m.mu.Lock()
@@ -1628,12 +1630,12 @@ func TestManager_GC_TerminatedSessionPreserved(t *testing.T) {
 
 	m.gc(ctx)
 
-	// After GC: session STILL in memory because retention cleanup is removed.
-	// TERMINATED records are "resume decision flags" and should not be auto-deleted.
+	// After GC: session STILL in memory because it's within TTL.
+	// TERMINATED records are "resume decision flags" and are only evicted after 24h.
 	m.mu.RLock()
 	_, ok = m.sessions["sess_retention_preserved"]
 	m.mu.RUnlock()
-	require.True(t, ok, "TERMINATED session should remain in memory after GC (resume decision flag)")
+	require.True(t, ok, "TERMINATED session should remain in memory after GC (within TTL)")
 }
 
 func TestManager_GC_TerminatedSession_DBError_NoImpact(t *testing.T) {
@@ -1655,16 +1657,16 @@ func TestManager_GC_TerminatedSession_DBError_NoImpact(t *testing.T) {
 	m, err := NewManager(ctx, nil, cfg, nil, store)
 	require.NoError(t, err)
 
-	// Seed a TERMINATED session.
-	oldTime := time.Now().Add(-cfg.Session.RetentionPeriod - time.Hour)
+	// Seed a TERMINATED session within TTL.
+	now := time.Now()
 	ms := &managedSession{
 		info: SessionInfo{
 			ID:         "sess_retention_noop",
 			UserID:     "user1",
 			WorkerType: worker.TypeClaudeCode,
 			State:      events.StateTerminated,
-			CreatedAt:  oldTime,
-			UpdatedAt:  oldTime,
+			CreatedAt:  now.Add(-cfg.Session.RetentionPeriod - time.Hour),
+			UpdatedAt:  now, // within 24h TTL
 		},
 	}
 	m.mu.Lock()
@@ -2233,4 +2235,144 @@ func TestManager_Pool(t *testing.T) {
 	total, max, _ := pool.Stats()
 	require.Equal(t, 0, total)
 	require.Equal(t, cfg.Pool.MaxSize, max)
+}
+
+// ─── RunningIndex tests ──────────────────────────────────────────────────────
+
+func TestRunningIndex_TransitionMaintained(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	cfg := config.Default()
+	store := new(mockStore)
+	store.Test(t)
+	store.On("Upsert", ctx, mock.AnythingOfType("*session.SessionInfo")).Return(nil)
+	store.On("Close").Return(nil)
+
+	m, err := NewManager(ctx, nil, cfg, nil, store)
+	require.NoError(t, err)
+	defer m.Close()
+
+	// Seed CREATED → transition to RUNNING → index should contain it.
+	now := time.Now()
+	m.mu.Lock()
+	m.sessions["sess_ri"] = &managedSession{info: SessionInfo{
+		ID: "sess_ri", UserID: "u1", WorkerType: worker.TypeClaudeCode,
+		State: events.StateCreated, CreatedAt: now, UpdatedAt: now,
+	}}
+	m.mu.Unlock()
+
+	require.Empty(t, m.getRunningSessionIDs(), "CREATED session should not be in runningIndex")
+
+	err = m.Transition(ctx, "sess_ri", events.StateRunning)
+	require.NoError(t, err)
+	require.Contains(t, m.getRunningSessionIDs(), "sess_ri", "RUNNING transition should add to runningIndex")
+
+	// RUNNING → TERMINATED → removed from index.
+	err = m.TransitionWithReason(ctx, "sess_ri", events.StateTerminated, "test")
+	require.NoError(t, err)
+	require.NotContains(t, m.getRunningSessionIDs(), "sess_ri", "TERMINATED transition should remove from runningIndex")
+}
+
+func TestRunningIndex_DeleteCleanup(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	cfg := config.Default()
+	store := new(mockStore)
+	store.Test(t)
+	store.On("Upsert", ctx, mock.AnythingOfType("*session.SessionInfo")).Return(nil)
+	store.On("Close").Return(nil)
+
+	m, err := NewManager(ctx, nil, cfg, nil, store)
+	require.NoError(t, err)
+	defer m.Close()
+
+	now := time.Now()
+	m.mu.Lock()
+	m.sessions["sess_ri_del"] = &managedSession{info: SessionInfo{
+		ID: "sess_ri_del", UserID: "u1", WorkerType: worker.TypeClaudeCode,
+		State: events.StateRunning, CreatedAt: now, UpdatedAt: now,
+	}}
+	m.mu.Unlock()
+	m.addToRunningIndex("sess_ri_del")
+
+	require.Contains(t, m.getRunningSessionIDs(), "sess_ri_del")
+
+	err = m.Delete(ctx, "sess_ri_del")
+	require.NoError(t, err)
+	require.NotContains(t, m.getRunningSessionIDs(), "sess_ri_del", "Delete should remove from runningIndex")
+}
+
+func TestRunningIndex_DeletePhysicalCleanup(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	cfg := config.Default()
+	store := new(mockStore)
+	store.Test(t)
+	store.On("DeletePhysical", ctx, "sess_ri_phys").Return(nil)
+	store.On("Close").Return(nil)
+
+	m, err := NewManager(ctx, nil, cfg, nil, store)
+	require.NoError(t, err)
+	defer m.Close()
+
+	now := time.Now()
+	m.mu.Lock()
+	m.sessions["sess_ri_phys"] = &managedSession{info: SessionInfo{
+		ID: "sess_ri_phys", UserID: "u1", WorkerType: worker.TypeClaudeCode,
+		State: events.StateRunning, CreatedAt: now, UpdatedAt: now,
+	}}
+	m.mu.Unlock()
+	m.addToRunningIndex("sess_ri_phys")
+
+	require.Contains(t, m.getRunningSessionIDs(), "sess_ri_phys")
+
+	err = m.DeletePhysical(ctx, "sess_ri_phys")
+	require.NoError(t, err)
+	require.NotContains(t, m.getRunningSessionIDs(), "sess_ri_phys", "DeletePhysical should remove from runningIndex")
+}
+
+func TestGC_EvictsOldTerminatedSessions(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	cfg := config.Default()
+	store := new(mockStore)
+	store.Test(t)
+	store.On("GetExpiredMaxLifetime", mock.Anything, mock.AnythingOfType("time.Time")).Return([]string(nil), nil)
+	store.On("GetExpiredIdle", mock.Anything, mock.AnythingOfType("time.Time")).Return([]string(nil), nil)
+	store.On("Close").Return(nil)
+
+	m, err := NewManager(ctx, nil, cfg, nil, store)
+	require.NoError(t, err)
+
+	// Seed a TERMINATED session with UpdatedAt beyond 24h TTL.
+	oldTime := time.Now().Add(-25 * time.Hour)
+	m.mu.Lock()
+	m.sessions["sess_old_term"] = &managedSession{info: SessionInfo{
+		ID: "sess_old_term", UserID: "u1", WorkerType: worker.TypeClaudeCode,
+		State: events.StateTerminated, CreatedAt: oldTime, UpdatedAt: oldTime,
+	}}
+	m.mu.Unlock()
+
+	// Seed a recent TERMINATED session within TTL.
+	recentTime := time.Now()
+	m.mu.Lock()
+	m.sessions["sess_recent_term"] = &managedSession{info: SessionInfo{
+		ID: "sess_recent_term", UserID: "u1", WorkerType: worker.TypeClaudeCode,
+		State: events.StateTerminated, CreatedAt: recentTime, UpdatedAt: recentTime,
+	}}
+	m.mu.Unlock()
+
+	m.gc(ctx)
+
+	// Old TERMINATED session evicted from memory.
+	m.mu.RLock()
+	_, oldOk := m.sessions["sess_old_term"]
+	_, recentOk := m.sessions["sess_recent_term"]
+	m.mu.RUnlock()
+	require.False(t, oldOk, "TERMINATED session older than TTL should be evicted from memory")
+	require.True(t, recentOk, "TERMINATED session within TTL should remain in memory")
 }
