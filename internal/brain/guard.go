@@ -48,6 +48,8 @@ type GuardConfig struct {
 	// Rate limiting for CheckInput calls (per-user)
 	RateLimitRPS   float64 `json:"rate_limit_rps"`   // Requests per second per user (0 = disabled)
 	RateLimitBurst int     `json:"rate_limit_burst"` // Burst capacity per user
+	// Fail-closed policy: when true, block input if deep analysis fails (e.g. LLM backend down)
+	FailClosedOnBrainError bool `json:"fail_closed_on_brain_error"`
 }
 
 // DefaultGuardConfig returns default guard configuration.
@@ -302,6 +304,8 @@ func (g *SafetyGuard) CheckInputWithUser(ctx context.Context, input, userID stri
 	for _, pattern := range g.banPatterns {
 		if pattern.MatchString(input) {
 			g.blockedInputs.Add(1)
+			g.logger.Warn("Input blocked by pattern match",
+				"pattern", pattern.String())
 
 			return &GuardResult{
 				Safe:           false,
@@ -398,7 +402,15 @@ Return JSON:
 
 	if err := g.brain.Analyze(ctx, prompt, &analysis); err != nil {
 		g.logger.Warn("Deep input analysis failed", "error", err)
-		// On error, use pattern result (already passed)
+		if g.config.FailClosedOnBrainError {
+			return &GuardResult{
+				Safe:        false,
+				ThreatLevel: ThreatLevelMedium,
+				ThreatType:  "analysis_unavailable",
+				Reason:      "Deep analysis unavailable, fail-closed policy applied",
+				Action:      GuardActionBlock,
+			}
+		}
 		return &GuardResult{
 			Safe:        true,
 			ThreatLevel: ThreatLevelLow,
@@ -408,6 +420,10 @@ Return JSON:
 
 	if !analysis.Safe {
 		g.blockedInputs.Add(1)
+		g.logger.Warn("Input blocked by deep analysis",
+			"threat_level", analysis.ThreatLevel,
+			"threat_type", analysis.ThreatType,
+			"reason", analysis.Reason)
 
 		return &GuardResult{
 			Safe:        false,
@@ -791,61 +807,55 @@ Keep response concise and actionable.`, err, eventContext)
 
 // === Global instance ===
 
-var (
-	globalGuard *SafetyGuard
-	guardOnce   sync.Once
-)
+// globalGuard holds the global SafetyGuard instance.
+// Uses atomic.Pointer for race-free concurrent access.
+var globalGuard atomic.Pointer[SafetyGuard]
 
 // GlobalGuard returns the global SafetyGuard instance.
 func GlobalGuard() *SafetyGuard {
-	return globalGuard
+	return globalGuard.Load()
 }
 
 // InitGuard initializes the global SafetyGuard.
 func InitGuard(config GuardConfig, logger *slog.Logger) error {
-	var initErr error
-	guardOnce.Do(func() {
-		if Global() == nil {
-			initErr = ErrBrainNotConfigured
-			return
-		}
+	if Global() == nil {
+		return ErrBrainNotConfigured
+	}
 
-		guard, err := NewSafetyGuard(Global(), config, logger)
-		if err != nil {
-			initErr = fmt.Errorf("failed to create SafetyGuard: %w", err)
-			return
-		}
+	guard, err := NewSafetyGuard(Global(), config, logger)
+	if err != nil {
+		return fmt.Errorf("failed to create SafetyGuard: %w", err)
+	}
 
-		globalGuard = guard
-		logger.Info("SafetyGuard initialized",
-			"enabled", config.Enabled,
-			"input_guard", config.InputGuardEnabled,
-			"output_guard", config.OutputGuardEnabled,
-			"chat2config", config.Chat2ConfigEnabled)
-	})
-	return initErr
+	globalGuard.Store(guard)
+	logger.Info("SafetyGuard initialized",
+		"enabled", config.Enabled,
+		"input_guard", config.InputGuardEnabled,
+		"output_guard", config.OutputGuardEnabled,
+		"chat2config", config.Chat2ConfigEnabled)
+	return nil
 }
 
 // CheckInputSafe is a convenience function for input checking.
 func CheckInputSafe(ctx context.Context, input string) *GuardResult {
-	if globalGuard == nil {
-		return &GuardResult{Safe: true, ThreatLevel: ThreatLevelNone, Action: GuardActionAllow}
+	if g := globalGuard.Load(); g != nil {
+		return g.CheckInput(ctx, input)
 	}
-	return globalGuard.CheckInput(ctx, input)
+	return &GuardResult{Safe: true, ThreatLevel: ThreatLevelNone, Action: GuardActionAllow}
 }
 
 // CheckOutputSafe is a convenience function for output checking.
 func CheckOutputSafe(output string) *GuardResult {
-	if globalGuard == nil {
-		return &GuardResult{Safe: true, ThreatLevel: ThreatLevelNone, Action: GuardActionAllow}
+	if g := globalGuard.Load(); g != nil {
+		return g.CheckOutput(output)
 	}
-	return globalGuard.CheckOutput(output)
+	return &GuardResult{Safe: true, ThreatLevel: ThreatLevelNone, Action: GuardActionAllow}
 }
 
 // SanitizeOutputString is a convenience function for output sanitization.
 func SanitizeOutputString(output string) string {
-	if globalGuard == nil {
-		return output
+	if g := globalGuard.Load(); g != nil {
+		return g.SanitizeOutput(output)
 	}
-	return globalGuard.SanitizeOutput(output)
+	return output
 }

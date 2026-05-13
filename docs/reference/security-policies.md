@@ -53,17 +53,24 @@ default:
 | BotID | `bot_id` | string | Bot 标识 |
 | SessionID | `session_id` | string | Session 标识 |
 
-### 密钥派生
+### 密钥派生（HKDF）
 
-当配置为 `[]byte`（原始密钥）时，通过 `deriveECDSAP256Key()` 从字节派生 ECDSA P-256 密钥：
+当配置为 `[]byte`（原始密钥）时，通过 HKDF (RFC 5869) 从字节派生 ECDSA P-256 密钥。info 参数 `"hotplex-ecdsa-p256"` 将派生密钥绑定到特定上下文，防止跨协议密钥复用：
 
 ```go
 func deriveECDSAP256Key(secret []byte) *ecdsa.PrivateKey {
-    // SHA-256 类似的确定性派生
-    // scalar = secret mod (N-1) + 1
-    // 公钥 = scalar * G
+    // HKDF-SHA256 extract-then-expand
+    scalarBytes, _ := hkdf.Key(sha256.New, secret, nil, "hotplex-ecdsa-p256", 32)
+    s := new(big.Int).SetBytes(scalarBytes)
+    N := elliptic.P256().Params().N
+    s.Mod(s, new(big.Int).Sub(N, big.NewInt(1)))
+    s.Add(s, big.NewInt(1))         // scalar ∈ [1, N-1]
+    x, y := elliptic.P256().ScalarBaseMult(s.Bytes())
+    return &ecdsa.PrivateKey{...}
 }
 ```
+
+> **升级注意**：v1.11.3 从 `copy(secret)` 直接截断改为 HKDF。同一个 `HOTPLEX_JWT_SECRET` 会派生出不同的 ECDSA 密钥对，所有旧 token 在升级后立即失效。Go Client SDK 已同步更新。
 
 ### JTI 黑名单
 

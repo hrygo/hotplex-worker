@@ -3,6 +3,7 @@ package feishu
 import (
 	"context"
 	"fmt"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -216,7 +217,14 @@ func (c *FeishuConn) handleDone(ctx context.Context, env *events.Envelope) error
 		"input_tok", d.TotalInputTok,
 	)
 	if c.adapter.turnSummaryEnabled {
-		go c.sendTurnSummaryCard(d)
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					c.adapter.Log.Error("feishu: panic in sendTurnSummaryCard", "panic", r, "stack", string(debug.Stack()))
+				}
+			}()
+			c.sendTurnSummaryCard(d)
+		}()
 	}
 
 	var fullText string
@@ -248,6 +256,11 @@ func (c *FeishuConn) handleDone(ctx context.Context, env *events.Envelope) error
 			ttsCtx, ttsCancel := context.WithTimeout(context.WithoutCancel(ctx), 60*time.Second)
 			go func() {
 				defer ttsCancel()
+				defer func() {
+					if r := recover(); r != nil {
+						c.adapter.Log.Error("feishu: panic in TTS process", "panic", r, "stack", string(debug.Stack()))
+					}
+				}()
 				c.adapter.ttsPipeline.Process(ttsCtx, fullText, chatID, replyID)
 			}()
 		}

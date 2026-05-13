@@ -100,6 +100,7 @@ HotPlex 是一个 AI Coding Agent 统一管理平台。通过飞书、Slack 或 
 | [Go SDK 参考](reference/sdk-go.md)                 | Go 客户端 SDK API 文档              |
 | [TypeScript SDK 参考](reference/sdk-typescript.md) | TypeScript SDK API 文档             |
 | [Python SDK 参考](reference/sdk-python.md)         | Python SDK API 文档                 |
+| [Java SDK 参考](reference/sdk-java.md)             | Java SDK API 文档                   |
 
 ## 概念解释
 

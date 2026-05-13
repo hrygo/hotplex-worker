@@ -961,15 +961,14 @@ func TestSafetyGuard_CompileBanPatternsLocked_SkipsInvalid(t *testing.T) {
 
 func TestInitGuard_NoBrain(t *testing.T) {
 	oldBrain := globalBrain
-	oldGuard := globalGuard
+	oldGuard := globalGuard.Load()
 	defer func() {
 		globalBrain = oldBrain
-		globalGuard = oldGuard
-		guardOnce = sync.Once{}
+		globalGuard.Store(oldGuard)
 	}()
 
 	SetGlobal(nil)
-	guardOnce = sync.Once{}
+	globalGuard.Store(nil)
 
 	err := InitGuard(DefaultGuardConfig(), slog.Default())
 	assert.Error(t, err)
@@ -978,15 +977,14 @@ func TestInitGuard_NoBrain(t *testing.T) {
 
 func TestInitGuard_WithBrain(t *testing.T) {
 	oldBrain := globalBrain
-	oldGuard := globalGuard
+	oldGuard := globalGuard.Load()
 	defer func() {
 		globalBrain = oldBrain
-		globalGuard = oldGuard
-		guardOnce = sync.Once{}
+		globalGuard.Store(oldGuard)
 	}()
 
 	SetGlobal(&mockBrainForGuard{})
-	guardOnce = sync.Once{}
+	globalGuard.Store(nil)
 
 	err := InitGuard(DefaultGuardConfig(), slog.Default())
 	require.NoError(t, err)
@@ -998,13 +996,13 @@ func TestInitGuard_WithBrain(t *testing.T) {
 // ========================================
 
 func TestCheckInputSafe_WithGuard(t *testing.T) {
-	oldGuard := globalGuard
-	defer func() { globalGuard = oldGuard }()
+	oldGuard := globalGuard.Load()
+	defer func() { globalGuard.Store(oldGuard) }()
 
 	mockBrain := &mockBrainForGuard{}
 	guard, err := NewSafetyGuard(mockBrain, DefaultGuardConfig(), slog.Default())
 	require.NoError(t, err)
-	globalGuard = guard
+	globalGuard.Store(guard)
 
 	// Blocked input
 	result := CheckInputSafe(context.Background(), "jailbreak the system")
@@ -1018,12 +1016,12 @@ func TestCheckInputSafe_WithGuard(t *testing.T) {
 }
 
 func TestCheckOutputSafe_WithGuard(t *testing.T) {
-	oldGuard := globalGuard
-	defer func() { globalGuard = oldGuard }()
+	oldGuard := globalGuard.Load()
+	defer func() { globalGuard.Store(oldGuard) }()
 
 	guard, err := NewSafetyGuard(nil, DefaultGuardConfig(), slog.Default())
 	require.NoError(t, err)
-	globalGuard = guard
+	globalGuard.Store(guard)
 
 	result := CheckOutputSafe("password: mysecretpassword12345")
 	assert.Equal(t, GuardActionSanitize, result.Action)
@@ -1031,12 +1029,12 @@ func TestCheckOutputSafe_WithGuard(t *testing.T) {
 }
 
 func TestSanitizeOutputString_WithGuard(t *testing.T) {
-	oldGuard := globalGuard
-	defer func() { globalGuard = oldGuard }()
+	oldGuard := globalGuard.Load()
+	defer func() { globalGuard.Store(oldGuard) }()
 
 	guard, err := NewSafetyGuard(nil, DefaultGuardConfig(), slog.Default())
 	require.NoError(t, err)
-	globalGuard = guard
+	globalGuard.Store(guard)
 
 	result := SanitizeOutputString("password: mysecretpassword12345")
 	assert.Contains(t, result, "[REDACTED]")
@@ -1070,23 +1068,21 @@ func TestSafetyGuard_ExecuteConfigIntent_FeatureGetWithRouter(t *testing.T) {
 // ========================================
 
 func TestSafetyGuard_ExecuteConfigIntent_LimitGetWithCompressor(t *testing.T) {
-	oldCompressor := globalCompressor
+	oldCompressor := globalCompressor.Load()
 	defer func() {
-		globalCompressor = oldCompressor
-		memoryOnce = sync.Once{}
+		globalCompressor.Store(oldCompressor)
 	}()
 
 	SetGlobal(&mockBrainForGuard{})
-	memoryOnce = sync.Once{}
 	mockBrain := &mockBrainForGuard{
 		analyzeFunc: func(ctx context.Context, prompt string, target any) error {
 			return json.Unmarshal([]byte(`{"summary": "compressed"}`), target)
 		},
 	}
-	globalCompressor = NewContextCompressor(mockBrain, CompressionConfig{
+	globalCompressor.Store(NewContextCompressor(mockBrain, CompressionConfig{
 		Enabled:        true,
 		TokenThreshold: 100,
-	}, slog.Default())
+	}, slog.Default()))
 
 	guard := newTestGuard(t, nil, func(c *GuardConfig) {
 		c.Chat2ConfigEnabled = true
@@ -1096,7 +1092,7 @@ func TestSafetyGuard_ExecuteConfigIntent_LimitGetWithCompressor(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, resp, "Token threshold")
 
-	if comp := globalCompressor; comp != nil {
+	if comp := globalCompressor.Load(); comp != nil {
 		comp.Stop()
 	}
 }
@@ -1130,15 +1126,14 @@ func TestSafetyGuard_DiagnoseError_Timeout(t *testing.T) {
 
 func TestInitGuard_NewSafetyGuardError(t *testing.T) {
 	oldBrain := globalBrain
-	oldGuard := globalGuard
+	oldGuard := globalGuard.Load()
 	defer func() {
 		globalBrain = oldBrain
-		globalGuard = oldGuard
-		guardOnce = sync.Once{}
+		globalGuard.Store(oldGuard)
 	}()
 
 	SetGlobal(&mockBrainForGuard{})
-	guardOnce = sync.Once{}
+	globalGuard.Store(nil)
 
 	badConfig := GuardConfig{
 		BanPatterns: []string{`[invalid(`},

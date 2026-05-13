@@ -10,6 +10,8 @@ difficulty: intermediate
 
 > `hotplex-client` — HotPlex Gateway 的官方 Python 客户端，基于 `websockets` 实现异步 AEP v1 全双工协议。
 
+> **SDK 位置**：Go SDK 位于仓库根目录的 `client/`（独立 Go module），Python / TypeScript / Java SDK 位于 `examples/` 目录。
+
 ## 安装
 
 ```bash

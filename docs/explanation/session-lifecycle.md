@@ -250,3 +250,9 @@ if ms.info.State == RUNNING && ms.worker != nil {
 - `internal/gateway/bridge.go` -- Session-Worker 生命周期编排
 - `internal/gateway/hub.go` -- WebSocket Hub 广播与连接管理
 - `pkg/events/events.go` -- 5 状态定义与合法转换
+
+---
+
+## 相关实践
+
+- [Session 管理指南](../guides/developer/session-management.md) — 日常运维中的 Session 操作（/gc、/reset、Resume）

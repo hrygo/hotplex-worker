@@ -1,6 +1,56 @@
 # Changelog
 
-## [Unreleased]
+## [1.11.4] - 2026-05-13
+
+### Summary
+
+v1.11.4 是一次 patch 更新，聚焦于 **Cron 迁移修复、投递身份和 Java SDK JWT 同步**。修复 Cron migration 005-008 的 SQLite 列序错位（4 个迁移合并为单一 005）；修复 Cron 飞书投递身份（`--as bot`）；同步 Java SDK JWT 密钥派生至 HKDF (RFC 5869) 与 Gateway 一致；更新 JWT 安全文档。
+
+### Fixed
+
+- **Cron**: Migration column order corruption — consolidating migrations 005-008 into a single 005 that creates the final schema directly, eliminating ALTER TABLE ADD COLUMN + SELECT * misalignment. Data fix script provided for existing deployments.
+- **Cron**: Feishu delivery identity — executor adds `--as bot` to lark-cli command so cron results are sent as bot identity instead of user identity. (#402)
+- **SDK/Java**: JWT key derivation synced to HKDF-SHA256 (RFC 5869) with info "hotplex-ecdsa-p256", matching Go gateway and Go client SDK. Previous direct-copy derivation produced incompatible keys, causing all Java-generated tokens to be rejected by v1.11.3+ gateways. (#402)
+
+### ⚠️ Migration Notice (v1.11.0-v1.11.3 users)
+
+If you deployed any version from v1.11.0 to v1.11.3, your `cron_jobs` table has corrupted column data. See `scripts/fix-cron-column-order.sh` for the one-time repair script.
+
+## [1.11.3] - 2026-05-12
+
+### Summary
+
+v1.11.3 是一次 patch 更新，聚焦于 **Cron attached session**、**安全加固双批次** 和 **文档中心演进**。新增 attached session 支持定时注入现有会话（`--attach` CLI，`at:+N` 相对时间语法）；两个安全批次覆盖 config reflection panic、dead validators 激活、飞书 goroutine panic recovery、admin body size limit 等 11 项修复；文档中心新增 sidebar audience grouping、构建时 link validation、Java SDK 参考文档。
+
+### Added
+
+- **Cron**: Attached session — inject cron prompts into existing live sessions via `--attach` CLI flag. Supports state-based dispatch (Running→InjectInput, Idle→ResumeAndInput), auto-fills from `$GATEWAY_SESSION_ID`, cascade-deletes on session terminate. (#377)
+- **Cron**: `at:+N` relative time syntax (min 1min, max 72h) for one-shot attached jobs with `--attach`. (#377)
+- **Cron**: Prometheus metric `hotplex_cron_attached_total` for attached session dispatch tracking. (#377)
+- **Admin**: `admin:write` scope added to default scopes for cron trigger authorization. (#393)
+- **Docs**: Java SDK reference documentation (`docs/reference/sdk-java.md`). (#393)
+
+### Fixed
+
+- **Config**: Reflection panic on env-mapping typo — `setField`/`setBoolField`/`setSliceField` no longer panic on non-existent struct fields, return descriptive errors instead. Startup `Validate()` warns on misconfigurations (negative retention_period, zero max_size). (#390)
+- **Security**: Dead validators activated — `ValidateTools` and `ValidateModel` enforced at init handshake, previously zero production callers. Defense-in-depth model validation in claudecode worker. (#386)
+- **Security**: JWT key derivation upgraded to HKDF (RFC 5869) — Go Client SDK synchronized to match gateway implementation. (#391)
+- **Security**: `GenerateToken`/`GenerateTokenWithJTI` auto-fill `aud` claim when audience configured. (#391)
+- **Security**: `SanitizeArg` preserves non-ASCII characters (CJK/Emoji). (#391)
+- **Admin**: Request body size limit (1MB) added to cron create/update handlers to prevent memory exhaustion. (#380)
+- **Worker**: URL path escaping added to OCS question/elicitation handlers. (#388)
+- **Messaging/Feishu**: Panic recovery added to 3 unprotected goroutine entries (sendTurnSummaryCard, TTS Process, ChatQueue.runWorker). (#378)
+- **Brain**: Structured logging when SafetyGuard blocks threats — previously only incremented atomic counter. (#381)
+- **Brain**: Configurable fail-closed policy (`FailClosedOnBrainError`) + `atomic.Pointer` for global singletons to eliminate data race. (#379)
+- **Cron**: Double metric counting fixed, error path persist fix, migration 008 CHECK constraint two-step table replacement. (#377)
+
+### Changed
+
+- **Cron**: Rename `PayloadAgentTurn` → `PayloadIsolatedSession`, `agent_turn` → `isolated_session` in SQLite migration 008. (#377)
+- **Cron**: Skill manual trimmed 24% — removed creator-unnecessary sections for tighter Agent consumption. (#377)
+- **Config**: `setField`/`setBoolField`/`setSliceField` signatures changed from void to error return type. (#390)
+- **Docs**: Sidebar audience grouping, last-modified timestamps, build-time link validation (zero broken links enforced), CI path expansion for docs changes. (#393)
+
 
 ## [1.11.2] - 2026-05-11
 

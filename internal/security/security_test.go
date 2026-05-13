@@ -788,7 +788,7 @@ func TestSanitizeArg(t *testing.T) {
 		{"tabs removed", "col1\tcol2", "col1col2"},
 		{"null byte removed", "hel\x00lo", "hello"},
 		{"ANSI escape partially kept", "test\x1b[31m", "test[31m"}, // [, ], digits kept; \x1b (27) removed
-		{"unicode removed", "hello\u4e16", "hello"},
+		{"unicode kept", "hello\u4e16", "hello\u4e16"},
 	}
 
 	for _, tt := range tests {

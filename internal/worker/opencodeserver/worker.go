@@ -249,7 +249,7 @@ func (w *Worker) HandlePermissionResponse(ctx context.Context, reqID string, all
 }
 
 func (w *Worker) HandleQuestionResponse(ctx context.Context, reqID string, answers map[string]string) error {
-	return w.httpPost(ctx, fmt.Sprintf("/question/%s/reply", reqID),
+	return w.httpPost(ctx, fmt.Sprintf("/question/%s/reply", url.PathEscape(reqID)),
 		map[string][][]string{"answers": answersToArrays(answers)})
 }
 
@@ -258,7 +258,7 @@ func (w *Worker) HandleElicitationResponse(ctx context.Context, reqID, action st
 	if content != nil {
 		payload["content"] = content
 	}
-	return w.httpPost(ctx, fmt.Sprintf("/elicitation/%s/reply", reqID), payload)
+	return w.httpPost(ctx, fmt.Sprintf("/elicitation/%s/reply", url.PathEscape(reqID)), payload)
 }
 
 // Resume reconnects to an existing session on the shared OpenCode server.

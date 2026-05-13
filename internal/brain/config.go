@@ -139,18 +139,19 @@ type MemoryCompressionConfig struct {
 
 // SafetyGuardFeatureConfig configures safety guardrails.
 type SafetyGuardFeatureConfig struct {
-	Enabled            bool          // Enable safety guard
-	InputGuardEnabled  bool          // Enable input validation
-	OutputGuardEnabled bool          // Enable output sanitization
-	Chat2ConfigEnabled bool          // Enable natural language config changes (security risk)
-	MaxInputLength     int           // Maximum input length
-	ScanDepth          int           // Depth for nested context scanning
-	Sensitivity        string        // Detection sensitivity: "low", "medium", "high"
-	AdminUsers         []string      // User IDs with admin privileges
-	AdminChannels      []string      // Channel IDs with admin privileges
-	ResponseTimeout    time.Duration // Timeout for Brain API calls
-	RateLimitRPS       float64       // Requests per second per user (0 = disabled)
-	RateLimitBurst     int           // Burst capacity per user
+	Enabled                bool          // Enable safety guard
+	InputGuardEnabled      bool          // Enable input validation
+	OutputGuardEnabled     bool          // Enable output sanitization
+	Chat2ConfigEnabled     bool          // Enable natural language config changes (security risk)
+	MaxInputLength         int           // Maximum input length
+	ScanDepth              int           // Depth for nested context scanning
+	Sensitivity            string        // Detection sensitivity: "low", "medium", "high"
+	AdminUsers             []string      // User IDs with admin privileges
+	AdminChannels          []string      // Channel IDs with admin privileges
+	ResponseTimeout        time.Duration // Timeout for Brain API calls
+	RateLimitRPS           float64       // Requests per second per user (0 = disabled)
+	RateLimitBurst         int           // Burst capacity per user
+	FailClosedOnBrainError bool          // Block input when deep analysis fails (e.g. LLM down)
 }
 
 // === Main Config ===
@@ -365,18 +366,19 @@ func buildConfig(apiKey, provider, protocol, model, endpoint string) Config {
 			SessionTTL:       getEnv("HOTPLEX_BRAIN_MEMORY_SESSION_TTL", "24h"),
 		},
 		Guard: SafetyGuardFeatureConfig{
-			Enabled:            getBoolEnv("HOTPLEX_BRAIN_GUARD_ENABLED", true),
-			InputGuardEnabled:  getBoolEnv("HOTPLEX_BRAIN_GUARD_INPUT_ENABLED", true),
-			OutputGuardEnabled: getBoolEnv("HOTPLEX_BRAIN_GUARD_OUTPUT_ENABLED", true),
-			Chat2ConfigEnabled: getBoolEnv("HOTPLEX_BRAIN_CHAT2CONFIG_ENABLED", false),
-			MaxInputLength:     getIntEnv("HOTPLEX_BRAIN_GUARD_MAX_INPUT_LENGTH", 100000),
-			ScanDepth:          getIntEnv("HOTPLEX_BRAIN_GUARD_SCAN_DEPTH", 3),
-			Sensitivity:        getEnv("HOTPLEX_BRAIN_GUARD_SENSITIVITY", "medium"),
-			AdminUsers:         parseStringList(getEnv("HOTPLEX_BRAIN_ADMIN_USERS", "")),
-			AdminChannels:      parseStringList(getEnv("HOTPLEX_BRAIN_ADMIN_CHANNELS", "")),
-			ResponseTimeout:    getDurationEnv("HOTPLEX_BRAIN_GUARD_RESPONSE_TIMEOUT", 10*time.Second),
-			RateLimitRPS:       getFloatEnv("HOTPLEX_BRAIN_GUARD_RATE_LIMIT_RPS", 10.0),
-			RateLimitBurst:     getIntEnv("HOTPLEX_BRAIN_GUARD_RATE_LIMIT_BURST", 20),
+			Enabled:                getBoolEnv("HOTPLEX_BRAIN_GUARD_ENABLED", true),
+			InputGuardEnabled:      getBoolEnv("HOTPLEX_BRAIN_GUARD_INPUT_ENABLED", true),
+			OutputGuardEnabled:     getBoolEnv("HOTPLEX_BRAIN_GUARD_OUTPUT_ENABLED", true),
+			Chat2ConfigEnabled:     getBoolEnv("HOTPLEX_BRAIN_CHAT2CONFIG_ENABLED", false),
+			MaxInputLength:         getIntEnv("HOTPLEX_BRAIN_GUARD_MAX_INPUT_LENGTH", 100000),
+			ScanDepth:              getIntEnv("HOTPLEX_BRAIN_GUARD_SCAN_DEPTH", 3),
+			Sensitivity:            getEnv("HOTPLEX_BRAIN_GUARD_SENSITIVITY", "medium"),
+			AdminUsers:             parseStringList(getEnv("HOTPLEX_BRAIN_ADMIN_USERS", "")),
+			AdminChannels:          parseStringList(getEnv("HOTPLEX_BRAIN_ADMIN_CHANNELS", "")),
+			ResponseTimeout:        getDurationEnv("HOTPLEX_BRAIN_GUARD_RESPONSE_TIMEOUT", 10*time.Second),
+			RateLimitRPS:           getFloatEnv("HOTPLEX_BRAIN_GUARD_RATE_LIMIT_RPS", 10.0),
+			RateLimitBurst:         getIntEnv("HOTPLEX_BRAIN_GUARD_RATE_LIMIT_BURST", 20),
+			FailClosedOnBrainError: getBoolEnv("HOTPLEX_BRAIN_GUARD_FAIL_CLOSED_ON_BRAIN_ERROR", false),
 		},
 	}
 }

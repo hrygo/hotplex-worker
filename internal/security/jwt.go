@@ -4,6 +4,8 @@ package security
 import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
+	"crypto/hkdf"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"math/big"
@@ -124,7 +126,7 @@ func (v *JWTValidator) hasAudience(aud any) bool {
 
 // GenerateToken generates a new JWT token for the given user.
 func (v *JWTValidator) GenerateToken(userID string, scopes []string, ttl time.Duration) (string, error) {
-	return v.GenerateTokenWithClaims(&JWTClaims{
+	claims := &JWTClaims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(ttl)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -135,7 +137,11 @@ func (v *JWTValidator) GenerateToken(userID string, scopes []string, ttl time.Du
 		},
 		UserID: userID,
 		Scopes: scopes,
-	})
+	}
+	if v.audience != "" {
+		claims.Audience = jwt.ClaimStrings{v.audience}
+	}
+	return v.GenerateTokenWithClaims(claims)
 }
 
 // GenerateTokenWithClaims generates a JWT token with the given claims using ES256.
@@ -160,12 +166,16 @@ func (v *JWTValidator) resolveSigningKey() (any, error) {
 	}
 }
 
-// deriveECDSAP256Key derives an ECDSA P-256 private key from a byte slice.
+// deriveECDSAP256Key derives an ECDSA P-256 private key from a byte slice
+// using HKDF (RFC 5869). The info parameter binds the derived key to the
+// "hotplex-ecdsa-p256" context, preventing cross-protocol key reuse.
 func deriveECDSAP256Key(secret []byte) *ecdsa.PrivateKey {
-	var scalarBytes [32]byte
-	copy(scalarBytes[:], secret)
+	scalarBytes, err := hkdf.Key(sha256.New, secret, nil, "hotplex-ecdsa-p256", 32)
+	if err != nil {
+		panic("hkdf.Key: " + err.Error())
+	}
+	s := new(big.Int).SetBytes(scalarBytes)
 	N := elliptic.P256().Params().N
-	s := new(big.Int).SetBytes(scalarBytes[:])
 	s.Mod(s, new(big.Int).Sub(N, big.NewInt(1)))
 	s.Add(s, big.NewInt(1))
 	x, y := elliptic.P256().ScalarBaseMult(s.Bytes()) //nolint:staticcheck // SA1019: must use deprecated scalar multiplication for deterministic ECDSA key derivation from seed
@@ -186,6 +196,9 @@ func (v *JWTValidator) GenerateTokenWithJTI(userID string, scopes []string, ttl,
 		},
 		UserID: userID,
 		Scopes: scopes,
+	}
+	if v.audience != "" {
+		claims.Audience = jwt.ClaimStrings{v.audience}
 	}
 	var method jwt.SigningMethod
 	var signingKey any

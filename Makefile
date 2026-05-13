@@ -21,7 +21,7 @@ GOOS         := $(shell go env GOOS)
 GOARCH       := $(shell go env GOARCH)
 GIT_SHA      := $(shell git rev-parse --short=8 HEAD 2>/dev/null || echo "unknown")
 BUILD_TIME   := $(shell date '+%Y-%m-%dT%H:%M:%S%z')
-LDFLAGS      := -s -w -X main.version=v1.11.2 -X main.buildTime=$(BUILD_TIME)
+LDFLAGS      := -s -w -X main.version=v1.11.4 -X main.buildTime=$(BUILD_TIME)
 BUILD_OPTS   := -trimpath
 
 GATEWAY_PID   := $(HOME)/.hotplex/.pids/gateway.pid
@@ -53,7 +53,7 @@ CYAN   := \033[36m
 .PHONY: dev dev-start dev-stop dev-status dev-logs dev-reset
 .PHONY: gateway-start gateway-stop gateway-status gateway-logs
 .PHONY: webchat-dev webchat-stop webchat-embed webchat-rebuild
-.PHONY: docs-build docs-clean
+.PHONY: docs-build docs-clean docs-lint
 .PHONY: test test-short lint fmt quality check clean
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -277,6 +277,9 @@ docs-build:
 docs-clean:
 	@rm -rf internal/docs/out
 	@echo "  $(GREEN)✓$(RESET) Documentation cleaned"
+
+docs-lint: docs-build
+	@echo "$(CYAN)Docs link validation passed$(RESET)"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Clean
