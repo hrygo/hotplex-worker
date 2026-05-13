@@ -106,8 +106,11 @@ cp configs/env.example .env
 | 文件 | 行数 | 功能 |
 |------|------|------|
 | `main.go` | 54 | cobra CLI 根命令 |
-| `gateway_run.go` | 498 | 网关运行：DI 容器、信号处理、hub/session/bridge 初始化 |
-| `serve.go` | 182 | gateway 子命令：start/stop/restart |
+| `gateway_run.go` | 773 | 网关运行：DI 容器、信号处理、hub/session/bridge 初始化 |
+| `gateway_cmd.go` | 219 | gateway 子命令：start/stop/restart + `--detached` 重启 |
+| `gateway_restart_helper.go` | 176 | 独立 PGID restart-helper（Worker-initiated restart） |
+| `gateway_restart_helper_unix.go` | 9 | Unix 平台 `Setpgid: true` |
+| `gateway_restart_helper_windows.go` | 15 | Windows 平台 `CREATE_NEW_PROCESS_GROUP` |
 | `routes.go` | 197 | HTTP 路由注册 |
 | `messaging_init.go` | 233 | 消息适配器生命周期 |
 | `cron_cmd.go` | 82 | cron 子命令注册 |
@@ -284,7 +287,8 @@ git push fork --delete feat/<feature-name>
 ### 入口点
 
 - **CLI Root** → `cmd/hotplex/main.go` - cobra 根命令
-- **GatewayDeps** → `cmd/hotplex/serve.go` - DI 容器
+- **GatewayDeps** → `cmd/hotplex/gateway_run.go` - DI 容器
+- **Restart Helper** → `cmd/hotplex/gateway_restart_helper.go` - 独立 PGID restart-helper（`--detached`）
 
 ### 核心流程
 
@@ -359,6 +363,7 @@ git push fork --delete feat/<feature-name>
 - **背压**: 丢弃 `message.delta`，保留 `state`/`done`/`error`
 - **Seq 分配**: Per-session 原子单调计数器
 - **进程终止**: 3 层（SIGTERM → 等待 5s → SIGKILL）
+- **Detached Restart**: `--detached` fork 独立 PGID helper，60s 冷却期防循环（`pid.go: restartMarker`）
 - **Agent 配置**: **B 通道** (`<directives>`): `<hotplex>`(META-COGNITION.md, go:embed, 始终存在且排首位) + `<persona>`(SOUL) + `<rules>`(AGENTS) + `<skills>`(SKILLS) → **C 通道** (`<context>`): `<user>`(USER) + `<memory>`(MEMORY)
 - **元认知层**: `internal/agentconfig/META-COGNITION.md` 定义 Worker 的身份边界（不管理 Transport/状态/协议）、B/C 通道冲突隔离法则（directives 无条件覆盖 context）、配置替换的"命中即终止"机制、配置修改 SOP（禁止改全局来影响 Bot）
 - **XML 安全**: 强制开启 **XML Sanitizer**，对保留标签进行 HTML 转义预防注入
@@ -407,6 +412,7 @@ make gateway-logs
 hotplex gateway start
 hotplex gateway stop
 hotplex gateway restart
+hotplex gateway restart --detached  # Worker-initiated restart（独立 PGID，安全隔离）
 ```
 
 ### 系统服务
