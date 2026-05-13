@@ -2,8 +2,6 @@
 title: HotPlex CLI 完整参考
 weight: 4
 description: HotPlex 命令行工具所有命令和标志的详尽参考文档
-persona: developer|enterprise
-difficulty: intermediate
 ---
 
 # HotPlex CLI 完整参考

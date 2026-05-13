@@ -1,10 +1,7 @@
 ---
-persona: enterprise
-difficulty: advanced
-title: Security Hardening 企业安全加固指南
+title: 企业安全加固指南
 weight: 22
-last_updated: 2026-05-14
-version: v1.12.0
+description: HotPlex Gateway 生产安全加固全流程：JWT 认证、SSRF 防御、命令白名单、网络隔离与合规审计
 ---
 
 # Security Hardening 企业安全加固指南

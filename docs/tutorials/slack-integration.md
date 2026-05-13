@@ -2,8 +2,6 @@
 title: Slack 集成教程
 weight: 1
 description: 从零配置 HotPlex Gateway 的 Slack 接入，5 分钟完成双向对话
-persona: developer
-difficulty: beginner
 ---
 
 # Slack 集成教程

@@ -2,8 +2,6 @@
 title: Integration Patterns Guide
 weight: 23
 description: Reverse proxy, CI/CD, monitoring, custom Worker, SDK integration, and webhook patterns for HotPlex.
-persona: enterprise
-difficulty: advanced
 ---
 
 # Integration Patterns Guide

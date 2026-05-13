@@ -1,10 +1,5 @@
 ---
 title: AEP v1 Appendix（时序 / 状态机 / Trace）
-type: appendix
-tags:
-  - project/HotPlex
-  - protocol/agent
-  - architecture
 ---
 
 # AEP v1 Appendix

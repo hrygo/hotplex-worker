@@ -2,8 +2,6 @@
 title: Observability Guide
 weight: 26
 description: Structured logging, Prometheus metrics, OpenTelemetry tracing, health endpoints, and alerting best practices for HotPlex Gateway.
-persona: enterprise
-difficulty: advanced
 ---
 
 # Observability Guide

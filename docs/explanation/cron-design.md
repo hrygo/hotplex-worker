@@ -2,8 +2,6 @@
 title: Cron AI-native 定时任务调度器
 weight: 5
 description: HotPlex AI-native Cron 调度器设计：自然语言到定时任务、timerLoop 引擎、并发槽控制与平台投递
-persona: developer
-difficulty: advanced
 ---
 
 # Cron AI-native 定时任务调度器
