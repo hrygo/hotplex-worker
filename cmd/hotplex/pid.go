@@ -134,3 +134,58 @@ func waitForProcessExit(pid int, timeout time.Duration) {
 		time.Sleep(100 * time.Millisecond)
 	}
 }
+
+// ─── Restart Cooldown Marker ──────────────────────────────────────────────────
+
+type restartMarker struct {
+	HelperPID int       `json:"helper_pid"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+func restartMarkerPath() string {
+	return filepath.Join(config.HotplexHome(), ".pids", "gateway.restart")
+}
+
+func writeRestartMarker(helperPID int) error {
+	p := restartMarkerPath()
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		return err
+	}
+	data, _ := json.Marshal(restartMarker{HelperPID: helperPID, CreatedAt: time.Now()})
+	return os.WriteFile(p, data, 0o644)
+}
+
+func readRestartMarker() (*restartMarker, error) {
+	data, err := os.ReadFile(restartMarkerPath())
+	if err != nil {
+		return nil, err
+	}
+	var m restartMarker
+	if err := json.Unmarshal(data, &m); err != nil {
+		return nil, fmt.Errorf("invalid restart marker: %w", err)
+	}
+	return &m, nil
+}
+
+func removeRestartMarker() {
+	_ = os.Remove(restartMarkerPath())
+}
+
+const restartCooldownPeriod = 60 * time.Second
+
+func checkRestartCooldown() error {
+	m, err := readRestartMarker()
+	if err != nil {
+		return nil // no marker = no cooldown
+	}
+	if proc.IsProcessAlive(m.HelperPID) == nil {
+		return fmt.Errorf("gateway: restart in progress (helper PID %d)", m.HelperPID)
+	}
+	elapsed := time.Since(m.CreatedAt)
+	if elapsed < restartCooldownPeriod {
+		remaining := restartCooldownPeriod - elapsed
+		return fmt.Errorf("gateway: restart cooldown active (try again in %s)", remaining.Round(time.Second))
+	}
+	removeRestartMarker()
+	return nil
+}
