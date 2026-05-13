@@ -98,7 +98,6 @@
 - `bot_registry.go` - `BotRegistry` 并发安全多 bot 注册表
 - `config.go` - `AdapterConfig` 含 `BotName` 字段
 - `slack/` - Socket Mode 适配器
-- `slack/` - Socket Mode 适配器
 - `feishu/` - WS 适配器 + STT
 - `tts/` - Edge-TTS 语音合成 + FFmpeg Opus 转换
 - `interaction/` - `InteractionManager` 权限/Q&A 管理

@@ -130,8 +130,8 @@ func (c multiBotConfigChecker) Check(ctx context.Context) cli.Diagnostic {
 	}
 
 	var issues []string
-	issues = append(issues, checkPlatformBots("slack", len(cfg.Messaging.Slack.Bots), cfg.Messaging.Slack.Bots)...)
-	issues = append(issues, checkFeishuBots(cfg.Messaging.Feishu.Bots)...)
+	issues = append(issues, checkBotEntries("slack", mapSlackBots(cfg.Messaging.Slack.Bots))...)
+	issues = append(issues, checkBotEntries("feishu", mapFeishuBots(cfg.Messaging.Feishu.Bots))...)
 
 	if len(issues) == 0 {
 		totalBots := len(cfg.Messaging.Slack.Bots) + len(cfg.Messaging.Feishu.Bots)
@@ -160,10 +160,16 @@ func (c multiBotConfigChecker) Check(ctx context.Context) cli.Diagnostic {
 	}
 }
 
-func checkPlatformBots(platform string, count int, bots []config.SlackBotConfig) []string {
+type botCheck struct {
+	Name  string
+	Cred1 string
+	Cred2 string
+}
+
+func checkBotEntries(platform string, bots []botCheck) []string {
 	var issues []string
-	if count > 10 {
-		issues = append(issues, fmt.Sprintf("%s: %d bots exceed limit (max 10)", platform, count))
+	if len(bots) > 10 {
+		issues = append(issues, fmt.Sprintf("%s: %d bots exceed limit (max 10)", platform, len(bots)))
 	}
 	seen := make(map[string]bool, len(bots))
 	for _, b := range bots {
@@ -175,31 +181,25 @@ func checkPlatformBots(platform string, count int, bots []config.SlackBotConfig)
 			issues = append(issues, fmt.Sprintf("%s: duplicate bot name %q", platform, b.Name))
 		}
 		seen[b.Name] = true
-		if strings.TrimSpace(b.BotToken) == "" && strings.TrimSpace(b.AppToken) == "" {
+		if strings.TrimSpace(b.Cred1) == "" && strings.TrimSpace(b.Cred2) == "" {
 			issues = append(issues, fmt.Sprintf("%s: bot %q has no credentials", platform, b.Name))
 		}
 	}
 	return issues
 }
 
-func checkFeishuBots(bots []config.FeishuBotConfig) []string {
-	var issues []string
-	if len(bots) > 10 {
-		issues = append(issues, fmt.Sprintf("feishu: %d bots exceed limit (max 10)", len(bots)))
+func mapSlackBots(bots []config.SlackBotConfig) []botCheck {
+	result := make([]botCheck, len(bots))
+	for i, b := range bots {
+		result[i] = botCheck{Name: b.Name, Cred1: b.BotToken, Cred2: b.AppToken}
 	}
-	seen := make(map[string]bool, len(bots))
-	for _, b := range bots {
-		if b.Name == "" {
-			issues = append(issues, "feishu: bot missing name")
-			continue
-		}
-		if seen[b.Name] {
-			issues = append(issues, fmt.Sprintf("feishu: duplicate bot name %q", b.Name))
-		}
-		seen[b.Name] = true
-		if strings.TrimSpace(b.AppID) == "" && strings.TrimSpace(b.AppSecret) == "" {
-			issues = append(issues, fmt.Sprintf("feishu: bot %q has no credentials", b.Name))
-		}
+	return result
+}
+
+func mapFeishuBots(bots []config.FeishuBotConfig) []botCheck {
+	result := make([]botCheck, len(bots))
+	for i, b := range bots {
+		result[i] = botCheck{Name: b.Name, Cred1: b.AppID, Cred2: b.AppSecret}
 	}
-	return issues
+	return result
 }

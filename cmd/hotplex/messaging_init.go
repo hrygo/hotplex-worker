@@ -260,7 +260,6 @@ func fillSlackExtras(acfg *messaging.AdapterConfig, appCfg *config.Config, botCf
 	acfg.Extras["reconnect_base_delay"] = platformCfg.ReconnectBaseDelay
 	acfg.Extras["reconnect_max_delay"] = platformCfg.ReconnectMaxDelay
 
-	// Per-bot STT/TTS.
 	sttCfg := platformCfg.STTConfig
 	ttsCfg := platformCfg.TTSConfig
 	if botCfg != nil {
@@ -302,7 +301,6 @@ func fillFeishuExtras(acfg *messaging.AdapterConfig, appCfg *config.Config, botC
 	acfg.Extras["app_id"] = appID
 	acfg.Extras["app_secret"] = appSecret
 
-	// Per-bot STT/TTS.
 	sttCfg := platformCfg.STTConfig
 	ttsCfg := platformCfg.TTSConfig
 	if botCfg != nil {

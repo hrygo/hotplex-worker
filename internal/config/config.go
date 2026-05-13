@@ -754,6 +754,44 @@ func propagateBotDefaults(bots *MessagingPlatformConfig, botSTT *STTConfig, botT
 	botTTS.FillFrom(bots.TTSConfig)
 }
 
+// expandStringFields expands env vars in non-empty string fields.
+func expandStringFields(fields ...*string) {
+	for _, f := range fields {
+		if *f != "" {
+			*f = ExpandEnv(*f)
+		}
+	}
+}
+
+// normalizePathFields resolves ~ and normalizes paths for non-empty string fields.
+func normalizePathFields(fields ...*string) {
+	for _, f := range fields {
+		if *f != "" {
+			if absPath, err := ExpandAndAbs(*f); err == nil {
+				*f = absPath
+			}
+		}
+	}
+}
+
+// collectBotFieldPtrs gathers LocalCmd and MossModelDir pointers from SlackBotConfig slice.
+func collectBotFieldPtrs(bots []SlackBotConfig) (localCmds, mossDirs []*string) {
+	for i := range bots {
+		localCmds = append(localCmds, &bots[i].LocalCmd)
+		mossDirs = append(mossDirs, &bots[i].MossModelDir)
+	}
+	return
+}
+
+// collectFeishuBotFieldPtrs gathers LocalCmd and MossModelDir pointers from FeishuBotConfig slice.
+func collectFeishuBotFieldPtrs(bots []FeishuBotConfig) (localCmds, mossDirs []*string) {
+	for i := range bots {
+		localCmds = append(localCmds, &bots[i].LocalCmd)
+		mossDirs = append(mossDirs, &bots[i].MossModelDir)
+	}
+	return
+}
+
 // ─── Loading ─────────────────────────────────────────────────────────────────
 
 // LoadOptions controls how configuration is loaded.
@@ -990,23 +1028,11 @@ func (c *Config) normalizePaths() {
 			*ef = ExpandEnv(*ef)
 		}
 	}
-	// Per-bot LocalCmd and MossModelDir expansion.
-	for i := range c.Messaging.Slack.Bots {
-		if c.Messaging.Slack.Bots[i].LocalCmd != "" {
-			c.Messaging.Slack.Bots[i].LocalCmd = ExpandEnv(c.Messaging.Slack.Bots[i].LocalCmd)
-		}
-		if c.Messaging.Slack.Bots[i].MossModelDir != "" {
-			c.Messaging.Slack.Bots[i].MossModelDir = ExpandEnv(c.Messaging.Slack.Bots[i].MossModelDir)
-		}
-	}
-	for i := range c.Messaging.Feishu.Bots {
-		if c.Messaging.Feishu.Bots[i].LocalCmd != "" {
-			c.Messaging.Feishu.Bots[i].LocalCmd = ExpandEnv(c.Messaging.Feishu.Bots[i].LocalCmd)
-		}
-		if c.Messaging.Feishu.Bots[i].MossModelDir != "" {
-			c.Messaging.Feishu.Bots[i].MossModelDir = ExpandEnv(c.Messaging.Feishu.Bots[i].MossModelDir)
-		}
-	}
+	// Per-bot env expansion.
+	slackLC, slackMD := collectBotFieldPtrs(c.Messaging.Slack.Bots)
+	feishuLC, feishuMD := collectFeishuBotFieldPtrs(c.Messaging.Feishu.Bots)
+	expandStringFields(append(slackLC, feishuLC...)...)
+	expandStringFields(append(slackMD, feishuMD...)...)
 
 	// 2. Expand ~ and normalize paths.
 	for _, pf := range []*string{
@@ -1032,20 +1058,7 @@ func (c *Config) normalizePaths() {
 		}
 	}
 	// Per-bot MossModelDir path normalization.
-	for i := range c.Messaging.Slack.Bots {
-		if c.Messaging.Slack.Bots[i].MossModelDir != "" {
-			if absPath, err := ExpandAndAbs(c.Messaging.Slack.Bots[i].MossModelDir); err == nil {
-				c.Messaging.Slack.Bots[i].MossModelDir = absPath
-			}
-		}
-	}
-	for i := range c.Messaging.Feishu.Bots {
-		if c.Messaging.Feishu.Bots[i].MossModelDir != "" {
-			if absPath, err := ExpandAndAbs(c.Messaging.Feishu.Bots[i].MossModelDir); err == nil {
-				c.Messaging.Feishu.Bots[i].MossModelDir = absPath
-			}
-		}
-	}
+	normalizePathFields(append(slackMD, feishuMD...)...)
 }
 
 // ExpandAndAbs returns an absolute path, resolving ~ and relative paths.

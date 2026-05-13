@@ -28,18 +28,6 @@ type BotEntry struct {
 	ConnectedAt time.Time
 }
 
-// BotInfo is the read-only view returned by the registry for API consumers.
-type BotInfo struct {
-	Name        string `json:"name"`
-	Platform    string `json:"platform"`
-	BotID       string `json:"bot_id"`
-	Status      string `json:"status"`
-	ConnectedAt string `json:"connected_at,omitempty"`
-	Sessions    int    `json:"sessions"`
-	Soul        string `json:"soul,omitempty"`
-	WorkerType  string `json:"worker_type,omitempty"`
-}
-
 // BotRegistry tracks active bot adapters and bridges.
 type BotRegistry struct {
 	mu      sync.RWMutex
@@ -87,6 +75,18 @@ func (r *BotRegistry) Get(platform PlatformType, name string) (*BotEntry, bool) 
 	e, ok := r.entries[botKey(platform, name)]
 	r.mu.RUnlock()
 	return e, ok
+}
+
+// GetByName returns a bot entry by name (globally unique across platforms).
+func (r *BotRegistry) GetByName(name string) (*BotEntry, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, e := range r.entries {
+		if e.Name == name {
+			return e, true
+		}
+	}
+	return nil, false
 }
 
 // ListAll returns all registered bot entries.
