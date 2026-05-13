@@ -11,19 +11,6 @@ import (
 	"github.com/hrygo/hotplex/pkg/events"
 )
 
-// ControlRequester is implemented by workers that support structured control queries.
-type ControlRequester interface {
-	SendControlRequest(ctx context.Context, subtype string, body map[string]any) (map[string]any, error)
-}
-
-// WorkerCommander is implemented by workers that support worker-level commands
-// beyond the basic Input() passthrough.
-type WorkerCommander interface {
-	Compact(ctx context.Context, args map[string]any) error
-	Clear(ctx context.Context) error
-	Rewind(ctx context.Context, targetID string) error
-}
-
 func (h *Handler) handleWorkerCommand(ctx context.Context, env *events.Envelope) error {
 	var cmd events.WorkerStdioCommand
 	var args string
@@ -62,7 +49,7 @@ func (h *Handler) handleWorkerCommand(ctx context.Context, env *events.Envelope)
 		return h.handlePassthroughCommand(ctx, env, w, cmd, args)
 	}
 
-	cr, ok := w.(ControlRequester)
+	cr, ok := w.(worker.ControlRequester)
 	if !ok {
 		return h.sendErrorf(ctx, env, events.ErrCodeNotSupported, "worker type does not support control requests")
 	}
@@ -139,7 +126,7 @@ func (h *Handler) handleWorkerCommand(ctx context.Context, env *events.Envelope)
 }
 
 func (h *Handler) handlePassthroughCommand(ctx context.Context, env *events.Envelope, w worker.Worker, cmd events.WorkerStdioCommand, args string) error {
-	if commander, ok := w.(WorkerCommander); ok {
+	if commander, ok := w.(worker.WorkerCommander); ok {
 		switch cmd {
 		case events.StdioCompact:
 			if err := commander.Compact(ctx, nil); err != nil {
