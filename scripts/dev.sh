@@ -29,6 +29,7 @@ readonly CONFIG="${CONFIG:-${ROOT_DIR}/configs/config-dev.yaml}"
 
 readonly GATEWAY_PID="${HOME}/.hotplex/.pids/gateway.pid"
 readonly GATEWAY_LOG="${LOG_DIR}/hotplex.log"
+readonly GATEWAY_ADDR="${GATEWAY_ADDR:-127.0.0.1:8888}"
 readonly GRACE_PERIOD="${GRACE_PERIOD:-7}"
 
 readonly WEBCHAT_DIR="${ROOT_DIR}/webchat"
@@ -128,9 +129,8 @@ start_gateway() {
     local bg_pid=$!
     echo $bg_pid > "$GATEWAY_PID"
 
-    # Wait for banner to appear in log (up to 30s).
-    # Gateway writes slog to stderr + banner to stdout; both go to $GATEWAY_LOG.
-    # Non-slog lines (banner or fmt warnings) signal readiness.
+    # Wait for gateway health endpoint (up to 30s).
+    # Gateway writes PID state file before listening, so stop/status work early.
     for ((i=0; i<60; i++)); do
         if ! kill -0 "$bg_pid" 2>/dev/null; then
             err "Gateway failed to start"
@@ -138,21 +138,22 @@ start_gateway() {
             rm -f "$GATEWAY_PID"
             exit 1
         fi
-        if grep -qvE '^(time=|\{"time":|[0-9]{4}/[0-9]{2}/[0-9]{2} )' "$GATEWAY_LOG" 2>/dev/null; then
-            sleep 0.5  # give banner a moment to flush fully
+        if curl -sf "http://$GATEWAY_ADDR/health" >/dev/null 2>&1; then
             break
         fi
         sleep 0.5
     done
 
-    # Extract banner (retry on slow startup — session repair, orphan cleanup).
     if kill -0 "$bg_pid" 2>/dev/null; then
-        for ((j=0; j<6; j++)); do
-            local banner
-            banner=$(grep -vE '^(time=|\{"time":|[0-9]{4}/[0-9]{2}/[0-9]{2} )' "$GATEWAY_LOG" | sed '/^$/d')
-            [[ -n "$banner" ]] && { echo "$banner"; return 0; }
-            sleep 0.5
-        done
+        # Show startup banner from log (best-effort, non-blocking).
+        local banner
+        banner=$(grep -vE '^(time=|\{"time":|[0-9]{4}/[0-9]{2}/[0-9]{2} )' "$GATEWAY_LOG" 2>/dev/null | sed '/^$/d')
+        [[ -n "$banner" ]] && echo "$banner"
+    else
+        err "Gateway failed to start"
+        tail -20 "$GATEWAY_LOG"
+        rm -f "$GATEWAY_PID"
+        exit 1
     fi
 }
 
