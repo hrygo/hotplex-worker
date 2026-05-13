@@ -285,7 +285,7 @@ public enum SessionState {
 
 ### JwtTokenGenerator
 
-ES256 (ECDSA P-256) 签名，密钥派生逻辑与 Go SDK 完全一致：
+ES256 (ECDSA P-256) 签名，从 `secret` 派生 P-256 密钥对：
 
 ```java
 // 基本用法
@@ -297,6 +297,8 @@ var tokenGen = new JwtTokenGenerator(secret, "hotplex", "my-gateway");
 
 - `secret` — 至少 32 字节的签名字符串
 - 内部通过 BouncyCastle 从 secret 派生 P-256 密钥对
+
+> **兼容性注意**：当前 Java SDK 的密钥派生（`scalar = secret mod (N-1) + 1`）与 v1.11.3 Gateway 的 HKDF 派生**不一致**。使用 Java SDK 生成的 token 将被 Gateway 拒绝。此问题待修复，修复后密钥派生将采用 HKDF (RFC 5869) 与 Go SDK 对齐。
 
 ```java
 // 生成 token
