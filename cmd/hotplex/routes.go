@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"net/http"
+	"slices"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
@@ -98,6 +99,12 @@ func setupRoutes(
 	}
 	if cfg.Admin.IPWhitelistEnabled {
 		adminAPI.SetAllowedCIDRs(cfg.Admin.AllowedCIDRs)
+
+		deps.ConfigStore.RegisterFunc(func(prev, next *config.Config) {
+			if !slices.Equal(prev.Admin.AllowedCIDRs, next.Admin.AllowedCIDRs) {
+				adminAPI.SetAllowedCIDRs(next.Admin.AllowedCIDRs)
+			}
+		})
 	}
 
 	adminMux := adminAPI.Mux()

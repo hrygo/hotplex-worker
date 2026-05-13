@@ -233,6 +233,9 @@ func TestHasAudience(t *testing.T) {
 		{"empty string slice", []string{}, false},
 		{"any slice match", []any{"api", "hotplex-gateway"}, true},
 		{"any slice no match", []any{"api", "web"}, false},
+		{"ClaimStrings match", jwt.ClaimStrings{"api", "hotplex-gateway", "web"}, true},
+		{"ClaimStrings no match", jwt.ClaimStrings{"api", "web"}, false},
+		{"empty ClaimStrings", jwt.ClaimStrings{}, false},
 		{"nil audience", nil, false},
 		{"empty string", "", false},
 		{"int audience (invalid type)", 123, false},
@@ -266,22 +269,18 @@ func TestGenerateToken(t *testing.T) {
 		require.NoError(t, err)
 		require.NotEmpty(t, token)
 
-		// Validate with a validator that does NOT require audience.
-		// GenerateToken does not set the Audience claim, so it would fail
-		// against a validator with audience configured.
-		validatorNoAud := NewJWTValidator(key, "")
-		defer validatorNoAud.blacklist.Stop()
-
-		claims, err := validatorNoAud.Validate(token)
+		// GenerateToken sets Audience when validator has audience configured.
+		claims, err := validator.Validate(token)
 		require.NoError(t, err)
 		require.Equal(t, "user-123", claims.UserID)
 		require.Equal(t, []string{"read", "write"}, claims.Scopes)
 		require.Equal(t, "user-123", claims.Subject)
 		require.Equal(t, "hotplex", claims.Issuer)
-		require.NotEmpty(t, claims.ID) // jti should be set
+		require.NotEmpty(t, claims.ID)
+		require.Contains(t, claims.Audience, audience)
 	})
 
-	t.Run("with HMAC secret generates but validation rejects HS256", func(t *testing.T) {
+	t.Run("with HMAC secret derives ES256 key for full round-trip", func(t *testing.T) {
 		t.Parallel()
 		secret := []byte("test-secret-key-32-bytes-long!!!")
 
@@ -293,12 +292,12 @@ func TestGenerateToken(t *testing.T) {
 		require.NoError(t, err)
 		require.NotEmpty(t, token)
 
-		// Note: GenerateToken with HMAC secret creates HS256 tokens
-		// but Validate only accepts ES256, so validation will fail
-		_, err = validator.Validate(token)
-		require.Error(t, err)
-		// jwt library error message describes the type mismatch
-		require.Contains(t, err.Error(), "invalid")
+		// HMAC secret is used to derive an ECDSA P-256 key; signing and
+		// validation both use ES256, so the round-trip succeeds.
+		claims, err := validator.Validate(token)
+		require.NoError(t, err)
+		require.Equal(t, "user-456", claims.UserID)
+		require.Contains(t, claims.Audience, audience)
 	})
 }
 

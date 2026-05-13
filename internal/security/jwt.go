@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -108,12 +109,10 @@ func (v *JWTValidator) hasAudience(aud any) bool {
 	switch s := aud.(type) {
 	case string:
 		return s == v.audience
+	case jwt.ClaimStrings:
+		return slices.Contains(s, v.audience)
 	case []string:
-		for _, a := range s {
-			if a == v.audience {
-				return true
-			}
-		}
+		return slices.Contains(s, v.audience)
 	case []any:
 		for _, item := range s {
 			if str, ok := item.(string); ok && str == v.audience {
