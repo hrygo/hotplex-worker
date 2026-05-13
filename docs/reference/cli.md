@@ -110,6 +110,7 @@ hotplex gateway stop
 ```bash
 hotplex gateway restart       # 重启，保留原配置
 hotplex gateway restart -d    # 重启为后台守护进程
+hotplex gateway restart --detached  # Worker-initiated restart（独立进程安全隔离）
 ```
 
 | 标志 | 短标志 | 类型 | 默认值 | 说明 |
@@ -117,6 +118,9 @@ hotplex gateway restart -d    # 重启为后台守护进程
 | `--config` | `-c` | `string` | `~/.hotplex/config.yaml` | 配置文件路径 |
 | `--dev` | | `bool` | `false` | 开发模式 |
 | `--daemon` | `-d` | `bool` | `false` | 后台守护进程模式 |
+| `--detached` | | `bool` | `false` | 从 Worker 进程内部安全重启 Gateway。Fork 独立 PGID 的 helper 进程执行重启，与调用方 Worker 的生命周期完全隔离。内置 60s 冷却期防止循环重启 |
+
+> `--detached` 适用于 AI Agent（Cron 任务或聊天指令）触发的 Gateway 重启。普通运维场景使用 `gateway restart` 即可。
 
 ---
 
