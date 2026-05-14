@@ -166,7 +166,7 @@ type Config struct {
 // MessagingConfig holds messaging platform adapter settings.
 // Shared defaults (WorkerType, STTConfig, TTSConfig) are set at this level and propagated
 // to each platform config via propagateMessagingDefaults().
-// DMPolicy and GroupPolicy remain platform-level only (different platforms may have different access policies).
+// Access control fields (DMPolicy, GroupPolicy, RequireMention, AllowFrom, AllowDMFrom, AllowGroupFrom) support per-bot overrides with platform-level fallback.
 // Priority: platform-level > messaging-level > Default().
 type MessagingConfig struct {
 	TurnSummaryEnabled bool `mapstructure:"turn_summary_enabled"`
