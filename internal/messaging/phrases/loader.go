@@ -9,7 +9,7 @@ import (
 // Load reads PHRASES.md from all levels with cascade-append:
 //
 //  1. dir/PHRASES.md (global, weight 2)
-//  2. dir/{platform}/PHRASES.md (platform, weight 3)
+//  2. dir/{platform}/PHRASES.md (platform, weight 1)
 //  3. dir/{platform}/{botID}/PHRASES.md (bot, weight 4)
 //
 // Each level's entries are appended to the pool, never replaced.
