@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.13.0] - 2026-05-14
+
+### Summary
+
+v1.13.0 是一次 minor 版本更新，核心主题是 **多 Bot 支持** 和 **性能优化**。新增 Multi-Bot 架构，允许单个 Gateway 同时运行多个独立 Bot 实例（独立凭证、Soul、Worker 类型），完全向后兼容现有单 Bot 配置。同步引入 Brain/Session 锁优化（lock-dropping）降低锁竞争延迟，以及 Worker 接口去重简化适配器开发。
+
+### Added
+
+- **Messaging**: Multi-bot support — run multiple independent bot instances per platform (Slack/Feishu) with separate credentials, soul, worker type, and STT/TTS config. Backward compatible: single-bot configs auto-wrap into `bots[]` via `normalizeSlackBots`/`normalizeFeishuBots`. (#410)
+- **Messaging**: `BotRegistry` — concurrent-safe runtime registry with Register/Unregister/Get/List/UpdateStatus/UnregisterAll lifecycle operations. (#410)
+- **Admin API**: Bot status endpoints — `GET /admin/bots` lists all registered bots, `GET /admin/bots/{name}` returns single bot details. (#410)
+- **CLI**: Multi-bot config diagnostic checker — validates credential completeness, bot count limits, and name uniqueness. (#410)
+- **Config**: `SlackBotConfig`/`FeishuBotConfig` types with per-bot STT/TTS inheritance via `propagateBotDefaults`. (#410)
+
+### Changed
+
+- **Brain**: Lock-dropping optimization — memory compression and context pruning now release locks before expensive LLM calls, reducing contention on high-concurrency sessions. (#409)
+- **Session**: `runningIndex` + terminated eviction + attach lock-dropping — O(1) active session lookup by key, automatic cleanup of terminated sessions, and non-blocking session attach. (#408)
+- **Worker**: Deduplicate `ControlRequester` and `WorkerCommander` interfaces into unified `Controllable` interface, simplifying worker adapter implementation. (#406)
+- **Cron**: Admin adapter DRY — extract shared adapter logic, add test coverage. (#409)
+
 ## [1.12.0] - 2026-05-13
 
 ### Summary
