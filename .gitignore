@@ -108,7 +108,7 @@ __pycache__
 !.agent/skills/hotplex-*/
 .agent/skills/hotplex-docs-patrol/.patrol-baseline
 .agents/
-skills/
+/skills/
 skills-lock.json
 .agent/scheduled_tasks.lock
 .agent/source-study-progress.json
