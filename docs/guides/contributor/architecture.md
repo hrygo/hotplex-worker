@@ -2,8 +2,6 @@
 title: 架构概览
 weight: 31
 description: HotPlex Gateway 系统架构全景视图，帮助贡献者理解各组件职责与交互方式
-persona: contributor
-difficulty: intermediate
 ---
 
 # 架构概览

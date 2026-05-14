@@ -2,8 +2,6 @@
 title: 与 AI 对话
 weight: 1
 description: 通过飞书或 Slack 使用 HotPlex 个人 AI 助手的完整指南
-persona: user
-difficulty: beginner
 ---
 
 # 与 AI 对话

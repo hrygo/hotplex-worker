@@ -2,8 +2,6 @@
 title: Compliance and Audit Guide
 weight: 29
 description: Security auditing, config change tracking, credential management, and token lifecycle for compliance requirements.
-persona: enterprise
-difficulty: advanced
 ---
 
 # Compliance and Audit Guide

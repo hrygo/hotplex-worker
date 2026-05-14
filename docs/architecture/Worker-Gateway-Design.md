@@ -1,9 +1,5 @@
 ---
-type: prd
-tags:
-  - project/HotPlex
-  - architecture/gateway
-  - agent/runtime
+
 ---
 
 # Worker Gateway Design

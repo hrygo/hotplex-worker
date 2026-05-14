@@ -1,3 +1,9 @@
+---
+title: 多 Agent 协作
+weight: 15
+description: HotPlex Worker 类型、并发 Session 与多项目工作流指南
+---
+
 # 多 Agent 协作
 
 > HotPlex 的 Worker 类型、并发 Session、多项目工作流指南

@@ -1,18 +1,5 @@
 ---
-type: design
-status: implemented
-implemented_at: 2026-04-25
-implementation_branch: feat/25-agent-config-implementation
-tags:
-  - design/agent-config
-  - architecture/context-injection
-  - worker/claude-code
-  - worker/opencode-server
-  - meta-cognition
-related:
-  - Claude-Code-Context-Analysis.md
-  - OpenCode-Server-Context-Analysis.md
-  - internal/agentconfig/META-COGNITION.md
+
 ---
 
 # HotPlex Agent Context 设定文件方案 (Dual-Worker)
