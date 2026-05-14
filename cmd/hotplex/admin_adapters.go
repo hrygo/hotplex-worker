@@ -8,6 +8,7 @@ import (
 	"github.com/hrygo/hotplex/internal/config"
 	"github.com/hrygo/hotplex/internal/eventstore"
 	"github.com/hrygo/hotplex/internal/gateway"
+	"github.com/hrygo/hotplex/internal/messaging"
 	"github.com/hrygo/hotplex/internal/session"
 	"github.com/hrygo/hotplex/internal/worker"
 	"github.com/hrygo/hotplex/pkg/events"
@@ -114,4 +115,38 @@ func (a *configWatcherAdapter) Rollback(version int) (*config.Config, int, error
 		return nil, -1, errors.New("config watcher is nil")
 	}
 	return a.watcher.Rollback(version)
+}
+
+type botListerAdapter struct {
+	registry *messaging.BotRegistry
+}
+
+func toAdminBotEntry(e *messaging.BotEntry) admin.BotEntry {
+	return admin.BotEntry{
+		Name:        e.Name,
+		Platform:    string(e.Platform),
+		BotID:       e.BotID,
+		Status:      string(e.Status),
+		ConnectedAt: e.ConnectedAt.Format("2006-01-02T15:04:05Z"),
+		Soul:        e.Soul,
+		WorkerType:  e.WorkerType,
+	}
+}
+
+func (a *botListerAdapter) ListBots() []admin.BotEntry {
+	entries := a.registry.ListAll()
+	result := make([]admin.BotEntry, len(entries))
+	for i, e := range entries {
+		result[i] = toAdminBotEntry(e)
+	}
+	return result
+}
+
+func (a *botListerAdapter) GetBot(name string) (*admin.BotEntry, bool) {
+	e, ok := a.registry.GetByName(name)
+	if !ok {
+		return nil, false
+	}
+	entry := toAdminBotEntry(e)
+	return &entry, true
 }
