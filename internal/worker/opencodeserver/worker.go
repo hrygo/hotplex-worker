@@ -789,7 +789,7 @@ func (c *conn) Send(ctx context.Context, msg *events.Envelope) error {
 	c.mu.Lock()
 	if c.closed {
 		c.mu.Unlock()
-		return fmt.Errorf("opencodeserver: connection closed")
+		return &worker.WorkerError{Kind: worker.ErrKindUnavailable, Message: "opencodeserver: connection closed"}
 	}
 	c.mu.Unlock()
 

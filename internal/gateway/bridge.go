@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -492,7 +493,8 @@ func (b *Bridge) SwitchWorkDir(ctx context.Context, oldSessionID, newWorkDir str
 // isWorkerInUseError checks if the worker rejected the session because its
 // session files already exist on disk (e.g. from a mid-start crash).
 func isWorkerInUseError(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "already in use")
+	var we *worker.WorkerError
+	return errors.As(err, &we) && we.Kind == worker.ErrKindSessionInUse
 }
 
 // Shutdown signals the bridge that the gateway is shutting down.

@@ -1007,7 +1007,9 @@ func TestConn(t *testing.T) {
 		c.Close()
 		err := c.Send(context.Background(), &events.Envelope{})
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "connection closed")
+		var we *worker.WorkerError
+		require.ErrorAs(t, err, &we)
+		require.Equal(t, worker.ErrKindUnavailable, we.Kind)
 	})
 }
 

@@ -9,6 +9,7 @@ import (
 	"maps"
 	"sync"
 
+	"github.com/hrygo/hotplex/internal/worker"
 	"github.com/hrygo/hotplex/internal/worker/base"
 	"github.com/hrygo/hotplex/pkg/aep"
 )
@@ -171,7 +172,7 @@ func (h *ControlHandler) SendControlRequest(ctx context.Context, subtype string,
 	h.mu.Unlock()
 	if err != nil {
 		if base.IsDeadProcessError(err) {
-			return nil, fmt.Errorf("control: worker process is not running or stdin is closed")
+			return nil, &worker.WorkerError{Kind: worker.ErrKindUnavailable, Message: "control: worker process is not running or stdin is closed", Cause: err}
 		}
 		return nil, fmt.Errorf("control: write request: %w", err)
 	}

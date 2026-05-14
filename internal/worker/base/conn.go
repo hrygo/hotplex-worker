@@ -8,6 +8,7 @@ import (
 	"os"
 	"sync"
 
+	"github.com/hrygo/hotplex/internal/worker"
 	"github.com/hrygo/hotplex/pkg/aep"
 	"github.com/hrygo/hotplex/pkg/events"
 )
@@ -60,14 +61,14 @@ func (c *Conn) Send(ctx context.Context, msg *events.Envelope) error {
 	defer c.mu.Unlock()
 
 	if c.closed {
-		return fmt.Errorf("base: connection closed")
+		return &worker.WorkerError{Kind: worker.ErrKindUnavailable, Message: "base: connection closed"}
 	}
 
 	// Write NDJSON to stdin while holding the lock to prevent interleaving
 	// with ControlHandler writes on the same fd.
 	if err := aep.Encode(c.stdin, msg); err != nil {
 		if IsDeadProcessError(err) {
-			return fmt.Errorf("base: worker process is not running or stdin is closed")
+			return &worker.WorkerError{Kind: worker.ErrKindUnavailable, Message: "base: worker process is not running or stdin is closed", Cause: err}
 		}
 		return fmt.Errorf("base: encode: %w", err)
 	}
@@ -80,7 +81,7 @@ func (c *Conn) SendUserMessage(ctx context.Context, content string) error {
 	defer c.mu.Unlock()
 
 	if c.closed {
-		return fmt.Errorf("base: connection closed")
+		return &worker.WorkerError{Kind: worker.ErrKindUnavailable, Message: "base: connection closed"}
 	}
 	c.lastInput = content // capture for crash recovery re-delivery
 
@@ -103,7 +104,7 @@ func (c *Conn) SendUserMessage(ctx context.Context, content string) error {
 	err = WriteAll(int(c.stdin.Fd()), data)
 	if err != nil {
 		if IsDeadProcessError(err) {
-			return fmt.Errorf("base: worker process is not running or stdin is closed")
+			return &worker.WorkerError{Kind: worker.ErrKindUnavailable, Message: "base: worker process is not running or stdin is closed", Cause: err}
 		}
 		return fmt.Errorf("base: write user message: %w", err)
 	}

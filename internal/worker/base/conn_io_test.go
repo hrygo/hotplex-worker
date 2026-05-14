@@ -11,6 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/hrygo/hotplex/internal/worker"
 	"github.com/hrygo/hotplex/pkg/aep"
 	"github.com/hrygo/hotplex/pkg/events"
 )
@@ -75,7 +76,9 @@ func TestConn_Send_ClosedConn(t *testing.T) {
 		Event:     events.Event{Type: events.MessageStart},
 	})
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "connection closed")
+	var we *worker.WorkerError
+	require.ErrorAs(t, err, &we)
+	require.Equal(t, worker.ErrKindUnavailable, we.Kind)
 
 	// Drain the read end so pipe cleanup is clean.
 	_, _ = r.Read(make([]byte, 1))
@@ -237,7 +240,9 @@ func TestConn_SendUserMessage_ClosedConn(t *testing.T) {
 
 	err := conn.SendUserMessage(context.Background(), "should fail")
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "connection closed")
+	var we *worker.WorkerError
+	require.ErrorAs(t, err, &we)
+	require.Equal(t, worker.ErrKindUnavailable, we.Kind)
 }
 
 // ---------------------------------------------------------------------------

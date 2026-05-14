@@ -197,6 +197,9 @@ func (w *Worker) startLocked(_ context.Context, session worker.SessionInfo, resu
 	if err != nil {
 		w.cleanupTempFiles()
 		w.Proc = nil
+		if strings.Contains(err.Error(), "already in use") {
+			return &worker.WorkerError{Kind: worker.ErrKindSessionInUse, Message: "claudecode: session already in use", Cause: err}
+		}
 		return fmt.Errorf("claudecode: start: %w", err)
 	}
 
@@ -446,7 +449,7 @@ func (w *Worker) SendControlRequest(ctx context.Context, subtype string, body ma
 	w.Mu.Lock()
 	if w.Proc == nil || !w.Proc.IsRunning() {
 		w.Mu.Unlock()
-		return nil, fmt.Errorf("claudecode: worker process is not running")
+		return nil, &worker.WorkerError{Kind: worker.ErrKindUnavailable, Message: "claudecode: worker process is not running"}
 	}
 	ctrl := w.control
 	w.Mu.Unlock()

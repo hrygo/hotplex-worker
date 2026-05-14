@@ -291,7 +291,9 @@ func TestSendControlRequest_NotRunning(t *testing.T) {
 	w := New()
 	_, err := w.SendControlRequest(context.Background(), "set_permission_mode", nil)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "not running")
+	var we *worker.WorkerError
+	require.ErrorAs(t, err, &we)
+	require.Equal(t, worker.ErrKindUnavailable, we.Kind)
 }
 
 // ─── nextSeq ─────────────────────────────────────────────────────────────────
