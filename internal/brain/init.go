@@ -20,6 +20,11 @@ import (
 func Init(logger *slog.Logger) error {
 	config := LoadConfigFromEnv()
 
+	_, validationErrs := LoadAndValidate()
+	for _, err := range validationErrs {
+		logger.Warn("Brain config validation warning", "error", err)
+	}
+
 	if !config.Enabled {
 		logger.Debug("Native Brain is disabled or missing configuration. Skipping.")
 		return nil
