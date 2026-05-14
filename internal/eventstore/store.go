@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -185,6 +186,13 @@ type EventTx interface {
 	Commit() error
 }
 
+// TurnQuerier provides read-only access to conversation turn records.
+type TurnQuerier interface {
+	QueryTurns(ctx context.Context, sessionID string, limit, offset int) ([]*TurnRecord, error)
+	QueryTurnsBefore(ctx context.Context, sessionID string, beforeSeq int64, limit int) ([]*TurnRecord, error)
+	QueryTurnStats(ctx context.Context, sessionID string) (*TurnStats, error)
+}
+
 // SQLiteStore implements EventStore using a shared SQLite database connection.
 type SQLiteStore struct {
 	db     *sql.DB
@@ -290,9 +298,7 @@ func (s *SQLiteStore) QueryBySession(ctx context.Context, sessionID string, curs
 
 	// For DESC queries (CursorLatest, CursorBefore), reverse to ASC order.
 	if dir == CursorLatest || dir == CursorBefore {
-		for i, j := 0, len(events)-1; i < j; i, j = i+1, j-1 {
-			events[i], events[j] = events[j], events[i]
-		}
+		slices.Reverse(events)
 	}
 
 	page := &EventPage{
@@ -371,9 +377,7 @@ func (s *SQLiteStore) QueryTurnsBefore(ctx context.Context, sessionID string, be
 		return nil, err
 	}
 	// Reverse to ASC order (SQL returns DESC).
-	for i, j := 0, len(records)-1; i < j; i, j = i+1, j-1 {
-		records[i], records[j] = records[j], records[i]
-	}
+	slices.Reverse(records)
 	return records, nil
 }
 
