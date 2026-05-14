@@ -24,8 +24,12 @@ func TestDefaults(t *testing.T) {
 
 func TestRandomReturnsFromPool(t *testing.T) {
 	t.Parallel()
-	p := &Phrases{entries: map[string][]string{
-		"test": {"a", "b", "c"},
+	p := &Phrases{entries: map[string][]entry{
+		"test": {
+			{"a", 1},
+			{"b", 1},
+			{"c", 1},
+		},
 	}}
 
 	seen := make(map[string]bool)
@@ -36,10 +40,32 @@ func TestRandomReturnsFromPool(t *testing.T) {
 	require.Len(t, seen, 3)
 }
 
+func TestRandomWeightedSelection(t *testing.T) {
+	t.Parallel()
+	p := &Phrases{entries: map[string][]entry{
+		"test": {
+			{"heavy", 100},
+			{"light", 1},
+		},
+	}}
+
+	heavyCount := 0
+	for range 1000 {
+		if p.Random("test") == "heavy" {
+			heavyCount++
+		}
+	}
+	// With 100:1 weight ratio, heavy should be selected ~99% of the time.
+	require.Greater(t, heavyCount, 900)
+}
+
 func TestAllReturnsCopy(t *testing.T) {
 	t.Parallel()
-	p := &Phrases{entries: map[string][]string{
-		"test": {"a", "b"},
+	p := &Phrases{entries: map[string][]entry{
+		"test": {
+			{"a", 1},
+			{"b", 2},
+		},
 	}}
 	all := p.All("test")
 	require.Equal(t, []string{"a", "b"}, all)
@@ -91,24 +117,7 @@ func TestParseMarkdownNoDash(t *testing.T) {
 	require.Empty(t, result["empty"])
 }
 
-func TestMergeAppends(t *testing.T) {
-	t.Parallel()
-	dst := map[string][]string{
-		"a": {"1"},
-		"b": {"2"},
-	}
-	src := map[string][]string{
-		"a": {"3"},
-		"c": {"4"},
-	}
-	merge(dst, src)
-
-	require.Equal(t, []string{"1", "3"}, dst["a"])
-	require.Equal(t, []string{"2"}, dst["b"])
-	require.Equal(t, []string{"4"}, dst["c"])
-}
-
-func TestLoadCascadeAppend(t *testing.T) {
+func TestLoadCascadeAppendWithWeights(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 
@@ -126,13 +135,65 @@ func TestLoadCascadeAppend(t *testing.T) {
 	p, err := Load(dir, "feishu", "ou_123")
 	require.NoError(t, err)
 
-	// Should contain defaults + global + platform + bot greetings
+	entries := p.entries["greetings"]
+	// External config overrides defaults: only 3 external entries, no defaults.
+	require.Len(t, entries, 3)
+
+	weightsByText := make(map[string]int)
+	for _, e := range entries {
+		weightsByText[e.text] = e.weight
+	}
+	require.Equal(t, WeightGlobal, weightsByText["global"])
+	require.Equal(t, WeightPlatform, weightsByText["platform"])
+	require.Equal(t, WeightBot, weightsByText["bot"])
+
+	// Weighted random: bot entry should dominate.
+	botCount := 0
+	for range 1000 {
+		if p.Random("greetings") == "bot" {
+			botCount++
+		}
+	}
+	require.Greater(t, botCount, 300) // bot (weight 4) out of total weight 9
+}
+
+func TestLoadFallbackToDefaultsWhenNoExternal(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	p, err := Load(dir, "feishu", "")
+	require.NoError(t, err)
+
+	// No external files → defaults used as-is with weight 1.
 	all := p.All("greetings")
-	require.Contains(t, all, "global")
-	require.Contains(t, all, "platform")
-	require.Contains(t, all, "bot")
-	// Also has defaults
-	require.True(t, len(all) > 3)
+	require.NotEmpty(t, all)
+	for _, e := range p.entries["greetings"] {
+		require.Equal(t, WeightDefault, e.weight)
+	}
+}
+
+func TestLoadFallbackPartial(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	// Only configure "greetings" externally; "tips" and "status" fall back to defaults.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "PHRASES.md"), []byte("## Greetings\n- custom greeting\n"), 0o644))
+
+	p, err := Load(dir, "slack", "")
+	require.NoError(t, err)
+
+	// Greetings: external only, no defaults.
+	require.Equal(t, []string{"custom greeting"}, p.All("greetings"))
+	require.Equal(t, WeightGlobal, p.entries["greetings"][0].weight)
+
+	// Tips: fallback to defaults.
+	require.NotEmpty(t, p.All("tips"))
+	for _, e := range p.entries["tips"] {
+		require.Equal(t, WeightDefault, e.weight)
+	}
+
+	// Status: fallback to defaults.
+	require.NotEmpty(t, p.All("status"))
 }
 
 func TestLoadMissingFiles(t *testing.T) {
@@ -141,7 +202,6 @@ func TestLoadMissingFiles(t *testing.T) {
 
 	p, err := Load(dir, "slack", "")
 	require.NoError(t, err)
-	// Falls back to defaults
 	require.NotEmpty(t, p.Random("greetings"))
 }
 
@@ -174,10 +234,20 @@ func TestLoadEmptyBotID(t *testing.T) {
 
 func TestCategoriesSorted(t *testing.T) {
 	t.Parallel()
-	p := &Phrases{entries: map[string][]string{
-		"zebra": {"z"},
-		"alpha": {"a"},
-		"mid":   {"m"},
+	p := &Phrases{entries: map[string][]entry{
+		"zebra": {{"z", 1}},
+		"alpha": {{"a", 1}},
+		"mid":   {{"m", 1}},
 	}}
 	require.Equal(t, []string{"alpha", "mid", "zebra"}, p.Categories())
+}
+
+func TestWeightConstants(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, 1, WeightDefault)
+	require.Equal(t, 1, WeightPlatform)
+	require.Equal(t, 2, WeightGlobal)
+	require.Equal(t, 4, WeightBot)
+	require.True(t, WeightBot > WeightGlobal)
+	require.True(t, WeightGlobal > WeightPlatform)
 }
