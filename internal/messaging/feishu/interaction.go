@@ -163,41 +163,13 @@ func (c *FeishuConn) sendElicitationRequest(ctx context.Context, env *events.Env
 // registerInteraction registers a pending interaction with the adapter's manager.
 func (a *Adapter) registerInteraction(requestID, sessionID, ownerID string, kind events.Kind, conn *FeishuConn) {
 	a.Interactions.Register(&messaging.PendingInteraction{
-		ID:        requestID,
-		SessionID: sessionID,
-		OwnerID:   ownerID,
-		Type:      kind,
-		CreatedAt: time.Now(),
-		Timeout:   messaging.DefaultInteractionTimeout,
-		SendResponse: func(metadata map[string]any) {
-			respCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-			env := &events.Envelope{
-				Version:   events.Version,
-				ID:        requestID,
-				SessionID: sessionID,
-				Event: events.Event{
-					Type: events.Input,
-					Data: map[string]any{
-						"content":  "",
-						"metadata": metadata,
-					},
-				},
-				OwnerID: ownerID,
-			}
-			if a.Bridge() != nil {
-				if err := a.Bridge().Handle(respCtx, env, conn); err != nil {
-					a.Log.Error("interaction: failed to send response",
-						"request_id", requestID,
-						"session_id", sessionID,
-						"err", err)
-				}
-			} else {
-				a.Log.Error("interaction: bridge not available",
-					"request_id", requestID,
-					"session_id", sessionID)
-			}
-		},
+		ID:           requestID,
+		SessionID:    sessionID,
+		OwnerID:      ownerID,
+		Type:         kind,
+		CreatedAt:    time.Now(),
+		Timeout:      messaging.DefaultInteractionTimeout,
+		SendResponse: messaging.NewSendResponseFunc(a.Log, a.Bridge(), requestID, sessionID, ownerID, conn),
 	})
 }
 
@@ -243,35 +215,17 @@ func (a *Adapter) checkPendingInteraction(ctx context.Context, text, userID stri
 		if !allowed {
 			reason = "user denied"
 		}
-		metadata = map[string]any{
-			"permission_response": map[string]any{
-				"request_id": matched.ID,
-				"allowed":    allowed,
-				"reason":     reason,
-			},
-		}
+		metadata = messaging.BuildPermissionResponse(matched.ID, allowed, reason)
 
 	case events.QuestionRequest:
-		metadata = map[string]any{
-			"question_response": map[string]any{
-				"id": matched.ID,
-				"answers": map[string]string{
-					"_": text, // pass the raw text as the answer
-				},
-			},
-		}
+		metadata = messaging.BuildQuestionResponse(matched.ID, text)
 
 	case events.ElicitationRequest:
 		action := "accept"
 		if normalized == "decline" || normalized == "拒绝" || normalized == "cancel" || normalized == "取消" {
 			action = "decline"
 		}
-		metadata = map[string]any{
-			"elicitation_response": map[string]any{
-				"id":     matched.ID,
-				"action": action,
-			},
-		}
+		metadata = messaging.BuildElicitationResponse(matched.ID, action)
 	}
 
 	// Complete (remove) the interaction

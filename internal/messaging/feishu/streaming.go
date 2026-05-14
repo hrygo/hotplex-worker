@@ -286,32 +286,7 @@ func (c *StreamingCardController) EnsureCard(ctx context.Context, chatID, chatTy
 		return nil
 	}
 
-	// Step 2: Convert msg_id → card_id so streaming updates target the message's card.
-	cardID, err := c.idConvert(ctx, msgID)
-	if err != nil {
-		c.log.Warn("feishu: id_convert failed, using IM patch fallback",
-			"err", err)
-		c.cardKitOK = false
-	} else {
-		c.mu.Lock()
-		c.cardID = cardID
-		c.mu.Unlock()
-
-		// Step 3: Enable streaming on the card.
-		if err := c.enableStreaming(ctx); err != nil {
-			c.log.Warn("feishu: enable streaming failed, using IM patch fallback",
-				"err", err)
-			c.cardKitOK = false
-		} else {
-			c.streamingActive = true
-		}
-	}
-
-	if !c.transition(PhaseStreaming) {
-		return fmt.Errorf("feishu: cannot transition to streaming")
-	}
-	c.startFlushLoop()
-	return nil
+	return c.createAndEnable(ctx, msgID)
 }
 
 // SendPlaceholder sends a streaming card immediately with a placeholder message.
@@ -359,19 +334,29 @@ func (c *StreamingCardController) SendPlaceholder(ctx context.Context, chatID, c
 		return nil
 	}
 
-	// Step 2: Convert msg_id → card_id.
+	return c.createAndEnable(ctx, msgID)
+}
+
+// createAndEnable performs the shared post-send lifecycle: idConvert → enableStreaming
+// → transition to PhaseStreaming → startFlushLoop. The caller is responsible for
+// setting c.msgID and c.streamingActive, and for checking the PhaseCompleted race
+// before calling this method.
+func (c *StreamingCardController) createAndEnable(ctx context.Context, msgID string) error {
+	// Convert msg_id → card_id so streaming updates target the message's card.
 	cardID, err := c.idConvert(ctx, msgID)
 	if err != nil {
-		c.log.Warn("feishu: id_convert failed for placeholder", "err", err)
+		c.log.Warn("feishu: id_convert failed, using IM patch fallback",
+			"err", err)
 		c.cardKitOK = false
 	} else {
 		c.mu.Lock()
 		c.cardID = cardID
 		c.mu.Unlock()
 
-		// Step 3: Enable streaming on the card.
+		// Enable streaming on the card.
 		if err := c.enableStreaming(ctx); err != nil {
-			c.log.Warn("feishu: enable streaming failed for placeholder", "err", err)
+			c.log.Warn("feishu: enable streaming failed, using IM patch fallback",
+				"err", err)
 			c.cardKitOK = false
 		} else {
 			c.streamingActive = true
