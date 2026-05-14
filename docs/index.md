@@ -14,6 +14,7 @@ HotPlex 是一个 AI Coding Agent 统一管理平台。通过飞书、Slack 或 
 | --------------------------------------- | ----------------------------------------------------------------- |
 | 我想快速体验                            | [5 分钟快速开始](getting-started.md)                              |
 | 我是普通用户，想用飞书/Slack 和 AI 聊天 | [与 AI 对话](guides/user/chat-with-ai.md)                         |
+| 我是开发者，想通过 WebSocket 集成      | [WebSocket 对接指南](guides/developer/websocket-integration.md)    |
 | 我是开发者，想远程控制 Coding Agent     | [远程 Coding Agent 指南](guides/developer/remote-coding-agent.md) |
 | 我是企业管理员，需要部署到生产环境      | [企业部署指南](guides/enterprise/deployment.md)                   |
 | 我想为 HotPlex 贡献代码                 | [开发环境搭建](guides/contributor/development-setup.md)           |
@@ -48,6 +49,7 @@ HotPlex 是一个 AI Coding Agent 统一管理平台。通过飞书、Slack 或 
 
 | 指南                                                         | 说明                                  |
 | ------------------------------------------------------------ | ------------------------------------- |
+| [WebSocket 对接](guides/developer/websocket-integration.md)     | AEP 协议、认证、Session 管理、重连机制 |
 | [远程 Coding Agent](guides/developer/remote-coding-agent.md) | 远程控制 AI Agent 编程的最佳实践      |
 | [Session 管理](guides/developer/session-management.md)       | 5 状态机、/gc vs /reset、Resume 机制  |
 | [Context Window 管理](guides/developer/context-window.md)    | /compact、/clear、B/C 通道 token 消耗 |
