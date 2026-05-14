@@ -257,3 +257,43 @@ func TestCollector_ResetSessionEmptyFlush(t *testing.T) {
 	require.Len(t, page.Events, 1)
 	require.Equal(t, string(events.Done), page.Events[0].Type)
 }
+
+func TestCollector_DroppedEvents(t *testing.T) {
+	store := newTestStore(t)
+	c := NewCollector(store, slog.Default())
+
+	// Fill the channel buffer to capacity (writer goroutine will drain these
+	// into batches, so we need to backpressure the writer).
+	// Use a blocking BeginTx to stall the writer so the channel stays full.
+	blockTx := make(chan struct{})
+	stallStore := &stallingEventStore{EventStore: store, block: blockTx}
+	c.store = stallStore
+
+	// Send enough events to saturate the channel beyond its capacity.
+	// The writer goroutine may consume some before blocking, so send 2× capacity.
+	const totalEvents = collectorChanCap * 2
+	for i := range totalEvents {
+		c.Capture("s1", int64(i), events.Done, json.RawMessage(`{}`), "outbound", SourceNormal)
+	}
+
+	// Unblock the writer and close cleanly.
+	close(blockTx)
+	require.NoError(t, c.Close())
+
+	require.Greater(t, c.DroppedEvents(), int64(0), "expected some events to be dropped")
+}
+
+// stallingEventStore wraps an EventStore and blocks BeginTx until block chan is closed.
+type stallingEventStore struct {
+	EventStore
+	block chan struct{}
+}
+
+func (s *stallingEventStore) BeginTx(ctx context.Context) (EventTx, error) {
+	select {
+	case <-s.block:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	return s.EventStore.BeginTx(ctx)
+}

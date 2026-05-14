@@ -186,6 +186,13 @@ type EventTx interface {
 	Commit() error
 }
 
+// TurnQuerier provides read-only access to conversation turn records.
+type TurnQuerier interface {
+	QueryTurns(ctx context.Context, sessionID string, limit, offset int) ([]*TurnRecord, error)
+	QueryTurnsBefore(ctx context.Context, sessionID string, beforeSeq int64, limit int) ([]*TurnRecord, error)
+	QueryTurnStats(ctx context.Context, sessionID string) (*TurnStats, error)
+}
+
 // SQLiteStore implements EventStore using a shared SQLite database connection.
 type SQLiteStore struct {
 	db     *sql.DB

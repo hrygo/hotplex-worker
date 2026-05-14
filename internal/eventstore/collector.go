@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/hrygo/hotplex/pkg/events"
@@ -68,6 +69,7 @@ type Collector struct {
 
 	accumMu sync.Mutex
 	accum   map[string]*deltaAccumulator // sessionID → active delta accumulator
+	dropped atomic.Int64
 }
 
 // NewCollector creates a Collector that writes events to store.
@@ -157,6 +159,7 @@ func (c *Collector) send(req *captureRequest) {
 	select {
 	case c.captureC <- req:
 	default:
+		c.dropped.Add(1)
 		c.log.Warn("eventstore: capture channel full, dropping event",
 			"session_id", req.event.SessionID,
 			"seq", req.event.Seq,
@@ -182,6 +185,11 @@ func (c *Collector) Close() error {
 	close(c.closeC)
 	c.closeWg.Wait()
 	return nil
+}
+
+// DroppedEvents returns the total number of events dropped due to a full channel.
+func (c *Collector) DroppedEvents() int64 {
+	return c.dropped.Load()
 }
 
 func (c *Collector) runWriter() {

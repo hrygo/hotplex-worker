@@ -153,6 +153,14 @@ func (m *mockTurnsStore) QueryTurnsBefore(ctx context.Context, sessionID string,
 	return args.Get(0).([]*eventstore.TurnRecord), args.Error(1)
 }
 
+func (m *mockTurnsStore) QueryTurnStats(ctx context.Context, sessionID string) (*eventstore.TurnStats, error) {
+	args := m.Called(ctx, sessionID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*eventstore.TurnStats), args.Error(1)
+}
+
 // ─── Test helpers ───────────────────────────────────────────────────────────────
 
 func newTestAuth(t *testing.T) *security.Authenticator {
