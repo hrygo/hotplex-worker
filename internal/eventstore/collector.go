@@ -89,18 +89,7 @@ func NewCollector(store EventStore, log *slog.Logger) *Collector {
 // on message.end or next non-delta event.
 func (c *Collector) Capture(sessionID string, seq int64, eventType events.Kind, data json.RawMessage, direction, source string) {
 	if eventType == events.MessageDelta {
-		c.accumMu.Lock()
-		if c.accum == nil {
-			c.accumMu.Unlock()
-			return
-		}
-		acc := c.accum[sessionID]
-		if acc == nil {
-			acc = newDeltaAccumulator()
-			c.accum[sessionID] = acc
-		}
-		acc.append(seq, data)
-		c.accumMu.Unlock()
+		c.accumulateDelta(sessionID, seq, data)
 		return
 	}
 
@@ -126,6 +115,30 @@ func (c *Collector) Capture(sessionID string, seq int64, eventType events.Kind, 
 		CreatedAt: time.Now().UnixMilli(),
 	}}
 	c.send(req)
+}
+
+// getOrCreateAccum returns the delta accumulator for sessionID, creating one if needed.
+// Caller must hold c.accumMu. Returns nil if the collector is closed.
+func (c *Collector) getOrCreateAccum(sessionID string) *deltaAccumulator {
+	if c.accum == nil {
+		return nil
+	}
+	acc := c.accum[sessionID]
+	if acc == nil {
+		acc = newDeltaAccumulator()
+		c.accum[sessionID] = acc
+	}
+	return acc
+}
+
+// accumulateDelta appends a message.delta event to the per-session accumulator.
+func (c *Collector) accumulateDelta(sessionID string, seq int64, data json.RawMessage) {
+	c.accumMu.Lock()
+	acc := c.getOrCreateAccum(sessionID)
+	if acc != nil {
+		acc.append(seq, data)
+	}
+	c.accumMu.Unlock()
 }
 
 func (c *Collector) flushDelta(sessionID string) {
@@ -260,14 +273,10 @@ func (c *Collector) flushBatch(batch []*captureRequest) {
 // Flushes immediately when accumulated content exceeds deltaFlushSize.
 func (c *Collector) CaptureDeltaString(sessionID string, seq int64, content string) {
 	c.accumMu.Lock()
-	if c.accum == nil {
+	acc := c.getOrCreateAccum(sessionID)
+	if acc == nil {
 		c.accumMu.Unlock()
 		return
-	}
-	acc := c.accum[sessionID]
-	if acc == nil {
-		acc = newDeltaAccumulator()
-		c.accum[sessionID] = acc
 	}
 	acc.appendRaw(seq, content)
 

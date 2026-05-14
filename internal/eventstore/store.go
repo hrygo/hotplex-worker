@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -290,9 +291,7 @@ func (s *SQLiteStore) QueryBySession(ctx context.Context, sessionID string, curs
 
 	// For DESC queries (CursorLatest, CursorBefore), reverse to ASC order.
 	if dir == CursorLatest || dir == CursorBefore {
-		for i, j := 0, len(events)-1; i < j; i, j = i+1, j-1 {
-			events[i], events[j] = events[j], events[i]
-		}
+		slices.Reverse(events)
 	}
 
 	page := &EventPage{
@@ -371,9 +370,7 @@ func (s *SQLiteStore) QueryTurnsBefore(ctx context.Context, sessionID string, be
 		return nil, err
 	}
 	// Reverse to ASC order (SQL returns DESC).
-	for i, j := 0, len(records)-1; i < j; i, j = i+1, j-1 {
-		records[i], records[j] = records[j], records[i]
-	}
+	slices.Reverse(records)
 	return records, nil
 }
 
