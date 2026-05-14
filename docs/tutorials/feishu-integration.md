@@ -2,8 +2,6 @@
 title: 飞书 (Feishu) 集成教程
 weight: 2
 description: 一步步将 HotPlex Gateway 接入飞书，实现 AI 对话、语音消息和权限交互
-persona: developer
-difficulty: beginner
 ---
 
 # 飞书集成教程

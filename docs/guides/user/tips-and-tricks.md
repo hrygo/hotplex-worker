@@ -1,3 +1,9 @@
+---
+title: 使用技巧与窍门
+weight: 4
+description: 提升 HotPlex AI Agent 使用效率的实用技巧与最佳实践
+---
+
 # 使用技巧与窍门
 
 > 提升 HotPlex AI Agent 使用效率的实用技巧

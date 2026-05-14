@@ -1,8 +1,6 @@
 ---
 title: "Metrics 参考"
 description: "HotPlex Gateway 暴露的所有 Prometheus 指标完整参考"
-persona: "developer"
-difficulty: "intermediate"
 ---
 
 # Metrics 参考

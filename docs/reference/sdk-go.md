@@ -2,8 +2,6 @@
 title: Go Client SDK 参考
 weight: 6
 description: 基于 AEP v1 协议的 HotPlex Worker Gateway Go 客户端 SDK 完整参考
-persona: developer
-difficulty: intermediate
 ---
 
 # Go Client SDK 参考

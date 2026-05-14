@@ -2,8 +2,6 @@
 title: "HotPlex 5 分钟快速上手"
 weight: 2
 description: "从零开始安装、配置并运行 HotPlex Worker Gateway"
-persona: "all"
-difficulty: "beginner"
 ---
 
 # HotPlex 5 分钟快速上手

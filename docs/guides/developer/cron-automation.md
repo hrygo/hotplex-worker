@@ -1,3 +1,9 @@
+---
+title: Cron 自动化
+weight: 14
+description: 使用 HotPlex Cron 调度器实现 AI Agent 自动化工作流与定时任务
+---
+
 # Cron 自动化
 
 > 使用 HotPlex Cron 调度器实现 AI Agent 自动化工作流

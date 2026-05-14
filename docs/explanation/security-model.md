@@ -1,3 +1,9 @@
+---
+title: 安全模型
+weight: 6
+description: HotPlex Gateway 安全设计哲学与多层防护体系：白名单策略、JWT 认证、SSRF 防御与进程隔离
+---
+
 # 安全模型
 
 > HotPlex Gateway 的安全设计哲学与多层防护体系解析

@@ -2,8 +2,6 @@
 title: 架构概览
 weight: 31
 description: HotPlex Gateway 系统架构全景视图，帮助贡献者理解各组件职责与交互方式
-persona: contributor
-difficulty: intermediate
 ---
 
 # 架构概览
@@ -136,6 +134,8 @@ CREATED → RUNNING → IDLE → TERMINATED → DELETED
 |------|------|------|
 | `Bridge` | `messaging/bridge.go` | SessionStarter + ConnFactory |
 | `PlatformAdapter` | `messaging/platform_adapter.go` | 基础适配器接口 |
+| `BotRegistry` | `messaging/bot_registry.go` | 并发安全多 bot 注册表（Register/Get/Unregister） |
+| `config.go` | `messaging/config.go` | `AdapterConfig` 含 `BotName` 字段 |
 | `slack/` | `messaging/slack/` | Slack Socket Mode 适配器 |
 | `feishu/` | `messaging/feishu/` | 飞书 WS 适配器 + STT |
 | `tts/` | `messaging/tts/` | Edge-TTS 语音合成 + FFmpeg Opus 转换 |

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	lark "github.com/larksuite/oapi-sdk-go/v3"
 
@@ -63,8 +64,12 @@ func startMessagingAdapters(ctx context.Context, deps *GatewayDeps) ([]messaging
 	sm := deps.SessionMgr
 	handler := deps.Handler
 	gwBridge := deps.Bridge
+	registry := messaging.DefaultBotRegistry()
+
 	for _, pt := range messaging.RegisteredTypes() {
 		var workerType, workDir string
+		var botEntries []*messaging.BotEntry
+
 		switch pt {
 		case messaging.PlatformSlack:
 			if !appCfg.Messaging.Slack.Enabled {
@@ -72,125 +77,260 @@ func startMessagingAdapters(ctx context.Context, deps *GatewayDeps) ([]messaging
 				continue
 			}
 			workerType = appCfg.Messaging.Slack.WorkerType
+			for i := range appCfg.Messaging.Slack.Bots {
+				bc := &appCfg.Messaging.Slack.Bots[i]
+				botEntries = append(botEntries, &messaging.BotEntry{
+					Name:       bc.Name,
+					Platform:   pt,
+					Soul:       bc.Soul,
+					WorkerType: bc.WorkerType,
+					Status:     messaging.BotStatusStarting,
+				})
+			}
 		case messaging.PlatformFeishu:
 			if !appCfg.Messaging.Feishu.Enabled {
 				statuses = append(statuses, AdapterStatus{Name: "feishu", Started: false})
 				continue
 			}
 			workerType = appCfg.Messaging.Feishu.WorkerType
+			for i := range appCfg.Messaging.Feishu.Bots {
+				bc := &appCfg.Messaging.Feishu.Bots[i]
+				botEntries = append(botEntries, &messaging.BotEntry{
+					Name:       bc.Name,
+					Platform:   pt,
+					Soul:       bc.Soul,
+					WorkerType: bc.WorkerType,
+					Status:     messaging.BotStatusStarting,
+				})
+			}
 		}
+
+		if len(botEntries) == 0 {
+			continue
+		}
+
+		// Startup validation: duplicate bot name within same platform.
+		seenNames := make(map[string]bool, len(botEntries))
+		var validated []*messaging.BotEntry
+		for _, e := range botEntries {
+			if seenNames[e.Name] {
+				log.Error("messaging: duplicate bot name, skipping", "platform", pt, "bot", e.Name)
+				continue
+			}
+			seenNames[e.Name] = true
+			validated = append(validated, e)
+		}
+		botEntries = validated
+
+		// Startup validation: bot count limit.
+		if len(botEntries) > config.MaxBotsPerPlatform {
+			log.Warn("messaging: bot count exceeds limit, excess bots ignored",
+				"platform", pt, "count", len(botEntries), "limit", config.MaxBotsPerPlatform)
+			botEntries = botEntries[:config.MaxBotsPerPlatform]
+		}
+
 		workDir = appCfg.ResolvePlatformWorkDir(string(pt))
 
-		adapter, err := messaging.New(pt, log)
-		if err != nil {
-			log.Warn("messaging: skip adapter", "platform", pt, "err", err)
-			continue
-		}
-
-		msgBridge := messaging.NewBridge(log, pt, hub, sm, handler, gwBridge, workerType, workDir)
-
-		acfg := messaging.AdapterConfig{
-			Hub:     hub,
-			SM:      sm,
-			Handler: handler,
-			Bridge:  msgBridge,
-			Extras:  make(map[string]any),
-		}
-		acfg.Extras["turn_summary_enabled"] = appCfg.Messaging.TurnSummaryEnabled
-
-		switch pt {
-		case messaging.PlatformSlack:
-			gateway := messaging.NewGate(
-				appCfg.Messaging.Slack.DMPolicy,
-				appCfg.Messaging.Slack.GroupPolicy,
-				appCfg.Messaging.Slack.RequireMention,
-				appCfg.Messaging.Slack.AllowFrom,
-				appCfg.Messaging.Slack.AllowDMFrom,
-				appCfg.Messaging.Slack.AllowGroupFrom,
-			)
-			acfg.Gate = gateway
-			acfg.Extras["bot_token"] = appCfg.Messaging.Slack.BotToken
-			acfg.Extras["app_token"] = appCfg.Messaging.Slack.AppToken
-			acfg.Extras["assistant_enabled"] = appCfg.Messaging.Slack.AssistantAPIEnabled
-			acfg.Extras["reconnect_base_delay"] = appCfg.Messaging.Slack.ReconnectBaseDelay
-			acfg.Extras["reconnect_max_delay"] = appCfg.Messaging.Slack.ReconnectMaxDelay
-			if t := buildSlackTranscriber(appCfg.Messaging.Slack, log); t != nil {
-				acfg.Extras["transcriber"] = t
+		for _, entry := range botEntries {
+			// Per-bot workerType override.
+			botWorkerType := workerType
+			if entry.WorkerType != "" {
+				botWorkerType = entry.WorkerType
 			}
-			if p := buildSlackTTSPipeline(appCfg, log); p != nil {
-				acfg.Extras["tts_pipeline"] = p
-			}
-		case messaging.PlatformFeishu:
-			gateway := messaging.NewGate(
-				appCfg.Messaging.Feishu.DMPolicy,
-				appCfg.Messaging.Feishu.GroupPolicy,
-				appCfg.Messaging.Feishu.RequireMention,
-				appCfg.Messaging.Feishu.AllowFrom,
-				appCfg.Messaging.Feishu.AllowDMFrom,
-				appCfg.Messaging.Feishu.AllowGroupFrom,
-			)
-			acfg.Gate = gateway
-			acfg.Extras["app_id"] = appCfg.Messaging.Feishu.AppID
-			acfg.Extras["app_secret"] = appCfg.Messaging.Feishu.AppSecret
-			if t := buildFeishuTranscriber(appCfg.Messaging.Feishu, log); t != nil {
-				acfg.Extras["transcriber"] = t
-			}
-			if p := buildFeishuTTSPipeline(appCfg, log); p != nil {
-				acfg.Extras["tts_pipeline"] = p
-			}
-		}
 
-		if err := adapter.ConfigureWith(acfg); err != nil {
-			log.Warn("messaging: configure failed", "platform", pt, "err", err)
-			continue
-		}
+			adapter, err := messaging.New(pt, log)
+			if err != nil {
+				log.Warn("messaging: skip adapter", "platform", pt, "bot", entry.Name, "err", err)
+				continue
+			}
 
-		if err := adapter.Start(ctx); err != nil {
-			log.Warn("messaging: start failed", "platform", pt, "err", err)
-			statuses = append(statuses, AdapterStatus{Name: string(pt), Started: false})
-			continue
-		}
+			msgBridge := messaging.NewBridge(log, pt, hub, sm, handler, gwBridge, botWorkerType, workDir)
 
-		// Hint: global agent-config files without bot-level directory.
-		if appCfg.AgentConfig.Enabled && appCfg.AgentConfig.ConfigDir != "" {
-			if botID := adapter.GetBotID(); botID != "" {
-				botDir := filepath.Join(appCfg.AgentConfig.ConfigDir, string(pt), botID)
-				if _, err := os.Stat(botDir); os.IsNotExist(err) && agentconfig.HasGlobalFiles(appCfg.AgentConfig.ConfigDir) {
-					log.Warn("agent-config: global files found but no bot-level directory",
-						"platform", pt,
-						"bot_id", botID,
-						"bot_dir", botDir)
+			acfg := messaging.AdapterConfig{
+				Hub:     hub,
+				SM:      sm,
+				Handler: handler,
+				Bridge:  msgBridge,
+				BotName: entry.Name,
+				Extras:  make(map[string]any),
+			}
+			acfg.Extras["turn_summary_enabled"] = appCfg.Messaging.TurnSummaryEnabled
+
+			switch pt {
+			case messaging.PlatformSlack:
+				botCfg := resolveSlackBot(appCfg, entry.Name)
+				fillSlackExtras(&acfg, appCfg, botCfg, log)
+			case messaging.PlatformFeishu:
+				botCfg := resolveFeishuBot(appCfg, entry.Name)
+				fillFeishuExtras(&acfg, appCfg, botCfg, log)
+			}
+
+			if err := adapter.ConfigureWith(acfg); err != nil {
+				log.Warn("messaging: configure failed", "platform", pt, "bot", entry.Name, "err", err)
+				continue
+			}
+
+			if err := adapter.Start(ctx); err != nil {
+				log.Warn("messaging: start failed", "platform", pt, "bot", entry.Name, "err", err)
+				statuses = append(statuses, AdapterStatus{Name: string(pt), BotName: entry.Name, Started: false})
+				continue
+			}
+
+			// Update entry with runtime info and register.
+			entry.BotID = adapter.GetBotID()
+			entry.Status = messaging.BotStatusRunning
+			entry.Adapter = adapter
+			entry.Bridge = msgBridge
+			entry.ConnectedAt = time.Now().UTC()
+			registry.Register(entry)
+
+			// Hint: global agent-config files without bot-level directory.
+			if appCfg.AgentConfig.Enabled && appCfg.AgentConfig.ConfigDir != "" {
+				if botID := adapter.GetBotID(); botID != "" {
+					botDir := filepath.Join(appCfg.AgentConfig.ConfigDir, string(pt), botID)
+					if _, err := os.Stat(botDir); os.IsNotExist(err) && agentconfig.HasGlobalFiles(appCfg.AgentConfig.ConfigDir) {
+						log.Warn("agent-config: global files found but no bot-level directory",
+							"platform", pt,
+							"bot", entry.Name,
+							"bot_id", botID,
+							"bot_dir", botDir)
+					}
 				}
 			}
-		}
 
-		if err := msgBridge.SetAdapter(adapter); err != nil {
-			log.Error("messaging: adapter platform mismatch", "platform", pt, "err", err)
+			if err := msgBridge.SetAdapter(adapter); err != nil {
+				log.Error("messaging: adapter platform mismatch", "platform", pt, "bot", entry.Name, "err", err)
+			}
+			adapters = append(adapters, adapter)
+			statuses = append(statuses, AdapterStatus{Name: string(pt), BotName: entry.Name, Started: true})
+			log.Info("messaging: adapter started", "platform", pt, "bot", entry.Name, "bot_id", entry.BotID)
 		}
-		adapters = append(adapters, adapter)
-		statuses = append(statuses, AdapterStatus{Name: string(pt), Started: true})
-		log.Info("messaging: adapter started", "platform", pt)
 	}
 	return adapters, statuses
 }
 
-func buildFeishuTranscriber(cfg config.FeishuConfig, log *slog.Logger) stt.Transcriber {
-	switch cfg.Provider {
+// resolveSlackBot finds the SlackBotConfig for the given bot name.
+func resolveSlackBot(cfg *config.Config, name string) *config.SlackBotConfig {
+	for i := range cfg.Messaging.Slack.Bots {
+		if cfg.Messaging.Slack.Bots[i].Name == name {
+			return &cfg.Messaging.Slack.Bots[i]
+		}
+	}
+	return nil
+}
+
+// resolveFeishuBot finds the FeishuBotConfig for the given bot name.
+func resolveFeishuBot(cfg *config.Config, name string) *config.FeishuBotConfig {
+	for i := range cfg.Messaging.Feishu.Bots {
+		if cfg.Messaging.Feishu.Bots[i].Name == name {
+			return &cfg.Messaging.Feishu.Bots[i]
+		}
+	}
+	return nil
+}
+
+// fillSlackExtras populates AdapterConfig.Extras for a Slack bot.
+func fillSlackExtras(acfg *messaging.AdapterConfig, appCfg *config.Config, botCfg *config.SlackBotConfig, log *slog.Logger) {
+	platformCfg := appCfg.Messaging.Slack
+	gate := messaging.NewGate(
+		platformCfg.DMPolicy,
+		platformCfg.GroupPolicy,
+		platformCfg.RequireMention,
+		platformCfg.AllowFrom,
+		platformCfg.AllowDMFrom,
+		platformCfg.AllowGroupFrom,
+	)
+	acfg.Gate = gate
+
+	// Use bot-specific credentials, falling back to platform-level.
+	botToken := platformCfg.BotToken
+	appToken := platformCfg.AppToken
+	if botCfg != nil {
+		if botCfg.BotToken != "" {
+			botToken = botCfg.BotToken
+		}
+		if botCfg.AppToken != "" {
+			appToken = botCfg.AppToken
+		}
+	}
+	acfg.Extras["bot_token"] = botToken
+	acfg.Extras["app_token"] = appToken
+	acfg.Extras["assistant_enabled"] = platformCfg.AssistantAPIEnabled
+	acfg.Extras["reconnect_base_delay"] = platformCfg.ReconnectBaseDelay
+	acfg.Extras["reconnect_max_delay"] = platformCfg.ReconnectMaxDelay
+
+	sttCfg := platformCfg.STTConfig
+	ttsCfg := platformCfg.TTSConfig
+	if botCfg != nil {
+		sttCfg = botCfg.STTConfig
+		ttsCfg = botCfg.TTSConfig
+	}
+	if t := buildSlackTranscriber(sttCfg, log); t != nil {
+		acfg.Extras["transcriber"] = t
+	}
+	if p := buildSlackTTSPipeline(ttsCfg, botToken, appToken, log); p != nil {
+		acfg.Extras["tts_pipeline"] = p
+	}
+}
+
+// fillFeishuExtras populates AdapterConfig.Extras for a Feishu bot.
+func fillFeishuExtras(acfg *messaging.AdapterConfig, appCfg *config.Config, botCfg *config.FeishuBotConfig, log *slog.Logger) {
+	platformCfg := appCfg.Messaging.Feishu
+	gate := messaging.NewGate(
+		platformCfg.DMPolicy,
+		platformCfg.GroupPolicy,
+		platformCfg.RequireMention,
+		platformCfg.AllowFrom,
+		platformCfg.AllowDMFrom,
+		platformCfg.AllowGroupFrom,
+	)
+	acfg.Gate = gate
+
+	// Use bot-specific credentials, falling back to platform-level.
+	appID := platformCfg.AppID
+	appSecret := platformCfg.AppSecret
+	if botCfg != nil {
+		if botCfg.AppID != "" {
+			appID = botCfg.AppID
+		}
+		if botCfg.AppSecret != "" {
+			appSecret = botCfg.AppSecret
+		}
+	}
+	acfg.Extras["app_id"] = appID
+	acfg.Extras["app_secret"] = appSecret
+
+	sttCfg := platformCfg.STTConfig
+	ttsCfg := platformCfg.TTSConfig
+	if botCfg != nil {
+		sttCfg = botCfg.STTConfig
+		ttsCfg = botCfg.TTSConfig
+	}
+	if t := buildFeishuTranscriber(sttCfg, appID, appSecret, log); t != nil {
+		acfg.Extras["transcriber"] = t
+	}
+	if p := buildFeishuTTSPipeline(ttsCfg, appID, appSecret, log); p != nil {
+		acfg.Extras["tts_pipeline"] = p
+	}
+}
+
+func buildFeishuTranscriber(sttCfg config.STTConfig, appID, appSecret string, log *slog.Logger) stt.Transcriber {
+	switch sttCfg.Provider {
 	case config.STTProviderFeishu:
-		client := lark.NewClient(cfg.AppID, cfg.AppSecret)
+		client := lark.NewClient(appID, appSecret)
 		return feishu.NewFeishuSTT(client, log)
 	case config.STTProviderLocal:
-		return buildLocalSTT("feishu", cfg.STTConfig, log)
+		return buildLocalSTT("feishu", sttCfg, log)
 	case config.STTProviderFeishuLocal:
-		if cfg.LocalCmd == "" {
+		if sttCfg.LocalCmd == "" {
 			log.Warn("feishu: stt_provider=feishu+local but stt_local_cmd is empty, using feishu only")
-			client := lark.NewClient(cfg.AppID, cfg.AppSecret)
+			client := lark.NewClient(appID, appSecret)
 			return feishu.NewFeishuSTT(client, log)
 		}
-		client := lark.NewClient(cfg.AppID, cfg.AppSecret)
+		client := lark.NewClient(appID, appSecret)
 		return stt.NewFallbackSTT(
 			feishu.NewFeishuSTT(client, log),
-			buildLocalSTT("feishu", cfg.STTConfig, log),
+			buildLocalSTT("feishu", sttCfg, log),
 			log,
 		)
 	default:
@@ -198,11 +338,11 @@ func buildFeishuTranscriber(cfg config.FeishuConfig, log *slog.Logger) stt.Trans
 	}
 }
 
-func buildSlackTranscriber(cfg config.SlackConfig, log *slog.Logger) stt.Transcriber {
-	if cfg.Provider != config.STTProviderLocal {
+func buildSlackTranscriber(sttCfg config.STTConfig, log *slog.Logger) stt.Transcriber {
+	if sttCfg.Provider != config.STTProviderLocal {
 		return nil
 	}
-	return buildLocalSTT("slack", cfg.STTConfig, log)
+	return buildLocalSTT("slack", sttCfg, log)
 }
 
 func buildLocalSTT(platform string, cfg config.STTConfig, log *slog.Logger) stt.Transcriber {
@@ -268,8 +408,7 @@ func expandCommand(cmd string) string {
 	return strings.Join(parts, " ")
 }
 
-func buildSlackTTSPipeline(cfg *config.Config, log *slog.Logger) *slack.TTSPipeline {
-	ttsCfg := cfg.Messaging.Slack.TTSConfig
+func buildSlackTTSPipeline(ttsCfg config.TTSConfig, botToken, appToken string, log *slog.Logger) *slack.TTSPipeline {
 	if !ttsCfg.TTSEnabled {
 		return nil
 	}
@@ -279,12 +418,11 @@ func buildSlackTTSPipeline(cfg *config.Config, log *slog.Logger) *slack.TTSPipel
 		return nil
 	}
 
-	client := slackapi.New(cfg.Messaging.Slack.BotToken, slackapi.OptionAppLevelToken(cfg.Messaging.Slack.AppToken))
+	client := slackapi.New(botToken, slackapi.OptionAppLevelToken(appToken))
 	return slack.NewTTSPipeline(synth, client, ttsCfg.MaxChars, log)
 }
 
-func buildFeishuTTSPipeline(cfg *config.Config, log *slog.Logger) *feishu.TTSPipeline {
-	ttsCfg := cfg.Messaging.Feishu.TTSConfig
+func buildFeishuTTSPipeline(ttsCfg config.TTSConfig, appID, appSecret string, log *slog.Logger) *feishu.TTSPipeline {
 	if !ttsCfg.TTSEnabled {
 		return nil
 	}
@@ -294,7 +432,7 @@ func buildFeishuTTSPipeline(cfg *config.Config, log *slog.Logger) *feishu.TTSPip
 		return nil
 	}
 
-	client := lark.NewClient(cfg.Messaging.Feishu.AppID, cfg.Messaging.Feishu.AppSecret)
+	client := lark.NewClient(appID, appSecret)
 	return feishu.NewTTSPipeline(synth, client, ttsCfg.MaxChars, log)
 }
 

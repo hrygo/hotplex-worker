@@ -2,8 +2,6 @@
 title: Disaster Recovery Guide
 weight: 27
 description: RTO/RPO targets, backup strategies, restore procedures, and DR testing for enterprise HotPlex deployments.
-persona: enterprise
-difficulty: advanced
 ---
 
 # Disaster Recovery Guide

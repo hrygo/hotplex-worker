@@ -11,6 +11,7 @@ import (
 	"github.com/hrygo/hotplex/internal/config"
 	"github.com/hrygo/hotplex/internal/docs"
 	"github.com/hrygo/hotplex/internal/gateway"
+	"github.com/hrygo/hotplex/internal/messaging"
 )
 
 func setupRoutes(
@@ -83,6 +84,7 @@ func setupRoutes(
 		Bridge:        bridgeAdapter,
 		ConfigWatcher: configWatcherAdapter,
 		Cron:          cronProvider,
+		BotLister:     &botListerAdapter{registry: messaging.DefaultBotRegistry()},
 		Version:       versionString,
 		NewSessionID:  newSessionID,
 	})
@@ -138,6 +140,10 @@ func setupRoutes(
 	adminMux.HandleFunc("DELETE /api/cron/jobs/{id}", adminAPI.HandleCronDelete)
 	adminMux.HandleFunc("POST /api/cron/jobs/{id}/run", adminAPI.HandleCronTrigger)
 	adminMux.HandleFunc("GET /api/cron/jobs/{id}/runs", adminAPI.HandleCronRunHistory)
+
+	// Bot status API
+	adminMux.HandleFunc("GET /admin/bots", adminAPI.HandleListBots)
+	adminMux.HandleFunc("GET /admin/bots/{name}", adminAPI.HandleGetBot)
 
 	// Documentation
 	mux.Handle("GET /docs/", http.StripPrefix("/docs", docs.Handler()))

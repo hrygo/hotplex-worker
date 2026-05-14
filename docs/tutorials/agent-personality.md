@@ -2,8 +2,6 @@
 title: Agent 人格定制教程
 weight: 3
 description: 使用双通道配置系统定制 AI Agent 的人格与行为，5 分钟上手
-persona: developer
-difficulty: beginner
 ---
 
 # Agent 人格定制教程

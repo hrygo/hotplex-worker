@@ -1,11 +1,5 @@
 ---
-type: research
-tags:
-  - research/claude-code
-  - architecture/context
-  - reference/prompt-engineering
-related:
-  - Agent-Config-Design.md
+
 ---
 
 # Claude Code Context Architecture Analysis
