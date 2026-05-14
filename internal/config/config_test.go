@@ -997,6 +997,101 @@ func TestPropagateMessagingDefaults(t *testing.T) {
 	})
 }
 
+func TestNormalizeSlackBots(t *testing.T) {
+	t.Parallel()
+
+	t.Run("backward compat wraps single-bot config", func(t *testing.T) {
+		t.Parallel()
+		cfg := &SlackConfig{BotToken: "xoxb-aaa", AppToken: "xapp-bbb"}
+		normalizeSlackBots(cfg)
+		require.Len(t, cfg.Bots, 1)
+		require.Equal(t, "default", cfg.Bots[0].Name)
+		require.Equal(t, "xoxb-aaa", cfg.Bots[0].BotToken)
+		require.Equal(t, "xapp-bbb", cfg.Bots[0].AppToken)
+	})
+
+	t.Run("bots array takes precedence", func(t *testing.T) {
+		t.Parallel()
+		cfg := &SlackConfig{
+			BotToken: "xoxb-legacy",
+			AppToken: "xapp-legacy",
+			Bots: []SlackBotConfig{
+				{Name: "bot1", BotToken: "xoxb-new", AppToken: "xapp-new"},
+			},
+		}
+		normalizeSlackBots(cfg)
+		require.Len(t, cfg.Bots, 1)
+		require.Equal(t, "bot1", cfg.Bots[0].Name)
+		require.Equal(t, "xoxb-new", cfg.Bots[0].BotToken)
+	})
+
+	t.Run("empty config produces no bots", func(t *testing.T) {
+		t.Parallel()
+		cfg := &SlackConfig{}
+		normalizeSlackBots(cfg)
+		require.Empty(t, cfg.Bots)
+	})
+}
+
+func TestNormalizeFeishuBots(t *testing.T) {
+	t.Parallel()
+
+	t.Run("backward compat wraps single-bot config", func(t *testing.T) {
+		t.Parallel()
+		cfg := &FeishuConfig{AppID: "cli_xxx", AppSecret: "secret"}
+		normalizeFeishuBots(cfg)
+		require.Len(t, cfg.Bots, 1)
+		require.Equal(t, "default", cfg.Bots[0].Name)
+		require.Equal(t, "cli_xxx", cfg.Bots[0].AppID)
+		require.Equal(t, "secret", cfg.Bots[0].AppSecret)
+	})
+
+	t.Run("bots array takes precedence", func(t *testing.T) {
+		t.Parallel()
+		cfg := &FeishuConfig{
+			AppID:     "cli_legacy",
+			AppSecret: "old_secret",
+			Bots: []FeishuBotConfig{
+				{Name: "bot1", AppID: "cli_new", AppSecret: "new_secret"},
+			},
+		}
+		normalizeFeishuBots(cfg)
+		require.Len(t, cfg.Bots, 1)
+		require.Equal(t, "bot1", cfg.Bots[0].Name)
+	})
+
+	t.Run("empty config produces no bots", func(t *testing.T) {
+		t.Parallel()
+		cfg := &FeishuConfig{}
+		normalizeFeishuBots(cfg)
+		require.Empty(t, cfg.Bots)
+	})
+}
+
+func TestPropagateMessagingDefaults_MultiBot(t *testing.T) {
+	t.Parallel()
+
+	t.Run("propagates STT/TTS to each bot", func(t *testing.T) {
+		t.Parallel()
+		cfg := Default()
+		cfg.Messaging.Slack.Bots = []SlackBotConfig{
+			{Name: "bot1"},
+			{Name: "bot2", STTConfig: STTConfig{Provider: "feishu"}},
+		}
+		cfg.Messaging.Feishu.Bots = []FeishuBotConfig{
+			{Name: "bot3"},
+		}
+		propagateMessagingDefaults(cfg)
+
+		// bot1 inherits messaging-level STT default.
+		require.Equal(t, "local", cfg.Messaging.Slack.Bots[0].Provider)
+		// bot2 has explicit provider, preserved.
+		require.Equal(t, "feishu", cfg.Messaging.Slack.Bots[1].Provider)
+		// bot3 inherits.
+		require.Equal(t, "local", cfg.Messaging.Feishu.Bots[0].Provider)
+	})
+}
+
 func TestMessagingLevelEnvVars(t *testing.T) {
 	// Not parallel — modifies global env vars.
 	envVars := []string{

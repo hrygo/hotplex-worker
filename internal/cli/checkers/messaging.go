@@ -2,10 +2,12 @@ package checkers
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strings"
 
 	"github.com/hrygo/hotplex/internal/cli"
+	"github.com/hrygo/hotplex/internal/config"
 )
 
 type slackCredsChecker struct{}
@@ -97,4 +99,107 @@ func (c feishuCredsChecker) Check(ctx context.Context) cli.Diagnostic {
 func init() {
 	cli.DefaultRegistry.Register(slackCredsChecker{})
 	cli.DefaultRegistry.Register(feishuCredsChecker{})
+	cli.DefaultRegistry.Register(multiBotConfigChecker{})
+}
+
+// ─── messaging.multi_bot_config ─────────────────────────────────────────────
+
+type multiBotConfigChecker struct{}
+
+func (c multiBotConfigChecker) Name() string     { return "messaging.multi_bot_config" }
+func (c multiBotConfigChecker) Category() string { return "messaging" }
+func (c multiBotConfigChecker) Check(ctx context.Context) cli.Diagnostic {
+	if configPath == "" {
+		return cli.Diagnostic{
+			Name:     c.Name(),
+			Category: c.Category(),
+			Status:   cli.StatusPass,
+			Message:  "Config path not set, skipping multi-bot check",
+		}
+	}
+
+	cfg, err := config.Load(configPath, config.LoadOptions{})
+	if err != nil {
+		return cli.Diagnostic{
+			Name:     c.Name(),
+			Category: c.Category(),
+			Status:   cli.StatusWarn,
+			Message:  "Cannot load config: " + err.Error(),
+			FixHint:  "Fix config syntax errors first",
+		}
+	}
+
+	var issues []string
+	issues = append(issues, checkBotEntries("slack", mapSlackBots(cfg.Messaging.Slack.Bots))...)
+	issues = append(issues, checkBotEntries("feishu", mapFeishuBots(cfg.Messaging.Feishu.Bots))...)
+
+	if len(issues) == 0 {
+		totalBots := len(cfg.Messaging.Slack.Bots) + len(cfg.Messaging.Feishu.Bots)
+		if totalBots == 0 {
+			return cli.Diagnostic{
+				Name:     c.Name(),
+				Category: c.Category(),
+				Status:   cli.StatusPass,
+				Message:  "No bots configured",
+			}
+		}
+		return cli.Diagnostic{
+			Name:     c.Name(),
+			Category: c.Category(),
+			Status:   cli.StatusPass,
+			Message:  fmt.Sprintf("Multi-bot config valid (%d bot(s))", totalBots),
+		}
+	}
+
+	return cli.Diagnostic{
+		Name:     c.Name(),
+		Category: c.Category(),
+		Status:   cli.StatusFail,
+		Message:  strings.Join(issues, "; "),
+		FixHint:  "Fix multi-bot config: ensure unique names, non-empty credentials, max 10 bots per platform",
+	}
+}
+
+type botCheck struct {
+	Name  string
+	Cred1 string
+	Cred2 string
+}
+
+func checkBotEntries(platform string, bots []botCheck) []string {
+	var issues []string
+	if len(bots) > config.MaxBotsPerPlatform {
+		issues = append(issues, fmt.Sprintf("%s: %d bots exceed limit (max %d)", platform, len(bots), config.MaxBotsPerPlatform))
+	}
+	seen := make(map[string]bool, len(bots))
+	for _, b := range bots {
+		if b.Name == "" {
+			issues = append(issues, fmt.Sprintf("%s: bot missing name", platform))
+			continue
+		}
+		if seen[b.Name] {
+			issues = append(issues, fmt.Sprintf("%s: duplicate bot name %q", platform, b.Name))
+		}
+		seen[b.Name] = true
+		if strings.TrimSpace(b.Cred1) == "" && strings.TrimSpace(b.Cred2) == "" {
+			issues = append(issues, fmt.Sprintf("%s: bot %q has no credentials", platform, b.Name))
+		}
+	}
+	return issues
+}
+
+func mapSlackBots(bots []config.SlackBotConfig) []botCheck {
+	result := make([]botCheck, len(bots))
+	for i, b := range bots {
+		result[i] = botCheck{Name: b.Name, Cred1: b.BotToken, Cred2: b.AppToken}
+	}
+	return result
+}
+
+func mapFeishuBots(bots []config.FeishuBotConfig) []botCheck {
+	result := make([]botCheck, len(bots))
+	for i, b := range bots {
+		result[i] = botCheck{Name: b.Name, Cred1: b.AppID, Cred2: b.AppSecret}
+	}
+	return result
 }
