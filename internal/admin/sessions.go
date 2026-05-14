@@ -120,7 +120,7 @@ func (a *AdminAPI) TerminateSession(w http.ResponseWriter, r *http.Request) {
 	}
 	id := r.PathValue("id")
 	if err := a.sm.Transition(r.Context(), id, events.StateTerminated); err != nil {
-		a.log.Warn("admin: terminate session failed", "id", id, "err", err, "admin", adminKeyPrefix(r))
+		a.log.Warn("admin: terminate session failed", "session_id", id, "err", err, "admin", adminKeyPrefix(r))
 		http.Error(w, "failed to terminate session", http.StatusInternalServerError)
 		return
 	}

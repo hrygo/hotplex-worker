@@ -225,6 +225,11 @@ func (c *Conn) performInit(handler *Handler) error {
 		}
 	}()
 
+	start := time.Now()
+	defer func() {
+		metrics.InitHandshakeDuration.Observe(time.Since(start).Seconds())
+	}()
+
 	// Read first message with a longer deadline (init may take time on cold start).
 	_ = c.wc.SetReadDeadline(time.Now().Add(30 * time.Second))
 

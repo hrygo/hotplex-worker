@@ -74,6 +74,16 @@ func (r *statusRecorder) WriteHeader(code int) {
 	r.ResponseWriter.WriteHeader(code)
 }
 
+// Write captures the implicit WriteHeader(200) call that occurs when handlers
+// write data without first calling WriteHeader. Without this, the underlying
+// http.response.Write() would call its own WriteHeader, bypassing our recorder.
+func (r *statusRecorder) Write(b []byte) (int, error) {
+	if r.status == 0 {
+		r.WriteHeader(http.StatusOK)
+	}
+	return r.ResponseWriter.Write(b)
+}
+
 type AdminAPI struct {
 	log           *slog.Logger
 	cfg           ConfigProvider
