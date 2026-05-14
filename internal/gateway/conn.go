@@ -225,6 +225,11 @@ func (c *Conn) performInit(handler *Handler) error {
 		}
 	}()
 
+	start := time.Now()
+	defer func() {
+		metrics.InitHandshakeDuration.Observe(time.Since(start).Seconds())
+	}()
+
 	// Read first message with a longer deadline (init may take time on cold start).
 	_ = c.wc.SetReadDeadline(time.Now().Add(30 * time.Second))
 
@@ -282,7 +287,7 @@ func (c *Conn) performInit(handler *Handler) error {
 	if initData.Auth.Token != "" && handler.jwtValidator != nil && !didDeferredAuth {
 		claims, err := handler.jwtValidator.Validate(initData.Auth.Token)
 		if err != nil {
-			c.log.Warn("gateway: init JWT validation failed", "err", err)
+			c.log.Warn("gateway: init JWT validation failed", "session_id", c.sessionID, "err", err)
 			c.sendInitError(events.ErrCodeUnauthorized, "invalid token")
 			metrics.GatewayErrorsTotal.WithLabelValues(string(events.ErrCodeUnauthorized)).Inc()
 			return fmt.Errorf("jwt validation: %w", err)

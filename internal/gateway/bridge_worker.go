@@ -8,6 +8,7 @@ import (
 
 	"github.com/hrygo/hotplex/internal/agentconfig"
 	"github.com/hrygo/hotplex/internal/eventstore"
+	"github.com/hrygo/hotplex/internal/metrics"
 	"github.com/hrygo/hotplex/internal/worker"
 	"github.com/hrygo/hotplex/internal/worker/noop"
 	"github.com/hrygo/hotplex/pkg/events"
@@ -46,6 +47,11 @@ func (b *Bridge) createAndLaunchWorker(params workerLaunchParams, startFn worker
 	if params.forwardOpts == nil {
 		params.forwardOpts = &forwardOpts{}
 	}
+
+	start := time.Now()
+	defer func() {
+		metrics.WorkerCreationDuration.WithLabelValues(string(params.wt)).Observe(time.Since(start).Seconds())
+	}()
 
 	w, err := b.wf.NewWorker(params.wt)
 	if err != nil {

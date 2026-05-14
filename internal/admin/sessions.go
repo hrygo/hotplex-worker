@@ -33,10 +33,14 @@ func (a *AdminAPI) CreateSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := a.bridge.StartSession(r.Context(), id, userID, "", wt, nil, "", "", nil, ""); err != nil {
-		a.log.Error("admin: create session", "err", err)
+		a.log.Error("admin: create session failed", "err", err)
 		http.Error(w, "failed to create session", http.StatusInternalServerError)
 		return
 	}
+
+	a.log.Info("admin: session created",
+		"session_id", id, "user_id", userID, "worker_type", string(wt),
+		"admin", adminKeyPrefix(r))
 
 	respondJSON(w, map[string]string{"session_id": id})
 }
@@ -98,9 +102,13 @@ func (a *AdminAPI) DeleteSession(w http.ResponseWriter, r *http.Request) {
 	}
 	id := r.PathValue("id")
 	if err := a.sm.Delete(r.Context(), id); err != nil {
+		a.log.Error("admin: delete session failed", "session_id", id, "err", err)
 		http.Error(w, "failed to delete session", http.StatusInternalServerError)
 		return
 	}
+
+	a.log.Info("admin: session deleted",
+		"session_id", id, "admin", adminKeyPrefix(r))
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -112,10 +120,13 @@ func (a *AdminAPI) TerminateSession(w http.ResponseWriter, r *http.Request) {
 	}
 	id := r.PathValue("id")
 	if err := a.sm.Transition(r.Context(), id, events.StateTerminated); err != nil {
-		a.log.Warn("admin: terminate session", "id", id, "err", err)
+		a.log.Warn("admin: terminate session failed", "session_id", id, "err", err, "admin", adminKeyPrefix(r))
 		http.Error(w, "failed to terminate session", http.StatusInternalServerError)
 		return
 	}
+
+	a.log.Info("admin: session terminated",
+		"session_id", id, "admin", adminKeyPrefix(r))
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -156,4 +167,16 @@ func (a *AdminAPI) HandleSessionStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, stats)
+}
+
+// adminKeyPrefix returns a truncated prefix of the admin token for audit logging.
+func adminKeyPrefix(r *http.Request) string {
+	token := extractBearerToken(r)
+	if token == "" {
+		return "none"
+	}
+	if len(token) > 8 {
+		return token[:8] + "..."
+	}
+	return token + "..."
 }
