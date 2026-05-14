@@ -2,8 +2,6 @@
 title: 添加消息平台适配器
 weight: 35
 description: 如何为 HotPlex Gateway 开发新的消息平台适配器
-persona: contributor
-difficulty: advanced
 ---
 
 # 添加消息平台适配器
@@ -75,6 +73,7 @@ type AdapterConfig struct {
     Handler HandlerInterface   // AEP Handler（事件分发）
     Bridge  *Bridge            // MessagingBridge（Session 生命周期）
     Gate    *Gate              // 访问控制
+    BotName string             // 多 bot 场景下的 bot 名称
     Extras  map[string]any     // 平台特定配置（凭据、开关等）
 }
 ```

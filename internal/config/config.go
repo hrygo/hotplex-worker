@@ -289,24 +289,64 @@ type MessagingPlatformConfig struct {
 	TTSConfig `mapstructure:",squash"`
 }
 
+// MaxBotsPerPlatform is the maximum number of bots allowed per messaging platform.
+const MaxBotsPerPlatform = 10
+
 // SlackConfig holds Slack Socket Mode adapter settings.
+// Supports single-bot (top-level bot_token/app_token) and multi-bot (bots[]) modes.
+// normalizeSlackBots() resolves the two into a unified Bots slice.
 type SlackConfig struct {
 	MessagingPlatformConfig `mapstructure:",squash"`
 
-	BotToken            string        `mapstructure:"bot_token"`
-	AppToken            string        `mapstructure:"app_token"`
+	// Single-bot credentials (backward compatible).
+	BotToken string `mapstructure:"bot_token"`
+	AppToken string `mapstructure:"app_token"`
+
 	SocketMode          bool          `mapstructure:"socket_mode"`
 	AssistantAPIEnabled *bool         `mapstructure:"assistant_api_enabled"`
 	ReconnectBaseDelay  time.Duration `mapstructure:"reconnect_base_delay"`
 	ReconnectMaxDelay   time.Duration `mapstructure:"reconnect_max_delay"`
+
+	// Multi-bot configuration. When non-empty, takes precedence over top-level credentials.
+	Bots []SlackBotConfig `mapstructure:"bots"`
+}
+
+// SlackBotConfig holds credentials and per-bot overrides for a single Slack bot.
+type SlackBotConfig struct {
+	Name       string `mapstructure:"name"`
+	BotToken   string `mapstructure:"bot_token"`
+	AppToken   string `mapstructure:"app_token"`
+	Soul       string `mapstructure:"soul,omitempty"`
+	WorkerType string `mapstructure:"worker_type,omitempty"`
+
+	STTConfig `mapstructure:",squash"`
+	TTSConfig `mapstructure:",squash"`
 }
 
 // FeishuConfig holds Feishu WebSocket adapter settings.
+// Supports single-bot (top-level app_id/app_secret) and multi-bot (bots[]) modes.
+// normalizeFeishuBots() resolves the two into a unified Bots slice.
 type FeishuConfig struct {
 	MessagingPlatformConfig `mapstructure:",squash"`
 
+	// Single-bot credentials (backward compatible).
 	AppID     string `mapstructure:"app_id"`
 	AppSecret string `mapstructure:"app_secret"`
+
+	// Multi-bot configuration. When non-empty, takes precedence over top-level credentials.
+	Bots []FeishuBotConfig `mapstructure:"bots"`
+}
+
+// FeishuBotConfig holds credentials and per-bot overrides for a single Feishu bot.
+type FeishuBotConfig struct {
+	Name       string `mapstructure:"name"`
+	AppID      string `mapstructure:"app_id"`
+	AppSecret  string `mapstructure:"app_secret"`
+	Soul       string `mapstructure:"soul,omitempty"`
+	WorkerType string `mapstructure:"worker_type,omitempty"`
+
+	STTConfig `mapstructure:",squash"`
+	TTSConfig `mapstructure:",squash"`
 }
 
 type AdminConfig struct {
@@ -662,6 +702,14 @@ func propagateMessagingDefaults(cfg *Config) {
 	msg := &cfg.Messaging
 	propagatePlatform(&msg.Slack.MessagingPlatformConfig, msg)
 	propagatePlatform(&msg.Feishu.MessagingPlatformConfig, msg)
+
+	// Propagate shared defaults into per-bot configs.
+	for i := range msg.Slack.Bots {
+		propagateBotDefaults(&msg.Slack.MessagingPlatformConfig, &msg.Slack.Bots[i].STTConfig, &msg.Slack.Bots[i].TTSConfig)
+	}
+	for i := range msg.Feishu.Bots {
+		propagateBotDefaults(&msg.Feishu.MessagingPlatformConfig, &msg.Feishu.Bots[i].STTConfig, &msg.Feishu.Bots[i].TTSConfig)
+	}
 }
 
 // propagatePlatform fills zero-value fields on the platform from the messaging-level shared config.
@@ -671,6 +719,62 @@ func propagatePlatform(p *MessagingPlatformConfig, msg *MessagingConfig) {
 	}
 	p.STTConfig.FillFrom(msg.STTConfig)
 	p.TTSConfig.FillFrom(msg.TTSConfig)
+}
+
+// normalizeSlackBots resolves SlackConfig to a unified Bots slice.
+// If Bots is already populated, it takes precedence.
+// If Bots is empty but top-level BotToken is set, auto-wraps as a single "default" bot.
+func normalizeSlackBots(cfg *SlackConfig) {
+	if len(cfg.Bots) > 0 {
+		return
+	}
+	if cfg.BotToken == "" {
+		return
+	}
+	cfg.Bots = []SlackBotConfig{
+		{Name: "default", BotToken: cfg.BotToken, AppToken: cfg.AppToken},
+	}
+}
+
+// normalizeFeishuBots resolves FeishuConfig to a unified Bots slice.
+// Same backward-compat logic as normalizeSlackBots.
+func normalizeFeishuBots(cfg *FeishuConfig) {
+	if len(cfg.Bots) > 0 {
+		return
+	}
+	if cfg.AppID == "" {
+		return
+	}
+	cfg.Bots = []FeishuBotConfig{
+		{Name: "default", AppID: cfg.AppID, AppSecret: cfg.AppSecret},
+	}
+}
+
+// propagateBotDefaults fills zero-value fields on each bot config from the
+// platform-level MessagingPlatformConfig and messaging-level shared config.
+func propagateBotDefaults(platformCfg *MessagingPlatformConfig, botSTT *STTConfig, botTTS *TTSConfig) {
+	botSTT.FillFrom(platformCfg.STTConfig)
+	botTTS.FillFrom(platformCfg.TTSConfig)
+}
+
+// expandStringFields expands env vars in non-empty string fields.
+func expandStringFields(fields ...*string) {
+	for _, f := range fields {
+		if *f != "" {
+			*f = ExpandEnv(*f)
+		}
+	}
+}
+
+// normalizePathFields resolves ~ and normalizes paths for non-empty string fields.
+func normalizePathFields(fields ...*string) {
+	for _, f := range fields {
+		if *f != "" {
+			if absPath, err := ExpandAndAbs(*f); err == nil {
+				*f = absPath
+			}
+		}
+	}
 }
 
 // ─── Loading ─────────────────────────────────────────────────────────────────
@@ -867,6 +971,10 @@ func loadRecursive(filePath string, opts LoadOptions, visited []string) (*Config
 	// Messaging platform env var overrides.
 	applyMessagingEnv(cfg)
 
+	// Normalize multi-bot configs (backward compat: single-bot → bots[]).
+	normalizeSlackBots(&cfg.Messaging.Slack)
+	normalizeFeishuBots(&cfg.Messaging.Feishu)
+
 	// Propagate shared messaging defaults to per-platform configs.
 	// Priority: platform-level (YAML/env) > messaging-level > Default().
 	propagateMessagingDefaults(cfg)
@@ -905,6 +1013,15 @@ func (c *Config) normalizePaths() {
 			*ef = ExpandEnv(*ef)
 		}
 	}
+	// Per-bot env expansion.
+	var botFields []*string
+	for i := range c.Messaging.Slack.Bots {
+		botFields = append(botFields, &c.Messaging.Slack.Bots[i].LocalCmd, &c.Messaging.Slack.Bots[i].MossModelDir)
+	}
+	for i := range c.Messaging.Feishu.Bots {
+		botFields = append(botFields, &c.Messaging.Feishu.Bots[i].LocalCmd, &c.Messaging.Feishu.Bots[i].MossModelDir)
+	}
+	expandStringFields(botFields...)
 
 	// 2. Expand ~ and normalize paths.
 	for _, pf := range []*string{
@@ -929,6 +1046,15 @@ func (c *Config) normalizePaths() {
 			*pf = absPath
 		}
 	}
+	// Per-bot MossModelDir path normalization.
+	var mossDirs []*string
+	for i := range c.Messaging.Slack.Bots {
+		mossDirs = append(mossDirs, &c.Messaging.Slack.Bots[i].MossModelDir)
+	}
+	for i := range c.Messaging.Feishu.Bots {
+		mossDirs = append(mossDirs, &c.Messaging.Feishu.Bots[i].MossModelDir)
+	}
+	normalizePathFields(mossDirs...)
 }
 
 // ExpandAndAbs returns an absolute path, resolving ~ and relative paths.

@@ -1,7 +1,7 @@
 ---
+title: 语音交互功能
 weight: 12
-persona: developer
-difficulty: intermediate
+description: HotPlex 语音消息与 TTS/STT 功能配置、Edge-TTS 集成与 FFmpeg Opus 转换
 ---
 
 # 语音功能开发指南

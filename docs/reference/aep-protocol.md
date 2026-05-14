@@ -1,3 +1,9 @@
+---
+title: AEP v1 协议参考
+weight: 1
+description: Agent Event Protocol v1 完整参考：事件类型、Envelope 格式、背压机制与错误码
+---
+
 # AEP v1 协议参考
 
 > Agent Event Protocol v1 完整参考文档——事件类型、Envelope 格式、背压机制、错误码

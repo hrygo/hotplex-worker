@@ -2,8 +2,6 @@
 title: "配置完整参考"
 weight: 3
 description: "HotPlex Worker Gateway 所有配置项的权威参考，覆盖配置文件、环境变量、优先级和热重载机制。"
-persona: "developer|enterprise"
-difficulty: "intermediate"
 ---
 
 # 配置完整参考
@@ -366,31 +364,74 @@ AI-native 定时任务引擎：自然语言 prompt 作为 payload，结果投递
 
 | 字段 | 类型 | 默认值 | 环境变量 | 说明 |
 |------|------|--------|----------|------|
-| `bot_token` | string | `""` | `HOTPLEX_MESSAGING_SLACK_BOT_TOKEN` | Slack Bot Token（`xoxb-...`） |
-| `app_token` | string | `""` | `HOTPLEX_MESSAGING_SLACK_APP_TOKEN` | Slack App Token（`xapp-...`），Socket Mode 所需 |
+| `bot_token` | string | `""` | `HOTPLEX_MESSAGING_SLACK_BOT_TOKEN` | Slack Bot Token（`xoxb-...`）（单 bot 模式） |
+| `app_token` | string | `""` | `HOTPLEX_MESSAGING_SLACK_APP_TOKEN` | Slack App Token（`xapp-...`），Socket Mode 所需（单 bot 模式） |
 | `socket_mode` | bool | `true` | — | 是否使用 Socket Mode（推荐） |
 | `assistant_api_enabled` | *bool | `nil` | — | 是否启用 Slack Assistant API。nil = 未设置 |
 | `reconnect_base_delay` | duration | — | — | 断线重连基础延迟 |
 | `reconnect_max_delay` | duration | — | — | 断线重连最大延迟 |
+| `bots` | []SlackBotConfig | `[]` | — | 多 bot 配置（见 §3.11.7） |
 
 #### 3.11.6 Feishu 专有配置
 
 | 字段 | 类型 | 默认值 | 环境变量 | 说明 |
 |------|------|--------|----------|------|
-| `app_id` | string | `""` | `HOTPLEX_MESSAGING_FEISHU_APP_ID` | 飞书 App ID（`cli_xxxx`） |
-| `app_secret` | string | `""` | `HOTPLEX_MESSAGING_FEISHU_APP_SECRET` | 飞书 App Secret |
+| `app_id` | string | `""` | `HOTPLEX_MESSAGING_FEISHU_APP_ID` | 飞书 App ID（`cli_xxxx`）（单 bot 模式） |
+| `app_secret` | string | `""` | `HOTPLEX_MESSAGING_FEISHU_APP_SECRET` | 飞书 App Secret（单 bot 模式） |
+| `bots` | []FeishuBotConfig | `[]` | — | 多 bot 配置（见 §3.11.7） |
 
-#### 3.11.7 配置传播机制
+#### 3.11.7 多 Bot 配置（Multi-Bot）
 
-共享配置通过 `propagateMessagingDefaults()` 从 `messaging` 级传播到各平台：
+每个平台支持多个独立 bot 实例，各自拥有独立凭证、STT/TTS 和 soul 配置。
+
+**SlackBotConfig 字段**：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `name` | string | Bot 名称（同一平台内唯一，必填） |
+| `bot_token` | string | Slack Bot Token（`xoxb-...`） |
+| `app_token` | string | Slack App Token（`xapp-...`） |
+| `soul` | string | Bot 人格标识（显示名称） |
+| `worker_type` | string | 覆盖 Worker 类型 |
+| `stt_*` | — | 覆盖 STT 配置（继承平台级 → messaging 级） |
+| `tts_*` | — | 覆盖 TTS 配置（继承平台级 → messaging 级） |
+
+**FeishuBotConfig 字段**：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `name` | string | Bot 名称（同一平台内唯一，必填） |
+| `app_id` | string | 飞书 App ID |
+| `app_secret` | string | 飞书 App Secret |
+| `soul` | string | Bot 人格标识 |
+| `worker_type` | string | 覆盖 Worker 类型 |
+| `stt_*` | — | 覆盖 STT 配置 |
+| `tts_*` | — | 覆盖 TTS 配置 |
+
+**向后兼容**：`normalizeSlackBots()`/`normalizeFeishuBots()` 自动将单 bot 顶层凭证归一化为 `bots: [{name: "default"}]`。`bots[]` 非空时忽略顶层凭证。
+
+**限制**：每平台最多 10 个 bot。配置变更需重启生效。
+
+**启动校验**：`hotplex doctor` 的 `messaging.multi_bot_config` checker 检测重复 name、缺失凭证、超限。
+
+**Bot 状态 API**：
 
 ```
-messaging.worker_type  ──→  slack.worker_type (如未设置)
-messaging.stt_*        ──→  slack.stt_* (如未设置)
-messaging.tts_*        ──→  slack.tts_* (如未设置)
+GET /admin/bots          → 列出所有活跃 bot
+GET /admin/bots/{name}   → 单个 bot 详情
 ```
 
-**优先级**：`platform-level (YAML/env) > messaging-level > Default()`
+#### 3.11.8 配置传播机制
+
+共享配置通过 `propagateMessagingDefaults()` 从 `messaging` 级传播到各平台，再传播到每个 bot：
+
+```
+messaging.worker_type  ──→  slack.worker_type (如未设置)  ──→  slack.bots[i].worker_type (如未设置)
+messaging.stt_*        ──→  slack.stt_* (如未设置)        ──→  slack.bots[i].stt_* (如未设置)
+messaging.tts_*        ──→  slack.tts_* (如未设置)        ──→  slack.bots[i].tts_* (如未设置)
+```
+
+**优先级**：`bot-level > platform-level (YAML/env) > messaging-level > Default()`
 
 仅 zero-value 字段被填充，已有值不会被覆盖。
 

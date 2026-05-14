@@ -1,9 +1,5 @@
 ---
-type: design
-tags:
-  - project/HotPlex
-  - security/ai-tool-policy
-  - security/command-injection
+
 ---
 
 # AI Tool Policy

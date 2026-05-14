@@ -221,12 +221,32 @@ messaging:
     require_mention: true
     # Override shared defaults here if needed, e.g.:
     # tts_provider: "edge"
+    # Multi-bot support (uncomment to use):
+    # bots:
+    #   - name: tech-support
+    #     bot_token: xoxb-xxx
+    #     app_token: xapp-xxx
+    #     soul: tech-support
+    #   - name: hr-bot
+    #     bot_token: xoxb-yyy
+    #     app_token: xapp-yyy
+    #     soul: hr-assistant
 
   feishu:
     enabled: false
     require_mention: true
     # Override shared defaults here if needed, e.g.:
     # tts_provider: "edge"
+    # Multi-bot support (uncomment to use):
+    # bots:
+    #   - name: tech-support
+    #     app_id: cli_xxx
+    #     app_secret: xxx
+    #     soul: tech-support
+    #   - name: hr-bot
+    #     app_id: cli_yyy
+    #     app_secret: yyy
+    #     soul: hr-assistant
 
 # ── Cron Scheduler ─────────────────────────────────────────────────────────
 # AI-native cronjob engine: natural language prompt as payload, results

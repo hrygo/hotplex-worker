@@ -1,9 +1,5 @@
 ---
-type: design
-tags:
-  - project/HotPlex
-  - persistence/message-store
-  - architecture/storage
+
 ---
 
 # Message Persistence Design

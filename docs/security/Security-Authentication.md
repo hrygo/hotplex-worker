@@ -1,9 +1,5 @@
 ---
-type: design
-tags:
-  - project/HotPlex
-  - security/authentication
-  - security/jwt
+
 ---
 
 # Security: Authentication & Authorization Design

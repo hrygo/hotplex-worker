@@ -1,9 +1,5 @@
 ---
 title: Agent Event Protocol (AEP) v1
-type: spec
-tags:
-  - project/HotPlex
-  - protocol/agent
 ---
 
 # Agent Event Protocol (AEP) v1

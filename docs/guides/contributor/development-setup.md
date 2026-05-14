@@ -2,8 +2,6 @@
 title: 开发环境搭建
 weight: 32
 description: 从零开始搭建 HotPlex Gateway 开发环境，10 分钟完成
-persona: contributor
-difficulty: beginner
 ---
 
 # 开发环境搭建

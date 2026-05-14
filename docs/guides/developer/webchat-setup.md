@@ -1,3 +1,9 @@
+---
+title: WebChat 设置与使用
+weight: 18
+description: HotPlex 内置 Web Chat UI 的安装、配置与开发指南
+---
+
 # WebChat 设置与使用
 
 > HotPlex 内置 Web Chat UI 的安装、配置和开发指南

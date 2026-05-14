@@ -2,8 +2,6 @@
 title: "安全策略参考"
 weight: 9
 description: "JWT、SSRF、命令白名单、Tool 控制、API Key 等安全配置完整参考"
-persona: "developer"
-difficulty: "advanced"
 ---
 
 # 安全策略参考

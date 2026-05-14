@@ -2,8 +2,6 @@
 title: Java Client SDK 参考
 weight: 9
 description: 基于 AEP v1 协议的 HotPlex Worker Gateway Java 客户端 SDK 完整参考
-persona: developer
-difficulty: intermediate
 ---
 
 # Java Client SDK 参考

@@ -63,6 +63,7 @@ type RuntimeStatus struct {
 // AdapterStatus reports a single messaging adapter's state.
 type AdapterStatus struct {
 	Name    string
+	BotName string
 	Started bool
 }
 

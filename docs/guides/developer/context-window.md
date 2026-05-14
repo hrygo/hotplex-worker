@@ -1,3 +1,9 @@
+---
+title: Context Window 管理
+weight: 13
+description: 理解和控制 AI Agent 的 token 预算，上下文压缩策略与长对话优化
+---
+
 # Context Window 管理
 
 > 理解和控制 AI Agent 的 token 预算，优化长对话体验

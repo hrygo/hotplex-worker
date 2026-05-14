@@ -1,10 +1,5 @@
 ---
-type: research
-tags:
-  - research/opencode
-  - architecture/context
-  - reference/prompt-engineering
-  - research/standalone
+
 ---
 
 # OpenCode Server Context Architecture Analysis
