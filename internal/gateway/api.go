@@ -33,7 +33,7 @@ type GatewayAPI struct {
 	sm         apiSM
 	bridge     SessionStarter
 	cfgStore   *config.ConfigStore
-	turnsStore TurnsReader
+	turnsStore eventstore.TurnQuerier
 	eventStore EventStoreReader
 	log        *slog.Logger
 }
@@ -43,13 +43,7 @@ type EventStoreReader interface {
 	QueryBySession(ctx context.Context, sessionID string, cursor int64, dir eventstore.CursorDirection, limit int) (*eventstore.EventPage, error)
 }
 
-// TurnsReader defines the interface for querying conversation turns via the events VIEW.
-type TurnsReader interface {
-	QueryTurns(ctx context.Context, sessionID string, limit, offset int) ([]*eventstore.TurnRecord, error)
-	QueryTurnsBefore(ctx context.Context, sessionID string, beforeSeq int64, limit int) ([]*eventstore.TurnRecord, error)
-}
-
-func NewGatewayAPI(log *slog.Logger, auth *security.Authenticator, sm apiSM, bridge SessionStarter, cfgStore *config.ConfigStore, turnsStore TurnsReader, eventStore EventStoreReader) *GatewayAPI {
+func NewGatewayAPI(log *slog.Logger, auth *security.Authenticator, sm apiSM, bridge SessionStarter, cfgStore *config.ConfigStore, turnsStore eventstore.TurnQuerier, eventStore EventStoreReader) *GatewayAPI {
 	return &GatewayAPI{auth: auth, sm: sm, bridge: bridge, cfgStore: cfgStore, turnsStore: turnsStore, eventStore: eventStore, log: log.With("component", "api")}
 }
 

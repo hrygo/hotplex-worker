@@ -114,6 +114,10 @@ func formatBash(input map[string]any) string {
 	if cmd == "" {
 		return "⏳ Running command..."
 	}
+	// Only show first line of multi-line commands to keep the activity strip clean.
+	if idx := strings.IndexByte(cmd, '\n'); idx >= 0 {
+		cmd = cmd[:idx]
+	}
 	return "⏳ " + cmd
 }
 

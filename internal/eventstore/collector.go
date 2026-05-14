@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/hrygo/hotplex/pkg/events"
@@ -68,6 +69,7 @@ type Collector struct {
 
 	accumMu sync.Mutex
 	accum   map[string]*deltaAccumulator // sessionID → active delta accumulator
+	dropped atomic.Int64
 }
 
 // NewCollector creates a Collector that writes events to store.
@@ -89,18 +91,7 @@ func NewCollector(store EventStore, log *slog.Logger) *Collector {
 // on message.end or next non-delta event.
 func (c *Collector) Capture(sessionID string, seq int64, eventType events.Kind, data json.RawMessage, direction, source string) {
 	if eventType == events.MessageDelta {
-		c.accumMu.Lock()
-		if c.accum == nil {
-			c.accumMu.Unlock()
-			return
-		}
-		acc := c.accum[sessionID]
-		if acc == nil {
-			acc = newDeltaAccumulator()
-			c.accum[sessionID] = acc
-		}
-		acc.append(seq, data)
-		c.accumMu.Unlock()
+		c.accumulateDelta(sessionID, seq, data)
 		return
 	}
 
@@ -128,6 +119,30 @@ func (c *Collector) Capture(sessionID string, seq int64, eventType events.Kind, 
 	c.send(req)
 }
 
+// getOrCreateAccum returns the delta accumulator for sessionID, creating one if needed.
+// Caller must hold c.accumMu. Returns nil if the collector is closed.
+func (c *Collector) getOrCreateAccum(sessionID string) *deltaAccumulator {
+	if c.accum == nil {
+		return nil
+	}
+	acc := c.accum[sessionID]
+	if acc == nil {
+		acc = newDeltaAccumulator()
+		c.accum[sessionID] = acc
+	}
+	return acc
+}
+
+// accumulateDelta appends a message.delta event to the per-session accumulator.
+func (c *Collector) accumulateDelta(sessionID string, seq int64, data json.RawMessage) {
+	c.accumMu.Lock()
+	acc := c.getOrCreateAccum(sessionID)
+	if acc != nil {
+		acc.append(seq, data)
+	}
+	c.accumMu.Unlock()
+}
+
 func (c *Collector) flushDelta(sessionID string) {
 	c.accumMu.Lock()
 	acc := c.accum[sessionID]
@@ -144,6 +159,7 @@ func (c *Collector) send(req *captureRequest) {
 	select {
 	case c.captureC <- req:
 	default:
+		c.dropped.Add(1)
 		c.log.Warn("eventstore: capture channel full, dropping event",
 			"session_id", req.event.SessionID,
 			"seq", req.event.Seq,
@@ -169,6 +185,11 @@ func (c *Collector) Close() error {
 	close(c.closeC)
 	c.closeWg.Wait()
 	return nil
+}
+
+// DroppedEvents returns the total number of events dropped due to a full channel.
+func (c *Collector) DroppedEvents() int64 {
+	return c.dropped.Load()
 }
 
 func (c *Collector) runWriter() {
@@ -260,14 +281,10 @@ func (c *Collector) flushBatch(batch []*captureRequest) {
 // Flushes immediately when accumulated content exceeds deltaFlushSize.
 func (c *Collector) CaptureDeltaString(sessionID string, seq int64, content string) {
 	c.accumMu.Lock()
-	if c.accum == nil {
+	acc := c.getOrCreateAccum(sessionID)
+	if acc == nil {
 		c.accumMu.Unlock()
 		return
-	}
-	acc := c.accum[sessionID]
-	if acc == nil {
-		acc = newDeltaAccumulator()
-		c.accum[sessionID] = acc
 	}
 	acc.appendRaw(seq, content)
 
