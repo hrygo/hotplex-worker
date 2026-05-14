@@ -14,6 +14,7 @@ import (
 	"github.com/larksuite/oapi-sdk-go/v3/ws"
 
 	"github.com/hrygo/hotplex/internal/messaging"
+	"github.com/hrygo/hotplex/internal/messaging/phrases"
 	"github.com/hrygo/hotplex/internal/messaging/stt"
 	"github.com/hrygo/hotplex/pkg/events"
 )
@@ -39,6 +40,7 @@ type Adapter struct {
 	transcriber        Transcriber
 	turnSummaryEnabled bool
 	ttsPipeline        *TTSPipeline
+	phrases            *phrases.Phrases
 	botName            string
 
 	mu          sync.RWMutex
@@ -69,6 +71,11 @@ func (a *Adapter) ConfigureWith(config messaging.AdapterConfig) error {
 	}
 	if v, ok := config.Extras["turn_summary_enabled"].(bool); ok {
 		a.turnSummaryEnabled = v
+	}
+	if p, ok := config.Extras["phrases"].(*phrases.Phrases); ok && p != nil {
+		a.phrases = p
+	} else {
+		a.phrases = phrases.Defaults()
 	}
 	if p, ok := config.Extras["tts_pipeline"].(*TTSPipeline); ok && p != nil {
 		a.ttsPipeline = p

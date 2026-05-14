@@ -1,6 +1,10 @@
 package messaging
 
-import "time"
+import (
+	"time"
+
+	"github.com/hrygo/hotplex/internal/messaging/phrases"
+)
 
 // AdapterConfig groups all dependencies for platform adapter configuration.
 // Adapters receive this in a single ConfigureWith call instead of individual setters.
@@ -39,4 +43,13 @@ func (c AdapterConfig) ExtrasDuration(key string) time.Duration {
 func (c AdapterConfig) ExtrasBoolPtr(key string) *bool {
 	v, _ := c.Extras[key].(*bool)
 	return v
+}
+
+// ExtrasPhrases extracts a *phrases.Phrases from the Extras map,
+// falling back to defaults if not present.
+func (c AdapterConfig) ExtrasPhrases() *phrases.Phrases {
+	if p, ok := c.Extras["phrases"].(*phrases.Phrases); ok && p != nil {
+		return p
+	}
+	return phrases.Defaults()
 }

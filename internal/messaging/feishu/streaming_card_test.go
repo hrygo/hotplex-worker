@@ -99,7 +99,7 @@ func TestStreamingCardController_Flush_Unchanged(t *testing.T) {
 	t.Parallel()
 	limiter := NewFeishuRateLimiter()
 	t.Cleanup(func() { limiter.Stop() })
-	c := NewStreamingCardController(nil, limiter, discardLogger, "TestBot", 0, "", "", "")
+	c := NewStreamingCardController(nil, limiter, discardLogger, "TestBot", 0, "", "", "", nil)
 
 	// Write content and set lastFlushed to the same value.
 	c.mu.Lock()
@@ -116,7 +116,7 @@ func TestStreamingCardController_Flush_NoCardKitNoMsgID(t *testing.T) {
 	t.Parallel()
 	limiter := NewFeishuRateLimiter()
 	t.Cleanup(func() { limiter.Stop() })
-	c := NewStreamingCardController(nil, limiter, discardLogger, "TestBot", 0, "", "", "")
+	c := NewStreamingCardController(nil, limiter, discardLogger, "TestBot", 0, "", "", "", nil)
 
 	// Write some content, disable cardKit so it skips to IM patch path.
 	c.mu.Lock()
@@ -134,7 +134,7 @@ func TestStreamingCardController_Flush_WithLimiter_CardKitDegraded(t *testing.T)
 	limiter := NewFeishuRateLimiter()
 	t.Cleanup(func() { limiter.Stop() })
 
-	c := NewStreamingCardController(nil, limiter, discardLogger, "TestBot", 0, "", "", "")
+	c := NewStreamingCardController(nil, limiter, discardLogger, "TestBot", 0, "", "", "", nil)
 
 	c.mu.Lock()
 	c.buf.WriteString("new content")
@@ -376,7 +376,7 @@ func TestStreamingCardController_WriteThenFlush(t *testing.T) {
 	t.Parallel()
 	limiter := NewFeishuRateLimiter()
 	t.Cleanup(func() { limiter.Stop() })
-	c := NewStreamingCardController(nil, limiter, discardLogger, "TestBot", 0, "", "", "")
+	c := NewStreamingCardController(nil, limiter, discardLogger, "TestBot", 0, "", "", "", nil)
 
 	// Disable cardKit so flush skips to IM patch path (no msgID → skip).
 	c.mu.Lock()
@@ -394,7 +394,7 @@ func TestStreamingCardController_Flush_CardKitDegraded_NoCardID(t *testing.T) {
 	t.Parallel()
 	limiter := NewFeishuRateLimiter()
 	t.Cleanup(func() { limiter.Stop() })
-	c := NewStreamingCardController(nil, limiter, discardLogger, "TestBot", 0, "", "", "")
+	c := NewStreamingCardController(nil, limiter, discardLogger, "TestBot", 0, "", "", "", nil)
 
 	require.NoError(t, c.Write("content"))
 
@@ -411,7 +411,7 @@ func TestStreamingCardController_Flush_IMPatchNoMsgID(t *testing.T) {
 	t.Parallel()
 	limiter := NewFeishuRateLimiter()
 	t.Cleanup(func() { limiter.Stop() })
-	c := NewStreamingCardController(nil, limiter, discardLogger, "TestBot", 0, "", "", "")
+	c := NewStreamingCardController(nil, limiter, discardLogger, "TestBot", 0, "", "", "", nil)
 
 	require.NoError(t, c.Write("data"))
 
@@ -428,7 +428,7 @@ func TestStreamingCardController_EnsureCard_TransitionFail(t *testing.T) {
 	t.Parallel()
 	limiter := NewFeishuRateLimiter()
 	t.Cleanup(func() { limiter.Stop() })
-	c := NewStreamingCardController(nil, limiter, discardLogger, "TestBot", 0, "", "", "")
+	c := NewStreamingCardController(nil, limiter, discardLogger, "TestBot", 0, "", "", "", nil)
 
 	// Force to streaming phase so transition to creating fails.
 	c.phase.Store(int32(PhaseCompleted))

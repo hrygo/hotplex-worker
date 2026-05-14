@@ -18,6 +18,7 @@ import (
 
 	"github.com/hrygo/hotplex/internal/messaging"
 
+	"github.com/hrygo/hotplex/internal/messaging/phrases"
 	"github.com/hrygo/hotplex/internal/metrics"
 )
 
@@ -114,6 +115,7 @@ type StreamingCardController struct {
 	model     string
 	branch    string
 	workDir   string
+	phrases   *phrases.Phrases
 
 	// Close metadata — turn summary injected before card finalization.
 	closeMeta   atomic.Pointer[messaging.TurnSummaryData]
@@ -139,7 +141,7 @@ const (
 	flushSize     = 30                     // rune count threshold for immediate flush trigger
 )
 
-func NewStreamingCardController(client *lark.Client, limiter *FeishuRateLimiter, log *slog.Logger, agentName string, turnNum int, model, branch, workDir string) *StreamingCardController {
+func NewStreamingCardController(client *lark.Client, limiter *FeishuRateLimiter, log *slog.Logger, agentName string, turnNum int, model, branch, workDir string, phr *phrases.Phrases) *StreamingCardController {
 	var p atomic.Int32
 	p.Store(int32(PhaseIdle))
 	return &StreamingCardController{
@@ -151,6 +153,7 @@ func NewStreamingCardController(client *lark.Client, limiter *FeishuRateLimiter,
 		model:           model,
 		branch:          branch,
 		workDir:         workDir,
+		phrases:         phr,
 		cardKitOK:       true,
 		elementID:       streamingElementID,
 		flushDone:       make(chan struct{}),
@@ -299,7 +302,7 @@ func (c *StreamingCardController) SendPlaceholder(ctx context.Context, chatID, c
 		return fmt.Errorf("feishu: cannot transition from %s to creating", c.getPhase())
 	}
 
-	placeholder := buildPlaceholderText()
+	placeholder := buildPlaceholderText(c.phrases)
 	c.mu.Lock()
 	c.chatType = chatType
 	c.replyToMsgID = replyToMsgID

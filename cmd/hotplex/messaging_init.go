@@ -20,6 +20,7 @@ import (
 	"github.com/hrygo/hotplex/internal/config"
 	"github.com/hrygo/hotplex/internal/messaging"
 	"github.com/hrygo/hotplex/internal/messaging/feishu"
+	"github.com/hrygo/hotplex/internal/messaging/phrases"
 	"github.com/hrygo/hotplex/internal/messaging/slack"
 	"github.com/hrygo/hotplex/internal/messaging/stt"
 	"github.com/hrygo/hotplex/internal/messaging/tts"
@@ -65,6 +66,9 @@ func startMessagingAdapters(ctx context.Context, deps *GatewayDeps) ([]messaging
 	handler := deps.Handler
 	gwBridge := deps.Bridge
 	registry := messaging.DefaultBotRegistry()
+
+	// Release phrases skill manual to disk for bot self-management.
+	phrases.ReleaseSkillManual(log)
 
 	for _, pt := range messaging.RegisteredTypes() {
 		var workerType, workDir string
@@ -168,6 +172,16 @@ func startMessagingAdapters(ctx context.Context, deps *GatewayDeps) ([]messaging
 				Extras:  make(map[string]any),
 			}
 			acfg.Extras["turn_summary_enabled"] = appCfg.Messaging.TurnSummaryEnabled
+
+			// Per-bot phrases loading with cascade-append.
+			homeDir, _ := os.UserHomeDir()
+			phrasesDir := filepath.Join(homeDir, ".hotplex", "phrases")
+			phr, err := phrases.Load(phrasesDir, string(entry.Platform), entry.BotID)
+			if err != nil {
+				log.Warn("phrases: load failed, using defaults", "error", err)
+				phr = phrases.Defaults()
+			}
+			acfg.Extras["phrases"] = phr
 
 			switch pt {
 			case messaging.PlatformSlack:

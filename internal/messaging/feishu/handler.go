@@ -202,7 +202,7 @@ func (a *Adapter) handleTextMessage(ctx context.Context, platformMsgID, channelI
 			a.Log.Debug("feishu: skipping placeholder, streaming already active")
 		} else {
 			turnNum, model, branch, workDir := conn.turnHeaderMeta()
-			ctrl := NewStreamingCardController(a.larkClient, a.rateLimiter, a.Log, a.resolveBotName(), turnNum+1, model, branch, workDir)
+			ctrl := NewStreamingCardController(a.larkClient, a.rateLimiter, a.Log, a.resolveBotName(), turnNum+1, model, branch, workDir, a.phrases)
 			conn.EnableStreaming(ctrl)
 
 			// Send placeholder card immediately — same streaming card structure as real messages.
