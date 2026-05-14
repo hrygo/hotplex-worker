@@ -16,6 +16,12 @@ hotplex.pid
 *.dylib
 *.exe
 *.dll
+*.pdf
+*.zip
+*.rar
+*.7z
+*.tar.gz
+*.tgz
 
 # --- Go Development ---
 vendor/

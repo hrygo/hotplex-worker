@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.13.1] - 2026-05-15
+
+### Summary
+
+v1.13.1 是一次 patch 更新，聚焦于 **架构健壮性与可观测性**。新增 per-bot 配置覆盖能力，支持多 Bot 场景下独立凭证与权限控制；Brain ConfigSpec 注册表消除 35+ 环境变量的静默降级；Gateway 新增 7 项 Prometheus 指标和 admin 审计日志；messaging/eventstore 层完成 DRY 重构减少约 140 行重复代码。
+
+### Added
+
+- **Config**: Per-bot configuration with platform-level fallback — override credentials, work directory, and access control per bot instance, with `${VAR}` env expansion fix. (#415)
+- **Gateway Core**: 7 Prometheus metrics — session starts/errors/duration, init handshake latency, retry attempts/exhaustion, worker creation duration. (#417)
+- **Admin API**: Structured audit logging for write operations + request-level middleware logging (method, path, status, duration, IP). (#417)
+
+### Changed
+
+- **Brain**: ConfigSpec registry (38 entries) replaces 35+ hardcoded `os.Getenv` calls with startup validation and structured warnings. (#420)
+- **Service**: CommandRunner interface — 16+ `exec.Command` calls now injectable for testability. (#420)
+- **Eventstore**: Extract `accumulateDelta`/`getOrCreateAccum` helpers, replace manual reverse with `slices.Reverse`, add dropped counter and `TurnQuerier` interface. (#419)
+- **Messaging**: DRY — extract `createAndEnable` helper from streaming card lifecycle (~45 lines), shared interaction `SendResponse` factory + metadata builders (~96 lines). (#418)
+- **Admin API**: Cron handler test coverage — 28 table-driven tests, 0% → covered. (#420)
+
+### Fixed
+
+- **Config**: Scope `.gitignore` `skills/` to repo root, update MessagingConfig comment. (#416)
+
 ## [1.13.0] - 2026-05-14
 
 ### Summary
