@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/hrygo/hotplex/internal/config"
+	"github.com/hrygo/hotplex/internal/metrics"
 	"github.com/hrygo/hotplex/pkg/events"
 )
 
@@ -91,6 +92,7 @@ func (c *LLMRetryController) ShouldRetry(sessionID string, errData *events.Error
 	attempt := c.attempts[sessionID] + 1
 	if attempt > c.config.MaxRetries {
 		c.log.Info("llm_retry: max retries exhausted", "session_id", sessionID, "max", c.config.MaxRetries)
+		metrics.RetryExhaustionTotal.Inc()
 		return false, 0
 	}
 	c.attempts[sessionID] = attempt

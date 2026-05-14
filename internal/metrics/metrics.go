@@ -213,4 +213,58 @@ var (
 		Name:      "streaming_card_flush_fallbacks_total",
 		Help:      "Total streaming card flush degradations from CardKit to IM Patch",
 	})
+
+	// ─── Gateway Observability Metrics (Issue #387) ─────────────────────────────
+
+	// SessionStartsTotal tracks session start attempts via StartSession/StartPlatformSession.
+	SessionStartsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "hotplex",
+		Name:      "session_starts_total",
+		Help:      "Total session start attempts by worker_type",
+	}, []string{"worker_type"})
+
+	// SessionErrorsTotal tracks session start failures by worker_type and error_type.
+	SessionErrorsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "hotplex",
+		Name:      "session_errors_total",
+		Help:      "Total session errors by worker_type and error_type (create_failed, start_failed, etc.)",
+	}, []string{"worker_type", "error_type"})
+
+	// SessionStartDuration records the duration of StartSession/ResumeSession in seconds.
+	SessionStartDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: "hotplex",
+		Name:      "session_start_duration_seconds",
+		Help:      "Duration of session start/resume operations in seconds",
+		Buckets:   []float64{0.5, 1, 2, 5, 10, 30, 60},
+	}, []string{"worker_type"})
+
+	// InitHandshakeDuration records the duration of WS init handshake in seconds.
+	InitHandshakeDuration = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: "hotplex",
+		Name:      "init_handshake_duration_seconds",
+		Help:      "Duration of WebSocket init handshake in seconds",
+		Buckets:   []float64{0.1, 0.25, 0.5, 1, 2, 5},
+	})
+
+	// RetryAttemptsTotal tracks auto-retry attempts by reason.
+	RetryAttemptsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "hotplex",
+		Name:      "retry_attempts_total",
+		Help:      "Total auto-retry attempts by reason (llm_error, etc.)",
+	}, []string{"reason"})
+
+	// RetryExhaustionTotal tracks retry exhaustion events (max retries hit).
+	RetryExhaustionTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: "hotplex",
+		Name:      "retry_exhaustion_total",
+		Help:      "Total retry exhaustion events where max retries were reached",
+	})
+
+	// WorkerCreationDuration records the duration of createAndLaunchWorker in seconds.
+	WorkerCreationDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: "hotplex",
+		Name:      "worker_creation_duration_seconds",
+		Help:      "Duration of worker creation and launch in seconds",
+		Buckets:   []float64{0.5, 1, 2, 5, 10, 30, 60},
+	}, []string{"worker_type"})
 )

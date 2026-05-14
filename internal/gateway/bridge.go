@@ -12,6 +12,7 @@ import (
 	"github.com/hrygo/hotplex/internal/config"
 	"github.com/hrygo/hotplex/internal/eventstore"
 	"github.com/hrygo/hotplex/internal/messaging"
+	"github.com/hrygo/hotplex/internal/metrics"
 	"github.com/hrygo/hotplex/internal/security"
 	"github.com/hrygo/hotplex/internal/session"
 	"github.com/hrygo/hotplex/internal/worker"
@@ -121,9 +122,16 @@ func (b *Bridge) StartSession(ctx context.Context, id, userID, botID string, wt 
 		return fmt.Errorf("bridge: rejecting new session during shutdown")
 	}
 
+	metrics.SessionStartsTotal.WithLabelValues(string(wt)).Inc()
+	start := time.Now()
+	defer func() {
+		metrics.SessionStartDuration.WithLabelValues(string(wt)).Observe(time.Since(start).Seconds())
+	}()
+
 	// Create session in DB with bot_id and allowed_tools.
 	si, err := b.sm.CreateWithBot(ctx, id, userID, botID, wt, allowedTools, platform, platformKey, workDir, title)
 	if err != nil {
+		metrics.SessionErrorsTotal.WithLabelValues(string(wt), "create_failed").Inc()
 		return fmt.Errorf("bridge: create session: %w", err)
 	}
 
@@ -161,6 +169,7 @@ func (b *Bridge) StartSession(ctx context.Context, id, userID, botID string, wt 
 			_ = b.sm.Delete(ctx, id)
 		},
 	); err != nil {
+		metrics.SessionErrorsTotal.WithLabelValues(string(wt), "start_failed").Inc()
 		return err
 	}
 
@@ -189,6 +198,11 @@ func (b *Bridge) resumeWithOpts(ctx context.Context, id, workDir string, opts fo
 	if err != nil {
 		return err
 	}
+
+	start := time.Now()
+	defer func() {
+		metrics.SessionStartDuration.WithLabelValues(string(si.WorkerType)).Observe(time.Since(start).Seconds())
+	}()
 
 	if si.State == events.StateDeleted {
 		return session.ErrSessionNotFound

@@ -72,6 +72,7 @@ func (a *AdminAPI) HandleCronCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("create job: %s", err), http.StatusBadRequest)
 		return
 	}
+	a.log.Info("admin: cron job created", "admin", adminKeyPrefix(r))
 	w.WriteHeader(http.StatusCreated)
 }
 
@@ -94,6 +95,7 @@ func (a *AdminAPI) HandleCronUpdate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("update job: %s", err), http.StatusBadRequest)
 		return
 	}
+	a.log.Info("admin: cron job updated", "job_id", id, "admin", adminKeyPrefix(r))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -111,6 +113,7 @@ func (a *AdminAPI) HandleCronDelete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
+	a.log.Info("admin: cron job deleted", "job_id", id, "admin", adminKeyPrefix(r))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -128,6 +131,7 @@ func (a *AdminAPI) HandleCronTrigger(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
+	a.log.Info("admin: cron job triggered", "job_id", id, "admin", adminKeyPrefix(r))
 	w.WriteHeader(http.StatusAccepted)
 }
 
