@@ -21,7 +21,6 @@ import (
 	"github.com/hrygo/hotplex/internal/eventstore"
 	"github.com/hrygo/hotplex/internal/security"
 	"github.com/hrygo/hotplex/internal/session"
-	"github.com/hrygo/hotplex/internal/worker"
 	"github.com/hrygo/hotplex/internal/worker/proc"
 )
 
@@ -284,18 +283,7 @@ func QueryHistory(ctx context.Context, store cron.Store, evStore *eventstore.SQL
 		return nil, err
 	}
 
-	sessionKey := session.DerivePlatformSessionKey(
-		job.OwnerID, worker.TypeClaudeCode,
-		session.PlatformContext{
-			Platform: "cron",
-			BotID:    job.BotID,
-			UserID:   job.OwnerID,
-			WorkDir:  job.WorkDir,
-			ChatID:   job.ID,
-		},
-	)
-
-	return evStore.QueryTurnStats(ctx, sessionKey)
+	return evStore.QueryTurnStats(ctx, job.SessionKey())
 }
 
 // NotifyGateway sends SIGHUP to the running gateway to reload the cron index.
