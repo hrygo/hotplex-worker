@@ -1,6 +1,7 @@
 package messaging
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -9,6 +10,74 @@ import (
 
 	"github.com/hrygo/hotplex/pkg/events"
 )
+
+// NewSendResponseFunc creates a SendResponse closure for registering pending interactions.
+func NewSendResponseFunc(log *slog.Logger, bridge *Bridge, requestID, sessionID, ownerID string, conn PlatformConn) func(map[string]any) {
+	return func(metadata map[string]any) {
+		respCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		env := &events.Envelope{
+			Version:   events.Version,
+			ID:        requestID,
+			SessionID: sessionID,
+			Event: events.Event{
+				Type: events.Input,
+				Data: map[string]any{
+					"content":  "",
+					"metadata": metadata,
+				},
+			},
+			OwnerID: ownerID,
+		}
+		if bridge != nil {
+			if err := bridge.Handle(respCtx, env, conn); err != nil {
+				log.Error("interaction: failed to send response",
+					"request_id", requestID,
+					"session_id", sessionID,
+					"err", err)
+			}
+		} else {
+			log.Error("interaction: bridge not available",
+				"request_id", requestID,
+				"session_id", sessionID)
+		}
+	}
+}
+
+// BuildPermissionResponse creates a permission_response metadata map.
+func BuildPermissionResponse(requestID string, allowed bool, reason string) map[string]any {
+	return map[string]any{
+		"permission_response": map[string]any{
+			"request_id": requestID,
+			"allowed":    allowed,
+			"reason":     reason,
+		},
+	}
+}
+
+// BuildQuestionResponse creates a question_response metadata map.
+func BuildQuestionResponse(requestID, answer string) map[string]any {
+	answers := map[string]string{}
+	if answer != "" {
+		answers["_"] = answer
+	}
+	return map[string]any{
+		"question_response": map[string]any{
+			"id":      requestID,
+			"answers": answers,
+		},
+	}
+}
+
+// BuildElicitationResponse creates an elicitation_response metadata map.
+func BuildElicitationResponse(requestID, action string) map[string]any {
+	return map[string]any{
+		"elicitation_response": map[string]any{
+			"id":     requestID,
+			"action": action,
+		},
+	}
+}
 
 const (
 	// DefaultInteractionTimeout is the default timeout for user interactions.
@@ -169,27 +238,11 @@ func (m *InteractionManager) watchTimeout(pi *PendingInteraction) {
 		// Send auto-deny/reject response based on type
 		switch pi.Type {
 		case events.PermissionRequest:
-			pi.SendResponse(map[string]any{
-				"permission_response": map[string]any{
-					"request_id": pi.ID,
-					"allowed":    false,
-					"reason":     "interaction timed out",
-				},
-			})
+			pi.SendResponse(BuildPermissionResponse(pi.ID, false, "interaction timed out"))
 		case events.QuestionRequest:
-			pi.SendResponse(map[string]any{
-				"question_response": map[string]any{
-					"id":      pi.ID,
-					"answers": map[string]string{},
-				},
-			})
+			pi.SendResponse(BuildQuestionResponse(pi.ID, ""))
 		case events.ElicitationRequest:
-			pi.SendResponse(map[string]any{
-				"elicitation_response": map[string]any{
-					"id":     pi.ID,
-					"action": "cancel",
-				},
-			})
+			pi.SendResponse(BuildElicitationResponse(pi.ID, "cancel"))
 		}
 	}()
 }
