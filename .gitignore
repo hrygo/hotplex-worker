@@ -104,6 +104,12 @@ playwright-report/
 __pycache__
 
 # --- Agent & Session State ---
+.agent/skills/*
+!.agent/skills/hotplex-*/
+.agent/skills/hotplex-docs-patrol/.patrol-baseline
+.agents/
+skills/
+skills-lock.json
 .agent/scheduled_tasks.lock
 .agent/source-study-progress.json
 .agent/arch-analysis/progress.json

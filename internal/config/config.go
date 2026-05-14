@@ -318,6 +318,15 @@ type SlackBotConfig struct {
 	AppToken   string `mapstructure:"app_token"`
 	Soul       string `mapstructure:"soul,omitempty"`
 	WorkerType string `mapstructure:"worker_type,omitempty"`
+	WorkDir    string `mapstructure:"work_dir,omitempty"`
+
+	// Per-bot access control (falls back to platform-level when empty).
+	DMPolicy       string   `mapstructure:"dm_policy,omitempty"`
+	GroupPolicy    string   `mapstructure:"group_policy,omitempty"`
+	RequireMention *bool    `mapstructure:"require_mention,omitempty"`
+	AllowFrom      []string `mapstructure:"allow_from,omitempty"`
+	AllowDMFrom    []string `mapstructure:"allow_dm_from,omitempty"`
+	AllowGroupFrom []string `mapstructure:"allow_group_from,omitempty"`
 
 	STTConfig `mapstructure:",squash"`
 	TTSConfig `mapstructure:",squash"`
@@ -344,6 +353,15 @@ type FeishuBotConfig struct {
 	AppSecret  string `mapstructure:"app_secret"`
 	Soul       string `mapstructure:"soul,omitempty"`
 	WorkerType string `mapstructure:"worker_type,omitempty"`
+	WorkDir    string `mapstructure:"work_dir,omitempty"`
+
+	// Per-bot access control (falls back to platform-level when empty).
+	DMPolicy       string   `mapstructure:"dm_policy,omitempty"`
+	GroupPolicy    string   `mapstructure:"group_policy,omitempty"`
+	RequireMention *bool    `mapstructure:"require_mention,omitempty"`
+	AllowFrom      []string `mapstructure:"allow_from,omitempty"`
+	AllowDMFrom    []string `mapstructure:"allow_dm_from,omitempty"`
+	AllowGroupFrom []string `mapstructure:"allow_group_from,omitempty"`
 
 	STTConfig `mapstructure:",squash"`
 	TTSConfig `mapstructure:",squash"`
@@ -1013,13 +1031,25 @@ func (c *Config) normalizePaths() {
 			*ef = ExpandEnv(*ef)
 		}
 	}
-	// Per-bot env expansion.
+	// Per-bot env expansion (credentials + paths).
 	var botFields []*string
 	for i := range c.Messaging.Slack.Bots {
-		botFields = append(botFields, &c.Messaging.Slack.Bots[i].LocalCmd, &c.Messaging.Slack.Bots[i].MossModelDir)
+		botFields = append(botFields,
+			&c.Messaging.Slack.Bots[i].BotToken,
+			&c.Messaging.Slack.Bots[i].AppToken,
+			&c.Messaging.Slack.Bots[i].WorkDir,
+			&c.Messaging.Slack.Bots[i].LocalCmd,
+			&c.Messaging.Slack.Bots[i].MossModelDir,
+		)
 	}
 	for i := range c.Messaging.Feishu.Bots {
-		botFields = append(botFields, &c.Messaging.Feishu.Bots[i].LocalCmd, &c.Messaging.Feishu.Bots[i].MossModelDir)
+		botFields = append(botFields,
+			&c.Messaging.Feishu.Bots[i].AppID,
+			&c.Messaging.Feishu.Bots[i].AppSecret,
+			&c.Messaging.Feishu.Bots[i].WorkDir,
+			&c.Messaging.Feishu.Bots[i].LocalCmd,
+			&c.Messaging.Feishu.Bots[i].MossModelDir,
+		)
 	}
 	expandStringFields(botFields...)
 
@@ -1046,15 +1076,15 @@ func (c *Config) normalizePaths() {
 			*pf = absPath
 		}
 	}
-	// Per-bot MossModelDir path normalization.
-	var mossDirs []*string
+	// Per-bot WorkDir and MossModelDir path normalization.
+	var botPaths []*string
 	for i := range c.Messaging.Slack.Bots {
-		mossDirs = append(mossDirs, &c.Messaging.Slack.Bots[i].MossModelDir)
+		botPaths = append(botPaths, &c.Messaging.Slack.Bots[i].WorkDir, &c.Messaging.Slack.Bots[i].MossModelDir)
 	}
 	for i := range c.Messaging.Feishu.Bots {
-		mossDirs = append(mossDirs, &c.Messaging.Feishu.Bots[i].MossModelDir)
+		botPaths = append(botPaths, &c.Messaging.Feishu.Bots[i].WorkDir, &c.Messaging.Feishu.Bots[i].MossModelDir)
 	}
-	normalizePathFields(mossDirs...)
+	normalizePathFields(botPaths...)
 }
 
 // ExpandAndAbs returns an absolute path, resolving ~ and relative paths.
