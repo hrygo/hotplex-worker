@@ -289,6 +289,9 @@ type MessagingPlatformConfig struct {
 	TTSConfig `mapstructure:",squash"`
 }
 
+// MaxBotsPerPlatform is the maximum number of bots allowed per messaging platform.
+const MaxBotsPerPlatform = 10
+
 // SlackConfig holds Slack Socket Mode adapter settings.
 // Supports single-bot (top-level bot_token/app_token) and multi-bot (bots[]) modes.
 // normalizeSlackBots() resolves the two into a unified Bots slice.
@@ -749,9 +752,9 @@ func normalizeFeishuBots(cfg *FeishuConfig) {
 
 // propagateBotDefaults fills zero-value fields on each bot config from the
 // platform-level MessagingPlatformConfig and messaging-level shared config.
-func propagateBotDefaults(bots *MessagingPlatformConfig, botSTT *STTConfig, botTTS *TTSConfig) {
-	botSTT.FillFrom(bots.STTConfig)
-	botTTS.FillFrom(bots.TTSConfig)
+func propagateBotDefaults(platformCfg *MessagingPlatformConfig, botSTT *STTConfig, botTTS *TTSConfig) {
+	botSTT.FillFrom(platformCfg.STTConfig)
+	botTTS.FillFrom(platformCfg.TTSConfig)
 }
 
 // expandStringFields expands env vars in non-empty string fields.
@@ -772,24 +775,6 @@ func normalizePathFields(fields ...*string) {
 			}
 		}
 	}
-}
-
-// collectBotFieldPtrs gathers LocalCmd and MossModelDir pointers from SlackBotConfig slice.
-func collectBotFieldPtrs(bots []SlackBotConfig) (localCmds, mossDirs []*string) {
-	for i := range bots {
-		localCmds = append(localCmds, &bots[i].LocalCmd)
-		mossDirs = append(mossDirs, &bots[i].MossModelDir)
-	}
-	return
-}
-
-// collectFeishuBotFieldPtrs gathers LocalCmd and MossModelDir pointers from FeishuBotConfig slice.
-func collectFeishuBotFieldPtrs(bots []FeishuBotConfig) (localCmds, mossDirs []*string) {
-	for i := range bots {
-		localCmds = append(localCmds, &bots[i].LocalCmd)
-		mossDirs = append(mossDirs, &bots[i].MossModelDir)
-	}
-	return
 }
 
 // ─── Loading ─────────────────────────────────────────────────────────────────
@@ -1029,10 +1014,14 @@ func (c *Config) normalizePaths() {
 		}
 	}
 	// Per-bot env expansion.
-	slackLC, slackMD := collectBotFieldPtrs(c.Messaging.Slack.Bots)
-	feishuLC, feishuMD := collectFeishuBotFieldPtrs(c.Messaging.Feishu.Bots)
-	expandStringFields(append(slackLC, feishuLC...)...)
-	expandStringFields(append(slackMD, feishuMD...)...)
+	var botFields []*string
+	for i := range c.Messaging.Slack.Bots {
+		botFields = append(botFields, &c.Messaging.Slack.Bots[i].LocalCmd, &c.Messaging.Slack.Bots[i].MossModelDir)
+	}
+	for i := range c.Messaging.Feishu.Bots {
+		botFields = append(botFields, &c.Messaging.Feishu.Bots[i].LocalCmd, &c.Messaging.Feishu.Bots[i].MossModelDir)
+	}
+	expandStringFields(botFields...)
 
 	// 2. Expand ~ and normalize paths.
 	for _, pf := range []*string{
@@ -1058,7 +1047,14 @@ func (c *Config) normalizePaths() {
 		}
 	}
 	// Per-bot MossModelDir path normalization.
-	normalizePathFields(append(slackMD, feishuMD...)...)
+	var mossDirs []*string
+	for i := range c.Messaging.Slack.Bots {
+		mossDirs = append(mossDirs, &c.Messaging.Slack.Bots[i].MossModelDir)
+	}
+	for i := range c.Messaging.Feishu.Bots {
+		mossDirs = append(mossDirs, &c.Messaging.Feishu.Bots[i].MossModelDir)
+	}
+	normalizePathFields(mossDirs...)
 }
 
 // ExpandAndAbs returns an absolute path, resolving ~ and relative paths.

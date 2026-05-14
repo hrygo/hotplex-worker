@@ -28,17 +28,11 @@ func (a *AdminAPI) HandleListBots(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if a.botLister == nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("[]"))
+		respondJSON(w, []BotEntry{})
 		return
 	}
 
-	entries := a.botLister.ListBots()
-	if entries == nil {
-		entries = []BotEntry{}
-	}
-	respondJSON(w, entries)
+	respondJSON(w, a.botLister.ListBots())
 }
 
 // HandleGetBot returns details for a single bot by name.

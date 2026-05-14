@@ -123,11 +123,10 @@ func startMessagingAdapters(ctx context.Context, deps *GatewayDeps) ([]messaging
 		botEntries = validated
 
 		// Startup validation: bot count limit.
-		const maxBotsPerPlatform = 10
-		if len(botEntries) > maxBotsPerPlatform {
+		if len(botEntries) > config.MaxBotsPerPlatform {
 			log.Warn("messaging: bot count exceeds limit, excess bots ignored",
-				"platform", pt, "count", len(botEntries), "limit", maxBotsPerPlatform)
-			botEntries = botEntries[:maxBotsPerPlatform]
+				"platform", pt, "count", len(botEntries), "limit", config.MaxBotsPerPlatform)
+			botEntries = botEntries[:config.MaxBotsPerPlatform]
 		}
 
 		workDir = appCfg.ResolvePlatformWorkDir(string(pt))

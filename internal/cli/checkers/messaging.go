@@ -168,8 +168,8 @@ type botCheck struct {
 
 func checkBotEntries(platform string, bots []botCheck) []string {
 	var issues []string
-	if len(bots) > 10 {
-		issues = append(issues, fmt.Sprintf("%s: %d bots exceed limit (max 10)", platform, len(bots)))
+	if len(bots) > config.MaxBotsPerPlatform {
+		issues = append(issues, fmt.Sprintf("%s: %d bots exceed limit (max %d)", platform, len(bots), config.MaxBotsPerPlatform))
 	}
 	seen := make(map[string]bool, len(bots))
 	for _, b := range bots {
