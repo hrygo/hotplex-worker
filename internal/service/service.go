@@ -7,6 +7,22 @@ import (
 	"path/filepath"
 )
 
+// CommandRunner abstracts OS command execution for testability.
+type CommandRunner interface {
+	LookPath(file string) (string, error)
+	CombinedOutput(name string, args ...string) ([]byte, error)
+	Run(name string, args ...string) error
+}
+
+// realRunner is the production implementation using os/exec.
+type realRunner struct{}
+
+func (realRunner) LookPath(file string) (string, error) { return exec.LookPath(file) }
+func (realRunner) CombinedOutput(name string, args ...string) ([]byte, error) {
+	return exec.Command(name, args...).CombinedOutput()
+}
+func (realRunner) Run(name string, args ...string) error { return exec.Command(name, args...).Run() }
+
 type Level string
 
 const (
@@ -53,10 +69,11 @@ type Manager interface {
 }
 
 func ResolveBinaryPath() (string, error) {
-	// Prefer the binary found in PATH (standard deployment location).
-	// This avoids capturing a build-directory path when the user runs
-	// ./bin/hotplex-linux-amd64 service install.
-	if p, err := exec.LookPath("hotplex"); err == nil {
+	return resolveBinaryPath(realRunner{})
+}
+
+func resolveBinaryPath(runner CommandRunner) (string, error) {
+	if p, err := runner.LookPath("hotplex"); err == nil {
 		if abs, err := filepath.Abs(p); err == nil {
 			if resolved, err := filepath.EvalSymlinks(abs); err == nil {
 				return resolved, nil
@@ -66,7 +83,6 @@ func ResolveBinaryPath() (string, error) {
 		return p, nil
 	}
 
-	// Fallback: resolve the currently running executable.
 	exe, err := os.Executable()
 	if err != nil {
 		return "", fmt.Errorf("resolve binary: %w", err)

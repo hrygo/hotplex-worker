@@ -11,10 +11,12 @@ import (
 	"strings"
 )
 
-type darwinManager struct{}
+type darwinManager struct {
+	run CommandRunner
+}
 
 func NewManager() Manager {
-	return &darwinManager{}
+	return &darwinManager{run: realRunner{}}
 }
 
 func (m *darwinManager) Install(opts InstallOptions) error {
@@ -32,18 +34,18 @@ func (m *darwinManager) Install(opts InstallOptions) error {
 		return err
 	}
 
-	if _, err := exec.LookPath("launchctl"); err != nil {
+	if _, err := m.run.LookPath("launchctl"); err != nil {
 		return fmt.Errorf("launchctl not found")
 	}
 
 	label := launchdLabel(opts.Name, opts.Level)
-	out, err := exec.Command("launchctl", "load", "-w", plistPath).CombinedOutput()
+	out, err := m.run.CombinedOutput("launchctl", "load", "-w", plistPath)
 	if err != nil {
 		_ = os.Remove(plistPath)
 		return fmt.Errorf("launchctl load: %s: %w", strings.TrimSpace(string(out)), err)
 	}
 
-	_ = exec.Command("launchctl", "start", label).Run()
+	_ = m.run.Run("launchctl", "start", label)
 	return nil
 }
 
@@ -57,7 +59,7 @@ func (m *darwinManager) Uninstall(name string, level Level) error {
 		return fmt.Errorf("service not installed at %s", plistPath)
 	}
 
-	if err := stopAndUnload(plistPath, name, level); err != nil {
+	if err := m.stopAndUnload(plistPath, name, level); err != nil {
 		return err
 	}
 
@@ -80,7 +82,7 @@ func (m *darwinManager) Status(name string, level Level) (*Status, error) {
 	s.Installed = true
 
 	label := launchdLabel(name, level)
-	out, err := exec.Command("launchctl", "list", label).CombinedOutput()
+	out, err := m.run.CombinedOutput("launchctl", "list", label)
 	if err != nil {
 		s.Running = false
 		s.StatusText = "stopped"
@@ -125,10 +127,10 @@ func (m *darwinManager) Start(name string, level Level) error {
 	}
 
 	label := launchdLabel(name, level)
-	out, err := exec.Command("launchctl", "load", "-w", plistPath).CombinedOutput()
+	out, err := m.run.CombinedOutput("launchctl", "load", "-w", plistPath)
 	if err != nil {
 		if strings.Contains(string(out), "already loaded") {
-			if err := exec.Command("launchctl", "start", label).Run(); err != nil {
+			if err := m.run.Run("launchctl", "start", label); err != nil {
 				return fmt.Errorf("launchctl start: %w", err)
 			}
 			return nil
@@ -146,15 +148,14 @@ func (m *darwinManager) Stop(name string, level Level) error {
 	if _, err := os.Stat(plistPath); os.IsNotExist(err) {
 		return ErrNotInstalled
 	}
-	return stopAndUnload(plistPath, name, level)
+	return m.stopAndUnload(plistPath, name, level)
 }
 
-// stopAndUnload stops and unloads a launchd service. Shared by Stop and Uninstall.
-func stopAndUnload(plistPath, name string, level Level) error {
+func (m *darwinManager) stopAndUnload(plistPath, name string, level Level) error {
 	label := launchdLabel(name, level)
-	_ = exec.Command("launchctl", "stop", label).Run()
+	_ = m.run.Run("launchctl", "stop", label)
 
-	out, err := exec.Command("launchctl", "unload", plistPath).CombinedOutput()
+	out, err := m.run.CombinedOutput("launchctl", "unload", plistPath)
 	if err != nil {
 		return fmt.Errorf("launchctl unload: %s: %w", strings.TrimSpace(string(out)), err)
 	}
@@ -173,8 +174,6 @@ func (m *darwinManager) Logs(name string, level Level, follow bool, lines int) e
 	stderrLog := filepath.Join(dir, "launchd.stderr.log")
 	stdoutLog := filepath.Join(dir, "launchd.stdout.log")
 
-	// Prefer stderr log: slog writes to os.Stderr (application logs).
-	// Fall back to stdout if stderr log doesn't exist yet (banner-only startup).
 	logFile := stderrLog
 	if _, err := os.Stat(logFile); os.IsNotExist(err) {
 		logFile = stdoutLog

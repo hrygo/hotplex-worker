@@ -32,6 +32,7 @@ func TestFormatCall(t *testing.T) {
 		{"Grep with path", "Grep", map[string]any{"pattern": "func main", "path": "src/"}, `🔍 "func main" in src`},
 		{"Grep pattern only", "Grep", map[string]any{"pattern": "hello"}, `🔍 "hello"`},
 		{"Grep no pattern", "Grep", map[string]any{}, "🔍 Searching..."},
+		{"Grep multiline pattern", "Grep", map[string]any{"pattern": "func \\w+\nsecond line"}, `🔍 "func \w+"`},
 
 		// Glob
 		{"Glob with pattern", "Glob", map[string]any{"pattern": "**/*.go"}, "📂 **/*.go"},
@@ -39,11 +40,13 @@ func TestFormatCall(t *testing.T) {
 
 		// Agent
 		{"Agent with description", "Agent", map[string]any{"description": "code-review"}, "🤖 code-review"},
+		{"Agent multiline desc", "Agent", map[string]any{"description": "review\ncode"}, "🤖 review"},
 		{"Agent with subagent_type", "Agent", map[string]any{"subagent_type": "Explore"}, "🤖 Explore"},
 		{"Agent no info", "Agent", map[string]any{}, "🤖 Spawning agent..."},
 
 		// WebSearch / WebFetch
 		{"WebSearch with query", "WebSearch", map[string]any{"query": "golang generics"}, "🌐 Searching golang generics"},
+		{"WebSearch multiline query", "WebSearch", map[string]any{"query": "how to\nuse generics"}, "🌐 Searching how to"},
 		{"WebFetch with url", "WebFetch", map[string]any{"url": "https://example.com"}, "🌐 Fetching https://example.com"},
 		{"WebSearch no query", "WebSearch", map[string]any{}, "🌐 Searching..."},
 

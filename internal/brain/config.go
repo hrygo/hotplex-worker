@@ -26,6 +26,7 @@
 package brain
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -302,85 +303,16 @@ func defaultModelForProtocol(protocol string) string {
 }
 
 // buildConfig constructs a Config from resolved values.
+// Sub-config fields are populated via the configRegistry.
 func buildConfig(apiKey, provider, protocol, model, endpoint string) Config {
-	return Config{
-		Enabled: apiKey != "",
-		Model: ModelConfig{
-			Provider: provider,
-			Protocol: protocol,
-			APIKey:   apiKey,
-			Model:    model,
-			Endpoint: endpoint,
-			TimeoutS: getIntEnv("HOTPLEX_BRAIN_TIMEOUT_S", 30),
-		},
-		Cache: CacheConfig{
-			Enabled: true,
-			Size:    getIntEnv("HOTPLEX_BRAIN_CACHE_SIZE", 1000),
-		},
-		Retry: RetryConfig{
-			Enabled:     true,
-			MaxAttempts: getIntEnv("HOTPLEX_BRAIN_MAX_RETRIES", 3),
-			MinWaitMs:   getIntEnv("HOTPLEX_BRAIN_RETRY_MIN_WAIT_MS", 100),
-			MaxWaitMs:   getIntEnv("HOTPLEX_BRAIN_RETRY_MAX_WAIT_MS", 5000),
-		},
-		Metrics: MetricsConfig{
-			Enabled:        getBoolEnv("HOTPLEX_BRAIN_METRICS_ENABLED", true),
-			ServiceName:    getEnv("HOTPLEX_BRAIN_METRICS_SERVICE_NAME", "hotplex-brain"),
-			ExportInterval: getDurationEnv("HOTPLEX_BRAIN_METRICS_EXPORT_INTERVAL", 10*time.Second),
-		},
-		Cost: CostConfig{
-			Enabled:      getBoolEnv("HOTPLEX_BRAIN_COST_TRACKING_ENABLED", true),
-			EnableBudget: getBoolEnv("HOTPLEX_BRAIN_COST_ENABLE_BUDGET", false),
-		},
-		RateLimit: RateLimitConfig{
-			Enabled:      getBoolEnv("HOTPLEX_BRAIN_RATE_LIMIT_ENABLED", false),
-			RPS:          getFloatEnv("HOTPLEX_BRAIN_RATE_LIMIT_RPS", 10.0),
-			Burst:        getIntEnv("HOTPLEX_BRAIN_RATE_LIMIT_BURST", 20),
-			QueueSize:    getIntEnv("HOTPLEX_BRAIN_RATE_LIMIT_QUEUE_SIZE", 100),
-			QueueTimeout: getDurationEnv("HOTPLEX_BRAIN_RATE_LIMIT_QUEUE_TIMEOUT", 30*time.Second),
-			PerModel:     getBoolEnv("HOTPLEX_BRAIN_RATE_LIMIT_PER_MODEL", false),
-		},
-		Router: RouterConfig{
-			Enabled:      getBoolEnv("HOTPLEX_BRAIN_ROUTER_ENABLED", false),
-			DefaultStage: getEnv("HOTPLEX_BRAIN_ROUTER_STRATEGY", "cost_priority"),
-			Models:       parseRouterModels(getEnv("HOTPLEX_BRAIN_ROUTER_MODELS", "")),
-		},
-		CircuitBreaker: CircuitBreakerConfig{
-			Enabled:     getBoolEnv("HOTPLEX_BRAIN_CIRCUIT_BREAKER_ENABLED", false),
-			MaxFailures: getIntEnv("HOTPLEX_BRAIN_CIRCUIT_BREAKER_MAX_FAILURES", 5),
-			Timeout:     getDurationEnv("HOTPLEX_BRAIN_CIRCUIT_BREAKER_TIMEOUT", 30*time.Second),
-			Interval:    getDurationEnv("HOTPLEX_BRAIN_CIRCUIT_BREAKER_INTERVAL", 60*time.Second),
-		},
-		IntentRouter: IntentRouterFeatureConfig{
-			Enabled:             getBoolEnv("HOTPLEX_BRAIN_INTENT_ROUTER_ENABLED", true),
-			ConfidenceThreshold: getFloatEnv("HOTPLEX_BRAIN_INTENT_ROUTER_CONFIDENCE", 0.7),
-			CacheSize:           getIntEnv("HOTPLEX_BRAIN_INTENT_ROUTER_CACHE_SIZE", 1000),
-		},
-		Memory: MemoryCompressionConfig{
-			Enabled:          getBoolEnv("HOTPLEX_BRAIN_MEMORY_ENABLED", true),
-			TokenThreshold:   getIntEnv("HOTPLEX_BRAIN_MEMORY_TOKEN_THRESHOLD", 8000),
-			TargetTokenCount: getIntEnv("HOTPLEX_BRAIN_MEMORY_TARGET_TOKENS", 2000),
-			PreserveTurns:    getIntEnv("HOTPLEX_BRAIN_MEMORY_PRESERVE_TURNS", 5),
-			MaxSummaryTokens: getIntEnv("HOTPLEX_BRAIN_MEMORY_MAX_SUMMARY_TOKENS", 500),
-			CompressionRatio: getFloatEnv("HOTPLEX_BRAIN_MEMORY_COMPRESSION_RATIO", 0.25),
-			SessionTTL:       getEnv("HOTPLEX_BRAIN_MEMORY_SESSION_TTL", "24h"),
-		},
-		Guard: SafetyGuardFeatureConfig{
-			Enabled:                getBoolEnv("HOTPLEX_BRAIN_GUARD_ENABLED", true),
-			InputGuardEnabled:      getBoolEnv("HOTPLEX_BRAIN_GUARD_INPUT_ENABLED", true),
-			OutputGuardEnabled:     getBoolEnv("HOTPLEX_BRAIN_GUARD_OUTPUT_ENABLED", true),
-			Chat2ConfigEnabled:     getBoolEnv("HOTPLEX_BRAIN_CHAT2CONFIG_ENABLED", false),
-			MaxInputLength:         getIntEnv("HOTPLEX_BRAIN_GUARD_MAX_INPUT_LENGTH", 100000),
-			ScanDepth:              getIntEnv("HOTPLEX_BRAIN_GUARD_SCAN_DEPTH", 3),
-			Sensitivity:            getEnv("HOTPLEX_BRAIN_GUARD_SENSITIVITY", "medium"),
-			AdminUsers:             parseStringList(getEnv("HOTPLEX_BRAIN_ADMIN_USERS", "")),
-			AdminChannels:          parseStringList(getEnv("HOTPLEX_BRAIN_ADMIN_CHANNELS", "")),
-			ResponseTimeout:        getDurationEnv("HOTPLEX_BRAIN_GUARD_RESPONSE_TIMEOUT", 10*time.Second),
-			RateLimitRPS:           getFloatEnv("HOTPLEX_BRAIN_GUARD_RATE_LIMIT_RPS", 10.0),
-			RateLimitBurst:         getIntEnv("HOTPLEX_BRAIN_GUARD_RATE_LIMIT_BURST", 20),
-			FailClosedOnBrainError: getBoolEnv("HOTPLEX_BRAIN_GUARD_FAIL_CLOSED_ON_BRAIN_ERROR", false),
-		},
-	}
+	cfg, _ := LoadAndValidate()
+	cfg.Enabled = apiKey != ""
+	cfg.Model.Provider = provider
+	cfg.Model.Protocol = protocol
+	cfg.Model.APIKey = apiKey
+	cfg.Model.Model = model
+	cfg.Model.Endpoint = endpoint
+	return cfg
 }
 
 func parseRouterModels(s string) []llm.ModelConfig {
@@ -434,7 +366,331 @@ func parseStringList(s string) []string {
 	return result
 }
 
-// Helper functions for loading config from environment variables
+// === ConfigSpec Registry ===
+
+// ConfigSpec defines a single environment-driven configuration entry.
+// The registry centralizes all env var lookups, defaults, and validation
+// so that configuration can be inspected, validated, and tested uniformly.
+type ConfigSpec struct {
+	Name     string             // config field name, e.g. "cache_size"
+	EnvKey   string             // e.g. "HOTPLEX_BRAIN_CACHE_SIZE"
+	Default  string             // string representation of default
+	Validate func(string) error // optional validator; nil = accept any value
+}
+
+// configRegistry enumerates every environment variable used by buildConfig.
+// Order matches the struct field order in Config for readability.
+var configRegistry = []ConfigSpec{
+	// Model
+	{Name: "model_timeout_s", EnvKey: "HOTPLEX_BRAIN_TIMEOUT_S", Default: "30",
+		Validate: positiveInt},
+	// Cache
+	{Name: "cache_size", EnvKey: "HOTPLEX_BRAIN_CACHE_SIZE", Default: "1000",
+		Validate: positiveInt},
+	// Retry
+	{Name: "retry_max_attempts", EnvKey: "HOTPLEX_BRAIN_MAX_RETRIES", Default: "3",
+		Validate: positiveInt},
+	{Name: "retry_min_wait_ms", EnvKey: "HOTPLEX_BRAIN_RETRY_MIN_WAIT_MS", Default: "100",
+		Validate: nonNegativeInt},
+	{Name: "retry_max_wait_ms", EnvKey: "HOTPLEX_BRAIN_RETRY_MAX_WAIT_MS", Default: "5000",
+		Validate: positiveInt},
+	// Metrics
+	{Name: "metrics_enabled", EnvKey: "HOTPLEX_BRAIN_METRICS_ENABLED", Default: "true"},
+	{Name: "metrics_service_name", EnvKey: "HOTPLEX_BRAIN_METRICS_SERVICE_NAME", Default: "hotplex-brain"},
+	{Name: "metrics_export_interval", EnvKey: "HOTPLEX_BRAIN_METRICS_EXPORT_INTERVAL", Default: "10s",
+		Validate: positiveDuration},
+	// Cost
+	{Name: "cost_tracking_enabled", EnvKey: "HOTPLEX_BRAIN_COST_TRACKING_ENABLED", Default: "true"},
+	{Name: "cost_enable_budget", EnvKey: "HOTPLEX_BRAIN_COST_ENABLE_BUDGET", Default: "false"},
+	// RateLimit
+	{Name: "rate_limit_enabled", EnvKey: "HOTPLEX_BRAIN_RATE_LIMIT_ENABLED", Default: "false"},
+	{Name: "rate_limit_rps", EnvKey: "HOTPLEX_BRAIN_RATE_LIMIT_RPS", Default: "10",
+		Validate: nonNegativeFloat},
+	{Name: "rate_limit_burst", EnvKey: "HOTPLEX_BRAIN_RATE_LIMIT_BURST", Default: "20",
+		Validate: nonNegativeInt},
+	{Name: "rate_limit_queue_size", EnvKey: "HOTPLEX_BRAIN_RATE_LIMIT_QUEUE_SIZE", Default: "100",
+		Validate: nonNegativeInt},
+	{Name: "rate_limit_queue_timeout", EnvKey: "HOTPLEX_BRAIN_RATE_LIMIT_QUEUE_TIMEOUT", Default: "30s",
+		Validate: positiveDuration},
+	{Name: "rate_limit_per_model", EnvKey: "HOTPLEX_BRAIN_RATE_LIMIT_PER_MODEL", Default: "false"},
+	// Router
+	{Name: "router_enabled", EnvKey: "HOTPLEX_BRAIN_ROUTER_ENABLED", Default: "false"},
+	{Name: "router_strategy", EnvKey: "HOTPLEX_BRAIN_ROUTER_STRATEGY", Default: "cost_priority"},
+	{Name: "router_models", EnvKey: "HOTPLEX_BRAIN_ROUTER_MODELS", Default: ""},
+	// CircuitBreaker
+	{Name: "circuit_breaker_enabled", EnvKey: "HOTPLEX_BRAIN_CIRCUIT_BREAKER_ENABLED", Default: "false"},
+	{Name: "circuit_breaker_max_failures", EnvKey: "HOTPLEX_BRAIN_CIRCUIT_BREAKER_MAX_FAILURES", Default: "5",
+		Validate: positiveInt},
+	{Name: "circuit_breaker_timeout", EnvKey: "HOTPLEX_BRAIN_CIRCUIT_BREAKER_TIMEOUT", Default: "30s",
+		Validate: positiveDuration},
+	{Name: "circuit_breaker_interval", EnvKey: "HOTPLEX_BRAIN_CIRCUIT_BREAKER_INTERVAL", Default: "60s",
+		Validate: positiveDuration},
+	// IntentRouter
+	{Name: "intent_router_enabled", EnvKey: "HOTPLEX_BRAIN_INTENT_ROUTER_ENABLED", Default: "true"},
+	{Name: "intent_router_confidence", EnvKey: "HOTPLEX_BRAIN_INTENT_ROUTER_CONFIDENCE", Default: "0.7",
+		Validate: confidenceRange},
+	{Name: "intent_router_cache_size", EnvKey: "HOTPLEX_BRAIN_INTENT_ROUTER_CACHE_SIZE", Default: "1000",
+		Validate: positiveInt},
+	// Memory
+	{Name: "memory_enabled", EnvKey: "HOTPLEX_BRAIN_MEMORY_ENABLED", Default: "true"},
+	{Name: "memory_token_threshold", EnvKey: "HOTPLEX_BRAIN_MEMORY_TOKEN_THRESHOLD", Default: "8000",
+		Validate: positiveInt},
+	{Name: "memory_target_tokens", EnvKey: "HOTPLEX_BRAIN_MEMORY_TARGET_TOKENS", Default: "2000",
+		Validate: positiveInt},
+	{Name: "memory_preserve_turns", EnvKey: "HOTPLEX_BRAIN_MEMORY_PRESERVE_TURNS", Default: "5",
+		Validate: nonNegativeInt},
+	{Name: "memory_max_summary_tokens", EnvKey: "HOTPLEX_BRAIN_MEMORY_MAX_SUMMARY_TOKENS", Default: "500",
+		Validate: positiveInt},
+	{Name: "memory_compression_ratio", EnvKey: "HOTPLEX_BRAIN_MEMORY_COMPRESSION_RATIO", Default: "0.25",
+		Validate: compressionRatioRange},
+	{Name: "memory_session_ttl", EnvKey: "HOTPLEX_BRAIN_MEMORY_SESSION_TTL", Default: "24h"},
+	// Guard
+	{Name: "guard_enabled", EnvKey: "HOTPLEX_BRAIN_GUARD_ENABLED", Default: "true"},
+	{Name: "guard_input_enabled", EnvKey: "HOTPLEX_BRAIN_GUARD_INPUT_ENABLED", Default: "true"},
+	{Name: "guard_output_enabled", EnvKey: "HOTPLEX_BRAIN_GUARD_OUTPUT_ENABLED", Default: "true"},
+	{Name: "chat2config_enabled", EnvKey: "HOTPLEX_BRAIN_CHAT2CONFIG_ENABLED", Default: "false"},
+	{Name: "guard_max_input_length", EnvKey: "HOTPLEX_BRAIN_GUARD_MAX_INPUT_LENGTH", Default: "100000",
+		Validate: nonNegativeInt},
+	{Name: "guard_scan_depth", EnvKey: "HOTPLEX_BRAIN_GUARD_SCAN_DEPTH", Default: "3",
+		Validate: nonNegativeInt},
+	{Name: "guard_sensitivity", EnvKey: "HOTPLEX_BRAIN_GUARD_SENSITIVITY", Default: "medium",
+		Validate: sensitivityLevel},
+	{Name: "guard_response_timeout", EnvKey: "HOTPLEX_BRAIN_GUARD_RESPONSE_TIMEOUT", Default: "10s",
+		Validate: positiveDuration},
+	{Name: "guard_rate_limit_rps", EnvKey: "HOTPLEX_BRAIN_GUARD_RATE_LIMIT_RPS", Default: "10",
+		Validate: nonNegativeFloat},
+	{Name: "guard_rate_limit_burst", EnvKey: "HOTPLEX_BRAIN_GUARD_RATE_LIMIT_BURST", Default: "20",
+		Validate: nonNegativeInt},
+	{Name: "guard_fail_closed_on_brain_error", EnvKey: "HOTPLEX_BRAIN_GUARD_FAIL_CLOSED_ON_BRAIN_ERROR", Default: "false"},
+}
+
+// --- Validation helpers ---
+
+func positiveInt(val string) error {
+	n, err := strconv.Atoi(val)
+	if err != nil {
+		return fmt.Errorf("invalid integer %q", val)
+	}
+	if n <= 0 {
+		return fmt.Errorf("must be positive, got %d", n)
+	}
+	return nil
+}
+
+func nonNegativeInt(val string) error {
+	n, err := strconv.Atoi(val)
+	if err != nil {
+		return fmt.Errorf("invalid integer %q", val)
+	}
+	if n < 0 {
+		return fmt.Errorf("must be non-negative, got %d", n)
+	}
+	return nil
+}
+
+func nonNegativeFloat(val string) error {
+	n, err := strconv.ParseFloat(val, 64)
+	if err != nil {
+		return fmt.Errorf("invalid float %q", val)
+	}
+	if n < 0 {
+		return fmt.Errorf("must be non-negative, got %f", n)
+	}
+	return nil
+}
+
+func positiveDuration(val string) error {
+	d, err := parseDuration(val)
+	if err != nil {
+		return fmt.Errorf("invalid duration %q: %w", val, err)
+	}
+	if d <= 0 {
+		return fmt.Errorf("must be positive, got %s", d)
+	}
+	return nil
+}
+
+func confidenceRange(val string) error {
+	n, err := strconv.ParseFloat(val, 64)
+	if err != nil {
+		return fmt.Errorf("invalid float %q", val)
+	}
+	if n < 0 || n > 1 {
+		return fmt.Errorf("must be between 0 and 1, got %f", n)
+	}
+	return nil
+}
+
+func compressionRatioRange(val string) error {
+	n, err := strconv.ParseFloat(val, 64)
+	if err != nil {
+		return fmt.Errorf("invalid float %q", val)
+	}
+	if n <= 0 || n >= 1 {
+		return fmt.Errorf("must be between 0 and 1 exclusive, got %f", n)
+	}
+	return nil
+}
+
+func sensitivityLevel(val string) error {
+	switch val {
+	case "low", "medium", "high":
+		return nil
+	default:
+		return fmt.Errorf("must be low, medium, or high, got %q", val)
+	}
+}
+
+// --- Parse helpers ---
+
+// parseDuration parses a duration string, accepting both Go duration syntax
+// (e.g., "30s", "1m") and bare seconds (e.g., "30").
+func parseDuration(val string) (time.Duration, error) {
+	if d, err := time.ParseDuration(val); err == nil {
+		return d, nil
+	}
+	if n, err := strconv.Atoi(val); err == nil {
+		return time.Duration(n) * time.Second, nil
+	}
+	return 0, fmt.Errorf("invalid duration %q", val)
+}
+
+// ResolveEnv looks up the env var for a spec, falling back to Default.
+// If validation fails it returns the default value.
+func (s ConfigSpec) ResolveEnv() string {
+	val := os.Getenv(s.EnvKey)
+	if val == "" {
+		return s.Default
+	}
+	if s.Validate != nil {
+		if err := s.Validate(val); err != nil {
+			return s.Default
+		}
+	}
+	return val
+}
+
+// LoadAndValidate loads brain config from environment and returns the config
+// along with any validation errors. Errors are non-fatal — the config uses
+// defaults for invalid values and reports all issues.
+func LoadAndValidate() (Config, []error) {
+	// Resolve all env vars through the registry, collecting validation errors.
+	values := make(map[string]string, len(configRegistry))
+	var errs []error
+	for _, spec := range configRegistry {
+		raw := os.Getenv(spec.EnvKey)
+		if raw == "" {
+			values[spec.Name] = spec.Default
+			continue
+		}
+		if spec.Validate != nil {
+			if err := spec.Validate(raw); err != nil {
+				errs = append(errs, fmt.Errorf("%s (%s): %w", spec.Name, spec.EnvKey, err))
+				values[spec.Name] = spec.Default // fall back to default on validation error
+				continue
+			}
+		}
+		values[spec.Name] = raw
+	}
+
+	cfg := Config{
+		Cache: CacheConfig{Enabled: true},
+		Retry: RetryConfig{Enabled: true},
+	}
+
+	cfg.Model.TimeoutS = getInt(values["model_timeout_s"])
+	cfg.Cache.Size = getInt(values["cache_size"])
+	cfg.Retry.MaxAttempts = getInt(values["retry_max_attempts"])
+	cfg.Retry.MinWaitMs = getInt(values["retry_min_wait_ms"])
+	cfg.Retry.MaxWaitMs = getInt(values["retry_max_wait_ms"])
+
+	cfg.Metrics.Enabled = getBool(values["metrics_enabled"])
+	cfg.Metrics.ServiceName = values["metrics_service_name"]
+	cfg.Metrics.ExportInterval = getDuration(values["metrics_export_interval"])
+
+	cfg.Cost.Enabled = getBool(values["cost_tracking_enabled"])
+	cfg.Cost.EnableBudget = getBool(values["cost_enable_budget"])
+
+	cfg.RateLimit.Enabled = getBool(values["rate_limit_enabled"])
+	cfg.RateLimit.RPS = getFloat(values["rate_limit_rps"])
+	cfg.RateLimit.Burst = getInt(values["rate_limit_burst"])
+	cfg.RateLimit.QueueSize = getInt(values["rate_limit_queue_size"])
+	cfg.RateLimit.QueueTimeout = getDuration(values["rate_limit_queue_timeout"])
+	cfg.RateLimit.PerModel = getBool(values["rate_limit_per_model"])
+
+	cfg.Router.Enabled = getBool(values["router_enabled"])
+	cfg.Router.DefaultStage = values["router_strategy"]
+	cfg.Router.Models = parseRouterModels(values["router_models"])
+
+	cfg.CircuitBreaker.Enabled = getBool(values["circuit_breaker_enabled"])
+	cfg.CircuitBreaker.MaxFailures = getInt(values["circuit_breaker_max_failures"])
+	cfg.CircuitBreaker.Timeout = getDuration(values["circuit_breaker_timeout"])
+	cfg.CircuitBreaker.Interval = getDuration(values["circuit_breaker_interval"])
+
+	cfg.IntentRouter.Enabled = getBool(values["intent_router_enabled"])
+	cfg.IntentRouter.ConfidenceThreshold = getFloat(values["intent_router_confidence"])
+	cfg.IntentRouter.CacheSize = getInt(values["intent_router_cache_size"])
+
+	cfg.Memory.Enabled = getBool(values["memory_enabled"])
+	cfg.Memory.TokenThreshold = getInt(values["memory_token_threshold"])
+	cfg.Memory.TargetTokenCount = getInt(values["memory_target_tokens"])
+	cfg.Memory.PreserveTurns = getInt(values["memory_preserve_turns"])
+	cfg.Memory.MaxSummaryTokens = getInt(values["memory_max_summary_tokens"])
+	cfg.Memory.CompressionRatio = getFloat(values["memory_compression_ratio"])
+	cfg.Memory.SessionTTL = values["memory_session_ttl"]
+
+	cfg.Guard.Enabled = getBool(values["guard_enabled"])
+	cfg.Guard.InputGuardEnabled = getBool(values["guard_input_enabled"])
+	cfg.Guard.OutputGuardEnabled = getBool(values["guard_output_enabled"])
+	cfg.Guard.Chat2ConfigEnabled = getBool(values["chat2config_enabled"])
+	cfg.Guard.MaxInputLength = getInt(values["guard_max_input_length"])
+	cfg.Guard.ScanDepth = getInt(values["guard_scan_depth"])
+	cfg.Guard.Sensitivity = values["guard_sensitivity"]
+	cfg.Guard.AdminUsers = parseStringList(os.Getenv("HOTPLEX_BRAIN_ADMIN_USERS"))
+	cfg.Guard.AdminChannels = parseStringList(os.Getenv("HOTPLEX_BRAIN_ADMIN_CHANNELS"))
+	cfg.Guard.ResponseTimeout = getDuration(values["guard_response_timeout"])
+	cfg.Guard.RateLimitRPS = getFloat(values["guard_rate_limit_rps"])
+	cfg.Guard.RateLimitBurst = getInt(values["guard_rate_limit_burst"])
+	cfg.Guard.FailClosedOnBrainError = getBool(values["guard_fail_closed_on_brain_error"])
+
+	return cfg, errs
+}
+
+// --- Value parse helpers (string → typed) ---
+
+func getBool(val string) bool {
+	b, err := strconv.ParseBool(val)
+	if err != nil {
+		return false
+	}
+	return b
+}
+
+func getInt(val string) int {
+	n, err := strconv.Atoi(val)
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
+func getFloat(val string) float64 {
+	n, err := strconv.ParseFloat(val, 64)
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
+func getDuration(val string) time.Duration {
+	d, err := parseDuration(val)
+	if err != nil {
+		return 0
+	}
+	return d
+}
+
+// --- Legacy env helpers (kept for backward compat with LoadConfigFromEnv) ---
 
 func getEnv(key, fallback string) string {
 	if val := os.Getenv(key); val != "" {
@@ -473,13 +729,8 @@ func getFloatEnv(key string, fallback float64) float64 {
 
 func getDurationEnv(key string, fallback time.Duration) time.Duration {
 	if val := os.Getenv(key); val != "" {
-		// Try parsing as duration string (e.g., "30s", "1m")
-		if d, err := time.ParseDuration(val); err == nil {
+		if d, err := parseDuration(val); err == nil {
 			return d
-		}
-		// Try parsing as seconds
-		if n, err := strconv.Atoi(val); err == nil {
-			return time.Duration(n) * time.Second
 		}
 	}
 	return fallback
