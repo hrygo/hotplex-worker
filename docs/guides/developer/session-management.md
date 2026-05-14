@@ -1,3 +1,9 @@
+---
+title: Session 管理
+weight: 17
+description: Session 生命周期、5 状态机、资源配额与 GC 回收的深度指南
+---
+
 # Session 管理
 
 > 面向开发者的 Session 生命周期、状态机、资源管理深度指南

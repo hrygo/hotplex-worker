@@ -1,9 +1,5 @@
 ---
-type: design
-tags:
-  - project/HotPlex
-  - environment/blocklist
-  - security/env-injection
+
 ---
 
 # Environment Variable Blocklist Strategy

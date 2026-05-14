@@ -1,3 +1,9 @@
+---
+title: 开发者安全指南
+weight: 16
+description: HotPlex Gateway 安全机制配置：JWT、SSRF 防御、命令白名单与进程隔离
+---
+
 # 开发者安全指南
 
 > 理解和配置 HotPlex Gateway 的安全机制，确保 Agent 安全运行

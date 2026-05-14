@@ -1,9 +1,5 @@
 ---
-type: design
-tags:
-  - project/HotPlex
-  - security/input-validation
-  - security/command-injection
+
 ---
 
 # Security: Input Validation & Command Injection Prevention

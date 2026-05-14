@@ -1,10 +1,5 @@
 ---
 title: WebSocket Full-Duplex Communication Flow
-type: architecture
-tags:
-  - project/HotPlex
-  - architecture/gateway
-  - architecture/websocket
 ---
 
 # WebSocket Full-Duplex Communication Flow

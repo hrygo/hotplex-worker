@@ -1,3 +1,9 @@
+---
+title: 移动端访问
+weight: 3
+description: 通过飞书或 Slack 移动应用随时随地与 AI Agent 对话
+---
+
 # 移动端访问
 
 > 通过飞书/Slack 移动应用随时随地与 AI 对话

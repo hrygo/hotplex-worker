@@ -1,9 +1,5 @@
 ---
-type: design
-tags:
-  - project/HotPlex
-  - security/ssrf
-  - security/url-validation
+
 ---
 
 # SSRF Protection

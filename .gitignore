@@ -8,6 +8,7 @@ hotplex
 hotplex-*
 hotplex.pid
 !cmd/hotplex
+.docs-patrol-baseline
 !.agent/skills/hotplex-*/
 *.test
 *.out

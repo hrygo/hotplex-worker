@@ -1,7 +1,7 @@
 ---
+title: Admin API 参考
 weight: 5
-persona: enterprise
-difficulty: advanced
+description: HotPlex Gateway 管理 API 完整参考：Session 管理、Cron 任务、系统配置与监控端点
 ---
 
 # Admin API 完整参考
