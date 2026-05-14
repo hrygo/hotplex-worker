@@ -13,10 +13,12 @@ import (
 	"golang.org/x/sys/windows/svc/mgr"
 )
 
-type windowsManager struct{}
+type windowsManager struct {
+	run CommandRunner
+}
 
 func NewManager() Manager {
-	return &windowsManager{}
+	return &windowsManager{run: realRunner{}}
 }
 
 func connectSCM() (*mgr.Mgr, error) {
