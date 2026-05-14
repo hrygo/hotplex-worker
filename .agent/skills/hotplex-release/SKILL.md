@@ -358,8 +358,16 @@ gh run watch <RUN_ID> --exit-status
 
 # CI 完成后，提取 CHANGELOG 内容替换自动生成的注释
 # 将 1.2.0 替换为当前发布的纯数字版本号
-VERSION="1.2.0" 
-awk -v ver="[${VERSION}]" '/^## \[/ { if ($2 == ver) found=1; else if (found) exit; } found { print }' CHANGELOG.md | sed '$d' > /tmp/release-notes.md
+VERSION="1.2.0"
+awk -v ver="[$VERSION]" '
+  /^## \[/ && $2 == ver { found=1; next }
+  /^## \[/ && found { exit }
+  found { print }
+' CHANGELOG.md | sed -e :a -e '/^\n*$/{$d;N;ba}' > /tmp/release-notes.md
+
+# 验证提取结果：首行必须是 ### 开头，且非空
+head -1 /tmp/release-notes.md | grep -q "^### " || { echo "ERROR: Release notes extraction failed — first line is not a changelog section"; exit 1; }
+wc -l /tmp/release-notes.md
 
 gh release edit vX.X.X --notes-file /tmp/release-notes.md
 
