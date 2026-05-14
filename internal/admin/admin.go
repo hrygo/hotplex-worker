@@ -64,6 +64,16 @@ type DebugSessionSnapshot struct {
 	HasWorker    bool
 }
 
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (r *statusRecorder) WriteHeader(code int) {
+	r.status = code
+	r.ResponseWriter.WriteHeader(code)
+}
+
 type AdminAPI struct {
 	log           *slog.Logger
 	cfg           ConfigProvider
@@ -126,9 +136,22 @@ func (a *AdminAPI) Mux() *http.ServeMux {
 
 func (a *AdminAPI) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		addCORSHeaders(w)
+		start := time.Now()
+		sw := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+
+		defer func() {
+			a.log.Info("admin: request",
+				"method", r.Method,
+				"path", r.URL.Path,
+				"status", sw.status,
+				"duration", time.Since(start),
+				"ip", clientIP(r),
+			)
+		}()
+
+		addCORSHeaders(sw)
 		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusOK)
+			sw.WriteHeader(http.StatusOK)
 			return
 		}
 
@@ -140,13 +163,13 @@ func (a *AdminAPI) Middleware(next http.Handler) http.Handler {
 					"method", r.Method,
 					"stack", string(debug.Stack()),
 				)
-				http.Error(w, "internal server error", http.StatusInternalServerError)
+				http.Error(sw, "internal server error", http.StatusInternalServerError)
 			}
 		}()
 
 		if rl, _ := a.rateLimiter.Load().(*simpleRateLimiter); rl != nil {
 			if !rl.Allow() {
-				http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
+				http.Error(sw, "rate limit exceeded", http.StatusTooManyRequests)
 				return
 			}
 		}
@@ -155,24 +178,24 @@ func (a *AdminAPI) Middleware(next http.Handler) http.Handler {
 			addr := clientIP(r)
 			if !ipAllowed(addr, cidrs) {
 				a.log.Warn("admin: IP not whitelisted", "ip", addr)
-				http.Error(w, "IP not allowed", http.StatusForbidden)
+				http.Error(sw, "IP not allowed", http.StatusForbidden)
 				return
 			}
 		}
 
 		token := extractBearerToken(r)
 		if token == "" {
-			http.Error(w, "missing admin token", http.StatusUnauthorized)
+			http.Error(sw, "missing admin token", http.StatusUnauthorized)
 			return
 		}
 		scopes, ok := a.validateToken(token)
 		if !ok {
-			http.Error(w, "invalid admin token", http.StatusUnauthorized)
+			http.Error(sw, "invalid admin token", http.StatusUnauthorized)
 			return
 		}
 
 		ctx := context.WithValue(r.Context(), scopeContextKey{}, scopes)
-		next.ServeHTTP(w, r.WithContext(ctx))
+		next.ServeHTTP(sw, r.WithContext(ctx))
 	})
 }
 
