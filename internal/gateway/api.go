@@ -86,6 +86,7 @@ func (g *GatewayAPI) authorizeSession(w http.ResponseWriter, r *http.Request) (s
 func (g *GatewayAPI) ListSessions(w http.ResponseWriter, r *http.Request) {
 	userID, _, err := g.auth.AuthenticateRequest(r)
 	if err != nil {
+		g.log.Warn("gateway: list sessions auth failed", "method", r.Method, "path", r.URL.Path, "err", err)
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -113,6 +114,7 @@ func (g *GatewayAPI) ListSessions(w http.ResponseWriter, r *http.Request) {
 
 	sessions, err := g.sm.List(r.Context(), userID, platform, limit, offset)
 	if err != nil {
+		g.log.Error("gateway: list sessions failed", "method", r.Method, "path", r.URL.Path, "err", err)
 		http.Error(w, "failed to list sessions", http.StatusInternalServerError)
 		return
 	}
@@ -122,6 +124,7 @@ func (g *GatewayAPI) ListSessions(w http.ResponseWriter, r *http.Request) {
 func (g *GatewayAPI) CreateSession(w http.ResponseWriter, r *http.Request) {
 	userID, botID, err := g.auth.AuthenticateRequest(r)
 	if err != nil {
+		g.log.Warn("gateway: create session auth failed", "method", r.Method, "path", r.URL.Path, "err", err)
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -132,10 +135,12 @@ func (g *GatewayAPI) CreateSession(w http.ResponseWriter, r *http.Request) {
 		wt = worker.TypeClaudeCode
 	}
 	if title == "" {
+		g.log.Warn("gateway: create session missing title", "method", r.Method, "path", r.URL.Path)
 		http.Error(w, "title is required", http.StatusBadRequest)
 		return
 	}
 	if len(title) > 256 {
+		g.log.Warn("gateway: create session title too long", "method", r.Method, "path", r.URL.Path, "title_len", len(title))
 		http.Error(w, "title too long (max 256 chars)", http.StatusBadRequest)
 		return
 	}
@@ -148,6 +153,7 @@ func (g *GatewayAPI) CreateSession(w http.ResponseWriter, r *http.Request) {
 	if workDir != "" {
 		expanded, err := validateAndExpandWorkDir(workDir)
 		if err != nil {
+			g.log.Warn("gateway: create session invalid work_dir", "method", r.Method, "path", r.URL.Path, "work_dir", workDir, "err", err)
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -204,6 +210,7 @@ func (g *GatewayAPI) DeleteSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := g.sm.DeletePhysical(r.Context(), id); err != nil {
+		g.log.Error("gateway: delete session failed", "session_id", id, "method", r.Method, "path", r.URL.Path, "err", err)
 		http.Error(w, "failed to delete session", http.StatusInternalServerError)
 		return
 	}
@@ -215,10 +222,12 @@ func (g *GatewayAPI) SwitchWorkDir(w http.ResponseWriter, r *http.Request) {
 		WorkDir string `json:"work_dir"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		g.log.Warn("gateway: switch workdir invalid body", "method", r.Method, "path", r.URL.Path, "err", err)
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 	if body.WorkDir == "" {
+		g.log.Warn("gateway: switch workdir missing work_dir", "method", r.Method, "path", r.URL.Path)
 		http.Error(w, "work_dir is required", http.StatusBadRequest)
 		return
 	}
@@ -226,6 +235,7 @@ func (g *GatewayAPI) SwitchWorkDir(w http.ResponseWriter, r *http.Request) {
 	// Expand ~ and resolve to absolute path.
 	expanded, err := validateAndExpandWorkDir(body.WorkDir)
 	if err != nil {
+		g.log.Warn("gateway: switch workdir invalid path", "method", r.Method, "path", r.URL.Path, "work_dir", body.WorkDir, "err", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -238,6 +248,7 @@ func (g *GatewayAPI) SwitchWorkDir(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
 	if !si.State.IsActive() {
+		g.log.Warn("gateway: switch workdir session not active", "session_id", id, "method", r.Method, "path", r.URL.Path, "state", si.State)
 		http.Error(w, "session not active", http.StatusConflict)
 		return
 	}
@@ -247,9 +258,11 @@ func (g *GatewayAPI) SwitchWorkDir(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var pathErr *os.PathError
 		if errors.As(err, &pathErr) || strings.Contains(err.Error(), "not a directory") {
+			g.log.Warn("gateway: switch workdir bad path", "session_id", id, "method", r.Method, "path", r.URL.Path, "err", err)
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		g.log.Error("gateway: switch workdir failed", "session_id", id, "method", r.Method, "path", r.URL.Path, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

@@ -54,7 +54,11 @@ func NewHandler(deps HandlerDeps) *Handler {
 func (h *Handler) Handle(ctx context.Context, env *events.Envelope) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			h.log.Error("gateway: panic in handler", "panic", r, "stack", string(debug.Stack()))
+			sid := ""
+			if env != nil {
+				sid = env.SessionID
+			}
+			h.log.Error("gateway: panic in handler", "session_id", sid, "panic", r, "stack", string(debug.Stack()))
 			err = fmt.Errorf("handler panic: %v", r)
 		}
 	}()
