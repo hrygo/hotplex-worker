@@ -369,7 +369,7 @@ awk -v ver="[$VERSION]" '
 head -1 /tmp/release-notes.md | grep -q "^### " || { echo "ERROR: Release notes extraction failed — first line is not a changelog section"; exit 1; }
 wc -l /tmp/release-notes.md
 
-# 追加 Contributors 段（@mention 触发 GitHub 原生头像列表）
+# 追加 Contributors 段（圆形头像，不使用 @mention 避免与 GitHub 原生列表重复）
 LAST_TAG=$(git tag --sort=-version:refname | sed -n '2p')
 LOGIN_BLACKLIST="HotPlexBot"  # Bot 账号过滤，| 分隔的 grep -E 模式
 CONTRIBUTORS=$(git log "${LAST_TAG}..v${VERSION}" --no-merges --format="%H" | while read sha; do
@@ -378,7 +378,8 @@ done | sort -u | grep -vE "^($LOGIN_BLACKLIST)$")
 if [ -n "$CONTRIBUTORS" ]; then
   echo -e "\n### Contributors\n" >> /tmp/release-notes.md
   echo "$CONTRIBUTORS" | while read login; do
-    echo -n "@${login} " >> /tmp/release-notes.md
+    # wsrv.nl: 64px source → 32px HiDPI display, circle mask
+    echo -n "[![@${login}](https://wsrv.nl/?url=github.com/${login}.png&w=64&h=64&mask=circle&fit=cover&maxage=1w)](https://github.com/${login}) " >> /tmp/release-notes.md
   done
   echo "" >> /tmp/release-notes.md
 fi
