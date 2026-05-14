@@ -26,6 +26,7 @@ func TestFormatCall(t *testing.T) {
 		// Bash
 		{"Bash with command", "Bash", map[string]any{"command": "make test"}, "⏳ make test"},
 		{"Bash no command", "Bash", map[string]any{}, "⏳ Running command..."},
+		{"Bash multiline", "Bash", map[string]any{"command": "jq -r '\nBuild KR→O mapping\ndef kr_to_o:\n[.key | .]"}, "⏳ jq -r '"},
 
 		// Grep
 		{"Grep with path", "Grep", map[string]any{"pattern": "func main", "path": "src/"}, `🔍 "func main" in src`},
