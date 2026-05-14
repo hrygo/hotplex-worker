@@ -369,6 +369,17 @@ awk -v ver="[$VERSION]" '
 head -1 /tmp/release-notes.md | grep -q "^### " || { echo "ERROR: Release notes extraction failed — first line is not a changelog section"; exit 1; }
 wc -l /tmp/release-notes.md
 
+# 追加 Contributors 段（带头像）
+LAST_TAG=$(git tag --sort=-version:refname | sed -n '2p')
+LOGIN_BLACKLIST="HotPlexBot"  # Bot 账号过滤，| 分隔的 grep -E 模式
+echo -e "\n### Contributors\n" >> /tmp/release-notes.md
+git log "${LAST_TAG}..v${VERSION}" --no-merges --format="%H" | while read sha; do
+  gh api "repos/{owner}/{repo}/commits/$sha" --jq '.author.login // empty' 2>/dev/null
+done | sort -u | grep -vE "^($LOGIN_BLACKLIST)$" | while read login; do
+  echo -n "[![@${login}](https://github.com/${login}.png?size=40)](https://github.com/${login}) " >> /tmp/release-notes.md
+done
+echo "" >> /tmp/release-notes.md
+
 gh release edit vX.X.X --notes-file /tmp/release-notes.md
 
 # 验证 release
