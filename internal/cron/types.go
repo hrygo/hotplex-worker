@@ -1,5 +1,10 @@
 package cron
 
+import (
+	"github.com/hrygo/hotplex/internal/session"
+	"github.com/hrygo/hotplex/internal/worker"
+)
+
 // Schedule kinds.
 type ScheduleKind string
 
@@ -56,6 +61,20 @@ type CronJobState struct {
 	RetryCount      int       `json:"retry_count,omitempty"`
 	LastRunID       string    `json:"last_run_id,omitempty"`
 	RunCount        int       `json:"run_count,omitempty"`
+}
+
+// SessionKey derives the deterministic session key for this cron job's execution history.
+func (j *CronJob) SessionKey() string {
+	return session.DerivePlatformSessionKey(
+		j.OwnerID, worker.TypeClaudeCode,
+		session.PlatformContext{
+			Platform: "cron",
+			BotID:    j.BotID,
+			UserID:   j.OwnerID,
+			WorkDir:  j.WorkDir,
+			ChatID:   j.ID,
+		},
+	)
 }
 
 // Clone returns a deep copy of the job, including reference-type fields

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1070,4 +1072,169 @@ func TestGenerateSummary_BrainError(t *testing.T) {
 	// This should fail because generateSummary calls brain.Chat which returns error
 	_, err := c.ForceCompress(context.Background(), "session1")
 	assert.Error(t, err)
+}
+
+// ========================================
+// Lock-Dropping Concurrency Tests
+// ========================================
+
+func TestContextCompressor_ConcurrentRecordDuringCompress(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping concurrent test in short mode")
+	}
+
+	slowBrain := &mockBrainForMemory{
+		chatFn: func(ctx context.Context, prompt string) (string, error) {
+			time.Sleep(100 * time.Millisecond) // simulate slow LLM
+			return "summary of conversation", nil
+		},
+	}
+	config := DefaultCompressionConfig()
+	config.CleanupInterval = 0
+	config.TokenThreshold = 500
+	config.PreserveTurns = 2
+
+	c := NewContextCompressor(slowBrain, config, slog.Default())
+	defer c.Stop()
+
+	// Add initial turns to exceed threshold.
+	for i := 0; i < 6; i++ {
+		c.RecordTurn("s1", "user", fmt.Sprintf("msg %d", i), 100)
+		c.RecordTurn("s1", "assistant", fmt.Sprintf("resp %d", i), 100)
+	}
+
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+
+	// Goroutine 1: compress.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		<-start
+		_, err := c.CheckAndCompress(context.Background(), "s1")
+		require.NoError(t, err)
+	}()
+
+	// Goroutine 2: add turns during compression (Phase 2).
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		<-start
+		time.Sleep(50 * time.Millisecond)
+		c.RecordTurn("s1", "user", "new msg during compress", 100)
+	}()
+
+	close(start)
+	wg.Wait()
+
+	history := c.GetHistory("s1")
+	require.NotNil(t, history)
+
+	// The turn added during compression must be preserved.
+	found := false
+	for _, turn := range history.Turns {
+		if turn.Content == "new msg during compress" {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "turn added during compression should be preserved")
+}
+
+func TestContextCompressor_ConcurrentClearDuringCompress(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping concurrent test in short mode")
+	}
+
+	slowBrain := &mockBrainForMemory{
+		chatFn: func(ctx context.Context, prompt string) (string, error) {
+			time.Sleep(100 * time.Millisecond)
+			return "summary", nil
+		},
+	}
+	config := DefaultCompressionConfig()
+	config.CleanupInterval = 0
+	config.TokenThreshold = 500
+	config.PreserveTurns = 2
+
+	c := NewContextCompressor(slowBrain, config, slog.Default())
+	defer c.Stop()
+
+	for i := 0; i < 6; i++ {
+		c.RecordTurn("s1", "user", fmt.Sprintf("msg %d", i), 100)
+		c.RecordTurn("s1", "assistant", fmt.Sprintf("resp %d", i), 100)
+	}
+
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+
+	// Goroutine 1: compress.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		<-start
+		c.CheckAndCompress(context.Background(), "s1") // may return error, that's ok
+	}()
+
+	// Goroutine 2: clear session during Phase 2.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		<-start
+		time.Sleep(50 * time.Millisecond)
+		c.ClearSession("s1")
+	}()
+
+	close(start)
+	wg.Wait()
+
+	// Session should be gone after ClearSession.
+	assert.Nil(t, c.GetHistory("s1"))
+}
+
+func TestContextCompressor_InflightDedup(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping concurrent test in short mode")
+	}
+
+	var chatCount int64
+	slowBrain := &mockBrainForMemory{
+		chatFn: func(ctx context.Context, prompt string) (string, error) {
+			atomic.AddInt64(&chatCount, 1)
+			time.Sleep(150 * time.Millisecond)
+			return "summary", nil
+		},
+	}
+	config := DefaultCompressionConfig()
+	config.CleanupInterval = 0
+	config.TokenThreshold = 500
+	config.PreserveTurns = 2
+
+	c := NewContextCompressor(slowBrain, config, slog.Default())
+	defer c.Stop()
+
+	for i := 0; i < 6; i++ {
+		c.RecordTurn("s1", "user", fmt.Sprintf("msg %d", i), 100)
+		c.RecordTurn("s1", "assistant", fmt.Sprintf("resp %d", i), 100)
+	}
+
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+
+	// Launch 3 concurrent compressions — only 1 should call the LLM.
+	for i := 0; i < 3; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			c.CheckAndCompress(context.Background(), "s1")
+		}()
+	}
+
+	close(start)
+	wg.Wait()
+
+	// In-flight dedup should ensure only 1 LLM call was made.
+	assert.Equal(t, int64(1), atomic.LoadInt64(&chatCount),
+		"in-flight dedup should prevent redundant LLM calls")
 }
