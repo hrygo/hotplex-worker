@@ -138,13 +138,26 @@ func startMessagingAdapters(ctx context.Context, deps *GatewayDeps) ([]messaging
 				botWorkerType = entry.WorkerType
 			}
 
+			// Per-bot workDir override.
+			botWorkDir := workDir
+			switch pt {
+			case messaging.PlatformSlack:
+				if bc := resolveSlackBot(appCfg, entry.Name); bc != nil && bc.WorkDir != "" {
+					botWorkDir = bc.WorkDir
+				}
+			case messaging.PlatformFeishu:
+				if bc := resolveFeishuBot(appCfg, entry.Name); bc != nil && bc.WorkDir != "" {
+					botWorkDir = bc.WorkDir
+				}
+			}
+
 			adapter, err := messaging.New(pt, log)
 			if err != nil {
 				log.Warn("messaging: skip adapter", "platform", pt, "bot", entry.Name, "err", err)
 				continue
 			}
 
-			msgBridge := messaging.NewBridge(log, pt, hub, sm, handler, gwBridge, botWorkerType, workDir)
+			msgBridge := messaging.NewBridge(log, pt, hub, sm, handler, gwBridge, botWorkerType, botWorkDir)
 
 			acfg := messaging.AdapterConfig{
 				Hub:     hub,
@@ -232,15 +245,7 @@ func resolveFeishuBot(cfg *config.Config, name string) *config.FeishuBotConfig {
 // fillSlackExtras populates AdapterConfig.Extras for a Slack bot.
 func fillSlackExtras(acfg *messaging.AdapterConfig, appCfg *config.Config, botCfg *config.SlackBotConfig, log *slog.Logger) {
 	platformCfg := appCfg.Messaging.Slack
-	gate := messaging.NewGate(
-		platformCfg.DMPolicy,
-		platformCfg.GroupPolicy,
-		platformCfg.RequireMention,
-		platformCfg.AllowFrom,
-		platformCfg.AllowDMFrom,
-		platformCfg.AllowGroupFrom,
-	)
-	acfg.Gate = gate
+	acfg.Gate = resolveSlackGate(platformCfg, botCfg)
 
 	// Use bot-specific credentials, falling back to platform-level.
 	botToken := platformCfg.BotToken
@@ -276,15 +281,7 @@ func fillSlackExtras(acfg *messaging.AdapterConfig, appCfg *config.Config, botCf
 // fillFeishuExtras populates AdapterConfig.Extras for a Feishu bot.
 func fillFeishuExtras(acfg *messaging.AdapterConfig, appCfg *config.Config, botCfg *config.FeishuBotConfig, log *slog.Logger) {
 	platformCfg := appCfg.Messaging.Feishu
-	gate := messaging.NewGate(
-		platformCfg.DMPolicy,
-		platformCfg.GroupPolicy,
-		platformCfg.RequireMention,
-		platformCfg.AllowFrom,
-		platformCfg.AllowDMFrom,
-		platformCfg.AllowGroupFrom,
-	)
-	acfg.Gate = gate
+	acfg.Gate = resolveFeishuGate(platformCfg, botCfg)
 
 	// Use bot-specific credentials, falling back to platform-level.
 	appID := platformCfg.AppID
@@ -482,4 +479,70 @@ func buildTTSSynthesizer(ttsCfg config.TTSConfig, log *slog.Logger) tts.Synthesi
 	shared := tts.NewSharedSynthesizer(synth)
 	ttsCache[cacheKey] = shared
 	return shared
+}
+
+// resolveSlackGate builds a Gate for a Slack bot, using per-bot fields
+// with platform-level fallback for any unset values.
+func resolveSlackGate(platformCfg config.SlackConfig, botCfg *config.SlackBotConfig) *messaging.Gate {
+	dm := platformCfg.DMPolicy
+	group := platformCfg.GroupPolicy
+	mention := platformCfg.RequireMention
+	from := platformCfg.AllowFrom
+	dmFrom := platformCfg.AllowDMFrom
+	groupFrom := platformCfg.AllowGroupFrom
+
+	if botCfg != nil {
+		if botCfg.DMPolicy != "" {
+			dm = botCfg.DMPolicy
+		}
+		if botCfg.GroupPolicy != "" {
+			group = botCfg.GroupPolicy
+		}
+		if botCfg.RequireMention != nil {
+			mention = *botCfg.RequireMention
+		}
+		if len(botCfg.AllowFrom) > 0 {
+			from = botCfg.AllowFrom
+		}
+		if len(botCfg.AllowDMFrom) > 0 {
+			dmFrom = botCfg.AllowDMFrom
+		}
+		if len(botCfg.AllowGroupFrom) > 0 {
+			groupFrom = botCfg.AllowGroupFrom
+		}
+	}
+	return messaging.NewGate(dm, group, mention, from, dmFrom, groupFrom)
+}
+
+// resolveFeishuGate builds a Gate for a Feishu bot, using per-bot fields
+// with platform-level fallback for any unset values.
+func resolveFeishuGate(platformCfg config.FeishuConfig, botCfg *config.FeishuBotConfig) *messaging.Gate {
+	dm := platformCfg.DMPolicy
+	group := platformCfg.GroupPolicy
+	mention := platformCfg.RequireMention
+	from := platformCfg.AllowFrom
+	dmFrom := platformCfg.AllowDMFrom
+	groupFrom := platformCfg.AllowGroupFrom
+
+	if botCfg != nil {
+		if botCfg.DMPolicy != "" {
+			dm = botCfg.DMPolicy
+		}
+		if botCfg.GroupPolicy != "" {
+			group = botCfg.GroupPolicy
+		}
+		if botCfg.RequireMention != nil {
+			mention = *botCfg.RequireMention
+		}
+		if len(botCfg.AllowFrom) > 0 {
+			from = botCfg.AllowFrom
+		}
+		if len(botCfg.AllowDMFrom) > 0 {
+			dmFrom = botCfg.AllowDMFrom
+		}
+		if len(botCfg.AllowGroupFrom) > 0 {
+			groupFrom = botCfg.AllowGroupFrom
+		}
+	}
+	return messaging.NewGate(dm, group, mention, from, dmFrom, groupFrom)
 }
