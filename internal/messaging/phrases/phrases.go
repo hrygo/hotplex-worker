@@ -12,8 +12,11 @@ type Phrases struct {
 }
 
 // Random returns a random entry from the given category.
-// Returns "" if category not found or empty.
+// Returns "" if category not found or empty, or if p is nil.
 func (p *Phrases) Random(category string) string {
+	if p == nil {
+		return ""
+	}
 	items := p.entries[category]
 	if len(items) == 0 {
 		return ""
@@ -21,14 +24,27 @@ func (p *Phrases) Random(category string) string {
 	return items[rand.IntN(len(items))]
 }
 
-// All returns all entries for a category (for preview/debug).
+// All returns a copy of all entries for a category (for preview/debug).
 // Returns nil if category not found.
 func (p *Phrases) All(category string) []string {
-	return p.entries[category]
+	if p == nil {
+		return nil
+	}
+	items := p.entries[category]
+	if items == nil {
+		return nil
+	}
+	cp := make([]string, len(items))
+	copy(cp, items)
+	return cp
 }
 
 // Categories returns available category names in sorted order.
+// Returns nil if p is nil.
 func (p *Phrases) Categories() []string {
+	if p == nil {
+		return nil
+	}
 	names := make([]string, 0, len(p.entries))
 	for k := range p.entries {
 		names = append(names, k)

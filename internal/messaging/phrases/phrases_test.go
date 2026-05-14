@@ -43,7 +43,18 @@ func TestAllReturnsCopy(t *testing.T) {
 	}}
 	all := p.All("test")
 	require.Equal(t, []string{"a", "b"}, all)
+	// Mutating returned slice must not affect internals.
+	all[0] = "modified"
+	require.Equal(t, "a", p.All("test")[0])
 	require.Nil(t, p.All("nonexistent"))
+}
+
+func TestNilPhrasesReceiver(t *testing.T) {
+	t.Parallel()
+	var p *Phrases
+	require.Equal(t, "", p.Random("greetings"))
+	require.Nil(t, p.All("greetings"))
+	require.Nil(t, p.Categories())
 }
 
 func TestParseMarkdown(t *testing.T) {
