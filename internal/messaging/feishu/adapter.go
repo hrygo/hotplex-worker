@@ -42,6 +42,7 @@ type Adapter struct {
 	ttsPipeline        *TTSPipeline
 	phrases            *phrases.Phrases
 	botName            string
+	Extras             map[string]any
 
 	mu          sync.RWMutex
 	chatQueue   *ChatQueue
@@ -53,6 +54,12 @@ func (a *Adapter) Platform() messaging.PlatformType { return messaging.PlatformF
 var _ messaging.PlatformAdapterInterface = (*Adapter)(nil)
 
 func (a *Adapter) GetBotID() string { return a.botOpenID }
+
+func (a *Adapter) SetPhrases(p *phrases.Phrases) {
+	if p != nil {
+		a.phrases = p
+	}
+}
 
 func (a *Adapter) ConfigureWith(config messaging.AdapterConfig) error {
 	// Call base to set hub/sm/handler/bridge.
@@ -80,6 +87,8 @@ func (a *Adapter) ConfigureWith(config messaging.AdapterConfig) error {
 	if p, ok := config.Extras["tts_pipeline"].(*TTSPipeline); ok && p != nil {
 		a.ttsPipeline = p
 	}
+
+	a.Extras = config.Extras
 
 	return nil
 }

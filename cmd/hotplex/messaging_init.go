@@ -173,15 +173,10 @@ func startMessagingAdapters(ctx context.Context, deps *GatewayDeps) ([]messaging
 			}
 			acfg.Extras["turn_summary_enabled"] = appCfg.Messaging.TurnSummaryEnabled
 
-			// Per-bot phrases loading with cascade-append.
-			homeDir, _ := os.UserHomeDir()
-			phrasesDir := filepath.Join(homeDir, ".hotplex", "phrases")
-			phr, err := phrases.Load(phrasesDir, string(entry.Platform), entry.BotID)
-			if err != nil {
-				log.Warn("phrases: load failed, using defaults", "error", err)
-				phr = phrases.Defaults()
+			// Chat access store (welcome card + analytics).
+			if deps.ChatAccessStore != nil {
+				acfg.Extras["chat_access_store"] = deps.ChatAccessStore
 			}
-			acfg.Extras["phrases"] = phr
 
 			switch pt {
 			case messaging.PlatformSlack:
@@ -205,6 +200,24 @@ func startMessagingAdapters(ctx context.Context, deps *GatewayDeps) ([]messaging
 
 			// Update entry with runtime info and register.
 			entry.BotID = adapter.GetBotID()
+
+			// Per-bot phrases loading with cascade-append.
+			// Must happen AFTER adapter.Start() so BotID is resolved from the platform.
+			homeDir, _ := os.UserHomeDir()
+			phrasesDir := filepath.Join(homeDir, ".hotplex", "phrases")
+			phr, phrasesErr := phrases.Load(phrasesDir, string(entry.Platform), entry.BotID)
+			if phrasesErr != nil {
+				log.Warn("phrases: load failed, using defaults", "error", phrasesErr)
+				phr = phrases.Defaults()
+			}
+			if setter, ok := adapter.(interface{ SetPhrases(*phrases.Phrases) }); ok {
+				setter.SetPhrases(phr)
+			} else {
+				acfg.Extras["phrases"] = phr
+				log.Warn("phrases: adapter does not implement SetPhrases, written to Extras only",
+					"platform", pt, "bot", entry.Name)
+			}
+
 			entry.Status = messaging.BotStatusRunning
 			entry.Adapter = adapter
 			entry.Bridge = msgBridge

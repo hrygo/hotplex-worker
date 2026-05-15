@@ -40,18 +40,19 @@ import (
 )
 
 type GatewayDeps struct {
-	Log            *slog.Logger
-	Config         *config.Config
-	ConfigStore    *config.ConfigStore
-	Hub            *gateway.Hub
-	SessionMgr     *session.Manager
-	EventStore     *eventstore.SQLiteStore
-	EventCollector *eventstore.Collector
-	Auth           *security.Authenticator
-	Handler        *gateway.Handler
-	Bridge         *gateway.Bridge
-	ConfigWatcher  *config.Watcher
-	CronScheduler  *cron.Scheduler
+	Log             *slog.Logger
+	Config          *config.Config
+	ConfigStore     *config.ConfigStore
+	Hub             *gateway.Hub
+	SessionMgr      *session.Manager
+	EventStore      *eventstore.SQLiteStore
+	EventCollector  *eventstore.Collector
+	Auth            *security.Authenticator
+	Handler         *gateway.Handler
+	Bridge          *gateway.Bridge
+	ConfigWatcher   *config.Watcher
+	CronScheduler   *cron.Scheduler
+	ChatAccessStore *messaging.ChatAccessStore
 }
 
 const defaultConfigPath = config.DefaultConfigPath
@@ -303,18 +304,19 @@ func runGateway(configPath string, devMode bool, stopCh <-chan struct{}) (err er
 
 	mux := http.NewServeMux()
 	deps := &GatewayDeps{
-		Log:            log,
-		Config:         cfg,
-		ConfigStore:    cfgStore,
-		Hub:            hub,
-		SessionMgr:     sm,
-		EventStore:     stores.event,
-		EventCollector: stores.collector,
-		Auth:           auth,
-		Handler:        handler,
-		Bridge:         bridge,
-		ConfigWatcher:  configWatcher,
-		CronScheduler:  cronScheduler,
+		Log:             log,
+		Config:          cfg,
+		ConfigStore:     cfgStore,
+		Hub:             hub,
+		SessionMgr:      sm,
+		EventStore:      stores.event,
+		EventCollector:  stores.collector,
+		Auth:            auth,
+		Handler:         handler,
+		Bridge:          bridge,
+		ConfigWatcher:   configWatcher,
+		CronScheduler:   cronScheduler,
+		ChatAccessStore: messaging.NewChatAccessStore(stores.session.DB(), log),
 	}
 
 	// Brain: lightweight LLM layer for TTS summarization (fail-open).

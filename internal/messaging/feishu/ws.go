@@ -32,6 +32,15 @@ func (a *Adapter) newEventHandler() *dispatcher.EventDispatcher {
 		}).
 		OnP2MessageReactionDeletedV1(func(_ context.Context, _ *larkim.P2MessageReactionDeletedV1) error {
 			return nil
+		}).
+		OnP2ChatAccessEventBotP2pChatEnteredV1(func(ctx context.Context, event *larkim.P2ChatAccessEventBotP2pChatEnteredV1) (err error) {
+			defer func() {
+				if r := recover(); r != nil {
+					a.Log.Error("feishu: panic in chat entered handler", "panic", r, "stack", string(debug.Stack()))
+					err = fmt.Errorf("feishu chat entered panic: %v", r)
+				}
+			}()
+			return a.handleChatEntered(ctx, event)
 		})
 }
 
