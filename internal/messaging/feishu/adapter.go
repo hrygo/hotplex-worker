@@ -42,6 +42,7 @@ type Adapter struct {
 	ttsPipeline        *TTSPipeline
 	phrases            *phrases.Phrases
 	botName            string
+	Extras             map[string]any
 
 	mu          sync.RWMutex
 	chatQueue   *ChatQueue
@@ -80,6 +81,8 @@ func (a *Adapter) ConfigureWith(config messaging.AdapterConfig) error {
 	if p, ok := config.Extras["tts_pipeline"].(*TTSPipeline); ok && p != nil {
 		a.ttsPipeline = p
 	}
+
+	a.Extras = config.Extras
 
 	return nil
 }

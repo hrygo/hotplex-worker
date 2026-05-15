@@ -183,6 +183,11 @@ func startMessagingAdapters(ctx context.Context, deps *GatewayDeps) ([]messaging
 			}
 			acfg.Extras["phrases"] = phr
 
+			// Chat access store (welcome card + analytics).
+			if deps.ChatAccessStore != nil {
+				acfg.Extras["chat_access_store"] = deps.ChatAccessStore
+			}
+
 			switch pt {
 			case messaging.PlatformSlack:
 				botCfg := resolveSlackBot(appCfg, entry.Name)

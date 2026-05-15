@@ -87,6 +87,7 @@ type Adapter struct {
 	turnSummaryEnabled bool
 	ttsPipeline        *TTSPipeline
 	phrases            *phrases.Phrases
+	Extras             map[string]any
 
 	rateLimiter   *ChannelRateLimiter
 	slashLimiter  *SlashRateLimiter
@@ -133,6 +134,8 @@ func (a *Adapter) ConfigureWith(config messaging.AdapterConfig) error {
 	if p, ok := config.Extras["tts_pipeline"].(*TTSPipeline); ok && p != nil {
 		a.ttsPipeline = p
 	}
+
+	a.Extras = config.Extras
 
 	return nil
 }
@@ -320,11 +323,15 @@ func (a *Adapter) runSocketMode(ctx context.Context) {
 }
 
 func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsAPIEvent) {
-	msgEvent, ok := event.InnerEvent.Data.(*slackevents.MessageEvent)
-	if !ok {
-		return
+	switch e := event.InnerEvent.Data.(type) {
+	case *slackevents.MessageEvent:
+		a.handleMessageEvent(ctx, e, event.TeamID)
+	case *slackevents.AppHomeOpenedEvent:
+		a.handleAppHomeOpened(ctx, e)
 	}
+}
 
+func (a *Adapter) handleMessageEvent(ctx context.Context, msgEvent *slackevents.MessageEvent, teamID string) {
 	if msgEvent.BotID != "" {
 		a.Log.Debug("slack: skipping bot message", "bot_id", msgEvent.BotID)
 		return
@@ -351,7 +358,6 @@ func (a *Adapter) handleEventsAPI(ctx context.Context, event slackevents.EventsA
 		return
 	}
 	text = messaging.SanitizeText(text)
-	teamID := event.TeamID
 
 	channelType := ChannelGroup
 	if channelID != "" && channelID[0] == 'D' {

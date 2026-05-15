@@ -121,5 +121,13 @@ func Defaults() *Phrases {
 			{"Composing response...", WeightDefault},
 			{"Processing...", WeightDefault},
 		},
+		"welcome": {
+			{"Hi，我是 {bot_name}，你的 AI 编程助手！", WeightDefault},
+			{"欢迎！直接发消息给我，我们可以开始写代码了。", WeightDefault},
+		},
+		"welcome_back": {
+			{"好久不见！有什么我可以帮你的？", WeightDefault},
+			{"欢迎回来～随时继续。", WeightDefault},
+		},
 	}}
 }
