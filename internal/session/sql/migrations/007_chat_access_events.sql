@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS chat_access_events (
 
 CREATE INDEX IF NOT EXISTS idx_ca_event ON chat_access_events(event_id);
 CREATE INDEX IF NOT EXISTS idx_ca_chat_bot ON chat_access_events(platform, chat_id, bot_id);
+CREATE INDEX IF NOT EXISTS idx_ca_user_bot ON chat_access_events(platform, user_id, bot_id);
 
 -- +goose Down
 

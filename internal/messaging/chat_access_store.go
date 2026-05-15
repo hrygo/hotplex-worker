@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 )
 
@@ -132,19 +133,5 @@ func boolToInt(b bool) int {
 
 // isSQLiteUnique returns true for UNIQUE constraint violations.
 func isSQLiteUnique(err error) bool {
-	return err != nil && (err.Error() == "UNIQUE constraint failed: chat_access_events.event_id" ||
-		containsErr(err, "UNIQUE constraint failed"))
-}
-
-func containsErr(err error, sub string) bool {
-	return len(err.Error()) >= len(sub) && containsStr(err.Error(), sub)
-}
-
-func containsStr(s, sub string) bool {
-	for i := 0; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
-			return true
-		}
-	}
-	return false
+	return err != nil && strings.Contains(err.Error(), "UNIQUE constraint failed")
 }

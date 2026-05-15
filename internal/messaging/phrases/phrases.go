@@ -15,8 +15,8 @@ type entry struct {
 // Fallback (defaults) all have the same weight → uniform random, no bias.
 const (
 	WeightDefault  = 1 // code defaults (fallback only)
-	WeightPlatform = 2 // ~/.hotplex/phrases/{platform}/PHRASES.md
-	WeightGlobal   = 1 // ~/.hotplex/phrases/PHRASES.md
+	WeightPlatform = 1 // ~/.hotplex/phrases/{platform}/PHRASES.md
+	WeightGlobal   = 2 // ~/.hotplex/phrases/PHRASES.md
 	WeightBot      = 4 // ~/.hotplex/phrases/{platform}/{botID}/PHRASES.md
 )
 
