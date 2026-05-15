@@ -91,16 +91,11 @@ jobs:
           if [ "$VER" = "$REF" ]; then VER="${{ github.event.inputs.version || 'dev' }}"; fi
           echo "version=${VER}" >> "$GITHUB_OUTPUT"
 
-      - name: Install cross-compiler
-        if: matrix.os == 'linux' && matrix.arch == 'arm64'
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq gcc-aarch64-linux-gnu
-
       - name: Build
         env:
-          CGO_ENABLED: ${{ matrix.os == 'linux' && '1' || '0' }}
+          CGO_ENABLED: 0
           GOOS: ${{ matrix.os }}
           GOARCH: ${{ matrix.arch }}
-          CC: ${{ matrix.os == 'linux' && matrix.arch == 'arm64' && 'aarch64-linux-gnu-gcc' || '' }}
           LDFLAGS: -s -w
           VERSION: ${{ steps.version.outputs.version }}
           COMMIT: ${{ github.sha }}

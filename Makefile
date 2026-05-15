@@ -125,7 +125,7 @@ endef
 build: docs-build webchat-embed
 	@echo "$(CYAN)Building...$(RESET)"
 	@mkdir -p $(BUILD_DIR) $(LOG_DIR)
-	@go build $(BUILD_OPTS) -ldflags="$(LDFLAGS)" \
+	@CGO_ENABLED=0 go build $(BUILD_OPTS) -ldflags="$(LDFLAGS)" \
 		-o $(BUILD_DIR)/$(BINARY_NAME)-$(GOOS)-$(GOARCH) $(MAIN_PATH)
 	@echo "  $(GREEN)✓$(RESET) $(BUILD_DIR)/$(BINARY_NAME)-$(GOOS)-$(GOARCH)"
 
