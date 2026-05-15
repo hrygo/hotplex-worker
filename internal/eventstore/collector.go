@@ -15,10 +15,10 @@ import (
 const (
 	collectorChanCap       = 2048
 	collectorBatchMax      = 100
-	collectorFlushInterval = 100 * time.Millisecond
+	collectorFlushInterval = 1 * time.Second
 
 	deltaFlushSize     = 4096 // bytes — flush accumulator when content exceeds this
-	deltaFlushInterval = 2 * time.Second
+	deltaFlushInterval = 3 * time.Second
 )
 
 // StorableTypes is the set of AEP event types eligible for event storage replay.
