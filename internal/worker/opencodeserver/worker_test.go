@@ -43,7 +43,6 @@ func TestOpenCodeServerWorker_New(t *testing.T) {
 	require.NotNil(t, w.client)
 	require.Nil(t, w.sseCancel, "sseCancel should be nil until Start/Resume")
 	require.Nil(t, w.httpConn)
-	require.Nil(t, w.httpConn)
 }
 
 func TestOpenCodeServerWorker_EnvBlocklist(t *testing.T) {

@@ -723,16 +723,16 @@ func (s *SingletonProcessManager) convertSessionError(sessionID string, props js
 
 // dispatchToAllSubscribers sends an event to every active subscriber.
 // Used for session.error events that have no sessionID.
+// Each subscriber receives a fresh envelope with its own sessionID to avoid
+// shared pointer mutation across loop iterations.
 func (s *SingletonProcessManager) dispatchToAllSubscribers(evt *ocsGlobalEvent) {
-	env := s.convertSessionError("", evt.Payload.Properties)
-	if env == nil {
-		return
-	}
-
 	s.busMu.RLock()
 	defer s.busMu.RUnlock()
 	for sessionID, ch := range s.subscribers {
-		env.SessionID = sessionID
+		env := s.convertSessionError(sessionID, evt.Payload.Properties)
+		if env == nil {
+			continue
+		}
 		select {
 		case ch <- env:
 		default:
