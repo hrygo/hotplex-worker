@@ -430,7 +430,9 @@ func (s *SingletonProcessManager) startIdleDrainLocked() {
 
 // buildEnv creates the environment for the opencode serve process.
 func (s *SingletonProcessManager) buildEnv() []string {
-	return base.BuildEnv(worker.SessionInfo{}, openCodeSrvEnvBlocklist, "opencode-server")
+	env := base.BuildEnv(worker.SessionInfo{}, openCodeSrvEnvBlocklist, "opencode-server")
+	env = append(env, "OPENCODE_EXPERIMENTAL_EVENT_SYSTEM=true")
+	return env
 }
 
 // readGlobalSSE connects to the OCS global event stream and dispatches events to session channels.
@@ -629,6 +631,7 @@ func (s *SingletonProcessManager) convertPartDelta(sessionID string, props json.
 func (s *SingletonProcessManager) convertPartUpdated(sessionID string, props json.RawMessage) *events.Envelope {
 	var data struct {
 		Part struct {
+			ID   string `json:"id"`
 			Type string `json:"type"`
 			Text string `json:"text"`
 		} `json:"part"`
@@ -641,6 +644,17 @@ func (s *SingletonProcessManager) convertPartUpdated(sessionID string, props jso
 	// duplicate the real-time delta stream from convertPartDelta. Skip them.
 	if data.Part.Type == "text" {
 		return nil
+	}
+
+	if data.Part.Type == "reasoning" {
+		return events.NewEnvelope(
+			aep.NewID(), sessionID, 0,
+			events.Reasoning,
+			events.ReasoningData{
+				ID:      data.Part.ID,
+				Content: data.Part.Text,
+			},
+		)
 	}
 
 	if data.Part.Type == "tool-invocation" || data.Part.Type == "tool-result" {

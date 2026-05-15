@@ -31,7 +31,7 @@ func TestOpenCodeServerWorker_Capabilities(t *testing.T) {
 	require.NotNil(t, w.EnvBlocklist())
 	require.Empty(t, w.SessionStoreDir())
 	require.Zero(t, w.MaxTurns())
-	require.Equal(t, []string{"text", "code"}, w.Modalities())
+	require.Equal(t, []string{"text", "code", "image"}, w.Modalities())
 }
 
 func TestOpenCodeServerWorker_New(t *testing.T) {

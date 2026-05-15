@@ -869,13 +869,13 @@ func TestWorkerSessionID(t *testing.T) {
 		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }))
 		t.Cleanup(ts.Close)
 		w := &Worker{BaseWorker: base.NewBaseWorker(slog.Default(), nil), client: ts.Client(), httpAddr: ts.URL}
-		w.initHTTPConn("user-1", "sess-from-conn", "")
+		w.initHTTPConn("user-1", "sess-from-conn", "", worker.SessionInfo{})
 		require.Equal(t, "sess-from-conn", w.GetWorkerSessionID())
 	})
 	t.Run("with conn set", func(t *testing.T) {
 		t.Parallel()
 		w := &Worker{BaseWorker: base.NewBaseWorker(slog.Default(), nil)}
-		w.initHTTPConn("user-1", "sess-original", "")
+		w.initHTTPConn("user-1", "sess-original", "", worker.SessionInfo{})
 		require.Equal(t, "sess-original", w.GetWorkerSessionID())
 		w.SetWorkerSessionID("sess-updated")
 		require.Equal(t, "sess-updated", w.GetWorkerSessionID())
@@ -943,7 +943,7 @@ func TestWorkerResetContext(t *testing.T) {
 			}))
 			t.Cleanup(ts.Close)
 			w := &Worker{BaseWorker: base.NewBaseWorker(slog.Default(), nil), client: ts.Client(), httpAddr: ts.URL}
-			w.initHTTPConn("user-1", "sess-xyz", "")
+			w.initHTTPConn("user-1", "sess-xyz", "", worker.SessionInfo{})
 			err := w.ResetContext(context.Background())
 			if tt.expectError {
 				require.Error(t, err)
@@ -1023,7 +1023,7 @@ func TestWorkerCapabilities(t *testing.T) {
 	require.NotNil(t, w.EnvBlocklist())
 	require.Equal(t, "", w.SessionStoreDir())
 	require.Equal(t, 0, w.MaxTurns())
-	require.Equal(t, []string{"text", "code"}, w.Modalities())
+	require.Equal(t, []string{"text", "code", "image"}, w.Modalities())
 }
 
 // Consolidated: worker not-started tests

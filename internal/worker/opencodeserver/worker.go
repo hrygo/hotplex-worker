@@ -172,7 +172,7 @@ func (w *Worker) SupportsTools() bool     { return true }
 func (w *Worker) EnvBlocklist() []string  { return openCodeSrvEnvBlocklist }
 func (w *Worker) SessionStoreDir() string { return "" }
 func (w *Worker) MaxTurns() int           { return 0 }
-func (w *Worker) Modalities() []string    { return []string{"text", "code"} }
+func (w *Worker) Modalities() []string    { return []string{"text", "code", "image"} }
 
 // ─── Worker Lifecycle ─────────────────────────────────────────────────────────
 
@@ -413,7 +413,21 @@ func (w *Worker) SendControlRequest(ctx context.Context, subtype string, body ma
 	if w.cmd == nil {
 		return nil, fmt.Errorf("opencode server: commander not initialized")
 	}
-	return w.cmd.SendControlRequest(ctx, subtype, body)
+	result, err := w.cmd.SendControlRequest(ctx, subtype, body)
+	if err != nil {
+		return result, err
+	}
+	// Propagate variant from set_model to conn for subsequent messages.
+	if subtype == "set_model" {
+		if v, ok := body["variant"].(string); ok && v != "" {
+			w.Mu.Lock()
+			if w.httpConn != nil {
+				w.httpConn.variant = v
+			}
+			w.Mu.Unlock()
+		}
+	}
+	return result, nil
 }
 
 func (w *Worker) Compact(ctx context.Context, args map[string]any) error {
@@ -489,8 +503,8 @@ func (w *Worker) createSession(ctx context.Context, projectDir string) (string, 
 	return result.ID, nil
 }
 
-func (w *Worker) initHTTPConn(userID, sessionID, systemPrompt string) {
-	w.httpConn = &conn{
+func (w *Worker) initHTTPConn(userID, sessionID, systemPrompt string, session worker.SessionInfo) {
+	c := &conn{
 		userID:       userID,
 		sessionID:    sessionID,
 		httpAddr:     w.httpAddr,
@@ -499,10 +513,33 @@ func (w *Worker) initHTTPConn(userID, sessionID, systemPrompt string) {
 		log:          w.Log,
 		systemPrompt: systemPrompt,
 	}
+
+	// Parse AllowedModels[0] → "provider/model" or plain "model".
+	if len(session.AllowedModels) > 0 && session.AllowedModels[0] != "" {
+		parts := strings.SplitN(session.AllowedModels[0], "/", 2)
+		ref := &ocsModelRef{ModelID: parts[0]}
+		if len(parts) == 2 {
+			ref.ProviderID = parts[0]
+			ref.ModelID = parts[1]
+		}
+		c.allowedModel = ref
+	}
+
+	// Parse JSONSchema string → map for PromptInput.format.
+	if session.JSONSchema != "" {
+		var schema map[string]any
+		if err := json.Unmarshal([]byte(session.JSONSchema), &schema); err == nil {
+			c.jsonSchema = schema
+		} else {
+			w.Log.Warn("opencodeserver: invalid JSONSchema, ignoring", "err", err)
+		}
+	}
+
+	w.httpConn = c
 }
 
 func (w *Worker) initSessionConn(ctx context.Context, serverSessionID string, session worker.SessionInfo) {
-	w.initHTTPConn(session.UserID, serverSessionID, session.SystemPrompt)
+	w.initHTTPConn(session.UserID, serverSessionID, session.SystemPrompt, session)
 	w.cmd = &ServerCommander{
 		client:    w.client,
 		baseURL:   w.httpAddr,
@@ -782,10 +819,19 @@ type conn struct {
 	log          *slog.Logger
 	systemPrompt string
 
+	allowedModel *ocsModelRef   // parsed from SessionInfo.AllowedModels[0]
+	jsonSchema   map[string]any // parsed from SessionInfo.JSONSchema
+	variant      string         // reasoning effort variant (e.g. "high", "low")
+
 	mu        sync.Mutex
 	closed    bool
 	closeOnce sync.Once
 	lastInput string // cached for crash recovery re-delivery
+}
+
+type ocsModelRef struct {
+	ProviderID string `json:"providerID"`
+	ModelID    string `json:"modelID"`
 }
 
 var _ worker.InputRecoverer = (*conn)(nil)
@@ -828,6 +874,18 @@ func (c *conn) Send(ctx context.Context, msg *events.Envelope) error {
 	}
 	if c.systemPrompt != "" {
 		body["system"] = c.systemPrompt
+	}
+	if c.allowedModel != nil {
+		body["model"] = c.allowedModel
+	}
+	if c.jsonSchema != nil {
+		body["format"] = map[string]any{
+			"type":   "json_schema",
+			"schema": c.jsonSchema,
+		}
+	}
+	if c.variant != "" {
+		body["variant"] = c.variant
 	}
 
 	payload, err := json.Marshal(body)
