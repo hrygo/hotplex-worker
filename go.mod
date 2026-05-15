@@ -15,7 +15,6 @@ require (
 	github.com/hrygo/hotplex/client v0.0.0
 	github.com/larksuite/oapi-sdk-go/v3 v3.5.3
 	github.com/mattn/go-isatty v0.0.21
-	github.com/mattn/go-sqlite3 v1.14.44
 	github.com/pressly/goose/v3 v3.27.1
 	github.com/prometheus/client_golang v1.19.1
 	github.com/robfig/cron/v3 v3.0.1

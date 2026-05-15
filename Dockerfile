@@ -25,8 +25,6 @@ WORKDIR /build
 RUN apk add --no-cache \
     git \
     make \
-    gcc \
-    musl-dev \
     ca-certificates \
     tzdata
 
@@ -42,7 +40,7 @@ COPY . .
 # Fixed path: ./cmd/hotplex instead of ./cmd/worker
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
-    CGO_ENABLED=1 GOOS=linux go build \
+    CGO_ENABLED=0 GOOS=linux go build \
     -trimpath \
     -ldflags="-s -w \
     -X 'github.com/hrygo/hotplex/internal/version.GitCommit=${GIT_SHA}' \

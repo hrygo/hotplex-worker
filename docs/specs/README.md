@@ -22,6 +22,7 @@
 
 | 文档 | 描述 | 状态 | 日期 | 进度 |
 |------|------|------|------|------|
+| [Worker-GAP-Analysis-2026-05-15.md](./Worker-GAP-Analysis-2026-05-15.md) | Worker GAP 分析 — OCS vs CC Worker 能力差距与实施计划 | active | 2026-05-15 | 0% |
 | [Session-History-Persistence-Spec.md](./Session-History-Persistence-Spec.md) | Session 历史持久化 — 会话重放与历史查询 | draft | 2026-04-28 | 40% |
 | [Per-Bot-Agent-Config-Spec.md](./Per-Bot-Agent-Config-Spec.md) | Per-Bot Agent 配置 — 独立 Bot 人格与上下文 | implemented | 2026-05-03 | 100% |
 | [Turn-Summary-Spec.md](./Turn-Summary-Spec.md) | Turn 摘要 — 消息轮次总结与统计 | draft | 2026-05-01 | 70% |

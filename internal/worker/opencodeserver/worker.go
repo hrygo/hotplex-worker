@@ -31,7 +31,6 @@
 package opencodeserver
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -39,6 +38,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"runtime/debug"
@@ -99,7 +99,7 @@ const (
 //
 //   - Single owner: Worker is owned by one session.Manager
 //   - Thread-safe: All public methods are safe for concurrent use
-//   - Goroutines: readSSE runs in separate goroutine, writes to recvCh
+//   - Goroutines: forwardBusEvents runs in a separate goroutine, receives from EventBus channel
 //   - Backpressure: recvCh has 256 buffer, drops messages when full
 type Worker struct {
 	*base.BaseWorker
@@ -108,7 +108,6 @@ type Worker struct {
 	httpConn  *conn
 	httpAddr  string
 	client    *http.Client
-	sseClient *http.Client // separate client without Timeout for SSE
 	cmd       *ServerCommander
 	crashSub  <-chan struct{} // closed when singleton process crashes
 
@@ -262,6 +261,8 @@ func (w *Worker) HandleElicitationResponse(ctx context.Context, reqID, action st
 }
 
 // Resume reconnects to an existing session on the shared OpenCode server.
+// If a WorkerSessionID from a previous Start is available in session.WorkerSessionID,
+// it attempts to reuse that OCS session. Otherwise, it creates a fresh OCS session.
 func (w *Worker) Resume(ctx context.Context, session worker.SessionInfo) error {
 	if err := w.checkNotStarted(); err != nil {
 		return err
@@ -271,8 +272,30 @@ func (w *Worker) Resume(ctx context.Context, session worker.SessionInfo) error {
 		return err
 	}
 
-	w.initSessionConn(ctx, session.SessionID, session)
-	w.startSSE(session.SessionID)
+	// Try to reuse the OCS-internal session if we have one from a previous Start.
+	ocsSessionID := session.WorkerSessionID
+	if ocsSessionID != "" {
+		// Verify the OCS session still exists.
+		if w.ocsSessionExists(ctx, ocsSessionID) {
+			w.Log.Info("opencodeserver: resuming existing OCS session",
+				"ocs_session_id", ocsSessionID, "hotplex_session_id", session.SessionID)
+			w.initSessionConn(ctx, ocsSessionID, session)
+			w.startSSE(ocsSessionID)
+			return nil
+		}
+		w.Log.Info("opencodeserver: OCS session not found, creating fresh",
+			"stale_ocs_session_id", ocsSessionID, "hotplex_session_id", session.SessionID)
+	}
+
+	// No valid OCS session — create a new one (conversation context is lost).
+	newSessionID, err := w.createSession(ctx, session.ProjectDir)
+	if err != nil {
+		w.releaseOnce.Do(func() { w.singleton.Release() })
+		return fmt.Errorf("opencodeserver: resume create session: %w", err)
+	}
+
+	w.initSessionConn(ctx, newSessionID, session)
+	w.startSSE(newSessionID)
 	return nil
 }
 
@@ -494,6 +517,23 @@ func (w *Worker) initSessionConn(ctx context.Context, serverSessionID string, se
 	w.Mu.Unlock()
 }
 
+// ocsSessionExists checks whether a session exists on the OpenCode server
+// by issuing a lightweight GET to the session messages endpoint.
+func (w *Worker) ocsSessionExists(ctx context.Context, sessionID string) bool {
+	checkURL := fmt.Sprintf("%s/session/%s/message?limit=1", w.httpAddr, url.QueryEscape(sessionID))
+	req, err := http.NewRequestWithContext(ctx, "GET", checkURL, http.NoBody)
+	if err != nil {
+		return false
+	}
+	resp, err := w.client.Do(req)
+	if err != nil {
+		return false
+	}
+	_, _ = io.Copy(io.Discard, resp.Body)
+	_ = resp.Body.Close()
+	return resp.StatusCode == http.StatusOK
+}
+
 // ─── Shared Lifecycle Helpers ──────────────────────────────────────────────────
 
 // checkNotStarted validates the singleton is ready and the worker is not
@@ -513,36 +553,98 @@ func (w *Worker) checkNotStarted() error {
 
 // acquireServer acquires a ref from the singleton process manager.
 func (w *Worker) acquireServer(ctx context.Context) error {
-	httpAddr, client, sseClient, crashSub, err := w.singleton.Acquire(ctx)
+	httpAddr, client, _, crashSub, err := w.singleton.Acquire(ctx)
 	if err != nil {
 		return fmt.Errorf("opencodeserver: acquire server: %w", err)
 	}
 	w.httpAddr = httpAddr
 	w.client = client
-	w.sseClient = sseClient
 	w.crashSub = crashSub
 	return nil
 }
 
-// startSSE creates a cancellable SSE context and starts the reader goroutine.
+// startSSE subscribes to the singleton EventBus and starts the forwarder goroutine.
 func (w *Worker) startSSE(sessionID string) {
 	sseCtx, sseCancel := context.WithCancel(context.Background())
 	w.Mu.Lock()
 	w.sseCancel = sseCancel
 	w.Mu.Unlock()
-	go w.readSSE(sseCtx, sessionID)
+
+	// Subscribe to global EventBus instead of opening own SSE connection.
+	busCh := w.singleton.Subscribe(sessionID)
+	go w.forwardBusEvents(sseCtx, sessionID, busCh)
 }
 
-// release closes the SSE connection and releases the singleton ref.
-// Shared by Terminate and Kill — they are semantically identical for OCS
-// workers since the shared server process is never killed by individual sessions.
+func (w *Worker) forwardBusEvents(ctx context.Context, sessionID string, busCh chan *events.Envelope) {
+	defer func() {
+		if r := recover(); r != nil {
+			w.Log.Error("opencodeserver: forwardBusEvents panic", "session_id", sessionID, "panic", r, "stack", string(debug.Stack()))
+		}
+	}()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case env, ok := <-busCh:
+			if !ok {
+				return
+			}
+
+			// Handle OCS-specific Raw events (permission/question asks).
+			if env.Event.Type == events.Raw {
+				data, _ := env.Event.Data.(events.RawData)
+				raw := toRawMessage(data.Raw)
+				switch data.Kind {
+				case "ocs:permission.asked":
+					w.handlePermissionAsked(sessionID, raw)
+					continue
+				case "ocs:question.asked":
+					w.handleQuestionAsked(sessionID, raw)
+					continue
+				}
+			}
+
+			w.SetLastIO(time.Now())
+
+			w.Mu.Lock()
+			ch := w.httpConn
+			var recvCh chan *events.Envelope
+			if ch != nil {
+				recvCh = ch.recvCh
+			}
+			w.Mu.Unlock()
+
+			if recvCh == nil {
+				return
+			}
+
+			select {
+			case recvCh <- env:
+			default:
+				w.Log.Warn("opencodeserver: recv channel full, dropping message",
+					"event_type", env.Event.Type, "event_id", env.ID)
+			}
+		}
+	}
+}
+
+// release closes the SSE subscription and releases the singleton ref.
 func (w *Worker) release() {
 	w.Mu.Lock()
 	sseCancel := w.sseCancel
+	sessionID := ""
+	if w.httpConn != nil {
+		sessionID = w.httpConn.sessionID
+	}
 	w.Mu.Unlock()
 
 	if sseCancel != nil {
 		sseCancel()
+	}
+
+	if sessionID != "" && w.singleton != nil {
+		w.singleton.Unsubscribe(sessionID)
 	}
 
 	w.releaseOnce.Do(func() {
@@ -558,106 +660,6 @@ func (w *Worker) release() {
 
 	if conn != nil {
 		_ = conn.Close()
-	}
-}
-
-func (w *Worker) readSSE(ctx context.Context, sessionID string) {
-	defer func() {
-		if r := recover(); r != nil {
-			w.Log.Error("opencodeserver: readSSE panic", "session_id", sessionID, "panic", r, "stack", string(debug.Stack()))
-		}
-	}()
-
-	sseURL := fmt.Sprintf("%s/events?session_id=%s", w.httpAddr, url.QueryEscape(sessionID))
-	req, err := http.NewRequestWithContext(ctx, "GET", sseURL, http.NoBody)
-	if err != nil {
-		w.Log.Error("opencodeserver: create SSE request", "session_id", sessionID, "err", err)
-		return
-	}
-	req.Header.Set("Accept", "text/event-stream")
-	req.Header.Set("Cache-Control", "no-cache")
-
-	resp, err := w.sseClient.Do(req)
-	if err != nil {
-		w.Log.Error("opencodeserver: SSE connect", "session_id", sessionID, "err", err)
-		return
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		w.Log.Error("opencodeserver: SSE status",
-			"session_id", sessionID,
-			"status", resp.StatusCode,
-			"body", string(body))
-		return
-	}
-
-	reader := bufio.NewReader(resp.Body)
-	for {
-		line, err := reader.ReadString('\n')
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				w.Log.Debug("opencodeserver: SSE stream ended (EOF)", "session_id", sessionID)
-				return
-			}
-			w.Log.Error("opencodeserver: SSE read", "session_id", sessionID, "err", err)
-			return
-		}
-
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-
-		if !strings.HasPrefix(line, "data: ") {
-			continue
-		}
-		data := strings.TrimPrefix(line, "data: ")
-
-		env, err := aep.DecodeLine([]byte(data))
-		if err != nil {
-			var busEvent struct {
-				Type       string          `json:"type"`
-				Properties json.RawMessage `json:"properties"`
-			}
-			if jsonErr := json.Unmarshal([]byte(data), &busEvent); jsonErr == nil {
-				switch busEvent.Type {
-				case "permission.asked":
-					w.handlePermissionAsked(sessionID, busEvent.Properties)
-				case "question.asked":
-					w.handleQuestionAsked(sessionID, busEvent.Properties)
-				default:
-					w.Log.Debug("opencodeserver: unhandled bus event", "type", busEvent.Type)
-				}
-				continue
-			}
-			w.Log.Warn("opencodeserver: decode SSE data", "session_id", sessionID, "err", err, "data", data)
-			continue
-		}
-
-		env.SessionID = sessionID
-		w.SetLastIO(time.Now())
-
-		w.Mu.Lock()
-		ch := w.httpConn
-		var recvCh chan *events.Envelope
-		if ch != nil {
-			recvCh = ch.recvCh
-		}
-		w.Mu.Unlock()
-
-		if recvCh == nil {
-			w.Log.Debug("opencodeserver: connection closed, stopping SSE reader")
-			return
-		}
-
-		select {
-		case recvCh <- env:
-		default:
-			w.Log.Warn("opencodeserver: recv channel full, dropping message",
-				"event_type", env.Event.Type, "event_id", env.ID)
-		}
 	}
 }
 
@@ -783,6 +785,15 @@ type conn struct {
 	mu        sync.Mutex
 	closed    bool
 	closeOnce sync.Once
+	lastInput string // cached for crash recovery re-delivery
+}
+
+var _ worker.InputRecoverer = (*conn)(nil)
+
+func (c *conn) LastInput() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.lastInput
 }
 
 func (c *conn) Send(ctx context.Context, msg *events.Envelope) error {
@@ -795,11 +806,21 @@ func (c *conn) Send(ctx context.Context, msg *events.Envelope) error {
 
 	var content string
 	if msg.Event.Data != nil {
-		if data, ok := msg.Event.Data.(map[string]any); ok {
-			if v, ok := data["content"].(string); ok {
+		switch d := msg.Event.Data.(type) {
+		case map[string]any:
+			if v, ok := d["content"].(string); ok {
 				content = v
 			}
+		case events.InputData:
+			content = d.Content
 		}
+	}
+
+	// Cache last input for crash recovery re-delivery.
+	if content != "" {
+		c.mu.Lock()
+		c.lastInput = content
+		c.mu.Unlock()
 	}
 
 	body := map[string]any{
@@ -823,9 +844,17 @@ func (c *conn) Send(ctx context.Context, msg *events.Envelope) error {
 
 	resp, err := c.client.Do(req)
 	if err != nil {
+		if isServerDownError(err) {
+			return &worker.WorkerError{Kind: worker.ErrKindUnavailable, Message: "opencodeserver: server unreachable", Cause: err}
+		}
 		return fmt.Errorf("opencodeserver: send input: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode == http.StatusBadGateway || resp.StatusCode == http.StatusServiceUnavailable {
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return &worker.WorkerError{Kind: worker.ErrKindUnavailable, Message: fmt.Sprintf("opencodeserver: input failed: status %d, body: %s", resp.StatusCode, string(respBody))}
+	}
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
@@ -853,7 +882,36 @@ func (c *conn) Close() error {
 func (c *conn) UserID() string    { return c.userID }
 func (c *conn) SessionID() string { return c.sessionID }
 
+// isServerDownError classifies network/timeout errors as "server unavailable".
+func isServerDownError(err error) bool {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	if _, ok := errors.AsType[net.Error](err); ok {
+		return true
+	}
+	return false
+}
+
 // ─── Init ────────────────────────────────────────────────────────────────────
+
+// toRawMessage safely converts any to json.RawMessage.
+func toRawMessage(v any) json.RawMessage {
+	if v == nil {
+		return nil
+	}
+	switch raw := v.(type) {
+	case json.RawMessage:
+		return raw
+	case []byte:
+		return json.RawMessage(raw)
+	case string:
+		return json.RawMessage(raw)
+	default:
+		b, _ := json.Marshal(v)
+		return json.RawMessage(b)
+	}
+}
 
 func init() {
 	worker.Register(worker.TypeOpenCodeSrv, func() (worker.Worker, error) {

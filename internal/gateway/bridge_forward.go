@@ -90,8 +90,6 @@ func (b *Bridge) forwardEvents(w worker.Worker, sessionID string, opts forwardOp
 				pendingError = cloned
 				continue
 			}
-		} else if b.log.Enabled(context.Background(), slog.LevelDebug) {
-			b.log.Debug("bridge: received event from worker", "session_id", sessionID, "worker_type", workerType, "event_type", env.Event.Type)
 		}
 
 		if firstEvent {
