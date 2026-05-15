@@ -88,6 +88,7 @@ type Adapter struct {
 	ttsPipeline        *TTSPipeline
 	phrases            *phrases.Phrases
 	Extras             map[string]any
+	botName            string
 
 	rateLimiter   *ChannelRateLimiter
 	slashLimiter  *SlashRateLimiter
@@ -142,6 +143,10 @@ func (a *Adapter) ConfigureWith(config messaging.AdapterConfig) error {
 	}
 
 	a.Extras = config.Extras
+
+	if config.BotName != "" {
+		a.botName = config.BotName
+	}
 
 	return nil
 }
