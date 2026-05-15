@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.13.2] - 2026-05-15
+
+### Summary
+
+v1.13.2 是一次 patch 更新，聚焦于 **消息体验增强** 和 **错误处理类型安全**。新增 Phrases 模块，将硬编码的 CLI 提示语和问候语提取为可配置、可扩展的消息池（权重随机 + 级联加载 + per-bot 个性化）；Worker 层引入类型化 `WorkerError` 替代脆弱的字符串匹配错误分类。
+
+### Added
+
+- **Messaging**: Phrases module — extract 28 CLI tips and 8 greetings from feishu placeholder into a shared, configurable message pool with weighted random selection (bot=4, global=2, platform=1), cascade-append loading, per-bot personalization, and B-channel skill manual. (#426)
+
+### Changed
+
+- **Worker**: Replace `strings.Contains` error classification with typed `WorkerError` + `Kind` enum — gateway uses `errors.As` for type-safe routing instead of fragile string matching. (#426)
+
 ## [1.13.1] - 2026-05-15
 
 ### Summary
