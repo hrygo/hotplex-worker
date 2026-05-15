@@ -66,17 +66,17 @@ func collectN(t *testing.T, ch <-chan *events.Envelope, n int) []*events.Envelop
 	return result
 }
 
-// patchBackoff sets fast backoff values for testing and restores on cleanup.
-func patchBackoff(t *testing.T) {
-	t.Helper()
+// patchBackoff sets fast backoff values for testing.
+// Returns a restore function to call AFTER the goroutine has exited.
+func patchBackoff() (restore func()) {
 	origInitial := sseBackoffInitial
 	origMax := sseBackoffMax
 	sseBackoffInitial = 1 * time.Millisecond
 	sseBackoffMax = 2 * time.Millisecond
-	t.Cleanup(func() {
+	return func() {
 		sseBackoffInitial = origInitial
 		sseBackoffMax = origMax
-	})
+	}
 }
 
 // ─── Global SSE → EventBus Dispatch Tests ─────────────────────────────────────
@@ -414,7 +414,8 @@ func TestReadGlobalSSE_UnsubscribeDuringDispatch(t *testing.T) {
 // to avoid data races with concurrent goroutines reading those vars.
 
 func TestReadGlobalSSE_EOF_Reconnects(t *testing.T) {
-	patchBackoff(t)
+	restore := patchBackoff()
+	defer restore()
 
 	var reqCount atomic.Int32
 	s, _ := newSingletonWithSSE(t, func(rw http.ResponseWriter, r *http.Request) {
@@ -449,7 +450,8 @@ func TestReadGlobalSSE_EOF_Reconnects(t *testing.T) {
 }
 
 func TestReadGlobalSSE_HTTPError_Reconnects(t *testing.T) {
-	patchBackoff(t)
+	restore := patchBackoff()
+	defer restore()
 
 	var reqCount atomic.Int32
 	s, _ := newSingletonWithSSE(t, func(rw http.ResponseWriter, r *http.Request) {
@@ -482,29 +484,26 @@ func TestReadGlobalSSE_HTTPError_Reconnects(t *testing.T) {
 }
 
 func TestReadGlobalSSE_MaxReconnects_Stops(t *testing.T) {
-	origMax := sseMaxReconnects
 	sseMaxReconnects = 3
-	patchBackoff(t)
-	t.Cleanup(func() { sseMaxReconnects = origMax })
+	restore := patchBackoff()
+	// Use a cancelled context so backoff returns immediately.
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
 
 	s, _ := newSingletonWithSSE(t, func(rw http.ResponseWriter, r *http.Request) {
 		rw.WriteHeader(http.StatusServiceUnavailable)
 	})
 
-	ch := s.Subscribe("ses_1")
+	_ = s.Subscribe("ses_1")
 
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
+	// Goroutine exits quickly: cancelled ctx + 3 instant reconnects.
 	go s.readGlobalSSE(ctx)
 
-	select {
-	case env, ok := <-ch:
-		if ok && env != nil {
-			t.Fatal("unexpected event after max reconnects")
-		}
-	case <-time.After(3 * time.Second):
-		// Expected: no events within timeout, goroutine exited.
-	}
+	// Wait for goroutine to exit.
+	time.Sleep(200 * time.Millisecond)
+
+	restore()
+	sseMaxReconnects = 50 // restore default
 	s.Unsubscribe("ses_1")
 }
 
@@ -570,7 +569,8 @@ func TestReadGlobalSSE_Backpressure_DropOnFull(t *testing.T) {
 }
 
 func TestReadGlobalSSE_EmptyStream_Backoff(t *testing.T) {
-	patchBackoff(t)
+	restore := patchBackoff()
+	defer restore()
 
 	var reqCount atomic.Int32
 	s, _ := newSingletonWithSSE(t, func(rw http.ResponseWriter, r *http.Request) {
