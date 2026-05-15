@@ -40,3 +40,4 @@ messaging:
     enabled: true
   feishu:
     enabled: true
+    worker_type: "opencode_server"
