@@ -1,5 +1,32 @@
 # Changelog
 
+## [1.14.0] - 2026-05-15
+
+### Summary
+
+v1.14.0 是一次 minor 版本更新，聚焦于 **OCS Worker 生产就绪** 和 **零 CGO 构建**。OCS Worker 从单连接 SSE 升级为全局 EventBus 架构，新增指数退避重连、LastInput 崩溃恢复、HTTP 错误分类等关键能力，配合 4 项并发修复消除生产风险。SQLite 驱动统一为纯 Go 实现（modernc.org/sqlite），所有平台支持 `CGO_ENABLED=0` 构建，Linux arm64 不再需要交叉编译器。
+
+### Added
+
+- **Worker**: OCS SSE EventBus — singleton global SSE reader (`GET /global/event`) with per-session channel dispatch, replacing per-worker SSE connections. (#428)
+- **Worker**: SSE reconnection with exponential backoff (500ms initial, 10s max, 20% jitter) and empty-stream detection to prevent CPU-burning tight loops. (#428)
+- **Worker**: LastInput caching via `InputRecoverer` interface for bridge crash recovery re-delivery. (#428)
+- **Worker**: HTTP error classification — server down / 502 / 503 mapped to typed `WorkerError(ErrKindUnavailable)` for gateway retry routing. (#428)
+- **Messaging**: P2P chat entered event — welcome card on first/returning user entry for Feishu (`bot_p2p_chat_entered_v1`) and Slack (`app_home_opened`), with `ChatAccessStore` analytics (new/returning/active classification, 1h cooldown). (#427, #430)
+
+### Changed
+
+- **Infrastructure**: Consolidate to pure-Go SQLite driver (modernc.org/sqlite), removing mattn/go-sqlite3 CGO dependency — enables `CGO_ENABLED=0` across all build targets (Makefile, Dockerfile, release CI) and simplifies cross-compilation.
+- **Eventstore**: Relax collector flush interval from 100ms to 1s and delta flush from 2s to 3s, reducing disk I/O overhead.
+- **Gateway Core**: Remove per-event debug log in bridge forwarding to cut log volume under high throughput.
+
+### Fixed
+
+- **Worker**: Fix shared pointer mutation in `dispatchToAllSubscribers` — convert envelope inside the subscriber loop instead of reusing a shared pointer, which caused all subscribers to receive the last sessionID.
+- **Messaging**: Skip cumulative `message.part.updated` text to prevent Feishu card duplication — cumulative text was appended as incremental delta, causing repeated text in streaming cards.
+- **Worker**: Eliminate test data race on backoff package variables — replace `t.Cleanup` restore with deferred restore after goroutine exit.
+- **Worker**: Prevent tight SSE reconnect loop on empty streams — only reset attempts after reading at least one data line; on empty EOF, apply exponential backoff.
+
 ## [1.13.2] - 2026-05-15
 
 ### Summary
