@@ -649,10 +649,10 @@ func (w *Worker) readSSE(ctx context.Context, sessionID string) {
 			continue
 		}
 
-		// Successfully connected — reset attempt counter.
-		attempts = 0
+		// Successfully connected.
 		w.Log.Debug("opencodeserver: SSE connected", "session_id", sessionID)
 
+		gotData := false
 		reader := bufio.NewReader(resp.Body)
 		for {
 			line, err := reader.ReadString('\n')
@@ -662,13 +662,23 @@ func (w *Worker) readSSE(ctx context.Context, sessionID string) {
 					return
 				}
 				if errors.Is(err, io.EOF) {
-					w.Log.Debug("opencodeserver: SSE stream ended, reconnecting", "session_id", sessionID)
-					break // break inner, continue outer to reconnect
+					if gotData {
+						attempts = 0
+						w.Log.Debug("opencodeserver: SSE stream ended, reconnecting", "session_id", sessionID)
+					} else {
+						attempts++
+						w.Log.Debug("opencodeserver: SSE empty stream, reconnecting with backoff",
+							"session_id", sessionID, "attempt", attempts)
+						w.sseBackoffSleep(ctx, attempts)
+					}
+					break
 				}
 				w.Log.Warn("opencodeserver: SSE read error, reconnecting", "session_id", sessionID, "err", err)
 				break
 			}
 
+			gotData = true
+			attempts = 0
 			line = strings.TrimSpace(line)
 			if line == "" {
 				continue
