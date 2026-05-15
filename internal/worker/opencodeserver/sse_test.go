@@ -120,6 +120,36 @@ func TestReadGlobalSSE_PartUpdatedText_Skipped(t *testing.T) {
 	s.Unsubscribe("ses_1")
 }
 
+func TestReadGlobalSSE_PartUpdatedReasoning(t *testing.T) {
+	t.Parallel()
+
+	s, _ := newSingletonWithSSE(t, func(rw http.ResponseWriter, r *http.Request) {
+		rw.Header().Set("Content-Type", "text/event-stream")
+		flusher := rw.(http.Flusher)
+
+		evt := ocsEvent(t, "message.part.updated", map[string]any{
+			"sessionID": "ses_1",
+			"part":      map[string]any{"id": "r_1", "type": "reasoning", "text": "thinking..."},
+		})
+		fmt.Fprint(rw, evt)
+		flusher.Flush()
+		<-r.Context().Done()
+	})
+
+	ch := s.Subscribe("ses_1")
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	go s.readGlobalSSE(ctx)
+
+	got := collectN(t, ch, 1)
+	require.Equal(t, events.Reasoning, got[0].Event.Type)
+	data := got[0].Event.Data.(events.ReasoningData)
+	require.Equal(t, "r_1", data.ID)
+	require.Equal(t, "thinking...", data.Content)
+	s.Unsubscribe("ses_1")
+}
+
 func TestReadGlobalSSE_DispatchesSessionStatus(t *testing.T) {
 	t.Parallel()
 
@@ -927,6 +957,80 @@ func TestConn_Send_200_Succeeds(t *testing.T) {
 
 	err := c.Send(context.Background(), msg)
 	require.NoError(t, err)
+}
+
+func TestConn_Send_InjectsModelFormatVariant(t *testing.T) {
+	t.Parallel()
+
+	var gotBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &gotBody)
+		rw.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(srv.Close)
+
+	c := &conn{
+		sessionID:    "ses_test",
+		httpAddr:     srv.URL,
+		client:       srv.Client(),
+		recvCh:       make(chan *events.Envelope, 16),
+		log:          slog.Default(),
+		allowedModel: &ocsModelRef{ProviderID: "anthropic", ModelID: "claude-sonnet-4-20250514"},
+		jsonSchema:   map[string]any{"type": "object", "properties": map[string]any{"name": map[string]any{"type": "string"}}},
+		variant:      "high",
+	}
+
+	msg := events.NewEnvelope("id1", "ses_test", 0, events.Input,
+		events.InputData{Content: "test"})
+	require.NoError(t, c.Send(context.Background(), msg))
+
+	// Verify model injected.
+	model, ok := gotBody["model"].(map[string]any)
+	require.True(t, ok, "model should be a map")
+	require.Equal(t, "anthropic", model["providerID"])
+	require.Equal(t, "claude-sonnet-4-20250514", model["modelID"])
+
+	// Verify format injected.
+	format, ok := gotBody["format"].(map[string]any)
+	require.True(t, ok, "format should be a map")
+	require.Equal(t, "json_schema", format["type"])
+	require.NotNil(t, format["schema"])
+
+	// Verify variant injected.
+	require.Equal(t, "high", gotBody["variant"])
+}
+
+func TestConn_Send_NoModelFormatVariantWhenEmpty(t *testing.T) {
+	t.Parallel()
+
+	var gotBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &gotBody)
+		rw.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(srv.Close)
+
+	c := &conn{
+		sessionID: "ses_test",
+		httpAddr:  srv.URL,
+		client:    srv.Client(),
+		recvCh:    make(chan *events.Envelope, 16),
+		log:       slog.Default(),
+		// no allowedModel, jsonSchema, variant
+	}
+
+	msg := events.NewEnvelope("id1", "ses_test", 0, events.Input,
+		events.InputData{Content: "test"})
+	require.NoError(t, c.Send(context.Background(), msg))
+
+	_, hasModel := gotBody["model"]
+	_, hasFormat := gotBody["format"]
+	_, hasVariant := gotBody["variant"]
+	require.False(t, hasModel, "model should not be present")
+	require.False(t, hasFormat, "format should not be present")
+	require.False(t, hasVariant, "variant should not be present")
 }
 
 // ─── SSE Backoff Test ─────────────────────────────────────────────────────────

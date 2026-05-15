@@ -884,8 +884,11 @@ func (c *conn) Send(ctx context.Context, msg *events.Envelope) error {
 			"schema": c.jsonSchema,
 		}
 	}
-	if c.variant != "" {
-		body["variant"] = c.variant
+	c.mu.Lock()
+	variant := c.variant
+	c.mu.Unlock()
+	if variant != "" {
+		body["variant"] = variant
 	}
 
 	payload, err := json.Marshal(body)
