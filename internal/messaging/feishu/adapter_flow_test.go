@@ -626,7 +626,7 @@ func TestAdapterFlow_WriteCtx_StreamCtrl_WriteFlush(t *testing.T) {
 	t.Cleanup(func() { limiter.Stop() })
 	conn := NewFeishuConn(a, "chat123", "", "")
 
-	ctrl := NewStreamingCardController(nil, limiter, discardLogger, "TestBot", 0, "", "", "")
+	ctrl := NewStreamingCardController(nil, limiter, discardLogger, "TestBot", 0, "", "", "", nil)
 	ctrl.transition(PhaseCreating)
 	ctrl.transition(PhaseStreaming)
 	ctrl.mu.Lock()
