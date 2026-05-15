@@ -3,12 +3,16 @@ package opencodeserver
 import (
 	"bufio"
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
 	"os"
 	"regexp"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -19,6 +23,8 @@ import (
 	"github.com/hrygo/hotplex/internal/worker"
 	"github.com/hrygo/hotplex/internal/worker/base"
 	"github.com/hrygo/hotplex/internal/worker/proc"
+	"github.com/hrygo/hotplex/pkg/aep"
+	"github.com/hrygo/hotplex/pkg/events"
 )
 
 // SingletonProcessManager manages a single shared `opencode serve` process
@@ -46,6 +52,11 @@ type SingletonProcessManager struct {
 	state    singletonState
 	crashCh  chan struct{} // closed when process exits unexpectedly
 
+	// EventBus dispatches events from the global SSE stream to individual sessions.
+	busMu       sync.RWMutex
+	subscribers map[string]chan *events.Envelope
+	sseCancel   context.CancelFunc
+
 	idleTimer *time.Timer
 }
 
@@ -69,11 +80,12 @@ func NewSingletonProcessManager(log *slog.Logger, cfg config.OpenCodeServerConfi
 		IdleConnTimeout:     90 * time.Second,
 	}
 	return &SingletonProcessManager{
-		log:       log.With("component", "opencode-server-singleton"),
-		client:    &http.Client{Timeout: cfg.HTTPTimeout, Transport: transport},
-		sseClient: &http.Client{Transport: transport}, // no Timeout for SSE
-		cfg:       cfg,
-		crashCh:   make(chan struct{}),
+		log:         log.With("component", "opencode-server-singleton"),
+		client:      &http.Client{Timeout: cfg.HTTPTimeout, Transport: transport},
+		sseClient:   &http.Client{Transport: transport}, // no Timeout for SSE
+		cfg:         cfg,
+		crashCh:     make(chan struct{}),
+		subscribers: make(map[string]chan *events.Envelope),
 	}
 }
 
@@ -132,8 +144,34 @@ func (s *SingletonProcessManager) Release() {
 	}
 }
 
+// Subscribe returns a channel that receives AEP events for the given session ID.
+func (s *SingletonProcessManager) Subscribe(sessionID string) chan *events.Envelope {
+	s.busMu.Lock()
+	defer s.busMu.Unlock()
+
+	if ch, ok := s.subscribers[sessionID]; ok {
+		return ch
+	}
+
+	ch := make(chan *events.Envelope, 256)
+	s.subscribers[sessionID] = ch
+	s.log.Debug("opencode-server-singleton: subscribed", "session_id", sessionID)
+	return ch
+}
+
+// Unsubscribe removes the subscription for the given session ID.
+func (s *SingletonProcessManager) Unsubscribe(sessionID string) {
+	s.busMu.Lock()
+	defer s.busMu.Unlock()
+
+	if ch, ok := s.subscribers[sessionID]; ok {
+		delete(s.subscribers, sessionID)
+		close(ch)
+		s.log.Debug("opencode-server-singleton: unsubscribed", "session_id", sessionID)
+	}
+}
+
 // Shutdown forcefully terminates the process regardless of reference count.
-// Called during gateway shutdown after all workers have been stopped.
 func (s *SingletonProcessManager) Shutdown(ctx context.Context) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -145,12 +183,24 @@ func (s *SingletonProcessManager) Shutdown(ctx context.Context) {
 		s.idleTimer = nil
 	}
 
+	if s.sseCancel != nil {
+		s.sseCancel()
+	}
+
 	if s.proc != nil {
 		s.log.Info("opencode-server-singleton: shutdown, killing process")
 		_ = s.proc.Kill()
 		s.proc = nil
 		s.refs = 0
 	}
+
+	// Close all active subscriptions.
+	s.busMu.Lock()
+	for id, ch := range s.subscribers {
+		close(ch)
+		delete(s.subscribers, id)
+	}
+	s.busMu.Unlock()
 }
 
 // IsRunning reports whether the singleton process is currently running.
@@ -235,6 +285,11 @@ func (s *SingletonProcessManager) startProcessLocked(ctx context.Context) error 
 
 	// Monitor process exit in background.
 	go s.monitorProcess()
+
+	// Start global SSE reader for all sessions.
+	sseCtx, sseCancel := context.WithCancel(context.Background())
+	s.sseCancel = sseCancel
+	go s.readGlobalSSE(sseCtx)
 
 	return nil
 }
@@ -329,6 +384,12 @@ func (s *SingletonProcessManager) monitorProcess() {
 	s.state = stateIdle
 	s.proc = nil
 
+	// Cancel the global SSE reader so it doesn't leak into the next lifecycle.
+	if s.sseCancel != nil {
+		s.sseCancel()
+		s.sseCancel = nil
+	}
+
 	// Notify crash subscribers if process died unexpectedly while sessions are active.
 	if wasRunning && refs > 0 {
 		s.log.Warn("opencode-server-singleton: process crashed", "exit_code", code, "refs", refs)
@@ -338,6 +399,16 @@ func (s *SingletonProcessManager) monitorProcess() {
 		s.log.Info("opencode-server-singleton: process exited", "exit_code", code, "refs", refs)
 	}
 	s.mu.Unlock()
+
+	// Close all subscriber channels outside s.mu to avoid lock nesting with busMu.
+	if wasRunning {
+		s.busMu.Lock()
+		for id, ch := range s.subscribers {
+			close(ch)
+			delete(s.subscribers, id)
+		}
+		s.busMu.Unlock()
+	}
 }
 
 // startIdleDrainLocked starts a timer to kill the process when idle.
@@ -361,6 +432,358 @@ func (s *SingletonProcessManager) startIdleDrainLocked() {
 func (s *SingletonProcessManager) buildEnv() []string {
 	return base.BuildEnv(worker.SessionInfo{}, openCodeSrvEnvBlocklist, "opencode-server")
 }
+
+// readGlobalSSE connects to the OCS global event stream and dispatches events to session channels.
+func (s *SingletonProcessManager) readGlobalSSE(ctx context.Context) {
+	defer func() {
+		if r := recover(); r != nil {
+			s.log.Error("opencode-server-singleton: readGlobalSSE panic", "panic", r, "stack", string(debug.Stack()))
+		}
+	}()
+
+	s.mu.Lock()
+	sseURL := s.httpAddr + "/global/event"
+	s.mu.Unlock()
+
+	var attempts int
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		if attempts >= sseMaxReconnects {
+			s.log.Error("opencode-server-singleton: SSE max reconnects exceeded", "attempts", attempts)
+			return
+		}
+
+		req, err := http.NewRequestWithContext(ctx, "GET", sseURL, http.NoBody)
+		if err != nil {
+			s.log.Error("opencode-server-singleton: create SSE request", "err", err)
+			return
+		}
+		req.Header.Set("Accept", "text/event-stream")
+		req.Header.Set("Cache-Control", "no-cache")
+
+		resp, err := s.sseClient.Do(req)
+		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			attempts++
+			s.log.Warn("opencode-server-singleton: SSE connect error, reconnecting",
+				"attempt", attempts, "err", err)
+			s.sseBackoffSleep(ctx, attempts)
+			continue
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+			_ = resp.Body.Close()
+			attempts++
+			s.log.Warn("opencode-server-singleton: SSE non-200 status, reconnecting",
+				"status", resp.StatusCode, "attempt", attempts, "body", string(body))
+			s.sseBackoffSleep(ctx, attempts)
+			continue
+		}
+
+		s.log.Debug("opencode-server-singleton: global SSE connected", "url", sseURL)
+
+		gotData := false
+		reader := bufio.NewReader(resp.Body)
+		for {
+			line, err := reader.ReadString('\n')
+			if err != nil {
+				_ = resp.Body.Close()
+				if ctx.Err() != nil {
+					return
+				}
+				if errors.Is(err, io.EOF) {
+					if gotData {
+						attempts = 0
+						s.log.Debug("opencode-server-singleton: global SSE stream ended, reconnecting")
+					} else {
+						attempts++
+						s.log.Debug("opencode-server-singleton: global SSE empty stream, reconnecting with backoff",
+							"attempt", attempts)
+						s.sseBackoffSleep(ctx, attempts)
+					}
+					break
+				}
+				s.log.Warn("opencode-server-singleton: global SSE read error, reconnecting", "err", err)
+				break
+			}
+
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+
+			if !strings.HasPrefix(line, "data: ") {
+				continue
+			}
+
+			gotData = true
+			attempts = 0
+			data := strings.TrimPrefix(line, "data: ")
+
+			// Parse and dispatch.
+			s.dispatchOCSEvent([]byte(data))
+		}
+	}
+}
+
+// dispatchOCSEvent parses a raw OCS event and forwards the converted AEP envelope
+// to the appropriate session channel.
+func (s *SingletonProcessManager) dispatchOCSEvent(data []byte) {
+	var evt ocsGlobalEvent
+	if err := json.Unmarshal(data, &evt); err != nil {
+		return
+	}
+
+	if evt.Payload.Type == "sync" || evt.Payload.Type == "server.connected" ||
+		evt.Payload.Type == "server.heartbeat" || evt.Payload.Type == "global.disposed" {
+		return
+	}
+
+	// session.error may have no sessionID — route via directory or skip.
+	var props struct {
+		SessionID string `json:"sessionID"`
+	}
+	if err := json.Unmarshal(evt.Payload.Properties, &props); err != nil {
+		return
+	}
+	sessionID := props.SessionID
+	if sessionID == "" {
+		// session.error can have optional sessionID — dispatch to all subscribers.
+		if evt.Payload.Type == "session.error" {
+			s.dispatchToAllSubscribers(&evt)
+		}
+		return
+	}
+
+	// Convert before acquiring lock — pure computation, no contention.
+	env := s.convertOCSEvent(sessionID, &evt)
+	if env == nil {
+		return
+	}
+
+	// Find subscriber and send under RLock to prevent close-during-send race.
+	s.busMu.RLock()
+	ch, ok := s.subscribers[sessionID]
+	if !ok {
+		s.busMu.RUnlock()
+		return
+	}
+	select {
+	case ch <- env:
+	default:
+		s.log.Warn("opencode-server-singleton: session channel full, dropping event",
+			"session_id", sessionID, "type", env.Event.Type)
+	}
+	s.busMu.RUnlock()
+}
+
+func (s *SingletonProcessManager) convertOCSEvent(sessionID string, evt *ocsGlobalEvent) *events.Envelope {
+	switch evt.Payload.Type {
+	case "message.part.delta":
+		return s.convertPartDelta(sessionID, evt.Payload.Properties)
+	case "message.part.updated":
+		return s.convertPartUpdated(sessionID, evt.Payload.Properties)
+	case "session.status":
+		return s.convertSessionStatus(sessionID, evt.Payload.Properties)
+	case "session.idle":
+		return s.convertSessionIdle(sessionID)
+	case "session.error":
+		return s.convertSessionError(sessionID, evt.Payload.Properties)
+	case "permission.asked":
+		return s.convertPermissionAsked(sessionID, evt.Payload.Properties)
+	case "question.asked":
+		return s.convertQuestionAsked(sessionID, evt.Payload.Properties)
+	default:
+		return nil
+	}
+}
+
+// convertPartDelta handles the streaming text delta event from OCS.
+// Format: {sessionID, messageID, partID, field: "text", delta: "incremental text"}
+func (s *SingletonProcessManager) convertPartDelta(sessionID string, props json.RawMessage) *events.Envelope {
+	var data struct {
+		Field string `json:"field"`
+		Delta string `json:"delta"`
+	}
+	if err := json.Unmarshal(props, &data); err != nil {
+		return nil
+	}
+	if data.Field != "text" || data.Delta == "" {
+		return nil
+	}
+	return events.NewEnvelope(
+		aep.NewID(), sessionID, 0,
+		events.MessageDelta,
+		events.MessageDeltaData{Content: data.Delta},
+	)
+}
+
+func (s *SingletonProcessManager) convertPartUpdated(sessionID string, props json.RawMessage) *events.Envelope {
+	var data struct {
+		Part struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"part"`
+	}
+	if err := json.Unmarshal(props, &data); err != nil {
+		return nil
+	}
+
+	if data.Part.Type == "text" {
+		if data.Part.Text == "" {
+			return nil
+		}
+		return events.NewEnvelope(
+			aep.NewID(), sessionID, 0,
+			events.MessageDelta,
+			events.MessageDeltaData{Content: data.Part.Text},
+		)
+	} else if data.Part.Type == "tool-invocation" || data.Part.Type == "tool-result" {
+		var rawInput map[string]any
+		_ = json.Unmarshal(props, &rawInput)
+		return events.NewEnvelope(
+			aep.NewID(), sessionID, 0,
+			events.ToolCall,
+			events.ToolCallData{Name: data.Part.Type, Input: rawInput},
+		)
+	}
+	return nil
+}
+
+func (s *SingletonProcessManager) convertSessionStatus(sessionID string, props json.RawMessage) *events.Envelope {
+	var data struct {
+		Status struct {
+			Type string `json:"type"`
+		} `json:"status"`
+	}
+	if err := json.Unmarshal(props, &data); err != nil {
+		return nil
+	}
+
+	switch data.Status.Type {
+	case "idle":
+		return events.NewEnvelope(
+			aep.NewID(), sessionID, 0,
+			events.Done,
+			events.DoneData{Success: true},
+		)
+	case "busy":
+		return events.NewEnvelope(
+			aep.NewID(), sessionID, 0,
+			events.State,
+			map[string]any{"state": "running"},
+		)
+	case "retry":
+		return events.NewEnvelope(
+			aep.NewID(), sessionID, 0,
+			events.State,
+			map[string]any{"state": "retry"},
+		)
+	default:
+		return nil
+	}
+}
+
+func (s *SingletonProcessManager) convertSessionIdle(sessionID string) *events.Envelope {
+	return events.NewEnvelope(
+		aep.NewID(), sessionID, 0,
+		events.Done,
+		events.DoneData{Success: true},
+	)
+}
+
+func (s *SingletonProcessManager) convertSessionError(sessionID string, props json.RawMessage) *events.Envelope {
+	var data struct {
+		Error struct {
+			Name string `json:"name"`
+			Data struct {
+				Message string `json:"message"`
+			} `json:"data"`
+		} `json:"error"`
+	}
+	_ = json.Unmarshal(props, &data)
+
+	msg := "opencode session error"
+	if data.Error.Data.Message != "" {
+		msg = data.Error.Data.Message
+	} else if data.Error.Name != "" {
+		msg = data.Error.Name
+	}
+	return events.NewEnvelope(
+		aep.NewID(), sessionID, 0,
+		events.Error,
+		events.ErrorData{Message: msg},
+	)
+}
+
+// dispatchToAllSubscribers sends an event to every active subscriber.
+// Used for session.error events that have no sessionID.
+func (s *SingletonProcessManager) dispatchToAllSubscribers(evt *ocsGlobalEvent) {
+	env := s.convertSessionError("", evt.Payload.Properties)
+	if env == nil {
+		return
+	}
+
+	s.busMu.RLock()
+	defer s.busMu.RUnlock()
+	for sessionID, ch := range s.subscribers {
+		env.SessionID = sessionID
+		select {
+		case ch <- env:
+		default:
+			s.log.Warn("opencode-server-singleton: session channel full, dropping error event",
+				"session_id", sessionID)
+		}
+	}
+}
+
+func (s *SingletonProcessManager) convertPermissionAsked(sessionID string, props json.RawMessage) *events.Envelope {
+	// Re-wrap as Raw event for Worker to handle specifically.
+	// This avoids moving handlePermissionAsked complex logic here.
+	return events.NewEnvelope(
+		aep.NewID(), sessionID, 0,
+		events.Raw,
+		events.RawData{Kind: "ocs:permission.asked", Raw: props},
+	)
+}
+
+func (s *SingletonProcessManager) convertQuestionAsked(sessionID string, props json.RawMessage) *events.Envelope {
+	return events.NewEnvelope(
+		aep.NewID(), sessionID, 0,
+		events.Raw,
+		events.RawData{Kind: "ocs:question.asked", Raw: props},
+	)
+}
+
+func (s *SingletonProcessManager) sseBackoffSleep(ctx context.Context, attempt int) {
+	dur := min(sseBackoffInitial*time.Duration(1<<min(attempt, 5)), sseBackoffMax)
+	select {
+	case <-ctx.Done():
+	case <-time.After(dur):
+	}
+}
+
+type ocsGlobalEvent struct {
+	Directory string `json:"directory"`
+	Payload   struct {
+		Type       string          `json:"type"`
+		Properties json.RawMessage `json:"properties"`
+	} `json:"payload"`
+}
+
+var (
+	sseMaxReconnects  = 50
+	sseBackoffInitial = 100 * time.Millisecond
+	sseBackoffMax     = 10 * time.Second
+)
 
 // --- package-level singleton ---
 
