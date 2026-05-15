@@ -81,19 +81,28 @@ func patchBackoff() (restore func()) {
 
 // ─── Global SSE → EventBus Dispatch Tests ─────────────────────────────────────
 
-func TestReadGlobalSSE_DispatchesMessagePartUpdated(t *testing.T) {
+func TestReadGlobalSSE_PartUpdatedText_Skipped(t *testing.T) {
 	t.Parallel()
 
 	s, _ := newSingletonWithSSE(t, func(rw http.ResponseWriter, r *http.Request) {
-		require.Equal(t, "/global/event", r.URL.Path)
 		rw.Header().Set("Content-Type", "text/event-stream")
 		flusher := rw.(http.Flusher)
 
+		// part.updated with text type should be skipped (cumulative, not incremental).
 		evt := ocsEvent(t, "message.part.updated", map[string]any{
 			"sessionID": "ses_1",
 			"part":      map[string]any{"type": "text", "text": "hello"},
 		})
 		fmt.Fprint(rw, evt)
+		flusher.Flush()
+
+		// Followed by a real delta to confirm reader is still alive.
+		deltaEvt := ocsEvent(t, "message.part.delta", map[string]any{
+			"sessionID": "ses_1",
+			"field":     "text",
+			"delta":     "world",
+		})
+		fmt.Fprint(rw, deltaEvt)
 		flusher.Flush()
 		<-r.Context().Done()
 	})
@@ -104,9 +113,10 @@ func TestReadGlobalSSE_DispatchesMessagePartUpdated(t *testing.T) {
 	defer cancel()
 	go s.readGlobalSSE(ctx)
 
+	// Only one event — the part.updated text was skipped.
 	got := collectN(t, ch, 1)
 	require.Equal(t, events.MessageDelta, got[0].Event.Type)
-	require.Equal(t, "ses_1", got[0].SessionID)
+	require.Equal(t, "world", got[0].Event.Data.(events.MessageDeltaData).Content)
 	s.Unsubscribe("ses_1")
 }
 
@@ -282,9 +292,10 @@ func TestReadGlobalSSE_SkipsSyncEvents(t *testing.T) {
 		fmt.Fprint(rw, gdEvt)
 		flusher.Flush()
 
-		msgEvt := ocsEvent(t, "message.part.updated", map[string]any{
+		msgEvt := ocsEvent(t, "message.part.delta", map[string]any{
 			"sessionID": "ses_1",
-			"part":      map[string]any{"type": "text", "text": "hi"},
+			"field":     "text",
+			"delta":     "hi",
 		})
 		fmt.Fprint(rw, msgEvt)
 		flusher.Flush()
@@ -314,9 +325,10 @@ func TestReadGlobalSSE_IgnoresEmptyLinesAndComments(t *testing.T) {
 		fmt.Fprint(rw, "retry: 5000\n")
 		fmt.Fprint(rw, "event: message\n")
 
-		evt := ocsEvent(t, "message.part.updated", map[string]any{
+		evt := ocsEvent(t, "message.part.delta", map[string]any{
 			"sessionID": "ses_1",
-			"part":      map[string]any{"type": "text", "text": "after_noise"},
+			"field":     "text",
+			"delta":     "after_noise",
 		})
 		fmt.Fprint(rw, evt)
 		flusher.Flush()
@@ -342,9 +354,10 @@ func TestReadGlobalSSE_MultipleSessions(t *testing.T) {
 		flusher := rw.(http.Flusher)
 
 		for _, sid := range []string{"ses_A", "ses_B"} {
-			evt := ocsEvent(t, "message.part.updated", map[string]any{
+			evt := ocsEvent(t, "message.part.delta", map[string]any{
 				"sessionID": sid,
-				"part":      map[string]any{"type": "text", "text": "msg_" + sid},
+				"field":     "text",
+				"delta":     "msg_" + sid,
 			})
 			fmt.Fprint(rw, evt)
 		}
@@ -376,18 +389,20 @@ func TestReadGlobalSSE_UnsubscribeDuringDispatch(t *testing.T) {
 		rw.Header().Set("Content-Type", "text/event-stream")
 		flusher := rw.(http.Flusher)
 
-		evt := ocsEvent(t, "message.part.updated", map[string]any{
+		evt := ocsEvent(t, "message.part.delta", map[string]any{
 			"sessionID": "ses_1",
-			"part":      map[string]any{"type": "text", "text": "first"},
+			"field":     "text",
+			"delta":     "first",
 		})
 		fmt.Fprint(rw, evt)
 		flusher.Flush()
 
 		time.Sleep(100 * time.Millisecond)
 
-		evt2 := ocsEvent(t, "message.part.updated", map[string]any{
+		evt2 := ocsEvent(t, "message.part.delta", map[string]any{
 			"sessionID": "ses_1",
-			"part":      map[string]any{"type": "text", "text": "after_unsub"},
+			"field":     "text",
+			"delta":     "after_unsub",
 		})
 		fmt.Fprint(rw, evt2)
 		flusher.Flush()
@@ -423,9 +438,10 @@ func TestReadGlobalSSE_EOF_Reconnects(t *testing.T) {
 		rw.Header().Set("Content-Type", "text/event-stream")
 		flusher := rw.(http.Flusher)
 
-		evt := ocsEvent(t, "message.part.updated", map[string]any{
+		evt := ocsEvent(t, "message.part.delta", map[string]any{
 			"sessionID": "ses_1",
-			"part":      map[string]any{"type": "text", "text": fmt.Sprintf("round%d", n)},
+			"field":     "text",
+			"delta":     fmt.Sprintf("round%d", n),
 		})
 		fmt.Fprint(rw, evt)
 		flusher.Flush()
@@ -463,9 +479,10 @@ func TestReadGlobalSSE_HTTPError_Reconnects(t *testing.T) {
 		rw.Header().Set("Content-Type", "text/event-stream")
 		flusher := rw.(http.Flusher)
 
-		evt := ocsEvent(t, "message.part.updated", map[string]any{
+		evt := ocsEvent(t, "message.part.delta", map[string]any{
 			"sessionID": "ses_1",
-			"part":      map[string]any{"type": "text", "text": "after_503"},
+			"field":     "text",
+			"delta":     "after_503",
 		})
 		fmt.Fprint(rw, evt)
 		flusher.Flush()
@@ -514,9 +531,10 @@ func TestReadGlobalSSE_ContextCancel_Stops(t *testing.T) {
 		rw.Header().Set("Content-Type", "text/event-stream")
 		flusher := rw.(http.Flusher)
 
-		evt := ocsEvent(t, "message.part.updated", map[string]any{
+		evt := ocsEvent(t, "message.part.delta", map[string]any{
 			"sessionID": "ses_1",
-			"part":      map[string]any{"type": "text", "text": "hi"},
+			"field":     "text",
+			"delta":     "hi",
 		})
 		fmt.Fprint(rw, evt)
 		flusher.Flush()
@@ -543,9 +561,10 @@ func TestReadGlobalSSE_Backpressure_DropOnFull(t *testing.T) {
 		flusher := rw.(http.Flusher)
 
 		for i := range 10 {
-			evt := ocsEvent(t, "message.part.updated", map[string]any{
+			evt := ocsEvent(t, "message.part.delta", map[string]any{
 				"sessionID": "ses_1",
-				"part":      map[string]any{"type": "text", "text": fmt.Sprintf("msg%d", i)},
+				"field":     "text",
+				"delta":     fmt.Sprintf("msg%d", i),
 			})
 			fmt.Fprint(rw, evt)
 		}
@@ -581,9 +600,10 @@ func TestReadGlobalSSE_EmptyStream_Backoff(t *testing.T) {
 		}
 		rw.Header().Set("Content-Type", "text/event-stream")
 		flusher := rw.(http.Flusher)
-		evt := ocsEvent(t, "message.part.updated", map[string]any{
+		evt := ocsEvent(t, "message.part.delta", map[string]any{
 			"sessionID": "ses_1",
-			"part":      map[string]any{"type": "text", "text": "after_empty"},
+			"field":     "text",
+			"delta":     "after_empty",
 		})
 		fmt.Fprint(rw, evt)
 		flusher.Flush()

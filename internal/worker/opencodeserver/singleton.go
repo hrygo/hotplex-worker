@@ -637,16 +637,13 @@ func (s *SingletonProcessManager) convertPartUpdated(sessionID string, props jso
 		return nil
 	}
 
+	// Text parts carry cumulative content (not incremental), which would
+	// duplicate the real-time delta stream from convertPartDelta. Skip them.
 	if data.Part.Type == "text" {
-		if data.Part.Text == "" {
-			return nil
-		}
-		return events.NewEnvelope(
-			aep.NewID(), sessionID, 0,
-			events.MessageDelta,
-			events.MessageDeltaData{Content: data.Part.Text},
-		)
-	} else if data.Part.Type == "tool-invocation" || data.Part.Type == "tool-result" {
+		return nil
+	}
+
+	if data.Part.Type == "tool-invocation" || data.Part.Type == "tool-result" {
 		var rawInput map[string]any
 		_ = json.Unmarshal(props, &rawInput)
 		return events.NewEnvelope(
