@@ -67,7 +67,10 @@ func (a *Adapter) sendWelcomeMessage(ctx context.Context, channelID string, acce
 	if text == "" {
 		text = "Hi，我是 {bot_name}，你的 AI 编程助手！"
 	}
-	botName := "HotPlex"
+	botName := a.botName
+	if botName == "" {
+		botName = "HotPlex"
+	}
 	text = strings.ReplaceAll(text, "{bot_name}", botName)
 
 	body := fmt.Sprintf("%s\n\n我可以帮你：\n• 💻 编写、审查、调试代码\n• 📁 管理项目文件和目录\n• 🔍 搜索代码库和分析架构", text)
