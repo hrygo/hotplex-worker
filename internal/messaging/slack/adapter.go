@@ -100,6 +100,12 @@ var _ messaging.PlatformAdapterInterface = (*Adapter)(nil)
 
 func (a *Adapter) GetBotID() string { return a.botID }
 
+func (a *Adapter) SetPhrases(p *phrases.Phrases) {
+	if p != nil {
+		a.phrases = p
+	}
+}
+
 func (a *Adapter) ConfigureWith(config messaging.AdapterConfig) error {
 	// Call base to set hub/sm/handler/bridge.
 	_ = a.PlatformAdapter.ConfigureWith(config)
