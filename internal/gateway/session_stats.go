@@ -110,14 +110,22 @@ func (a *sessionAccumulator) resetPerTurn() {
 	a.TurnDurationMs = 0
 }
 
-// mergeContextUsage updates ContextFill and ContextWindow from precise worker control data.
+// mergeContextUsage updates ContextFill, ContextWindow, and ModelName from precise worker control data.
 // Called after get_context_usage returns; overrides the aggregated Done event values.
+// Supports partial data: updates ModelName even when MaxTokens is 0 (OCS scenario).
 func (a *sessionAccumulator) mergeContextUsage(cu *events.ContextUsageData) {
-	if cu == nil || cu.MaxTokens <= 0 {
+	if cu == nil {
 		return
 	}
-	a.ContextFill = int64(cu.TotalTokens)
-	a.ContextWindow = int64(cu.MaxTokens)
+	if cu.TotalTokens > 0 {
+		a.ContextFill = int64(cu.TotalTokens)
+	}
+	if cu.MaxTokens > 0 {
+		a.ContextWindow = int64(cu.MaxTokens)
+	}
+	if cu.Model != "" && a.ModelName == "" {
+		a.ModelName = shortModelName(cu.Model)
+	}
 }
 
 // computeContextPct returns context window usage percentage (0-100).

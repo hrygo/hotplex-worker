@@ -522,7 +522,7 @@ func fetchContextUsage(cr worker.ControlRequester, acc *sessionAccumulator) {
 	ctrlCtx, ctrlCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer ctrlCancel()
 	if resp, err := cr.SendControlRequest(ctrlCtx, "get_context_usage", nil); err == nil {
-		if cu := events.MapContextUsageResponse(resp); cu.MaxTokens > 0 {
+		if cu := events.MapContextUsageResponse(resp); cu.MaxTokens > 0 || cu.TotalTokens > 0 || cu.Model != "" {
 			acc.mergeContextUsage(cu)
 		}
 	}

@@ -23,7 +23,6 @@ import (
 	"github.com/hrygo/hotplex/internal/worker"
 	"github.com/hrygo/hotplex/internal/worker/base"
 	"github.com/hrygo/hotplex/internal/worker/proc"
-	"github.com/hrygo/hotplex/pkg/aep"
 	"github.com/hrygo/hotplex/pkg/events"
 )
 
@@ -57,6 +56,9 @@ type SingletonProcessManager struct {
 	subscribers map[string]chan *events.Envelope
 	sseCancel   context.CancelFunc
 
+	// Converter maps OCS BusEvents to AEP envelopes.
+	converter *Converter
+
 	idleTimer *time.Timer
 }
 
@@ -86,6 +88,7 @@ func NewSingletonProcessManager(log *slog.Logger, cfg config.OpenCodeServerConfi
 		cfg:         cfg,
 		crashCh:     make(chan struct{}),
 		subscribers: make(map[string]chan *events.Envelope),
+		converter:   NewConverter(),
 	}
 }
 
@@ -536,7 +539,7 @@ func (s *SingletonProcessManager) readGlobalSSE(ctx context.Context) {
 	}
 }
 
-// dispatchOCSEvent parses a raw OCS event and forwards the converted AEP envelope
+// dispatchOCSEvent parses a raw OCS event and forwards the converted AEP envelopes
 // to the appropriate session channel.
 func (s *SingletonProcessManager) dispatchOCSEvent(data []byte) {
 	var evt ocsGlobalEvent
@@ -560,18 +563,20 @@ func (s *SingletonProcessManager) dispatchOCSEvent(data []byte) {
 	if sessionID == "" {
 		// session.error can have optional sessionID — dispatch to all subscribers.
 		if evt.Payload.Type == "session.error" {
-			s.dispatchToAllSubscribers(&evt)
+			s.dispatchToAllSubscribers(evt.Payload.Properties)
 		}
 		return
 	}
 
-	// Convert before acquiring lock — pure computation, no contention.
-	env := s.convertOCSEvent(sessionID, &evt)
-	if env == nil {
-		return
+	// Delegate to converter.
+	envs := s.converter.Convert(sessionID, evt.Payload.Type, evt.Payload.Properties)
+	for _, env := range envs {
+		s.sendToSubscriber(sessionID, env)
 	}
+}
 
-	// Find subscriber and send under RLock to prevent close-during-send race.
+// sendToSubscriber delivers a single envelope to the session's channel.
+func (s *SingletonProcessManager) sendToSubscriber(sessionID string, env *events.Envelope) {
 	s.busMu.RLock()
 	ch, ok := s.subscribers[sessionID]
 	if !ok {
@@ -587,191 +592,22 @@ func (s *SingletonProcessManager) dispatchOCSEvent(data []byte) {
 	s.busMu.RUnlock()
 }
 
-func (s *SingletonProcessManager) convertOCSEvent(sessionID string, evt *ocsGlobalEvent) *events.Envelope {
-	switch evt.Payload.Type {
-	case "message.part.delta":
-		return s.convertPartDelta(sessionID, evt.Payload.Properties)
-	case "message.part.updated":
-		return s.convertPartUpdated(sessionID, evt.Payload.Properties)
-	case "session.status":
-		return s.convertSessionStatus(sessionID, evt.Payload.Properties)
-	case "session.idle":
-		return s.convertSessionIdle(sessionID)
-	case "session.error":
-		return s.convertSessionError(sessionID, evt.Payload.Properties)
-	case "permission.asked":
-		return s.convertPermissionAsked(sessionID, evt.Payload.Properties)
-	case "question.asked":
-		return s.convertQuestionAsked(sessionID, evt.Payload.Properties)
-	default:
-		return nil
-	}
-}
-
-// convertPartDelta handles the streaming text delta event from OCS.
-// Format: {sessionID, messageID, partID, field: "text", delta: "incremental text"}
-func (s *SingletonProcessManager) convertPartDelta(sessionID string, props json.RawMessage) *events.Envelope {
-	var data struct {
-		Field string `json:"field"`
-		Delta string `json:"delta"`
-	}
-	if err := json.Unmarshal(props, &data); err != nil {
-		return nil
-	}
-	if data.Field != "text" || data.Delta == "" {
-		return nil
-	}
-	return events.NewEnvelope(
-		aep.NewID(), sessionID, 0,
-		events.MessageDelta,
-		events.MessageDeltaData{Content: data.Delta},
-	)
-}
-
-func (s *SingletonProcessManager) convertPartUpdated(sessionID string, props json.RawMessage) *events.Envelope {
-	var data struct {
-		Part struct {
-			ID   string `json:"id"`
-			Type string `json:"type"`
-			Text string `json:"text"`
-		} `json:"part"`
-	}
-	if err := json.Unmarshal(props, &data); err != nil {
-		return nil
-	}
-
-	// Text parts carry cumulative content (not incremental), which would
-	// duplicate the real-time delta stream from convertPartDelta. Skip them.
-	if data.Part.Type == "text" {
-		return nil
-	}
-
-	if data.Part.Type == "reasoning" {
-		return events.NewEnvelope(
-			aep.NewID(), sessionID, 0,
-			events.Reasoning,
-			events.ReasoningData{
-				ID:      data.Part.ID,
-				Content: data.Part.Text,
-			},
-		)
-	}
-
-	if data.Part.Type == "tool-invocation" || data.Part.Type == "tool-result" {
-		var rawInput map[string]any
-		_ = json.Unmarshal(props, &rawInput)
-		return events.NewEnvelope(
-			aep.NewID(), sessionID, 0,
-			events.ToolCall,
-			events.ToolCallData{Name: data.Part.Type, Input: rawInput},
-		)
-	}
-	return nil
-}
-
-func (s *SingletonProcessManager) convertSessionStatus(sessionID string, props json.RawMessage) *events.Envelope {
-	var data struct {
-		Status struct {
-			Type string `json:"type"`
-		} `json:"status"`
-	}
-	if err := json.Unmarshal(props, &data); err != nil {
-		return nil
-	}
-
-	switch data.Status.Type {
-	case "idle":
-		return events.NewEnvelope(
-			aep.NewID(), sessionID, 0,
-			events.Done,
-			events.DoneData{Success: true},
-		)
-	case "busy":
-		return events.NewEnvelope(
-			aep.NewID(), sessionID, 0,
-			events.State,
-			map[string]any{"state": "running"},
-		)
-	case "retry":
-		return events.NewEnvelope(
-			aep.NewID(), sessionID, 0,
-			events.State,
-			map[string]any{"state": "retry"},
-		)
-	default:
-		return nil
-	}
-}
-
-func (s *SingletonProcessManager) convertSessionIdle(sessionID string) *events.Envelope {
-	return events.NewEnvelope(
-		aep.NewID(), sessionID, 0,
-		events.Done,
-		events.DoneData{Success: true},
-	)
-}
-
-func (s *SingletonProcessManager) convertSessionError(sessionID string, props json.RawMessage) *events.Envelope {
-	var data struct {
-		Error struct {
-			Name string `json:"name"`
-			Data struct {
-				Message string `json:"message"`
-			} `json:"data"`
-		} `json:"error"`
-	}
-	_ = json.Unmarshal(props, &data)
-
-	msg := "opencode session error"
-	if data.Error.Data.Message != "" {
-		msg = data.Error.Data.Message
-	} else if data.Error.Name != "" {
-		msg = data.Error.Name
-	}
-	return events.NewEnvelope(
-		aep.NewID(), sessionID, 0,
-		events.Error,
-		events.ErrorData{Message: msg},
-	)
-}
-
-// dispatchToAllSubscribers sends an event to every active subscriber.
-// Used for session.error events that have no sessionID.
-// Each subscriber receives a fresh envelope with its own sessionID to avoid
-// shared pointer mutation across loop iterations.
-func (s *SingletonProcessManager) dispatchToAllSubscribers(evt *ocsGlobalEvent) {
+// dispatchToAllSubscribers sends session.error to every active subscriber.
+func (s *SingletonProcessManager) dispatchToAllSubscribers(props json.RawMessage) {
 	s.busMu.RLock()
 	defer s.busMu.RUnlock()
-	for sessionID, ch := range s.subscribers {
-		env := s.convertSessionError(sessionID, evt.Payload.Properties)
-		if env == nil {
-			continue
-		}
-		select {
-		case ch <- env:
-		default:
-			s.log.Warn("opencode-server-singleton: session channel full, dropping error event",
-				"session_id", sessionID)
+	for sessionID := range s.subscribers {
+		envs := s.converter.Convert(sessionID, "session.error", props)
+		ch := s.subscribers[sessionID]
+		for _, env := range envs {
+			select {
+			case ch <- env:
+			default:
+				s.log.Warn("opencode-server-singleton: session channel full, dropping error event",
+					"session_id", sessionID)
+			}
 		}
 	}
-}
-
-func (s *SingletonProcessManager) convertPermissionAsked(sessionID string, props json.RawMessage) *events.Envelope {
-	// Re-wrap as Raw event for Worker to handle specifically.
-	// This avoids moving handlePermissionAsked complex logic here.
-	return events.NewEnvelope(
-		aep.NewID(), sessionID, 0,
-		events.Raw,
-		events.RawData{Kind: "ocs:permission.asked", Raw: props},
-	)
-}
-
-func (s *SingletonProcessManager) convertQuestionAsked(sessionID string, props json.RawMessage) *events.Envelope {
-	return events.NewEnvelope(
-		aep.NewID(), sessionID, 0,
-		events.Raw,
-		events.RawData{Kind: "ocs:question.asked", Raw: props},
-	)
 }
 
 func (s *SingletonProcessManager) sseBackoffSleep(ctx context.Context, attempt int) {
