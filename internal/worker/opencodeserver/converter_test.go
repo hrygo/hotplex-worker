@@ -224,6 +224,16 @@ func TestConverter_SessionStatus_Idle(t *testing.T) {
 	require.False(t, exists)
 }
 
+func TestConverter_SessionStatus_Idle_NoUsage(t *testing.T) {
+	c := newTestConverter()
+	props := rawProps(t, map[string]any{"status": map[string]any{"type": "idle"}})
+	envs := c.Convert("s1", ocsSessionStatus, props)
+	require.Len(t, envs, 1)
+	require.Equal(t, events.Done, envs[0].Event.Type)
+	dd := envs[0].Event.Data.(events.DoneData)
+	require.Nil(t, dd.Stats, "no usage → Stats is nil")
+}
+
 func TestConverter_SessionStatus_Busy(t *testing.T) {
 	c := newTestConverter()
 	props := rawProps(t, map[string]any{"status": map[string]any{"type": "busy"}})
@@ -243,7 +253,11 @@ func TestConverter_SessionStatus_Retry(t *testing.T) {
 func TestConverter_SessionIdle(t *testing.T) {
 	c := newTestConverter()
 	envs := c.Convert("s1", ocsSessionIdle, nil)
-	require.Empty(t, envs, "no usage accumulated → no Done emitted")
+	require.Len(t, envs, 1)
+	require.Equal(t, events.Done, envs[0].Event.Type)
+	dd := envs[0].Event.Data.(events.DoneData)
+	require.True(t, dd.Success)
+	require.Nil(t, dd.Stats, "no usage accumulated → Stats is nil")
 }
 
 func TestConverter_SessionIdle_WithUsage(t *testing.T) {
@@ -481,7 +495,10 @@ func TestConverter_DualDone_IdleFirst(t *testing.T) {
 	require.Equal(t, events.Done, envs[0].Event.Type)
 
 	envs = c.Convert(sid, ocsSessionIdle, nil)
-	require.Empty(t, envs, "session.idle after state cleared should not emit second Done")
+	require.Len(t, envs, 1)
+	require.Equal(t, events.Done, envs[0].Event.Type)
+	dd := envs[0].Event.Data.(events.DoneData)
+	require.Nil(t, dd.Stats, "state already cleared → Stats is nil")
 }
 
 func TestConverter_Reset(t *testing.T) {

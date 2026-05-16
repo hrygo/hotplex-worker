@@ -417,14 +417,20 @@ func (w *Worker) SendControlRequest(ctx context.Context, subtype string, body ma
 	if err != nil {
 		return result, err
 	}
-	// Propagate variant from set_model to conn for subsequent messages.
+	// Propagate model + variant from set_model to conn for subsequent messages.
 	if subtype == "set_model" {
-		if v, ok := body["variant"].(string); ok && v != "" {
-			w.Mu.Lock()
-			if w.httpConn != nil {
-				w.httpConn.variant = v
+		w.Mu.Lock()
+		conn := w.httpConn
+		w.Mu.Unlock()
+		if conn != nil {
+			conn.mu.Lock()
+			if pm := w.cmd.PendingModel(); pm != nil {
+				conn.allowedModel = &ocsModelRef{ProviderID: pm.ProviderID, ModelID: pm.ModelID}
 			}
-			w.Mu.Unlock()
+			if v, ok := body["variant"].(string); ok && v != "" {
+				conn.variant = v
+			}
+			conn.mu.Unlock()
 		}
 	}
 	return result, nil
@@ -875,9 +881,6 @@ func (c *conn) Send(ctx context.Context, msg *events.Envelope) error {
 	if c.systemPrompt != "" {
 		body["system"] = c.systemPrompt
 	}
-	if c.allowedModel != nil {
-		body["model"] = c.allowedModel
-	}
 	if c.jsonSchema != nil {
 		body["format"] = map[string]any{
 			"type":   "json_schema",
@@ -885,8 +888,12 @@ func (c *conn) Send(ctx context.Context, msg *events.Envelope) error {
 		}
 	}
 	c.mu.Lock()
+	allowedModel := c.allowedModel
 	variant := c.variant
 	c.mu.Unlock()
+	if allowedModel != nil {
+		body["model"] = allowedModel
+	}
 	if variant != "" {
 		body["variant"] = variant
 	}
