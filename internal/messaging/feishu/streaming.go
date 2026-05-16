@@ -310,12 +310,12 @@ func (c *StreamingCardController) SendPlaceholder(ctx context.Context, chatID, c
 	c.placeholder = placeholder
 	c.mu.Unlock()
 
-	// Step 1: Send card message with placeholder content.
+	personaActivity := buildPersonaText(c.phrases)
 	contentJSON := buildStreamingCard(
 		cardHeader{Title: c.agentName, Template: headerWathet, Tags: turnTags(c.turnNum, c.model, c.branch, c.workDir)},
 		truncateForSummary(placeholder),
 		placeholder,
-		"",
+		personaActivity,
 	)
 	msgID, err := c.sendCardMessageRaw(ctx, chatID, chatType, contentJSON)
 	if err != nil {
@@ -698,7 +698,7 @@ func (c *StreamingCardController) Close(ctx context.Context) error {
 		Title:    c.agentName,
 		Template: headerBlue,
 		Tags:     c.closeTags(),
-	}, content)
+	}, content, true)
 
 	return nil
 }
@@ -729,20 +729,30 @@ func (c *StreamingCardController) Abort(ctx context.Context) error {
 		Title:    c.agentName,
 		Template: headerGrey,
 		Tags:     turnTags(c.turnNum, c.model, c.branch, c.workDir),
-	}, "")
+	}, "", false)
 
 	return nil
 }
 
 // buildFinalElements builds the elements list for the final card (Close/Abort).
-// Tool activity is transient and excluded from the final card.
-func (c *StreamingCardController) buildFinalElements(body string) []map[string]any {
-	return []map[string]any{
+// On normal Close (showClosing=true), the tool_activity strip shows a closing phrase;
+// on Abort (showClosing=false) or when no closing is available, the strip is omitted.
+func (c *StreamingCardController) buildFinalElements(body string, showClosing bool) []map[string]any {
+	elements := []map[string]any{
 		{"tag": "markdown", "element_id": streamingElementID, "content": body},
 	}
+	if showClosing {
+		if closing := buildClosingText(c.phrases); closing != "" {
+			elements = append(elements,
+				map[string]any{"tag": "hr"},
+				map[string]any{"tag": "markdown", "element_id": toolActivityElementID, "content": closing},
+			)
+		}
+	}
+	return elements
 }
 
-func (c *StreamingCardController) updateHeader(ctx context.Context, cardID string, header cardHeader, body string) {
+func (c *StreamingCardController) updateHeader(ctx context.Context, cardID string, header cardHeader, body string, showClosing bool) {
 	if cardID == "" {
 		return
 	}
@@ -752,7 +762,7 @@ func (c *StreamingCardController) updateHeader(ctx context.Context, cardID strin
 			"streaming_mode": false,
 			"summary":        map[string]any{"content": truncateForSummary(body)},
 		},
-		c.buildFinalElements(body),
+		c.buildFinalElements(body, showClosing),
 	)
 
 	reqBody := larkcardkit.NewUpdateCardReqBodyBuilder().
@@ -962,7 +972,7 @@ func (c *StreamingCardController) flushIMPatchWithConfig(ctx context.Context, co
 }
 
 func (c *StreamingCardController) doFlushIMPatch(ctx context.Context, header cardHeader, config map[string]any, content string, final bool) error {
-	elements := c.buildFinalElements(content)
+	elements := c.buildFinalElements(content, final)
 	contentJSON := buildCard(header, config, elements)
 
 	body := larkim.NewPatchMessageReqBodyBuilder().
