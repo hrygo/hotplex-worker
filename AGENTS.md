@@ -25,6 +25,7 @@
 - **测试**: `testify/require`、table-driven、`t.Parallel()`
 - **Worker 注册**: `init()` + `worker.Register()` 模式
 - **关闭顺序**: signal → cancel ctx → tracing → hub → bridge → sessionMgr → HTTP
+- **服务重启**: 必须使用 `hotplex service restart` 原子指令，禁止手动拆分 `stop && sleep && start`（仅二进制替换场景需手动 stop 等待）
 
 ### 反模式（禁止）
 

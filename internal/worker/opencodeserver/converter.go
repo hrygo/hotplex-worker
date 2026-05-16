@@ -10,20 +10,20 @@ import (
 
 // OCS event type constants — used by Converter and singleton dispatch filter.
 const (
-	ocsStepStarted    = "session.next.step.started"
-	ocsStepEnded      = "session.next.step.ended"
-	ocsStepFailed     = "session.next.step.failed"
-	ocsTextDelta      = "session.next.text.delta"
-	ocsReasoningDelta = "session.next.reasoning.delta"
-	ocsReasoningEnded = "session.next.reasoning.ended"
-	ocsToolCalled     = "session.next.tool.called"
-	ocsToolSuccess    = "session.next.tool.success"
-	ocsToolFailed     = "session.next.tool.failed"
-	ocsSessionStatus  = "session.status"
-	ocsSessionIdle    = "session.idle"
-	ocsSessionError   = "session.error"
-	ocsPermAsked      = "permission.asked"
-	ocsQuestionAsked  = "question.asked"
+	ocsStepStarted      = "session.next.step.started"
+	ocsStepEnded        = "session.next.step.ended"
+	ocsStepFailed       = "session.next.step.failed"
+	ocsPartDelta        = "message.part.delta" // OCS 1.15+: unified text/reasoning delta
+	ocsToolCalled       = "session.next.tool.called"
+	ocsToolSuccess      = "session.next.tool.success"
+	ocsToolFailed       = "session.next.tool.failed"
+	ocsSessionStatus    = "session.status"
+	ocsSessionIdle      = "session.idle"
+	ocsSessionError     = "session.error"
+	ocsReasoningStarted = "session.next.reasoning.started"
+	ocsReasoningEnded   = "session.next.reasoning.ended"
+	ocsPermAsked        = "permission.asked"
+	ocsQuestionAsked    = "question.asked"
 )
 
 // Converter maps OCS BusEvents to AEP envelopes.
@@ -39,10 +39,11 @@ type Converter struct {
 }
 
 // turnState tracks per-session accumulation within a single turn.
-// Reset when session.status(idle) fires.
+// Reset when session.status(idle) fires or session.error occurs.
 type turnState struct {
-	cost   float64
-	tokens tokenAccum
+	cost            float64
+	tokens          tokenAccum
+	reasoningActive bool // true between reasoning.started and reasoning.ended
 }
 
 type tokenAccum struct {
@@ -59,12 +60,14 @@ func NewConverter() *Converter {
 // Convert maps an OCS BusEvent to zero or more AEP envelopes.
 // eventType is payload.type, props is payload.properties (raw JSON).
 func (c *Converter) Convert(sessionID, eventType string, props json.RawMessage) []*events.Envelope {
-	// V2 events: session.next.* prefix
-	if strings.HasPrefix(eventType, "session.next.") {
+	switch {
+	case eventType == ocsPartDelta:
+		return c.handlePartDelta(sessionID, props)
+	case strings.HasPrefix(eventType, "session.next."):
 		return c.convertV2(sessionID, eventType, props)
+	default:
+		return c.convertV1(sessionID, eventType, props)
 	}
-	// Legacy V1 events
-	return c.convertV1(sessionID, eventType, props)
 }
 
 // --- V2 event handlers ---
@@ -77,18 +80,22 @@ func (c *Converter) convertV2(sessionID, eventType string, props json.RawMessage
 		return c.handleStepEnded(sessionID, props)
 	case ocsStepFailed:
 		return c.handleStepFailed(sessionID, props)
-	case ocsTextDelta:
-		return c.handleTextDelta(sessionID, props)
-	case ocsReasoningDelta:
-		return c.handleReasoningDelta(sessionID, props)
-	case ocsReasoningEnded:
-		return c.handleReasoningEnded(sessionID, props)
 	case ocsToolCalled:
 		return c.handleToolCalled(sessionID, props)
 	case ocsToolSuccess:
 		return c.handleToolOutcome(sessionID, props, false)
 	case ocsToolFailed:
 		return c.handleToolOutcome(sessionID, props, true)
+	case ocsReasoningStarted:
+		st := c.getOrCreateState(sessionID)
+		st.reasoningActive = true
+		return nil
+	case ocsReasoningEnded:
+		// Direct lookup: orphan ended without started is a no-op.
+		if st, ok := c.states[sessionID]; ok {
+			st.reasoningActive = false
+		}
+		return nil
 	default:
 		return nil
 	}
@@ -142,9 +149,15 @@ func (c *Converter) handleStepFailed(sessionID string, props json.RawMessage) []
 	}
 }
 
-func (c *Converter) handleTextDelta(sessionID string, props json.RawMessage) []*events.Envelope {
+// handlePartDelta handles message.part.delta from OCS 1.15+.
+// Routes by field: "reasoning" → Reasoning, "text" → Reasoning (if in reasoning
+// phase) or MessageDelta. The reasoning phase is bracketed by
+// session.next.reasoning.started/ended events stored in turnState.
+func (c *Converter) handlePartDelta(sessionID string, props json.RawMessage) []*events.Envelope {
 	var evt struct {
-		Delta string `json:"delta"`
+		PartID string `json:"partID"`
+		Field  string `json:"field"`
+		Delta  string `json:"delta"`
 	}
 	if err := json.Unmarshal(props, &evt); err != nil {
 		return nil
@@ -152,46 +165,27 @@ func (c *Converter) handleTextDelta(sessionID string, props json.RawMessage) []*
 	if evt.Delta == "" {
 		return nil
 	}
-	return []*events.Envelope{
-		events.NewEnvelope(aep.NewID(), sessionID, 0, events.MessageDelta, events.MessageDeltaData{Content: evt.Delta}),
-	}
-}
 
-func (c *Converter) handleReasoningDelta(sessionID string, props json.RawMessage) []*events.Envelope {
-	var evt struct {
-		ReasoningID string `json:"reasoningID"`
-		Delta       string `json:"delta"`
-	}
-	if err := json.Unmarshal(props, &evt); err != nil {
-		return nil
-	}
-	if evt.Delta == "" {
-		return nil
-	}
-	return []*events.Envelope{
-		events.NewEnvelope(aep.NewID(), sessionID, 0, events.Reasoning, events.ReasoningData{
-			ID:      evt.ReasoningID,
-			Content: evt.Delta,
-		}),
-	}
-}
-
-func (c *Converter) handleReasoningEnded(sessionID string, props json.RawMessage) []*events.Envelope {
-	var evt struct {
-		ReasoningID string `json:"reasoningID"`
-		Text        string `json:"text"`
-	}
-	if err := json.Unmarshal(props, &evt); err != nil {
-		return nil
-	}
-	if evt.Text == "" {
-		return nil
-	}
-	return []*events.Envelope{
-		events.NewEnvelope(aep.NewID(), sessionID, 0, events.Reasoning, events.ReasoningData{
-			ID:      evt.ReasoningID,
-			Content: evt.Text,
-		}),
+	switch evt.Field {
+	case "reasoning":
+		return []*events.Envelope{
+			events.NewEnvelope(aep.NewID(), sessionID, 0, events.Reasoning, events.ReasoningData{
+				ID:      evt.PartID,
+				Content: evt.Delta,
+			}),
+		}
+	default: // "text" or unspecified
+		if st, ok := c.states[sessionID]; ok && st.reasoningActive {
+			return []*events.Envelope{
+				events.NewEnvelope(aep.NewID(), sessionID, 0, events.Reasoning, events.ReasoningData{
+					ID:      evt.PartID,
+					Content: evt.Delta,
+				}),
+			}
+		}
+		return []*events.Envelope{
+			events.NewEnvelope(aep.NewID(), sessionID, 0, events.MessageDelta, events.MessageDeltaData{Content: evt.Delta}),
+		}
 	}
 }
 

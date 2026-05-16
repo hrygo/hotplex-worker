@@ -93,49 +93,67 @@ func TestConverter_StepFailed(t *testing.T) {
 	require.Equal(t, "API timeout", envs[0].Event.Data.(events.ErrorData).Message)
 }
 
-// ─── V2 Text ──────────────────────────────────────────────────────────────────
+// ─── message.part.delta (OCS 1.15+) ──────────────────────────────────────────
 
-func TestConverter_TextDelta(t *testing.T) {
+func TestConverter_PartDelta_Text(t *testing.T) {
 	c := newTestConverter()
-	props := rawProps(t, map[string]any{"delta": "Hel"})
-	envs := c.Convert("s1", ocsTextDelta, props)
+	props := rawProps(t, map[string]any{
+		"partID": "p1",
+		"field":  "text",
+		"delta":  "Hel",
+	})
+	envs := c.Convert("s1", ocsPartDelta, props)
 	require.Len(t, envs, 1)
 	require.Equal(t, events.MessageDelta, envs[0].Event.Type)
 	require.Equal(t, "Hel", envs[0].Event.Data.(events.MessageDeltaData).Content)
 }
 
-func TestConverter_TextDelta_Empty(t *testing.T) {
+func TestConverter_PartDelta_Text_Empty(t *testing.T) {
 	c := newTestConverter()
-	props := rawProps(t, map[string]any{"delta": ""})
-	envs := c.Convert("s1", ocsTextDelta, props)
+	props := rawProps(t, map[string]any{
+		"partID": "p1",
+		"field":  "text",
+		"delta":  "",
+	})
+	envs := c.Convert("s1", ocsPartDelta, props)
 	require.Empty(t, envs)
 }
 
-// ─── V2 Reasoning ─────────────────────────────────────────────────────────────
-
-func TestConverter_ReasoningDelta(t *testing.T) {
+func TestConverter_PartDelta_Reasoning(t *testing.T) {
 	c := newTestConverter()
 	props := rawProps(t, map[string]any{
-		"reasoningID": "r1",
-		"delta":       "thinking...",
+		"partID": "p1",
+		"field":  "reasoning",
+		"delta":  "thinking...",
 	})
-	envs := c.Convert("s1", ocsReasoningDelta, props)
+	envs := c.Convert("s1", ocsPartDelta, props)
 	require.Len(t, envs, 1)
 	require.Equal(t, events.Reasoning, envs[0].Event.Type)
-	require.Equal(t, "r1", envs[0].Event.Data.(events.ReasoningData).ID)
+	require.Equal(t, "p1", envs[0].Event.Data.(events.ReasoningData).ID)
 	require.Equal(t, "thinking...", envs[0].Event.Data.(events.ReasoningData).Content)
 }
 
-func TestConverter_ReasoningEnded(t *testing.T) {
+func TestConverter_PartDelta_DefaultField(t *testing.T) {
+	c := newTestConverter()
+	// Missing field → treated as text
+	props := rawProps(t, map[string]any{
+		"partID": "p1",
+		"delta":  "hello",
+	})
+	envs := c.Convert("s1", ocsPartDelta, props)
+	require.Len(t, envs, 1)
+	require.Equal(t, events.MessageDelta, envs[0].Event.Type)
+}
+
+func TestConverter_PartDelta_Reasoning_Empty(t *testing.T) {
 	c := newTestConverter()
 	props := rawProps(t, map[string]any{
-		"reasoningID": "r1",
-		"text":        "full reasoning text",
+		"partID": "p1",
+		"field":  "reasoning",
+		"delta":  "",
 	})
-	envs := c.Convert("s1", ocsReasoningEnded, props)
-	require.Len(t, envs, 1)
-	require.Equal(t, events.Reasoning, envs[0].Event.Type)
-	require.Equal(t, "full reasoning text", envs[0].Event.Data.(events.ReasoningData).Content)
+	envs := c.Convert("s1", ocsPartDelta, props)
+	require.Empty(t, envs)
 }
 
 // ─── V2 Tool Events ───────────────────────────────────────────────────────────
@@ -317,7 +335,7 @@ func TestConverter_QuestionAsked(t *testing.T) {
 
 func TestConverter_V1UnknownEvent(t *testing.T) {
 	c := newTestConverter()
-	envs := c.Convert("s1", "message.part.delta", rawProps(t, nil))
+	envs := c.Convert("s1", "some.unknown.event", rawProps(t, nil))
 	require.Empty(t, envs)
 }
 
@@ -339,7 +357,7 @@ func TestConverter_FullTurnLifecycle(t *testing.T) {
 	require.Empty(t, envs)
 
 	// Step 3: text delta
-	envs = c.Convert(sid, ocsTextDelta, rawProps(t, map[string]any{"delta": "Hello"}))
+	envs = c.Convert(sid, ocsPartDelta, rawProps(t, map[string]any{"partID": "p1", "field": "text", "delta": "Hello"}))
 	require.Len(t, envs, 1)
 	require.Equal(t, events.MessageDelta, envs[0].Event.Type)
 
@@ -364,7 +382,7 @@ func TestConverter_FullTurnLifecycle(t *testing.T) {
 	require.Empty(t, envs)
 
 	// Step 7: more text
-	envs = c.Convert(sid, ocsTextDelta, rawProps(t, map[string]any{"delta": "Done!"}))
+	envs = c.Convert(sid, ocsPartDelta, rawProps(t, map[string]any{"partID": "p1", "field": "text", "delta": "Done!"}))
 	require.Len(t, envs, 1)
 	require.Equal(t, events.MessageDelta, envs[0].Event.Type)
 
@@ -418,25 +436,13 @@ func TestConverter_ToolFailed_WithErrorMessage(t *testing.T) {
 	require.Equal(t, "permission denied", tr.Error)
 }
 
-func TestConverter_ReasoningEnded_Empty(t *testing.T) {
-	c := newTestConverter()
-	props := rawProps(t, map[string]any{
-		"reasoningID": "r1",
-		"text":        "",
-	})
-	envs := c.Convert("s1", ocsReasoningEnded, props)
-	require.Empty(t, envs)
-}
-
 func TestConverter_MalformedJSON(t *testing.T) {
 	c := newTestConverter()
 	bad := json.RawMessage(`{invalid json`)
 	for _, eventType := range []string{
 		ocsStepStarted,
 		ocsStepEnded,
-		ocsTextDelta,
-		ocsReasoningDelta,
-		ocsReasoningEnded,
+		ocsPartDelta,
 		ocsToolCalled,
 		ocsToolSuccess,
 		ocsToolFailed,
@@ -512,6 +518,124 @@ func TestConverter_Reset(t *testing.T) {
 	_, exists := c.states["s1"]
 	require.False(t, exists, "Reset should clear all state")
 
-	envs := c.Convert("s2", ocsTextDelta, rawProps(t, map[string]any{"delta": "hello"}))
+	envs := c.Convert("s2", ocsPartDelta, rawProps(t, map[string]any{"partID": "p1", "field": "text", "delta": "hello"}))
 	require.Len(t, envs, 1)
+}
+
+// ─── Reasoning Phase Detection ─────────────────────────────────────────────────
+
+func TestConverter_ReasoningPhase_TextBecomesReasoning(t *testing.T) {
+	c := newTestConverter()
+	sid := "ses-reasoning"
+
+	// Enter reasoning phase
+	envs := c.Convert(sid, ocsReasoningStarted, nil)
+	require.Empty(t, envs)
+
+	// field="text" during reasoning phase → Reasoning event
+	envs = c.Convert(sid, ocsPartDelta, rawProps(t, map[string]any{
+		"partID": "p1", "field": "text", "delta": "thinking",
+	}))
+	require.Len(t, envs, 1)
+	require.Equal(t, events.Reasoning, envs[0].Event.Type)
+	require.Equal(t, "p1", envs[0].Event.Data.(events.ReasoningData).ID)
+	require.Equal(t, "thinking", envs[0].Event.Data.(events.ReasoningData).Content)
+
+	// Exit reasoning phase
+	envs = c.Convert(sid, ocsReasoningEnded, nil)
+	require.Empty(t, envs)
+
+	// field="text" after reasoning ended → MessageDelta
+	envs = c.Convert(sid, ocsPartDelta, rawProps(t, map[string]any{
+		"partID": "p2", "field": "text", "delta": "answer",
+	}))
+	require.Len(t, envs, 1)
+	require.Equal(t, events.MessageDelta, envs[0].Event.Type)
+}
+
+func TestConverter_ReasoningPhase_FieldReasoningAlwaysReasoning(t *testing.T) {
+	c := newTestConverter()
+	sid := "ses-explicit-reasoning"
+
+	// Without reasoning.started, field="reasoning" still produces Reasoning
+	envs := c.Convert(sid, ocsPartDelta, rawProps(t, map[string]any{
+		"partID": "p1", "field": "reasoning", "delta": "deep thought",
+	}))
+	require.Len(t, envs, 1)
+	require.Equal(t, events.Reasoning, envs[0].Event.Type)
+
+	// Even after reasoning.ended, field="reasoning" still produces Reasoning
+	c.Convert(sid, ocsReasoningStarted, nil)
+	c.Convert(sid, ocsReasoningEnded, nil)
+	envs = c.Convert(sid, ocsPartDelta, rawProps(t, map[string]any{
+		"partID": "p2", "field": "reasoning", "delta": "more",
+	}))
+	require.Len(t, envs, 1)
+	require.Equal(t, events.Reasoning, envs[0].Event.Type)
+}
+
+func TestConverter_ReasoningPhase_ClearedOnIdle(t *testing.T) {
+	c := newTestConverter()
+	sid := "ses-leak"
+
+	// Enter reasoning phase, accumulate usage
+	c.Convert(sid, ocsReasoningStarted, nil)
+	c.Convert(sid, ocsStepEnded, rawProps(t, map[string]any{
+		"cost": 0.01, "tokens": map[string]any{"input": 100, "output": 10, "reasoning": 5, "cache": map[string]any{"read": 0, "write": 0}},
+	}))
+
+	// Turn ends (idle) → state cleared, reasoningActive reset
+	c.Convert(sid, ocsSessionStatus, rawProps(t, map[string]any{"status": map[string]any{"type": "idle"}}))
+
+	// New turn: field="text" without reasoning.started → MessageDelta (no leak)
+	envs := c.Convert(sid, ocsPartDelta, rawProps(t, map[string]any{
+		"partID": "p1", "field": "text", "delta": "fresh turn",
+	}))
+	require.Len(t, envs, 1)
+	require.Equal(t, events.MessageDelta, envs[0].Event.Type)
+}
+
+func TestConverter_ReasoningPhase_ClearedOnError(t *testing.T) {
+	c := newTestConverter()
+	sid := "ses-err-reasoning"
+
+	c.Convert(sid, ocsReasoningStarted, nil)
+
+	// Error clears state entirely
+	c.Convert(sid, ocsSessionError, rawProps(t, map[string]any{
+		"error": map[string]any{"name": "APIError", "data": map[string]any{"message": "boom"}},
+	}))
+
+	// No state → field="text" is MessageDelta (no leak)
+	envs := c.Convert(sid, ocsPartDelta, rawProps(t, map[string]any{
+		"partID": "p1", "field": "text", "delta": "after error",
+	}))
+	require.Len(t, envs, 1)
+	require.Equal(t, events.MessageDelta, envs[0].Event.Type)
+}
+
+func TestConverter_ReasoningPhase_EndedWithoutStarted(t *testing.T) {
+	c := newTestConverter()
+	sid := "ses-orphan-end"
+
+	// reasoning.ended without prior started → no state, should not panic
+	envs := c.Convert(sid, ocsReasoningEnded, nil)
+	require.Empty(t, envs)
+}
+
+func TestConverter_ReasoningPhase_Reset(t *testing.T) {
+	c := newTestConverter()
+	sid := "ses-reset-reasoning"
+
+	c.Convert(sid, ocsReasoningStarted, nil)
+	require.True(t, c.states[sid].reasoningActive)
+
+	c.Reset()
+
+	// After reset, new state created without reasoningActive
+	envs := c.Convert(sid, ocsPartDelta, rawProps(t, map[string]any{
+		"partID": "p1", "field": "text", "delta": "post-reset",
+	}))
+	require.Len(t, envs, 1)
+	require.Equal(t, events.MessageDelta, envs[0].Event.Type)
 }
