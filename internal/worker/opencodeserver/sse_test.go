@@ -34,6 +34,7 @@ func newSingletonWithSSE(t *testing.T, handler http.HandlerFunc) (*SingletonProc
 		sseClient:   srv.Client(),
 		httpAddr:    srv.URL,
 		subscribers: make(map[string]chan *events.Envelope),
+		converter:   NewConverter(),
 	}
 	return s, srv
 }
@@ -88,7 +89,7 @@ func TestReadGlobalSSE_PartUpdatedText_Skipped(t *testing.T) {
 		rw.Header().Set("Content-Type", "text/event-stream")
 		flusher := rw.(http.Flusher)
 
-		// part.updated with text type should be skipped (cumulative, not incremental).
+		// V1 message.part.updated is now ignored by V2 Converter.
 		evt := ocsEvent(t, "message.part.updated", map[string]any{
 			"sessionID": "ses_1",
 			"part":      map[string]any{"type": "text", "text": "hello"},
@@ -96,10 +97,9 @@ func TestReadGlobalSSE_PartUpdatedText_Skipped(t *testing.T) {
 		fmt.Fprint(rw, evt)
 		flusher.Flush()
 
-		// Followed by a real delta to confirm reader is still alive.
-		deltaEvt := ocsEvent(t, "message.part.delta", map[string]any{
+		// Followed by a V2 text delta to confirm reader is still alive.
+		deltaEvt := ocsEvent(t, "session.next.text.delta", map[string]any{
 			"sessionID": "ses_1",
-			"field":     "text",
 			"delta":     "world",
 		})
 		fmt.Fprint(rw, deltaEvt)
@@ -117,6 +117,37 @@ func TestReadGlobalSSE_PartUpdatedText_Skipped(t *testing.T) {
 	got := collectN(t, ch, 1)
 	require.Equal(t, events.MessageDelta, got[0].Event.Type)
 	require.Equal(t, "world", got[0].Event.Data.(events.MessageDeltaData).Content)
+	s.Unsubscribe("ses_1")
+}
+
+func TestReadGlobalSSE_PartUpdatedReasoning(t *testing.T) {
+	t.Parallel()
+
+	s, _ := newSingletonWithSSE(t, func(rw http.ResponseWriter, r *http.Request) {
+		rw.Header().Set("Content-Type", "text/event-stream")
+		flusher := rw.(http.Flusher)
+
+		evt := ocsEvent(t, "session.next.reasoning.ended", map[string]any{
+			"sessionID":   "ses_1",
+			"reasoningID": "r_1",
+			"text":        "thinking...",
+		})
+		fmt.Fprint(rw, evt)
+		flusher.Flush()
+		<-r.Context().Done()
+	})
+
+	ch := s.Subscribe("ses_1")
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	go s.readGlobalSSE(ctx)
+
+	got := collectN(t, ch, 1)
+	require.Equal(t, events.Reasoning, got[0].Event.Type)
+	data := got[0].Event.Data.(events.ReasoningData)
+	require.Equal(t, "r_1", data.ID)
+	require.Equal(t, "thinking...", data.Content)
 	s.Unsubscribe("ses_1")
 }
 
@@ -155,14 +186,12 @@ func TestReadGlobalSSE_DispatchesPartDelta(t *testing.T) {
 		flusher := rw.(http.Flusher)
 
 		// Streaming delta events — the real-time text from OCS.
-		evt1 := ocsEvent(t, "message.part.delta", map[string]any{
+		evt1 := ocsEvent(t, "session.next.text.delta", map[string]any{
 			"sessionID": "ses_1",
-			"field":     "text",
 			"delta":     "Hel",
 		})
-		evt2 := ocsEvent(t, "message.part.delta", map[string]any{
+		evt2 := ocsEvent(t, "session.next.text.delta", map[string]any{
 			"sessionID": "ses_1",
-			"field":     "text",
 			"delta":     "lo",
 		})
 		fmt.Fprint(rw, evt1)
@@ -292,9 +321,8 @@ func TestReadGlobalSSE_SkipsSyncEvents(t *testing.T) {
 		fmt.Fprint(rw, gdEvt)
 		flusher.Flush()
 
-		msgEvt := ocsEvent(t, "message.part.delta", map[string]any{
+		msgEvt := ocsEvent(t, "session.next.text.delta", map[string]any{
 			"sessionID": "ses_1",
-			"field":     "text",
 			"delta":     "hi",
 		})
 		fmt.Fprint(rw, msgEvt)
@@ -325,9 +353,8 @@ func TestReadGlobalSSE_IgnoresEmptyLinesAndComments(t *testing.T) {
 		fmt.Fprint(rw, "retry: 5000\n")
 		fmt.Fprint(rw, "event: message\n")
 
-		evt := ocsEvent(t, "message.part.delta", map[string]any{
+		evt := ocsEvent(t, "session.next.text.delta", map[string]any{
 			"sessionID": "ses_1",
-			"field":     "text",
 			"delta":     "after_noise",
 		})
 		fmt.Fprint(rw, evt)
@@ -354,9 +381,8 @@ func TestReadGlobalSSE_MultipleSessions(t *testing.T) {
 		flusher := rw.(http.Flusher)
 
 		for _, sid := range []string{"ses_A", "ses_B"} {
-			evt := ocsEvent(t, "message.part.delta", map[string]any{
+			evt := ocsEvent(t, "session.next.text.delta", map[string]any{
 				"sessionID": sid,
-				"field":     "text",
 				"delta":     "msg_" + sid,
 			})
 			fmt.Fprint(rw, evt)
@@ -389,9 +415,8 @@ func TestReadGlobalSSE_UnsubscribeDuringDispatch(t *testing.T) {
 		rw.Header().Set("Content-Type", "text/event-stream")
 		flusher := rw.(http.Flusher)
 
-		evt := ocsEvent(t, "message.part.delta", map[string]any{
+		evt := ocsEvent(t, "session.next.text.delta", map[string]any{
 			"sessionID": "ses_1",
-			"field":     "text",
 			"delta":     "first",
 		})
 		fmt.Fprint(rw, evt)
@@ -399,9 +424,8 @@ func TestReadGlobalSSE_UnsubscribeDuringDispatch(t *testing.T) {
 
 		time.Sleep(100 * time.Millisecond)
 
-		evt2 := ocsEvent(t, "message.part.delta", map[string]any{
+		evt2 := ocsEvent(t, "session.next.text.delta", map[string]any{
 			"sessionID": "ses_1",
-			"field":     "text",
 			"delta":     "after_unsub",
 		})
 		fmt.Fprint(rw, evt2)
@@ -438,9 +462,8 @@ func TestReadGlobalSSE_EOF_Reconnects(t *testing.T) {
 		rw.Header().Set("Content-Type", "text/event-stream")
 		flusher := rw.(http.Flusher)
 
-		evt := ocsEvent(t, "message.part.delta", map[string]any{
+		evt := ocsEvent(t, "session.next.text.delta", map[string]any{
 			"sessionID": "ses_1",
-			"field":     "text",
 			"delta":     fmt.Sprintf("round%d", n),
 		})
 		fmt.Fprint(rw, evt)
@@ -479,9 +502,8 @@ func TestReadGlobalSSE_HTTPError_Reconnects(t *testing.T) {
 		rw.Header().Set("Content-Type", "text/event-stream")
 		flusher := rw.(http.Flusher)
 
-		evt := ocsEvent(t, "message.part.delta", map[string]any{
+		evt := ocsEvent(t, "session.next.text.delta", map[string]any{
 			"sessionID": "ses_1",
-			"field":     "text",
 			"delta":     "after_503",
 		})
 		fmt.Fprint(rw, evt)
@@ -531,9 +553,8 @@ func TestReadGlobalSSE_ContextCancel_Stops(t *testing.T) {
 		rw.Header().Set("Content-Type", "text/event-stream")
 		flusher := rw.(http.Flusher)
 
-		evt := ocsEvent(t, "message.part.delta", map[string]any{
+		evt := ocsEvent(t, "session.next.text.delta", map[string]any{
 			"sessionID": "ses_1",
-			"field":     "text",
 			"delta":     "hi",
 		})
 		fmt.Fprint(rw, evt)
@@ -561,9 +582,8 @@ func TestReadGlobalSSE_Backpressure_DropOnFull(t *testing.T) {
 		flusher := rw.(http.Flusher)
 
 		for i := range 10 {
-			evt := ocsEvent(t, "message.part.delta", map[string]any{
+			evt := ocsEvent(t, "session.next.text.delta", map[string]any{
 				"sessionID": "ses_1",
-				"field":     "text",
 				"delta":     fmt.Sprintf("msg%d", i),
 			})
 			fmt.Fprint(rw, evt)
@@ -600,9 +620,8 @@ func TestReadGlobalSSE_EmptyStream_Backoff(t *testing.T) {
 		}
 		rw.Header().Set("Content-Type", "text/event-stream")
 		flusher := rw.(http.Flusher)
-		evt := ocsEvent(t, "message.part.delta", map[string]any{
+		evt := ocsEvent(t, "session.next.text.delta", map[string]any{
 			"sessionID": "ses_1",
-			"field":     "text",
 			"delta":     "after_empty",
 		})
 		fmt.Fprint(rw, evt)
@@ -927,6 +946,80 @@ func TestConn_Send_200_Succeeds(t *testing.T) {
 
 	err := c.Send(context.Background(), msg)
 	require.NoError(t, err)
+}
+
+func TestConn_Send_InjectsModelFormatVariant(t *testing.T) {
+	t.Parallel()
+
+	var gotBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &gotBody)
+		rw.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(srv.Close)
+
+	c := &conn{
+		sessionID:    "ses_test",
+		httpAddr:     srv.URL,
+		client:       srv.Client(),
+		recvCh:       make(chan *events.Envelope, 16),
+		log:          slog.Default(),
+		allowedModel: &ocsModelRef{ProviderID: "anthropic", ModelID: "claude-sonnet-4-20250514"},
+		jsonSchema:   map[string]any{"type": "object", "properties": map[string]any{"name": map[string]any{"type": "string"}}},
+		variant:      "high",
+	}
+
+	msg := events.NewEnvelope("id1", "ses_test", 0, events.Input,
+		events.InputData{Content: "test"})
+	require.NoError(t, c.Send(context.Background(), msg))
+
+	// Verify model injected.
+	model, ok := gotBody["model"].(map[string]any)
+	require.True(t, ok, "model should be a map")
+	require.Equal(t, "anthropic", model["providerID"])
+	require.Equal(t, "claude-sonnet-4-20250514", model["modelID"])
+
+	// Verify format injected.
+	format, ok := gotBody["format"].(map[string]any)
+	require.True(t, ok, "format should be a map")
+	require.Equal(t, "json_schema", format["type"])
+	require.NotNil(t, format["schema"])
+
+	// Verify variant injected.
+	require.Equal(t, "high", gotBody["variant"])
+}
+
+func TestConn_Send_NoModelFormatVariantWhenEmpty(t *testing.T) {
+	t.Parallel()
+
+	var gotBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &gotBody)
+		rw.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(srv.Close)
+
+	c := &conn{
+		sessionID: "ses_test",
+		httpAddr:  srv.URL,
+		client:    srv.Client(),
+		recvCh:    make(chan *events.Envelope, 16),
+		log:       slog.Default(),
+		// no allowedModel, jsonSchema, variant
+	}
+
+	msg := events.NewEnvelope("id1", "ses_test", 0, events.Input,
+		events.InputData{Content: "test"})
+	require.NoError(t, c.Send(context.Background(), msg))
+
+	_, hasModel := gotBody["model"]
+	_, hasFormat := gotBody["format"]
+	_, hasVariant := gotBody["variant"]
+	require.False(t, hasModel, "model should not be present")
+	require.False(t, hasFormat, "format should not be present")
+	require.False(t, hasVariant, "variant should not be present")
 }
 
 // ─── SSE Backoff Test ─────────────────────────────────────────────────────────

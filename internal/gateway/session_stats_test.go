@@ -184,14 +184,15 @@ func TestSessionAccumulator_MergeContextUsage(t *testing.T) {
 		require.Equal(t, int64(100000), acc.ContextFill, "nil ContextUsageData must not change accumulator")
 	})
 
-	t.Run("zero max tokens ignored", func(t *testing.T) {
+	t.Run("zero max tokens updates fill only", func(t *testing.T) {
 		acc := &sessionAccumulator{
 			ContextFill:   100000,
 			ContextWindow: 200000,
 			StartedAt:     time.Now(),
 		}
 		acc.mergeContextUsage(&events.ContextUsageData{TotalTokens: 50000, MaxTokens: 0})
-		require.Equal(t, int64(100000), acc.ContextFill, "zero MaxTokens must not change accumulator")
+		require.Equal(t, int64(50000), acc.ContextFill, "TotalTokens should update ContextFill even with zero MaxTokens")
+		require.Equal(t, int64(200000), acc.ContextWindow, "zero MaxTokens must not change ContextWindow")
 	})
 }
 

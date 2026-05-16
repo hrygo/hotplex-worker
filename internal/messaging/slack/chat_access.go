@@ -3,9 +3,7 @@ package slack
 import (
 	"context"
 	"fmt"
-	"strings"
 
-	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
 
 	"github.com/hrygo/hotplex/internal/messaging"
@@ -29,16 +27,9 @@ func (a *Adapter) handleAppHomeOpened(ctx context.Context, event *slackevents.Ap
 	}
 
 	eventID := fmt.Sprintf("app_home_opened_%s_%s_%s", event.User, event.Channel, event.EventTimeStamp)
-	accessType := store.Classify(ctx, string(messaging.PlatformSlack), event.Channel, a.botID, event.User, 0)
+	store.Classify(ctx, string(messaging.PlatformSlack), event.Channel, a.botID, event.User, 0)
 
-	welcomeSent := false
-	if accessType == messaging.ChatAccessNew || accessType == messaging.ChatAccessReturning {
-		if err := a.sendWelcomeMessage(ctx, event.Channel, accessType); err != nil {
-			a.Log.Warn("slack: welcome message send failed", "channel", event.Channel, "err", err)
-		} else {
-			welcomeSent = true
-		}
-	}
+	// Welcome message disabled — users prefer silence on app_home_opened.
 
 	inserted, err := store.Record(ctx, messaging.ChatAccessRecord{
 		EventID:     eventID,
@@ -46,7 +37,7 @@ func (a *Adapter) handleAppHomeOpened(ctx context.Context, event *slackevents.Ap
 		ChatID:      event.Channel,
 		UserID:      event.User,
 		BotID:       a.botID,
-		WelcomeSent: welcomeSent,
+		WelcomeSent: false,
 	})
 	if err != nil {
 		a.Log.Warn("slack: chat access record failed", "err", err)
@@ -54,41 +45,6 @@ func (a *Adapter) handleAppHomeOpened(ctx context.Context, event *slackevents.Ap
 	if !inserted {
 		a.Log.Debug("slack: duplicate app_home_opened event", "event_id", eventID)
 	}
-}
-
-// sendWelcomeMessage posts a Block Kit welcome message to the DM channel.
-func (a *Adapter) sendWelcomeMessage(ctx context.Context, channelID string, accessType messaging.ChatAccessType) error {
-	category := "welcome"
-	if accessType == messaging.ChatAccessReturning {
-		category = "welcome_back"
-	}
-
-	text := a.phrases.Random(category)
-	if text == "" {
-		text = "Hi，我是 {bot_name}，你的 AI 编程助手！"
-	}
-	botName := a.botName
-	if botName == "" {
-		botName = "HotPlex"
-	}
-	text = strings.ReplaceAll(text, "{bot_name}", botName)
-
-	body := fmt.Sprintf("%s\n\n我可以帮你：\n• 💻 编写、审查、调试代码\n• 📁 管理项目文件和目录\n• 🔍 搜索代码库和分析架构", text)
-
-	blocks := []slack.Block{
-		&slack.SectionBlock{
-			Type: slack.MBTSection,
-			Text: &slack.TextBlockObject{Type: "mrkdwn", Text: body},
-		},
-		slack.NewDividerBlock(),
-		slack.NewContextBlock("", &slack.TextBlockObject{Type: "mrkdwn", Text: "快捷命令：`/help` `/reset` `/cd`  ·  直接发消息即可开始 ✨"}),
-	}
-
-	_, _, err := a.client.PostMessageContext(ctx, channelID,
-		slack.MsgOptionBlocks(blocks...),
-		slack.MsgOptionText(text, false),
-	)
-	return err
 }
 
 // chatAccessStore extracts the ChatAccessStore from the adapter extras.
