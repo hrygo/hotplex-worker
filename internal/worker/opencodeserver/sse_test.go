@@ -97,9 +97,11 @@ func TestReadGlobalSSE_PartUpdatedText_Skipped(t *testing.T) {
 		fmt.Fprint(rw, evt)
 		flusher.Flush()
 
-		// Followed by a V2 text delta to confirm reader is still alive.
-		deltaEvt := ocsEvent(t, "session.next.text.delta", map[string]any{
+		// Followed by a V2 part delta to confirm reader is still alive.
+		deltaEvt := ocsEvent(t, "message.part.delta", map[string]any{
 			"sessionID": "ses_1",
+			"partID":    "p1",
+			"field":     "text",
 			"delta":     "world",
 		})
 		fmt.Fprint(rw, deltaEvt)
@@ -127,10 +129,11 @@ func TestReadGlobalSSE_PartUpdatedReasoning(t *testing.T) {
 		rw.Header().Set("Content-Type", "text/event-stream")
 		flusher := rw.(http.Flusher)
 
-		evt := ocsEvent(t, "session.next.reasoning.ended", map[string]any{
-			"sessionID":   "ses_1",
-			"reasoningID": "r_1",
-			"text":        "thinking...",
+		evt := ocsEvent(t, "message.part.delta", map[string]any{
+			"sessionID": "ses_1",
+			"partID":    "r_1",
+			"field":     "reasoning",
+			"delta":     "thinking...",
 		})
 		fmt.Fprint(rw, evt)
 		flusher.Flush()
@@ -186,12 +189,16 @@ func TestReadGlobalSSE_DispatchesPartDelta(t *testing.T) {
 		flusher := rw.(http.Flusher)
 
 		// Streaming delta events — the real-time text from OCS.
-		evt1 := ocsEvent(t, "session.next.text.delta", map[string]any{
+		evt1 := ocsEvent(t, "message.part.delta", map[string]any{
 			"sessionID": "ses_1",
+			"partID":    "p1",
+			"field":     "text",
 			"delta":     "Hel",
 		})
-		evt2 := ocsEvent(t, "session.next.text.delta", map[string]any{
+		evt2 := ocsEvent(t, "message.part.delta", map[string]any{
 			"sessionID": "ses_1",
+			"partID":    "p1",
+			"field":     "text",
 			"delta":     "lo",
 		})
 		fmt.Fprint(rw, evt1)
@@ -321,8 +328,10 @@ func TestReadGlobalSSE_SkipsSyncEvents(t *testing.T) {
 		fmt.Fprint(rw, gdEvt)
 		flusher.Flush()
 
-		msgEvt := ocsEvent(t, "session.next.text.delta", map[string]any{
+		msgEvt := ocsEvent(t, "message.part.delta", map[string]any{
 			"sessionID": "ses_1",
+			"partID":    "p1",
+			"field":     "text",
 			"delta":     "hi",
 		})
 		fmt.Fprint(rw, msgEvt)
@@ -353,8 +362,10 @@ func TestReadGlobalSSE_IgnoresEmptyLinesAndComments(t *testing.T) {
 		fmt.Fprint(rw, "retry: 5000\n")
 		fmt.Fprint(rw, "event: message\n")
 
-		evt := ocsEvent(t, "session.next.text.delta", map[string]any{
+		evt := ocsEvent(t, "message.part.delta", map[string]any{
 			"sessionID": "ses_1",
+			"partID":    "p1",
+			"field":     "text",
 			"delta":     "after_noise",
 		})
 		fmt.Fprint(rw, evt)
@@ -381,8 +392,10 @@ func TestReadGlobalSSE_MultipleSessions(t *testing.T) {
 		flusher := rw.(http.Flusher)
 
 		for _, sid := range []string{"ses_A", "ses_B"} {
-			evt := ocsEvent(t, "session.next.text.delta", map[string]any{
+			evt := ocsEvent(t, "message.part.delta", map[string]any{
 				"sessionID": sid,
+				"partID":    "p1",
+				"field":     "text",
 				"delta":     "msg_" + sid,
 			})
 			fmt.Fprint(rw, evt)
@@ -415,8 +428,10 @@ func TestReadGlobalSSE_UnsubscribeDuringDispatch(t *testing.T) {
 		rw.Header().Set("Content-Type", "text/event-stream")
 		flusher := rw.(http.Flusher)
 
-		evt := ocsEvent(t, "session.next.text.delta", map[string]any{
+		evt := ocsEvent(t, "message.part.delta", map[string]any{
 			"sessionID": "ses_1",
+			"partID":    "p1",
+			"field":     "text",
 			"delta":     "first",
 		})
 		fmt.Fprint(rw, evt)
@@ -424,8 +439,10 @@ func TestReadGlobalSSE_UnsubscribeDuringDispatch(t *testing.T) {
 
 		time.Sleep(100 * time.Millisecond)
 
-		evt2 := ocsEvent(t, "session.next.text.delta", map[string]any{
+		evt2 := ocsEvent(t, "message.part.delta", map[string]any{
 			"sessionID": "ses_1",
+			"partID":    "p1",
+			"field":     "text",
 			"delta":     "after_unsub",
 		})
 		fmt.Fprint(rw, evt2)
@@ -462,8 +479,10 @@ func TestReadGlobalSSE_EOF_Reconnects(t *testing.T) {
 		rw.Header().Set("Content-Type", "text/event-stream")
 		flusher := rw.(http.Flusher)
 
-		evt := ocsEvent(t, "session.next.text.delta", map[string]any{
+		evt := ocsEvent(t, "message.part.delta", map[string]any{
 			"sessionID": "ses_1",
+			"partID":    "p1",
+			"field":     "text",
 			"delta":     fmt.Sprintf("round%d", n),
 		})
 		fmt.Fprint(rw, evt)
@@ -502,8 +521,10 @@ func TestReadGlobalSSE_HTTPError_Reconnects(t *testing.T) {
 		rw.Header().Set("Content-Type", "text/event-stream")
 		flusher := rw.(http.Flusher)
 
-		evt := ocsEvent(t, "session.next.text.delta", map[string]any{
+		evt := ocsEvent(t, "message.part.delta", map[string]any{
 			"sessionID": "ses_1",
+			"partID":    "p1",
+			"field":     "text",
 			"delta":     "after_503",
 		})
 		fmt.Fprint(rw, evt)
@@ -553,8 +574,10 @@ func TestReadGlobalSSE_ContextCancel_Stops(t *testing.T) {
 		rw.Header().Set("Content-Type", "text/event-stream")
 		flusher := rw.(http.Flusher)
 
-		evt := ocsEvent(t, "session.next.text.delta", map[string]any{
+		evt := ocsEvent(t, "message.part.delta", map[string]any{
 			"sessionID": "ses_1",
+			"partID":    "p1",
+			"field":     "text",
 			"delta":     "hi",
 		})
 		fmt.Fprint(rw, evt)
@@ -582,8 +605,10 @@ func TestReadGlobalSSE_Backpressure_DropOnFull(t *testing.T) {
 		flusher := rw.(http.Flusher)
 
 		for i := range 10 {
-			evt := ocsEvent(t, "session.next.text.delta", map[string]any{
+			evt := ocsEvent(t, "message.part.delta", map[string]any{
 				"sessionID": "ses_1",
+				"partID":    "p1",
+				"field":     "text",
 				"delta":     fmt.Sprintf("msg%d", i),
 			})
 			fmt.Fprint(rw, evt)
@@ -620,8 +645,10 @@ func TestReadGlobalSSE_EmptyStream_Backoff(t *testing.T) {
 		}
 		rw.Header().Set("Content-Type", "text/event-stream")
 		flusher := rw.(http.Flusher)
-		evt := ocsEvent(t, "session.next.text.delta", map[string]any{
+		evt := ocsEvent(t, "message.part.delta", map[string]any{
 			"sessionID": "ses_1",
+			"partID":    "p1",
+			"field":     "text",
 			"delta":     "after_empty",
 		})
 		fmt.Fprint(rw, evt)
