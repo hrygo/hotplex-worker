@@ -10,18 +10,20 @@ import (
 
 // OCS event type constants — used by Converter and singleton dispatch filter.
 const (
-	ocsStepStarted   = "session.next.step.started"
-	ocsStepEnded     = "session.next.step.ended"
-	ocsStepFailed    = "session.next.step.failed"
-	ocsPartDelta     = "message.part.delta" // OCS 1.15+: unified text/reasoning delta
-	ocsToolCalled    = "session.next.tool.called"
-	ocsToolSuccess   = "session.next.tool.success"
-	ocsToolFailed    = "session.next.tool.failed"
-	ocsSessionStatus = "session.status"
-	ocsSessionIdle   = "session.idle"
-	ocsSessionError  = "session.error"
-	ocsPermAsked     = "permission.asked"
-	ocsQuestionAsked = "question.asked"
+	ocsStepStarted      = "session.next.step.started"
+	ocsStepEnded        = "session.next.step.ended"
+	ocsStepFailed       = "session.next.step.failed"
+	ocsPartDelta        = "message.part.delta" // OCS 1.15+: unified text/reasoning delta
+	ocsToolCalled       = "session.next.tool.called"
+	ocsToolSuccess      = "session.next.tool.success"
+	ocsToolFailed       = "session.next.tool.failed"
+	ocsSessionStatus    = "session.status"
+	ocsSessionIdle      = "session.idle"
+	ocsSessionError     = "session.error"
+	ocsReasoningStarted = "session.next.reasoning.started"
+	ocsReasoningEnded   = "session.next.reasoning.ended"
+	ocsPermAsked        = "permission.asked"
+	ocsQuestionAsked    = "question.asked"
 )
 
 // Converter maps OCS BusEvents to AEP envelopes.
@@ -37,10 +39,11 @@ type Converter struct {
 }
 
 // turnState tracks per-session accumulation within a single turn.
-// Reset when session.status(idle) fires.
+// Reset when session.status(idle) fires or session.error occurs.
 type turnState struct {
-	cost   float64
-	tokens tokenAccum
+	cost            float64
+	tokens          tokenAccum
+	reasoningActive bool // true between reasoning.started and reasoning.ended
 }
 
 type tokenAccum struct {
@@ -83,6 +86,16 @@ func (c *Converter) convertV2(sessionID, eventType string, props json.RawMessage
 		return c.handleToolOutcome(sessionID, props, false)
 	case ocsToolFailed:
 		return c.handleToolOutcome(sessionID, props, true)
+	case ocsReasoningStarted:
+		st := c.getOrCreateState(sessionID)
+		st.reasoningActive = true
+		return nil
+	case ocsReasoningEnded:
+		// Direct lookup: orphan ended without started is a no-op.
+		if st, ok := c.states[sessionID]; ok {
+			st.reasoningActive = false
+		}
+		return nil
 	default:
 		return nil
 	}
@@ -137,7 +150,9 @@ func (c *Converter) handleStepFailed(sessionID string, props json.RawMessage) []
 }
 
 // handlePartDelta handles message.part.delta from OCS 1.15+.
-// Routes by field: "text" → MessageDelta, "reasoning" → Reasoning.
+// Routes by field: "reasoning" → Reasoning, "text" → Reasoning (if in reasoning
+// phase) or MessageDelta. The reasoning phase is bracketed by
+// session.next.reasoning.started/ended events stored in turnState.
 func (c *Converter) handlePartDelta(sessionID string, props json.RawMessage) []*events.Envelope {
 	var evt struct {
 		PartID string `json:"partID"`
@@ -160,6 +175,14 @@ func (c *Converter) handlePartDelta(sessionID string, props json.RawMessage) []*
 			}),
 		}
 	default: // "text" or unspecified
+		if st, ok := c.states[sessionID]; ok && st.reasoningActive {
+			return []*events.Envelope{
+				events.NewEnvelope(aep.NewID(), sessionID, 0, events.Reasoning, events.ReasoningData{
+					ID:      evt.PartID,
+					Content: evt.Delta,
+				}),
+			}
+		}
 		return []*events.Envelope{
 			events.NewEnvelope(aep.NewID(), sessionID, 0, events.MessageDelta, events.MessageDeltaData{Content: evt.Delta}),
 		}
