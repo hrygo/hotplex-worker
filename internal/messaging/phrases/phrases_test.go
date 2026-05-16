@@ -20,6 +20,8 @@ func TestDefaults(t *testing.T) {
 	require.Contains(t, cats, "greetings")
 	require.Contains(t, cats, "tips")
 	require.Contains(t, cats, "status")
+	require.Contains(t, cats, "persona")
+	require.Contains(t, cats, "closings")
 }
 
 func TestRandomReturnsFromPool(t *testing.T) {

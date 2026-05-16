@@ -129,5 +129,25 @@ func Defaults() *Phrases {
 			{"好久不见！有什么我可以帮你的？", WeightDefault},
 			{"欢迎回来～随时继续。", WeightDefault},
 		},
+		"persona": {
+			{"🧠 正在回忆上次对话...", WeightDefault},
+			{"📋 加载技能库...", WeightDefault},
+			{"🔍 检查工作目录...", WeightDefault},
+			{"🎯 分析需求中...", WeightDefault},
+			{"🛠️ 准备开发工具...", WeightDefault},
+			{"📂 浏览项目结构...", WeightDefault},
+			{"💡 思考最佳方案...", WeightDefault},
+			{"🚀 引擎预热中...", WeightDefault},
+		},
+		"closings": {
+			{"搞定了！有事随时找我～", WeightDefault},
+			{"✅ 完成！还需要什么？", WeightDefault},
+			{"搞定～", WeightDefault},
+			{"🎉 大功告成！", WeightDefault},
+			{"☕ 任务完成，随时待命", WeightDefault},
+			{"✨ 处理好了，有事吱声", WeightDefault},
+			{"😌 收工～", WeightDefault},
+			{"🎯 完美收尾！", WeightDefault},
+		},
 	}}
 }
