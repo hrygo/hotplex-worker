@@ -58,9 +58,20 @@ Markdown 格式，简单、可编辑、git-friendly：
 - 输入 /gc 可休眠当前会话，下次发消息自动恢复
 - 输入 /reset 可重置上下文，从零开始新对话
 
+## Persona
+- 🧠 正在回忆上次对话...
+- 📋 加载技能库...
+
+## Closings
+- 搞定了！有事随时找我～
+- ✅ 完成！还需要什么？
+
 ## Status
 - 正在思考...
 - 马上回复～
+
+## Welcome
+- Hi，我是 {bot_name}，你的 AI 编程助手！
 
 ## Custom
 - 自定义分类名称
@@ -76,11 +87,119 @@ Markdown 格式，简单、可编辑、git-friendly：
 
 ## 内置分类
 
-| 分类 | 用途 | 默认条目数 |
-|------|------|-----------|
-| `greetings` | 占位卡片欢迎语 | 8 |
-| `tips` | 占位卡片 CLI 提示 | 17 |
-| `status` | Slack 助手状态文本 | 4 |
+| 分类 | 用途 | 使用位置 | 默认条目数 |
+|------|------|---------|-----------|
+| `greetings` | 占位卡片欢迎语 | 飞书 placeholder card 第一行 | 8 |
+| `tips` | 占位卡片 CLI 提示 | 飞书 placeholder card 第二行 | 17 |
+| `persona` | 准备中的人格化状态 | 飞书 tool_activity 区域（placeholder 阶段） | 8 |
+| `closings` | 完成时的签名语 | 飞书 tool_activity 区域（turn 完成时） | 8 |
+| `status` | 助手状态文本 | Slack assistant status | 4 |
+| `welcome` | 首次进入聊天欢迎语 | 飞书 welcome card（支持 `{bot_name}` 占位符） | 2 |
+| `welcome_back` | 回访用户欢迎语 | 飞书 welcome card（回访场景） | 2 |
+
+### 各分类默认值
+
+<details>
+<summary>greetings（占位卡片欢迎语）</summary>
+
+```
+- 来啦～
+- 交给我～
+- 收到，马上～
+- 好嘞！
+- 马上来～
+- 明白，开始干活！
+- 来了来了～
+- 收到！
+```
+</details>
+
+<details>
+<summary>tips（占位卡片 CLI 提示）</summary>
+
+```
+- 输入 /gc 或 $休眠 可休眠当前会话，下次发消息自动恢复
+- 输入 /reset 或 $重置 可重置上下文，从零开始新对话
+- 输入 /cd ../other-project 或 $切换目录 ../other-project 切换工作目录
+- 输入 ? 或 /help 查看所有可用命令
+- 用 $ 前缀可用自然语言触发命令，如 $compact、$上下文、$切换模型
+- 输入 /compact 或 $压缩 可压缩历史，释放上下文窗口
+- 输入 /commit 或 $提交 可让 AI 快速创建 Git 提交
+- 输入 /model sonnet 可切换 AI 模型
+- 输入 /context 或 $上下文 可查看上下文窗口使用量
+- 输入 /skills 或 $技能 可查看当前已加载的技能列表
+- 输入 /mcp 可查看 MCP 服务器连接状态
+- 输入 /perm bypassPermissions 可调整权限
+- 运行 hotplex onboard 启动交互式配置向导
+- 运行 hotplex doctor --fix 可自动检测并修复环境问题
+- 运行 hotplex update -y --restart 一键更新并重启 Gateway
+- 运行 hotplex dev 可同时启动 Gateway 和 WebChat 开发环境
+- 支持 Slack、飞书、WebChat 多平台同时在线
+```
+</details>
+
+<details>
+<summary>persona（准备中状态，显示在 tool_activity 区域）</summary>
+
+```
+- 🧠 正在回忆上次对话...
+- 📋 加载技能库...
+- 🔍 检查工作目录...
+- 🎯 分析需求中...
+- 🛠️ 准备开发工具...
+- 📂 浏览项目结构...
+- 💡 思考最佳方案...
+- 🚀 引擎预热中...
+```
+</details>
+
+<details>
+<summary>closings（完成签名语，turn 结束时显示）</summary>
+
+```
+- 搞定了！有事随时找我～
+- ✅ 完成！还需要什么？
+- 搞定～
+- 🎉 大功告成！
+- ☕ 任务完成，随时待命
+- ✨ 处理好了，有事吱声
+- 😌 收工～
+- 🎯 完美收尾！
+```
+</details>
+
+<details>
+<summary>status（Slack 助手状态文本）</summary>
+
+```
+- Initializing...
+- Thinking...
+- Composing response...
+- Processing...
+```
+</details>
+
+<details>
+<summary>welcome（首次进入聊天，支持 `{bot_name}` 占位符）</summary>
+
+```
+- Hi，我是 {bot_name}，你的 AI 编程助手！
+- 欢迎！直接发消息给我，我们可以开始写代码了。
+```
+</details>
+
+<details>
+<summary>welcome_back（回访用户欢迎语）</summary>
+
+```
+- 好久不见！有什么我可以帮你的？
+- 欢迎回来～随时继续。
+```
+</details>
+
+## 占位符
+
+`welcome` 分类支持 `{bot_name}` 占位符，在发送时自动替换为 bot 实际名称。
 
 ## 生效方式
 
