@@ -248,10 +248,7 @@ func TestConverter_SessionStatus_Retry(t *testing.T) {
 func TestConverter_SessionIdle(t *testing.T) {
 	c := newTestConverter()
 	envs := c.Convert("s1", "session.idle", nil)
-	require.Len(t, envs, 1)
-	require.Equal(t, events.Done, envs[0].Event.Type)
-	dd := envs[0].Event.Data.(events.DoneData)
-	require.Nil(t, dd.Stats, "no usage accumulated → nil stats")
+	require.Empty(t, envs, "no usage accumulated → no Done emitted")
 }
 
 func TestConverter_SessionIdle_WithUsage(t *testing.T) {
@@ -380,4 +377,127 @@ func TestConverter_FullTurnLifecycle(t *testing.T) {
 	// State cleared
 	_, exists := c.states[sid]
 	require.False(t, exists)
+}
+
+// ─── Review Fix Tests ─────────────────────────────────────────────────────────
+
+func TestConverter_ToolFailed_NilError(t *testing.T) {
+	c := newTestConverter()
+	props := rawProps(t, map[string]any{
+		"callID": "tc1",
+	})
+	envs := c.Convert("s1", "session.next.tool.failed", props)
+	require.Len(t, envs, 1)
+	require.Equal(t, events.ToolResult, envs[0].Event.Type)
+	tr := envs[0].Event.Data.(events.ToolResultData)
+	require.Equal(t, "tc1", tr.ID)
+	require.Equal(t, "tool failed", tr.Error)
+	require.Nil(t, tr.Output)
+}
+
+func TestConverter_ToolFailed_WithErrorMessage(t *testing.T) {
+	c := newTestConverter()
+	props := rawProps(t, map[string]any{
+		"callID": "tc1",
+		"error":  map[string]any{"message": "permission denied"},
+	})
+	envs := c.Convert("s1", "session.next.tool.failed", props)
+	require.Len(t, envs, 1)
+	tr := envs[0].Event.Data.(events.ToolResultData)
+	require.Equal(t, "permission denied", tr.Error)
+}
+
+func TestConverter_ReasoningEnded_Empty(t *testing.T) {
+	c := newTestConverter()
+	props := rawProps(t, map[string]any{
+		"reasoningID": "r1",
+		"text":        "",
+	})
+	envs := c.Convert("s1", "session.next.reasoning.ended", props)
+	require.Empty(t, envs)
+}
+
+func TestConverter_MalformedJSON(t *testing.T) {
+	c := newTestConverter()
+	bad := json.RawMessage(`{invalid json`)
+	for _, eventType := range []string{
+		"session.next.step.started",
+		"session.next.step.ended",
+		"session.next.text.delta",
+		"session.next.reasoning.delta",
+		"session.next.reasoning.ended",
+		"session.next.tool.called",
+		"session.next.tool.success",
+		"session.next.tool.failed",
+		"session.status",
+	} {
+		envs := c.Convert("s1", eventType, bad)
+		require.Empty(t, envs, "malformed JSON should produce nil for %s", eventType)
+	}
+
+	// step.failed and session.error always emit Error (use default message on bad JSON)
+	for _, eventType := range []string{
+		"session.next.step.failed",
+		"session.error",
+	} {
+		envs := c.Convert("s1", eventType, bad)
+		require.Len(t, envs, 1, "%s should emit Error even on malformed JSON", eventType)
+		require.Equal(t, events.Error, envs[0].Event.Type)
+	}
+}
+
+func TestConverter_InterleavedSessions(t *testing.T) {
+	c := newTestConverter()
+	s1, s2 := "session-a", "session-b"
+
+	c.Convert(s1, "session.next.step.ended", rawProps(t, map[string]any{
+		"cost": 0.01, "tokens": map[string]any{"input": 500, "output": 50, "reasoning": 0, "cache": map[string]any{"read": 0, "write": 0}},
+	}))
+	c.Convert(s2, "session.next.step.ended", rawProps(t, map[string]any{
+		"cost": 0.05, "tokens": map[string]any{"input": 2000, "output": 200, "reasoning": 0, "cache": map[string]any{"read": 0, "write": 0}},
+	}))
+
+	envs := c.Convert(s1, "session.status", rawProps(t, map[string]any{"status": map[string]any{"type": "idle"}}))
+	require.Len(t, envs, 1)
+	dd := envs[0].Event.Data.(events.DoneData)
+	require.InDelta(t, 0.01, dd.Stats["cost"], 0.0001)
+
+	_, exists := c.states[s1]
+	require.False(t, exists)
+	require.NotNil(t, c.states[s2])
+
+	envs = c.Convert(s2, "session.status", rawProps(t, map[string]any{"status": map[string]any{"type": "idle"}}))
+	dd = envs[0].Event.Data.(events.DoneData)
+	require.InDelta(t, 0.05, dd.Stats["cost"], 0.0001)
+}
+
+func TestConverter_DualDone_IdleFirst(t *testing.T) {
+	c := newTestConverter()
+	sid := "ses-dual"
+
+	c.Convert(sid, "session.next.step.ended", rawProps(t, map[string]any{
+		"cost": 0.01, "tokens": map[string]any{"input": 500, "output": 50, "reasoning": 0, "cache": map[string]any{"read": 0, "write": 0}},
+	}))
+
+	envs := c.Convert(sid, "session.status", rawProps(t, map[string]any{"status": map[string]any{"type": "idle"}}))
+	require.Len(t, envs, 1)
+	require.Equal(t, events.Done, envs[0].Event.Type)
+
+	envs = c.Convert(sid, "session.idle", nil)
+	require.Empty(t, envs, "session.idle after state cleared should not emit second Done")
+}
+
+func TestConverter_Reset(t *testing.T) {
+	c := newTestConverter()
+	c.Convert("s1", "session.next.step.ended", rawProps(t, map[string]any{
+		"cost": 0.01, "tokens": map[string]any{"input": 500, "output": 50, "reasoning": 0, "cache": map[string]any{"read": 0, "write": 0}},
+	}))
+	require.NotNil(t, c.states["s1"])
+
+	c.Reset()
+	_, exists := c.states["s1"]
+	require.False(t, exists, "Reset should clear all state")
+
+	envs := c.Convert("s2", "session.next.text.delta", rawProps(t, map[string]any{"delta": "hello"}))
+	require.Len(t, envs, 1)
 }

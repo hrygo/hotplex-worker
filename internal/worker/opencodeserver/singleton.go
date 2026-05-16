@@ -230,6 +230,7 @@ func (s *SingletonProcessManager) PID() int {
 // startProcessLocked starts the opencode serve process. Caller must hold s.mu.
 func (s *SingletonProcessManager) startProcessLocked(ctx context.Context) error {
 	s.state = stateStarting
+	s.converter.Reset()
 	s.log.Info("opencode-server-singleton: starting opencode serve process")
 
 	// Allocate an ephemeral port.

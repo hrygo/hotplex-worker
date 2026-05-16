@@ -11,6 +11,11 @@ import (
 // Converter maps OCS BusEvents to AEP envelopes.
 // It handles both V2 events (session.next.* prefix) and legacy V1 events
 // (session.status, session.error, permission.asked, question.asked).
+//
+// Thread safety: Convert and Reset are NOT safe for concurrent use. They must
+// only be called from the readGlobalSSE goroutine (which also calls
+// dispatchToAllSubscribers). If future callers need concurrent access, add a
+// mutex to Converter.
 type Converter struct {
 	states map[string]*turnState // sessionID → state
 }
@@ -178,6 +183,9 @@ func (c *Converter) handleReasoningEnded(sessionID string, props json.RawMessage
 	if err := json.Unmarshal(props, &evt); err != nil {
 		return nil
 	}
+	if evt.Text == "" {
+		return nil
+	}
 	return []*events.Envelope{
 		events.NewEnvelope(aep.NewID(), sessionID, 0, events.Reasoning, events.ReasoningData{
 			ID:      evt.ReasoningID,
@@ -221,8 +229,11 @@ func (c *Converter) handleToolOutcome(sessionID string, props json.RawMessage, i
 	}
 
 	data := events.ToolResultData{ID: evt.CallID}
-	if isFailed && evt.Error != nil {
-		data.Error = evt.Error.Message
+	if isFailed {
+		data.Error = "tool failed"
+		if evt.Error != nil {
+			data.Error = evt.Error.Message
+		}
 	} else {
 		data.Output = evt.Content
 	}
@@ -291,6 +302,9 @@ func (c *Converter) handleSessionStatus(sessionID string, props json.RawMessage)
 
 func (c *Converter) handleSessionIdle(sessionID string) []*events.Envelope {
 	stats := c.takeStats(sessionID)
+	if stats == nil {
+		return nil
+	}
 	return []*events.Envelope{
 		events.NewEnvelope(aep.NewID(), sessionID, 0, events.Done,
 			events.DoneData{Success: true, Stats: stats}),
@@ -320,6 +334,12 @@ func (c *Converter) handleSessionError(sessionID string, props json.RawMessage) 
 }
 
 // --- state helpers ---
+
+// Reset clears all per-session turn state. Call when the OCS process restarts
+// to prevent stale state from leaking into the new process lifecycle.
+func (c *Converter) Reset() {
+	clear(c.states)
+}
 
 func (c *Converter) getOrCreateState(sessionID string) *turnState {
 	st, ok := c.states[sessionID]
