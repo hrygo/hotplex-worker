@@ -563,7 +563,7 @@ func (s *SingletonProcessManager) dispatchOCSEvent(data []byte) {
 	sessionID := props.SessionID
 	if sessionID == "" {
 		// session.error can have optional sessionID — dispatch to all subscribers.
-		if evt.Payload.Type == "session.error" {
+		if evt.Payload.Type == ocsSessionError {
 			s.dispatchToAllSubscribers(evt.Payload.Properties)
 		}
 		return
@@ -598,7 +598,7 @@ func (s *SingletonProcessManager) dispatchToAllSubscribers(props json.RawMessage
 	s.busMu.RLock()
 	defer s.busMu.RUnlock()
 	for sessionID := range s.subscribers {
-		envs := s.converter.Convert(sessionID, "session.error", props)
+		envs := s.converter.Convert(sessionID, ocsSessionError, props)
 		ch := s.subscribers[sessionID]
 		for _, env := range envs {
 			select {

@@ -158,6 +158,15 @@ func TestReadGlobalSSE_DispatchesSessionStatus(t *testing.T) {
 		rw.Header().Set("Content-Type", "text/event-stream")
 		flusher := rw.(http.Flusher)
 
+		// Accumulate usage first so session.status(idle) emits Done
+		stepEvt := ocsEvent(t, "session.next.step.ended", map[string]any{
+			"sessionID": "ses_1",
+			"cost":      0.01,
+			"tokens":    map[string]any{"input": 500, "output": 50, "reasoning": 0, "cache": map[string]any{"read": 0, "write": 0}},
+		})
+		fmt.Fprint(rw, stepEvt)
+		flusher.Flush()
+
 		evt := ocsEvent(t, "session.status", map[string]any{
 			"sessionID": "ses_1",
 			"status":    map[string]any{"type": "idle"},

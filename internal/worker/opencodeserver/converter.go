@@ -8,6 +8,24 @@ import (
 	"github.com/hrygo/hotplex/pkg/events"
 )
 
+// OCS event type constants — used by Converter and singleton dispatch filter.
+const (
+	ocsStepStarted    = "session.next.step.started"
+	ocsStepEnded      = "session.next.step.ended"
+	ocsStepFailed     = "session.next.step.failed"
+	ocsTextDelta      = "session.next.text.delta"
+	ocsReasoningDelta = "session.next.reasoning.delta"
+	ocsReasoningEnded = "session.next.reasoning.ended"
+	ocsToolCalled     = "session.next.tool.called"
+	ocsToolSuccess    = "session.next.tool.success"
+	ocsToolFailed     = "session.next.tool.failed"
+	ocsSessionStatus  = "session.status"
+	ocsSessionIdle    = "session.idle"
+	ocsSessionError   = "session.error"
+	ocsPermAsked      = "permission.asked"
+	ocsQuestionAsked  = "question.asked"
+)
+
 // Converter maps OCS BusEvents to AEP envelopes.
 // It handles both V2 events (session.next.* prefix) and legacy V1 events
 // (session.status, session.error, permission.asked, question.asked).
@@ -23,11 +41,8 @@ type Converter struct {
 // turnState tracks per-session accumulation within a single turn.
 // Reset when session.status(idle) fires.
 type turnState struct {
-	model     string
-	steps     int
-	cost      float64
-	tokens    tokenAccum
-	toolNames map[string]int
+	cost   float64
+	tokens tokenAccum
 }
 
 type tokenAccum struct {
@@ -56,45 +71,31 @@ func (c *Converter) Convert(sessionID, eventType string, props json.RawMessage) 
 
 func (c *Converter) convertV2(sessionID, eventType string, props json.RawMessage) []*events.Envelope {
 	switch eventType {
-	case "session.next.step.started":
+	case ocsStepStarted:
 		return c.handleStepStarted(sessionID, props)
-	case "session.next.step.ended":
+	case ocsStepEnded:
 		return c.handleStepEnded(sessionID, props)
-	case "session.next.step.failed":
+	case ocsStepFailed:
 		return c.handleStepFailed(sessionID, props)
-	case "session.next.text.delta":
+	case ocsTextDelta:
 		return c.handleTextDelta(sessionID, props)
-	case "session.next.reasoning.delta":
+	case ocsReasoningDelta:
 		return c.handleReasoningDelta(sessionID, props)
-	case "session.next.reasoning.ended":
+	case ocsReasoningEnded:
 		return c.handleReasoningEnded(sessionID, props)
-	case "session.next.tool.called":
+	case ocsToolCalled:
 		return c.handleToolCalled(sessionID, props)
-	case "session.next.tool.success":
+	case ocsToolSuccess:
 		return c.handleToolOutcome(sessionID, props, false)
-	case "session.next.tool.failed":
+	case ocsToolFailed:
 		return c.handleToolOutcome(sessionID, props, true)
 	default:
 		return nil
 	}
 }
 
-func (c *Converter) handleStepStarted(sessionID string, props json.RawMessage) []*events.Envelope {
-	var evt struct {
-		Model struct {
-			ProviderID string `json:"providerID"`
-			ModelID    string `json:"modelID"`
-			Variant    string `json:"variant,omitempty"`
-		} `json:"model"`
-	}
-	if err := json.Unmarshal(props, &evt); err != nil {
-		return nil
-	}
-
-	st := c.getOrCreateState(sessionID)
-	st.model = evt.Model.ModelID
-	st.steps++
-	return nil // no AEP output, just state update
+func (c *Converter) handleStepStarted(_ string, _ json.RawMessage) []*events.Envelope {
+	return nil
 }
 
 func (c *Converter) handleStepEnded(sessionID string, props json.RawMessage) []*events.Envelope {
@@ -121,7 +122,7 @@ func (c *Converter) handleStepEnded(sessionID string, props json.RawMessage) []*
 	st.tokens.reasoning += int64(evt.Tokens.Reasoning)
 	st.tokens.cacheRead += int64(evt.Tokens.Cache.Read)
 	st.tokens.cacheWrite += int64(evt.Tokens.Cache.Write)
-	return nil // no AEP output, just state update
+	return nil
 }
 
 func (c *Converter) handleStepFailed(sessionID string, props json.RawMessage) []*events.Envelope {
@@ -204,9 +205,6 @@ func (c *Converter) handleToolCalled(sessionID string, props json.RawMessage) []
 		return nil
 	}
 
-	st := c.getOrCreateState(sessionID)
-	st.toolNames[evt.Tool]++
-
 	return []*events.Envelope{
 		events.NewEnvelope(aep.NewID(), sessionID, 0, events.ToolCall, events.ToolCallData{
 			ID:    evt.CallID,
@@ -247,18 +245,18 @@ func (c *Converter) handleToolOutcome(sessionID string, props json.RawMessage, i
 
 func (c *Converter) convertV1(sessionID, eventType string, props json.RawMessage) []*events.Envelope {
 	switch eventType {
-	case "session.status":
+	case ocsSessionStatus:
 		return c.handleSessionStatus(sessionID, props)
-	case "session.idle":
+	case ocsSessionIdle:
 		return c.handleSessionIdle(sessionID)
-	case "session.error":
+	case ocsSessionError:
 		return c.handleSessionError(sessionID, props)
-	case "permission.asked":
+	case ocsPermAsked:
 		return []*events.Envelope{
 			events.NewEnvelope(aep.NewID(), sessionID, 0, events.Raw,
 				events.RawData{Kind: "ocs:permission.asked", Raw: props}),
 		}
-	case "question.asked":
+	case ocsQuestionAsked:
 		return []*events.Envelope{
 			events.NewEnvelope(aep.NewID(), sessionID, 0, events.Raw,
 				events.RawData{Kind: "ocs:question.asked", Raw: props}),
@@ -281,6 +279,9 @@ func (c *Converter) handleSessionStatus(sessionID string, props json.RawMessage)
 	switch data.Status.Type {
 	case "idle":
 		stats := c.takeStats(sessionID)
+		if stats == nil {
+			return nil
+		}
 		return []*events.Envelope{
 			events.NewEnvelope(aep.NewID(), sessionID, 0, events.Done,
 				events.DoneData{Success: true, Stats: stats}),
@@ -328,6 +329,7 @@ func (c *Converter) handleSessionError(sessionID string, props json.RawMessage) 
 	} else if data.Error.Name != "" {
 		msg = data.Error.Name
 	}
+	delete(c.states, sessionID)
 	return []*events.Envelope{
 		events.NewEnvelope(aep.NewID(), sessionID, 0, events.Error, events.ErrorData{Message: msg}),
 	}
@@ -344,7 +346,7 @@ func (c *Converter) Reset() {
 func (c *Converter) getOrCreateState(sessionID string) *turnState {
 	st, ok := c.states[sessionID]
 	if !ok {
-		st = &turnState{toolNames: make(map[string]int)}
+		st = &turnState{}
 		c.states[sessionID] = st
 	}
 	return st
